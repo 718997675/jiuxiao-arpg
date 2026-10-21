@@ -1,10 +1,72 @@
-# 九霄 · 山海录
+<div align="center">
 
-一个用 **three.js** 从零手写的 3D 中式暗黑风 ARPG（浏览器单机，无需构建、无需联网）。
+<img src="docs/social-preview.png" width="100%" alt="九霄·山海录">
 
-直接双击 `index.html` 即可开始游戏。
+<br>
 
-**在线地址**：https://jiuxiao-arpg.app.workbuddy.host/?sharecode=KMOWFYC4VF
+### 用 three.js 从零手写的 3D 中式暗黑 ARPG
+**无构建 · 无依赖 · 双击即玩 · 手机可玩**
+
+<br>
+
+[![在线试玩](https://img.shields.io/badge/▶%20%20在线试玩-立刻开始-c0392b?style=for-the-badge)](https://jiuxiao-arpg.app.workbuddy.host/?sharecode=KMOWFYC4VF)
+[![License](https://img.shields.io/badge/license-MIT-3d8b3d?style=for-the-badge)](LICENSE)
+[![three.js](https://img.shields.io/badge/three.js-r128-1a1a1a?style=for-the-badge&logo=three.js&logoColor=white)](https://threejs.org/)
+[![No Build](https://img.shields.io/badge/build-无构建-2b3a4a?style=for-the-badge)](.)
+[![Mobile](https://img.shields.io/badge/mobile-摇杆适配-8a5a2b?style=for-the-badge)](.)
+
+<br>
+
+三职业 · 12 场 Boss 战 · 24 条随机词缀 · 5 套套装 · 纸娃娃实时换装 · 程序化建模零素材
+
+</div>
+
+---
+
+## 这是什么
+
+一个**完全用代码画出来**的 ARPG：没有一张图片素材、没有一个音频文件、没有一次模型加载。
+
+地面是 Canvas 程序化生成的纹理，角色和怪物是代码拼的几何体，音效是 WebAudio 现场合成的波形。整个项目 8 个 JS 文件、约 1.3 万行，用 `file://` 双击就能玩，也能直接丢到任何静态服务器上。
+
+| | |
+|---|---|
+| **引擎** | three.js r128（本地内置，不用 CDN） |
+| **形态** | 纯静态，零构建，零 npm 依赖 |
+| **操作** | PC 键鼠 / 手机虚拟摇杆，自动切换 |
+| **存档** | localStorage + 内存兜底，异常不黑屏 |
+| **体积** | 源码约 1.2 MB（含 three.js） |
+
+## 画面
+
+<div align="center">
+<img src="docs/screenshots/demo.webp" width="100%" alt="战斗演示">
+<br>
+<sub><b>实时战斗</b> · 挥砍时刀光横扫、怪物受击白闪、伤害数字弹出、击杀后顿帧。<br>（若不动，<a href="docs/screenshots/demo.gif">点这里看 GIF 版</a>）</sub>
+</div>
+
+<br>
+
+<table>
+<tr>
+<td width="50%"><img src="docs/screenshots/03-swamp.jpg" alt="血月沼泽"><br><sub><b>血月沼泽</b> · 精英怪带黄色光环，头顶血条随距离淡出</sub></td>
+<td width="50%"><img src="docs/screenshots/04-abyss.jpg" alt="九幽地宫"><br><sub><b>九幽地宫</b> · 28 级区域，怪物密度显著提高</sub></td>
+</tr>
+<tr>
+<td><img src="docs/screenshots/02-village.jpg" alt="桃源村"><br><sub><b>桃源村</b> · 安全区，NPC 与任务集散地</sub></td>
+<td><img src="docs/screenshots/06-mine.jpg" alt="玄铁矿洞"><br><sub><b>玄铁矿洞</b> · 狭窄地形，怪物容易形成包夹</sub></td>
+</tr>
+<tr>
+<td><img src="docs/screenshots/07-combat.jpg" alt="战斗"><br><sub><b>打击感</b> · 弧形刀光、顿帧、击退、暴击数字</sub></td>
+<td><img src="docs/screenshots/09-inventory.jpg" alt="背包"><br><sub><b>纸娃娃</b> · 17 种装备图标，穿戴后模型实时变化</sub></td>
+</tr>
+</table>
+
+<div align="center">
+<img src="docs/screenshots/11-m-play.jpg" width="290" alt="手机端">
+<br>
+<sub><b>手机端</b> · 左摇杆移动，右侧 3×2 技能宫格，自动瞄准最近敌人</sub>
+</div>
 
 ---
 

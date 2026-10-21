@@ -1,0 +1,62 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { width:1280px; height:640px; overflow:hidden; background:#07090c;
+         font-family:"Songti SC","STSong","Noto Serif SC",serif; }
+  .wrap { position:relative; width:1280px; height:640px; }
+  .bg { position:absolute; inset:0; background:url("screenshots/04-abyss.jpg") 66% 34%/128% no-repeat; }
+  .veil { position:absolute; inset:0;
+    background:
+      linear-gradient(100deg, rgba(5,7,10,.975) 0%, rgba(5,7,10,.95) 30%, rgba(5,7,10,.72) 48%, rgba(5,7,10,.22) 70%, rgba(5,7,10,.02) 100%),
+      radial-gradient(110% 85% at 6% 52%, rgba(0,0,0,.55) 0%, transparent 68%); }
+  .edge { position:absolute; inset:0; box-shadow:inset 0 0 90px 10px rgba(0,0,0,.55); }
+  .content { position:absolute; left:74px; top:104px; width:660px; }
+  .eyebrow { font-family:-apple-system,"PingFang SC",sans-serif; font-size:13px; letter-spacing:5px;
+             color:#c9a86a; opacity:.85; margin-bottom:26px; }
+  h1 { font-size:74px; line-height:1.12; letter-spacing:6px; color:#f3e2bc; white-space:nowrap;
+       text-shadow:0 0 52px rgba(255,186,77,.36), 0 3px 12px rgba(0,0,0,.95); font-weight:400; }
+  h1 span { color:#ffcf7a; }
+  .rule { width:190px; height:1px; margin:26px 0 22px;
+          background:linear-gradient(90deg,#a8843c,rgba(168,132,60,0)); }
+  .sub { font-family:-apple-system,"PingFang SC",sans-serif; font-size:19px; line-height:1.85;
+         color:#b9b2a2; letter-spacing:1.5px; }
+  .tags { display:flex; gap:9px; margin-top:34px; flex-wrap:wrap; }
+  .tag { font-family:-apple-system,"PingFang SC",sans-serif; font-size:13px; letter-spacing:1px;
+         padding:7px 14px; color:#d8c8a4; border:1px solid rgba(216,178,90,.34);
+         border-radius:2px; background:rgba(216,178,90,.06); }
+  .foot { position:absolute; left:74px; bottom:56px; display:flex; align-items:center; gap:12px;
+          font-family:-apple-system,"PingFang SC",sans-serif; font-size:13.5px; color:#7d7768; letter-spacing:1.2px; }
+  .dot { width:5px; height:5px; background:#8a6d33; border-radius:50%; }
+  .kbd { font-family:-apple-system,sans-serif; font-size:12px; color:#a89c84; padding:2px 7px;
+         border:1px solid #33302a; border-radius:3px; background:#12100d; }
+</style></head>
+<body>
+<div class="wrap">
+  <div class="bg"></div>
+  <div class="veil"></div>
+  <div class="edge"></div>
+
+  <div class="content">
+    <div class="eyebrow">T H R E E . J S &nbsp;·&nbsp; A R P G</div>
+    <h1>九霄<span>·</span>山海录</h1>
+    <div class="rule"></div>
+    <div class="sub">纯前端手写的中式暗黑 ARPG<br>无构建 · 无依赖 · 双击即玩</div>
+    <div class="tags">
+      <div class="tag">三职业</div>
+      <div class="tag">12 场 Boss 战</div>
+      <div class="tag">随机词缀</div>
+      <div class="tag">纸娃娃</div>
+      <div class="tag">手机可玩</div>
+    </div>
+  </div>
+
+  <div class="foot">
+    <span class="kbd">WASD</span><span>移动</span>
+    <span class="dot"></span>
+    <span class="kbd">左键</span><span>普攻</span>
+    <span class="dot"></span>
+    <span class="kbd">1-6</span><span>技能</span>
+  </div>
+</div>
+</body></html>
