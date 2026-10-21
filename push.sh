@@ -67,6 +67,15 @@ fi
 # ---------- 3. 检查变更 ----------
 CHANGED=$(git status --porcelain)
 if [ -z "$CHANGED" ]; then
+  # 工作区干净，但可能还有没推上去的提交（例如上次推送中断）
+  AHEAD=$(git rev-list --count origin/main..HEAD 2>/dev/null || echo 0)
+  if [ "${AHEAD:-0}" -gt 0 ]; then
+    echo
+    warn "工作区干净，但有 $AHEAD 个提交尚未推送"
+    export GIT_SSH_COMMAND="ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20"
+    git push origin HEAD && ok "补推完成：$(git rev-parse --short HEAD)"
+    exit 0
+  fi
   echo
   ok "没有变更，GitHub 已是最新"
   exit 0
