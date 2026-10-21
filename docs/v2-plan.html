@@ -40,12 +40,12 @@
 
   /* ---- 甘特 ---- */
   .gantt{background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:16px 16px 8px; overflow-x:auto}
-  .g-grid{min-width:1120px}
-  .g-head{display:grid; grid-template-columns:118px repeat(28,1fr); gap:0; margin-bottom:8px}
+  .g-grid{min-width:1180px}
+  .g-head{display:grid; grid-template-columns:118px repeat(30,1fr); gap:0; margin-bottom:8px}
   .g-head .lbl{font-size:10px; color:var(--dim2); letter-spacing:1px}
   .g-head .d{font-size:9px; color:var(--dim2); text-align:center; line-height:1.25}
   .g-head .d.m{color:var(--gold-d); font-weight:600}
-  .g-row{display:grid; grid-template-columns:118px repeat(28,1fr); align-items:center;
+  .g-row{display:grid; grid-template-columns:118px repeat(30,1fr); align-items:center;
          border-top:1px solid rgba(255,255,255,.035); min-height:31px}
   .g-row .nm{font-size:11.5px; color:var(--dim); padding-right:8px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
   .g-row .nm b{color:var(--text); font-weight:500}
@@ -105,7 +105,7 @@
   <div class="kicker">Roadmap · V2</div>
   <h1>九霄·<span>山海录</span> 研发计划</h1>
   <div class="sub">
-    开工 <b>2026-10-23 晚</b> · 计划收尾 <b>2026-11-18</b> · 共 <b>11 个 Sprint / 27 个晚上</b>
+    开工 <b>2026-10-23 晚</b> · 计划收尾 <b>2026-11-21</b> · 共 <b>11 个 Sprint / 30 个晚上</b>
   </div>
 </header>
 
@@ -123,35 +123,32 @@
   <div class="stat"><div class="k">任务</div><div class="v">11<i>→</i><b>40</b></div></div>
   <div class="stat"><div class="k">剧情文本</div><div class="v">3千<i>→</i><b>4万字</b></div></div>
   <div class="stat"><div class="k">通关时长</div><div class="v">4h<i>→</i><b>25h+</b></div></div>
+  <div class="stat"><div class="k">图标资产</div><div class="v">17<i>→</i><b>105</b></div></div>
 </div>
 
-<h2>排期 <em>10/22 – 11/18 · 每格一天</em></h2>
+<h2>排期 <em>10/23 – 11/21 · 每格一天</em></h2>
 <div class="gantt">
   <div class="g-grid">
     <div class="g-head">
       <div class="lbl">SPRINT</div>
-      <div class="d">22</div><div class="d">23</div><div class="d">24</div><div class="d">25</div><div class="d">26</div><div class="d">27</div><div class="d">28</div>
-      <div class="d m">29</div><div class="d">30</div><div class="d">31</div>
-      <div class="d m">1</div><div class="d">2</div><div class="d">3</div><div class="d">4</div><div class="d">5</div><div class="d">6</div><div class="d">7</div>
-      <div class="d m">8</div><div class="d">9</div><div class="d">10</div><div class="d">11</div><div class="d">12</div><div class="d">13</div><div class="d">14</div>
-      <div class="d m">15</div><div class="d">16</div><div class="d">17</div><div class="d">18</div>
+      <div class="d">23</div><div class="d">24</div><div class="d">25</div><div class="d m">26</div><div class="d">27</div><div class="d">28</div><div class="d">29</div><div class="d">30</div><div class="d">31</div><div class="d">1</div><div class="d m">2</div><div class="d">3</div><div class="d">4</div><div class="d">5</div><div class="d">6</div><div class="d">7</div><div class="d">8</div><div class="d m">9</div><div class="d">10</div><div class="d">11</div><div class="d">12</div><div class="d">13</div><div class="d">14</div><div class="d">15</div><div class="d m">16</div><div class="d">17</div><div class="d">18</div><div class="d">19</div><div class="d">20</div><div class="d">21</div>
     </div>
 
     <div class="g-row"><div class="nm"><b>S0</b> 存档地基</div><div class="bar s0" style="grid-column:2/span 1" title="S0 存档 v2 + 3 角色位 + 迁移器 + 导入导出">存档</div></div>
     <div class="g-row"><div class="nm"><b>S1</b> 装备扩容</div><div class="bar s1" style="grid-column:3/span 2" title="S1 装备基底 70→210、ilvl 物品等级、词缀 24→64">210 基底</div></div>
-    <div class="g-row"><div class="nm"><b>S2</b> 符文/套装</div><div class="bar s2" style="grid-column:5/span 2" title="S2 符文之语 24 符文 + 12 组合、套装 5→12、洗练台">符文 · 12 套</div></div>
-    <div class="g-row"><div class="nm"><b>S3</b> 天赋树</div><div class="bar s3" style="grid-column:7/span 3" title="S3 被动天赋树 120 节点 + 3 套预设 + Canvas UI">120 节点 · 3 预设</div></div>
-    <div class="g-row"><div class="nm"><b>S4</b> 技能扩容</div><div class="bar s4" style="grid-column:10/span 2" title="S4 主动技能 18→36、108 个技能变体、技能等级、8 技能栏">36 技能</div></div>
-    <div class="g-row"><div class="nm"><b>S5</b> 怪物体系</div><div class="bar s5" style="grid-column:12/span 3" title="S5 怪物 12→40、12 种精英词缀、图鉴、族群抗性">40 怪 · 12 精英词缀</div></div>
-    <div class="g-row"><div class="nm"><b>S6</b> 储物箱</div><div class="bar s6" style="grid-column:15/span 2" title="S6 储物箱 + 材料仓 + 自动整理 + 套装收藏柜">仓库 · 整理</div></div>
-    <div class="g-row"><div class="nm"><b>S7</b> 坐骑</div><div class="bar s7" style="grid-column:17/span 2" title="S7 6 种坐骑 + 培养 + 骑乘战斗 + 幻化">6 坐骑 · 骑战</div></div>
-    <div class="g-row"><div class="nm"><b>S8</b> 剧情 5 章</div><div class="bar s8" style="grid-column:19/span 4" title="S8 5 章主线 4 万字 + 演出系统 + 3 结局 + 山海志">4 万字 · 演出 · 3 结局</div></div>
-    <div class="g-row"><div class="nm"><b>S9</b> 账号/云同步</div><div class="bar s9" style="grid-column:23/span 3" title="S9 账号登录 + 云同步 + 冲突处理">登录 · 双端同步</div></div>
-    <div class="g-row"><div class="nm"><b>S10</b> 调平/打磨</div><div class="bar s10" style="grid-column:26/span 3" title="S10 数值模拟调平 + 音频 + 手柄 + 性能 + 全量回归">模拟调平 · 打磨</div></div>
+    <div class="g-row"><div class="nm"><b>S2</b> 符文/套装</div><div class="bar s2" style="grid-column:5/span 2" title="S2 符文之语 24 符文 + 12 组合 + 10 个符文图标、套装 5→12、洗练台">符文 · 12 套</div></div>
+    <div class="g-row"><div class="nm"><b>S3</b> 天赋树</div><div class="bar s3" style="grid-column:7/span 4" title="S3 被动天赋树 120 节点 + 42 个天赋图标 + 3 套预设 + Canvas UI">120 节点 · 42 图标</div></div>
+    <div class="g-row"><div class="nm"><b>S4</b> 技能扩容</div><div class="bar s4" style="grid-column:11/span 3" title="S4 主动技能 18→36、108 个技能变体 + 36 个技能图标 + 8 技能栏">36 技能 · 36 图标</div></div>
+    <div class="g-row"><div class="nm"><b>S5</b> 怪物体系</div><div class="bar s5" style="grid-column:14/span 3" title="S5 怪物 12→40、12 种精英词缀、图鉴、族群抗性">40 怪 · 12 精英词缀</div></div>
+    <div class="g-row"><div class="nm"><b>S6</b> 储物箱</div><div class="bar s6" style="grid-column:17/span 2" title="S6 储物箱 + 材料仓 + 自动整理 + 套装收藏柜">仓库 · 整理</div></div>
+    <div class="g-row"><div class="nm"><b>S7</b> 坐骑</div><div class="bar s7" style="grid-column:19/span 2" title="S7 6 种坐骑 + 培养 + 骑乘战斗 + 幻化">6 坐骑 · 骑战</div></div>
+    <div class="g-row"><div class="nm"><b>S8</b> 剧情 5 章</div><div class="bar s8" style="grid-column:21/span 4" title="S8 5 章主线 4 万字 + 演出系统 + 3 结局 + 山海志">4 万字 · 演出 · 3 结局</div></div>
+    <div class="g-row"><div class="nm"><b>S9</b> 账号/云同步</div><div class="bar s9" style="grid-column:25/span 3" title="S9 账号登录 + 云同步 + 冲突处理">登录 · 双端同步</div></div>
+    <div class="g-row"><div class="nm"><b>S10</b> 调平/打磨</div><div class="bar s10" style="grid-column:28/span 4" title="S10 数值模拟调平 + 坐骑/材料图标 17 个 + 音频 + 手柄 + 性能 + 全量回归">调平 · 打磨</div></div>
   </div>
 </div>
 
-<h2>十大模块 <em>红=必做　橙=建议　蓝=可延后</em></h2>
+<h2>十一大模块 <em>红=必做　橙=建议　蓝=可延后</em></h2>
 <div class="cards">
 
   <div class="card p0">
@@ -182,22 +179,24 @@
 
   <div class="card p0">
     <div class="top"><span class="code">M3</span><h3>技能体系 2.0</h3><span class="tag t0">必做</span></div>
-    <div class="delta">主动 <b>18</b><span class="arw">→</span><b>36</b>　变体 <b>0</b><span class="arw">→</span><b>108</b></div>
+    <div class="delta">主动 <b>18</b><span class="arw">→</span><b>36</b>　变体 <b>0</b><span class="arw">→</span><b>108</b>　图标 <b>0</b><span class="arw">→</span><b>36</b></div>
     <ul>
       <li>三职业各 12 技能，分三系（狂战 / 守护 / 破军…）</li>
       <li>技能等级 1–10，吃「+N 技能等级」词缀</li>
       <li>每技能 <b>3 个符文改造</b>：改机制不改名</li>
+      <li><b>36 个技能图标</b>，按 8 种施法形态归类；变体只叠 Ⅰ/Ⅱ/Ⅲ 角标</li>
       <li>技能栏 6 → <b>8</b>（PC 1-8 / 手机 4×2）</li>
     </ul>
   </div>
 
   <div class="card p0">
     <div class="top"><span class="code">M4</span><h3>被动 / 天赋树</h3><span class="tag t0">必做</span></div>
-    <div class="delta">节点 <b>0</b><span class="arw">→</span><b>120</b>　天赋点 <b>0</b><span class="arw">→</span><b>70</b></div>
+    <div class="delta">节点 <b>0</b><span class="arw">→</span><b>120</b>　天赋点 <b>0</b><span class="arw">→</span><b>70</b>　图标 <b>0</b><span class="arw">→</span><b>42</b></div>
     <ul>
       <li>每职业 3 系 × 10 节点 + 通用 30</li>
       <li>小节点 / 中节点（改机制）/ <b>大节点（质变）</b></li>
       <li>装备 flag 可激活<b>隐藏节点</b>，形成双构筑</li>
+      <li><b>图标分层</b>：90 个小节点共用 12 个属性符号，24 中节点独立，6 大节点插画级</li>
       <li>3 套预设一键切换 + 洗点金币递增</li>
       <li>UI 用 Canvas 绘制连线（120 节点不卡）</li>
     </ul>
@@ -271,6 +270,19 @@
     </ul>
   </div>
 
+  <div class="card p0">
+    <div class="top"><span class="code">M11</span><h3>图标视觉系统</h3><span class="tag t0">必做</span></div>
+    <div class="delta">图标 <b>17</b><span class="arw">→</span><b>105</b>　独立绘制 <b>105</b>　外部请求 <b>0</b></div>
+    <ul>
+      <li>统一 <b>32×32 剪影</b> + <code>currentColor</code>，颜色全部交给 CSS（稀有度 / 系别 / 元素）</li>
+      <li>配额：技能 <b>36</b> / 天赋 <b>42</b> / 符文 <b>10</b> / 坐骑 <b>6</b> / 材料 <b>8</b> / 新槽 <b>3</b></li>
+      <li>变体、小节点、符文靠<b>角标与组合</b>压缩，200 个视觉只画 105 张</li>
+      <li>天赋树走 Canvas：<code>Path2D</code> <b>启动时编译一次</b>，120 节点稳 60fps</li>
+      <li>每画 12 个拼一张对照墙，防画风漂移</li>
+      <li>深色底 / 浅色底都要能看清，靠 <code>currentColor</code> 换色即可</li>
+    </ul>
+  </div>
+
 </div>
 
 <h2>依赖关系 <em>顺序不能颠倒</em></h2>
@@ -281,7 +293,10 @@
               └─→ <i>S9 账号</i>（复用 SaveManager 序列化）
 
 <i>S4 技能</i> ──→ <i>S3 天赋</i>（天赋节点要引用技能 id）
-<i>S5 怪物</i> ──→ <i>S1 掉落</i>（掉落表按怪物等级生成）</div>
+<i>S5 怪物</i> ──→ <i>S1 掉落</i>（掉落表按怪物等级生成）
+
+<b>M11 图标规范</b> ──→ <i>S3</i>（42）+ <i>S4</i>（36）+ <i>S2</i>（10）+ <i>S10</i>（17）
+                       规范与 Path2D 缓存必须最先定，否则天赋树画完要回头返工</div>
 
 <h2>砍单顺序 <em>时间不够就按这个顺序放弃</em></h2>
 <div class="tbl">
@@ -290,12 +305,12 @@
   <tr>
     <td>1 · 必做</td>
     <td>S0 存档 → S1 装备 → S3 天赋 → S4 技能</td>
-    <td>这四项完成，<b style="color:#ff8b95">构筑深度</b>就有了，玩家会想玩第二遍。约 8 晚。</td>
+    <td>这四项完成，<b style="color:#ff8b95">构筑深度</b>就有了，玩家会想玩第二遍。含图标约 <b>10 晚</b>。</td>
   </tr>
   <tr>
     <td>2 · 强烈建议</td>
     <td>S5 怪物 → S6 储物箱</td>
-    <td>决定「刷得爽不爽」。约 5 晚，加上必做共 <b style="color:#ffc670">13 晚（两周）</b>。</td>
+    <td>决定「刷得爽不爽」。约 5 晚，加上必做共 <b style="color:#ffc670">15 晚（两周半）</b>。</td>
   </tr>
   <tr>
     <td>3 · 可延后</td>
@@ -320,6 +335,8 @@
   <tr><td>账号需云服务</td><td>部署形态变化，可能卡住</td><td>先做 JSON 导出/导入兜底；账号作为可选增强，不阻塞发布</td></tr>
   <tr><td>单一 data.js 破 3000 行</td><td>改一处崩三处</td><td>S0 阶段完成 <code>src/data/</code> 拆分</td></tr>
   <tr><td>手机端承载不了天赋树/仓库</td><td>移动端体验崩</td><td>天赋树用 Canvas + 双指缩放；仓库虚拟滚动；单独跑竖屏回归</td></tr>
+  <tr><td>图标画不完（105 个）</td><td>拖住 S3/S4，或用占位符毁掉观感</td><td>先定规范再画；变体/小节点/符文用角标与组合压缩；<b>优先保 36 个技能图标</b>，天赋图标可降级为圆点+数字</td></tr>
+  <tr><td>图标风格漂移</td><td>界面显得杂</td><td>统一 32×32 网格与 2px 安全边距；每画 12 个拼对照墙自查</td></tr>
 </table>
 </div>
 
