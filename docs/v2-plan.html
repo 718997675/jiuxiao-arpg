@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>九霄·山海录 V2 研发计划</title>
+<style>
+  :root{
+    --bg:#0e1116; --panel:#151a21; --panel2:#1a2029; --line:#252d39;
+    --text:#e6e2d8; --dim:#8b93a1; --dim2:#5f6875;
+    --gold:#d8b25a; --gold-d:#a8843a;
+    --warrior:#ff7a5c; --mage:#6cc0ff; --taoist:#6ee0b0;
+    --p0:#ff5f6d; --p1:#ffb347; --p2:#5fa8ff;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    background:var(--bg); color:var(--text);
+    font-family:-apple-system,"PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+    line-height:1.6; padding:32px 28px 60px; max-width:1240px; margin:0 auto;
+    -webkit-font-smoothing:antialiased;
+  }
+  header{border-bottom:1px solid var(--line); padding-bottom:20px; margin-bottom:26px}
+  .kicker{font-size:11px; letter-spacing:3px; color:var(--gold-d); text-transform:uppercase; margin-bottom:8px}
+  h1{font-size:27px; font-weight:600; letter-spacing:1px; font-family:"STKaiti","KaiTi",serif; color:#f0e6cf}
+  h1 span{color:var(--gold)}
+  .sub{color:var(--dim); font-size:13px; margin-top:8px}
+  .sub b{color:var(--text); font-weight:500}
+
+  h2{font-size:15px; letter-spacing:2px; color:var(--gold); margin:38px 0 16px;
+     padding-left:11px; border-left:3px solid var(--gold-d); font-weight:600}
+  h2 em{font-style:normal; color:var(--dim2); font-size:12px; letter-spacing:0; margin-left:8px; font-weight:400}
+
+  /* ---- 数字对比 ---- */
+  .stats{display:grid; grid-template-columns:repeat(auto-fit,minmax(132px,1fr)); gap:10px}
+  .stat{background:var(--panel); border:1px solid var(--line); border-radius:6px; padding:13px 14px}
+  .stat .k{font-size:11px; color:var(--dim); letter-spacing:1px}
+  .stat .v{font-size:19px; font-weight:600; margin-top:5px; font-variant-numeric:tabular-nums}
+  .stat .v i{font-style:normal; color:var(--dim2); font-size:13px; margin:0 3px}
+  .stat .v b{color:var(--gold); font-weight:600}
+
+  /* ---- 甘特 ---- */
+  .gantt{background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:16px 16px 8px; overflow-x:auto}
+  .g-grid{min-width:1120px}
+  .g-head{display:grid; grid-template-columns:118px repeat(28,1fr); gap:0; margin-bottom:8px}
+  .g-head .lbl{font-size:10px; color:var(--dim2); letter-spacing:1px}
+  .g-head .d{font-size:9px; color:var(--dim2); text-align:center; line-height:1.25}
+  .g-head .d.m{color:var(--gold-d); font-weight:600}
+  .g-row{display:grid; grid-template-columns:118px repeat(28,1fr); align-items:center;
+         border-top:1px solid rgba(255,255,255,.035); min-height:31px}
+  .g-row .nm{font-size:11.5px; color:var(--dim); padding-right:8px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+  .g-row .nm b{color:var(--text); font-weight:500}
+  .bar{height:17px; border-radius:3px; font-size:9.5px; line-height:17px; color:#0c1015;
+       padding:0 5px; font-weight:600; white-space:nowrap; overflow:hidden; letter-spacing:.2px}
+  .g-row .ph{height:17px}
+  .s0{background:#8e7cc3} .s1{background:#d8b25a} .s2{background:#c9a04a}
+  .s3{background:var(--p0)} .s4{background:#ff8c69} .s5{background:#3fae7a}
+  .s6{background:#4a9db5} .s7{background:#a9714f} .s8{background:#7b8cde}
+  .s9{background:#6cc0ff} .s10{background:#9aa4b1}
+
+  /* ---- 模块卡 ---- */
+  .cards{display:grid; grid-template-columns:repeat(auto-fill,minmax(330px,1fr)); gap:12px}
+  .card{background:var(--panel); border:1px solid var(--line); border-radius:7px; padding:15px 16px;
+        border-top:2px solid var(--line); transition:border-color .18s}
+  .card.p0{border-top-color:var(--p0)} .card.p1{border-top-color:var(--p1)} .card.p2{border-top-color:var(--p2)}
+  .card .top{display:flex; align-items:baseline; gap:8px; margin-bottom:3px}
+  .card .code{font-size:10px; color:var(--dim2); letter-spacing:1px}
+  .card h3{font-size:14.5px; font-weight:600; letter-spacing:.5px}
+  .card .tag{font-size:9.5px; padding:1px 6px; border-radius:9px; margin-left:auto; letter-spacing:.5px}
+  .tag.t0{background:rgba(255,95,109,.14); color:#ff8b95; border:1px solid rgba(255,95,109,.3)}
+  .tag.t1{background:rgba(255,179,71,.12); color:#ffc670; border:1px solid rgba(255,179,71,.28)}
+  .tag.t2{background:rgba(95,168,255,.12); color:#8bc0ff; border:1px solid rgba(95,168,255,.28)}
+  .delta{font-size:12px; color:var(--dim); margin:9px 0 10px; font-variant-numeric:tabular-nums}
+  .delta b{color:var(--text); font-weight:600}
+  .delta .arw{color:var(--gold-d); margin:0 5px}
+  .card ul{list-style:none; font-size:12px; color:var(--dim); display:flex; flex-direction:column; gap:4px}
+  .card li::before{content:"▸"; color:var(--gold-d); margin-right:6px; font-size:10px}
+  .card li b{color:#cfd6e0; font-weight:500}
+
+  /* ---- 依赖 ---- */
+  .deps{background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:18px 20px;
+        font-family:ui-monospace,"SF Mono",Menlo,monospace; font-size:12px; color:var(--dim); overflow-x:auto; white-space:pre}
+  .deps b{color:var(--gold)}
+  .deps i{color:#6cc0ff; font-style:normal}
+
+  /* ---- 风险 ---- */
+  table{width:100%; border-collapse:collapse; font-size:12.5px}
+  th,td{text-align:left; padding:9px 12px; border-bottom:1px solid var(--line); vertical-align:top}
+  th{font-size:11px; color:var(--dim2); letter-spacing:1px; font-weight:500; background:var(--panel2)}
+  td:first-child{color:#cfd6e0; width:28%}
+  td:nth-child(2){color:var(--dim); width:26%}
+  td:last-child{color:var(--dim)}
+  tr:last-child td{border-bottom:none}
+  .tbl{background:var(--panel); border:1px solid var(--line); border-radius:8px; overflow:hidden}
+
+  .note{margin-top:34px; padding:14px 16px; background:rgba(216,178,90,.06); border-left:2px solid var(--gold-d);
+        border-radius:4px; font-size:12.5px; color:var(--dim)}
+  .note b{color:var(--gold)}
+  footer{margin-top:30px; padding-top:16px; border-top:1px solid var(--line); font-size:11px; color:var(--dim2);
+         display:flex; justify-content:space-between; flex-wrap:wrap; gap:8px}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="kicker">Roadmap · V2</div>
+  <h1>九霄·<span>山海录</span> 研发计划</h1>
+  <div class="sub">
+    开工 <b>2026-10-23 晚</b> · 计划收尾 <b>2026-11-18</b> · 共 <b>11 个 Sprint / 27 个晚上</b>
+  </div>
+</header>
+
+<h2>规模目标 <em>V1 → V2</em></h2>
+<div class="stats">
+  <div class="stat"><div class="k">装备基底</div><div class="v">70<i>→</i><b>210</b></div></div>
+  <div class="stat"><div class="k">词缀</div><div class="v">24<i>→</i><b>64</b></div></div>
+  <div class="stat"><div class="k">套装</div><div class="v">5<i>→</i><b>12</b></div></div>
+  <div class="stat"><div class="k">主动技能</div><div class="v">18<i>→</i><b>36</b></div></div>
+  <div class="stat"><div class="k">技能变体</div><div class="v">0<i>→</i><b>108</b></div></div>
+  <div class="stat"><div class="k">天赋节点</div><div class="v">0<i>→</i><b>120</b></div></div>
+  <div class="stat"><div class="k">怪物</div><div class="v">12<i>→</i><b>40</b></div></div>
+  <div class="stat"><div class="k">Boss</div><div class="v">12<i>→</i><b>20</b></div></div>
+  <div class="stat"><div class="k">地图</div><div class="v">6<i>→</i><b>12</b></div></div>
+  <div class="stat"><div class="k">任务</div><div class="v">11<i>→</i><b>40</b></div></div>
+  <div class="stat"><div class="k">剧情文本</div><div class="v">3千<i>→</i><b>4万字</b></div></div>
+  <div class="stat"><div class="k">通关时长</div><div class="v">4h<i>→</i><b>25h+</b></div></div>
+</div>
+
+<h2>排期 <em>10/22 – 11/18 · 每格一天</em></h2>
+<div class="gantt">
+  <div class="g-grid">
+    <div class="g-head">
+      <div class="lbl">SPRINT</div>
+      <div class="d">22</div><div class="d">23</div><div class="d">24</div><div class="d">25</div><div class="d">26</div><div class="d">27</div><div class="d">28</div>
+      <div class="d m">29</div><div class="d">30</div><div class="d">31</div>
+      <div class="d m">1</div><div class="d">2</div><div class="d">3</div><div class="d">4</div><div class="d">5</div><div class="d">6</div><div class="d">7</div>
+      <div class="d m">8</div><div class="d">9</div><div class="d">10</div><div class="d">11</div><div class="d">12</div><div class="d">13</div><div class="d">14</div>
+      <div class="d m">15</div><div class="d">16</div><div class="d">17</div><div class="d">18</div>
+    </div>
+
+    <div class="g-row"><div class="nm"><b>S0</b> 存档地基</div><div class="bar s0" style="grid-column:2/span 1" title="S0 存档 v2 + 3 角色位 + 迁移器 + 导入导出">存档</div></div>
+    <div class="g-row"><div class="nm"><b>S1</b> 装备扩容</div><div class="bar s1" style="grid-column:3/span 2" title="S1 装备基底 70→210、ilvl 物品等级、词缀 24→64">210 基底</div></div>
+    <div class="g-row"><div class="nm"><b>S2</b> 符文/套装</div><div class="bar s2" style="grid-column:5/span 2" title="S2 符文之语 24 符文 + 12 组合、套装 5→12、洗练台">符文 · 12 套</div></div>
+    <div class="g-row"><div class="nm"><b>S3</b> 天赋树</div><div class="bar s3" style="grid-column:7/span 3" title="S3 被动天赋树 120 节点 + 3 套预设 + Canvas UI">120 节点 · 3 预设</div></div>
+    <div class="g-row"><div class="nm"><b>S4</b> 技能扩容</div><div class="bar s4" style="grid-column:10/span 2" title="S4 主动技能 18→36、108 个技能变体、技能等级、8 技能栏">36 技能</div></div>
+    <div class="g-row"><div class="nm"><b>S5</b> 怪物体系</div><div class="bar s5" style="grid-column:12/span 3" title="S5 怪物 12→40、12 种精英词缀、图鉴、族群抗性">40 怪 · 12 精英词缀</div></div>
+    <div class="g-row"><div class="nm"><b>S6</b> 储物箱</div><div class="bar s6" style="grid-column:15/span 2" title="S6 储物箱 + 材料仓 + 自动整理 + 套装收藏柜">仓库 · 整理</div></div>
+    <div class="g-row"><div class="nm"><b>S7</b> 坐骑</div><div class="bar s7" style="grid-column:17/span 2" title="S7 6 种坐骑 + 培养 + 骑乘战斗 + 幻化">6 坐骑 · 骑战</div></div>
+    <div class="g-row"><div class="nm"><b>S8</b> 剧情 5 章</div><div class="bar s8" style="grid-column:19/span 4" title="S8 5 章主线 4 万字 + 演出系统 + 3 结局 + 山海志">4 万字 · 演出 · 3 结局</div></div>
+    <div class="g-row"><div class="nm"><b>S9</b> 账号/云同步</div><div class="bar s9" style="grid-column:23/span 3" title="S9 账号登录 + 云同步 + 冲突处理">登录 · 双端同步</div></div>
+    <div class="g-row"><div class="nm"><b>S10</b> 调平/打磨</div><div class="bar s10" style="grid-column:26/span 3" title="S10 数值模拟调平 + 音频 + 手柄 + 性能 + 全量回归">模拟调平 · 打磨</div></div>
+  </div>
+</div>
+
+<h2>十大模块 <em>红=必做　橙=建议　蓝=可延后</em></h2>
+<div class="cards">
+
+  <div class="card p0">
+    <div class="top"><span class="code">M1</span><h3>装备系统 2.0</h3><span class="tag t0">必做</span></div>
+    <div class="delta">基底 <b>70</b><span class="arw">→</span><b>210</b>　词缀 <b>24</b><span class="arw">→</span><b>64</b></div>
+    <ul>
+      <li>槽位 11 → <b>14</b>（披风 / 护符 / <b>命格</b>）</li>
+      <li>基底 8 阶，引入 <b>ilvl 物品等级</b>缩放数值</li>
+      <li>新增元素伤害、<b>+N 技能等级</b>、光环、濒死免疫</li>
+      <li>洗练台：重 roll 单条词缀 / 升品阶</li>
+      <li><b>符文之语</b>：24 符文 + 12 组合（艾尔+索尔+塔尔 → 连锁闪电）</li>
+      <li>套装 5 → <b>12</b>（每职业 3 + 通用 3），效果改为改机制</li>
+    </ul>
+  </div>
+
+  <div class="card p1">
+    <div class="top"><span class="code">M2</span><h3>怪物体系 2.0</h3><span class="tag t1">建议</span></div>
+    <div class="delta">怪物 <b>12</b><span class="arw">→</span><b>40</b>　Boss <b>12</b><span class="arw">→</span><b>20</b></div>
+    <ul>
+      <li>10 个新程序化模型 + 元素变体</li>
+      <li><b>精英词缀 12 种</b>（冰霜 / 闪电 / 分裂 / 亡语…）</li>
+      <li>族群抗性：亡灵抗毒、石魔抗物理、妖灵抗法术</li>
+      <li>图鉴系统 + 区域集齐永久加成</li>
+      <li>AI 升级：包夹 / 风筝 / 自爆 / 治疗友军</li>
+      <li>世界 Boss + 血月天气事件</li>
+    </ul>
+  </div>
+
+  <div class="card p0">
+    <div class="top"><span class="code">M3</span><h3>技能体系 2.0</h3><span class="tag t0">必做</span></div>
+    <div class="delta">主动 <b>18</b><span class="arw">→</span><b>36</b>　变体 <b>0</b><span class="arw">→</span><b>108</b></div>
+    <ul>
+      <li>三职业各 12 技能，分三系（狂战 / 守护 / 破军…）</li>
+      <li>技能等级 1–10，吃「+N 技能等级」词缀</li>
+      <li>每技能 <b>3 个符文改造</b>：改机制不改名</li>
+      <li>技能栏 6 → <b>8</b>（PC 1-8 / 手机 4×2）</li>
+    </ul>
+  </div>
+
+  <div class="card p0">
+    <div class="top"><span class="code">M4</span><h3>被动 / 天赋树</h3><span class="tag t0">必做</span></div>
+    <div class="delta">节点 <b>0</b><span class="arw">→</span><b>120</b>　天赋点 <b>0</b><span class="arw">→</span><b>70</b></div>
+    <ul>
+      <li>每职业 3 系 × 10 节点 + 通用 30</li>
+      <li>小节点 / 中节点（改机制）/ <b>大节点（质变）</b></li>
+      <li>装备 flag 可激活<b>隐藏节点</b>，形成双构筑</li>
+      <li>3 套预设一键切换 + 洗点金币递增</li>
+      <li>UI 用 Canvas 绘制连线（120 节点不卡）</li>
+    </ul>
+  </div>
+
+  <div class="card p1">
+    <div class="top"><span class="code">M5</span><h3>坐骑体系</h3><span class="tag t1">建议</span></div>
+    <div class="delta">坐骑 <b>0</b><span class="arw">→</span><b>6</b>　培养 <b>无</b><span class="arw">→</span><b>等级 / 亲密</b></div>
+    <ul>
+      <li>马 / 狼 / 鹿 / 鹤 / 虎 / 麒麟（终局）</li>
+      <li>Boss 掉落、任务、<b>野外驯服</b></li>
+      <li>骑乘战斗：攻速 −25%、移速 +45%</li>
+      <li>受击 3 次落马 + 3 秒硬直</li>
+      <li>3 个坐骑装备位（马鞍 / 蹄铁 / 铃铛）</li>
+    </ul>
+  </div>
+
+  <div class="card p1">
+    <div class="top"><span class="code">M6</span><h3>储物箱</h3><span class="tag t1">建议</span></div>
+    <div class="delta">仓库 <b>0</b><span class="arw">→</span><b>60+</b>　背包 <b>40</b><span class="arw">→</span><b>60</b></div>
+    <ul>
+      <li>账号仓库跨角色共享 + 材料独立仓</li>
+      <li>分类标签 + 搜索 + <b>虚拟滚动</b></li>
+      <li>套装收藏柜（登记后随时取出）</li>
+      <li>一键整理：部位 → 稀有度 → ilvl</li>
+    </ul>
+  </div>
+
+  <div class="card p0">
+    <div class="top"><span class="code">M7</span><h3>建档 / 读档</h3><span class="tag t0">必做</span></div>
+    <div class="delta">存档位 <b>1</b><span class="arw">→</span><b>3</b>　导入导出 <b>无</b><span class="arw">→</span><b>有</b></div>
+    <ul>
+      <li>schema v2 + <b>迁移器</b>（V1 老档不丢）</li>
+      <li>JSON 导出 / 导入，带数值合法性校验</li>
+      <li>原子写入（tmp → 替换），防写坏</li>
+      <li>回档点 + 死亡惩罚二选一</li>
+    </ul>
+  </div>
+
+  <div class="card p2">
+    <div class="top"><span class="code">M8</span><h3>账号体系</h3><span class="tag t2">可延后</span></div>
+    <div class="delta">登录 <b>无</b><span class="arw">→</span><b>邮箱 / 手机</b>　同步 <b>无</b><span class="arw">→</span><b>云</b></div>
+    <ul>
+      <li>纯静态部署<b>没有数据库</b>，须用托管云服务</li>
+      <li>本地优先，登录才开同步，不强制在线</li>
+      <li>冲突弹窗让玩家选，<b>不自动覆盖</b></li>
+      <li>降级方案：JSON 导出即可跨设备搬档</li>
+    </ul>
+  </div>
+
+  <div class="card p2">
+    <div class="top"><span class="code">M9</span><h3>世界观 / 剧情</h3><span class="tag t2">可延后</span></div>
+    <div class="delta">文本 <b>3千</b><span class="arw">→</span><b>4万字</b>　结局 <b>1</b><span class="arw">→</span><b>3</b></div>
+    <ul>
+      <li>5 章主线：桃源烬 → 幽篁血竹 → 黄泉渡口 → 昆仑雪狱 → 九霄之上</li>
+      <li>演出系统：镜头关键帧 + 打字机 + 音效点</li>
+      <li>分支影响 NPC 存亡，结局三选一</li>
+      <li>内置「山海志」图鉴 + 名词表 + 时间线</li>
+    </ul>
+  </div>
+
+  <div class="card p1">
+    <div class="top"><span class="code">M10</span><h3>体验感打磨</h3><span class="tag t1">建议</span></div>
+    <div class="delta">贯穿全程　不单独占工期</div>
+    <ul>
+      <li>打击感：血雾 / 地面残留 / 破防硬直</li>
+      <li>BGM 三层（探索 / 战斗 / Boss）交叉淡入</li>
+      <li>装备对比、伤害统计、拾取过滤</li>
+      <li>手柄支持、色盲模式、字体缩放</li>
+      <li>性能：对象池 + 粒子上限 + 小地图降帧</li>
+    </ul>
+  </div>
+
+</div>
+
+<h2>依赖关系 <em>顺序不能颠倒</em></h2>
+<div class="deps"><b>S0 存档 v2</b> ──┬─→ <i>S1/S2 装备</i>（ilvl / 孔 / 符文 字段）
+              ├─→ <i>S3 天赋</i>（talents 字段）
+              ├─→ <i>S6 仓库</i>（stash 字段）
+              ├─→ <i>S7 坐骑</i>（mount 字段）
+              └─→ <i>S9 账号</i>（复用 SaveManager 序列化）
+
+<i>S4 技能</i> ──→ <i>S3 天赋</i>（天赋节点要引用技能 id）
+<i>S5 怪物</i> ──→ <i>S1 掉落</i>（掉落表按怪物等级生成）</div>
+
+<h2>砍单顺序 <em>时间不够就按这个顺序放弃</em></h2>
+<div class="tbl">
+<table>
+  <tr><th>优先级</th><th>包含</th><th>说明</th></tr>
+  <tr>
+    <td>1 · 必做</td>
+    <td>S0 存档 → S1 装备 → S3 天赋 → S4 技能</td>
+    <td>这四项完成，<b style="color:#ff8b95">构筑深度</b>就有了，玩家会想玩第二遍。约 8 晚。</td>
+  </tr>
+  <tr>
+    <td>2 · 强烈建议</td>
+    <td>S5 怪物 → S6 储物箱</td>
+    <td>决定「刷得爽不爽」。约 5 晚，加上必做共 <b style="color:#ffc670">13 晚（两周）</b>。</td>
+  </tr>
+  <tr>
+    <td>3 · 可延后</td>
+    <td>S2 符文之语 · S7 坐骑</td>
+    <td>爽点但非核心，可放到 V2.1。</td>
+  </tr>
+  <tr>
+    <td>4 · 最后做</td>
+    <td>S8 剧情 4 万字 · S9 账号</td>
+    <td>工作量最大、最容易拖；账号只有多设备需求才必要。</td>
+  </tr>
+</table>
+</div>
+
+<h2>主要风险</h2>
+<div class="tbl">
+<table>
+  <tr><th>风险</th><th>影响</th><th>应对</th></tr>
+  <tr><td>存档迁移丢档</td><td>玩家进度全失，致命</td><td>迁移前自动备份 <code>jiuxiao_save_v1.bak</code>；迁移后校验和比对关键字段</td></tr>
+  <tr><td>数值失控</td><td>后期无难度或前中期劝退</td><td>每 Sprint 跑 1000 次战斗模拟：普通胜率 75% / 精英 55% / Boss 35%</td></tr>
+  <tr><td>内容量爆炸</td><td>工期翻倍</td><td>全部数据化 + AI 批量生成，人工只做审校；每 Sprint 设内容上限，超出就砍</td></tr>
+  <tr><td>账号需云服务</td><td>部署形态变化，可能卡住</td><td>先做 JSON 导出/导入兜底；账号作为可选增强，不阻塞发布</td></tr>
+  <tr><td>单一 data.js 破 3000 行</td><td>改一处崩三处</td><td>S0 阶段完成 <code>src/data/</code> 拆分</td></tr>
+  <tr><td>手机端承载不了天赋树/仓库</td><td>移动端体验崩</td><td>天赋树用 Canvas + 双指缩放；仓库虚拟滚动；单独跑竖屏回归</td></tr>
+</table>
+</div>
+
+<div class="note">
+  <b>铁律：</b>每个 Sprint 结束都必须是「可玩、可发布」的状态，绝不留半截功能过夜。收尾必跑三端回归 + 存档往返 + 40 怪帧率。
+</div>
+
+<footer>
+  <span>九霄·山海录 V2 · 研发计划 v1.0</span>
+  <span>2026-10-22 制定 · 10-23 开工</span>
+</footer>
+
+</body>
+</html>

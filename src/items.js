@@ -1,0 +1,382 @@
+/* ============================================================
+ * 装备系统：随机词缀 / 稀有度 / 套装 / 属性汇总 / 提示框
+ * ============================================================ */
+
+let ITEM_UID = 1;
+
+const UNIQUES = {
+  weapon: [
+    { name: '斩月·霜寒', power: 'frost', desc: '攻击有 25% 几率使敌人减速 40%，持续 2 秒。', stats: { crit: 6, critDmg: 25 }, cls: 'warrior' },
+    { name: '焚天·赤霄', power: 'explode', desc: '击杀敌人时引发一次火焰爆炸。', stats: { atkPct: 12, skillDmg: 15 }, cls: 'mage' },
+    { name: '太初·无相', power: 'thunder', desc: '攻击有 18% 几率召下连锁天雷。', stats: { int: 12, cdr: 8 }, cls: 'taoist' }
+  ],
+  helm: [{ name: '九幽面纱', power: 'vampire', desc: '生命偷取额外 +5%。', stats: { hp: 60, crit: 4 } }],
+  chest: [{ name: '玄冥战衣', power: 'thorns', desc: '受到攻击时反弹 30% 伤害。', stats: { def: 40, hp: 100 } }],
+  boots: [{ name: '踏云履', power: 'speed', desc: '移动速度额外 +8%。', stats: { moveSpd: 8 } }],
+  ring: [{ name: '轮回之戒', power: 'lifesteal', desc: '所有伤害的 6% 转化为生命。', stats: { lifesteal: 6, crit: 4 } }],
+  amulet: [{ name: '天机玉珏', power: 'magicfind', desc: '奇遇机缘 +30%。', stats: { magicFind: 30 } }]
+};
+
+function tierIndex(ilvl) { return CLAMP(Math.floor((ilvl - 1) / 8), 0, 4); }
+
+function itemPower(item) {
+  let s = 0;
+  for (const a of item.affixes) s += a.val * (STATS[a.key].pct ? 1.6 : 0.5);
+  if (item.baseDmg) s += (item.baseDmg[0] + item.baseDmg[1]) * 1.4;
+  if (item.baseArmor) s += item.baseArmor * 0.9;
+  return Math.round(s + item.ilvl * 4);
+}
+
+function itemValue(item) {
+  const r = { common: 1, magic: 1.8, rare: 3, legendary: 6, set: 5 }[item.rarity];
+  return Math.round((12 + item.ilvl * 8) * r * (1 + item.affixes.length * 0.15));
+}
+
+function affixValue(a, ilvl) {
+  const v = RND(a.min, a.max) * (1 + ilvl * 0.055);
+  return Math.max(1, Math.round(v));
+}
+
+function makeAffix(ilvl, used) {
+  let pool = AFFIXES.filter(a => !used.has(a.key));
+  const roll = Math.random();
+  const tierWant = roll < 0.62 ? 1 : (roll < 0.9 ? 2 : 3);
+  let cand = pool.filter(a => a.tier === tierWant);
+  if (!cand.length) cand = pool;
+  const a = PICK(cand);
+  used.add(a.key);
+  return { key: a.key, val: affixValue(a, ilvl), pre: a.pre, suf: a.suf, tier: a.tier };
+}
+
+function affixText(a) {
+  const s = STATS[a.key];
+  return '+' + a.val + (s.pct ? '%' : '') + ' ' + s.label;
+}
+
+function baseTierFor(slot, ilvl) {
+  const ti = tierIndex(ilvl);
+  if (slot === 'weapon') return ti;
+  return ti;
+}
+
+/* 生成一件装备 */
+function rollItem(ilvl, opts = {}) {
+  ilvl = CLAMP(Math.round(ilvl), 1, 40);
+  const slot = opts.slot || PICK(['helm', 'chest', 'shoulders', 'gloves', 'boots', 'belt', 'amulet', 'ring', 'weapon', 'offhand']);
+  const cls = opts.cls || PICK(['warrior', 'mage', 'taoist']);
+  let rarity = opts.rarity;
+  if (!rarity) {
+    const mf = opts.magicFind || 0;
+    const w = [
+      ['common', RARITY.common.weight],
+      ['magic', RARITY.magic.weight + mf * 0.16],
+      ['rare', RARITY.rare.weight + mf * 0.1],
+      ['legendary', RARITY.legendary.weight + mf * 0.05],
+      ['set', RARITY.set.weight + mf * 0.04]
+    ];
+    let total = w.reduce((s, x) => s + x[1], 0), r = Math.random() * total;
+    for (const [k, v] of w) { if (r < v) { rarity = k; break; } r -= v; }
+    if (!rarity) rarity = 'common';
+  }
+  const isRing = slot === 'ring';
+  const item = {
+    uid: ITEM_UID++, slot, ilvl, rarity, cls: null, affixes: [],
+    setId: null, setName: null, power: null, powerDesc: null, reqLv: Math.max(1, ilvl - 1)
+  };
+
+  /* ---- 基底 ---- */
+  if (slot === 'weapon') {
+    const list = WEAPON_BASES[cls];
+    const bi = CLAMP(tierIndex(ilvl), 0, list.length - 1);
+    const base = list[bi];
+    const rm = RARITY[rarity].mul;
+    const lo = base.dmg[0] * (1 + ilvl * 0.115) * rm;
+    const hi = base.dmg[1] * (1 + ilvl * 0.115) * rm;
+    item.baseName = base.name;
+    item.shape = base.shape;
+    item.baseDmg = [Math.round(lo), Math.round(hi)];
+    item.speed = base.speed;
+    item.cls = cls;
+    item.name = base.name;
+    item.kind = '武器';
+  } else if (slot === 'offhand') {
+    const list = OFFHAND_BASES[cls];
+    const bi = CLAMP(tierIndex(ilvl), 0, list.length - 1);
+    const [bn, barm] = list[bi];
+    item.baseName = bn;
+    item.baseArmor = Math.round(barm * (1 + ilvl * 0.1) * RARITY[rarity].mul);
+    item.cls = cls;
+    item.name = bn;
+    item.kind = '副手';
+    item.shape = cls === 'warrior' ? 'shield' : (cls === 'mage' ? 'orb' : 'charm');
+  } else {
+    const list = ARMOR_BASES[slot];
+    const bi = CLAMP(tierIndex(ilvl), 0, list.length - 1);
+    const [bn, barm] = list[bi];
+    item.baseName = bn;
+    item.baseArmor = Math.round(barm * (1 + ilvl * 0.13) * RARITY[rarity].mul);
+    item.name = bn;
+    item.kind = SLOTS[slot].name;
+  }
+  if (isRing) { item.slot = 'ring'; }
+
+  /* ---- 套装 ---- */
+  if (rarity === 'set') {
+    const cands = Object.values(SETS).filter(s =>
+      (!s.cls || s.cls === cls) &&
+      s.slots.some(sl => sl === slot || (sl === 'ring' && slot === 'ring'))
+    );
+    if (cands.length) {
+      const set = PICK(cands);
+      const idx = set.slots.findIndex(sl => sl === slot);
+      const pieceIndex = idx >= 0 ? idx : set.slots.findIndex(sl => sl === 'ring');
+      item.setId = set.id;
+      item.setName = set.name;
+      item.name = set.pieces[pieceIndex] || set.pieces[0];
+      item.rarity = 'set';
+      item.cls = set.cls || null;
+    } else rarity = item.rarity = 'rare';
+  }
+
+  /* ---- 唯一神兵 ---- */
+  if (item.rarity === 'legendary' && !item.setId && CHANCE(0.55)) {
+    const pool = (UNIQUES[slot] || []).filter(u => !u.cls || u.cls === cls);
+    if (pool.length) {
+      const u = PICK(pool);
+      item.name = u.name;
+      item.power = u.power;
+      item.powerDesc = u.desc;
+      item.uniqueStats = u.stats || {};
+      item.cls = cls;
+    }
+  }
+
+  /* ---- 词缀 ---- */
+  let count = RARITY[item.rarity].affixes;
+  if (item.rarity === 'rare' && CHANCE(0.5)) count = 4;
+  if (item.rarity === 'set') count = 3 + (CHANCE(0.4) ? 1 : 0);
+  const used = new Set();
+  for (let i = 0; i < count; i++) item.affixes.push(makeAffix(ilvl, used));
+
+  /* ---- 命名 ---- */
+  if (!item.setId && !item.power) {
+    if (item.rarity === 'magic') {
+      const a = item.affixes[0];
+      item.name = (CHANCE(0.5) ? PICK(a.pre) : '') + item.baseName + (CHANCE(0.35) ? PICK(a.suf).replace(/^·\s*/, '·') : '');
+    } else if (item.rarity === 'rare') {
+      const p = item.affixes[0], s = item.affixes[1] || p;
+      item.name = PICK(p.pre) + item.baseName + PICK(s.suf).replace(/^·\s*/, '·');
+    } else if (item.rarity === 'legendary') {
+      item.name = PICK(['灭世', '焚寂', '太虚', '九幽', '斩龙', '无相']) + '·' + item.baseName;
+    }
+  }
+  item.value = itemValue(item);
+  return item;
+}
+
+/* 初始装备 */
+function makeStarterSet(cls) {
+  const w = rollItem(1, { slot: 'weapon', cls, rarity: 'common' });
+  w.name = { warrior: '新兵铁剑', mage: '旧桃木杖', taoist: '师父的桃木剑' }[cls];
+  w.affixes = [{ key: 'atk', val: 3, pre: [], suf: [], tier: 1 }];
+  return { weapon: w, chest: rollItem(1, { slot: 'chest', cls, rarity: 'common' }) };
+}
+
+/* ---------------- 属性汇总 ---------------- */
+function emptyStats() {
+  const o = {};
+  for (const k in STATS) o[k] = 0;
+  return o;
+}
+
+function sumItemStats(item, out) {
+  if (item.baseDmg) out.atk += (item.baseDmg[0] + item.baseDmg[1]) / 2;
+  if (item.baseArmor) out.def += item.baseArmor;
+  for (const a of item.affixes) out[a.key] = (out[a.key] || 0) + a.val;
+  if (item.uniqueStats) for (const k in item.uniqueStats) out[k] = (out[k] || 0) + item.uniqueStats[k];
+  if (item.power === 'vampire') out.lifesteal += 5;
+  if (item.power === 'speed') out.moveSpd += 8;
+  if (item.power === 'thorns') out.thorns += 30;
+  if (item.power === 'lifesteal') out.lifesteal += 6;
+  if (item.power === 'magicfind') out.magicFind += 30;
+}
+
+function aggregate(equipped) {
+  const st = emptyStats();
+  const setCount = {};
+  const flags = {};
+  for (const slot in equipped) {
+    const it = equipped[slot];
+    if (!it) continue;
+    sumItemStats(it, st);
+    if (it.setId) setCount[it.setId] = (setCount[it.setId] || 0) + 1;
+    if (it.power) flags[it.power] = true;
+  }
+  const setBonuses = [];
+  for (const sid in setCount) {
+    const set = SETS[sid];
+    for (const b of set.bonuses) {
+      if (setCount[sid] >= b.need) {
+        setBonuses.push({ setId: sid, name: set.name, text: b.text, need: b.need });
+        if (b.stats) for (const k in b.stats) st[k] = (st[k] || 0) + b.stats[k];
+        if (b.flag) flags[b.flag] = true;
+      }
+    }
+  }
+  return { stats: st, setCount, setBonuses, flags };
+}
+
+/* 计算玩家最终属性 */
+function computePlayerStats(p) {
+  const agg = aggregate(p.equipment);
+  const st = agg.stats;
+  const c = CLASSES[p.cls];
+  const lv = p.level;
+  const str = c.base.str + c.growth.str * (lv - 1) + st.str;
+  const agi = c.base.agi + c.growth.agi * (lv - 1) + st.agi;
+  const vit = c.base.vit + c.growth.vit * (lv - 1) + st.vit;
+  const int = c.base.int + c.growth.int * (lv - 1) + st.int;
+  const main = { str, agi, vit, int }[c.mainStat];
+
+  const atk = (c.baseAtk + st.atk + main * c.statMul) * (1 + st.atkPct / 100);
+  const hpMax = (c.baseHp + lv * 16 + vit * c.hpPerVit + st.hp) * (1 + st.hpPct / 100);
+  const mpMax = c.baseMp + lv * 4 + int * c.mpPerInt + st.mp;
+  const crit = CLAMP(5 + agi * 0.18 + st.crit, 0, 75);
+  const critDmg = 150 + st.critDmg;
+  const aspd = (1 + st.aspd / 100) * (1 + agi * 0.004);
+  const moveSpd = (7.2 + agi * 0.015) * (1 + st.moveSpd / 100);
+  const def = st.def + vit * 0.6;
+  const cdr = CLAMP(st.cdr, 0, 45);
+
+  return {
+    str, agi, vit, int, atk, hpMax: Math.round(hpMax), mpMax: Math.round(mpMax),
+    crit, critDmg, aspd, moveSpd, def, cdr,
+    lifesteal: st.lifesteal, skillDmg: st.skillDmg, allRes: st.allRes,
+    goldFind: st.goldFind, magicFind: st.magicFind, killHeal: st.killHeal,
+    mpReg: 3 + st.mpReg, thorns: st.thorns, summonDmg: st.summonDmg,
+    setBonuses: agg.setBonuses, setCount: agg.setCount, flags: agg.flags, raw: st
+  };
+}
+
+/* ---------------- 装备图标（程序化内联 SVG，viewBox 32x32） ----------------
+ * 颜色一律用 currentColor，由外层按稀有度着色；深色镂空用 ICON_HOLE */
+const ICON_HOLE = '#0b0d10';
+const ITEM_ICONS = {
+  /* 武器 */
+  sword: `<path d="M16 1.3 19.4 8.4 19.4 20.6 16 24.2 12.6 20.6 12.6 8.4Z" opacity=".95"/>
+    <path d="M7.4 20.3 24.6 20.3 24.6 23.1 7.4 23.1Z" opacity=".62"/>
+    <path d="M14.4 23.3 17.6 23.3 17.6 28.2 14.4 28.2Z" opacity=".8"/>
+    <circle cx="16" cy="29.3" r="1.9" opacity=".6"/>`,
+  saber: `<path d="M12.2 22.4C12.2 12.2 17.8 5.2 28.8 3.4 25 10.6 21.4 17.4 16.2 23.4Z" opacity=".95"/>
+    <path d="M11.6 22.6 15.4 26 12.2 29.2 8.6 25.8Z" opacity=".66"/>
+    <path d="M9.8 26.6 6.4 30 4.6 28.2 8 24.8Z" opacity=".55"/>`,
+  axe: `<path d="M10.8 30.8 16.4 5 18.6 5.4 13 31.2Z" opacity=".8"/>
+    <path d="M17.8 5.4C24.4 2.6 30.2 6.6 29.2 14.6 28.8 17.2 26.4 17.6 25 15.4 22.4 11.2 20 7.8 17.8 5.4Z" opacity=".97"/>
+    <path d="M19.4 8.4C22.8 8 26 9.6 27.4 12.4 24.8 11.4 22 10 19.4 8.4Z" fill="${ICON_HOLE}" opacity=".45"/>`,
+  glaive: `<path d="M20.4 31.4 12.2 10 14.3 9.2 22.6 30.8Z" opacity=".8"/>
+    <path d="M13 10.4C8.4 5.6 2.4 6 1.4 10.8 1.6 15.6 5.6 18.8 11 19.2 9.8 16 10.8 12.8 13 10.4Z" opacity=".97"/>
+    <path d="M12.2 12.4C9.4 9.4 6 9.2 4.6 11.2 4 12.2 4.6 13.8 6.2 15.2 7.4 16.2 9 16.8 10.6 16.8 11.4 15.2 11.8 13.8 12.2 12.4Z" fill="${ICON_HOLE}" opacity=".42"/>`,
+  staff: `<path d="M14.6 31 15.5 11.4 17.3 11.6 16.4 31.2Z" opacity=".8"/>
+    <path d="M15.6 12.4C15.6 6.6 18.6 3.2 23.2 4.2" fill="none" stroke="currentColor" stroke-width="2.4" opacity=".95"/>
+    <circle cx="24.2" cy="7.4" r="3.1" opacity=".97"/>
+    <circle cx="23.2" cy="6.4" r="1" fill="#fff" opacity=".5"/>
+    <path d="M13.6 20 17.4 20" stroke="${ICON_HOLE}" stroke-width="1.6" opacity=".45"/>`,
+  taojian: `<path d="M16 4.4 18.6 9.6 18.6 19.2 16 22.6 13.4 19.2 13.4 9.6Z" opacity=".93"/>
+    <path d="M10 19.4 22 19.4 22 21.5 10 21.5Z" opacity=".6"/>
+    <path d="M14.6 21.5 17.4 21.5 17.4 25.8 14.6 25.8Z" opacity=".8"/>
+    <path d="M16 26.2c2.4 1.8 2.4 4.2 0 5.4-2.4-1.2-2.4-3.6 0-5.4Z" opacity=".5"/>`,
+  /* 副手 */
+  shield: `<path d="M16 2.4 27.4 6.6 27.4 15.4C27.4 22.8 21.8 28.4 16 30.4 10.2 28.4 4.6 22.8 4.6 15.4V6.6Z" opacity=".92"/>
+    <path d="M16 6.2 22.4 8.4 22.4 15.6C22.4 20.6 19.4 24.6 16 26.4 12.6 24.6 9.6 20.6 9.6 15.6V8.4Z" fill="${ICON_HOLE}" opacity=".42"/>
+    <path d="M16 10.4 16 22.6" stroke="currentColor" stroke-width="1.6" opacity=".8"/>`,
+  orb: `<circle cx="16" cy="16" r="7.4" opacity=".95"/>
+    <circle cx="13.2" cy="13" r="2.5" fill="#fff" opacity=".45"/>
+    <ellipse cx="16" cy="16" rx="11.4" ry="4.3" fill="none" stroke="currentColor" stroke-width="1.5" opacity=".45" transform="rotate(-24 16 16)"/>`,
+  charm: `<circle cx="16" cy="4" r="2.4" fill="none" stroke="currentColor" stroke-width="1.6" opacity=".85"/>
+    <path d="M10.4 8.2 21.6 8.2 21.6 23.4 16 29 10.4 23.4Z" opacity=".95"/>
+    <path d="M12.8 11.4 19.2 11.4 19.2 13 12.8 13Z" fill="${ICON_HOLE}" opacity=".55"/>
+    <path d="M12.8 15.4 19.2 15.4 19.2 17 12.8 17Z" fill="${ICON_HOLE}" opacity=".55"/>
+    <path d="M14.4 19.4 17.6 19.4 17.6 21 14.4 21Z" fill="${ICON_HOLE}" opacity=".55"/>`,
+  /* 护甲 */
+  helm: `<path d="M16 5.2C21.8 5.2 25.6 9.6 25.6 15.4V17.4H6.4V15.4C6.4 9.6 10.2 5.2 16 5.2Z" opacity=".95"/>
+    <path d="M3.4 17.4 28.6 17.4 28.6 20.8 3.4 20.8Z" opacity=".97"/>
+    <path d="M8.2 20.8 23.8 20.8 23.8 23.8C23.8 25.8 20.4 27.2 16 27.2 11.6 27.2 8.2 25.8 8.2 23.8Z" opacity=".82"/>
+    <path d="M10.6 13 21.4 13 21.4 15.8 10.6 15.8Z" fill="${ICON_HOLE}" opacity=".7"/>
+    <path d="M16 5.2 16 12.6" stroke="${ICON_HOLE}" stroke-width="1.3" opacity=".38"/>`,
+  chest: `<path d="M11.4 5 5.4 7.4 3.2 13.4 7.4 15.4 8.2 12.8 8.2 20.6C8.2 25.2 11.6 27.8 16 28.6 20.4 27.8 23.8 25.2 23.8 20.6V12.8L24.6 15.4 28.8 13.4 26.6 7.4 20.6 5 16 7.4Z" opacity=".95"/>
+    <path d="M16 7.8 16 28.2" stroke="${ICON_HOLE}" stroke-width="1.4" opacity=".5"/>
+    <path d="M9.4 7.4 13.4 6.2M22.6 7.4 18.6 6.2" stroke="${ICON_HOLE}" stroke-width="1.2" opacity=".35"/>`,
+  shoulders: `<path d="M16 6.2 20.6 9.2 28.2 14.4 26 19.8 19 15.6 19 11.4Z" opacity=".96"/>
+    <path d="M16 6.2 11.4 9.2 3.8 14.4 6 19.8 13 15.6 13 11.4Z" opacity=".96"/>
+    <path d="M16 6.6 16 12.4" stroke="${ICON_HOLE}" stroke-width="1.4" opacity=".4"/>`,
+  gloves: `<path d="M10.8 12.8C10.8 10.6 12.4 9.4 14.2 9.4 15.4 9.4 16.2 10 16.6 11 17 9.6 18 8.8 19.4 8.8 21 8.8 22.2 10 22.2 11.8V19.4C22.2 24.6 19.6 28 16 28 12.4 28 9.8 24.6 9.8 19.4Z" opacity=".95"/>
+    <path d="M6.6 13.6C4.4 13 4 15.4 5.8 16.8L9.8 19.2 9.8 14.6Z" opacity=".72"/>
+    <path d="M10.4 23.4 21.6 23.4" stroke="${ICON_HOLE}" stroke-width="1.3" opacity=".45"/>`,
+  boots: `<path d="M9.6 3.6 15.4 3.6 15.4 16.2C20.2 17.2 25.2 20.2 25.2 23.8 25.2 26.4 23.4 28 20.4 28H9.6Z" opacity=".95"/>
+    <path d="M9.6 14 15.4 14" stroke="${ICON_HOLE}" stroke-width="1.2" opacity=".42"/>
+    <path d="M9.6 24.4 24.8 24.4" stroke="${ICON_HOLE}" stroke-width="1.5" opacity=".5"/>`,
+  belt: `<path d="M3.6 12.2 28.4 12.2 28.4 19.8 3.6 19.8Z" opacity=".9"/>
+    <path d="M12.4 9.8 19.6 9.8 19.6 22.2 12.4 22.2Z" opacity=".96"/>
+    <path d="M14.8 12.2 17.2 12.2 17.2 19.8 14.8 19.8Z" fill="${ICON_HOLE}" opacity=".6"/>
+    <path d="M3.6 15.4 28.4 15.4" stroke="${ICON_HOLE}" stroke-width="1" opacity=".3"/>`,
+  amulet: `<path d="M7.2 4.6C7.2 15.6 24.8 15.6 24.8 4.6" fill="none" stroke="currentColor" stroke-width="2.1" opacity=".8"/>
+    <path d="M16 15.4 20.8 21 16 27.8 11.2 21Z" opacity=".96"/>
+    <path d="M16 18.4 18.4 21 16 24.6 13.6 21Z" fill="${ICON_HOLE}" opacity=".5"/>`,
+  ring: `<circle cx="16" cy="20" r="7.6" fill="none" stroke="currentColor" stroke-width="2.9" opacity=".9"/>
+    <path d="M16 3.2 20.6 9.4 16 14.6 11.4 9.4Z" opacity=".96"/>
+    <path d="M16 5.8 18.2 9.4 16 13 13.8 9.4Z" fill="${ICON_HOLE}" opacity=".38"/>`
+};
+
+function itemIconKey(item) {
+  if (!item) return 'chest';
+  const k = (item.slot === 'weapon' || item.slot === 'offhand') ? (item.shape || 'sword') : item.slot;
+  return ITEM_ICONS[k] ? k : (ITEM_ICONS[item.slot] ? item.slot : 'chest');
+}
+
+/* 生成图标 HTML；尺寸交给 CSS（.it-ico） */
+function itemIcon(item, opts = {}) {
+  if (!item) return '';
+  const r = RARITY[item.rarity] || RARITY.common;
+  const key = itemIconKey(item);
+  const glow = item.rarity === 'legendary' || item.rarity === 'set';
+  const style = `color:${r.color}${glow ? `;filter:drop-shadow(0 0 3px ${r.color}bb)` : ''}`;
+  return `<svg class="it-ico${opts.cls ? ' ' + opts.cls : ''}" viewBox="0 0 32 32" fill="currentColor" style="${style}" aria-hidden="true">${ITEM_ICONS[key]}</svg>`;
+}
+
+/* ---------------- 提示框 ---------------- */
+const SLOT_NAME = { helm: '头盔', chest: '战甲', shoulders: '护肩', gloves: '护手', boots: '战靴', belt: '腰带', amulet: '项链', ring: '戒指', ring1: '戒指', ring2: '戒指', weapon: '武器', offhand: '副手' };
+
+function itemTooltip(item, opts = {}) {
+  if (!item) return '';
+  const r = RARITY[item.rarity];
+  let h = `<div class="tt" style="--rc:${r.color}">`;
+  h += `<div class="tt-head"><div class="tt-ico" style="border-color:${r.color}44;background:radial-gradient(circle at 50% 35%,${r.color}22,rgba(0,0,0,.5))">${itemIcon(item)}</div><div class="tt-htx">`;
+  h += `<div class="tt-name" style="color:${r.color}">${item.name}</div>`;
+  h += `<div class="tt-sub">${r.name} · ${SLOT_NAME[item.slot] || item.kind}${item.setName ? ' · ' + item.setName + '套装' : ''}</div>`;
+  h += `</div></div>`;
+  if (item.baseDmg) {
+    const dps = ((item.baseDmg[0] + item.baseDmg[1]) / 2 / (item.speed || 1)).toFixed(1);
+    h += `<div class="tt-main">攻击 ${item.baseDmg[0]} - ${item.baseDmg[1]}　<span class="dim">速度 ${(item.speed || 1).toFixed(2)}　DPS ${dps}</span></div>`;
+  }
+  if (item.baseArmor) h += `<div class="tt-main">护甲 ${item.baseArmor}</div>`;
+  if (!item.baseDmg && !item.baseArmor) h += `<div class="tt-main dim">饰品</div>`;
+  for (const a of item.affixes) {
+    h += `<div class="tt-aff">${affixText(a)}</div>`;
+  }
+  if (item.powerDesc) h += `<div class="tt-power">神兵特效：${item.powerDesc}</div>`;
+  if (item.setId) {
+    const set = SETS[item.setId];
+    const have = (Game.state ? (Game.state.setCount[item.setId] || 0) : 0);
+    h += `<div class="tt-set"><div class="tt-set-t" style="color:${set.color}">${set.name}（${have}/${set.pieces.length}）</div>`;
+    for (const b of set.bonuses) {
+      const on = have >= b.need;
+      h += `<div class="tt-set-b ${on ? 'on' : 'off'}">(${b.need}) ${b.text}</div>`;
+    }
+    h += `</div>`;
+  }
+  h += `<div class="tt-req">需求等级 ${item.reqLv}${item.cls ? ' · ' + CLASSES[item.cls].name : ''}</div>`;
+  h += `<div class="tt-val">售价 ${item.value} 金</div>`;
+  if (opts.hint) h += `<div class="tt-hint">${opts.hint}</div>`;
+  h += `</div>`;
+  return h;
+}

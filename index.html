@@ -1,0 +1,646 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#0b0c10">
+<title>九霄 · 山海录</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='13' fill='%230b0e14'/%3E%3Crect x='3' y='3' width='58' height='58' rx='11' fill='none' stroke='%23d8b25a' stroke-opacity='.55'/%3E%3Ctext x='32' y='46' font-size='38' text-anchor='middle' fill='%23e8c46a' font-family='STKaiti,KaiTi,serif'%3E%E4%B9%9D%3C/text%3E%3C/svg%3E">
+<style>
+  :root{
+    --gold:#d8b25a; --gold-d:#8a6d2f; --ink:#0b0c10; --panel:rgba(11,12,16,.985);
+    --line:rgba(216,178,90,.28); --txt:#e8e2d4; --dim:#9a9488;
+    --hp:#c8362e; --mp:#3b7fd4; --xp:#d8b25a;
+    --set:#5ce08a; --leg:#ff7a3c; --rare:#ffc857; --magic:#67a9ff; --common:#cfcfd6;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+  html,body{width:100%;height:100%;overflow:hidden;color:var(--txt);
+    background:radial-gradient(ellipse at 50% 40%,#1b2436 0%,#0d1119 55%,#05060a 100%);
+    font-family:"PingFang SC","Hiragino Sans GB","Microsoft YaHei",system-ui,sans-serif;
+    user-select:none;cursor:default}
+  #gl{position:fixed;inset:0;display:block}
+  #app{position:fixed;inset:0;pointer-events:none;z-index:10}
+  #app > *{pointer-events:none}
+  .btn{pointer-events:auto;cursor:pointer;background:linear-gradient(180deg,rgba(60,48,28,.9),rgba(30,24,16,.95));
+    border:1px solid var(--line);color:#f0e2c0;padding:8px 18px;border-radius:2px;font-size:13px;letter-spacing:2px;
+    transition:.15s;font-family:inherit}
+  .btn:hover{border-color:var(--gold);background:linear-gradient(180deg,rgba(90,70,36,.95),rgba(46,36,20,.95));color:#fff3cc;box-shadow:0 0 12px rgba(216,178,90,.25)}
+  .btn:active{transform:translateY(1px)}
+  .btn.primary{background:linear-gradient(180deg,#8a2e22,#4a1410);border-color:#c86a40;color:#ffe0b0}
+  .btn.primary:hover{background:linear-gradient(180deg,#b03a28,#6a1c14)}
+  .btn:disabled{opacity:.35;cursor:not-allowed}
+
+  /* ---------- 左上角角色板 ---------- */
+  #charplate{position:absolute;left:18px;top:16px;display:flex;gap:10px;align-items:flex-start;pointer-events:auto}
+  #portrait{width:66px;height:66px;border:1px solid var(--gold-d);background:radial-gradient(circle at 50% 35%,#3a3226,#12100c);
+    display:flex;align-items:center;justify-content:center;position:relative;box-shadow:0 0 0 1px #000,0 4px 18px rgba(0,0,0,.7)}
+  #portrait .glyph{font-family:"STKaiti","KaiTi",serif;font-size:34px;color:#e8c878;text-shadow:0 0 12px rgba(216,178,90,.6)}
+  #portrait .lv{position:absolute;right:-1px;bottom:-1px;background:#0b0c10;border:1px solid var(--gold-d);
+    font-size:11px;padding:0 5px;color:var(--gold);letter-spacing:1px}
+  .bars{width:238px;padding-top:2px}
+  .pname{font-size:14px;letter-spacing:2px;color:#f0e6cc;display:flex;justify-content:space-between;align-items:baseline}
+  .pname small{font-size:11px;color:var(--dim);letter-spacing:1px}
+  .bar{height:13px;background:rgba(0,0,0,.72);border:1px solid rgba(255,255,255,.09);margin-top:5px;position:relative;overflow:hidden}
+  .bar > i{display:block;height:100%;width:100%;transition:width .18s ease-out}
+  .bar.hp > i{background:linear-gradient(180deg,#e04a3a,#8a1a14)}
+  .bar.mp > i{background:linear-gradient(180deg,rgba(255,255,255,.34),rgba(255,255,255,0) 62%),var(--res,#4a9ae8)}
+  .bar.xp{height:4px;margin-top:4px;border-color:transparent;background:rgba(0,0,0,.6)}
+  .bar.xp > i{background:linear-gradient(90deg,#8a6d2f,#f0d080);transition:width .3s}
+  .bar span{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+    font-size:10.5px;letter-spacing:.5px;text-shadow:0 1px 2px #000;color:#fff9e8}
+
+  /* ---------- 右上角 ---------- */
+  #topright{position:absolute;right:18px;top:16px;display:flex;flex-direction:column;align-items:flex-end;gap:8px}
+  #miniWrap{width:168px;height:168px;border:1px solid var(--line);background:rgba(4,5,8,.8);
+    position:relative;box-shadow:0 6px 24px rgba(0,0,0,.65),inset 0 0 30px rgba(0,0,0,.8);overflow:hidden}
+  #minimap{width:100%;height:100%;display:block}
+  #zoneName{position:absolute;left:0;right:0;bottom:0;text-align:center;font-size:11px;letter-spacing:2px;
+    padding:3px 0;background:linear-gradient(0deg,rgba(0,0,0,.85),transparent);color:var(--gold)}
+  #questTrack{width:210px;background:rgba(8,9,12,.72);border-left:2px solid var(--gold-d);padding:7px 10px;
+    font-size:12px;line-height:1.7;color:#cdc6b6;display:none}
+  #questTrack b{color:var(--gold);font-weight:500;letter-spacing:1px;font-size:12px}
+  #questTrack .obj{color:#a8a090}
+  #questTrack .obj.done{color:#5ce08a;text-decoration:line-through}
+  #goldRow{font-size:12px;color:#e8c878;letter-spacing:1px;display:flex;gap:14px;text-shadow:0 1px 3px #000}
+
+  /* ---------- Boss 血条 ---------- */
+  #bossbar{position:absolute;left:50%;top:22px;transform:translateX(-50%);width:min(560px,52vw);display:none;text-align:center}
+  #bossbar .bn{font-family:"STKaiti","KaiTi",serif;font-size:19px;letter-spacing:4px;color:#f0d8a8;
+    text-shadow:0 0 18px rgba(200,40,20,.7),0 2px 4px #000}
+  #bossbar .bt{font-size:11px;color:#c8a878;letter-spacing:3px;margin-top:-2px;margin-bottom:3px}
+  #bossbar .bbar{height:16px;background:rgba(0,0,0,.85);border:1px solid rgba(200,60,40,.55);position:relative;overflow:hidden;
+    box-shadow:0 0 22px rgba(180,30,20,.35),inset 0 0 12px #000}
+  #bossbar .bbar > i{display:block;height:100%;background:linear-gradient(180deg,#e04a30,#6a0e08);transition:width .16s}
+  #bossbar .bbar span{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:10px;letter-spacing:2px;color:#ffe8c8}
+  #bossbar .phase{display:flex;gap:5px;justify-content:center;margin-top:3px}
+  #bossbar .phase i{width:22px;height:2px;background:#4a3020}
+  #bossbar .phase i.on{background:#e06a40;box-shadow:0 0 8px #e06a40}
+
+  /* ---------- 技能栏 ---------- */
+  #actionbar{position:absolute;left:50%;bottom:22px;transform:translateX(-50%);display:flex;gap:7px;align-items:flex-end}
+  .skill{width:54px;height:54px;background:linear-gradient(180deg,#2a2620,#12100c);border:1px solid #4a4030;
+    position:relative;pointer-events:auto;cursor:pointer;overflow:hidden;transition:.12s;
+    box-shadow:0 4px 14px rgba(0,0,0,.6)}
+  .skill:hover{border-color:var(--gold);transform:translateY(-2px)}
+  .skill .g{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+    font-family:"STKaiti","KaiTi",serif;font-size:26px;color:#e8dcc0;text-shadow:0 2px 6px #000}
+  .skill .k{position:absolute;left:2px;top:1px;font-size:9px;color:#a8a090;letter-spacing:0}
+  .skill .cost{position:absolute;right:3px;bottom:1px;font-size:9px;color:#7fb0e8}
+  .skill .cd{position:absolute;inset:0;background:rgba(2,3,6,.78);display:flex;align-items:center;justify-content:center;
+    font-size:15px;color:#fff;font-weight:600;display:none}
+  .skill.locked{filter:grayscale(1) brightness(.62)}
+  .skill.locked .g{opacity:.3}
+  .skill.locked .cost{opacity:.3}
+  .skill.locked::after{content:'未悟';position:absolute;left:0;right:0;bottom:3px;text-align:center;
+    font-size:9px;color:#c8a878;letter-spacing:0}
+  .skill.ready{box-shadow:0 0 0 1px rgba(216,178,90,.5),0 0 14px rgba(216,178,90,.22),0 4px 14px rgba(0,0,0,.6)}
+  .potion{width:44px;height:54px;background:linear-gradient(180deg,#2a1a1a,#120c0c);border:1px solid #4a3030;
+    position:relative;pointer-events:auto;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center}
+  .potion .g{font-family:"STKaiti",serif;font-size:20px;color:#e86a5a}
+  .potion .n{font-size:10px;color:#c8b090;margin-top:1px}
+  .potion .k{position:absolute;top:1px;left:2px;font-size:9px;color:#8a8070}
+  .potion.blue .g{color:#6aa8e8}
+
+  /* ---------- 提示 / 日志 / 交互 ---------- */
+  #interact{position:absolute;left:50%;bottom:92px;transform:translateX(-50%);font-size:13px;letter-spacing:2px;
+    color:#ffe9a8;background:rgba(8,8,12,.82);border:1px solid var(--line);padding:6px 16px;display:none;
+    text-shadow:0 1px 4px #000;box-shadow:0 4px 16px rgba(0,0,0,.6)}
+  #interact b{color:#fff;border:1px solid var(--gold);padding:0 5px;margin-right:6px;font-weight:500}
+  #log{position:absolute;left:20px;bottom:100px;width:330px;font-size:11.5px;line-height:1.75;color:#a8a090;
+    text-shadow:0 1px 3px #000;pointer-events:none}
+  #log div{animation:fadein .3s;opacity:.9}
+  #log .good{color:#8ae0a0}.log .bad{color:#e07a6a}
+  #toasts{position:absolute;left:50%;top:96px;transform:translateX(-50%);display:flex;flex-direction:column;
+    align-items:center;gap:6px;pointer-events:none}
+  .toast{font-size:13px;letter-spacing:3px;color:#ffe9a8;background:rgba(10,9,6,.88);border:1px solid var(--line);
+    padding:7px 24px;animation:toastIn .4s ease-out;text-shadow:0 0 12px rgba(216,178,90,.5)}
+  .toast.lv{color:#ffd166;font-size:17px;letter-spacing:5px}
+  .toast.item{color:#b8e0ff}
+  @keyframes toastIn{from{opacity:0;transform:translateY(-10px)}to{opacity:1;transform:none}}
+  @keyframes fadein{from{opacity:0;transform:translateX(-6px)}to{opacity:.9;transform:none}}
+  #vignette{position:fixed;inset:0;pointer-events:none;z-index:9;opacity:0;transition:opacity .25s;
+    background:radial-gradient(ellipse at center,transparent 40%,rgba(140,0,0,.55) 100%)}
+  #fxLayer{position:fixed;inset:0;pointer-events:none;z-index:11;overflow:hidden}
+  .dmg-text{position:absolute;font-weight:800;font-size:19px;color:#fff;white-space:nowrap;
+    text-shadow:0 0 6px rgba(0,0,0,.95),0 2px 4px #000,0 0 14px rgba(255,200,80,.35);
+    will-change:transform;font-family:"PingFang SC",sans-serif}
+  .dmg-text.crit{font-size:27px;color:#ffb340;text-shadow:0 0 10px rgba(255,90,20,.9),0 2px 5px #000}
+  .dmg-text.heal{color:#7ce09a}
+  .dmg-text.player{color:#ff6a5a}
+  .dmg-text.info{font-size:14px;color:#c8b8ff;font-weight:600}
+  .dmg-text.skill{color:#ffe9a8;font-size:15px;font-weight:600}
+
+  /* ---------- 面板 ---------- */
+  .panel{position:absolute;background:var(--panel);border:1px solid var(--line);display:none;pointer-events:auto;
+    box-shadow:0 20px 60px rgba(0,0,0,.85),inset 0 0 40px rgba(216,178,90,.04);z-index:20}
+  .panel.open{display:block;animation:popen .16s ease-out}
+  @keyframes popen{from{opacity:0;transform:scale(.985)}to{opacity:1;transform:none}}
+  .ph{display:flex;justify-content:space-between;align-items:center;padding:10px 14px;
+    background:linear-gradient(180deg,rgba(60,48,28,.55),rgba(20,18,14,.2));border-bottom:1px solid var(--line)}
+  .ph h3{font-family:"STKaiti","KaiTi",serif;font-size:16px;font-weight:500;letter-spacing:5px;color:#f0dca8}
+  .ph .x{cursor:pointer;color:#a89878;font-size:16px;padding:0 4px;line-height:1}
+  .ph .x:hover{color:#fff}
+  .pb{padding:14px}
+
+  /* 背包 */
+  #invPanel{left:50%;top:50%;transform:translate(-50%,-50%);width:760px;max-height:88vh}
+  .inv-wrap{display:flex;gap:16px}
+  .doll{width:230px;flex:none}
+  .doll-title{font-size:11px;color:var(--dim);letter-spacing:2px;margin-bottom:6px;text-align:center}
+  .doll-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+  .eslot{height:62px;background:linear-gradient(160deg,rgba(38,34,28,.7),rgba(0,0,0,.55));
+    border:1px solid rgba(255,255,255,.115);box-shadow:inset 0 0 6px rgba(0,0,0,.5);position:relative;cursor:pointer;
+    display:flex;align-items:center;justify-content:center;font-size:9px;color:#5a5448;transition:.12s}
+  .eslot:hover{border-color:var(--gold-d);background:rgba(60,48,28,.3)}
+  .eslot .lbl{position:absolute;top:1px;left:3px;font-size:8.5px;color:#6a6458;letter-spacing:0}
+  .eslot.filled{border-color:rgba(216,178,90,.4)}
+  .eslot .ico{display:flex;align-items:center;justify-content:center;width:38px;height:38px;line-height:1;margin-top:6px}
+  .eslot.empty{color:#4a453c}
+  .eslot .ico.empty::before{content:'＋';font-size:16px;color:#3f3a32}
+  /* 装备图标 */
+  .it-ico{display:block;width:30px;height:30px;flex:none}
+  .eslot .it-ico{width:36px;height:36px}
+  .islot .it-ico{width:30px;height:30px}
+  .shoprow .it-ico{width:26px;height:26px}
+  .inv-main{flex:1;min-width:0}
+  .inv-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+  .inv-top .cap{font-size:11px;color:var(--dim);letter-spacing:1px}
+  .igrid{display:grid;grid-template-columns:repeat(8,1fr);gap:6px}
+  .islot{aspect-ratio:1;background:linear-gradient(160deg,rgba(38,34,28,.75),rgba(0,0,0,.55));
+    border:1px solid rgba(255,255,255,.115);box-shadow:inset 0 0 6px rgba(0,0,0,.55);position:relative;cursor:pointer;
+    display:flex;align-items:center;justify-content:center;transition:.1s;overflow:hidden}
+  .islot:hover{border-color:var(--gold);background:rgba(80,64,36,.25)}
+  .islot .ico{display:flex;align-items:center;justify-content:center;width:100%;height:100%;line-height:1}
+  .islot .qty{position:absolute;right:2px;bottom:0;font-size:10px;color:#e8e0c8}
+  .islot .slot-tag{position:absolute;right:3px;bottom:1px;font-size:8px;line-height:1;color:rgba(255,255,255,.38);
+    letter-spacing:0;pointer-events:none;text-shadow:0 1px 2px rgba(0,0,0,.8)}
+  .islot .slot-tag{position:absolute;right:3px;bottom:1px;font-size:8px;line-height:1;color:rgba(255,255,255,.38);
+    letter-spacing:0;pointer-events:none;text-shadow:0 1px 2px rgba(0,0,0,.8)}
+  .islot.r-magic{border-color:rgba(103,169,255,.45);box-shadow:inset 0 0 10px rgba(103,169,255,.12)}
+  .islot.r-rare{border-color:rgba(255,200,87,.5);box-shadow:inset 0 0 10px rgba(255,200,87,.13)}
+  .islot.r-legendary{border-color:rgba(255,122,60,.65);box-shadow:inset 0 0 12px rgba(255,122,60,.2)}
+  .islot.r-set{border-color:rgba(92,224,138,.6);box-shadow:inset 0 0 12px rgba(92,224,138,.18)}
+  .statbox{display:grid;grid-template-columns:1fr 1fr;gap:2px 12px;margin-top:10px;font-size:11.5px;
+    color:#b8b0a0;border-top:1px solid rgba(255,255,255,.07);padding-top:8px}
+  .statbox b{color:#f0e0b8;font-weight:500;float:right}
+  .hintline{font-size:10.5px;color:#7a7466;margin-top:8px;letter-spacing:.5px;line-height:1.6}
+
+  /* 属性面板 */
+  #statPanel{left:50%;top:50%;transform:translate(-50%,-50%);width:420px}
+  .statlist{display:grid;grid-template-columns:1fr 1fr;gap:4px 18px;font-size:12px;color:#b8b0a0}
+  .statlist div{display:flex;justify-content:space-between;padding:2px 0;border-bottom:1px dashed rgba(255,255,255,.05)}
+  .statlist b{color:#f0e0b8;font-weight:500}
+  .setshow{margin-top:12px;font-size:11.5px;line-height:1.8;color:#9ae0b0}
+
+  /* 任务 */
+  #questPanel{left:50%;top:50%;transform:translate(-50%,-50%);width:520px;max-height:80vh;overflow:hidden}
+  .qlist{max-height:60vh;overflow-y:auto}
+  .quest{border-left:2px solid var(--gold-d);padding:8px 12px;margin-bottom:8px;background:rgba(255,255,255,.02)}
+  .quest .qn{font-size:13px;color:#f0dca8;letter-spacing:1px}
+  .quest .qb{font-size:11.5px;color:#a8a090;line-height:1.7;margin:4px 0}
+  .quest .qo{font-size:11.5px;color:#c8c0a8}
+  .quest .qo.done{color:#5ce08a}
+  .quest .qr{font-size:10.5px;color:#8a8474;margin-top:4px}
+
+  /* 对话 */
+  #dialog{position:absolute;left:50%;bottom:110px;transform:translateX(-50%);width:min(700px,80vw);
+    background:rgba(8,9,12,.95);border:1px solid var(--line);display:none;pointer-events:auto;z-index:22;
+    box-shadow:0 16px 50px rgba(0,0,0,.9)}
+  #dialog .dn{font-family:"STKaiti",serif;font-size:15px;color:var(--gold);letter-spacing:3px;padding:9px 16px 0}
+  #dialog .dt{font-size:13px;line-height:1.95;color:#ddd4c0;padding:6px 16px 12px;letter-spacing:.5px}
+  #dialog .dc{display:flex;gap:8px;padding:0 16px 12px;flex-wrap:wrap}
+  #dialog .dc .btn{padding:5px 14px;font-size:12px}
+
+  /* 商店 */
+  #shopPanel{left:50%;top:50%;transform:translate(-50%,-50%);width:560px;max-height:82vh}
+  .shoplist{max-height:52vh;overflow-y:auto}
+  .shoprow{display:flex;align-items:center;gap:10px;padding:7px 8px;border-bottom:1px solid rgba(255,255,255,.05);cursor:pointer}
+  .shoprow:hover{background:rgba(216,178,90,.07)}
+  .shoprow .ico{width:36px;height:36px;border:1px solid rgba(216,178,90,.3);display:flex;align-items:center;justify-content:center;
+    font-family:"STKaiti",serif;font-size:19px}
+  .shoprow .si{flex:1;min-width:0}
+  .shoprow .sn{font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .shoprow .ss{font-size:10.5px;color:#8a8474}
+  .shoprow .sp{font-size:12px;color:#e8c878;white-space:nowrap}
+
+  /* 传送 */
+  #travelPanel{left:50%;top:50%;transform:translate(-50%,-50%);width:460px}
+  .trow{display:flex;justify-content:space-between;align-items:center;padding:9px 6px;border-bottom:1px solid rgba(255,255,255,.05)}
+  .trow.locked{opacity:.4}
+  .trow .tn{font-size:13px;color:#e8dcc0;letter-spacing:2px}
+  .trow .tl{font-size:10.5px;color:#8a8474}
+
+  /* 开始界面 */
+  #start{position:fixed;inset:0;z-index:60;
+    background:radial-gradient(ellipse at 50% 44%,rgba(20,26,40,.5) 0%,rgba(11,14,21,.78) 52%,rgba(5,6,10,.94) 100%);
+    display:flex;flex-direction:column;align-items:center;justify-content:center;pointer-events:auto}
+  /* 标题界面隐藏 HUD */
+  body.in-menu #charplate,body.in-menu #topright,body.in-menu #actionbar,
+  body.in-menu #log,body.in-menu #bossbar,body.in-menu #mtouch,
+  body.in-menu #openBtns,body.in-menu #toasts{opacity:0;pointer-events:none}
+  #charplate,#topright,#actionbar,#log,#bossbar{transition:opacity .45s ease}
+  #start::before{content:'';position:absolute;inset:0;
+    background:repeating-linear-gradient(0deg,transparent 0 3px,rgba(255,255,255,.012) 3px 4px);pointer-events:none}
+  #start h1{font-family:"STKaiti","KaiTi","STSong",serif;font-size:clamp(42px,7vw,86px);font-weight:400;
+    letter-spacing:16px;color:#eed9a0;text-shadow:0 0 40px rgba(216,178,90,.45),0 4px 10px #000;margin-left:16px}
+  #start .sub{font-size:12px;letter-spacing:9px;color:#9a8a6a;margin-top:10px;margin-left:10px}
+  #start .divider{width:min(560px,70vw);height:1px;background:linear-gradient(90deg,transparent,#8a6d2f,transparent);margin:26px 0 22px}
+  #start .pick{font-size:12px;color:#a89878;letter-spacing:4px;margin-bottom:14px}
+  .classes{display:flex;gap:16px;flex-wrap:wrap;justify-content:center}
+  .cclass{width:190px;padding:16px 14px;border:1px solid rgba(216,178,90,.22);background:linear-gradient(180deg,rgba(40,34,24,.55),rgba(10,10,12,.7));
+    cursor:pointer;transition:.2s;text-align:center;position:relative}
+  .cclass:hover{border-color:rgba(216,178,90,.6);transform:translateY(-3px);box-shadow:0 10px 30px rgba(0,0,0,.6)}
+  .cclass.sel{border-color:var(--gold);background:linear-gradient(180deg,rgba(80,62,30,.6),rgba(16,14,12,.85));
+    box-shadow:0 0 22px rgba(216,178,90,.2)}
+  .cclass .cg{font-family:"STKaiti",serif;font-size:42px;color:#e8c878;text-shadow:0 0 20px rgba(216,178,90,.5);line-height:1}
+  .cclass .cn{font-size:16px;letter-spacing:4px;margin-top:8px;color:#f0e4c8}
+  .cclass .ct{font-size:10.5px;letter-spacing:2px;color:#9a8a6a;margin-top:2px}
+  .cclass .cd{font-size:11px;line-height:1.75;color:#9a9488;margin-top:9px;text-align:left}
+  #start .bottom{margin-top:26px;display:flex;gap:12px;align-items:center}
+  #start .tips{position:absolute;bottom:22px;font-size:10.5px;color:#6a6458;letter-spacing:1px;text-align:center;line-height:1.9}
+  #start .tips b{color:#a89878;font-weight:400}
+
+  /* 死亡 */
+  #death{position:fixed;inset:0;z-index:55;background:radial-gradient(ellipse at center,rgba(60,0,0,.35),rgba(0,0,0,.88));
+    display:none;flex-direction:column;align-items:center;justify-content:center;pointer-events:auto}
+  #death h2{font-family:"STKaiti",serif;font-size:64px;letter-spacing:18px;color:#c8362e;text-shadow:0 0 40px rgba(200,30,20,.6);font-weight:400}
+  #death p{font-size:12px;color:#9a8a7a;letter-spacing:3px;margin:14px 0 24px}
+
+  /* 提示框 */
+  #tooltip{position:fixed;z-index:100;pointer-events:none;display:none;width:270px}
+  .tt{background:rgba(6,7,10,.97);border:1px solid var(--rc,rgba(216,178,90,.4));padding:10px 12px;
+    box-shadow:0 12px 40px rgba(0,0,0,.9),inset 0 0 30px rgba(0,0,0,.6)}
+  .tt-head{display:flex;gap:9px;align-items:center}
+  .tt-ico{width:46px;height:46px;flex:none;border:1px solid rgba(216,178,90,.35);border-radius:3px;
+    display:flex;align-items:center;justify-content:center;box-shadow:inset 0 0 10px rgba(0,0,0,.6)}
+  .tt-ico .it-ico{width:34px;height:34px}
+  .tt-htx{min-width:0;flex:1}
+  .tt-name{font-size:14px;letter-spacing:1px;font-weight:600;text-shadow:0 0 12px rgba(0,0,0,.8)}
+  .tt-sub{font-size:10px;color:#8a8474;margin:2px 0 0;letter-spacing:1px}
+  .tt-main{font-size:12px;color:#e8dcc0;margin:2px 0}
+  .tt-aff{font-size:12px;color:#9ad0ff;line-height:1.6}
+  .tt-aff .dim{color:#7f9ab0;font-size:10px}
+  .tt-power{font-size:11.5px;color:#ff9a5c;margin-top:6px;line-height:1.6;border-top:1px dashed rgba(255,122,60,.25);padding-top:5px}
+  .tt-set{margin-top:6px;border-top:1px dashed rgba(92,224,138,.25);padding-top:5px}
+  .tt-set-t{font-size:11px;letter-spacing:1px}
+  .tt-set-b{font-size:10.5px;line-height:1.65}
+  .tt-set-b.on{color:#7ce09a}
+  .tt-set-b.off{color:#5a6a60}
+  .tt-req{font-size:10.5px;color:#8a8474;margin-top:6px;border-top:1px solid rgba(255,255,255,.07);padding-top:4px}
+  .tt-val{font-size:10.5px;color:#c8a860}
+  .tt-hint{font-size:10px;color:#7a7466;margin-top:3px}
+  .dim{color:#8a8474}
+
+  #openBtns{position:absolute;right:18px;bottom:22px;display:flex;flex-direction:column;gap:6px;align-items:flex-end}
+  #openBtns .btn{padding:5px 12px;font-size:11px;letter-spacing:2px;background:rgba(10,10,14,.78)}
+  #help{position:absolute;left:18px;bottom:22px;font-size:10.5px;color:#6a6458;line-height:1.9;letter-spacing:.5px}
+  #help b{color:#a89878;font-weight:400}
+
+  ::-webkit-scrollbar{width:5px;height:5px}
+  ::-webkit-scrollbar-track{background:rgba(255,255,255,.02)}
+  ::-webkit-scrollbar-thumb{background:rgba(216,178,90,.25)}
+  ::-webkit-scrollbar-thumb:hover{background:rgba(216,178,90,.45)}
+
+  /* 运行出错提示 */
+  #fatal{display:none;position:fixed;inset:0;z-index:9999;align-items:center;justify-content:center;
+    background:rgba(6,6,9,.94);backdrop-filter:blur(3px);padding:24px}
+  #fatal .fbox{max-width:620px;width:100%;border:1px solid rgba(216,178,90,.3);border-radius:4px;
+    background:rgba(16,16,20,.98);padding:26px 28px}
+  #fatal h3{margin:0 0 10px;font-size:16px;letter-spacing:3px;color:#d8b25a;font-weight:500}
+  #fatal p{margin:0 0 12px;font-size:12px;color:#9a9488;line-height:1.8}
+  #fatal pre{margin:0 0 18px;max-height:220px;overflow:auto;font-size:11px;line-height:1.7;
+    color:#c8a9a0;background:rgba(0,0,0,.5);border:1px solid rgba(255,255,255,.06);
+    border-radius:3px;padding:12px;white-space:pre-wrap;word-break:break-all;user-select:text}
+
+  /* ============================================================
+   * 移动端（body.touch 由 mobile.js 添加，PC 上完全不生效）
+   * ============================================================ */
+  body.touch{-webkit-user-select:none;user-select:none;overscroll-behavior:none}
+  body.touch #gl,body.touch #mtouch,body.touch #mJoy{touch-action:none}
+
+  /* ---- 虚拟按键 ---- */
+  #mtouch{position:fixed;inset:0;z-index:12;pointer-events:none;display:none}
+  body.touch #mtouch{display:block}
+  #mtouch .mbtn{position:absolute;border-radius:50%;pointer-events:auto;
+    display:flex;align-items:center;justify-content:center;
+    background:radial-gradient(circle at 36% 28%,rgba(62,52,34,.94),rgba(10,10,14,.92));
+    border:1.5px solid rgba(216,178,90,.42);color:#e8d8b0;
+    font-family:"STKaiti","KaiTi",serif;letter-spacing:1px;
+    box-shadow:0 4px 14px rgba(0,0,0,.6),inset 0 0 12px rgba(216,178,90,.08);
+    -webkit-tap-highlight-color:transparent;user-select:none;
+    transition:transform .08s,box-shadow .12s,border-color .12s}
+  #mtouch .mbtn.press{transform:scale(.91);border-color:var(--gold);box-shadow:0 0 20px rgba(216,178,90,.55)}
+  #mtouch .mbtn.atk{background:radial-gradient(circle at 36% 28%,rgba(132,46,36,.96),rgba(28,10,10,.94));
+    border-color:rgba(232,110,78,.62);color:#ffdcc6;letter-spacing:2px}
+  #mtouch .mbtn.atk.press{box-shadow:0 0 28px rgba(232,90,60,.75)}
+  #mtouch .mbtn.sm{color:#c8bda4}
+  #mtouch .mbtn .cnt{position:absolute;right:-3px;bottom:-3px;min-width:17px;height:17px;border-radius:9px;
+    background:rgba(8,8,12,.96);border:1px solid rgba(216,178,90,.45);color:#ffd88a;font-size:10px;
+    font-family:system-ui,sans-serif;display:flex;align-items:center;justify-content:center;padding:0 3px;
+    letter-spacing:0}
+  #mtouch .mbtn.on{border-color:rgba(120,220,140,.75);box-shadow:0 0 18px rgba(110,220,140,.5);
+    background:radial-gradient(circle at 36% 28%,rgba(40,90,50,.95),rgba(10,20,12,.92))}
+
+  #mJoy{position:absolute;border-radius:50%;pointer-events:auto;
+    background:radial-gradient(circle,rgba(24,22,18,.36),rgba(8,8,12,.22));
+    border:1.5px solid rgba(216,178,90,.24);
+    box-shadow:inset 0 0 26px rgba(0,0,0,.45);
+    transition:border-color .15s,background .15s;touch-action:none}
+  #mJoy.active{border-color:rgba(216,178,90,.55);
+    background:radial-gradient(circle,rgba(40,34,24,.5),rgba(8,8,12,.28))}
+  #mJoy .ring{position:absolute;inset:15%;border-radius:50%;border:1px dashed rgba(216,178,90,.16)}
+  #mJoy .knob{position:absolute;border-radius:50%;
+    background:radial-gradient(circle at 36% 30%,#7a6845,#241e15 72%);
+    border:1.5px solid rgba(216,178,90,.55);
+    box-shadow:0 3px 10px rgba(0,0,0,.6),inset 0 0 8px rgba(255,220,150,.16);
+    will-change:transform}
+
+  #mtouch .mskill{position:absolute;border-radius:50%;pointer-events:auto;
+    display:flex;align-items:center;justify-content:center;
+    background:linear-gradient(180deg,rgba(46,40,30,.95),rgba(12,10,10,.92));
+    border:1.5px solid rgba(216,178,90,.34);
+    box-shadow:0 4px 12px rgba(0,0,0,.55),inset 0 0 10px rgba(216,178,90,.06);
+    -webkit-tap-highlight-color:transparent;
+    transition:transform .08s,border-color .1s}
+  #mtouch .mskill .g{font-family:"STKaiti","KaiTi",serif;font-size:inherit;color:#e8dcc0;
+    text-shadow:0 2px 6px #000}
+  #mtouch .mskill .cd{position:absolute;inset:0;border-radius:50%;display:none;
+    align-items:center;justify-content:center;font-size:12px;color:#fff;font-weight:600;
+    font-family:system-ui,sans-serif;text-shadow:0 1px 3px #000}
+  #mtouch .mskill.hit{transform:scale(.88);border-color:var(--gold)}
+  #mtouch .mskill.locked{filter:grayscale(1) brightness(.55)}
+  #mtouch .mskill.locked .g{opacity:.3}
+  #mtouch .mskill.locked::after{content:'未悟';position:absolute;left:0;right:0;bottom:12%;
+    text-align:center;font-size:8px;color:#c8a878;letter-spacing:0}
+  #mtouch .mskill.ready{border-color:rgba(216,178,90,.6);
+    box-shadow:0 0 12px rgba(216,178,90,.25),0 4px 12px rgba(0,0,0,.55)}
+
+  /* ---- HUD 缩放 ---- */
+  body.touch #actionbar{display:none}
+  body.touch #help{display:none}
+  body.touch #interact{display:none!important}
+  body.touch #charplate{left:10px;top:8px;gap:7px;transform:scale(.8);transform-origin:top left}
+  body.touch #topright{right:10px;top:8px;gap:5px}
+  body.touch #miniWrap{width:98px;height:98px}
+  body.touch #zoneName{font-size:9.5px;padding:2px 0}
+  body.touch #questTrack{width:min(180px,42vw);font-size:11px;padding:5px 8px;line-height:1.6}
+  body.touch #goldRow{font-size:11px;gap:10px}
+  body.touch #log{left:10px;top:64px;bottom:auto;width:min(240px,44vw);font-size:10.5px;line-height:1.6}
+  body.touch #log div:nth-child(n+5){display:none}
+  body.touch #toasts{top:66px;max-width:82vw}
+  body.touch .toast{font-size:12px;padding:6px 16px;letter-spacing:2px;text-align:center;max-width:82vw}
+  body.touch .toast.lv{font-size:14px;letter-spacing:3px}
+  body.touch #bossbar{top:6px;width:min(44vw,400px)}
+  body.touch #bossbar .bn{font-size:15px;letter-spacing:3px}
+  body.touch #bossbar .bt{font-size:10px;letter-spacing:2px}
+  body.touch #bossbar .bbar{height:13px}
+  body.touch #openBtns{right:8px;bottom:auto;top:50%;transform:translateY(-50%);gap:7px}
+  body.touch #openBtns .btn{padding:7px 11px;font-size:11.5px;letter-spacing:1px}
+  body.touch #openBtns .dim{display:none}
+  body.touch #vignette{z-index:8}
+
+  /* 面板/对话打开时收起虚拟按键，避免误触 */
+  body.touch.ui-open #mtouch,body.touch.ui-open #openBtns{opacity:0;pointer-events:none}
+  body.touch.ui-open #charplate,body.touch.ui-open #topright,
+  body.touch.ui-open #log,body.touch.ui-open #toasts{opacity:.18}
+
+  /* ---- 触屏面板 ---- */
+  body.touch .panel{max-height:84vh;max-height:84dvh;overflow:auto;-webkit-overflow-scrolling:touch;touch-action:auto}
+  body.touch #invPanel{width:min(760px,96vw);max-height:84vh;max-height:84dvh}
+  body.touch #statPanel{width:min(420px,94vw)}
+  body.touch #questPanel{width:min(520px,94vw);max-height:84vh;max-height:84dvh}
+  body.touch #shopPanel{width:min(560px,94vw)}
+  body.touch #travelPanel{width:min(460px,94vw)}
+  body.touch .pb{padding:10px}
+  body.touch .doll{width:200px}
+  body.touch .doll-grid{grid-template-columns:repeat(3,1fr);gap:5px}
+  body.touch .eslot{height:42px}
+  body.touch .igrid{grid-template-columns:repeat(10,minmax(0,1fr));gap:5px}
+  body.touch .islot .ico{font-size:18px}
+  body.touch .eslot .ico{width:28px;height:28px}
+  body.touch .eslot .it-ico{width:26px;height:26px}
+  body.touch .islot .it-ico{width:25px;height:25px}
+  body.touch .islot .slot-tag{display:none}
+  body.touch .statbox{display:none}
+  body.touch .hintline{font-size:9.5px}
+  body.touch .qlist{max-height:52dvh}
+  body.touch .shoplist{max-height:44dvh}
+  body.touch .statlist{grid-template-columns:1fr 1fr;gap:3px 14px;font-size:11.5px}
+  body.touch #dialog{bottom:10px;width:96vw;max-height:46dvh;overflow:auto}
+  body.touch #dialog .dt{font-size:12.5px;line-height:1.85}
+  body.touch #dialog .dc .btn{padding:8px 16px;font-size:12.5px}
+
+  /* ---- 触屏 tooltip ---- */
+  body.touch #tooltip{max-width:78vw;font-size:12px;padding:10px 12px;pointer-events:auto}
+  body.touch #tooltip .tt-act{display:flex;gap:8px;margin-top:10px}
+  body.touch #tooltip .tt-act .btn{flex:1;padding:9px 0;font-size:12.5px;letter-spacing:2px}
+
+  /* ---- 开始界面 ---- */
+  body.touch #start{overflow-y:auto;padding:0 10px}
+  body.touch #start .classes{gap:8px}
+  body.touch .cclass{width:min(190px,29vw);padding:12px 10px}
+  body.touch .cclass .cg{font-size:34px}
+  body.touch .cclass .cn{font-size:14px}
+  body.touch .cclass .cd{font-size:10px;line-height:1.6}
+  body.touch #start .bottom{flex-wrap:wrap;justify-content:center;gap:8px;margin-top:18px}
+  body.touch #start .tips{font-size:9.5px;bottom:10px;line-height:1.7;padding:0 12px}
+  body.touch #death .btn{padding:12px 26px;font-size:14px}
+
+  @media (orientation:portrait){
+    body.touch .inv-wrap{flex-direction:column;gap:8px}
+    body.touch .doll{width:100%}
+    body.touch .doll-grid{grid-template-columns:repeat(6,1fr)}
+    body.touch .igrid{grid-template-columns:repeat(8,minmax(0,1fr))}
+    body.touch #toasts{top:220px;max-width:76vw}
+    body.touch #log{top:70px!important}
+    body.touch #bossbar{top:164px;width:94vw}
+    body.touch #openBtns{flex-direction:row;transform:none;right:10px;top:132px;gap:6px}
+    body.touch #openBtns .btn{padding:6px 9px;font-size:10.5px}
+    body.touch .cclass .cn,body.touch .cclass .ct{padding-left:2px}
+    body.touch .cclass .cd{display:block;grid-column:1/-1;max-height:3.1em;overflow:hidden;margin-top:6px}
+    body.touch .cclass{width:min(330px,84vw);display:grid;grid-template-columns:54px 1fr;column-gap:10px;
+      align-items:center;padding:10px 12px}
+    body.touch .cclass .cg{grid-row:1/span 2;font-size:32px}
+    body.touch .cclass .cn{margin-top:0}
+    body.touch #start h1{font-size:clamp(34px,11vw,56px)}
+    body.touch #start .sub{font-size:10px;letter-spacing:5px}
+    body.touch #log{width:min(200px,52vw)}
+  }
+
+  /* 横屏手机：高度吃紧，整体收紧一档 */
+  @media (max-height:540px){
+    body.touch #start{padding-top:8px}
+    body.touch #start h1{font-size:clamp(28px,6.4vw,44px);line-height:1.1}
+    body.touch #start .sub{display:none}
+    body.touch #start .divider{margin:8px 0 6px}
+    body.touch #start .pick{margin-bottom:6px;font-size:11px}
+    body.touch .cclass{padding:8px 10px;width:min(190px,27vw)}
+    body.touch .cclass .cg{font-size:26px}
+    body.touch .cclass .cn{font-size:13px;margin-top:2px}
+    body.touch .cclass .ct{font-size:9.5px}
+    body.touch .cclass .cd{font-size:9.5px;line-height:1.5;max-height:3em;overflow:hidden;margin-top:5px}
+    body.touch #start .bottom{margin-top:10px}
+    body.touch #start .bottom .btn{width:120px;padding:8px 10px}
+    body.touch #start #nameInput{width:120px;padding:8px 10px}
+    body.touch #start .tips{display:none}
+    body.touch #log{top:58px;font-size:10px}
+    body.touch #log div:nth-child(n+4){display:none}
+    body.touch #questTrack{width:min(150px,32vw);font-size:10px;padding:4px 6px;line-height:1.5}
+    body.touch #miniWrap{width:82px;height:82px}
+    body.touch #charplate{transform:scale(.72)}
+    body.touch #bossbar{width:min(46vw,380px)}
+    body.touch #openBtns .btn{padding:6px 9px;font-size:11px}
+  }
+</style>
+</head>
+<body class="in-menu">
+<canvas id="gl"></canvas>
+<div id="vignette"></div>
+<div id="fxLayer"></div>
+<div id="app">
+  <!-- HUD -->
+  <div id="charplate">
+    <div id="portrait"><span class="glyph" id="pGlyph">刀</span><span class="lv" id="pLv">1</span></div>
+    <div class="bars">
+      <div class="pname"><span id="pName">无名</span><small id="pClass">战士</small></div>
+      <div class="bar hp"><i id="hpFill"></i><span id="hpText">100 / 100</span></div>
+      <div class="bar mp"><i id="mpFill"></i><span id="mpText">50 / 50</span></div>
+      <div class="bar xp"><i id="xpFill"></i></div>
+    </div>
+  </div>
+
+  <div id="topright">
+    <div id="miniWrap"><canvas id="minimap" width="336" height="336"></canvas><div id="zoneName">桃源村</div></div>
+    <div id="goldRow"><span id="goldTxt">金 0</span><span id="potionTxt">药 0</span></div>
+    <div id="questTrack"></div>
+  </div>
+
+  <div id="bossbar">
+    <div class="bn" id="bossName"></div>
+    <div class="bt" id="bossTitle"></div>
+    <div class="bbar"><i id="bossFill"></i><span id="bossText"></span></div>
+    <div class="phase" id="bossPhase"></div>
+  </div>
+
+  <div id="actionbar"></div>
+  <div id="interact"></div>
+  <div id="toasts"></div>
+  <div id="log"></div>
+  <div id="help"></div>
+  <div id="openBtns">
+    <button class="btn" onclick="UI.toggleInv()">背包 <span class="dim">I</span></button>
+    <button class="btn" onclick="UI.toggleStat()">属性 <span class="dim">C</span></button>
+    <button class="btn" onclick="UI.toggleQuest()">任务 <span class="dim">L</span></button>
+  </div>
+</div>
+
+<!-- 背包 -->
+<div class="panel" id="invPanel">
+  <div class="ph"><h3>行 囊</h3><span class="x" onclick="UI.closeAll()">✕</span></div>
+  <div class="pb inv-wrap">
+    <div class="doll">
+      <div class="doll-title">纸 娃 娃</div>
+      <div class="doll-grid" id="dollGrid"></div>
+      <div class="statbox" id="statBox"></div>
+    </div>
+    <div class="inv-main">
+      <div class="inv-top"><span class="cap" id="invCap">0 / 40</span>
+        <span class="cap" id="invTip">左键装备 · Shift+左键出售</span></div>
+      <div class="igrid" id="invGrid"></div>
+      <div class="hintline" id="setLine"></div>
+    </div>
+  </div>
+</div>
+
+<!-- 属性 -->
+<div class="panel" id="statPanel">
+  <div class="ph"><h3>道 途</h3><span class="x" onclick="UI.closeAll()">✕</span></div>
+  <div class="pb">
+    <div class="statlist" id="statList"></div>
+    <div class="setshow" id="setShow"></div>
+  </div>
+</div>
+
+<!-- 任务 -->
+<div class="panel" id="questPanel">
+  <div class="ph"><h3>山 海 志</h3><span class="x" onclick="UI.closeAll()">✕</span></div>
+  <div class="pb"><div class="qlist" id="questList"></div></div>
+</div>
+
+<!-- 对话 -->
+<div id="dialog">
+  <div class="dn" id="dlgName"></div>
+  <div class="dt" id="dlgText"></div>
+  <div class="dc" id="dlgBtns"></div>
+</div>
+
+<!-- 商店 -->
+<div class="panel" id="shopPanel">
+  <div class="ph"><h3 id="shopTitle">铁 匠 铺</h3><span class="x" onclick="UI.closeAll()">✕</span></div>
+  <div class="pb">
+    <div class="shoplist" id="shopList"></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px">
+      <span class="hintline" id="shopHint">点击购买 · 价格随品质浮动</span>
+      <button class="btn" onclick="UI.sellJunk()">一键出售凡品</button>
+    </div>
+  </div>
+</div>
+
+<!-- 传送 -->
+<div class="panel" id="travelPanel">
+  <div class="ph"><h3>传 送 阵</h3><span class="x" onclick="UI.closeAll()">✕</span></div>
+  <div class="pb"><div id="travelList"></div>
+    <div class="hintline">深入更险之地，需先达到对应境界。</div></div>
+</div>
+
+<!-- 死亡 -->
+<div id="death">
+  <h2>身 陨</h2>
+  <p id="deathTip">你的道，还未走完。</p>
+  <button class="btn primary" onclick="Game.respawn()">于桃源村重生</button>
+</div>
+
+<!-- 开始 -->
+<div id="start">
+  <h1>九霄山海录</h1>
+  <div class="sub">A  R  P  G &nbsp;·&nbsp; 三 职 业 &nbsp;·&nbsp; 十 二 妖 王</div>
+  <div class="divider"></div>
+  <div class="pick">择 一 道 而 行</div>
+  <div class="classes" id="classPick"></div>
+  <div class="bottom">
+    <input id="nameInput" maxlength="8" placeholder="道号" style="pointer-events:auto;background:rgba(0,0,0,.6);border:1px solid var(--line);
+      color:#f0e0b8;padding:9px 14px;width:150px;font-family:inherit;font-size:13px;letter-spacing:2px;outline:none;text-align:center">
+    <button class="btn primary" id="startBtn">踏 入 山 海</button>
+    <button class="btn" id="continueBtn" style="display:none">继 续 前 世</button>
+  </div>
+  <div class="tips" id="startTips">
+    <b>WASD</b> 移动 · <b>鼠标</b> 瞄准 · <b>左键</b> 普攻 · <b>1-6</b> 技能 · <b>空格</b> 翻滚 · <b>F</b> 交互 · <b>I</b> 背包 · <b>C</b> 属性 · <b>L</b> 任务<br>
+    拾取装备可穿戴，纸娃娃实时变化 · 绿字为套装 · 橙字为神兵
+  </div>
+</div>
+
+<div id="tooltip"></div>
+
+<!-- 运行出错时的可见提示，避免只看到一片黑 -->
+<div id="fatal">
+  <div class="fbox">
+    <h3>山海未开 · 运行出错</h3>
+    <p>请把下面这段信息发给开发者，或尝试刷新页面：</p>
+    <pre id="fatalMsg"></pre>
+    <button class="btn primary" onclick="location.reload()">重 新 加 载</button>
+  </div>
+</div>
+
+<script src="lib/three.min.js"></script>
+<script src="src/data.js"></script>
+<script src="src/items.js"></script>
+<script src="src/actors.js"></script>
+<script src="src/fx.js"></script>
+<script src="src/world.js"></script>
+<script src="src/ui.js"></script>
+<script src="src/mobile.js"></script>
+<script src="src/game.js"></script>
+</body>
+</html>
