@@ -355,8 +355,15 @@
   /* ============================================================
    * 移动端（body.touch 由 mobile.js 添加，PC 上完全不生效）
    * ============================================================ */
-  body.touch{-webkit-user-select:none;user-select:none;overscroll-behavior:none}
+  body.touch{-webkit-user-select:none;user-select:none;overscroll-behavior:none;
+    touch-action:manipulation}
   body.touch #gl,body.touch #mtouch,body.touch #mJoy{touch-action:none}
+  /* iOS Safari 的规矩：输入框字号 < 16px 时，一旦聚焦就自动把整页放大，
+   * 而且键盘收起后不会还原。页面被放大 → 固定定位的摇杆被推出可视区（看起来「消失」）、
+   * 右侧按钮整体显得更大。所以触屏下所有可输入控件一律 ≥16px。 */
+  body.touch input,body.touch textarea{font-size:16px!important;letter-spacing:1px}
+  body.touch #newName{width:132px;padding:6px 8px}
+  html,body{overflow:hidden;overscroll-behavior:none}
 
   /* ---- 虚拟按键 ---- */
   #mtouch{position:fixed;inset:0;z-index:12;pointer-events:none;display:none}

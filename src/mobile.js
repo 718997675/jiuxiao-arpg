@@ -34,15 +34,40 @@ const Mobile = {
     this.bindJoy();
     this.bindButtons();
     this.bindCamera();
-    window.addEventListener('resize', () => this.layout());
-    window.addEventListener('orientationchange', () => setTimeout(() => this.layout(), 260));
+    /* resize 在真机上会连着触发好几次（地址栏收放、转屏、软键盘），
+     * 以前每次都立刻重排，很容易排在一个「过渡态」上——最坏的情况是按横屏宽度
+     * 去排竖屏：摇杆被推到屏幕外（看起来就是「摇杆神秘消失」），
+     * 右侧按钮又跟着 u 一起放大（看起来就是「菜单莫名变大」）。
+     * 所以统一去抖，等尺寸稳定下来再排。 */
+    window.addEventListener('resize', () => this.queueLayout());
+    window.addEventListener('orientationchange', () => {
+      this.queueLayout(220);
+      setTimeout(() => this.layout(), 700);   // 有些机型 220ms 时还没转完
+    });
+    if (window.visualViewport) {
+      // 页面被放大 / 软键盘顶起时，只有 visualViewport 会变，innerHeight 不变
+      window.visualViewport.addEventListener('resize', () => this.queueLayout(60));
+      window.visualViewport.addEventListener('scroll', () => this.queueLayout(60));
+    }
+    /* iOS Safari 从 10 起直接无视 user-scalable=no，捏合照样能把整页放大；
+     * 放大后 position:fixed 的 HUD 会被推出可视区。这两个手势直接掐掉。 */
+    ['gesturestart', 'gesturechange', 'gestureend'].forEach(t =>
+      document.addEventListener(t, e => e.preventDefault(), { passive: false }));
+    document.addEventListener('dblclick', e => e.preventDefault(), { passive: false });
     document.addEventListener('visibilitychange', () => {
       if (document.hidden) this.resetJoy();
+      else this.queueLayout(120);   // 切回来可能已经转过屏 / 换过尺寸
     });
     const tipEl = document.getElementById('startTips');
     if (tipEl) tipEl.innerHTML = '<b>左摇杆</b> 移动 · <b>右侧按钮</b> 普攻与技能 · <b>拖动画面</b> 转视角<br>'
       + '双击摇杆翻滚 · 拾取装备可穿戴，纸娃娃实时变化';
     setTimeout(() => UI.toast('摇杆移动 · 按钮攻击 · 拖动转视角'), 2200);
+  },
+
+  /* 去抖重排：连续 resize 只排最后一次，避免排到中间态 */
+  queueLayout(delay) {
+    if (this._lt) clearTimeout(this._lt);
+    this._lt = setTimeout(() => { this._lt = null; this.layout(); }, delay === undefined ? 120 : delay);
   },
 
   /* ---------------- DOM ---------------- */
@@ -86,21 +111,65 @@ const Mobile = {
   /* ---------------- 布局 ---------------- */
   layout() {
     if (!this.on) return;
-    const W = window.innerWidth, H = window.innerHeight;
+
+    /* 尺寸优先级：visualViewport > innerWidth/innerHeight。
+     * 两个都是真机会骗人的地方：
+     *  · 页面被放大（iOS 输入框聚焦会自动放大）时 innerWidth 还是 390，
+     *    但真正看得见的只有 260 宽；
+     *  · 转屏/收放地址栏的中间态，innerWidth 可能已经报成横屏宽度，高度还是竖屏的。
+     * visualViewport 反映的是「此刻真正看得见的区域」，以它为准最稳。 */
+    const vv = window.visualViewport;
+    const vvOk = !!(vv && vv.width > 120 && vv.height > 120);
+    const W = Math.round((vvOk ? vv.width : 0) || window.innerWidth || 0);
+    const H = Math.round((vvOk ? vv.height : 0) || window.innerHeight || 0);
+    if (W < 120 || H < 120) return;          // 转屏/收放地址栏途中的 0 或极小值，直接不理
+    this.vp = { w: W, h: H, zoomed: !!(vv && vv.scale > 1.02) };
+
+    // 自愈：ui-open 卡住会让整个触控层透明（看起来就是「摇杆不见了」）
+    try {
+      const dlg = document.getElementById('dialog');
+      if (document.body.classList.contains('ui-open')
+        && !document.querySelector('.panel.open')
+        && !(dlg && dlg.style.display === 'block')) {
+        document.body.classList.remove('ui-open');
+      }
+      if (!document.body.classList.contains('touch')) document.body.classList.add('touch');
+    } catch (e) { }
+
+    // 触控层对齐到「当前可见的区域」，页面被放大/滚走时也跟着走
+    if (this.el && vv) {
+      this.off = { x: vv.offsetLeft || 0, y: vv.offsetTop || 0 };
+      this.el.style.left = vv.offsetLeft + 'px';
+      this.el.style.top = vv.offsetTop + 'px';
+      this.el.style.width = vv.width + 'px';
+      this.el.style.height = vv.height + 'px';
+      this.el.style.right = 'auto';
+      this.el.style.bottom = 'auto';
+    }
+
     const portrait = H > W;
     // 竖屏屏幕窄、底部还要留安全区，按钮比例调大一档、留白加宽
-    const u = this.u = CLAMP(Math.min(W, H) / (portrait ? 410 : 430), 0.7, 1.6);
+    let u = CLAMP(Math.min(W, H) / (portrait ? 410 : 430), 0.7, 1.6);
+    // 比例突变（>25%）几乎一定是尺寸还没稳定，沿用上一次的值，别让按钮忽然变大
+    if (this.u && Math.abs(u - this.u) > this.u * 0.25) u = this.u;
+    this.u = u;
+
     const ins = safeInsets();
     const pad = (portrait ? 18 : 14) * u;
 
     const atkR = 45 * u, skS = 48 * u, smS = 38 * u, joyR = 60 * u;
     const gap = 6 * u;
-    const ax = W - ins.r - pad - atkR;
-    const ay = H - ins.b - pad - atkR;
+    // 兜底夹紧：不管算出来什么，都不许跑到屏幕外
+    const fx = (x, w) => Math.min(Math.max(x, ins.l + 4), Math.max(ins.l + 4, W - ins.r - 4 - w));
+    const fy = (y, h) => Math.min(Math.max(y, ins.t + 4), Math.max(ins.t + 4, H - ins.b - 4 - h));
+
+    const ax = fx(W - ins.r - pad - atkR * 2, atkR * 2) + atkR;
+    const ay = fy(H - ins.b - pad - atkR * 2, atkR * 2) + atkR;
     this.joyR = joyR;
 
     // 摇杆
-    const jx = ins.l + pad + joyR, jy = H - ins.b - pad - joyR;
+    const jx = fx(ins.l + pad, joyR * 2) + joyR;
+    const jy = fy(H - ins.b - pad - joyR * 2, joyR * 2) + joyR;
     this.joyC = { x: jx, y: jy };
     const joy = document.getElementById('mJoy');
     if (joy) {
@@ -128,13 +197,13 @@ const Mobile = {
     const gw = cols * skS + (cols - 1) * gap;
     const gRight = ax - atkR - 9 * u;
     const gBottom = ay + atkR;
-    const gLeft = gRight - gw;
-    const gTop = gBottom - (2 * skS + gap);
+    const gLeft = fx(gRight - gw, gw);
+    const gTop = fy(gBottom - (2 * skS + gap), 2 * skS + gap);
     document.querySelectorAll('#mSkills .mskill').forEach((el, i) => {
       const c = i % cols, r = Math.floor(i / cols);
       el.style.width = el.style.height = skS + 'px';
-      el.style.left = gLeft + c * (skS + gap) + 'px';
-      el.style.top = gTop + r * (skS + gap) + 'px';
+      el.style.left = fx(gLeft + c * (skS + gap), skS) + 'px';
+      el.style.top = fy(gTop + r * (skS + gap), skS) + 'px';
       el.style.fontSize = 15 * u + 'px';
     });
 
@@ -142,12 +211,10 @@ const Mobile = {
     const util = document.querySelectorAll('#mUtil .mbtn');
     const uGap = 8 * u;
     const uw = util.length * smS + (util.length - 1) * uGap;
-    const uRight = gRight;
-    const uy = gTop - 9 * u - smS;
+    const uy = fy(gTop - 9 * u - smS, smS);
     util.forEach((el, i) => {
-      const x = uRight - uw + i * (smS + uGap);
       el.style.width = el.style.height = smS + 'px';
-      el.style.left = x + 'px';
+      el.style.left = fx(gRight - uw + i * (smS + uGap), smS) + 'px';
       el.style.top = uy + 'px';
       el.style.fontSize = 13 * u + 'px';
     });
@@ -159,7 +226,9 @@ const Mobile = {
     const knob = joy.querySelector('.knob');
 
     const move = (x, y) => {
-      let dx = x - this.joyC.x, dy = y - this.joyC.y;
+      // 触控层可能被平移过（页面放大时对齐到可视区），clientX 是布局坐标，要减去这个偏移
+      const ox = this.off ? this.off.x : 0, oy = this.off ? this.off.y : 0;
+      let dx = x - ox - this.joyC.x, dy = y - oy - this.joyC.y;
       const max = this.joyR * 0.82;
       const len = Math.hypot(dx, dy);
       const k = len > max ? max / len : 1;
