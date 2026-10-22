@@ -192,6 +192,11 @@
   .statlist{display:grid;grid-template-columns:1fr 1fr;gap:4px 18px;font-size:12px;color:#b8b0a0}
   .statlist div{display:flex;justify-content:space-between;padding:2px 0;border-bottom:1px dashed rgba(255,255,255,.05)}
   .statlist b{color:#f0e0b8;font-weight:500}
+  /* 属性面板分组标题：横跨两列，和条目区分开 */
+  .statlist .st-grp{grid-column:1/-1;justify-content:flex-start;color:#c9a86a;
+    font-size:11px;letter-spacing:3px;margin-top:7px;padding:2px 0 3px;
+    border-bottom:1px solid rgba(201,168,106,.28)}
+  .statlist .st-grp:first-child{margin-top:0}
   .setshow{margin-top:12px;font-size:11.5px;line-height:1.8;color:#9ae0b0}
 
   /* 任务 */
@@ -319,6 +324,7 @@
   .tt-sub{font-size:10px;color:#8a8474;margin:2px 0 0;letter-spacing:1px}
   .tt-main{font-size:12px;color:#e8dcc0;margin:2px 0}
   .tt-aff{font-size:12px;color:#9ad0ff;line-height:1.6}
+  .tt-imp{font-size:12px;color:#c9b8ff;line-height:1.6;margin-top:3px;padding:1px 0 1px 5px;border-left:2px solid rgba(185,140,255,.5)}
   .tt-aff .dim{color:#7f9ab0;font-size:10px}
   .tt-power{font-size:11.5px;color:#ff9a5c;margin-top:6px;line-height:1.6;border-top:1px dashed rgba(255,122,60,.25);padding-top:5px}
   .tt-set{margin-top:6px;border-top:1px dashed rgba(92,224,138,.25);padding-top:5px}

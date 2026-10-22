@@ -25,32 +25,93 @@ const RARITY = {
   set: { key: 'set', name: '套装', color: '#5ce08a', mul: 1.42, affixes: 3, weight: 3 }
 };
 
-/* ---------------- 属性定义 ---------------- */
+/* ---------------- 属性定义 ----------------
+ * V2 S1：24 → 64 个 key。
+ * 硬规矩：**每个 key 都必须有真实生效点**，不许有「面板上好看、战斗里没用」的假属性。
+ *         生效位置见 game.js 里标了 [S1] 的几处（rollDamage / damageEnemy / damagePlayer /
+ *         update / gainXp / healPlayer / 拾取判定）。
+ * makeAffix() 是按 key 去重的，所以 64 个词缀必须对应 64 个不同的 key。
+ */
 const STATS = {
+  /* ---- 三围与主属性 ---- */
   atk: { label: '攻击力', pct: false },
   atkPct: { label: '攻击力', pct: true },
   def: { label: '护甲', pct: false },
   hp: { label: '生命上限', pct: false },
   hpPct: { label: '生命上限', pct: true },
   mp: { label: '灵力上限', pct: false },
+  mpPct: { label: '灵力上限', pct: true },
   mpReg: { label: '灵力回复/秒', pct: false },
   str: { label: '力量', pct: false },
   agi: { label: '敏捷', pct: false },
   vit: { label: '体质', pct: false },
   int: { label: '灵力', pct: false },
+
+  /* ---- 暴击与攻速 ---- */
   crit: { label: '暴击率', pct: true },
   critDmg: { label: '暴击伤害', pct: true },
   aspd: { label: '攻击速度', pct: true },
-  moveSpd: { label: '移动速度', pct: true },
-  lifesteal: { label: '生命偷取', pct: true },
+  aspdOnCrit: { label: '暴击后攻速', pct: true },
+
+  /* ---- 抗性 ---- */
+  allRes: { label: '全元素抗性', pct: true },
+  physRes: { label: '物理抗性', pct: true },
+  fireRes: { label: '火焰抗性', pct: true },
+  iceRes: { label: '冰霜抗性', pct: true },
+  poisonRes: { label: '毒性抗性', pct: true },
+
+  /* ---- 防御 ---- */
+  armorPct: { label: '护甲', pct: true },
+  dodge: { label: '闪避率', pct: true },
+  block: { label: '格挡率', pct: true },
+  dmgReduce: { label: '伤害减免', pct: true },
+  ccResist: { label: '控制抗性', pct: true },
+  thorns: { label: '伤害反弹', pct: true },
+
+  /* ---- 伤害加成 ---- */
+  dmgAll: { label: '伤害加成', pct: true },
+  meleeDmg: { label: '近战伤害', pct: true },
+  projDmg: { label: '投射物伤害', pct: true },
+  aoeDmg: { label: '范围伤害', pct: true },
+  dotDmg: { label: '持续伤害', pct: true },
+  eliteDmg: { label: '对精英伤害', pct: true },
+  bossDmg: { label: '对首领伤害', pct: true },
+  executeDmg: { label: '处决伤害', pct: true },
+  firstStrike: { label: '先手伤害', pct: true },
+  armorPen: { label: '护甲穿透', pct: true },
+  minDmg: { label: '伤害下限', pct: true },
   skillDmg: { label: '技能伤害', pct: true },
+  summonDmg: { label: '召唤物伤害', pct: true },
+
+  /* ---- 命中附加 ---- */
+  stunChance: { label: '眩晕几率', pct: true },
+  slowChance: { label: '减速几率', pct: true },
+  freezeChance: { label: '冻结几率', pct: true },
+  burnChance: { label: '点燃几率', pct: true },
+  knockback: { label: '击退强度', pct: false },
+  mpOnHit: { label: '命中回复灵力', pct: false },
+  hpOnHit: { label: '命中回复生命', pct: false },
+
+  /* ---- 续航 ---- */
+  hpRegen: { label: '每秒回复生命', pct: false },
+  lifesteal: { label: '生命偷取', pct: true },
+  killHeal: { label: '击杀回复生命', pct: false },
+  mpOnKill: { label: '击杀回复灵力', pct: false },
+  healBonus: { label: '治疗效果', pct: true },
+  shieldBonus: { label: '护盾强度', pct: true },
+  overkillShield: { label: '溢出伤害转护盾', pct: true },
+
+  /* ---- 功能 ---- */
+  moveSpd: { label: '移动速度', pct: true },
+  moveSpdFlat: { label: '移动速度', pct: false },
   cdr: { label: '冷却缩减', pct: true },
+  cdrFlat: { label: '冷却缩减', pct: false },
+  costReduce: { label: '技能消耗降低', pct: true },
   goldFind: { label: '金币获取', pct: true },
   magicFind: { label: '奇遇机缘', pct: true },
-  allRes: { label: '全元素抗性', pct: true },
-  thorns: { label: '伤害反弹', pct: false },
-  killHeal: { label: '击杀回复生命', pct: false },
-  summonDmg: { label: '召唤物伤害', pct: true }
+  expGain: { label: '经验获取', pct: true },
+  dropRate: { label: '掉落数量', pct: true },
+  pickupRadius: { label: '拾取范围', pct: false }
 };
 
 /* ---------------- 职业 ---------------- */

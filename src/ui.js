@@ -60,6 +60,18 @@ const UI = {
       const n = (document.getElementById('nameInput').value || '').trim() || '无名客';
       Game.startNew(this.selectedCls, n);
     });
+
+    /* 调试直连：index.html?cls=warrior|mage|taoist 跳过标题页直接开局。
+     * 不带参数时完全无影响，正式发布地址不受影响 */
+    const q = new URLSearchParams(location.search);
+    const auto = q.get('cls');
+    if (auto && CLASSES[auto]) {
+      this.selectedCls = auto;
+      const wrap = document.getElementById('classPick');
+      if (wrap) wrap.querySelectorAll('.cclass').forEach(x => x.classList.toggle('sel', x.dataset.cls === auto));
+      const nm = (q.get('name') || '').trim() || '无名客';
+      setTimeout(() => Game.startNew(auto, nm), 80);
+    }
     document.getElementById('continueBtn').addEventListener('click', e => {
       const slot = parseInt(e.currentTarget.dataset.slot, 10);
       Game.loadGame(slot || undefined);
@@ -204,7 +216,7 @@ const UI = {
       const sk = SKILLS[id];
       return `<div class="skill" data-skill="${id}" title="${sk.name}">
         <span class="k">${i + 1}</span><div class="g">${sk.glyph}</div>
-        <span class="cost">${sk.cost}</span><div class="cd"></div></div>`;
+        <span class="cost">${Game.skillCost(sk)}</span><div class="cd"></div></div>`;
     }).join('') +
       `<div class="potion" data-potion="hp"><span class="k">7</span><div class="g">丹</div><div class="n">红药</div></div>
        <div class="potion blue" data-potion="mp"><span class="k">8</span><div class="g">露</div><div class="n">蓝药</div></div>`;
@@ -236,7 +248,7 @@ const UI = {
       } else {
         cdEl.style.display = 'none';
       }
-      const noMp = s.mp < sk.cost;
+      const noMp = s.mp < Game.skillCost(sk);
       el.classList.toggle('ready', !locked && cd <= 0.05 && !noMp);
       el.style.filter = !locked && noMp ? 'saturate(.4) brightness(.75)' : '';
     });
@@ -314,20 +326,86 @@ const UI = {
 
   renderStats() {
     const s = Game.state, st = s.stats, c = CLASSES[s.cls];
-    const rows = [
+    const n = k => st[k] || 0;                 // 旧档/异常值兜底
+    const P = k => Math.round(n(k)) + '%';
+    const G = [];
+
+    /* 根基：永远显示 */
+    const base = [
       ['职业', c.name + ' · ' + c.title], ['境界', s.level + ' 级'],
       ['攻击力', Math.round(st.atk)], ['护甲', Math.round(st.def)],
       ['生命上限', Math.round(st.hpMax)], ['灵力上限', Math.round(st.mpMax)],
       ['力量', Math.round(st.str)], ['敏捷', Math.round(st.agi)],
-      ['体质', Math.round(st.vit)], ['灵力', Math.round(st.int)],
-      ['暴击率', st.crit.toFixed(1) + '%'], ['暴击伤害', Math.round(st.critDmg) + '%'],
-      ['攻击速度', st.aspd.toFixed(2)], ['移动速度', st.moveSpd.toFixed(1)],
-      ['生命偷取', st.lifesteal.toFixed(1) + '%'], ['技能伤害', Math.round(st.skillDmg) + '%'],
-      ['冷却缩减', Math.round(st.cdr) + '%'], ['全抗性', Math.round(st.allRes) + '%'],
-      ['奇遇机缘', Math.round(st.magicFind) + '%'], ['金币获取', Math.round(st.goldFind) + '%'],
-      ['击杀回复', Math.round(st.killHeal)], ['伤害反弹', Math.round(st.thorns) + '%']
+      ['体质', Math.round(st.vit)], ['灵力', Math.round(st.int)]
     ];
-    document.getElementById('statList').innerHTML = rows.map(r => `<div><span>${r[0]}</span><b>${r[1]}</b></div>`).join('');
+    G.push(['根基', base]);
+
+    /* 攻伐：数值为 0 的条目自动隐藏，面板不会长到 64 行 */
+    const atk = [
+      ['暴击率', st.crit.toFixed(1) + '%'],
+      ['暴击伤害', Math.round(st.critDmg) + '%'],
+      ['攻击速度', st.aspd.toFixed(2)]
+    ];
+    if (n('dmgAll')) atk.push(['伤害加成', P('dmgAll')]);
+    if (n('skillDmg')) atk.push(['技能伤害', P('skillDmg')]);
+    if (n('meleeDmg')) atk.push(['近战伤害', P('meleeDmg')]);
+    if (n('projDmg')) atk.push(['投射物伤害', P('projDmg')]);
+    if (n('aoeDmg')) atk.push(['范围伤害', P('aoeDmg')]);
+    if (n('dotDmg')) atk.push(['持续伤害', P('dotDmg')]);
+    if (n('eliteDmg')) atk.push(['对精英伤害', P('eliteDmg')]);
+    if (n('bossDmg')) atk.push(['对首领伤害', P('bossDmg')]);
+    if (n('executeDmg')) atk.push(['处决伤害', P('executeDmg')]);
+    if (n('firstStrike')) atk.push(['先手伤害', P('firstStrike')]);
+    if (n('armorPen')) atk.push(['护甲穿透', P('armorPen')]);
+    if (n('summonDmg')) atk.push(['召唤物伤害', P('summonDmg')]);
+    G.push(['攻伐', atk]);
+
+    /* 守御 */
+    const def = [];
+    if (n('dodge')) def.push(['闪避率', P('dodge')]);
+    if (n('block')) def.push(['格挡率', P('block')]);
+    if (n('dmgReduce')) def.push(['伤害减免', P('dmgReduce')]);
+    if (n('allRes')) def.push(['全元素抗性', P('allRes')]);
+    if (n('physRes')) def.push(['物理抗性', P('physRes')]);
+    if (n('fireRes')) def.push(['火焰抗性', P('fireRes')]);
+    if (n('iceRes')) def.push(['冰霜抗性', P('iceRes')]);
+    if (n('poisonRes')) def.push(['毒性抗性', P('poisonRes')]);
+    if (n('ccResist')) def.push(['控制抗性', P('ccResist')]);
+    if (n('thorns')) def.push(['伤害反弹', P('thorns')]);
+    if (n('shieldBonus')) def.push(['护盾强度', P('shieldBonus')]);
+    if (def.length) G.push(['守御', def]);
+
+    /* 续航 */
+    const sus = [];
+    if (n('lifesteal')) sus.push(['生命偷取', st.lifesteal.toFixed(1) + '%']);
+    if (n('hpRegen')) sus.push(['每秒回复', n('hpRegen').toFixed(1)]);
+    if (n('hpOnHit')) sus.push(['命中回血', Math.round(n('hpOnHit'))]);
+    if (n('killHeal')) sus.push(['击杀回复', Math.round(n('killHeal'))]);
+    if (n('mpOnHit')) sus.push(['命中回灵', Math.round(n('mpOnHit'))]);
+    if (n('mpOnKill')) sus.push(['击杀回灵', Math.round(n('mpOnKill'))]);
+    if (n('mpReg') > 3) sus.push(['灵力回复', st.mpReg.toFixed(1) + '/s']);
+    if (n('healBonus')) sus.push(['治疗效果', P('healBonus')]);
+    if (n('overkillShield')) sus.push(['溢出转护盾', P('overkillShield')]);
+    if (sus.length) G.push(['续航', sus]);
+
+    /* 机能 */
+    const util = [['移动速度', st.moveSpd.toFixed(1)]];
+    if (n('cdr')) util.push(['冷却缩减', P('cdr')]);
+    if (n('cdrFlat')) util.push(['冷却缩短', n('cdrFlat').toFixed(1) + 's']);
+    if (n('costReduce')) util.push(['消耗降低', P('costReduce')]);
+    if (n('aspdOnCrit')) util.push(['暴击后攻速', P('aspdOnCrit')]);
+    if (n('expGain')) util.push(['经验获取', P('expGain')]);
+    if (n('goldFind')) util.push(['金币获取', P('goldFind')]);
+    if (n('magicFind')) util.push(['奇遇机缘', P('magicFind')]);
+    if (n('dropRate')) util.push(['掉落数量', P('dropRate')]);
+    if (n('pickupRadius')) util.push(['拾取范围', n('pickupRadius').toFixed(1)]);
+    G.push(['机能', util]);
+
+    document.getElementById('statList').innerHTML = G.map(([title, list]) =>
+      `<div class="st-grp">${title}</div>` +
+      list.map(r => `<div><span>${r[0]}</span><b>${r[1]}</b></div>`).join('')
+    ).join('');
+
     const active = st.setBonuses;
     document.getElementById('setShow').innerHTML = active.length
       ? '<div style="color:var(--gold);letter-spacing:2px;margin-bottom:4px">套装之力</div>' +

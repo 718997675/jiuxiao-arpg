@@ -21,6 +21,7 @@ function tierIndex(ilvl) { return CLAMP(Math.floor((ilvl - 1) / 8), 0, 4); }
 
 function itemPower(item) {
   let s = 0;
+  if (item.implicit) s += item.implicit.val * (STATS[item.implicit.key].pct ? 1.6 : 0.6);
   for (const a of item.affixes) s += a.val * (STATS[a.key].pct ? 1.6 : 0.5);
   if (item.baseDmg) s += (item.baseDmg[0] + item.baseDmg[1]) * 1.4;
   if (item.baseArmor) s += item.baseArmor * 0.9;
@@ -81,14 +82,18 @@ function rollItem(ilvl, opts = {}) {
   const isRing = slot === 'ring';
   const item = {
     uid: ITEM_UID++, slot, ilvl, rarity, cls: null, affixes: [],
+    implicit: null,
     setId: null, setName: null, power: null, powerDesc: null, reqLv: Math.max(1, ilvl - 1)
   };
 
-  /* ---- 基底 ---- */
+  /* ---- 基底 ----
+   * 每个档位有 3 个流派变体，随机取一个；变体若带固有属性就记进 item.implicit。
+   * 固有属性和词缀一样走 sumItemStats 汇总，所以是真实生效的，不是摆设。
+   */
   if (slot === 'weapon') {
     const list = WEAPON_BASES[cls];
-    const bi = CLAMP(tierIndex(ilvl), 0, list.length - 1);
-    const base = list[bi];
+    const tier = CLAMP(tierIndex(ilvl), 0, list.length - 1);
+    const base = PICK(list[tier]);
     const rm = RARITY[rarity].mul;
     const lo = base.dmg[0] * (1 + ilvl * 0.115) * rm;
     const hi = base.dmg[1] * (1 + ilvl * 0.115) * rm;
@@ -101,22 +106,24 @@ function rollItem(ilvl, opts = {}) {
     item.kind = '武器';
   } else if (slot === 'offhand') {
     const list = OFFHAND_BASES[cls];
-    const bi = CLAMP(tierIndex(ilvl), 0, list.length - 1);
-    const [bn, barm] = list[bi];
+    const tier = CLAMP(tierIndex(ilvl), 0, list.length - 1);
+    const [bn, barm, ik, iv] = PICK(list[tier]);
     item.baseName = bn;
     item.baseArmor = Math.round(barm * (1 + ilvl * 0.1) * RARITY[rarity].mul);
     item.cls = cls;
     item.name = bn;
     item.kind = '副手';
     item.shape = cls === 'warrior' ? 'shield' : (cls === 'mage' ? 'orb' : 'charm');
+    if (ik) item.implicit = { key: ik, val: iv };
   } else {
     const list = ARMOR_BASES[slot];
-    const bi = CLAMP(tierIndex(ilvl), 0, list.length - 1);
-    const [bn, barm] = list[bi];
+    const tier = CLAMP(tierIndex(ilvl), 0, list.length - 1);
+    const [bn, barm, ik, iv] = PICK(list[tier]);
     item.baseName = bn;
     item.baseArmor = Math.round(barm * (1 + ilvl * 0.13) * RARITY[rarity].mul);
     item.name = bn;
     item.kind = SLOTS[slot].name;
+    if (ik) item.implicit = { key: ik, val: iv };
   }
   if (isRing) { item.slot = 'ring'; }
 
@@ -192,6 +199,8 @@ function emptyStats() {
 function sumItemStats(item, out) {
   if (item.baseDmg) out.atk += (item.baseDmg[0] + item.baseDmg[1]) / 2;
   if (item.baseArmor) out.def += item.baseArmor;
+  /* 基底固有属性：S1 新增，全槽通用 */
+  if (item.implicit) out[item.implicit.key] = (out[item.implicit.key] || 0) + item.implicit.val;
   for (const a of item.affixes) out[a.key] = (out[a.key] || 0) + a.val;
   if (item.uniqueStats) for (const k in item.uniqueStats) out[k] = (out[k] || 0) + item.uniqueStats[k];
   if (item.power === 'vampire') out.lifesteal += 5;
@@ -226,6 +235,21 @@ function aggregate(equipped) {
   return { stats: st, setCount, setBonuses, flags };
 }
 
+/* [S1] 概率 / 倍率类属性的硬上限。
+ * 词缀数值本身会随 ilvl 放大（×(1+ilvl×0.055)，40 级约 3.2 倍），单件 6% 闪避到 40 级
+ * 就是 19%，十件叠起来能到 90%——不封顶的话后期玩家会直接无敌。
+ * 这里既是安全阀，也是策划的「可堆叠天花板」：调平衡改这张表即可。 */
+const STAT_CAPS = {
+  dodge: 25, block: 25, dmgReduce: 30, ccResist: 70,
+  stunChance: 30, slowChance: 40, freezeChance: 25, burnChance: 40,
+  armorPen: 60, crit: 75, critDmg: 400,
+  executeDmg: 120, firstStrike: 100, eliteDmg: 120, bossDmg: 140,
+  dmgAll: 80, meleeDmg: 120, projDmg: 120, aoeDmg: 120, dotDmg: 150,
+  skillDmg: 150, summonDmg: 150, lifesteal: 30, thorns: 120,
+  healBonus: 100, shieldBonus: 100, overkillShield: 60,
+  costReduce: 50, cdr: 45
+};
+
 /* 计算玩家最终属性 */
 function computePlayerStats(p) {
   const agg = aggregate(p.equipment);
@@ -240,22 +264,29 @@ function computePlayerStats(p) {
 
   const atk = (c.baseAtk + st.atk + main * c.statMul) * (1 + st.atkPct / 100);
   const hpMax = (c.baseHp + lv * 16 + vit * c.hpPerVit + st.hp) * (1 + st.hpPct / 100);
-  const mpMax = c.baseMp + lv * 4 + int * c.mpPerInt + st.mp;
+  const mpMax = (c.baseMp + lv * 4 + int * c.mpPerInt + st.mp) * (1 + st.mpPct / 100);
   const crit = CLAMP(5 + agi * 0.18 + st.crit, 0, 75);
   const critDmg = 150 + st.critDmg;
   const aspd = (1 + st.aspd / 100) * (1 + agi * 0.004);
-  const moveSpd = (7.2 + agi * 0.015) * (1 + st.moveSpd / 100);
-  const def = st.def + vit * 0.6;
+  const moveSpd = (7.2 + agi * 0.015) * (1 + st.moveSpd / 100) + st.moveSpdFlat;
+  const def = (st.def + vit * 0.6) * (1 + st.armorPct / 100);
   const cdr = CLAMP(st.cdr, 0, 45);
 
-  return {
+  const out = {
     str, agi, vit, int, atk, hpMax: Math.round(hpMax), mpMax: Math.round(mpMax),
     crit, critDmg, aspd, moveSpd, def, cdr,
-    lifesteal: st.lifesteal, skillDmg: st.skillDmg, allRes: st.allRes,
-    goldFind: st.goldFind, magicFind: st.magicFind, killHeal: st.killHeal,
-    mpReg: 3 + st.mpReg, thorns: st.thorns, summonDmg: st.summonDmg,
+    mpReg: 3 + st.mpReg,
     setBonuses: agg.setBonuses, setCount: agg.setCount, flags: agg.flags, raw: st
   };
+  /* 其余属性一律透传。
+   * S1 新增的 40 个属性（dodge/block/dmgAll/armorPen/...) 全走这条路，
+   * 以后再加属性也不会因为忘了写 return 而变成「面板上没有、战斗里没有」。 */
+  for (const k in st) if (!(k in out)) out[k] = st[k];
+  /* [S1] 概率 / 倍率类属性封顶，防止后期无敌 */
+  for (const k in STAT_CAPS) {
+    if (typeof out[k] === 'number' && out[k] > STAT_CAPS[k]) out[k] = STAT_CAPS[k];
+  }
+  return out;
 }
 
 /* ---------------- 装备图标（程序化内联 SVG，viewBox 32x32） ----------------
@@ -360,6 +391,11 @@ function itemTooltip(item, opts = {}) {
   }
   if (item.baseArmor) h += `<div class="tt-main">护甲 ${item.baseArmor}</div>`;
   if (!item.baseDmg && !item.baseArmor) h += `<div class="tt-main dim">饰品</div>`;
+  /* 基底固有：S1 起每件装备的「流派标记」，排在词缀上方单独一行 */
+  if (item.implicit) {
+    const s = STATS[item.implicit.key];
+    h += `<div class="tt-imp">固有　+${item.implicit.val}${s.pct ? '%' : ''} ${s.label}</div>`;
+  }
   for (const a of item.affixes) {
     h += `<div class="tt-aff">${affixText(a)}</div>`;
   }

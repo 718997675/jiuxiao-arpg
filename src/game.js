@@ -719,6 +719,10 @@ const Game = {
     const mpRate = st.mpReg * (this.combatRecently > 0 ? 1 : 1.9);
     this.state.mp = Math.min(st.mpMax, this.state.mp + mpRate * dt);
     this.state.hp = Math.min(st.hpMax, this.state.hp + (this.regen || 0) * dt);
+    /* [S1] 装备的每秒回血，和药水的 regen 分开累加（战斗中也生效） */
+    if (st.hpRegen) this.state.hp = Math.min(st.hpMax, this.state.hp + st.hpRegen * dt);
+    /* [S1] 暴击后攻速加成计时 */
+    if (this.aspdCritT > 0) this.aspdCritT = Math.max(0, this.aspdCritT - dt);
 
     // 减速
     if (this.playerSlowT > 0) {
@@ -841,7 +845,9 @@ const Game = {
     const s = this.state, st = s.stats;
     const wp = s.equipment.weapon;
     const wpSpeed = wp && wp.speed ? wp.speed : 1;
-    const cdBase = 0.72 / (st.aspd * wpSpeed);
+    /* [S1] 暴击后攻速：暴击命中后 2.5 秒内攻速加成 */
+    const aspdK = this.aspdCritT > 0 ? 1 + (st.aspdOnCrit || 0) / 100 : 1;
+    const cdBase = 0.72 / (st.aspd * wpSpeed * aspdK);
     this.atkCd = cdBase;
     this.attacking = 0.32;
     SFX.swing();
@@ -855,6 +861,7 @@ const Game = {
     const dir = this.aimDir.clone();
 
     if (cls === 'warrior' || cls === 'taoist') {
+      this._tag = 'melee';
       this.actor.atkAnim = 1; this.actor.atkType = 'swing'; this.actor.atkSpeed = 2.5;
       const ang = Math.atan2(dir.x, dir.z);
       const arc = 1.9;
@@ -869,15 +876,17 @@ const Game = {
       this.shake = Math.max(this.shake, 0.12);
       if (this.state.stats.flags.thunder && CHANCE(0.18)) this.procThunder(hits[0] || null);
     } else {
+      this._tag = null;   // 投射物的 tag 靠 p.tag 传递，不走全局标记
       this.actor.atkAnim = 1; this.actor.atkType = 'cast'; this.actor.atkSpeed = 2.4;
       const color = cls === 'mage' ? 0x8ad0ff : 0xffd070;
       FX.projectile({
         pos: new THREE.Vector3(origin.x + dir.x * 0.7, 1.1, origin.z + dir.z * 0.7),
         dir, speed: 24, color, radius: 0.22, team: 'player',
         dmg: st.atk * 0.85, life: 1.4, elem: cls === 'mage' ? 'ice' : 'none',
+        tag: 'proj',
         onHit: (e, p) => {
           const { dmg, crit } = this.rollDamage(p.dmg);
-          this.damageEnemy(e, dmg, crit, {});
+          this.damageEnemy(e, dmg, crit, { tag: p.tag });
           FX.burst(p.pos.clone(), color, 8, { speed: 5, size: 0.08, life: 0.3, additive: true });
           this.state.mp = Math.min(st.mpMax, this.state.mp + 1.5);
         }
@@ -899,7 +908,19 @@ const Game = {
   },
 
   /* ---------------- 技能 ---------------- */
-  skillCd(sk) { return sk.cd * (1 - this.state.stats.cdr / 100); },
+  /* [S1] 技能实际消耗（装备的 costReduce 生效后）。技能栏显示与施放判定共用这一个入口，
+   * 否则会出现「按钮显示 12，实际扣 10」或者「明明够蓝却提示灵力不足」。 */
+  skillCost(sk) {
+    const st = this.state && this.state.stats;
+    if (!st) return sk.cost;      // 开始界面构建技能栏时还没有 state
+    return Math.max(1, Math.round(sk.cost * (1 - (st.costReduce || 0) / 100)));
+  },
+
+  /* [S1] cdrFlat 是固定秒数缩减，优先级高于百分比；冷却不低于 0.5 秒防止无限连 */
+  skillCd(sk) {
+    const st = this.state.stats;
+    return Math.max(0.5, sk.cd * (1 - st.cdr / 100) - (st.cdrFlat || 0));
+  },
 
   castSkill(id) {
     const s = this.state;
@@ -908,13 +929,22 @@ const Game = {
     if (!sk) return;
     if (s.level < sk.unlock) { UI.log('尚未领悟「' + sk.name + '」'); SFX.ui(); return; }
     if ((this.cooldowns[id] || 0) > 0.02) return;
-    if (s.mp < sk.cost) { UI.log(s.cls === 'warrior' ? '怒气不足' : '灵力不足'); SFX.ui(); return; }
-    s.mp -= sk.cost;
+    /* [S1] 技能消耗降低 */
+    const cost = this.skillCost(sk);
+    if (s.mp < cost) { UI.log(s.cls === 'warrior' ? '怒气不足' : '灵力不足'); SFX.ui(); return; }
+    s.mp -= cost;
     this.cooldowns[id] = this.skillCd(sk);
     this.attacking = 0.35;
     this.camPunch = 0.16;
     this.combatRecently = 5;
     const st = s.stats;
+    /* [S1] 技能类型 → 伤害乘区标记。
+     * 同步结算的技能直接读 this._tag；投射物 / 地板等异步伤害在 opts 里显式传 tag。 */
+    const TAG_OF = {
+      melee: 'melee', dash: 'melee', aoe: 'aoe', nova: 'aoe', ultimate: 'aoe',
+      zone: 'aoe', rain: 'aoe', proj: 'proj', summon: 'dot'
+    };
+    this._tag = TAG_OF[sk.type] || 'melee';
     const pp = new THREE.Vector3(this.playerGroup.position.x, 0, this.playerGroup.position.z);
     const aim = this.aimPoint.clone();
     const dir = this.aimDir.clone();
@@ -1089,7 +1119,7 @@ const Game = {
       case 'iceshield': {
         this.actor.atkAnim = 1; this.actor.atkType = 'cast';
         SFX.ice();
-        this.shield = st.hpMax * 0.35;
+        this.shield = st.hpMax * 0.35 * (1 + (st.shieldBonus || 0) / 100);   // [S1] 护盾强度
         this.shieldT = 10;
         FX.ring(pp, 2, 0x9ae0ff, 0.6, 0.2);
         UI.toast('玄冰护盾 ' + Math.round(this.shield));
@@ -1147,7 +1177,7 @@ const Game = {
         setTimeout(() => { this.regen = Math.max(0, (this.regen || 0) - st.hpMax * 0.03); }, 4000);
         FX.ring(pp, 2.2, 0x8affb0, 0.6);
         for (let i = 0; i < 14; i++) FX.burst(new THREE.Vector3(pp.x + RND(-1, 1), RND(0.3, 2.2), pp.z + RND(-1, 1)), 0x8affb0, 2, { speed: 1.5, size: 0.1, life: 0.9, gravity: -3, additive: true });
-        if (st.flags.groupheal) this.shield = Math.max(this.shield, st.hpMax * 0.2);
+        if (st.flags.groupheal) this.shield = Math.max(this.shield, st.hpMax * 0.2 * (1 + (st.shieldBonus || 0) / 100));   // [S1]
         break;
       }
       case 'poison': {
@@ -1201,6 +1231,7 @@ const Game = {
         break;
       }
     }
+    this._tag = null;      // [S1] 技能结算完毕，标记归零，避免污染普攻
     UI.renderHUD();
   },
 
@@ -1242,19 +1273,47 @@ const Game = {
   rollDamage(base) {
     const st = this.state.stats;
     const crit = Math.random() * 100 < st.crit;
-    let dmg = base * RND(0.9, 1.12);
+    /* [S1] minDmg 抬高伤害下限（封顶 0.2，否则波动区间会翻过来）；
+     *      dmgAll 是所有伤害的通用乘区 */
+    const lo = 0.9 + Math.min(0.2, (st.minDmg || 0) / 100);
+    let dmg = base * RND(lo, 1.12) * (1 + (st.dmgAll || 0) / 100);
     if (crit) dmg *= st.critDmg / 100;
     return { dmg, crit };
+  },
+
+  /* [S1] 技能类型 → 对应伤害加成乘区。
+   * 技能持续伤害（火海等地板）走 dot，投射物走 proj，其余按 aoe/melee 分。 */
+  tagBonus(tag) {
+    const st = this.state.stats;
+    if (tag === 'aoe') return st.aoeDmg || 0;
+    if (tag === 'proj') return st.projDmg || 0;
+    if (tag === 'dot') return st.dotDmg || 0;
+    return st.meleeDmg || 0;
   },
 
   damageEnemy(e, dmg, crit, opts = {}) {
     if (e.dead) return;
     const st = this.state.stats;
-    let final = dmg * (1 + st.skillDmg / 100 * 0.5);
-    final *= 100 / (100 + (e.level * 3 + (e.cfg.armorHigh ? e.level * 6 : 0)));
+    const tag = opts.tag || this._tag || 'melee';
+    let final = dmg * (1 + st.skillDmg / 100 * 0.5) * (1 + this.tagBonus(tag) / 100);
+
+    /* [S1] 护甲穿透：按比例削减目标有效护甲，最多穿掉 80% */
+    const armor = e.level * 3 + (e.cfg.armorHigh ? e.level * 6 : 0);
+    const effArmor = Math.max(0, armor * (1 - Math.min(0.8, (st.armorPen || 0) / 100)));
+    final *= 100 / (100 + effArmor);
+
     if (e.cfg.all) final *= 0.85;
     if (st.flags.bossSlayer && e.boss) final *= 1.4;
+
+    /* [S1] 按目标状态增伤：精英 / 首领 / 残血处决 / 满血先手 */
+    if (st.eliteDmg && (e.elite || e.boss)) final *= 1 + st.eliteDmg / 100;
+    if (st.bossDmg && e.boss) final *= 1 + st.bossDmg / 100;
+    if (st.executeDmg && e.maxHp && e.hp / e.maxHp < 0.3) final *= 1 + st.executeDmg / 100;
+    if (st.firstStrike && e.maxHp && e.hp >= e.maxHp - 1) final *= 1 + st.firstStrike / 100;
+
     e.hp -= final;
+    if (e.hp < 0) e.overkill = -e.hp;      // [S1] 记下溢出量，击杀时可能转成护盾
+    if (crit && st.aspdOnCrit) this.aspdCritT = 2.5;   // [S1] 暴击后攻速
     e.hitFlash = 1;
     e.actor.flash = opts.silent ? 0.08 : 0.22;
     e.actor.flashWas = true;
@@ -1270,11 +1329,30 @@ const Game = {
     if (st.flags.frost && CHANCE(0.25)) { e.slow = 0.4; e.slowT = 2; }
     if (st.flags.thunder && CHANCE(0.18)) this.procThunder(e);
 
-    // 击退
-    if (opts.knock && !e.boss) {
+    /* [S1] 命中附加：眩晕 / 减速 / 冻结 / 点燃 / 回灵回血。
+     * 只在「有感」的命中上触发（silent 的持续伤害不重复触发，否则一跳一堆特效）。 */
+    if (!opts.silent) {
+      if (st.stunChance && !e.boss && CHANCE(st.stunChance / 100)) e.stun = Math.max(e.stun || 0, 0.8);
+      if (st.slowChance && CHANCE(st.slowChance / 100)) {
+        e.slow = Math.max(e.slow || 0, 0.35); e.slowT = Math.max(e.slowT || 0, 2);
+      }
+      if (st.freezeChance && !e.boss && CHANCE(st.freezeChance / 100)) {
+        e.slow = 1; e.slowT = Math.max(e.slowT || 0, 1.2);
+      }
+      if (st.burnChance && CHANCE(st.burnChance / 100)) {
+        e.poisonT = Math.max(e.poisonT || 0, 3);
+        e.poisonDmg = Math.max(e.poisonDmg || 0, st.atk * 0.12);
+      }
+      if (st.mpOnHit) this.state.mp = Math.min(st.mpMax, this.state.mp + st.mpOnHit);
+      if (st.hpOnHit) this.healPlayer(st.hpOnHit, true);
+    }
+
+    // 击退（技能自带 + 装备击退强度）
+    const kb = (opts.knock || 0) + (st.knockback || 0) * 0.35;
+    if (kb > 0 && !e.boss) {
       const dx = e.pos.x - this.playerGroup.position.x, dz = e.pos.z - this.playerGroup.position.z;
       const d = Math.hypot(dx, dz) || 1;
-      e.pos.x += dx / d * opts.knock * 0.5; e.pos.z += dz / d * opts.knock * 0.5;
+      e.pos.x += dx / d * kb * 0.5; e.pos.z += dz / d * kb * 0.5;
     }
     if (e.hp <= 0) this.onEnemyDeath(e);
   },
@@ -1289,7 +1367,8 @@ const Game = {
     this.damageEnemy(target, dmg, false, { silent: true });
   },
 
-  explodeAt(pos, radius, baseDmg, color, big, silent) {
+  /* [S1] 爆炸一律算范围伤害（tag='aoe'），不管是谁触发的爆炸 */
+  explodeAt(pos, radius, baseDmg, color, big, silent, tag = 'aoe') {
     if (!silent) { SFX.explode(); this.shake = Math.max(this.shake, big ? 0.5 : 0.25); this.hitstop = 50; }
     FX.flashCircle(pos, radius, color, 0.35);
     FX.ring(pos, radius * 1.2, color, 0.45, 0.2);
@@ -1298,7 +1377,7 @@ const Game = {
       if (e.dead) continue;
       if (DIST2D(e.pos, pos) < radius + e.radius) {
         const { dmg, crit } = this.rollDamage(baseDmg);
-        this.damageEnemy(e, dmg, crit, { knock: 0.5 });
+        this.damageEnemy(e, dmg, crit, { knock: 0.5, tag });
       }
     }
   },
@@ -1313,7 +1392,7 @@ const Game = {
       for (const e of this.enemies) {
         if (!e.dead && DIST2D(e.pos, pos) < radius) {
           const { dmg } = this.rollDamage(this.state.stats.atk * 0.45);
-          this.damageEnemy(e, dmg, false, { silent: true });
+          this.damageEnemy(e, dmg, false, { silent: true, tag: 'dot' });
         }
       }
       if (ticks > 3) clearInterval(iv);
@@ -1332,21 +1411,50 @@ const Game = {
 
   healPlayer(amount, silent) {
     const s = this.state;
+    /* [S1] 治疗效果加成（回春咒、药水、击杀回复、生命偷取全都吃） */
+    amount *= 1 + (s.stats.healBonus || 0) / 100;
     const before = s.hp;
     s.hp = Math.min(s.stats.hpMax, s.hp + amount);
     const gained = s.hp - before;
     if (gained > 0.5) {
-      FX.text(new THREE.Vector3(this.playerGroup.position.x, 2.6, this.playerGroup.position.z), '+' + Math.round(gained), 'heal');
-      if (!silent) SFX.heal();
+      /* silent 的回复（生命偷取、每秒回血、击杀回复）不弹字，否则一屏都是 +N */
+      if (!silent) {
+        FX.text(new THREE.Vector3(this.playerGroup.position.x, 2.6, this.playerGroup.position.z), '+' + Math.round(gained), 'heal');
+        SFX.heal();
+      }
     }
   },
 
   damagePlayer(amount, source) {
     if (this.dead || this.invuln > 0) return;
     const s = this.state, st = s.stats;
+
+    /* [S1] 闪避：完全免伤。给 0.2 秒无敌，避免一次群体攻击连续闪出十几条文字 */
+    if (st.dodge && CHANCE(st.dodge / 100)) {
+      FX.text(new THREE.Vector3(this.playerGroup.position.x, 2.2, this.playerGroup.position.z), '闪避', 'info');
+      this.invuln = 0.2;
+      return;
+    }
+
     const reduce = Math.min(0.75, st.def / (st.def + 320 + this.state.level * 22));
     let dmg = amount * (1 - reduce);
+
+    /* [S1] 格挡：伤害减半（先于抗性结算） */
+    if (st.block && CHANCE(st.block / 100)) {
+      dmg *= 0.5;
+      FX.text(new THREE.Vector3(this.playerGroup.position.x, 2.5, this.playerGroup.position.z), '格挡', 'info');
+    }
+
     dmg *= (1 - CLAMP(st.allRes, 0, 60) / 200);
+    /* [S1] 单元素抗性：按来源怪物的元素标记取，无标记按物理 */
+    const cfg = source && source.cfg;
+    const oneRes = cfg
+      ? (cfg.fire ? st.fireRes : cfg.ice ? st.iceRes : cfg.poison ? st.poisonRes : st.physRes)
+      : st.physRes;
+    dmg *= (1 - CLAMP(oneRes || 0, 0, 60) / 200);
+    /* [S1] 固定伤害减免 */
+    dmg *= (1 - CLAMP(st.dmgReduce || 0, 0, 40) / 100);
+
     if (this.shield > 0) {
       const absorbed = Math.min(this.shield, dmg);
       this.shield -= absorbed; dmg -= absorbed;
@@ -1547,7 +1655,9 @@ const Game = {
   },
 
   playerPoison(dps) {
-    this.poisonDps = dps; this.poisonT = 4;
+    /* [S1] 控制抗性同时缩短中毒持续时间 */
+    this.poisonT = 4 * (1 - CLAMP(this.state.stats.ccResist || 0, 0, 60) / 100);
+    this.poisonDps = dps;
   },
 
   updateBossAI(e, dt, d, pp) {
@@ -1722,7 +1832,8 @@ const Game = {
         SFX.ice();
         if (DIST2D(new THREE.Vector3(this.playerGroup.position.x, 0, this.playerGroup.position.z), c) < 7) {
           this.damagePlayer(st * 1.1, self);
-          this.playerSlow = 0.5; this.playerSlowT = 2.5;
+          this.playerSlow = 0.5;
+          this.playerSlowT = 2.5 * (1 - CLAMP(this.state.stats.ccResist || 0, 0, 60) / 100);
         }
         break;
       }
@@ -1741,7 +1852,8 @@ const Game = {
       case 'curse': {
         if (DIST2D(new THREE.Vector3(this.playerGroup.position.x, 0, this.playerGroup.position.z), e.pos) < 14) {
           this.damagePlayer(st * 0.6, self);
-          this.playerSlow = 0.45; this.playerSlowT = 3;
+          this.playerSlow = 0.45;
+          this.playerSlowT = 3 * (1 - CLAMP(this.state.stats.ccResist || 0, 0, 60) / 100);
           FX.beam(new THREE.Vector3(e.pos.x, 2, e.pos.z), new THREE.Vector3(this.playerGroup.position.x, 1.4, this.playerGroup.position.z), 0xaa66ff, 0.4);
           UI.log('你被邪咒缠绕，身法迟滞！', 'bad');
         }
@@ -1881,18 +1993,22 @@ const Game = {
 
   updateLoot(dt) {
     const pp = this.playerGroup.position;
+    /* [S1] 拾取范围：装备上的 pickupRadius 同时放大吸附圈与拾取圈 */
+    const pr = this.state.stats.pickupRadius || 0;
+    const pullR = 2.4 + pr * 0.55;
+    const grabR = 1.3 + pr * 0.3;
     for (let i = this.loot.length - 1; i >= 0; i--) {
       const l = this.loot[i];
       l.t += dt;
       l.obj.position.y = Math.sin(l.t * 3) * 0.1;
       l.box.rotation.y += dt * 2;
       const d = Math.hypot(pp.x - l.pos.x, pp.z - l.pos.z);
-      if (d < 2.4) {
+      if (d < pullR) {
         // 吸附
         l.pos.x += (pp.x - l.pos.x) * dt * 6;
         l.pos.z += (pp.z - l.pos.z) * dt * 6;
         l.obj.position.x = l.pos.x; l.obj.position.z = l.pos.z;
-        if (d < 1.3) {
+        if (d < grabR) {
           if (l.item) {
             if (this.state.inventory.length >= this.state.maxInv) {
               if (!l.warned) { l.warned = true; UI.log('行囊已满，先清理背包。', 'bad'); }
@@ -1951,8 +2067,11 @@ const Game = {
     this.spawnLoot(p, null, Math.round(goldBase * (1 + e.level * 0.05)));
 
     // 装备
+    const sto = this.state.stats;
     let dropChance = e.boss ? 1 : (e.elite ? 0.85 : 0.3);
-    const drops = e.boss ? 3 : 1;
+    /* [S1] 掉落数量：按一半概率额外多掉一件，封顶 60% */
+    let drops = e.boss ? 3 : 1;
+    if (sto.dropRate && CHANCE(Math.min(0.6, sto.dropRate / 200))) drops += 1;
     for (let i = 0; i < drops; i++) {
       if (i > 0 && !CHANCE(0.55)) continue;
       if (Math.random() > dropChance) continue;
@@ -1969,7 +2088,16 @@ const Game = {
     }
 
     // 击杀回复
-    if (this.state.stats.killHeal) this.healPlayer(this.state.stats.killHeal, true);
+    if (sto.killHeal) this.healPlayer(sto.killHeal, true);
+    if (sto.mpOnKill) this.state.mp = Math.min(sto.mpMax, this.state.mp + sto.mpOnKill);
+    /* [S1] 溢出伤害转护盾：把超过致死的那部分按比例变成护盾，上限 30% 生命 */
+    if (sto.overkillShield && e.overkill > 0) {
+      const add = Math.min(sto.hpMax * 0.1, e.overkill * sto.overkillShield / 100);
+      if (add > 1) {
+        this.shield = Math.min(sto.hpMax * 0.3, Math.max(this.shield || 0, 0) + add);
+        FX.text(new THREE.Vector3(p.x, 2.6, p.z), '+' + Math.round(add) + ' 护盾', 'info');
+      }
+    }
     // 爆炸特效
     if (this.state.stats.flags.explode) this.explodeAt(p, 3.2, this.state.stats.atk * 0.8, 0xff7a30, false, true);
 
@@ -1998,6 +2126,8 @@ const Game = {
 
   gainXp(amount) {
     const s = this.state;
+    /* [S1] 经验获取加成 */
+    amount = Math.round(amount * (1 + (s.stats.expGain || 0) / 100));
     s.xp += amount;
     while (s.xp >= s.xpNext) {
       s.xp -= s.xpNext;

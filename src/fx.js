@@ -324,7 +324,8 @@ const FX = {
       radius: r, life: opts.life || 2.4, team: opts.team || 'player',
       dmg: opts.dmg || 10, onHit: opts.onHit, pierce: opts.pierce || false,
       trail: opts.trail !== false, color: opts.color || 0xffaa44, elem: opts.elem,
-      knock: opts.knock || 0
+      knock: opts.knock || 0,
+      tag: opts.tag           // [S1] 伤害乘区标记，命中时由调用方取回
     };
     this.projectiles.push(p);
     return p;
