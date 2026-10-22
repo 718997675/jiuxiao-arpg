@@ -183,17 +183,58 @@ Boss 拥有 **地面预警圈 / 弹幕环射 / 冲撞 / 召唤小怪 / 毒雾 / 
 ```
 index.html          界面 / 样式 / HUD / 面板
 lib/three.min.js    three.js r128（本地，无需联网）
-src/data.js         职业、技能、装备基底、词缀、套装、怪物、Boss、地图、任务
+src/core/boot.js    崩溃兜底：出错时给出可见提示，而不是一片黑
+src/core/store.js   底层存储驱动（localStorage + 内存兜底）
+src/core/save.js    SaveManager：3 角色位 / schema v2 / 迁移器 / 导入导出 / 原子写入
+src/data/data-core.js      职业、稀有度、属性、数学工具
+src/data/data-items.js     装备槽位、基底、词缀、套装
+src/data/data-skills.js    18 个主动技能与技能栏顺序
+src/data/data-monsters.js  12 种怪 + 12 个 Boss
+src/data/data-world.js     地图、NPC、任务链
 src/items.js        随机装备生成、稀有度、套装、属性汇总、提示框
 src/actors.js       低多边形人物/怪物建模、纸娃娃、程序化动作
 src/fx.js           粒子、投射物、预警圈、伤害数字、音效合成
 src/world.js        地表贴图、地图搭建、植被建筑、NPC、传送阵
 src/ui.js           背包/纸娃娃/提示框/任务/对话/商店/传送/小地图
+src/ui-save.js      存档管理面板：新建 / 删除 / 导出 / 导入
 src/mobile.js       触屏层：虚拟摇杆、技能宫格、触屏相机、自动瞄准联动
-src/game.js         渲染循环、输入、战斗、AI、Boss 机制、掉落、存档
+src/game.js         渲染循环、输入、战斗、AI、Boss 机制、掉落、存档调用
 dev/                自动化验证脚本（puppeteer，仅开发用，不影响游戏）
 shots/              实机截图
 ```
+
+> `data/` 与 `core/` 的 script 顺序不能换：后者依赖前者定义的常量。
+> 数据层只放数值与配置，逻辑文件不写死数值——S1 之后要批量加内容，全靠这条规矩。
+
+---
+
+## 四之二、存档系统（V2 / S0）
+
+存档在 v2 起是**三个本地角色位**，结构为分层 doc：
+
+```
+jiuxiao_save_v2_s1 / s2 / s3   三个角色位
+jiuxiao_active_slot            当前角色位
+jiuxiao_save_v1                V1 旧档（迁移后保留，不删）
+jiuxiao_save_v1.bak            V1 旧档原始备份（迁移前写入，只写不覆盖有效备份）
+jiuxiao_migrated_v2            迁移完成时间戳
+```
+
+doc 结构：`{ v:2, meta, char, world, stash, codex, talents, mount, settings }`。
+运行时 `Game.state` 仍是扁平对象，`SaveManager.pack/unpack()` 负责转换——所以后面加天赋、仓库、坐骑只需要往 doc 里加字段，不用再动存取逻辑。
+
+- **自动迁移**：首次启动检测到 `jiuxiao_save_v1` 且角色位 1 为空 → 备份 → 迁移。字段 1:1 搬迁，不重算任何数值。
+- **原子写入**：先写 `<key>.tmp` 并回读校验，再替换正式键；写一半断电只会是「旧档完整」或「新档完整」。
+- **导入导出**：`存档管理 → 导出` 下载 JSON；`导入文件 / 粘贴文本` 支持 v2 doc 与 V1 单档，导入前校验 schema、职业、等级、背包数量。
+- **入口**：开始界面「存档」按钮、游戏内右侧「存档」按钮、快捷键 `P`。
+
+自检脚本：
+
+```bash
+node dev/test-save.js           # 离线：迁移/往返/导入导出/原子写/quota 满/3 位隔离
+node dev/test-save-browser.js   # 浏览器：真实 localStorage + 三端布局 + 控制台 0 error
+```
+
 
 ---
 

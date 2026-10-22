@@ -24,7 +24,7 @@ const Game = {
   running: false, dead: false, time: 0,
   hitstop: 0, shake: 0, atkCd: 0, dashT: 0, dashCd: 0, invuln: 0,
   boss: null, interactTarget: null, lastSave: 0, minimapT: 0,
-  shopItems: [], skillFlags: {},
+  shopItems: [], skillFlags: {}, savedSlot: 0,
   particleT: 0,
 
   /* ======================================================= */
@@ -35,8 +35,11 @@ const Game = {
       e.preventDefault();
       showFatal('WebGL 上下文丢失（显卡驱动或内存不足）。\n请刷新页面，或关闭其他占用显卡的标签页。');
     });
+    /* 高分屏（Windows 125%/150% 缩放）本身就在做降采样，再叠 MSAA 等于付两次钱，
+     * 视觉上几乎看不出差别，帧率却能掉一截。所以只在 dpr≈1 时才开抗锯齿。 */
+    const dpr0 = window.devicePixelRatio || 1;
     try {
-      this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+      this.renderer = new THREE.WebGLRenderer({ canvas, antialias: dpr0 <= 1.25, powerPreference: 'high-performance' });
     } catch (e) {
       showFatal('这台设备无法创建 WebGL 上下文：\n' + (e.message || e) + '\n\n请确认浏览器已开启硬件加速。');
       return;
@@ -44,7 +47,7 @@ const Game = {
     /* Windows 上系统缩放 125% / 150% 很常见，devicePixelRatio=1.5 意味着
      * 渲染像素是 CSS 像素的 2.25 倍——1920×1080 实际要画 2880×1620。
      * 这是「Chrome 里特别卡」的常见原因，所以上限压到 1.5，并按帧率自动再降。 */
-    this.perf = { level: 0, ready: false, acc: 0, frames: 0, low: 0, fps: 60, dpr: 1, shadow: 0 };
+    this.perf = { level: 0, warm: 0, low: 0, good: 0, acc: 0, frames: 0, fps: 60, dpr: 1, shadow: 0 };
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.shadowMap.enabled = true;
@@ -71,6 +74,13 @@ const Game = {
     this.scene.add(new THREE.AmbientLight(0xffffff, 0.1));
 
     FX.init(this.scene, this.camera, document.getElementById('fxLayer'));
+    // 存档地基：先做 V1→V2 迁移，再让 UI 判断有没有档可读
+    try {
+      if (typeof SaveManager !== 'undefined') {
+        SaveManager.init();
+        this.savedSlot = SaveManager.activeSlot();
+      }
+    } catch (e) { console.error('[存档] 初始化失败', e); }
     // UI 出错不应该拖垮画面，单独兜住
     try { UI.init(); } catch (e) { showFatal('界面初始化失败：' + (e.stack || e.message)); }
     try { if (typeof Mobile !== 'undefined') Mobile.init(); } catch (e) { console.error(e); }
@@ -79,7 +89,7 @@ const Game = {
     this.mouseY = window.innerHeight / 2;
     try { this.buildTitleScene(); } catch (e) { showFatal('标题场景构建失败：' + (e.stack || e.message)); }
     try {
-      UI.setHelp('<b>WASD</b> 移动 · <b>左键</b> 攻击 · <b>1-6</b> 技能 · <b>空格</b> 翻滚 · <b>F</b> 交互<br><b>Q/E</b> 转视角 · <b>滚轮</b> 缩放 · <b>I</b> 背包 · <b>C</b> 属性 · <b>L</b> 任务');
+      UI.setHelp('<b>WASD</b> 移动 · <b>左键</b> 攻击 · <b>1-6</b> 技能 · <b>空格</b> 翻滚 · <b>F</b> 交互<br><b>Q/E</b> 转视角 · <b>滚轮</b> 缩放 · <b>I</b> 背包 · <b>C</b> 属性 · <b>L</b> 任务 · <b>P</b> 存档');
     } catch (e) { }
 
     window.addEventListener('resize', () => this.updateViewport());
@@ -193,9 +203,18 @@ const Game = {
     return s;
   },
 
-  startNew(cls, name) {
+  startNew(cls, name, slot) {
     SFX.init();
+    // 已有进度先落盘，避免切档丢东西
+    if (this.running && this.state) this.save();
+    let target = slot || 0;
+    if (typeof SaveManager !== 'undefined') {
+      const r = SaveManager.createCharacter(cls, name, target);
+      if (!r.ok) { UI.toast(r.error || '建档失败', 'bad'); return false; }
+      target = r.slot;
+    }
     this.state = this.newState(cls, name);
+    this.savedSlot = target || 1;
     this.recalc();
     this.state.hp = this.state.stats.hpMax;
     this.state.mp = this.state.stats.mpMax;
@@ -210,6 +229,7 @@ const Game = {
     this.save();
     UI.toast('踏入山海 · ' + CLASSES[cls].name, 'lv');
     setTimeout(() => UI.log('【桃源村】村口的老者似乎在等你。', 'good'), 600);
+    return true;
   },
 
   setupPlayer() {
@@ -221,7 +241,7 @@ const Game = {
     });
     a.group.scale.setScalar(1.12);
     this.actor = a;
-    const foot = new THREE.Mesh(new THREE.RingGeometry(0.5, 0.62, 20), new THREE.MeshBasicMaterial({ color: 0x9ad8ff, transparent: true, opacity: 0.32, side: THREE.DoubleSide, depthWrite: false }));
+    const foot = new THREE.Mesh(ringGeo(0.5, 0.62, 20), new THREE.MeshBasicMaterial({ color: 0x9ad8ff, transparent: true, opacity: 0.32, side: THREE.DoubleSide, depthWrite: false }));
     foot.rotation.x = -Math.PI / 2; foot.position.y = 0.04;
     a.group.add(foot);
     this.playerGroup = a.group;
@@ -368,7 +388,7 @@ const Game = {
       spawnPos: new THREE.Vector3(x, 0, z), active: !isBoss, hitT: 0
     };
     if (elite) {
-      const ring = new THREE.Mesh(new THREE.RingGeometry(0.9, 1.15, 20), new THREE.MeshBasicMaterial({ color: 0xffaa33, transparent: true, opacity: 0.55, side: THREE.DoubleSide }));
+      const ring = new THREE.Mesh(ringGeo(0.9, 1.15, 20), new THREE.MeshBasicMaterial({ color: 0xffaa33, transparent: true, opacity: 0.55, side: THREE.DoubleSide }));
       ring.rotation.x = -Math.PI / 2; ring.position.y = 0.05;
       a.group.add(ring);
       e.eliteRing = ring;
@@ -387,7 +407,7 @@ const Game = {
         w.rotation.set(-0.1, 0, -0.9);
         a.parts.weaponHand.add(w);
       }
-      const aura = new THREE.Mesh(new THREE.RingGeometry(1.15, 1.45, 26), new THREE.MeshBasicMaterial({ color: 0xff4422, transparent: true, opacity: 0.38, side: THREE.DoubleSide, depthWrite: false }));
+      const aura = new THREE.Mesh(ringGeo(1.15, 1.45, 26), new THREE.MeshBasicMaterial({ color: 0xff4422, transparent: true, opacity: 0.38, side: THREE.DoubleSide, depthWrite: false }));
       aura.rotation.x = -Math.PI / 2; aura.position.y = 0.06;
       a.group.add(aura);
       e.bossAura = aura;
@@ -431,6 +451,71 @@ const Game = {
       this.menuCamera();
     }
     this.renderer.render(this.scene, this.camera);
+    this.tickPerf(raw);
+  },
+
+  /* ---------------- 自适应画质 ---------------- *
+   * 不猜用户的机器，直接量：每 2 秒统计一次实际帧率，掉了就降一档。
+   * 降档顺序是「性价比」顺序——先降分辨率（几乎无感），再降阴影质量，
+   * 最后才关阴影（观感损失最大，但集显上往往是唯一能把帧率拉回来的手段）。
+   * 降档要连续两次采样都低才执行，避免一次过场卡顿就误判；
+   * 升档要求连续 5 次采样都很稳，否则会在阈值附近反复横跳、反复重编译 shader。
+   */
+  tickPerf(raw) {
+    const p = this.perf;
+    if (!p) return;
+    p.acc += raw; p.frames++;
+    if (p.acc < 2) return;
+    const fps = p.frames / p.acc;
+    p.fps = Math.round(fps);
+    p.acc = 0; p.frames = 0;
+    // 启动前几秒在编译 shader、上传贴图，帧率天然难看，不作数
+    if (p.warm < 3) { p.warm++; return; }
+
+    if (fps < 42) {
+      p.low++; p.good = 0;
+      if (p.low >= 2 && p.level < 2) { p.level++; p.low = 0; this.applyPerfLevel(); }
+    } else if (fps > 57) {
+      p.good++; p.low = 0;
+      if (p.good >= 5 && p.level > 0) { p.level--; p.good = 0; this.applyPerfLevel(); }
+    } else {
+      p.low = 0; p.good = 0;
+    }
+  },
+
+  applyPerfLevel() {
+    const p = this.perf, lv = p.level, r = this.renderer;
+    const dprMax = [1.5, 1.25, 1.0][lv];
+    const dpr = Math.min(window.devicePixelRatio || 1, dprMax);
+    if (Math.abs(dpr - r.getPixelRatio()) > 0.01) {
+      r.setPixelRatio(dpr);
+      r.setSize(window.innerWidth, window.innerHeight);
+    }
+    const wantShadow = lv < 2;
+    const size = lv === 0 ? 1536 : 1024;
+    if (r.shadowMap.enabled !== wantShadow) {
+      r.shadowMap.enabled = wantShadow;
+      this.dirtyShadows();
+    } else if (wantShadow && this.sun.shadow.mapSize.x !== size) {
+      this.sun.shadow.mapSize.set(size, size);
+      if (this.sun.shadow.map) { this.sun.shadow.map.dispose(); this.sun.shadow.map = null; }
+    }
+    p.dpr = dpr;
+    p.shadow = wantShadow ? size : 0;
+    if (typeof FX !== 'undefined') FX.q = [1, 0.7, 0.5][lv];
+    console.log('[画质] L' + lv + ' · dpr=' + dpr.toFixed(2) + ' · 阴影=' + (p.shadow || '关') + ' · ' + p.fps + 'fps');
+  },
+
+  /* 开关阴影会改变材质编译时的 defines，必须让所有材质重新编译一次，
+   * 否则画面上会出现「阴影还在/阴影错乱」的残影。只在下调画质时触发一次。 */
+  dirtyShadows() {
+    if (!this.scene) return;
+    this.scene.traverse(o => {
+      const m = o.material;
+      if (!m) return;
+      if (Array.isArray(m)) m.forEach(x => { if (x) x.needsUpdate = true; });
+      else m.needsUpdate = true;
+    });
   },
 
   menuCamera() {
@@ -1776,10 +1861,10 @@ const Game = {
       const box = new THREE.Mesh(boxGeo(0.42, 0.42, 0.42), new THREE.MeshStandardMaterial({ color: c, emissive: c, emissiveIntensity: 0.8, metalness: 0.5, roughness: 0.3 }));
       box.position.y = 0.6;
       g.add(box);
-      const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.3, 5, 6, 1, true), new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: 0.35, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }));
+      const beam = new THREE.Mesh(cylGeo(0.16, 0.3, 5, 6), new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: 0.35, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }));
       beam.position.y = 2.5;
       g.add(beam);
-      const ring = new THREE.Mesh(new THREE.RingGeometry(0.5, 0.62, 18), new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: 0.6, side: THREE.DoubleSide }));
+      const ring = new THREE.Mesh(ringGeo(0.5, 0.62, 18), new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: 0.6, side: THREE.DoubleSide }));
       ring.rotation.x = -Math.PI / 2; ring.position.y = 0.04;
       g.add(ring);
       this.loot.push({ obj: g, pos: g.position.clone(), item, gold: 0, box, t: 0 });
@@ -1815,7 +1900,7 @@ const Game = {
               UI.log('获得 ' + l.item.name, l.item.rarity === 'common' ? '' : 'good');
               UI.toast(l.item.name, 'item');
               this.pickupFx(l.pos, l.item);
-              this.scene.remove(l.obj);
+              disposeTree(l.obj);          // 光柱/环/模型一起还回
               this.loot.splice(i, 1);
             }
           } else {
@@ -1823,18 +1908,18 @@ const Game = {
             this.state.gold += g;
             FX.text(new THREE.Vector3(l.pos.x, 1.4, l.pos.z), '+' + g + ' 金', 'info', { life: 0.8 });
             SFX.coin();
-            this.scene.remove(l.obj);
+            disposeTree(l.obj);
             this.loot.splice(i, 1);
           }
         }
       }
-      if (l.t > 180) { this.scene.remove(l.obj); this.loot.splice(i, 1); }
+      if (l.t > 180) { disposeTree(l.obj); this.loot.splice(i, 1); }
     }
   },
 
   pickupFx(pos, item) {
     const c = new THREE.Color(RARITY[item.rarity].color);
-    for (let i = 0; i < 16; i++) {
+    for (let i = 0; i < 8; i++) {
       FX.burst(new THREE.Vector3(pos.x, RND(0.3, 1.5), pos.z), c.getHex(), 1, { speed: 2, size: 0.11, life: 0.8, gravity: -3, additive: true });
     }
   },
@@ -2323,36 +2408,57 @@ const Game = {
 
   /* ---------------- 存档 ---------------- */
   save() {
-    if (!this.state) return;
-    try { Store.set(JSON.stringify(this.state)); } catch (e) { }
+    if (!this.state) return false;
+    let ok = true;
+    try {
+      if (typeof SaveManager !== 'undefined') {
+        ok = SaveManager.save(this.state, this.savedSlot || SaveManager.activeSlot());
+      } else {
+        Store.set(JSON.stringify(this.state));
+      }
+    } catch (e) { ok = false; }
     this.lastSave = this.time;
+    if (!ok) {
+      UI.log('存档写入失败（可能空间不足），请导出备份。', 'bad');
+      if (typeof SaveManager !== 'undefined') console.warn('[存档]', SaveManager.lastError);
+    }
+    return ok;
   },
 
   autoSave() {
     if (this.time - this.lastSave > 20) this.save();
   },
 
-  loadGame() {
-    let raw = null;
-    try { raw = Store.get(); } catch (e) { raw = null; }
-    if (!raw) return;
-    try {
-      const s = JSON.parse(raw);
-      if (!s || !s.cls) return;
-      this.state = s;
-      this.state.quests.announced = this.state.quests.announced || {};
-      this.recalc();
-      this.setupPlayer();
-      this.loadMap(this.state.mapId || 'village');
-      UI.hideStart();
-      if (this.titleGroup) this.titleGroup.visible = false;
-      UI.buildActionBar();
-      UI.renderHUD();
-      this.running = true;
-      this.dead = false;
-      UI.toast('继 续 前 世', 'lv');
-      this.save();
-    } catch (e) { console.error(e); UI.log('存档损坏。', 'bad'); }
+  /* 从角色位进入游戏（开始界面 / 存档面板共用） */
+  loadGame(slot) { return this.loadSlot(slot); },
+
+  loadSlot(slot) {
+    if (typeof SaveManager === 'undefined') return false;
+    const n = SaveManager.validSlot(slot || SaveManager.activeSlot());
+    const flat = SaveManager.load(n);
+    if (!flat) { UI.log('该角色位没有存档。', 'bad'); return false; }
+    this.state = flat;
+    this.state.quests = this.state.quests || { active: [], done: [], next: 'q1', announced: {} };
+    this.state.quests.announced = this.state.quests.announced || {};
+    this.savedSlot = n;
+    this.recalc();
+    this.setupPlayer();
+    this.loadMap(this.state.mapId || 'village');
+    UI.hideStart();
+    if (this.titleGroup) this.titleGroup.visible = false;
+    UI.buildActionBar();
+    UI.renderHUD();
+    this.running = true;
+    this.dead = false;
+    UI.toast('继 续 前 世 · 位 ' + n, 'lv');
+    this.save();
+    UI.log(`【角色位 ${n}】${this.state.name} · ${CLASSES[this.state.cls].name} ${this.state.level} 级。`, 'good');
+    return true;
+  },
+
+  deleteSlot(slot) {
+    if (typeof SaveManager === 'undefined') return false;
+    return SaveManager.deleteSlot(slot);
   }
 };
 
@@ -2362,4 +2468,10 @@ window.addEventListener('load', () => {
     if (e.key === 'Enter') document.getElementById('startBtn').click();
     e.stopPropagation();
   });
+  // 切后台 / 关页面前强制存一次（手机端尤其重要，Safari 会直接杀标签）
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden && Game.running && Game.state) Game.save();
+  });
+  window.addEventListener('pagehide', () => { if (Game.running && Game.state) Game.save(); });
+  window.addEventListener('beforeunload', () => { if (Game.running && Game.state) Game.save(); });
 });

@@ -232,6 +232,44 @@
   .trow .tn{font-size:13px;color:#e8dcc0;letter-spacing:2px}
   .trow .tl{font-size:10.5px;color:#8a8474}
 
+  /* ---------- 存档管理 ---------- */
+  /* 可能从开始界面打开，所以要压过 #start 的 z-index:60 */
+  #savePanel{left:50%;top:50%;transform:translate(-50%,-50%);width:640px;max-height:88vh;overflow:hidden;z-index:70}
+  #savePanel .pb{max-height:calc(88vh - 47px);overflow-y:auto}
+  /* 面板打开时冻结开始界面的按钮，避免隔着面板误点「踏入山海」 */
+  body.ui-open #start,body.ui-open #start *{pointer-events:none!important}
+  .slots{display:flex;flex-direction:column;gap:8px}
+  .scard{display:flex;gap:11px;align-items:center;padding:9px 11px;border:1px solid rgba(255,255,255,.09);
+    background:linear-gradient(100deg,rgba(40,34,24,.5),rgba(8,8,12,.55));position:relative}
+  .scard.active{border-color:rgba(216,178,90,.5);box-shadow:inset 0 0 22px rgba(216,178,90,.07)}
+  .scard.empty{border-style:dashed;opacity:.75}
+  .sidx{width:32px;height:44px;flex:none;display:flex;align-items:center;justify-content:center;
+    font-family:"STKaiti","KaiTi",serif;font-size:21px;color:#b8a078;border:1px solid rgba(216,178,90,.22);background:rgba(0,0,0,.4)}
+  .scard.active .sidx{color:#f0d8a0;border-color:rgba(216,178,90,.55)}
+  .sinfo{flex:1;min-width:0}
+  .sname{font-size:13.5px;color:#f0e6cc;letter-spacing:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .sname small{color:#9a9488;font-size:10.5px;letter-spacing:0;margin-left:6px}
+  .smeta{font-size:10.5px;color:#8a8474;margin-top:3px;letter-spacing:.3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .sacts{display:flex;gap:5px;flex:none;flex-wrap:wrap;justify-content:flex-end}
+  .sacts .btn{padding:5px 10px;font-size:11px;letter-spacing:1px}
+  .btn.danger{border-color:rgba(200,80,60,.42);color:#e0a094}
+  .btn.danger:hover{border-color:#c85a48;background:linear-gradient(180deg,rgba(120,40,30,.92),rgba(50,14,10,.95));color:#ffd8cc}
+  .savenew,.saveio{margin-top:13px;border-top:1px solid rgba(255,255,255,.07);padding-top:11px}
+  .stitle{font-size:10.5px;color:var(--dim);letter-spacing:3px;margin-bottom:8px}
+  .nline{display:flex;gap:7px;align-items:center;flex-wrap:wrap}
+  #newName{background:rgba(0,0,0,.6);border:1px solid var(--line);color:#f0e0b8;padding:8px 11px;width:120px;
+    font-family:inherit;font-size:12.5px;letter-spacing:2px;outline:none;text-align:center;pointer-events:auto}
+  .clsmini{display:flex;gap:5px}
+  .cmini{padding:7px 9px;border:1px solid rgba(216,178,90,.2);color:#b8a888;font-size:12px;cursor:pointer;
+    letter-spacing:1px;background:rgba(0,0,0,.35);transition:.15s;pointer-events:auto}
+  .cmini.sel{border-color:var(--gold);color:#f0dca8;background:rgba(80,62,30,.5)}
+  .saveio{display:flex;gap:7px;flex-wrap:wrap;align-items:center}
+  .saveio .btn{padding:7px 12px;font-size:11.5px}
+  #importText{width:100%;height:56px;margin-top:8px;background:rgba(0,0,0,.55);border:1px solid rgba(255,255,255,.1);
+    color:#c8c0a8;font-family:ui-monospace,Menlo,monospace;font-size:10.5px;padding:7px 9px;resize:vertical;
+    outline:none;pointer-events:auto;letter-spacing:0;display:none}
+  #importText.show{display:block}
+
   /* 开始界面 */
   #start{position:fixed;inset:0;z-index:60;
     background:radial-gradient(ellipse at 50% 44%,rgba(20,26,40,.5) 0%,rgba(11,14,21,.78) 52%,rgba(5,6,10,.94) 100%);
@@ -413,6 +451,12 @@
   body.touch #questPanel{width:min(520px,94vw);max-height:84vh;max-height:84dvh}
   body.touch #shopPanel{width:min(560px,94vw)}
   body.touch #travelPanel{width:min(460px,94vw)}
+  body.touch #savePanel{width:min(640px,96vw)}
+  body.touch #savePanel .pb{-webkit-overflow-scrolling:touch;touch-action:pan-y}
+  body.touch .sacts .btn{padding:7px 12px;font-size:11.5px}
+  body.touch #newName{width:112px}
+  body.touch .cmini{padding:8px 10px}
+  body.touch #importText{height:64px;font-size:11px}
   body.touch .pb{padding:10px}
   body.touch .doll{width:200px}
   body.touch .doll-grid{grid-template-columns:repeat(3,1fr);gap:5px}
@@ -469,6 +513,13 @@
     body.touch #log{width:min(200px,52vw)}
   }
 
+  /* 极窄竖屏：卡片改为上下两段，操作按钮换行到卡片底部 */
+  @media (max-width:560px){
+    body.touch .scard{flex-wrap:wrap;gap:8px;padding:8px 10px}
+    body.touch .sacts{width:100%;justify-content:flex-end}
+    body.touch .sinfo{width:calc(100% - 44px)}
+  }
+
   /* 横屏手机：高度吃紧，整体收紧一档 */
   @media (max-height:540px){
     body.touch #start{padding-top:8px}
@@ -492,6 +543,16 @@
     body.touch #charplate{transform:scale(.72)}
     body.touch #bossbar{width:min(46vw,380px)}
     body.touch #openBtns .btn{padding:6px 9px;font-size:11px}
+    /* 存档面板在横屏下压缩，尽量少滚动 */
+    body.touch #savePanel{max-height:94vh;width:min(700px,94vw)}
+    body.touch #savePanel .pb{max-height:calc(94vh - 42px);padding:10px}
+    body.touch #savePanel .ph{padding:7px 12px}
+    body.touch #savePanel .ph h3{font-size:14px}
+    body.touch .scard{padding:6px 9px;gap:8px}
+    body.touch .sidx{height:36px;width:27px;font-size:17px}
+    body.touch .savenew,body.touch .saveio{margin-top:9px;padding-top:9px}
+    body.touch #savePanel .stitle{margin-bottom:6px}
+    body.touch #savePanel .hintline{margin-top:6px;font-size:9.5px}
   }
 </style>
 </head>
@@ -533,6 +594,7 @@
     <button class="btn" onclick="UI.toggleInv()">背包 <span class="dim">I</span></button>
     <button class="btn" onclick="UI.toggleStat()">属性 <span class="dim">C</span></button>
     <button class="btn" onclick="UI.toggleQuest()">任务 <span class="dim">L</span></button>
+    <button class="btn" onclick="SaveUI.open()">存档 <span class="dim">P</span></button>
   </div>
 </div>
 
@@ -595,6 +657,35 @@
     <div class="hintline">深入更险之地，需先达到对应境界。</div></div>
 </div>
 
+<!-- 存档管理 -->
+<div class="panel" id="savePanel">
+  <div class="ph"><h3>存 档 管 理</h3><span class="x" onclick="SaveUI.close()">✕</span></div>
+  <div class="pb">
+    <div class="slots" id="slotList"></div>
+
+    <div class="savenew">
+      <div class="stitle">新 建 角 色</div>
+      <div class="nline">
+        <input id="newName" maxlength="8" placeholder="道号">
+        <div class="clsmini" id="newClsPick"></div>
+        <button class="btn primary" id="newCharBtn">建 档</button>
+      </div>
+    </div>
+
+    <div class="saveio">
+      <div class="stitle" style="width:100%;margin-bottom:2px">导 出 / 导 入</div>
+      <button class="btn" id="exportBtn">导出当前档</button>
+      <button class="btn" id="importBtn">导入文件</button>
+      <button class="btn" id="pasteBtn">粘贴文本</button>
+      <input type="file" id="importFile" accept=".json,application/json" hidden>
+      <textarea id="importText" placeholder="把存档 JSON 粘贴到这里，再点「导入文本」"></textarea>
+      <button class="btn" id="importTextBtn" style="display:none">导入文本</button>
+    </div>
+
+    <div class="hintline" id="saveHint">存档存在于本机浏览器（localStorage）。换设备或清理浏览器数据前，请先导出备份。</div>
+  </div>
+</div>
+
 <!-- 死亡 -->
 <div id="death">
   <h2>身 陨</h2>
@@ -614,10 +705,11 @@
       color:#f0e0b8;padding:9px 14px;width:150px;font-family:inherit;font-size:13px;letter-spacing:2px;outline:none;text-align:center">
     <button class="btn primary" id="startBtn">踏 入 山 海</button>
     <button class="btn" id="continueBtn" style="display:none">继 续 前 世</button>
+    <button class="btn" id="saveMgrBtn">存 档</button>
   </div>
   <div class="tips" id="startTips">
-    <b>WASD</b> 移动 · <b>鼠标</b> 瞄准 · <b>左键</b> 普攻 · <b>1-6</b> 技能 · <b>空格</b> 翻滚 · <b>F</b> 交互 · <b>I</b> 背包 · <b>C</b> 属性 · <b>L</b> 任务<br>
-    拾取装备可穿戴，纸娃娃实时变化 · 绿字为套装 · 橙字为神兵
+    <b>WASD</b> 移动 · <b>鼠标</b> 瞄准 · <b>左键</b> 普攻 · <b>1-6</b> 技能 · <b>空格</b> 翻滚 · <b>F</b> 交互 · <b>I</b> 背包 · <b>C</b> 属性 · <b>L</b> 任务 · <b>P</b> 存档<br>
+    拾取装备可穿戴，纸娃娃实时变化 · 绿字为套装 · 橙字为神兵 · 三个角色位，可导出备份
   </div>
 </div>
 
@@ -634,13 +726,24 @@
 </div>
 
 <script src="lib/three.min.js"></script>
-<script src="src/data.js"></script>
+<!-- 内核：兜底 → 存储驱动 → 存档 v2 -->
+<script src="src/core/boot.js"></script>
+<script src="src/core/store.js"></script>
+<script src="src/core/save.js"></script>
+<!-- 数据层：基础 / 装备 / 技能 / 怪物 / 世界（顺序不可换，后者依赖前者的常量） -->
+<script src="src/data/data-core.js"></script>
+<script src="src/data/data-items.js"></script>
+<script src="src/data/data-skills.js"></script>
+<script src="src/data/data-monsters.js"></script>
+<script src="src/data/data-world.js"></script>
+<!-- 逻辑层 -->
 <script src="src/items.js"></script>
 <script src="src/actors.js"></script>
 <script src="src/fx.js"></script>
 <script src="src/world.js"></script>
 <script src="src/ui.js"></script>
 <script src="src/mobile.js"></script>
+<script src="src/ui-save.js"></script>
 <script src="src/game.js"></script>
 </body>
 </html>

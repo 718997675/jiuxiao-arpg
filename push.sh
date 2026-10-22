@@ -42,7 +42,7 @@ echo
 # ---------- 1. 语法检查 ----------
 if [ -n "$NODE" ]; then
   bad=0
-  for f in src/*.js; do
+  for f in $(find src -name '*.js' -type f | sort); do
     if ! "$NODE" --check "$f" 2>/tmp/_jscheck; then
       echo "${R}语法错误${N}: $f"
       sed -n '1,6p' /tmp/_jscheck
@@ -51,7 +51,7 @@ if [ -n "$NODE" ]; then
   done
   rm -f /tmp/_jscheck
   [ "$bad" -eq 1 ] && die "语法检查未通过，已中止（GitHub 上的代码不会被污染）"
-  ok "语法检查通过（src/*.js）"
+  ok "语法检查通过（src/**/*.js）"
 else
   warn "未找到 node，跳过语法检查"
 fi
@@ -60,7 +60,8 @@ fi
 if [ -d dist ]; then
   cp index.html dist/ 2>/dev/null || true
   [ -f README.md ] && cp README.md dist/ 2>/dev/null || true
-  [ -d src ] && cp -R src/. dist/src/ 2>/dev/null || true
+  # 整目录镜像：src 里删掉/拆分的文件不会残留在 dist 里
+  [ -d src ] && rm -rf dist/src && cp -R src dist/src 2>/dev/null || true
   ok "已同步 dist/（发布目录）"
 fi
 

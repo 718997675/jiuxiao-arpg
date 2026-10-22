@@ -56,6 +56,7 @@
   .s3{background:var(--p0)} .s4{background:#ff8c69} .s5{background:#3fae7a}
   .s6{background:#4a9db5} .s7{background:#a9714f} .s8{background:#7b8cde}
   .s9{background:#6cc0ff} .s10{background:#9aa4b1}
+  .bar.done{box-shadow:0 0 0 1.5px #6cc08a, 0 0 12px rgba(92,224,138,.35)}
 
   /* ---- 模块卡 ---- */
   .cards{display:grid; grid-template-columns:repeat(auto-fill,minmax(330px,1fr)); gap:12px}
@@ -105,7 +106,8 @@
   <div class="kicker">Roadmap · V2</div>
   <h1>九霄·<span>山海录</span> 研发计划</h1>
   <div class="sub">
-    开工 <b>2026-10-23 晚</b> · 计划收尾 <b>2026-11-21</b> · 共 <b>11 个 Sprint / 30 个晚上</b>
+    开工 <b>2026-10-23 晚</b> · 计划收尾 <b>2026-11-21</b> · 共 <b>11 个 Sprint / 30 个晚上</b><br>
+    <span style="color:#5ce08a">S0 存档地基 已完成 10/23</span> · 下一步 S1 装备扩容（10/24 起）
   </div>
 </header>
 
@@ -134,7 +136,7 @@
       <div class="d">23</div><div class="d">24</div><div class="d">25</div><div class="d m">26</div><div class="d">27</div><div class="d">28</div><div class="d">29</div><div class="d">30</div><div class="d">31</div><div class="d">1</div><div class="d m">2</div><div class="d">3</div><div class="d">4</div><div class="d">5</div><div class="d">6</div><div class="d">7</div><div class="d">8</div><div class="d m">9</div><div class="d">10</div><div class="d">11</div><div class="d">12</div><div class="d">13</div><div class="d">14</div><div class="d">15</div><div class="d m">16</div><div class="d">17</div><div class="d">18</div><div class="d">19</div><div class="d">20</div><div class="d">21</div>
     </div>
 
-    <div class="g-row"><div class="nm"><b>S0</b> 存档地基</div><div class="bar s0" style="grid-column:2/span 1" title="S0 存档 v2 + 3 角色位 + 迁移器 + 导入导出">存档</div></div>
+    <div class="g-row"><div class="nm"><b>S0</b> 存档地基 <span style="color:#5ce08a">✓</span></div><div class="bar s0 done" style="grid-column:2/span 1" title="已完成 10/23：data/ 拆分 + SaveManager + V1 迁移 + 存档面板 + 导入导出">存档 ✓</div></div>
     <div class="g-row"><div class="nm"><b>S1</b> 装备扩容</div><div class="bar s1" style="grid-column:3/span 2" title="S1 装备基底 70→210、ilvl 物品等级、词缀 24→64">210 基底</div></div>
     <div class="g-row"><div class="nm"><b>S2</b> 符文/套装</div><div class="bar s2" style="grid-column:5/span 2" title="S2 符文之语 24 符文 + 12 组合 + 10 个符文图标、套装 5→12、洗练台">符文 · 12 套</div></div>
     <div class="g-row"><div class="nm"><b>S3</b> 天赋树</div><div class="bar s3" style="grid-column:7/span 4" title="S3 被动天赋树 120 节点 + 42 个天赋图标 + 3 套预设 + Canvas UI">120 节点 · 42 图标</div></div>

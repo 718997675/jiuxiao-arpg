@@ -11,8 +11,13 @@ const UI = {
     this.tooltipEl = document.getElementById('tooltip');
     this.buildClassCards();
     this.bindEvents();
-    const has = Store.has();
-    document.getElementById('continueBtn').style.display = has ? 'inline-block' : 'none';
+    // 有任意角色位可读，就亮出「继续前世（含档位与等级）」
+    try {
+      if (typeof SaveManager !== 'undefined' && typeof SaveUI !== 'undefined') SaveUI.syncStart();
+    } catch (e) {
+      const has = Store.has();
+      document.getElementById('continueBtn').style.display = has ? 'inline-block' : 'none';
+    }
     if (IS_TOUCH) {
       const tip = document.getElementById('invTip');
       if (tip) tip.textContent = '点击物品查看 · 可穿戴 / 出售';
@@ -55,7 +60,12 @@ const UI = {
       const n = (document.getElementById('nameInput').value || '').trim() || '无名客';
       Game.startNew(this.selectedCls, n);
     });
-    document.getElementById('continueBtn').addEventListener('click', () => Game.loadGame());
+    document.getElementById('continueBtn').addEventListener('click', e => {
+      const slot = parseInt(e.currentTarget.dataset.slot, 10);
+      Game.loadGame(slot || undefined);
+    });
+    const sm = document.getElementById('saveMgrBtn');
+    if (sm) sm.addEventListener('click', () => SaveUI.open());
 
     // 物品悬停 / 点击（事件委托）
     document.addEventListener('mouseover', e => {
