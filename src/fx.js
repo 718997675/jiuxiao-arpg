@@ -76,7 +76,7 @@ function hpBarTexture() {
   _hpBarTex = new THREE.CanvasTexture(c);
   _hpBarTex.minFilter = THREE.LinearFilter;
   _hpBarTex.generateMipmaps = false;
-  _hpBarTex.userData.shared = true;   // 所有血条共用一个纹理，永不 dispose
+  markShared(_hpBarTex);   // 所有血条共用一个纹理，永不 dispose
   return _hpBarTex;
 }
 
@@ -164,7 +164,7 @@ function _fxGeo(key, make) {
   const hit = FX_GEO[key];
   if (hit) return hit;
   const g = make();
-  g.userData.shared = true;
+  markShared(g);
   return (FX_GEO[key] = g);
 }
 const fxRing = (inner, outer, seg, len) =>
@@ -178,10 +178,19 @@ const FX = {
   scene: null, cam: null, layer: null,
   parts: [], projectiles: [], zones: [], texts: [], beams: [],
   maxTexts: 60,
+  /* 粒子倍率：由 Game.applyPerfLevel 按帧率下调。集显上粒子是最贵的
+   * 「每帧重建光栅化状态」的来源之一，砍半几乎看不出，帧率能回来不少。 */
+  q: 1,
 
   init(scene, cam, layer) { this.scene = scene; this.cam = cam; this.layer = layer; },
 
   burst(pos, color, count = 10, opts = {}) {
+    /* 每组粒子是「count 个独立 Mesh」= count 次 draw call，同时堆几十组会把
+     * 绘制批次顶上去。超过上限就直接不出新粒子——画面上少一簇火星没人看得出来，
+     * 但 draw call 从 700 掉回 300 是实打实的手感差别。 */
+    if (this.parts.length >= 40) return;
+    // 低画质时按倍率削减粒子数，但至少保留 3 颗，否则打击感会整个消失
+    if (this.q < 1) count = Math.max(3, Math.round(count * this.q));
     const speed = opts.speed || 6;
     const size = opts.size || 0.1;
     const life = opts.life || 0.5;
@@ -381,7 +390,6 @@ const FX = {
       if (b.life <= 0) { this.scene.remove(b.line); b.line.geometry.dispose(); b.line.material.dispose(); this.beams.splice(i, 1); }
     }
     // 文字
-    Object.assign(this, {});
     for (let i = this.texts.length - 1; i >= 0; i--) {
       const t = this.texts[i];
       t.life -= dt;

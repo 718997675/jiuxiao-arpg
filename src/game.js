@@ -496,7 +496,9 @@ const Game = {
     if (r.shadowMap.enabled !== wantShadow) {
       r.shadowMap.enabled = wantShadow;
       this.dirtyShadows();
-    } else if (wantShadow && this.sun.shadow.mapSize.x !== size) {
+    }
+    // 注意别写成 else if：从 L2 回升到 L0 时「重新开阴影」和「调回 1536」要同时发生
+    if (wantShadow && this.sun.shadow.mapSize.x !== size) {
       this.sun.shadow.mapSize.set(size, size);
       if (this.sun.shadow.map) { this.sun.shadow.map.dispose(); this.sun.shadow.map = null; }
     }

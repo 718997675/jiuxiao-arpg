@@ -8,13 +8,21 @@ function _cacheGeo(k, make) {
   const hit = GEO_CACHE[k];
   if (hit) return hit;
   const g = make();
-  g.userData.shared = true;
+  markShared(g);
   return (GEO_CACHE[k] = g);
 }
 function boxGeo(w, h, d) { return _cacheGeo(`b${w}_${h}_${d}`, () => new THREE.BoxGeometry(w, h, d)); }
 function sphGeo(r, s = 6) { return _cacheGeo(`s${r}_${s}`, () => new THREE.SphereGeometry(r, s, Math.max(4, s - 2))); }
 function coneGeo(r, h, s = 6) { return _cacheGeo(`c${r}_${h}_${s}`, () => new THREE.ConeGeometry(r, h, s)); }
 function cylGeo(rt, rb, h, s = 6) { return _cacheGeo(`y${rt}_${rb}_${h}_${s}`, () => new THREE.CylinderGeometry(rt, rb, h, s)); }
+function torusGeo(r, tube, rs, ts) { return _cacheGeo(`t${r}_${tube}_${rs}_${ts}`, () => new THREE.TorusGeometry(r, tube, rs, ts)); }
+function ringGeo(inner, outer, seg) { return _cacheGeo(`g${inner}_${outer}_${seg}`, () => new THREE.RingGeometry(inner, outer, seg)); }
+
+/* 纹理在 r128 里不一定有 userData（几何体/材质都有，纹理没有），
+ * 直接 .userData.shared 会抛「Cannot read properties of undefined」，
+ * 所以统一走这两个小工具，别在业务代码里裸取。 */
+function isShared(x) { return !!(x && x.userData && x.userData.shared); }
+function markShared(x) { if (x) { if (!x.userData) x.userData = {}; x.userData.shared = true; } return x; }
 
 /* ---------------- GPU 资源回收 ---------------- *
  * 关键：只释放「独占」的几何体/材质/纹理，跳过 userData.shared 的共享资源。
@@ -26,14 +34,14 @@ function disposeTree(root, opts = {}) {
   const geos = new Set(), mats = new Set(), texs = new Set();
   root.traverse(o => {
     const g = o.geometry;
-    if (g && !g.userData.shared && !geos.has(g)) geos.add(g);
+    if (g && !isShared(g) && !geos.has(g)) geos.add(g);
     const m = o.material;
     if (m) {
       const list = Array.isArray(m) ? m : [m];
       for (const mt of list) {
-        if (!mt || mt.userData.shared || mats.has(mt)) continue;
+        if (!mt || isShared(mt) || mats.has(mt)) continue;
         mats.add(mt);
-        if (mt.map && !mt.map.userData.shared && !texs.has(mt.map)) texs.add(mt.map);
+        if (mt.map && !isShared(mt.map) && !texs.has(mt.map)) texs.add(mt.map);
       }
     }
   });
@@ -95,7 +103,7 @@ function buildWeapon(shape, color, glow, scale = 1) {
   } else if (shape === 'staff') {
     mesh(cylGeo(0.045, 0.06, 1.9, 6), wood, 0, 0.55, 0, g);
     mesh(sphGeo(0.16, 7), metal, 0, 1.55, 0, g);
-    const ring = mesh(new THREE.TorusGeometry(0.22, 0.035, 4, 8), gold, 0, 1.55, 0, g);
+    const ring = mesh(torusGeo(0.22, 0.035, 4, 8), gold, 0, 1.55, 0, g);
     ring.rotation.x = Math.PI / 2;
   } else if (shape === 'taojian') {
     mesh(boxGeo(0.06, 1.35, 0.03), metal, 0, 0.78, 0, g);
@@ -109,7 +117,7 @@ function buildWeapon(shape, color, glow, scale = 1) {
     mesh(boxGeo(0.07, 0.3, 0.3), gold, 0.08, 0, 0, g);
   } else if (shape === 'orb') {
     mesh(sphGeo(0.22, 8), metal, 0, 0.05, 0, g);
-    const r = mesh(new THREE.TorusGeometry(0.32, 0.025, 4, 10), gold, 0, 0.05, 0, g);
+    const r = mesh(torusGeo(0.32, 0.025, 4, 10), gold, 0, 0.05, 0, g);
     r.rotation.x = 1.2;
   } else if (shape === 'charm') {
     mesh(boxGeo(0.3, 0.42, 0.04), M(0xe8dfa8, { emissive: glow, ei: 0.35 }), 0, 0.1, 0, g);
@@ -226,7 +234,7 @@ function buildMonster(kind, cfg) {
     const head = mesh(sphGeo(0.24, 7), dark, 0, 0.62, 0.56, g);
     head.scale.set(1.1, 0.85, 0.9);
     for (const sx of [-1, 1]) {
-      const fang = mesh(new THREE.ConeGeometry(0.05, 0.26, 5), M(0xe8dcc0, { rough: 0.5 }), sx * 0.1, 0.44, 0.68, g);
+      const fang = mesh(coneGeo(0.05, 0.26, 5), M(0xe8dcc0, { rough: 0.5 }), sx * 0.1, 0.44, 0.68, g);
       fang.rotation.x = 2.5;
     }
     // 六只眼
@@ -486,7 +494,7 @@ function buildMonster(kind, cfg) {
           mesh(boxGeo(1.1, 1.5, 0.05), wm, sx * 0.55, -0.3, -0.1, wing).rotation.z = sx * 0.3;
           a.parts['wing' + (sx < 0 ? 'L' : 'R')] = wing;
         }
-        const auraM = new THREE.Mesh(new THREE.SphereGeometry(0.9, 8, 6), new THREE.MeshBasicMaterial({ color: 0x8a2aff, transparent: true, opacity: 0.06, blending: THREE.AdditiveBlending, depthWrite: false }));
+        const auraM = new THREE.Mesh(sphGeo(0.9, 8), new THREE.MeshBasicMaterial({ color: 0x8a2aff, transparent: true, opacity: 0.06, blending: THREE.AdditiveBlending, depthWrite: false }));
         auraM.position.y = 1.6; auraM.scale.set(1.15, 1.3, 1.15);
         g.add(auraM);
       }
@@ -626,7 +634,7 @@ function applyPaperDoll(p) {
   /* 高阶套装光环 */
   if (p.stats && p.stats.setBonuses.length >= 2) {
     if (!P.aura) {
-      const ring = mesh(new THREE.RingGeometry(0.7, 0.82, 24), new THREE.MeshBasicMaterial({ color: 0x5ce08a, transparent: true, opacity: 0.45, side: THREE.DoubleSide }), 0, 0.05, 0, a.group);
+      const ring = mesh(ringGeo(0.7, 0.82, 24), new THREE.MeshBasicMaterial({ color: 0x5ce08a, transparent: true, opacity: 0.45, side: THREE.DoubleSide }), 0, 0.05, 0, a.group);
       ring.rotation.x = -Math.PI / 2;
       P.aura = ring;
     }

@@ -53,6 +53,8 @@ const ROOT = path.resolve(__dirname, '..');
   const samples = [];
   const t0 = Date.now();
   let lastLog = 0;
+  const MAPS = ['swamp', 'forest', 'desert', 'snow'];
+  let mapIdx = 0, lastMap = 0;
 
   while (Date.now() - t0 < SEC * 1000) {
     // 持续战斗：普攻 + 每 4 秒一次技能 + 每 25 秒换图
@@ -66,6 +68,14 @@ const ROOT = path.resolve(__dirname, '..');
     await wait(320);
 
     const el = (Date.now() - t0) / 1000;
+
+    // 每 45 秒换一次图：换图是最容易泄漏 GPU 资源的路径，必须压到
+    if (el - lastMap >= 45) {
+      lastMap = el;
+      mapIdx = (mapIdx + 1) % MAPS.length;
+      await p.evaluate((m) => { try { Game.travelTo(m); } catch (e) {} }, MAPS[mapIdx]).catch(() => {});
+    }
+
     if (el - lastLog >= 15) {
       lastLog = el;
       const s = await p.evaluate(() => {
@@ -85,12 +95,14 @@ const ROOT = path.resolve(__dirname, '..');
           fxZones: FX.zones.length,
           fxProj: FX.projectiles.length,
           fxTexts: FX.texts.length,
-          lights: (() => { let n = 0; Game.scene.traverse(o => { if (o.isLight) n++; }); return n; })()
+          lights: (() => { let n = 0; Game.scene.traverse(o => { if (o.isLight) n++; }); return n; })(),
+          lv: Game.perf ? Game.perf.level : -1,
+          dpr: Game.renderer.getPixelRatio().toFixed(2)
         };
       }).catch(e => ({ err: String(e).slice(0, 80) }));
       samples.push(s);
       console.log(`[${String(Math.round(el)).padStart(3)}s] fps=${s.fps} geo=${s.geo} tex=${s.tex} prog=${s.prog} `
-        + `calls=${s.calls} tris=${s.tris} heap=${s.heap}MB lights=${s.lights} | `
+        + `calls=${s.calls} tris=${s.tris} heap=${s.heap}MB lights=${s.lights} L${s.lv}@${s.dpr} | `
         + `part=${s.fxParts} zone=${s.fxZones} proj=${s.fxProj} txt=${s.fxTexts} mob=${s.enemies}`);
     }
 
