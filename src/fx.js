@@ -76,6 +76,7 @@ function hpBarTexture() {
   _hpBarTex = new THREE.CanvasTexture(c);
   _hpBarTex.minFilter = THREE.LinearFilter;
   _hpBarTex.generateMipmaps = false;
+  _hpBarTex.userData.shared = true;   // 所有血条共用一个纹理，永不 dispose
   return _hpBarTex;
 }
 
@@ -153,6 +154,25 @@ function updateHpBar(bar, ratio, dist) {
   }
 }
 
+/* ---------------- 特效几何体缓存 ---------------- *
+ * 这些形状参数固定，但数量大（每次技能都要一个环/一个圆）。
+ * 以前每次都 new RingGeometry 且不 dispose，等于每放一次技能泄漏一块显存。
+ * 现在全部缓存复用，方向用 mesh.rotation.z 表达，不再把角度编进几何体。
+ */
+const FX_GEO = {};
+function _fxGeo(key, make) {
+  const hit = FX_GEO[key];
+  if (hit) return hit;
+  const g = make();
+  g.userData.shared = true;
+  return (FX_GEO[key] = g);
+}
+const fxRing = (inner, outer, seg, len) =>
+  _fxGeo(`r${inner}_${outer}_${seg}_${len.toFixed(3)}`, () => new THREE.RingGeometry(inner, outer, seg, 1, 0, len));
+const fxCircle = (seg) => _fxGeo(`c${seg}`, () => new THREE.CircleGeometry(1, seg));
+const fxRingThin = (inner, outer, seg) =>
+  _fxGeo(`t${inner}_${outer}_${seg}`, () => new THREE.RingGeometry(inner, outer, seg));
+
 /* ---------------- 粒子 ---------------- */
 const FX = {
   scene: null, cam: null, layer: null,
@@ -188,7 +208,7 @@ const FX = {
   blood(pos, color = 0xcc2222, count = 10) { this.burst(pos, color, count, { speed: 6, size: 0.09, life: 0.5, gravity: 18 }); },
 
   ring(pos, radius, color = 0xffffff, dur = 0.45, thickness = 0.16) {
-    const geo = new THREE.RingGeometry(0.9, 1.0, 32);
+    const geo = fxRing(0.9, 1.0, 32, Math.PI * 2);
     const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.9, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending });
     const m = new THREE.Mesh(geo, mat);
     m.rotation.x = -Math.PI / 2;
@@ -199,7 +219,7 @@ const FX = {
   },
 
   flashCircle(pos, radius, color = 0xffffff, dur = 0.4) {
-    const geo = new THREE.CircleGeometry(1, 28);
+    const geo = fxCircle(28);
     const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.55, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending });
     const m = new THREE.Mesh(geo, mat);
     m.rotation.x = -Math.PI / 2;
@@ -211,12 +231,12 @@ const FX = {
 
   /* 地面预警（Boss 技能） */
   telegraph(pos, radius, dur, cb, color = 0xff3333) {
-    const geo = new THREE.CircleGeometry(1, 40);
+    const geo = fxCircle(40);
     const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.22, side: THREE.DoubleSide, depthWrite: false });
     const m = new THREE.Mesh(geo, mat);
     m.rotation.x = -Math.PI / 2; m.position.set(pos.x, 0.06, pos.z); m.scale.setScalar(radius);
     this.scene.add(m);
-    const ringGeo = new THREE.RingGeometry(0.94, 1, 40);
+    const ringGeo = fxRingThin(0.94, 1, 40);
     const rm = new THREE.Mesh(ringGeo, new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.7, side: THREE.DoubleSide, depthWrite: false }));
     rm.rotation.x = -Math.PI / 2; rm.position.y = 0.01; m.add(rm);
     this.zones.push({ mesh: m, mat, life: dur, max: dur, type: 'tele', cb, radius });
@@ -224,7 +244,7 @@ const FX = {
 
   /* 持续区域（毒雾/火海） */
   area(pos, radius, color, dur, opts = {}) {
-    const geo = new THREE.CircleGeometry(1, 32);
+    const geo = fxCircle(32);
     // 亮色技能降低不透明度，避免在亮地面上糊成一块
     const cc = new THREE.Color(color);
     const lum = 0.299 * cc.r + 0.587 * cc.g + 0.114 * cc.b;
@@ -234,7 +254,7 @@ const FX = {
     m.rotation.x = -Math.PI / 2; m.position.set(pos.x, 0.05, pos.z); m.scale.setScalar(radius);
     this.scene.add(m);
     // 边沿亮圈，避免大色块显得扁平
-    const rim = new THREE.Mesh(new THREE.RingGeometry(0.93, 1, 40),
+    const rim = new THREE.Mesh(fxRingThin(0.93, 1, 40),
       new THREE.MeshBasicMaterial({ color, transparent: true, opacity: Math.min(0.7, baseOp + 0.32), side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending }));
     rim.rotation.x = -Math.PI / 2; rim.position.y = 0.012; m.add(rim);
     this.zones.push({ mesh: m, mat, life: dur, max: dur, type: 'area', radius, color, baseOp });
@@ -259,10 +279,12 @@ const FX = {
 
   /* 剑光 */
   slash(pos, angle, color = 0xffffff, radius = 2.2, arc = 2.2) {
-    const geo = new THREE.RingGeometry(radius * 0.55, radius, 24, 1, angle - arc / 2, arc);
+    // 几何体只按半径/弧度缓存，朝向交给 rotation.z（等价于原来的 thetaStart）
+    const geo = fxRing(radius * 0.55, radius, 24, arc);
     const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.85, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending });
     const m = new THREE.Mesh(geo, mat);
     m.rotation.x = -Math.PI / 2;
+    m.rotation.z = angle - arc / 2;
     m.position.set(pos.x, 0.6, pos.z);
     this.scene.add(m);
     this.zones.push({ mesh: m, mat, life: 0.2, max: 0.2, type: 'slash' });
@@ -270,18 +292,26 @@ const FX = {
 
   projectile(opts) {
     const r = opts.radius || 0.3;
+    const col = opts.color || 0xffaa44;
     const geo = sphGeo(r, 7);
-    const mat = new THREE.MeshBasicMaterial({ color: opts.color || 0xffaa44, transparent: true, opacity: 0.95 });
+    const mat = new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.95 });
     const m = new THREE.Mesh(geo, mat);
     m.position.copy(opts.pos);
-    const halo = new THREE.Mesh(sphGeo(r * 1.9, 6), new THREE.MeshBasicMaterial({ color: opts.color || 0xffaa44, transparent: true, opacity: 0.28, blending: THREE.AdditiveBlending, depthWrite: false }));
+    /* 不再给投射物挂 PointLight。
+     * 场景里光源数量一变，three 就会把所有材质的 shader 重新编译一次，
+     * 战斗中不停发射/消失 → 每帧几百次重编译 → 这是「非常卡」的头号原因。
+     * 改用两层叠加光晕，视觉上几乎等价，成本只是两个精灵。
+     */
+    const haloMat = new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.34, blending: THREE.AdditiveBlending, depthWrite: false });
+    const halo = new THREE.Mesh(sphGeo(r * 1.9, 6), haloMat);
     m.add(halo);
+    const haloMat2 = new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.13, blending: THREE.AdditiveBlending, depthWrite: false });
+    const halo2 = new THREE.Mesh(sphGeo(r * 3.4, 6), haloMat2);
+    m.add(halo2);
     if (opts.scale) m.scale.setScalar(opts.scale);
     this.scene.add(m);
-    const light = opts.light !== false ? new THREE.PointLight(opts.color || 0xffaa44, 0.9, 8) : null;
-    if (light) m.add(light);
     const p = {
-      mesh: m, mat, pos: m.position, vel: opts.dir.clone().multiplyScalar(opts.speed || 18),
+      mesh: m, mat, haloMat, haloMat2, trailT: 0, pos: m.position, vel: opts.dir.clone().multiplyScalar(opts.speed || 18),
       radius: r, life: opts.life || 2.4, team: opts.team || 'player',
       dmg: opts.dmg || 10, onHit: opts.onHit, pierce: opts.pierce || false,
       trail: opts.trail !== false, color: opts.color || 0xffaa44, elem: opts.elem,
@@ -372,7 +402,10 @@ const FX = {
       const p = this.projectiles[i];
       p.life -= dt;
       p.pos.addScaledVector(p.vel, dt);
-      if (p.trail && Math.random() < 0.7) {
+      // 拖尾按时间节流：原来每帧 70% 概率新建一组粒子，战斗中每秒几十次分配
+      p.trailT = (p.trailT || 0) - dt;
+      if (p.trail && p.trailT <= 0) {
+        p.trailT = 0.055;
         this.burst(p.pos, p.color, 1, { speed: 0.6, size: 0.09, life: 0.22, gravity: 0, additive: true });
       }
       if (p.life <= 0) { this.removeProjectile(i); }
@@ -382,8 +415,40 @@ const FX = {
   removeProjectile(i) {
     const p = this.projectiles[i];
     if (!p) return;
-    this.scene.remove(p.mesh);
+    if (p.mesh.parent) p.mesh.parent.remove(p.mesh);
     p.mat.dispose();
+    if (p.haloMat) p.haloMat.dispose();
+    if (p.haloMat2) p.haloMat2.dispose();
     this.projectiles.splice(i, 1);
+  },
+
+  /* 换图 / 重开时彻底清空所有特效，并把材质还回去 */
+  clear() {
+    for (const p of this.projectiles) {
+      if (p.mesh.parent) p.mesh.parent.remove(p.mesh);
+      p.mat.dispose();
+      if (p.haloMat) p.haloMat.dispose();
+      if (p.haloMat2) p.haloMat2.dispose();
+    }
+    this.projectiles.length = 0;
+    for (const z of this.zones) {
+      if (z.mesh.parent) z.mesh.parent.remove(z.mesh);
+      z.mat.dispose();
+      z.mesh.traverse(o => { if (o.material && o.material !== z.mat) o.material.dispose(); });
+    }
+    this.zones.length = 0;
+    for (const pa of this.parts) {
+      if (pa.group.parent) pa.group.parent.remove(pa.group);
+      pa.mat.dispose();
+    }
+    this.parts.length = 0;
+    for (const b of this.beams) {
+      if (b.line.parent) b.line.parent.remove(b.line);
+      b.line.geometry.dispose();
+      b.line.material.dispose();
+    }
+    this.beams.length = 0;
+    for (const t of this.texts) { if (t.el.parentNode) t.el.remove(); }
+    this.texts.length = 0;
   }
 };

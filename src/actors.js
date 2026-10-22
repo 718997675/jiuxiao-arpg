@@ -3,22 +3,47 @@
  * ============================================================ */
 
 const GEO_CACHE = {};
-function boxGeo(w, h, d) {
-  const k = `b${w}_${h}_${d}`;
-  return GEO_CACHE[k] || (GEO_CACHE[k] = new THREE.BoxGeometry(w, h, d));
+/* 缓存几何体打上 shared 标记：它们被全场景复用，任何时候都不能 dispose */
+function _cacheGeo(k, make) {
+  const hit = GEO_CACHE[k];
+  if (hit) return hit;
+  const g = make();
+  g.userData.shared = true;
+  return (GEO_CACHE[k] = g);
 }
-function sphGeo(r, s = 6) {
-  const k = `s${r}_${s}`;
-  return GEO_CACHE[k] || (GEO_CACHE[k] = new THREE.SphereGeometry(r, s, Math.max(4, s - 2)));
+function boxGeo(w, h, d) { return _cacheGeo(`b${w}_${h}_${d}`, () => new THREE.BoxGeometry(w, h, d)); }
+function sphGeo(r, s = 6) { return _cacheGeo(`s${r}_${s}`, () => new THREE.SphereGeometry(r, s, Math.max(4, s - 2))); }
+function coneGeo(r, h, s = 6) { return _cacheGeo(`c${r}_${h}_${s}`, () => new THREE.ConeGeometry(r, h, s)); }
+function cylGeo(rt, rb, h, s = 6) { return _cacheGeo(`y${rt}_${rb}_${h}_${s}`, () => new THREE.CylinderGeometry(rt, rb, h, s)); }
+
+/* ---------------- GPU 资源回收 ---------------- *
+ * 关键：只释放「独占」的几何体/材质/纹理，跳过 userData.shared 的共享资源。
+ * 之前的版本换地图只 scene.remove 不 dispose，导致每次换图泄漏整张图的
+ * 几何体与材质，显存涨满后 WebGL 上下文丢失（表现为「过一会就闪退」）。
+ */
+function disposeTree(root, opts = {}) {
+  if (!root) return 0;
+  const geos = new Set(), mats = new Set(), texs = new Set();
+  root.traverse(o => {
+    const g = o.geometry;
+    if (g && !g.userData.shared && !geos.has(g)) geos.add(g);
+    const m = o.material;
+    if (m) {
+      const list = Array.isArray(m) ? m : [m];
+      for (const mt of list) {
+        if (!mt || mt.userData.shared || mats.has(mt)) continue;
+        mats.add(mt);
+        if (mt.map && !mt.map.userData.shared && !texs.has(mt.map)) texs.add(mt.map);
+      }
+    }
+  });
+  geos.forEach(g => g.dispose());
+  mats.forEach(m => m.dispose());
+  texs.forEach(t => t.dispose());
+  if (opts.detach !== false && root.parent) root.parent.remove(root);
+  return geos.size + mats.size + texs.size;
 }
-function coneGeo(r, h, s = 6) {
-  const k = `c${r}_${h}_${s}`;
-  return GEO_CACHE[k] || (GEO_CACHE[k] = new THREE.ConeGeometry(r, h, s));
-}
-function cylGeo(rt, rb, h, s = 6) {
-  const k = `y${rt}_${rb}_${h}_${s}`;
-  return GEO_CACHE[k] || (GEO_CACHE[k] = new THREE.CylinderGeometry(rt, rb, h, s));
-}
+
 
 function M(color, o = {}) {
   return new THREE.MeshStandardMaterial({

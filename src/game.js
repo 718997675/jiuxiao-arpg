@@ -41,10 +41,14 @@ const Game = {
       showFatal('这台设备无法创建 WebGL 上下文：\n' + (e.message || e) + '\n\n请确认浏览器已开启硬件加速。');
       return;
     }
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    /* Windows 上系统缩放 125% / 150% 很常见，devicePixelRatio=1.5 意味着
+     * 渲染像素是 CSS 像素的 2.25 倍——1920×1080 实际要画 2880×1620。
+     * 这是「Chrome 里特别卡」的常见原因，所以上限压到 1.5，并按帧率自动再降。 */
+    this.perf = { level: 0, ready: false, acc: 0, frames: 0, low: 0, fps: 60, dpr: 1, shadow: 0 };
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.shadowMap.type = THREE.PCFShadowMap;
     // 使用线性输出，保证手调色值所见即所得
     this.renderer.toneMapping = THREE.NoToneMapping;
     this.renderer.toneMappingExposure = 1.0;
@@ -58,7 +62,7 @@ const Game = {
     this.sun = new THREE.DirectionalLight(0xfff0d0, 1.05);
     this.sun.position.set(22, 36, 16);
     this.sun.castShadow = true;
-    this.sun.shadow.mapSize.set(2048, 2048);
+    this.sun.shadow.mapSize.set(1536, 1536);   // 2048 在集显上 shadow pass 成本过高
     const sc = this.sun.shadow.camera;
     sc.left = -42; sc.right = 42; sc.top = 42; sc.bottom = -42; sc.near = 1; sc.far = 130;
     this.sun.shadow.bias = -0.0012;
@@ -240,23 +244,20 @@ const Game = {
     s.mapId = mapId;
     this.mapGen = (this.mapGen || 0) + 1;
     this.mobTimer = 0;
-    // 清场
-    for (const e of this.enemies) this.scene.remove(e.actor.group);
+    // 清场：必须真正释放 GPU 资源。只 scene.remove 不 dispose 的话，
+    // 每换一次图就泄漏一整张地图的几何体+材质，几分钟后显存耗尽、上下文丢失。
+    for (const e of this.enemies) disposeTree(e.actor.group);
     this.enemies = [];
-    for (const a of this.allies) this.scene.remove(a.actor.group);
+    for (const a of this.allies) disposeTree(a.actor.group);
     this.allies = [];
-    for (const l of this.loot) this.scene.remove(l.obj);
+    for (const l of this.loot) disposeTree(l.obj);
     this.loot = [];
-    for (const id in this.npcs) this.scene.remove(this.npcs[id].group);
+    for (const id in this.npcs) disposeTree(this.npcs[id].group);
     this.npcs = {};
-    if (this.world) { this.scene.remove(this.world.root); }
+    if (this.world) disposeTree(this.world.root);
     this.boss = null; UI.updateBoss(null);
-    for (const p of FX.projectiles) this.scene.remove(p.mesh);
-    for (const z of FX.zones) this.scene.remove(z.mesh);
-    for (const pa of FX.parts) this.scene.remove(pa.group);
-    for (const b of FX.beams) this.scene.remove(b.line);
-    for (const t of FX.texts) t.el.remove();
-    FX.projectiles.length = 0; FX.zones.length = 0; FX.parts.length = 0; FX.beams.length = 0; FX.texts.length = 0;
+    FX.clear();
+
     this.buffs = []; this.shield = 0; this.regen = 0; this.poisonT = 0; this.playerSlow = 0;
     this.cooldowns = {};
 
@@ -1422,7 +1423,8 @@ const Game = {
     }
     this.enemies = this.enemies.filter(e => {
       if (e.dead && (e.deadT || 0) >= 3) {
-        this.scene.remove(e.actor.group);
+        // 整棵子树（模型 + 武器 + 血条）一起释放，共享缓存的几何体由 disposeTree 自动跳过
+        disposeTree(e.actor.group);
         if (e.bar) { e.bar.fill.material.dispose(); e.bar.bg.material.dispose(); }
         return false;
       }
