@@ -362,7 +362,7 @@ src/
 | Sprint | 时间 | 内容 | 晚数 | 交付物 |
 |---|---|---|---|---|
 | **S0** | 10/23 五 | 存档 v2 + 3 角色位 + 迁移器 + 导入导出 | 1 | ✅ 已完成（老档可读、导出→清空→导入 100% 还原） |
-| **S1** | 10/24-25 六日 | 装备基底 70→210、ilvl、词缀 24→64 | 2 | 掉落表跑通 |
+| **S1** | 10/24-25 六日 | 装备基底 70→210、ilvl、词缀 24→64 | 2 | ✅ 提前完成（10/23 01:20–02:00） |
 | **S2** | 10/26-27 一二 | 符文之语（24 符文 + 12 组合 + 10 个符文图标）、套装 5→12、洗练台 | 2 | 可镶符文、可洗词缀 |
 | **S3** | 10/28-31 三四五六 | 被动天赋树 120 节点 + **42 个天赋图标** + 3 套预设 + Canvas UI | 4 | 构筑可成型 |
 | **S4** | 11/1-3 日一二 | 技能 18→36 + 108 变体 + **36 个技能图标** + 技能等级 + 8 技能栏 | 3 | 三系玩法分化 |
@@ -469,6 +469,74 @@ M11 图标规范 ──→ S3（42）+ S4（36）+ S2（10）+ S10（17）
 1. `#savePanel` 要能从开始界面打开，z-index 必须高于 `#start`（60），否则面板被标题页盖住；同时要用 `body.ui-open` 冻结开始界面的按钮，防止隔着面板误点「踏入山海」。
 2. 内存兜底不能无条件参与读取：玩家在控制台清了 localStorage，若内存镜像还在，会「复活」旧档。改成只在 localStorage 不可写时才走内存。
 3. 导出前必须 `Game.save()`，否则导出的是上次自动存档的时间点，不是「此刻」。
+
+### S1 实际完成记录（2026-10-23 01:20 – 02:10，提前 1 天）
+
+| 计划项 | 结果 |
+|---|---|
+| 装备基底 70→210 | ✅ 护甲 8 槽 × 5 档 × 3 变体 = 120，武器 45，副手 45 |
+| 词缀 24→64 | ✅ 64 条，tier 分布 62/28/10（实测 61.9/28.2/9.9） |
+| ilvl | ✅ 沿用 `tierIndex`（每 8 级一档），1–40 级 5 档 |
+| 掉落表跑通 | ✅ `onEnemyDeath` 的 ilvl 直接喂给 `rollItem`，10 件满装 1.8 秒清 6 只 400 血怪 |
+
+**核心设计：3 种流派变体 + 固有属性**
+
+每个档位不是"一件更贵的同名装备"，而是三个流派：
+
+```
+头盔 tier3  铁盔 14        ← 均衡
+           玄铁面 18 · 固有 护甲+6      ← 重防
+           灵犀冠 12 · 固有 暴击+2      ← 轻灵
+```
+
+固有属性存在 `item.implicit`，和词缀一样走 `sumItemStats` 汇总，**真实生效**，tooltip 里单独一行（紫色左边线）显示。这让「我要刷一件带暴击的头」这种追求第一次成立。
+
+**关键约束：不许有假属性**
+
+`makeAffix` 是按 key 去重的，所以 64 条词缀 = 64 个不同的属性 key，意味着要真造 40 个新属性。这 40 个每一个都必须接进战斗，否则就是面板上好看、打起来没用的摆设。全部生效点：
+
+| 属性 | 生效位置 |
+|---|---|
+| minDmg / dmgAll | `rollDamage` 伤害下限与通用乘区 |
+| meleeDmg / projDmg / aoeDmg / dotDmg | `damageEnemy` 按技能类型分乘区（`tagBonus`） |
+| armorPen | `damageEnemy` 按比例削减目标有效护甲 |
+| eliteDmg / bossDmg / executeDmg / firstStrike | `damageEnemy` 按目标状态增伤 |
+| stunChance / slowChance / freezeChance / burnChance | `damageEnemy` 命中附加 |
+| mpOnHit / hpOnHit / knockback | `damageEnemy` 命中结算 |
+| dodge / block / dmgReduce | `damagePlayer` 闪避 / 格挡减半 / 固定减伤 |
+| physRes / fireRes / iceRes / poisonRes | `damagePlayer` 按来源怪物的元素标记 |
+| ccResist | `playerPoison` 与 Boss 减速时长 |
+| hpRegen / healBonus / mpOnKill / overkillShield | `update` / `healPlayer` / `onEnemyDeath` |
+| armorPct / mpPct / moveSpdFlat | `computePlayerStats` 计算层 |
+| aspdOnCrit / cdrFlat / costReduce | `doBasicAttack` / `skillCd` / `skillCost` |
+| expGain / dropRate / pickupRadius / shieldBonus | `gainXp` / `onEnemyDeath` / `updateLoot` / 护盾赋值 |
+
+**新增 STAT_CAPS 硬上限（必须保留）**
+
+词缀值会随 ilvl 放大 `×(1 + ilvl×0.055)`，40 级约 3.2 倍。单件 6% 闪避到 40 级就是 19%，十件叠起来 90% —— 不封顶后期直接无敌。`items.js` 顶部的 `STAT_CAPS` 是安全阀，也是调平衡的唯一开关：
+
+```
+dodge 25  block 25  dmgReduce 30  ccResist 70
+stunChance 30  slowChance 40  freezeChance 25
+armorPen 60  crit 75  thorns 120  dmgAll 80 ...
+```
+
+**验证**
+
+`node dev/test-items.js`（17 项，全过）：
+- 滚 1 万件，210/210 基底全覆盖、64/64 词缀全覆盖 → 没有「写了但滚不到」的死数据
+- 相邻档位涨幅 3.16→2.16→1.97→1.64，前陡后缓，1→40 级总成长 22 倍
+- 500 组满装属性汇总无 NaN、无负值
+
+`node dev/test-s1.js`（全过）：属性面板 5 组 32 行无溢出、tooltip 固有属性正常、实战 1.8 秒清 6 怪、控制台 0 error。
+
+三端回归（PC 1440×900 / 844×390 / 390×844）：0 错误 0 失败请求。
+
+**踩到的坑**
+
+1. **基底名字会撞**。项链的「灵珠/碧水珠/铜铃」和法师/道士副手撞了三个，导致 207/210（Map 按名字去重）。名字空间要按槽位分开看，别只想着"我这槽不重名"。
+2. **`vm.runInContext` 拿不到 `const`**。node 里跑数据表做校验时，`const STATS` 不会挂到 context 对象上，要用 `vm.runInContext(src + "\n;STATS")` 取返回值。
+3. **技能消耗与冷却要单一入口**。UI 显示 `sk.cost`、战斗扣 `cost*(1-costReduce)`，会变成「显示 12 实际扣 10」；统一到 `Game.skillCost()` / `Game.skillCd()`，UI 也调它。
 
 ---
 
