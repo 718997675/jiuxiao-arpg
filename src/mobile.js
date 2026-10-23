@@ -282,6 +282,16 @@ const Mobile = {
       el.style.top = uy + 'px';
       el.style.fontSize = 13 * u + 'px';
     });
+
+    /* 增益 / 减益栏：触屏技能格上方，跟着 HUD 一起缩放 */
+    const bb = document.getElementById('buffbar');
+    if (bb) {
+      bb.style.left = '50%';
+      bb.style.top = Math.max(ins.t + 4, uy - 28 * u) + 'px';
+      bb.style.bottom = 'auto';
+      bb.style.transform = 'translateX(-50%)';
+      bb.style.maxWidth = Math.min(W - 20, 360 * u) + 'px';
+    }
   },
 
   /* ---------------- 摇杆 ---------------- */

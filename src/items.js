@@ -233,7 +233,9 @@ function makeAffix(ilvl, used) {
   const tierWant = roll < 0.62 ? 1 : (roll < 0.9 ? 2 : 3);
   let cand = pool.filter(a => a.tier === tierWant);
   if (!cand.length) cand = pool;
-  const a = PICK(cand);
+  const weighted = [];
+  for (const c of cand) for (let i = 0; i < (c.weight || 1); i++) weighted.push(c);
+  const a = PICK(weighted);
   used.add(a.key);
   const q = rollAffixQuality();
   return { key: a.key, val: affixValue(a, ilvl, q), pre: a.pre, suf: a.suf, tier: a.tier, q };

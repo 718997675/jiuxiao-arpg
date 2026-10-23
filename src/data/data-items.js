@@ -262,7 +262,7 @@ const AFFIXES = [
 
   /* ---------- tier 3 · 稀有特效 ---------- */
   { key: 'lifesteal', pre: ['饮血的', '噬魂的'], suf: ['· 饮血', '· 噬魂'], min: 1, max: 4, tier: 3 },
-  { key: 'cdr', pre: ['流转的', '天机的'], suf: ['· 流转', '· 天机'], min: 2, max: 7, tier: 3 },
+  { key: 'cdr', pre: ['流转的', '天机的'], suf: ['· 流转', '· 天机'], min: 3, max: 8, tier: 2, weight: 3 },
   { key: 'killHeal', pre: ['贪婪的', '嗜杀的'], suf: ['· 汲取', '· 归元'], min: 4, max: 14, tier: 3 },
   { key: 'summonDmg', pre: ['御兽的', '妖契的'], suf: ['· 御兽', '· 妖契'], min: 6, max: 16, tier: 3 },
   { key: 'dodge', pre: ['幻身的', '无相的'], suf: ['· 幻身', '· 无迹'], min: 2, max: 6, tier: 3 },

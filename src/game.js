@@ -447,7 +447,7 @@ const Game = {
     this.boss = null; UI.updateBoss(null);
     FX.clear();
 
-    this.buffs = []; this.shield = 0; this.shieldT = 0; this.regen = 0; this.poisonT = 0; this.playerSlow = 0; this.playerSlowT = 0; this.shieldT = 0; this.playerSlowT = 0;
+    this.buffs = []; this.shield = 0; this.shieldT = 0; this.regen = 0; this.poisonT = 0; this.playerSlow = 0; this.playerSlowT = 0;
     this.cooldowns = {};
 
     const m = MAPS[mapId];

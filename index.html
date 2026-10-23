@@ -103,6 +103,19 @@
   .potion .k{position:absolute;top:1px;left:2px;font-size:9px;color:#8a8070}
   .potion.blue .g{color:#6aa8e8}
 
+  /* ---------- 增益 / 减益栏 ---------- */
+  #buffbar{position:absolute;left:50%;bottom:88px;transform:translateX(-50%);display:none;gap:6px;align-items:center;
+    justify-content:center;flex-wrap:wrap;max-width:min(680px,86vw);pointer-events:none;z-index:2}
+  .buff{display:flex;align-items:center;gap:5px;padding:3px 8px 3px 5px;background:rgba(10,10,14,.84);
+    border:1px solid var(--c,#d8b25a);box-shadow:0 0 10px rgba(216,178,90,.18);font-size:11px;letter-spacing:1px;
+    color:#e8dcc0;text-shadow:0 1px 2px #000;animation:buffIn .18s ease-out}
+  .buff .bi{display:flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:2px;
+    background:var(--c,#d8b25a);color:#10100c;font-size:11px;font-weight:700}
+  .buff .bt{margin-left:2px;color:var(--c,#d8b25a);font-variant-numeric:tabular-nums}
+  .buff.debuff{border-style:dashed;background:rgba(28,8,8,.86)}
+  @keyframes buffIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+  body.touch #buffbar{max-width:76vw;font-size:10px}
+
   /* ---------- 提示 / 日志 / 交互 ---------- */
   #interact{position:absolute;left:50%;bottom:92px;transform:translateX(-50%);font-size:13px;letter-spacing:2px;
     color:#ffe9a8;background:rgba(8,8,12,.82);border:1px solid var(--line);padding:6px 16px;display:none;
@@ -362,10 +375,10 @@
     background:radial-gradient(ellipse at 50% 44%,rgba(20,26,40,.5) 0%,rgba(11,14,21,.78) 52%,rgba(5,6,10,.94) 100%);
     display:flex;flex-direction:column;align-items:center;justify-content:center;pointer-events:auto}
   /* 标题界面隐藏 HUD */
-  body.in-menu #charplate,body.in-menu #topright,body.in-menu #actionbar,
+  body.in-menu #charplate,body.in-menu #topright,body.in-menu #actionbar,body.in-menu #buffbar,
   body.in-menu #log,body.in-menu #bossbar,body.in-menu #mtouch,
   body.in-menu #openBtns,body.in-menu #toasts{opacity:0;pointer-events:none}
-  #charplate,#topright,#actionbar,#log,#bossbar{transition:opacity .45s ease}
+  #charplate,#topright,#actionbar,#buffbar,#log,#bossbar{transition:opacity .45s ease}
   #start::before{content:'';position:absolute;inset:0;
     background:repeating-linear-gradient(0deg,transparent 0 3px,rgba(255,255,255,.012) 3px 4px);pointer-events:none}
   #start h1{font-family:"STKaiti","KaiTi","STSong",serif;font-size:clamp(42px,7vw,86px);font-weight:400;
@@ -621,7 +634,7 @@
 
   /* 面板/对话打开时收起虚拟按键，避免误触 */
   body.touch.ui-open #mtouch,body.touch.ui-open #openBtns{opacity:0;pointer-events:none}
-  body.touch.ui-open #charplate,body.touch.ui-open #topright,
+  body.touch.ui-open #charplate,body.touch.ui-open #topright,body.touch.ui-open #buffbar,
   body.touch.ui-open #log,body.touch.ui-open #toasts{opacity:.18}
 
   /* ---- 触屏面板 ---- */
@@ -793,6 +806,7 @@
     <div class="phase" id="bossPhase"></div>
   </div>
 
+  <div id="buffbar"></div>
   <div id="actionbar"></div>
   <div id="interact"></div>
   <div id="toasts"></div>

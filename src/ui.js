@@ -413,7 +413,9 @@ const UI = {
     const bar = document.getElementById('actionbar');
     bar.innerHTML = order.map((id, i) => {
       const sk = SKILLS[id];
-      return `<div class="skill" data-skill="${id}" title="${sk.name}">
+      const castLabel = sk.cast === 'ground' ? '指定位置' : sk.cast === 'dir' ? '指定方向' : sk.cast === 'enemy' ? '自动索敌' : '自身';
+      const rangeLabel = sk.castRange ? ` · ${sk.castRange} 码` : '';
+      return `<div class="skill" data-skill="${id}" title="${sk.name} · ${castLabel}${rangeLabel}">
         <span class="k">${i + 1}</span><div class="g">${sk.glyph}</div>
         <span class="cost">${Game.skillCost(sk)}</span><div class="cd"></div></div>`;
     }).join('') +
@@ -453,6 +455,27 @@ const UI = {
       el.classList.toggle('ready', !locked && cd <= 0.05 && !noMp);
       el.style.filter = !locked && noMp ? 'saturate(.4) brightness(.75)' : '';
     });
+  },
+
+  /* 技能栏上方：增益 / 减益 / 护盾，按剩余时间倒序，减益置后 */
+  renderBuffs() {
+    const el = document.getElementById('buffbar');
+    if (!el || !Game.state) return;
+    const list = [];
+    for (const b of Game.buffs) list.push({ name: b.name, dur: b.dur, color: b.color, type: b.type || 'buff', icon: b.icon, desc: b.desc });
+    if (Game.statusBuffs) list.push(...Game.statusBuffs());
+    list.sort((a, b) => (a.type === 'debuff' ? 1 : 0) - (b.type === 'debuff' ? 1 : 0) || b.dur - a.dur);
+    const sig = list.map(b => `${b.name}|${b.type}|${Math.ceil((Number(b.dur) || 0) * 10)}|${b.color}`).join(';');
+    if (sig === this._buffSig) return;
+    this._buffSig = sig;
+    if (!list.length) { el.style.display = 'none'; el.innerHTML = ''; return; }
+    el.style.display = 'flex';
+    el.innerHTML = list.map(b => {
+      const c = typeof b.color === 'number' ? '#' + b.color.toString(16).padStart(6, '0') : (b.color || '#d8b25a');
+      const icon = b.icon || (b.name ? b.name.slice(0, 1) : '·');
+      const desc = b.desc ? ` title="${b.desc}"` : '';
+      return `<div class="buff ${b.type || 'buff'}" style="--c:${c}"${desc}><span class="bi">${icon}</span><span class="bn">${b.name}</span><span class="bt">${Math.max(0, Number(b.dur) || 0).toFixed(1)}s</span></div>`;
+    }).join('');
   },
 
   updateBoss(boss) {
