@@ -2,6 +2,30 @@
  * 主逻辑：渲染 / 输入 / 战斗 / 敌人AI / Boss / 掉落 / 任务 / 存档
  * ============================================================ */
 
+/* 铁匠铺免费刷新周期：5 分钟（v1.0.4） */
+const SHOP_REFRESH_MS = 5 * 60 * 1000;
+
+/**
+ * 线段 a→b 与圆 (cx,cz,r) 的首次相交参数 t ∈ [0,1]，不相交返回 -1。
+ *
+ * 只在 XZ 平面算：怪物模型站在地面上，判定按脚下的圆来，和玩家眼睛看到的
+ * 「模型在哪」完全一致。把 y 算进来反而会出问题——施法起点在 1.1~1.4 高，
+ * 朝地面瞄准时 dir.y 是负的，飞远了会从怪物脚边擦过去，表现就是「法球穿模」。
+ */
+function segCircleT(a, b, cx, cz, r) {
+  const dx = b.x - a.x, dz = b.z - a.z;
+  const fx = a.x - cx, fz = a.z - cz;
+  const C = fx * fx + fz * fz - r * r;
+  if (C <= 0) return 0;                 // 起点已经在圈内（贴脸放技能）
+  const A = dx * dx + dz * dz;
+  if (A < 1e-9) return -1;              // 本帧没动
+  const B = 2 * (fx * dx + fz * dz);
+  const disc = B * B - 4 * A * C;
+  if (disc < 0) return -1;
+  const t = (-B - Math.sqrt(disc)) / (2 * A);
+  return (t >= 0 && t <= 1) ? t : -1;
+}
+
 const BOSS_POS = {
   treeking: [28, -26], batking: [-30, -22],
   chief: [34, 26], golemking: [-36, 24], snakequeen: [0, -36],
@@ -229,7 +253,8 @@ const Game = {
       stash: { items: [], mats: {} },
       quests: { active: [], done: [], next: 'q1', announced: {} },
       mapId: 'village', playerPos: { x: 0, z: 10 },
-      bossKilled: {}, playTime: 0
+      bossKilled: {}, playTime: 0,
+      shop: null          // { at, items, rolls } —— 由 ensureShop/genShop 填充
     };
     return s;
   },
@@ -386,6 +411,29 @@ const Game = {
     this.spawnBosses();
     this.recalc();
     this.applyDoll();
+    /* [FIX-TOWN] 回城满血：踏入安全区（桃源村）即回满生命与灵力。
+     *
+     * 换图时上面已经清空了 buff / 中毒 / 减速 / 护盾，但血蓝是原样带过来的，
+     * 于是「残血回城 → 站在村里慢慢回蓝 → 再出门」成了固定动作；
+     * 更糟的是回城落点就在村口，残血玩家经常刚落地就被门口刷的怪补掉。
+     * 这里把回城补满，顺带把上一张图残留的负面状态一并收尾。 */
+    if (m.safe) {
+      const st = this.state.stats;
+      const wasHurt = this.state.hp < st.hpMax - 0.5 || this.state.mp < st.mpMax - 0.5;
+      this.state.hp = st.hpMax;
+      this.state.mp = st.mpMax;
+      this.shield = 0;
+      this.poisonT = 0; this.playerSlow = 0;
+      if (wasHurt) {
+        const pp = new THREE.Vector3(this.playerGroup.position.x, 0, this.playerGroup.position.z);
+        FX.ring(pp, 3.2, 0x8ce0a8, 0.8, 0.3);
+        for (let i = 0; i < 26; i++) {
+          FX.burst(new THREE.Vector3(pp.x + RND(-1.2, 1.2), RND(0.1, 2.2), pp.z + RND(-1.2, 1.2)),
+            0x9affc8, 1, { speed: 1.6, size: 0.1, life: 1.1, gravity: -3, additive: true });
+        }
+        UI.toast('气血尽复', 'lv');
+      }
+    }
     UI.renderHUD();
     UI.renderActionBar && UI.buildActionBar();
     UI.log('【' + m.name + '】' + (m.safe ? '炊烟与犬吠，难得的安宁。' : '妖气弥漫，小心脚下。'), m.safe ? 'good' : 'bad');
@@ -492,10 +540,29 @@ const Game = {
       e.eliteRing = ring;
     }
     if (isBoss) {
+      /* [FIX-BOSSLABEL] 名字牌必须放在「不被 group.scale 二次放大」的容器里。
+       *
+       * 旧写法：label.position.y = 4.2 * (scale / 1.8)，直接把精灵挂在 a.group 下。
+       * a.group.scale = scale（首领 1.9~3.0），于是：
+       *   实际世界高度 = 4.2 * (scale/1.8) * scale   → 混沌天魔(3.0) 得到 21 单位，
+       *   精灵自身 6×1.5 也被放大成 18×4.5 世界单位。
+       * 名字牌飘在离本体二十米的高空，斜俯视镜头下透视投影会把它甩到屏幕另一侧，
+       * 看起来就是「BOSS 显示位置和实际坐标对不上」。
+       *
+       * 现在改用和血条同一套做法：先量模型真实头顶（modelTopY），
+       * 再把容器缩放取倒数抵消，位置与字号都按世界单位算。 */
+      const gs = a.group.scale.x || 1;
+      const topWorld = modelTopY(a.group);          // 世界空间头顶高度（group 在 y=0，等价于 local*gs）
+      const labelG = new THREE.Group();
+      labelG.scale.setScalar(1 / gs);
+      labelG.position.y = (topWorld + 0.55) / gs;   // 抵消缩放后正好落在头顶上方 0.55
+      labelG.renderOrder = 999;
       const label = makeLabelSprite(cfg.name, '#ffd8b0', 44);
-      label.position.y = 4.2 * (scale / 1.8);
-      a.group.add(label);
+      label.position.set(0, 0, 0);
+      labelG.add(label);
+      a.group.add(labelG);
       e.label = label;
+      e.labelG = labelG;
       // 专属武器
       const shapes = { brute: 'axe', golem: 'axe', humanoid: 'glaive', demon: 'glaive', ghost: 'staff', snake: 'staff' };
       const shape = shapes[cfg.model];
@@ -993,7 +1060,7 @@ const Game = {
       const color = cls === 'mage' ? 0x8ad0ff : 0xffd070;
       FX.projectile({
         pos: new THREE.Vector3(origin.x + dir.x * 0.7, 1.1, origin.z + dir.z * 0.7),
-        dir, speed: 24, color, radius: 0.22, team: 'player',
+        dir, speed: 24, color, radius: 0.22, hitRadius: 0.5, team: 'player',
         dmg: st.atk * 0.85, life: 1.4, elem: cls === 'mage' ? 'ice' : 'none',
         tag: 'proj',
         onHit: (e, p) => {
@@ -1158,7 +1225,7 @@ const Game = {
         const radius = 2.4 * (st.flags.firetrail ? 1.6 : 1);
         const p = FX.projectile({
           pos: new THREE.Vector3(pp.x + dir.x * 0.8, 1.4, pp.z + dir.z * 0.8),
-          dir, speed: 21, color: 0xff7a30, radius: 0.32, team: 'player',
+          dir, speed: 21, color: 0xff7a30, radius: 0.32, hitRadius: 0.62, team: 'player',
           dmg: st.atk * 1.9, life: 1.6, elem: 'fire', trail: true,
           onHit: (e, proj) => {
             this.explodeAt(proj.pos.clone(), radius, st.atk * 1.9, 0xff7a30);
@@ -1262,21 +1329,33 @@ const Game = {
       /* 道士 */
       case 'talisman': {
         this.actor.atkAnim = 1; this.actor.atkType = 'cast';
-        SFX.thunder();
+        SFX.cast();
         const target = this.nearestEnemy(aim, 16) || this.nearestEnemy(pp, 16);
-        if (target) {
-          const from = new THREE.Vector3(pp.x, 3.4, pp.z);
-          const to = new THREE.Vector3(target.pos.x, 1.2, target.pos.z);
-          FX.beam(from, to, 0x9affd0, 0.18);
-          FX.flashCircle(target.pos, 1.8, 0x9affd0, 0.25);
-          const { dmg, crit } = this.rollDamage(st.atk * 1.7);
-          this.damageEnemy(target, dmg, crit, {});
-          this.shake = 0.12;
-        } else {
-          const from = new THREE.Vector3(pp.x, 3.2, pp.z);
-          const to = new THREE.Vector3(aim.x, 0.2, aim.z);
-          FX.beam(from, to, 0x9affd0, 0.2);
-        }
+        /* v1.0.4：从「瞬间一道雷光」改成「一道符飞过去」。
+         * 原实现是一条 beam，同一帧生成又消失，画面上只闪一下，
+         * 玩家根本看不出技能放没放出去，也没有飞行时间带来的节奏感。
+         * 现在是一枚会拐弯追踪的符咒，命中瞬间才落雷。 */
+        const start = new THREE.Vector3(pp.x, 1.5, pp.z);
+        const tdir = target
+          ? new THREE.Vector3(target.pos.x - pp.x, 0, target.pos.z - pp.z).normalize()
+          : new THREE.Vector3(dir.x, 0, dir.z).normalize();
+        FX.projectile({
+          pos: start, dir: tdir, speed: 17, color: 0xffd24a, radius: 0.3, hitRadius: 0.55,
+          team: 'player', style: 'talisman', life: 2.0, trail: true, tag: 'proj',
+          homing: target ? target.pos : null, homeTurn: 9,
+          onHit: (e, proj) => {
+            const { dmg, crit } = this.rollDamage(st.atk * 1.7);
+            this.damageEnemy(e, dmg, crit, { tag: 'proj' });
+            // 符纸炸开 → 天雷落地
+            FX.beam(new THREE.Vector3(e.pos.x, 4.2, e.pos.z), new THREE.Vector3(e.pos.x, 0.9, e.pos.z), 0x9affd0, 0.16);
+            FX.flashCircle(e.pos, 1.9, 0x9affd0, 0.26);
+            FX.burst(new THREE.Vector3(e.pos.x, 1.2, e.pos.z), 0x9affd0, 12, { speed: 4, size: 0.1, life: 0.4, additive: true });
+            SFX.thunder();
+            this.shake = Math.max(this.shake, 0.12);
+          }
+        });
+        // 出手瞬间手边亮一下，抬手动作才有落点
+        FX.flashCircle(new THREE.Vector3(pp.x + tdir.x * 0.9, 0.08, pp.z + tdir.z * 0.9), 1.1, 0xffd24a, 0.18);
         break;
       }
       case 'summon': {
@@ -2086,20 +2165,41 @@ const Game = {
   },
 
   /* ---------------- 投射物碰撞 ---------------- */
+  /* v1.0.4：点判定 → 扫掠（线段）判定
+   *
+   * 旧写法是每帧拿投射物当前坐标去比 distanceTo(怪物)，只要一帧走过的距离
+   * 超过「怪物半径 + 投射物半径」，判定点就会从怪物前面直接跳到后面，永远踩不到——
+   * 这就是「法师法球有时候直接穿过怪物模型」。
+   * 法球速度 21~24，60fps 下每帧 0.35~0.4，本来勉强够；但掉到 30fps 就是 0.7~0.8，
+   * 手机上一场群怪立刻就能复现。
+   *
+   * 现在改成拿「上一帧位置 → 当前帧位置」这条线段去和怪物的圆求交，
+   * 无论帧率多低、速度多快都不会漏；顺带解决了瞄准落点在地面导致的上下偏差。
+   */
   updateProjectiles(dt) {
     for (let i = FX.projectiles.length - 1; i >= 0; i--) {
       const p = FX.projectiles[i];
+      const prev = p.prevPos || p.pos;
       if (p.team === 'player') {
+        let best = null, bestT = 2;
         for (const e of this.enemies) {
           if (e.dead) continue;
-          if (p.pos.distanceTo(new THREE.Vector3(e.pos.x, 1, e.pos.z)) < e.radius + p.radius + 0.35) {
-            if (p.onHit) p.onHit(e, p);
-            if (!p.pierce) { FX.removeProjectile(i); break; }
-          }
+          if (p.hitSet && p.hitSet.has(e.id)) continue;    // 穿透弹不重复打同一只
+          const t = segCircleT(prev, p.pos, e.pos.x, e.pos.z, e.radius + p.hitRadius + 0.25);
+          if (t >= 0 && t < bestT) { bestT = t; best = e; }
+        }
+        if (best) {
+          /* 命中点：把投射物挪到线段与圆的交点，爆炸/特效就落在模型表面而不是穿到身后 */
+          if (!p.pierce) p.pos.lerpVectors(prev, p.pos, bestT);
+          if (p.onHit) p.onHit(best, p);
+          if (!p.pierce) { FX.removeProjectile(i); continue; }
+          (p.hitSet || (p.hitSet = new Set())).add(best.id);
         }
       } else {
-        const pp = new THREE.Vector3(this.playerGroup.position.x, 1.1, this.playerGroup.position.z);
-        if (p.pos.distanceTo(pp) < 0.85 + p.radius) {
+        const pg = this.playerGroup.position;
+        const t = segCircleT(prev, p.pos, pg.x, pg.z, 0.85 + p.hitRadius);
+        if (t >= 0) {
+          if (!p.pierce) p.pos.lerpVectors(prev, p.pos, t);
           if (p.onHit) p.onHit(null, p);
           FX.removeProjectile(i);
         }
@@ -2423,7 +2523,8 @@ const Game = {
     if (id === 'elder') {
       this.openElder();
     } else if (id === 'smith') {
-      this.genShop();
+      /* 进货走 ensureShop：5 分钟窗口内反复说话不会换货 */
+      this.ensureShop();
       UI.showDialog(npc.name, PICK(npc.lines), [
         { label: '看看货（购买）', action: () => UI.openShop(this.shopItems, '铁匠铺') },
         { label: '借用炼器台', action: () => UI.openForge() },
@@ -2585,6 +2686,30 @@ const Game = {
     return true;
   },
 
+  /* 背包排序（v1.0.4）
+   * mode: score 评分 / rarity 品质 / slot 部位 / level 等级
+   * 直接重排 state.inventory —— 物品的 data-ref 是下标，视图与数组必须同源。 */
+  sortInventory(mode) {
+    const s = this.state;
+    if (!s || !Array.isArray(s.inventory)) return 0;
+    const RANK = { set: 5, legendary: 4, rare: 3, magic: 2, common: 1 };
+    const slotIdx = k => {
+      const key = (k === 'ring') ? 'ring1' : k;      // item.slot 只有 ring，SLOT_ORDER 里是 ring1/ring2
+      const i = (typeof SLOT_ORDER !== 'undefined') ? SLOT_ORDER.indexOf(key) : -1;
+      return i < 0 ? 99 : i;
+    };
+    const byScore = (a, b) => itemScore(b) - itemScore(a);
+    const cmp = {
+      score: (a, b) => byScore(a, b) || (RANK[b.rarity] || 0) - (RANK[a.rarity] || 0),
+      rarity: (a, b) => ((RANK[b.rarity] || 0) - (RANK[a.rarity] || 0)) || byScore(a, b),
+      slot: (a, b) => (slotIdx(a.slot) - slotIdx(b.slot)) || byScore(a, b),
+      level: (a, b) => ((b.reqLv || 0) - (a.reqLv || 0)) || byScore(a, b)
+    }[mode] || byScore;
+    s.inventory.sort(cmp);
+    UI.renderInventory();
+    return s.inventory.length;
+  },
+
   equipFromInv(idx) {
     const s = this.state;
     const item = s.inventory[idx];
@@ -2720,17 +2845,69 @@ const Game = {
     return { ok: true, affix: a, cost };
   },
 
-  genShop() {
-    const lv = this.state.level;
+  /* ---------------- 商店（v1.0.4） ----------------
+   *
+   * 规则：
+   *   · 每 5 分钟免费换一批货；
+   *   · 等不及可以花金币立刻刷新，同一窗口内连续刷新价格递增（1.8 倍，最多算 4 次）；
+   *   · 刷新状态写进存档，刷新页面 / 重开游戏都不会白嫖到新货。
+   *
+   * 旧版是「每次跟铁匠说话就 genShop()」，等于无限免费刷新，
+   * 5 分钟刷新的意义会被完全绕开，所以进货统一走 ensureShop()。 */
+  ensureShop() {
+    const s = this.state;
+    if (!s) return false;
+    const sh = s.shop;
+    const expired = !sh || !Array.isArray(sh.items) || !sh.items.length ||
+      !sh.at || (Date.now() - sh.at) >= SHOP_REFRESH_MS;
+    if (expired) { this.genShop(0); return true; }
+    this.shopItems = sh.items;
+    return false;
+  },
+
+  shopRemainMs() {
+    const sh = this.state && this.state.shop;
+    if (!sh || !sh.at) return 0;
+    return Math.max(0, SHOP_REFRESH_MS - (Date.now() - sh.at));
+  },
+
+  /* 金币刷新价格：随境界线性上涨，同一窗口内每次 ×1.8（最多按 4 次计） */
+  shopRefreshCost() {
+    const s = this.state;
+    if (!s) return 0;
+    const rolls = (s.shop && s.shop.rolls) || 0;
+    const base = 80 + s.level * 12;
+    const raw = base * Math.pow(1.8, Math.min(rolls, 4));
+    return Math.round(raw / 10) * 10;
+  },
+
+  refreshShopPaid() {
+    const s = this.state;
+    if (!s) return { ok: false };
+    const cost = this.shopRefreshCost();
+    if (s.gold < cost) { UI.log('金币不足，刷新需 ' + cost + ' 金。', 'bad'); return { ok: false, cost }; }
+    s.gold -= cost;
+    this.genShop(((s.shop && s.shop.rolls) || 0) + 1);
+    SFX.coin();
+    UI.log('铁匠铺换了新货（-' + cost + ' 金）。', 'good');
+    UI.renderHUD();
+    this.save();
+    return { ok: true, cost };
+  },
+
+  genShop(rolls) {
+    const s = this.state;
+    const lv = s.level;
     const items = [];
     for (let i = 0; i < 6; i++) {
       const it = rollItem(Math.max(1, lv + RNDI(0, 3)), {
-        cls: CHANCE(0.8) ? this.state.cls : PICK(['warrior', 'mage', 'taoist']),
+        cls: CHANCE(0.8) ? s.cls : PICK(['warrior', 'mage', 'taoist']),
         rarity: i === 0 ? 'rare' : (CHANCE(0.55) ? 'magic' : 'common')
       });
       items.push({ item: it, price: Math.round(it.value * 3.2) });
     }
     this.shopItems = items;
+    s.shop = { at: Date.now(), items: items, rolls: rolls || 0 };
   },
 
   buyShopItem(idx) {
@@ -2742,6 +2919,8 @@ const Game = {
     SFX.coin();
     UI.log('购入 ' + entry.item.name, 'good');
     this.shopItems.splice(idx, 1);
+    /* shopItems 与 state.shop.items 是同一个数组引用，卖掉的货要同步消失，
+     * 否则关掉面板再打开会「复活」，等于无限买同一件 */
     UI.openShop(this.shopItems, '铁匠铺');
     UI.renderHUD();
     this.save();
@@ -2835,6 +3014,10 @@ const Game = {
     this.state.quests = this.state.quests || { active: [], done: [], next: 'q1', announced: {} };
     this.state.quests.announced = this.state.quests.announced || {};
     this.savedSlot = n;
+    /* 读档后把商店货架接回来（存档里带 { at, items, rolls }）。
+     * 过期或结构不对就重新进货，避免面板打开时是空的。 */
+    this.shopItems = (this.state.shop && Array.isArray(this.state.shop.items)) ? this.state.shop.items : [];
+    this.ensureShop();
     this.recalc();
     this.setupPlayer();
     this.loadMap(this.state.mapId || 'village');

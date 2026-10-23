@@ -223,6 +223,10 @@ const SaveManager = {
         quests: this._obj(s.quests) || { active: [], done: [], next: 'q1', announced: {} }
       },
       stash: this._obj(s.stash) || { items: [], mats: {} },
+      /* v1.0.4 商店刷新窗口 { at, items, rolls }。
+       * 存下来的意义是「刷新页面不重置 5 分钟计时、也不能白嫖一次换货」，
+       * 结构不对（被手改过）时直接丢成 null，下次进货会重新生成。 */
+      shop: (s.shop && Array.isArray(s.shop.items)) ? s.shop : null,
       codex: this._obj(s.codex) || {},
       talents: this._obj(s.talents) || {},
       mount: s.mount === undefined ? null : s.mount,
@@ -239,6 +243,7 @@ const SaveManager = {
       bossKilled: c.bossKilled || {}, playTime: c.playTime || 0,
       quests: w.quests, mapId: w.mapId, playerPos: w.playerPos,
       stash: doc.stash || { items: [], mats: {} },
+      shop: (doc.shop && Array.isArray(doc.shop.items)) ? doc.shop : null,
       codex: doc.codex || {},
       talents: doc.talents || {},
       mount: doc.mount === undefined ? null : doc.mount,

@@ -205,6 +205,77 @@ const fxRingThin = (inner, outer, seg) =>
   _fxGeo(`t${inner}_${outer}_${seg}`, () => new THREE.RingGeometry(inner, outer, seg));
 
 /* ---------------- 粒子 ---------------- */
+/* 符纸贴图（v1.0.4）：程序化画一张竖长黄符，朱砂字 + 朱印。
+ * 只生成一次并复用 —— 道士普攻/技能会连续出符，每次新建 CanvasTexture 会
+ * 直接把显存和上传带宽吃满（和当初投射物挂 PointLight 是同一类问题）。 */
+let _talismanTex = null;
+function talismanTexture() {
+  if (_talismanTex) return _talismanTex;
+  const W = 96, H = 160;
+  const c = document.createElement('canvas');
+  c.width = W; c.height = H;
+  const g = c.getContext('2d');
+  // 纸
+  const grd = g.createLinearGradient(0, 0, W, H);
+  grd.addColorStop(0, '#f6e8b4');
+  grd.addColorStop(0.5, '#e8d190');
+  grd.addColorStop(1, '#c8a860');
+  g.fillStyle = grd;
+  g.fillRect(0, 0, W, H);
+  // 朱砂边
+  g.strokeStyle = 'rgba(190,48,30,.9)';
+  g.lineWidth = 4;
+  g.strokeRect(5, 5, W - 10, H - 10);
+  g.strokeStyle = 'rgba(190,48,30,.42)';
+  g.lineWidth = 1.5;
+  g.strokeRect(11, 11, W - 22, H - 22);
+  // 符头「敕令」
+  g.fillStyle = '#b02818';
+  g.font = 'bold 26px "STKaiti","KaiTi",serif';
+  g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.fillText('敕', W / 2 - 17, 34);
+  g.fillText('令', W / 2 + 17, 34);
+  // 符胆：竖笔 + 折笔，模拟朱砂符文
+  g.strokeStyle = '#a8241a';
+  g.lineWidth = 4.5;
+  g.lineCap = 'round';
+  g.beginPath();
+  g.moveTo(W / 2, 54); g.lineTo(W / 2, 118);
+  g.stroke();
+  g.lineWidth = 3.5;
+  const bars = [[30, 66, 66], [30, 80, 66], [34, 94, 62], [38, 108, 58]];
+  for (const [x1, y, x2] of bars) {
+    g.beginPath(); g.moveTo(x1, y); g.lineTo(x2, y); g.stroke();
+  }
+  // 两侧勾
+  g.beginPath();
+  g.moveTo(24, 58); g.lineTo(24, 88); g.lineTo(34, 96);
+  g.moveTo(W - 24, 58); g.lineTo(W - 24, 88); g.lineTo(W - 34, 96);
+  g.stroke();
+  // 朱印
+  g.fillStyle = 'rgba(178,32,24,.86)';
+  g.fillRect(W / 2 - 15, 124, 30, 24);
+  g.fillStyle = 'rgba(246,232,180,.9)';
+  g.font = 'bold 15px "STKaiti","KaiTi",serif';
+  g.fillText('雷', W / 2, 137);
+  // 外发光，暗场景里更抓眼
+  g.globalCompositeOperation = 'lighter';
+  g.shadowColor = 'rgba(255,214,120,.95)';
+  g.shadowBlur = 14;
+  g.strokeStyle = 'rgba(255,226,150,.5)';
+  g.lineWidth = 2;
+  g.strokeRect(2, 2, W - 4, H - 4);
+  g.globalCompositeOperation = 'source-over';
+
+  _talismanTex = new THREE.CanvasTexture(c);
+  _talismanTex.needsUpdate = true;
+  return _talismanTex;
+}
+const fxPlane = (w, h) => _fxGeo(`p${w}_${h}`, () => new THREE.PlaneGeometry(w, h));
+
+/* 追踪用的临时向量：每帧每个投射物都 new 一个 Vector3 会造成 GC 抖动 */
+const _vHome = new THREE.Vector3();
+
 const FX = {
   scene: null, cam: null, layer: null,
   parts: [], projectiles: [], zones: [], texts: [], beams: [],
@@ -330,32 +401,67 @@ const FX = {
     this.zones.push({ mesh: m, mat, life: 0.2, max: 0.2, type: 'slash' });
   },
 
+  /**
+   * 生成一枚投射物。
+   * style: 'orb'（默认，法球）| 'talisman'（符咒）
+   * hitRadius: 命中判定半径，和视觉半径分开 —— 法球看起来只有 0.3，
+   *            但判定给 0.6 才不会「擦着模型飞过去」。
+   * homing: 一个 Vector3 引用（通常直接传 enemy.pos），有值就自动追踪。
+   */
   projectile(opts) {
     const r = opts.radius || 0.3;
     const col = opts.color || 0xffaa44;
-    const geo = sphGeo(r, 7);
-    const mat = new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.95 });
-    const m = new THREE.Mesh(geo, mat);
+    const style = opts.style || 'orb';
+    let m, mat, haloMat = null, haloMat2 = null;
+
+    if (style === 'talisman') {
+      /* 符咒：一张竖长符纸 + 背后一层加色光晕。
+       * 符纸始终朝向相机（billboard），旋转量只有绕视线的一点摆动，
+       * 这样无论从哪个角度看都能看清「这是一道符」，不会变成一条线。 */
+      const scl = opts.scale || 1;
+      mat = new THREE.MeshBasicMaterial({
+        map: talismanTexture(), transparent: true, opacity: 1,
+        depthWrite: false, side: THREE.DoubleSide
+      });
+      m = new THREE.Mesh(fxPlane(0.62 * scl, 1.03 * scl), mat);
+      haloMat = new THREE.MeshBasicMaterial({
+        color: col, transparent: true, opacity: 0.42,
+        blending: THREE.AdditiveBlending, depthWrite: false
+      });
+      const glow = new THREE.Mesh(fxPlane(1.5 * scl, 2.0 * scl), haloMat);
+      glow.position.z = -0.01;
+      m.add(glow);
+    } else {
+      mat = new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.95 });
+      m = new THREE.Mesh(sphGeo(r, 7), mat);
+      /* 不再给投射物挂 PointLight。
+       * 场景里光源数量一变，three 就会把所有材质的 shader 重新编译一次，
+       * 战斗中不停发射/消失 → 每帧几百次重编译 → 这是「非常卡」的头号原因。
+       * 改用两层叠加光晕，视觉上几乎等价，成本只是两个精灵。
+       */
+      haloMat = new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.34, blending: THREE.AdditiveBlending, depthWrite: false });
+      m.add(new THREE.Mesh(sphGeo(r * 1.9, 6), haloMat));
+      haloMat2 = new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.13, blending: THREE.AdditiveBlending, depthWrite: false });
+      m.add(new THREE.Mesh(sphGeo(r * 3.4, 6), haloMat2));
+      if (opts.scale) m.scale.setScalar(opts.scale);
+    }
     m.position.copy(opts.pos);
-    /* 不再给投射物挂 PointLight。
-     * 场景里光源数量一变，three 就会把所有材质的 shader 重新编译一次，
-     * 战斗中不停发射/消失 → 每帧几百次重编译 → 这是「非常卡」的头号原因。
-     * 改用两层叠加光晕，视觉上几乎等价，成本只是两个精灵。
-     */
-    const haloMat = new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.34, blending: THREE.AdditiveBlending, depthWrite: false });
-    const halo = new THREE.Mesh(sphGeo(r * 1.9, 6), haloMat);
-    m.add(halo);
-    const haloMat2 = new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.13, blending: THREE.AdditiveBlending, depthWrite: false });
-    const halo2 = new THREE.Mesh(sphGeo(r * 3.4, 6), haloMat2);
-    m.add(halo2);
-    if (opts.scale) m.scale.setScalar(opts.scale);
     this.scene.add(m);
     const p = {
-      mesh: m, mat, haloMat, haloMat2, trailT: 0, pos: m.position, vel: opts.dir.clone().multiplyScalar(opts.speed || 18),
-      radius: r, life: opts.life || 2.4, team: opts.team || 'player',
+      mesh: m, mat, haloMat, haloMat2, trailT: 0, pos: m.position,
+      /* prevPos 是「上一帧的位置」，扫掠碰撞要用它和 pos 连成线段。
+       * 只在 update 里推进位置，碰撞判定在 Game.updateProjectiles 里做。 */
+      prevPos: m.position.clone(),
+      vel: opts.dir.clone().multiplyScalar(opts.speed || 18),
+      speed: opts.speed || 18,
+      radius: r, hitRadius: opts.hitRadius || r,
+      life: opts.life || 2.4, team: opts.team || 'player',
       dmg: opts.dmg || 10, onHit: opts.onHit, pierce: opts.pierce || false,
       trail: opts.trail !== false, color: opts.color || 0xffaa44, elem: opts.elem,
       knock: opts.knock || 0,
+      style, spin: Math.random() * 6.28, spinSpd: opts.spinSpd || 3.2,
+      homing: opts.homing || null, homeTurn: opts.homeTurn || 6,
+      hitSet: null,
       tag: opts.tag           // [S1] 伤害乘区标记，命中时由调用方取回
     };
     this.projectiles.push(p);
@@ -441,7 +547,23 @@ const FX = {
     for (let i = this.projectiles.length - 1; i >= 0; i--) {
       const p = this.projectiles[i];
       p.life -= dt;
+      /* 记录推进前的位置：Game 的扫掠碰撞用它和 pos 连成线段，
+       * 否则高速投射物一帧跨过整只怪，判定点永远踩空。 */
+      p.prevPos.copy(p.pos);
+      if (p.homing) {
+        _vHome.set(p.homing.x - p.pos.x, 1.0 - p.pos.y, p.homing.z - p.pos.z);
+        if (_vHome.lengthSq() > 1e-6) {
+          _vHome.normalize().multiplyScalar(p.speed);
+          p.vel.lerp(_vHome, Math.min(1, p.homeTurn * dt));
+        }
+      }
       p.pos.addScaledVector(p.vel, dt);
+      if (p.style === 'talisman' && this.cam) {
+        /* 符纸永远正对镜头，只绕视线轴做小幅摆动，任何角度都能看清是张符 */
+        p.mesh.quaternion.copy(this.cam.quaternion);
+        p.spin += dt * p.spinSpd;
+        p.mesh.rotateZ(Math.sin(p.spin) * 0.34);
+      }
       // 拖尾按时间节流：原来每帧 70% 概率新建一组粒子，战斗中每秒几十次分配
       p.trailT = (p.trailT || 0) - dt;
       if (p.trail && p.trailT <= 0) {

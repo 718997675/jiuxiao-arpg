@@ -545,6 +545,114 @@ function itemIcon(item, opts = {}) {
 /* ---------------- 提示框 ---------------- */
 const SLOT_NAME = { helm: '头盔', chest: '战甲', shoulders: '护肩', gloves: '护手', boots: '战靴', belt: '腰带', amulet: '项链', ring: '戒指', ring1: '戒指', ring2: '戒指', weapon: '武器', offhand: '副手' };
 
+/* ---------------- 装备评分 / 对比（v1.0.4） ----------------
+ *
+ * 目的只有两个：
+ *   1. 背包与商店里能「一眼看出这件比身上的强还是弱」；
+ *   2. 排序有个稳定的依据，不用按名字或内存顺序乱排。
+ *
+ * 权重不是精确的 DPS 换算（那需要把 64 条属性全塞进战斗公式里重算一遍），
+ * 而是按「同类装备横向比较时的相对价值」定的一组经验系数。
+ * 只要同一部位的两件装备用同一套系数算，比较结果就是有效的。
+ */
+const SCORE_W = {
+  /* 直接增伤 */
+  atk: 4.0, atkPct: 3.2, dmgAll: 4.0, skillDmg: 2.6, meleeDmg: 2.6, projDmg: 2.6,
+  aoeDmg: 2.6, dotDmg: 2.4, eliteDmg: 2.0, bossDmg: 2.0, executeDmg: 1.6,
+  firstStrike: 1.4, armorPen: 2.2, summonDmg: 1.6,
+  /* 暴击攻速 */
+  crit: 3.0, critDmg: 0.7, aspd: 3.0, aspdOnCrit: 1.4,
+  /* 生存 */
+  hp: 0.35, hpPct: 2.4, mp: 0.16, mpPct: 0.9, mpReg: 2.4,
+  def: 1.2, armorPct: 1.8, dodge: 2.4, block: 1.8, dmgReduce: 2.6, ccResist: 1.4, thorns: 1.0,
+  /* 抗性 */
+  allRes: 1.7, physRes: 1.1, fireRes: 1.1, iceRes: 1.1, poisonRes: 1.1,
+  /* 三围 */
+  str: 1.7, agi: 1.7, vit: 1.7, int: 1.7
+};
+
+/* 把一件装备的所有加成汇总成 { statKey: 数值 }，主属性用 _dps / _armor 两个虚拟键 */
+function itemStatMap(item) {
+  const m = {};
+  if (!item) return m;
+  if (item.baseDmg) {
+    const avg = (item.baseDmg[0] + item.baseDmg[1]) / 2;
+    m._dps = avg / (item.speed || 1);
+  }
+  if (item.baseArmor) m._armor = item.baseArmor;
+  if (item.implicit) m[item.implicit.key] = (m[item.implicit.key] || 0) + item.implicit.val;
+  for (const a of (item.affixes || [])) m[a.key] = (m[a.key] || 0) + a.val;
+  /* 已成的符文之语也算进去，否则镶好符文的装备评分反而比裸装低 */
+  const rw = (typeof runeWordOf === 'function') ? runeWordOf(item) : null;
+  if (rw && rw.stats) for (const k in rw.stats) m[k] = (m[k] || 0) + rw.stats[k];
+  return m;
+}
+
+function itemScore(item) {
+  if (!item) return 0;
+  const m = itemStatMap(item);
+  let sc = 0;
+  for (const k in m) {
+    if (k === '_dps') sc += m[k] * 6.0;
+    else if (k === '_armor') sc += m[k] * 1.1;
+    else sc += m[k] * (SCORE_W[k] || 1.2);
+  }
+  /* 稀有度只做很小的修正：同词缀下神兵略优于凡品，但不能盖过属性差 */
+  const r = RARITY[item.rarity];
+  if (r) sc += (r.mul - 1) * 18;
+  return Math.round(sc);
+}
+
+/**
+ * 新装备 vs 已穿装备的逐条差值
+ * @returns {{rows:Array<{label:string,delta:number,pct:boolean,base:boolean}>, gain:number, scoreA:number, scoreB:number}}
+ */
+function itemCompare(item, equipped) {
+  const ma = itemStatMap(item), mb = itemStatMap(equipped);
+  const keys = Object.keys(ma);
+  for (const k of Object.keys(mb)) if (keys.indexOf(k) < 0) keys.push(k);
+  const rows = [];
+  for (const k of keys) {
+    const va = ma[k] || 0, vb = mb[k] || 0;
+    const d = va - vb;
+    if (Math.abs(d) < 1e-6) continue;
+    let label, pctv = false, base = false;
+    if (k === '_dps') { label = 'DPS'; base = true; }
+    else if (k === '_armor') { label = '护甲'; base = true; }
+    else { const s = STATS[k] || { label: k }; label = s.label; pctv = !!s.pct; }
+    rows.push({ label, delta: d, pct: pctv, base });
+  }
+  /* 主属性排最前，其余按影响绝对值降序 —— 玩家最先想知道的就是「伤害高了还是低了」 */
+  rows.sort((x, y) => {
+    if (x.base !== y.base) return x.base ? -1 : 1;
+    return Math.abs(y.delta * (SCORE_W[y.label] || 1)) - Math.abs(x.delta * (SCORE_W[x.label] || 1));
+  });
+  const scoreA = itemScore(item), scoreB = itemScore(equipped);
+  return { rows, gain: scoreA - scoreB, scoreA, scoreB };
+}
+
+/* 对比区块 HTML：绿↑ 红↓ */
+function itemCompareHTML(item, equipped) {
+  if (!item) return '';
+  const c = itemCompare(item, equipped);
+  const sign = v => (v > 0 ? '+' : '') + (Math.abs(v) >= 10 ? Math.round(v) : Math.round(v * 10) / 10);
+  /* 0 差值不该染成红色（会被误读成「变差了」） */
+  const cls = v => (v > 0 ? 'up' : (v < 0 ? 'down' : 'flat'));
+  let h = `<div class="tt-cmp">`;
+  h += `<div class="tt-cmp-t">对比当前<span class="dim">${SLOT_NAME[equipped.slot] || ''}</span></div>`;
+  if (!c.rows.length) {
+    h += `<div class="tt-cmp-none">属性完全一致</div>`;
+  } else {
+    for (const r of c.rows.slice(0, 8)) {
+      h += `<div class="tt-cmp-r"><span>${r.label}</span><b class="${cls(r.delta)}">${sign(r.delta)}${r.pct ? '%' : ''}</b></div>`;
+    }
+    if (c.rows.length > 8) h += `<div class="tt-cmp-none">…另有 ${c.rows.length - 8} 条差异</div>`;
+  }
+  h += `<div class="tt-cmp-s">评分 ${c.scoreB} → <b>${c.scoreA}</b> <b class="${cls(c.gain)}">(${sign(c.gain)})</b></div>`;
+  h += `</div>`;
+  return h;
+}
+
 function itemTooltip(item, opts = {}) {
   if (!item) return '';
   const r = RARITY[item.rarity];
@@ -603,6 +711,9 @@ function itemTooltip(item, opts = {}) {
   }
   h += `<div class="tt-req">需求等级 ${item.reqLv}${item.cls ? ' · ' + CLASSES[item.cls].name : ''}</div>`;
   h += `<div class="tt-val">售价 ${item.value} 金</div>`;
+  /* 对比放在最后：先看词条，再看「换了之后强多少」，符合阅读顺序 */
+  if (opts.compareTo) h += itemCompareHTML(item, opts.compareTo);
+  else h += `<div class="tt-score">综合评分 <b>${itemScore(item)}</b></div>`;
   if (opts.hint) h += `<div class="tt-hint">${opts.hint}</div>`;
   h += `</div>`;
   return h;

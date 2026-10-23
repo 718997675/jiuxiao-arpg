@@ -1,0 +1,25 @@
+const http=require('http'),fs=require('fs'),path=require('path'),puppeteer=require('puppeteer-core');
+const ROOT=path.resolve(__dirname,'..'),PORT=8904;
+const EDGE='C://Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
+const MIME={'.html':'text/html; charset=utf-8','.js':'application/javascript; charset=utf-8','.css':'text/css','.png':'image/png','.svg':'image/svg+xml'};
+const server=http.createServer((q,r)=>{let p=decodeURIComponent(q.url.split('?')[0]);if(p==='/')p='/index.html';const f=path.join(ROOT,p);if(!fs.existsSync(f)||fs.statSync(f).isDirectory()){r.writeHead(404);r.end();return;}r.writeHead(200,{'Content-Type':MIME[path.extname(f).toLowerCase()]||'application/octet-stream'});fs.createReadStream(f).pipe(r);});
+(async()=>{await new Promise(r=>server.listen(PORT,r));
+const b=await puppeteer.launch({executablePath:EDGE,headless:'new',args:['--use-angle=swiftshader','--enable-unsafe-swiftshader','--no-sandbox']});
+const pg=await b.newPage();
+await pg.setUserAgent('Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1');
+await pg.setViewport({width:390,height:844,isMobile:true,hasTouch:true,deviceScaleFactor:2});
+await pg.goto(`http://127.0.0.1:${PORT}/?cls=taoist&name=符师`,{waitUntil:'load'});
+await new Promise(r=>setTimeout(r,1800));
+await pg.evaluate(()=>{
+  const items=[];const RAR=['rare','magic','legendary','set','magic','rare'];
+  for(let i=0;i<10;i++)items.push(rollItem(8+i*2,{cls:'taoist',rarity:RAR[i%RAR.length]}));
+  Game.state.inventory=items;Game.state.gold=5000;
+  Game.recalc();UI.toggleInv();Game.sortInventory('score');
+});
+await new Promise(r=>setTimeout(r,500));
+await pg.screenshot({path:path.join(__dirname,'shot-v104-m-inv.png')});
+await pg.evaluate(()=>{UI.closeAll();Game.state.shop=null;Game.ensureShop();UI.openShop(Game.shopItems,'铁匠铺');});
+await new Promise(r=>setTimeout(r,500));
+await pg.screenshot({path:path.join(__dirname,'shot-v104-m-shop.png')});
+console.log('mobile shots ok');
+await b.close();server.close();})();

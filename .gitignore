@@ -7,6 +7,7 @@
 
 # 本地截图与调试产物（体积大，不纳入版本管理）
 shots/
+dev/shot-*.png
 
 # 发布产物：由源码同步生成（cp index.html + src/ 到 dist/），不手工维护
 dist/

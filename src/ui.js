@@ -122,6 +122,21 @@ const UI = {
     const sm = document.getElementById('saveMgrBtn');
     if (sm) sm.addEventListener('click', () => SaveUI.open());
 
+    /* 背包排序按钮（v1.0.4）：点一次就重排 state.inventory 并重绘。
+     * 排序直接作用在真实数组上，不另做一份「显示用视图」——
+     * 物品的 data-ref 是下标，一旦视图和数组顺序不一致，点错装备就成了常态 bug。 */
+    const sortWrap = document.getElementById('invSort');
+    if (sortWrap) {
+      sortWrap.addEventListener('click', e => {
+        const b = e.target.closest('[data-sort]');
+        if (!b) return;
+        this.sortMode = b.dataset.sort;
+        sortWrap.querySelectorAll('[data-sort]').forEach(x => x.classList.toggle('on', x === b));
+        Game.sortInventory(this.sortMode);
+        SFX.ui();
+      });
+    }
+
     // 物品悬停 / 点击（事件委托）
     document.addEventListener('mouseover', e => {
       if (IS_TOUCH) return;   // 触屏改为一指点开、按钮操作
@@ -130,7 +145,12 @@ const UI = {
       const item = this.itemFromRef(el.dataset.ref);
       if (!item) return;
       this.hoverRef = el.dataset.ref;
-      this.tooltipEl.innerHTML = itemTooltip(item, { hint: el.dataset.ref.startsWith('inv:') ? '左键装备 / Shift+左键出售' : '左键卸下' });
+      /* 背包里的物品才做「与已穿装备对比」；已穿的那件自己跟自己比没有意义 */
+      const isInv = el.dataset.ref.startsWith('inv:');
+      this.tooltipEl.innerHTML = itemTooltip(item, {
+        hint: isInv ? '左键装备 / Shift+左键出售' : '左键卸下',
+        compareTo: isInv ? this.equippedFor(item) : null
+      });
       this.tooltipEl.style.display = 'block';
       this.moveTooltip(e);
     });
@@ -190,7 +210,10 @@ const UI = {
     const item = this.itemFromRef(ref);
     if (!item) return;
     const isInv = ref.startsWith('inv:');
-    this.tooltipEl.innerHTML = itemTooltip(item, { hint: '' }) +
+    this.tooltipEl.innerHTML = itemTooltip(item, {
+      hint: '',
+      compareTo: isInv ? this.equippedFor(item) : null
+    }) +
       `<div class="tt-act">
          <button class="btn primary" data-act="${isInv ? 'equip' : 'unequip'}">${isInv ? '穿 戴' : '卸 下'}</button>
          ${isInv ? '<button class="btn" data-act="sell">出 售</button>' : ''}
@@ -223,6 +246,27 @@ const UI = {
     if (kind === 'inv') return Game.state.inventory[parseInt(val)] || null;
     if (kind === 'eq') return Game.state.equipment[val] || null;
     return null;
+  },
+
+  /**
+   * 找出「这件装备装上后会替换掉的那一件」。
+   *
+   * 戒指有两个孔，装备时的落位规则是 ring1 → ring2 → 顶掉 ring1，
+   * 所以对比对象应该取两只里评分较低的那只（那才是真正会被换掉的），
+   * 而不是无脑取 ring1——否则玩家会看到「明明戒指2很烂，却拿戒指1跟我比」。
+   */
+  equippedFor(item) {
+    if (!item || !Game.state) return null;
+    const eq = Game.state.equipment;
+    if (!eq) return null;
+    if (item.slot === 'ring') {
+      const a = eq.ring1, b = eq.ring2;
+      if (!a && !b) return null;
+      if (!a) return b;
+      if (!b) return a;
+      return itemScore(a) <= itemScore(b) ? a : b;
+    }
+    return eq[item.slot] || null;
   },
 
   /* ---------------- HUD ---------------- */
@@ -313,7 +357,14 @@ const UI = {
     document.getElementById('bossTitle').textContent = boss.cfg.title || '';
     document.getElementById('bossFill').style.width = CLAMP(boss.hp / boss.maxHp * 100, 0, 100) + '%';
     document.getElementById('bossText').textContent = `${Math.ceil(boss.hp)} / ${Math.round(boss.maxHp)}`;
-    const ph = boss.cfg.hp * 0.6 > boss.hp ? (boss.cfg.hp * 0.3 > boss.hp ? 2 : 1) : 0;
+    /* 阶段灯必须按「当前血量占比」算，不能拿 cfg.hp（基础血量）比。
+     * 难度会把 maxHp 乘上 0.65~2.4，用基础值算的话血条显示三阶段已亮、
+     * 实际 AI 还在一阶段（或反过来），玩家会觉得血条和 BOSS 行为对不上。
+     * 阈值与 updateBossAI 保持一致：普通 60%/30%，困难以上提前到 75%/45%。 */
+    const hr = boss.maxHp > 0 ? boss.hp / boss.maxHp : 0;
+    const rush = (Game.diff && Game.diff().bossRush);
+    const t1 = rush ? 0.75 : 0.6, t2 = rush ? 0.45 : 0.3;
+    const ph = hr <= t2 ? 2 : (hr <= t1 ? 1 : 0);
     document.getElementById('bossPhase').innerHTML = '<i class="on"></i>' +
       `<i class="${ph >= 1 ? 'on' : ''}"></i><i class="${ph >= 2 ? 'on' : ''}"></i>`;
   },
@@ -323,6 +374,8 @@ const UI = {
   toggleStat() { const p = document.getElementById('statPanel'); this.closeAll(p); p.classList.toggle('open'); if (p.classList.contains('open')) this.renderStats(); },
   toggleQuest() { const p = document.getElementById('questPanel'); this.closeAll(p); p.classList.toggle('open'); if (p.classList.contains('open')) this.renderQuests(); },
   closeAll(except) {
+    /* 关面板时把商店倒计时停掉，否则每秒还在跑一个 setInterval */
+    if (this.shopTimer) { clearInterval(this.shopTimer); this.shopTimer = null; }
     document.querySelectorAll('.panel').forEach(p => { if (p !== except) p.classList.remove('open'); });
     document.getElementById('dialog').style.display = 'none';
     this.tooltipEl.style.display = 'none';
@@ -534,11 +587,12 @@ const UI = {
         <div class="si"><div class="sn" style="color:${r.color}">${it.item.name}</div>
           <div class="ss">${r.name} · ${SLOT_NAME[it.item.slot]} · 需 ${it.item.reqLv} 级</div></div>
         <div class="sp">${it.price} 金</div></div>`;
-    }).join('');
+    }).join('') || '<div class="hintline" style="padding:14px 0;text-align:center">货架空了，等下一次进货吧。</div>';
     list.querySelectorAll('[data-buy]').forEach(row => {
       row.addEventListener('mouseenter', () => {
         const it = items[parseInt(row.dataset.buy)].item;
-        this.tooltipEl.innerHTML = itemTooltip(it);
+        /* 商店里最需要对比：这件买下来到底比身上的强多少 */
+        this.tooltipEl.innerHTML = itemTooltip(it, { compareTo: this.equippedFor(it) });
         this.tooltipEl.style.display = 'block';
       });
       row.addEventListener('mouseleave', () => { this.tooltipEl.style.display = 'none'; });
@@ -548,6 +602,55 @@ const UI = {
     this.closeAll(document.getElementById('shopPanel'));
     document.getElementById('shopPanel').classList.add('open');
     this.shopItems = items;
+    this.renderShopRefresh();
+    this.startShopTick();
+  },
+
+  /* 商店刷新条：免费倒计时 + 金币刷新。
+   * 每秒只改文本、不重建 DOM —— 整块 innerHTML 重写会让「按住鼠标时按钮被换掉」，
+   * 点击事件就丢了。 */
+  renderShopRefresh() {
+    const el = document.getElementById('shopRefresh');
+    if (!el || !Game.state) return;
+    let timeEl = el.querySelector('.sr-time b');
+    let btn = el.querySelector('[data-shop-refresh]');
+    if (!btn || !timeEl) {
+      el.innerHTML = `<span class="sr-time">下次免费换货 <b>--:--</b></span>
+        <button class="sr-btn" data-shop-refresh="1">金币刷新</button>`;
+      timeEl = el.querySelector('.sr-time b');
+      btn = el.querySelector('[data-shop-refresh]');
+      btn.addEventListener('click', ev => {
+        ev.stopPropagation();
+        const r = Game.refreshShopPaid();
+        if (r.ok) this.openShop(Game.shopItems, document.getElementById('shopTitle').textContent);
+        else this.renderShopRefresh();
+      });
+    }
+    const ms = Game.shopRemainMs();
+    const mm = Math.floor(ms / 60000);
+    const ss = Math.floor((ms % 60000) / 1000);
+    const cost = Game.shopRefreshCost();
+    timeEl.textContent = `${mm}:${String(ss).padStart(2, '0')}`;
+    btn.textContent = `金币刷新 · ${cost}`;
+    btn.classList.toggle('dis', Game.state.gold < cost);
+  },
+
+  startShopTick() {
+    if (this.shopTimer) { clearInterval(this.shopTimer); this.shopTimer = null; }
+    this.shopTimer = setInterval(() => {
+      const panel = document.getElementById('shopPanel');
+      if (!panel || !panel.classList.contains('open')) {
+        clearInterval(this.shopTimer); this.shopTimer = null; return;
+      }
+      if (Game.shopRemainMs() <= 0) {
+        /* 到点自动换货：不重新进店也会换，玩家开着的面板同步刷新 */
+        Game.ensureShop();
+        this.openShop(Game.shopItems, document.getElementById('shopTitle').textContent);
+        this.log('铁匠铺换了新货。', 'good');
+        return;
+      }
+      this.renderShopRefresh();
+    }, 1000);
   },
 
   /* ---------------- 传送 ---------------- */
