@@ -15,7 +15,7 @@
 
 ## 发版流程
 
-**每一次新增或调整内容，都要完整走完这六步**，不要攒着等"下次一起发"。
+**每一次新增或调整内容，都要完整走完这七步**，不要攒着等"下次一起发"。
 
 | # | 动作 | 具体做法 |
 | --- | --- | --- |
@@ -24,9 +24,16 @@
 | 3 | 更新本表 + 写版本说明 | 表格最上方加一行并改「当前版本」；新建 `docs/releases/vX.Y.Z.md`，照既有格式（标题 / 发布日期 / 按主题分节 / 验证）。 |
 | 4 | 提交 | `feat(vX.Y.Z): 标题` 或 `fix(vX.Y.Z): 标题`，正文分条列出改动与验证结果。代码与文档同一个提交。 |
 | 5 | 打 tag 并推送 | `git tag -a vX.Y.Z -m "vX.Y.Z: 短主题"`，然后推三个目标：工作分支、`dev-v3`（快进，禁用强推）、tag。 |
-| 6 | 建 GitHub Release | `GH_TOKEN=... bash dev/make-release.sh vX.Y.Z "vX.Y.Z · 标题"` |
+| 6 | 建 GitHub Release | `bash dev/make-release.sh vX.Y.Z "vX.Y.Z · 标题"`。凭据自动从 `~/.config/jiuxiao-arpg/gh_token` 读，不必每次带 `GH_TOKEN`。脚本会先校验 tag 在远程、且 Release 未存在。 |
+| 7 | **自检对齐** | `bash dev/check-release.sh`。它会列出「远程有 tag 但没建 Release」的缺口；退出码 0 才算真的发完。 |
 
-第 6 步最容易漏，原因见下。
+第 6、7 步最容易漏，原因见下。凭据只需配置一次：
+
+```bash
+mkdir -p ~/.config/jiuxiao-arpg
+printf '%s' 'github_pat_xxx' > ~/.config/jiuxiao-arpg/gh_token
+chmod 600 ~/.config/jiuxiao-arpg/gh_token
+```
 
 ### 两个必须知道的坑
 
@@ -34,7 +41,8 @@
 - **推送 `dev-v3` 前先 `git fetch`。** 确认远程没有超出本地基线的提交，再做快进；任何情况下都不要强推。
 
 ```
-推 tag 不会生成 Release —— 这是 v1.1.5 发版时踩过的坑。
+推 tag 不会生成 Release —— v1.1.5、v1.1.6 连着踩了两次。
+所以第 7 步的自检不是可选项：bash dev/check-release.sh 退出码 0 才算发完。
 ```
 
 
