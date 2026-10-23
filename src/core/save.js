@@ -62,6 +62,13 @@ const SaveManager = {
     return n;
   },
   _obj(v) { return (v && typeof v === 'object' && !Array.isArray(v)) ? v : null; },
+  /* 难度白名单校验：认不出的值（含旧档缺失）统一回落默认档，绝不让脏值进存档 */
+  _difficulty(v) {
+    const def = (typeof DEFAULT_DIFF !== 'undefined') ? DEFAULT_DIFF : 'normal';
+    const table = (typeof DIFFS !== 'undefined') ? DIFFS : null;
+    if (!table) return def;
+    return table[v] ? v : def;
+  },
   _clone(v, def) {
     try { return v === undefined ? def : JSON.parse(JSON.stringify(v)); }
     catch (e) { return def; }
@@ -121,6 +128,10 @@ const SaveManager = {
     const xpDef = Math.max(1, Math.round(c.level * 100));
     c.xpNext = Math.max(1, this._num(c.xpNext, xpDef));
     c.gold = this._int(c.gold, 0, 1e12, 0);
+    /* 难度 / 传送石 / 技能领悟：旧档没有时补默认值，避免 unpack 出 undefined */
+    c.difficulty = this._difficulty(c.difficulty);
+    c.teleportStones = this._int(c.teleportStones, 0, 9999, 0);
+    if (!this._obj(c.skillFlags)) c.skillFlags = {};
     const pot = this._obj(c.potions) || {};
     c.potions = { hp: this._int(pot.hp, 0, 999, 0), mp: this._int(pot.mp, 0, 999, 0) };
     c.hp = this._num(c.hp, 1);
@@ -205,6 +216,9 @@ const SaveManager = {
         xp: this._num(s.xp, 0),
         xpNext: Math.max(1, this._num(s.xpNext, 120)),
         gold: this._int(s.gold, 0, 1e12, 0),
+        difficulty: this._difficulty(s.difficulty),
+        teleportStones: this._int(s.teleportStones, 0, 9999, 0),
+        skillFlags: this._obj(s.skillFlags) || {},
         potions: {
           hp: this._int((s.potions || {}).hp, 0, 999, 0),
           mp: this._int((s.potions || {}).mp, 0, 999, 0)
@@ -239,6 +253,9 @@ const SaveManager = {
     return {
       cls: c.cls, name: c.name, level: c.level, xp: c.xp, xpNext: c.xpNext,
       gold: c.gold, potions: c.potions, hp: c.hp, mp: c.mp,
+      difficulty: c.difficulty,
+      teleportStones: c.teleportStones || 0,
+      skillFlags: c.skillFlags || {},
       equipment: c.equipment, inventory: c.inventory, maxInv: c.maxInv,
       bossKilled: c.bossKilled || {}, playTime: c.playTime || 0,
       quests: w.quests, mapId: w.mapId, playerPos: w.playerPos,
@@ -444,7 +461,8 @@ const SaveManager = {
     const eq = (typeof makeStarterSet === 'function') ? makeStarterSet(cls) : { chest: null, weapon: null };
     return {
       cls, name, level: 1, xp: 0, xpNext: 120, gold: 120,
-      potions: { hp: 4, mp: 3 }, hp: 100, mp: 50,
+      difficulty: (typeof DEFAULT_DIFF !== 'undefined') ? DEFAULT_DIFF : 'normal',
+      potions: { hp: 4, mp: 3 }, teleportStones: 0, hp: 100, mp: 50,
       equipment: { helm: null, chest: eq.chest, shoulders: null, gloves: null, boots: null, belt: null, amulet: null, ring1: null, ring2: null, weapon: eq.weapon, offhand: null },
       inventory: [], maxInv: 40,
       quests: { active: [], done: [], next: 'q1', announced: {} },

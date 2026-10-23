@@ -382,6 +382,7 @@ const Game = {
       target = r.slot;
     }
     this.state = this.newState(cls, name);
+    this.skillFlags = {};            // 新角色不继承上个角色的技能领悟
     this.savedSlot = target || 1;
     this.recalc();
     this.state.hp = this.state.stats.hpMax;
@@ -446,7 +447,7 @@ const Game = {
     this.boss = null; UI.updateBoss(null);
     FX.clear();
 
-    this.buffs = []; this.shield = 0; this.regen = 0; this.poisonT = 0; this.playerSlow = 0;
+    this.buffs = []; this.shield = 0; this.shieldT = 0; this.regen = 0; this.poisonT = 0; this.playerSlow = 0; this.playerSlowT = 0; this.shieldT = 0; this.playerSlowT = 0;
     this.cooldowns = {};
 
     const m = MAPS[mapId];
@@ -483,7 +484,7 @@ const Game = {
       this.state.hp = st.hpMax;
       this.state.mp = st.mpMax;
       this.shield = 0;
-      this.poisonT = 0; this.playerSlow = 0;
+      this.poisonT = 0; this.playerSlow = 0; this.playerSlowT = 0; this.shieldT = 0;
       if (wasHurt) {
         const pp = new THREE.Vector3(this.playerGroup.position.x, 0, this.playerGroup.position.z);
         FX.ring(pp, 3.2, 0x8ce0a8, 0.8, 0.3);
@@ -1108,6 +1109,7 @@ const Game = {
       this.shieldT = (this.shieldT || 0) - dt;
       if (this.shieldT <= 0) { this.shield = 0; UI.log('玄冰护盾消散'); }
     }
+    if (typeof UI !== 'undefined') UI.renderBuffs();
   },
 
   updatePlayer(dt) {
@@ -1300,6 +1302,43 @@ const Game = {
     return out;
   },
 
+  /* 技能落点：ground / enemy 自动夹在施法距离内，dir 用当前朝向，self 以自身为中心 */
+  resolveCast(sk, pp, aim, dir) {
+    const out = aim.clone();
+    out.y = 0;
+    const range = sk.castRange || 0;
+    const to = out.clone().sub(pp); to.y = 0;
+    const dist = to.length();
+    if (sk.cast === 'self') { out.copy(pp); return out; }
+    if (sk.cast === 'dir') {
+      out.copy(pp).addScaledVector(dir, range || Math.max(6, dist));
+      out.y = 0;
+      return out;
+    }
+    if (sk.cast === 'enemy') {
+      const maxR = range || 99;
+      let target = this.nearestEnemy(aim, maxR);
+      if (target && DIST2D(target.pos, pp) > maxR) target = null;
+      if (!target) target = this.nearestEnemy(pp, maxR);
+      if (target) { out.set(target.pos.x, 0, target.pos.z); return out; }
+    }
+    if (range > 0 && dist > range) out.copy(pp).addScaledVector(to.normalize(), range);
+    else if (dist < 0.6) out.copy(pp);
+    out.y = 0;
+    return out;
+  },
+
+  /* 施法瞬间在地上画一条方向线 + 落点圈，让玩家看清本次判定的方向和最远距离 */
+  showCastGuide(sk, pp, point, dir) {
+    if (sk.cast === 'self') return;
+    const end = sk.cast === 'dir'
+      ? pp.clone().addScaledVector(dir, sk.castRange || 6)
+      : point.clone();
+    end.y = 0;
+    const color = sk.cls === 'warrior' ? 0xffb070 : (sk.cls === 'mage' ? 0x8ad8ff : 0x9affd0);
+    FX.beam(new THREE.Vector3(pp.x, 0.16, pp.z), new THREE.Vector3(end.x, 0.16, end.z), color, 0.18, 0.6);
+    FX.ring(end, 0.7, color, 0.24, 0.18);
+  },
   castSkill(id) {
     const s = this.state;
     if (!s || this.dead || !this.running) return;
@@ -1334,8 +1373,10 @@ const Game = {
     };
     this._tag = TAG_OF[sk.type] || 'melee';
     const pp = new THREE.Vector3(this.playerGroup.position.x, 0, this.playerGroup.position.z);
-    const aim = this.aimPoint.clone();
+    let aim = this.aimPoint.clone();
     const dir = this.aimDir.clone();
+    aim = this.resolveCast(sk, pp, aim, dir);
+    this.showCastGuide(sk, pp, aim, dir);
     const dmgOf = mult => {
       const { dmg, crit } = this.rollDamage(st.atk * mult);
       return { dmg, crit };
@@ -1388,7 +1429,7 @@ const Game = {
         if (spow !== 1) for (const k in buff) {
           if (typeof buff[k] === 'number' && k !== 'dur') buff[k] = Math.round(buff[k] * spow);
         }
-        this.addBuff(sk.name, buff, id === 'taiji' ? 0x88ffd0 : (id === 'warcry' ? 0xff8a4a : 0xff4a4a));
+        this.addBuff(sk.name, buff, id === 'taiji' ? 0x88ffd0 : (id === 'warcry' ? 0xff8a4a : 0xff4a4a), { type: 'buff', icon: sk.glyph, key: 'skill:' + id, refresh: true });
         FX.ring(pp, 5, id === 'taiji' ? 0x88ffd0 : 0xff8a4a, 0.7, 0.25);
         FX.burst(new THREE.Vector3(pp.x, 1.2, pp.z), id === 'taiji' ? 0x88ffd0 : 0xff8a4a, 26, { speed: 3, size: 0.12, life: 0.8, gravity: -2, additive: true });
         SFX.cast();
@@ -1398,16 +1439,17 @@ const Game = {
       case 'quake': {
         this.actor.atkAnim = 1; this.actor.atkType = 'slam'; this.actor.atkSpeed = 2.0;
         SFX.explode(); this.shake = 0.55; this.hitstop = 90;
-        const hits = this.enemies.filter(e => !e.dead && DIST2D(e.pos, pp) < 5.8 * srad + e.radius);
+        const cp = aim.clone();
+        const hits = this.enemies.filter(e => !e.dead && DIST2D(e.pos, cp) < 5.8 * srad + e.radius);
         for (const e of hits) {
           const { dmg, crit } = this.rollDamage(st.atk * 3.2 * spow);
           this.damageEnemy(e, dmg, crit, { knock: 1.6 });
           e.stun = Math.max(e.stun, 1.6);
         }
-        FX.ring(pp, 6 * srad, 0xffaa60, 0.6, 0.3);
-        FX.flashCircle(pp, 5.8 * srad, 0xffcc88, 0.35);
+        FX.ring(cp, 6 * srad, 0xffaa60, 0.6, 0.3);
+        FX.flashCircle(cp, 5.8 * srad, 0xffcc88, 0.35);
         for (let i = 0; i < 3; i++) setTimeout(() => {
-          FX.burst(new THREE.Vector3(pp.x + RND(-4, 4), 0.2, pp.z + RND(-4, 4)), 0xaa8866, 12, { speed: 6, size: 0.14, life: 0.7, gravity: 16 });
+          FX.burst(new THREE.Vector3(cp.x + RND(-4, 4), 0.2, cp.z + RND(-4, 4)), 0xaa8866, 12, { speed: 6, size: 0.14, life: 0.7, gravity: 16 });
         }, i * 70);
         break;
       }
@@ -1419,7 +1461,7 @@ const Game = {
           const { dmg, crit } = this.rollDamage(st.atk * 6.5);
           this.damageEnemy(e, dmg, crit, { knock: 3 });
         }
-        this.addBuff(sk.name, Object.assign({}, sk.buff), 0xffd166);
+        this.addBuff(sk.name, Object.assign({}, sk.buff), 0xffd166, { type: 'buff', icon: sk.glyph, key: 'skill:avatar', refresh: true });
         FX.ring(pp, 9, 0xffd166, 0.9, 0.4);
         FX.flashCircle(pp, 9, 0xffe0a0, 0.5);
         for (let i = 0; i < 40; i++) FX.burst(new THREE.Vector3(pp.x + RND(-6, 6), RND(0, 3), pp.z + RND(-6, 6)), 0xffd166, 2, { speed: 4, size: 0.14, life: 0.9, gravity: -4, additive: true });
@@ -1445,17 +1487,18 @@ const Game = {
       case 'frostnova': {
         this.actor.atkAnim = 1; this.actor.atkType = 'cast';
         SFX.ice();
-        const hits = this.enemies.filter(e => !e.dead && DIST2D(e.pos, pp) < 6 * srad + e.radius);
+        const cp = aim.clone();
+        const hits = this.enemies.filter(e => !e.dead && DIST2D(e.pos, cp) < 6 * srad + e.radius);
         for (const e of hits) {
           const { dmg, crit } = this.rollDamage(st.atk * 2.2 * spow);
           this.damageEnemy(e, dmg, crit, {});
           e.slow = 0.45; e.slowT = 3.5;
         }
-        FX.ring(pp, 6 * srad, 0x8ad8ff, 0.7, 0.3);
-        FX.flashCircle(pp, 6 * srad, 0x8ad8ff, 0.45);
+        FX.ring(cp, 6 * srad, 0x8ad8ff, 0.7, 0.3);
+        FX.flashCircle(cp, 6 * srad, 0x8ad8ff, 0.45);
         for (let i = 0; i < 30; i++) {
           const ang = Math.random() * 7, r = RND(1, 6);
-          FX.burst(new THREE.Vector3(pp.x + Math.cos(ang) * r, RND(0.1, 1), pp.z + Math.sin(ang) * r), 0xaae8ff, 2, { speed: 2, size: 0.12, life: 0.8, gravity: -1, additive: true });
+          FX.burst(new THREE.Vector3(cp.x + Math.cos(ang) * r, RND(0.1, 1), cp.z + Math.sin(ang) * r), 0xaae8ff, 2, { speed: 2, size: 0.12, life: 0.8, gravity: -1, additive: true });
         }
         this.shake = 0.3;
         break;
@@ -1640,10 +1683,30 @@ const Game = {
     UI.renderHUD();
   },
 
-  addBuff(name, stats, color) {
-    this.buffs.push({ name, stats, dur: stats.dur || 8, color });
+  addBuff(name, stats, color, opts = {}) {
+    const dur = stats.dur || 8;
+    const entry = {
+      name, stats, dur, color,
+      key: opts.key || null,
+      type: opts.type || 'buff',
+      icon: opts.icon || (name ? name.slice(0, 1) : '益'),
+      desc: opts.desc || ''
+    };
+    const cur = opts.refresh && opts.key ? this.buffs.find(b => b.key === opts.key) : null;
+    if (cur) Object.assign(cur, entry);
+    else this.buffs.push(entry);
     this.recalc();
     this.buffFx(color);
+    if (typeof UI !== 'undefined') UI.renderBuffs();
+  },
+
+  /* 玩家身上的减益 / 护盾，统一给 buffbar 渲染 */
+  statusBuffs() {
+    const out = [];
+    if (this.playerSlowT > 0) out.push({ name: '迟滞', dur: this.playerSlowT, color: '#6ab8ff', type: 'debuff', icon: '缓', desc: '移动速度降低 ' + Math.round((this.playerSlow || 0) * 100) + '%' });
+    if (this.poisonT > 0) out.push({ name: '中毒', dur: this.poisonT, color: '#7fbf5a', type: 'debuff', icon: '毒', desc: '每 0.9 秒受到 ' + Math.round(this.poisonDps || 0) + ' 点毒素伤害' });
+    if (this.shield > 0 && this.shieldT > 0) out.push({ name: '玄冰护盾', dur: this.shieldT, color: '#9ae0ff', type: 'buff', icon: '盾', desc: '吸收 ' + Math.round(this.shield) + ' 点伤害' });
+    return out;
   },
 
   buffFx(color) {
@@ -3405,6 +3468,8 @@ const Game = {
   /* ---------------- 存档 ---------------- */
   save() {
     if (!this.state) return false;
+    /* 技能领悟标记挂在本体上，落盘前并回 state，pack 才会带走 */
+    if (this.skillFlags) this.state.skillFlags = this.skillFlags;
     let ok = true;
     try {
       if (typeof SaveManager !== 'undefined') {
@@ -3434,6 +3499,7 @@ const Game = {
     const flat = SaveManager.load(n);
     if (!flat) { UI.log('该角色位没有存档。', 'bad'); return false; }
     this.state = flat;
+    this.skillFlags = this.state.skillFlags || {};   // 技能领悟标记随档走
     this.normalizePlayerItems(this.state);
     this.state.quests = this.state.quests || { active: [], done: [], next: 'q1', announced: {} };
     this.state.quests.announced = this.state.quests.announced || {};
