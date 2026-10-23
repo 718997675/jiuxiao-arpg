@@ -78,6 +78,10 @@ function reg(actor, mat) { actor.mats.push(mat); return mat; }
 
 /* ---------------- 武器 ---------------- */
 function buildWeapon(shape, color, glow, scale = 1) {
+  /* 新版建模在 src/weapons.js（Shape 挤出真实轮廓，尺寸也收过）。
+   * 取不到该模块时退回下面的方块拼法，保证一定能出武器 */
+  if (typeof WeaponForge !== 'undefined') return WeaponForge.build(shape, color, glow, scale);
+
   const g = new THREE.Group();
   const metal = M(color, { metal: 0.75, rough: 0.35, emissive: glow, ei: glow ? 0.55 : 0 });
   const wood = M(0x5a4028, { rough: 0.95 });
@@ -654,8 +658,8 @@ function applyPaperDoll(p) {
       /* 古风手型：大刀与桃木剑都斜持（直握会插进地面），
        * 这个倾角也让挥砍带出横向刀光；杖/符立握 */
       if (wp.shape === 'staff' || wp.shape === 'charm') { w.rotation.set(0.05, 0, -0.06); w.position.set(0.02, -0.05, 0.02); }
-      else if (wp.shape === 'saber') { w.rotation.set(-1.02, 0, Math.PI - 0.12); w.position.set(0.02, 0.02, 0.03); }
-      else { w.rotation.set(-1.00, 0, Math.PI - 0.12); w.position.set(0.02, 0.02, 0.03); }
+      else if (wp.shape === 'saber') { w.rotation.set(-0.78, 0, Math.PI + 0.55); w.position.set(0.02, 0.02, 0.03); }
+      else { w.rotation.set(-0.80, 0, Math.PI + 0.45); w.position.set(0.02, 0.02, 0.03); }
     } else {
       if (wp.shape === 'staff' || wp.shape === 'charm') w.rotation.set(0, 0, -0.08);
       else w.rotation.set(-0.12, 0, -0.85);

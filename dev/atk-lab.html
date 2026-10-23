@@ -84,6 +84,7 @@
 <div id="hint">拖拽旋转 · 滚轮缩放 · ← → 微调<br>右侧数字：比值 &gt; 1 = 上下劈，&lt; 1 = 横劈</div>
 
 <script src="../lib/three.min.js"></script>
+<script src="../src/weapons.js"></script>
 <script src="../src/charforge.js"></script>
 <script>
 (function () {
@@ -165,9 +166,9 @@
   scene.add(trailGroup);
   let showTrail = true;
 
-  const tipLocalSaber = new THREE.Vector3(0, 1.20, 0);
-  const tipLocalStaff = new THREE.Vector3(0, 1.44, 0);
-  const tipLocalSword = new THREE.Vector3(0, 1.10, 0);
+  const tipLocalSaber = new THREE.Vector3(0, 0.82, 0);
+  const tipLocalStaff = new THREE.Vector3(0, 1.15, 0);
+  const tipLocalSword = new THREE.Vector3(0, 0.76, 0);
 
   function tipWorld() {
     if (!a || !a.weapon) return null;
@@ -329,6 +330,28 @@
     stats: () => ({ ...stats }),
     atk: () => CharForge.ATK,
     cam: (yaw, pitch, dist) => { camYaw = yaw; camPitch = pitch; camDist = dist; placeCam(); },
+    /* 直接摆一个姿态并读回刀尖/手的位置，用来做参数搜索 */
+    pose: o => {
+      const P = a.parts;
+      P.armR.rotation.set(o.armRx || 0, o.armRy || 0, o.armRz || 0);
+      if (P.elbowR) P.elbowR.rotation.x = o.elbowR || 0;
+      P.torso.rotation.y = o.twist || 0;
+      P.torso.rotation.x = o.lean || 0;
+      if (a.weapon) {
+        a.weapon.rotation.x = o.wpnRx == null ? -1.02 : o.wpnRx;
+        if (o.wpnRz != null) a.weapon.rotation.z = o.wpnRz;
+      }
+      a.group.updateWorldMatrix(true, true);
+      const t = tipWorld();
+      const hp = new THREE.Vector3();
+      a.parts.weaponHand.updateWorldMatrix(true, false);
+      hp.setFromMatrixPosition(a.parts.weaponHand.matrixWorld);
+      const r = v => +v.toFixed(2);
+      return {
+        tip: [r(t.x), r(t.y), r(t.z)],
+        hand: [r(hp.x), r(hp.y), r(hp.z)]
+      };
+    },
     probe: p => {
       applyP(p, false);
       const f = n => +a.parts[n].rotation[n.includes('armR') ? 'x' : 'x'].toFixed(2);

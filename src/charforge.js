@@ -91,6 +91,13 @@
 
   /* ---------------- 武器（古风：大刀 / 云头杖 / 桃木剑） ---------------- */
   function weapon(kind, cfg) {
+    /* 统一走 src/weapons.js 的真实轮廓建模，和游戏内换装系统用同一套，
+     * 免得调试台看到的和实机不是一把武器 */
+    if (typeof WeaponForge !== 'undefined') {
+      const map = { saber: 'saber', staff: 'staff', sword: 'taojian' };
+      return WeaponForge.build(map[kind] || 'taojian', cfg.armor, null, 1);
+    }
+
     const g = new THREE.Group();
     const metal = MAT(cfg.armor, { rough: 0.35, metal: 0.72 });
     const gold = MAT(cfg.trim, { rough: 0.3, metal: 0.86 });
@@ -322,9 +329,9 @@
     /* ================= 自带武器 ================= */
     if (cfg.weapon && !opt.noWeapon) {
       const w3 = weapon(cfg.weapon, cfg);
-      if (cfg.weapon === 'saber') { w3.position.set(0.012, -0.02, 0.02); w3.rotation.set(-1.02, 0, Math.PI - 0.10); }
+      if (cfg.weapon === 'saber') { w3.position.set(0.012, -0.02, 0.02); w3.rotation.set(-0.78, 0, Math.PI + 0.55); }
       else if (cfg.weapon === 'staff') { w3.position.set(0.02, -0.30, 0.02); w3.rotation.set(0, 0, -0.06); }
-      else { w3.position.set(0.004, -0.02, 0.02); w3.rotation.set(-1.00, 0, Math.PI + 0.10); }
+      else { w3.position.set(0.004, -0.02, 0.02); w3.rotation.set(-0.80, 0, Math.PI + 0.45); }
       A.parts.weaponHand.add(w3);
       A.weapon = w3;
     }
@@ -402,9 +409,9 @@
    *   挥出  +0.60 甩腕翻下去
    *   触底  +0.95 刀尖扎向地面 */
   const WPN = {
-    warrior: [[0, -1.02], [0.20, -0.80], [0.34, -0.88], [0.44, -0.86], [0.56, 0.16], [0.68, 0.10], [0.80, -0.55], [0.92, -0.85], [1, -1.02]],
+    warrior: [[0, -0.78], [0.20, -0.70], [0.34, -0.88], [0.44, -0.86], [0.56, 0.16], [0.68, 0.10], [0.80, -0.55], [0.92, -0.72], [1, -0.78]],
     /* 桃木剑短（约 1.1 米），翻腕幅度比大刀小，待机同样斜持避免剑尖戳地 */
-    taoist: [[0, -1.00], [0.18, -0.78], [0.30, -0.60], [0.40, -0.58], [0.52, 0.12], [0.64, 0.20], [0.78, -0.42], [0.90, -0.80], [1, -1.00]]
+    taoist: [[0, -0.80], [0.18, -0.72], [0.30, -0.60], [0.40, -0.58], [0.52, 0.12], [0.64, 0.20], [0.78, -0.42], [0.90, -0.72], [1, -0.80]]
   };
 
   function update(a, dt) {
