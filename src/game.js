@@ -91,10 +91,29 @@ const Game = {
      * 渲染像素是 CSS 像素的 2.25 倍——1920×1080 实际要画 2880×1620。
      * 这是「Chrome 里特别卡」的常见原因，所以上限压到 1.5，并按帧率自动再降。 */
     this.perf = { level: 0, warm: 0, low: 0, good: 0, acc: 0, frames: 0, fps: 60, dpr: 1, shadow: 0 };
+    /* 玩家设置必须在第一次 applyPerfLevel 之前读进来，否则会先按默认值
+     * 建一次 dpr/阴影，再被覆盖——两次 setSize 就是两次重排，白卡一下。 */
+    try {
+      if (typeof Settings !== 'undefined') Settings.load();
+    } catch (e) { console.error('[设置] 读取失败', e); }
+    this.mobCap = (typeof Settings !== 'undefined' && Settings.d)
+      ? Settings.resolve(0).mobCap
+      : (IS_TOUCH ? MOB_CAP_TOUCH : MOB_CAP_PC);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
+    /* 自己数 draw call。renderer.info.render.calls 在 r128 里会被中途 reset，
+     * 读数不可信；renderBufferDirect 是唯一必经的最底层绘制入口，
+     * 包一层就能拿到「本帧真正提交了多少次绘制」（主通道 + 阴影通道合计）。 */
+    this._calls = 0;
+    try {
+      const r = this.renderer, rd = r.renderBufferDirect.bind(r);
+      r.renderBufferDirect = function (camera, scene, geometry, material, object, group) {
+        Game._calls++;
+        return rd(camera, scene, geometry, material, object, group);
+      };
+    } catch (e) { /* 数不出来不影响玩 */ }
     // 使用线性输出，保证手调色值所见即所得
     this.renderer.toneMapping = THREE.NoToneMapping;
     this.renderer.toneMappingExposure = 1.0;
@@ -137,11 +156,18 @@ const Game = {
     this.mouseY = window.innerHeight / 2;
     try { this.buildTitleScene(); } catch (e) { showFatal('标题场景构建失败：' + (e.stack || e.message)); }
     try {
-      UI.setHelp('<b>WASD</b> 移动 · <b>左键</b> 攻击 · <b>1-6</b> 技能 · <b>空格</b> 翻滚 · <b>F</b> 交互<br><b>Q/E</b> 转视角 · <b>滚轮</b> 缩放 · <b>R</b> 炼器 · <b>I</b> 背包 · <b>C</b> 属性 · <b>L</b> 任务 · <b>P</b> 存档');
+      UI.setHelp('<b>WASD</b> 移动 · <b>左键</b> 攻击 · <b>1-6</b> 技能 · <b>空格</b> 翻滚 · <b>F</b> 交互<br><b>Q/E</b> 转视角 · <b>滚轮</b> 缩放 · <b>R</b> 炼器 · <b>I</b> 背包 · <b>C</b> 属性 · <b>L</b> 任务 · <b>P</b> 存档 · <b>O</b> 设置');
     } catch (e) { }
 
     window.addEventListener('resize', () => this.updateViewport());
     this.updateViewport();
+
+    /* 存档里的设置在这里第一次落地（分辨率 / 阴影 / 粒子 / 怪数上限）。
+     * 放在 animate 之前，避免先按默认值渲染几帧再跳变。 */
+    try { this.applyPerfLevel(); } catch (e) { console.error('[画质] 初始化失败', e); }
+    /* 帧数面板要立刻反映「上次开着的状态」，不能等第一次采样——
+     * 低帧率下第一次采样可能要好几秒才凑够 1 秒窗口 */
+    try { if (typeof UI !== 'undefined' && UI.syncFps) UI.syncFps(); } catch (e) { }
 
     // 标题界面背景动画（无论如何都要跑起来）
     this.animate();
@@ -520,7 +546,9 @@ const Game = {
      * 不做这个检查的话，Boss 的 summon 会每几秒往场上塞 2~4 只且永不回收，
      * 一场持久战下来能堆到一百多只，draw call 直接顶穿手机 GPU。 */
     if (!isBoss) {
-      const cap = IS_TOUCH ? MOB_CAP_TOUCH : MOB_CAP_PC;
+      /* 上限可在设置里调（低配机器调到 12~20 能立竿见影）；
+       * this.mobCap 由 applyPerfLevel 写入，没初始化时退回常量 */
+      const cap = this.mobCap || (IS_TOUCH ? MOB_CAP_TOUCH : MOB_CAP_PC);
       let alive = 0;
       for (const e of this.enemies) if (!e.dead && !e.boss) alive++;
       if (alive >= cap) return null;
@@ -654,7 +682,12 @@ const Game = {
   },
 
   tickFrame() {
-    const raw = Math.min(this.clock.getDelta(), 0.06);
+    /* real 是真实墙钟间隔，raw 是被夹到 60ms 的逻辑步长。
+     * 帧率统计必须用 real：用夹过的 raw 在低帧率下会算出严重偏高的 FPS
+     * （4fps 会被报成 16fps），那样帧数面板等于骗人，自动降档也会误判。 */
+    const real = this.clock.getDelta();
+    const raw = Math.min(real, 0.06);
+    this._calls = 0;
     let dt = raw;
     if (this.hitstop > 0) { this.hitstop -= raw * 1000; dt = raw * 0.1; }
     this.time += dt;
@@ -676,7 +709,7 @@ const Game = {
       this.menuCamera();
     }
     this.renderer.render(this.scene, this.camera);
-    this.tickPerf(raw);
+    this.tickPerf(real);
   },
 
   /* 限频上报：同一个错误每 5 秒最多提示一次，否则控制台会被刷爆 */
@@ -691,20 +724,29 @@ const Game = {
   },
 
   /* ---------------- 自适应画质 ---------------- *
-   * 不猜用户的机器，直接量：每 2 秒统计一次实际帧率，掉了就降一档。
+   * 不猜用户的机器，直接量：每秒统计一次实际帧率，掉了就降一档。
    * 降档顺序是「性价比」顺序——先降分辨率（几乎无感），再降阴影质量，
    * 最后才关阴影（观感损失最大，但集显上往往是唯一能把帧率拉回来的手段）。
    * 降档要连续两次采样都低才执行，避免一次过场卡顿就误判；
    * 升档要求连续 5 次采样都很稳，否则会在阈值附近反复横跳、反复重编译 shader。
+   *
+   * 注意：这段只在设置里选了「自动」档时才跑。用户手动钉了档位还继续自动改，
+   * 会让人觉得「设置不生效」，那是最糟的体验。
    */
   tickPerf(raw) {
     const p = this.perf;
     if (!p) return;
-    p.acc += raw; p.frames++;
-    if (p.acc < 2) return;
+    /* 单帧间隔上限夹到 0.25s：只为挡住「切后台再切回来」那种几秒的大跳，
+     * 不夹会瞬间算出 1fps 直接把画质打到底。0.25s 意味着最低可测到 4fps，
+     * 再低已经没法玩了，读数不准也无所谓。 */
+    p.acc += Math.min(raw, 0.25); p.frames++;
+    if (p.acc < 1) return;
     const fps = p.frames / p.acc;
     p.fps = Math.round(fps);
     p.acc = 0; p.frames = 0;
+    /* 帧数面板和自动降档共用这次采样，所以放在 early-return 之前 */
+    this.updateFpsHud(fps);
+    if (typeof Settings !== 'undefined' && Settings.d && !Settings.autoAdjust()) return;
     // 启动前几秒在编译 shader、上传贴图，帧率天然难看，不作数
     if (p.warm < 3) { p.warm++; return; }
 
@@ -719,29 +761,60 @@ const Game = {
     }
   },
 
+  /* 把「自动等级 + 玩家设置」合成一组实际参数。
+   * 没有 Settings（老存档 / 单测环境）时退回原来的纯自动逻辑。 */
+  perfCfg() {
+    const lv = this.perf.level;
+    if (typeof Settings !== 'undefined' && Settings.resolve) return Settings.resolve(lv);
+    return {
+      dpr: Math.min(window.devicePixelRatio || 1, [1.5, 1.25, 1.0][lv] || 1),
+      shadow: lv < 2,
+      shadowSize: lv === 0 ? 1536 : 1024,
+      fx: [1, 0.7, 0.5][lv] || 0.5,
+      mobCap: IS_TOUCH ? MOB_CAP_TOUCH : MOB_CAP_PC,
+      forceShadow: false
+    };
+  },
+
   applyPerfLevel() {
-    const p = this.perf, lv = p.level, r = this.renderer;
-    const dprMax = [1.5, 1.25, 1.0][lv];
-    const dpr = Math.min(window.devicePixelRatio || 1, dprMax);
-    if (Math.abs(dpr - r.getPixelRatio()) > 0.01) {
-      r.setPixelRatio(dpr);
+    const p = this.perf, r = this.renderer;
+    if (!r) return;
+    const cfg = this.perfCfg();
+    const lv = p.level;
+
+    if (Math.abs(cfg.dpr - r.getPixelRatio()) > 0.01) {
+      r.setPixelRatio(cfg.dpr);
       r.setSize(window.innerWidth, window.innerHeight);
     }
-    const wantShadow = lv < 2;
-    const size = lv === 0 ? 1536 : 1024;
-    if (r.shadowMap.enabled !== wantShadow) {
-      r.shadowMap.enabled = wantShadow;
+    if (r.shadowMap.enabled !== cfg.shadow) {
+      r.shadowMap.enabled = cfg.shadow;
       this.dirtyShadows();
     }
     // 注意别写成 else if：从 L2 回升到 L0 时「重新开阴影」和「调回 1536」要同时发生
-    if (wantShadow && this.sun.shadow.mapSize.x !== size) {
-      this.sun.shadow.mapSize.set(size, size);
+    if (cfg.shadow && this.sun.shadow.mapSize.x !== cfg.shadowSize) {
+      this.sun.shadow.mapSize.set(cfg.shadowSize, cfg.shadowSize);
       if (this.sun.shadow.map) { this.sun.shadow.map.dispose(); this.sun.shadow.map = null; }
     }
-    p.dpr = dpr;
-    p.shadow = wantShadow ? size : 0;
-    if (typeof FX !== 'undefined') FX.q = [1, 0.7, 0.5][lv];
-    console.log('[画质] L' + lv + ' · dpr=' + dpr.toFixed(2) + ' · 阴影=' + (p.shadow || '关') + ' · ' + p.fps + 'fps');
+    p.dpr = cfg.dpr;
+    p.shadow = cfg.shadow ? cfg.shadowSize : 0;
+    if (typeof FX !== 'undefined') FX.q = cfg.fx;
+    /* 同屏怪数上限也归这里管：低配机器上这是最直接的 draw call 开关 */
+    this.mobCap = cfg.mobCap;
+    console.log('[画质] L' + lv + ' · dpr=' + cfg.dpr.toFixed(2) + ' · 阴影=' + (p.shadow || '关')
+      + ' · 粒子=' + cfg.fx + ' · 怪≤' + cfg.mobCap + ' · ' + p.fps + 'fps');
+  },
+
+  /* 帧数面板：1 秒刷新一次，只写文本，不重建 DOM */
+  updateFpsHud(fps) {
+    if (typeof UI === 'undefined' || !UI.setFps) return;
+    if (typeof Settings !== 'undefined' && Settings.d && !Settings.d.fps) { UI.setFps(0, null); return; }
+    UI.setFps(fps, {
+      calls: this._calls || 0,
+      dpr: this.renderer ? this.renderer.getPixelRatio() : 1,
+      shadow: this.renderer ? this.renderer.shadowMap.enabled : false,
+      cap: this.mobCap,
+      level: this.perf.level
+    });
   },
 
   /* 开关阴影会改变材质编译时的 defines，必须让所有材质重新编译一次，

@@ -466,6 +466,30 @@
   #help{position:absolute;left:18px;bottom:22px;font-size:10.5px;color:#6a6458;line-height:1.9;letter-spacing:.5px}
   #help b{color:#a89878;font-weight:400}
 
+  /* ---------- 帧数面板（设置里可开关） ---------- */
+  #fpsHud{display:none;position:absolute;left:18px;top:100px;z-index:14;pointer-events:none;
+    font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:12px;line-height:1.3;
+    color:#cfc6b0;background:rgba(8,8,12,.66);border:1px solid rgba(216,178,90,.22);
+    padding:5px 9px 6px;border-radius:2px;letter-spacing:.5px;text-shadow:0 1px 2px rgba(0,0,0,.9)}
+  #fpsHud b{font-size:16px;font-weight:700;font-variant-numeric:tabular-nums}
+  #fpsHud b.ok{color:#7ce09a} #fpsHud b.mid{color:#e8c060} #fpsHud b.low{color:#ff6a5a}
+  #fpsHud i{display:block;font-style:normal;font-size:10.5px;color:#8a8378;margin-top:1px;letter-spacing:0}
+
+  /* ---------- 设置面板 ---------- */
+  /* z-index 要高过标题界面（#start 是 60）：低配机器往往需要在开局前就把画质调好 */
+  #setPanel{z-index:70;left:50%;top:50%;transform:translate(-50%,-50%);width:540px;max-height:88vh}
+  #setPanel .pb{padding:8px 16px 14px}
+  .setrow{display:flex;align-items:center;gap:12px;padding:9px 0;border-bottom:1px solid rgba(255,255,255,.055)}
+  .setrow:last-of-type{border-bottom:0}
+  .setlab{width:76px;flex:none;font-size:12px;color:#a89878;letter-spacing:2px}
+  .setseg{display:flex;gap:5px;flex-wrap:wrap;flex:1;min-width:0}
+  .setseg .sbtn{min-width:44px;text-align:center;padding:4px 9px}
+  .setseg .sbtn.on{pointer-events:none}
+  #setHint{margin-top:12px;font-size:11px;line-height:1.85;color:#7a7468}
+  #setHint b{color:#b8a888;font-weight:400}
+  .setfoot{display:flex;justify-content:space-between;align-items:center;margin-top:12px;gap:10px}
+  .setfoot .dim{font-size:10.5px}
+
   ::-webkit-scrollbar{width:5px;height:5px}
   ::-webkit-scrollbar-track{background:rgba(255,255,255,.02)}
   ::-webkit-scrollbar-thumb{background:rgba(216,178,90,.25)}
@@ -604,6 +628,11 @@
   body.touch #shopPanel{width:min(560px,94vw)}
   body.touch #travelPanel{width:min(460px,94vw)}
   body.touch #forgePanel{width:min(760px,96vw);max-height:88vh;max-height:88dvh}
+  body.touch #setPanel{width:min(540px,96vw)}
+  body.touch .setlab{width:64px;font-size:11px;letter-spacing:1px}
+  body.touch .setseg .sbtn{min-width:40px;padding:5px 8px}
+  body.touch #fpsHud{left:8px;top:auto;bottom:calc(50% + 58px);font-size:11px}
+  body.touch #fpsHud b{font-size:14px}
   body.touch .forge-body{flex-direction:column;min-height:0;gap:8px}
   body.touch .forge-list{width:100%;max-height:17dvh;display:flex;gap:6px;overflow-x:auto;overflow-y:hidden;
     border-right:none;border-bottom:1px solid rgba(255,255,255,.07);padding:0 0 6px}
@@ -680,6 +709,13 @@
     body.touch .scard{flex-wrap:wrap;gap:8px;padding:8px 10px}
     body.touch .sacts{width:100%;justify-content:flex-end}
     body.touch .sinfo{width:calc(100% - 44px)}
+    /* 设置项：窄屏上把标签挪到上一行，选项均分整宽，
+     * 否则 6 个选项会被挤成两行、面板高度直接翻倍 */
+    body.touch .setrow{flex-direction:column;align-items:stretch;gap:6px;padding:8px 0}
+    body.touch .setlab{width:auto;letter-spacing:2px}
+    body.touch .setseg{gap:4px}
+    body.touch .setseg .sbtn{flex:1;min-width:0;padding:7px 2px;letter-spacing:0}
+    body.touch #setPanel .pb{padding:6px 12px 12px}
   }
 
   /* 横屏手机：高度吃紧，整体收紧一档 */
@@ -753,12 +789,14 @@
   <div id="toasts"></div>
   <div id="log"></div>
   <div id="help"></div>
+  <div id="fpsHud"></div>
   <div id="openBtns">
     <button class="btn" onclick="UI.toggleInv()">背包 <span class="dim">I</span></button>
     <button class="btn" onclick="UI.toggleStat()">属性 <span class="dim">C</span></button>
     <button class="btn" onclick="UI.toggleQuest()">任务 <span class="dim">L</span></button>
     <button class="btn" onclick="UI.toggleForge()">炼器 <span class="dim">R</span></button>
     <button class="btn" onclick="SaveUI.open()">存档 <span class="dim">P</span></button>
+    <button class="btn" onclick="UI.openSettings()">设置 <span class="dim">O</span></button>
   </div>
 </div>
 
@@ -876,6 +914,19 @@
   </div>
 </div>
 
+<!-- 设置 -->
+<div class="panel" id="setPanel">
+  <div class="ph"><h3>设 置</h3><span class="x" onclick="UI.closeAll()">✕</span></div>
+  <div class="pb">
+    <div id="setBody"></div>
+    <div id="setHint"></div>
+    <div class="setfoot">
+      <span class="dim">设置只影响本机画面，不影响存档</span>
+      <button class="btn" onclick="Settings.reset()">恢复默认</button>
+    </div>
+  </div>
+</div>
+
 <!-- 死亡 -->
 <div id="death">
   <h2>身 陨</h2>
@@ -899,6 +950,7 @@
     <button class="btn primary" id="startBtn">踏 入 山 海</button>
     <button class="btn" id="continueBtn" style="display:none">继 续 前 世</button>
     <button class="btn" id="saveMgrBtn">存 档</button>
+    <button class="btn" onclick="UI.openSettings()">设 置</button>
   </div>
   <div class="tips" id="startTips">
     <b>WASD</b> 移动 · <b>鼠标</b> 瞄准 · <b>左键</b> 普攻 · <b>1-6</b> 技能 · <b>空格</b> 翻滚 · <b>F</b> 交互 · <b>R</b> 炼器 · <b>I</b> 背包 · <b>C</b> 属性 · <b>L</b> 任务 · <b>P</b> 存档<br>
@@ -922,6 +974,7 @@
 <!-- 内核：兜底 → 存储驱动 → 存档 v2 -->
 <script src="src/core/boot.js"></script>
 <script src="src/core/store.js"></script>
+<script src="src/core/settings.js"></script>
 <script src="src/core/save.js"></script>
 <!-- 数据层：基础 / 装备 / 技能 / 怪物 / 世界（顺序不可换，后者依赖前者的常量） -->
 <script src="src/data/data-core.js"></script>

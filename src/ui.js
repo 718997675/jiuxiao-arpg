@@ -186,7 +186,100 @@ const UI = {
       else if (k === 'c') { this.toggleStat(); e.preventDefault(); }
       else if (k === 'l') { this.toggleQuest(); e.preventDefault(); }
       else if (k === 'r') { this.toggleForge(); e.preventDefault(); }
+      else if (k === 'o') { this.openSettings(); e.preventDefault(); }
       else if (k === 'escape') { this.closeAll(); }
+    });
+
+    /* 设置面板：按钮是动态生成的，用事件委托，避免每次重绘都重新挂监听 */
+    const setBody = document.getElementById('setBody');
+    if (setBody) setBody.addEventListener('click', e => this.onSettingsClick(e));
+  },
+
+  /* ---------------- 设置面板 ---------------- */
+
+  SET_ROWS: [
+    { k: 'preset', label: '画质档位',
+      opts: [['auto', '自动'], ['ultra', '极高'], ['high', '高'], ['mid', '中'], ['low', '低'], ['min', '极低']] },
+    { k: 'scale', label: '渲染倍率',
+      opts: [['auto', '自动'], ['1.25', '1.25x'], ['1', '1.0x'], ['0.8', '0.8x'], ['0.65', '0.65x'], ['0.5', '0.5x']] },
+    { k: 'shadow', label: '实时阴影',
+      opts: [['auto', '自动'], ['on', '开'], ['off', '关']] },
+    { k: 'fx', label: '粒子效果',
+      opts: [['auto', '自动'], ['high', '高'], ['mid', '中'], ['low', '低']] },
+    { k: 'mobCap', label: '同屏怪数',
+      opts: [['auto', '自动'], ['48', '多'], ['36', '标准'], ['28', '少'], ['20', '很少'], ['12', '极少']] },
+    { k: 'fps', label: '显示帧数',
+      opts: [['0', '关'], ['1', '开']] }
+  ],
+
+  openSettings() {
+    const p = document.getElementById('setPanel');
+    if (!p) return;
+    this.closeAll(p);
+    p.classList.add('open');
+    this.renderSettings();
+  },
+
+  renderSettings() {
+    const body = document.getElementById('setBody');
+    const hint = document.getElementById('setHint');
+    if (!body || typeof Settings === 'undefined' || !Settings.d) return;
+    const d = Settings.d;
+    body.innerHTML = this.SET_ROWS.map(r => {
+      /* fps 存的是布尔值，选项却是 '0'/'1'，直接 String() 会永远对不上高亮 */
+      const cur = r.k === 'fps' ? (d.fps ? '1' : '0') : String(d[r.k]);
+      return `<div class="setrow"><span class="setlab">${r.label}</span><div class="setseg">`
+        + r.opts.map(([v, t]) =>
+          `<button class="sbtn${cur === v ? ' on' : ''}" data-k="${r.k}" data-v="${v}">${t}</button>`).join('')
+        + `</div></div>`;
+    }).join('');
+    if (hint) {
+      hint.innerHTML = d.preset === 'custom'
+        ? '当前为<b>自定义</b>，自动降画质已关闭。想让它按帧率自动调，把「画质档位」选回<b>自动</b>。'
+        : '当前为<b>自动</b>：帧率低于 42 会自动降一档，稳定高于 57 再升回来。'
+        + '<br>卡的时候优先降<b>渲染倍率</b>——0.65x 只损失一点锐度，像素量却少了 58%。';
+    }
+  },
+
+  onSettingsClick(e) {
+    const b = e.target.closest('[data-k]');
+    if (!b || typeof Settings === 'undefined') return;
+    const k = b.dataset.k;
+    let v = b.dataset.v;
+    if (k === 'fps') v = (v === '1');
+    else if (k === 'scale' || k === 'mobCap') v = (v === 'auto' ? 'auto' : Number(v));
+    Settings.set(k, v);
+    /* 改完立刻重绘，让高亮跟着走（Settings.apply 里也会调，但那条路可能被
+     * 「面板没开」的守卫挡掉，这里显式再来一次最稳） */
+    this.renderSettings();
+  },
+
+  /* 帧数面板：info 为 null 表示隐藏 */
+  setFps(fps, info) {
+    const el = document.getElementById('fpsHud');
+    if (!el) return;
+    if (!info) { el.style.display = 'none'; return; }
+    el.style.display = 'block';
+    const n = Math.round(fps) || 0;
+    const cls = n >= 55 ? 'ok' : (n >= 35 ? 'mid' : 'low');
+    el.innerHTML = `<b class="${cls}">${n}</b> FPS`
+      + `<i>${info.calls} draw · ${info.dpr.toFixed(2)}x · 影${info.shadow ? '开' : '关'} · 怪≤${info.cap}</i>`;
+  },
+
+  /* 设置里刚开关帧数显示时，立刻同步一次，不用等下一秒的采样 */
+  syncFps() {
+    const el = document.getElementById('fpsHud');
+    if (!el || typeof Settings === 'undefined' || !Settings.d) return;
+    if (!Settings.d.fps) { el.style.display = 'none'; return; }
+    el.style.display = 'block';
+    const g = (typeof Game !== 'undefined') ? Game : null;
+    if (!g || !g.renderer) return;
+    this.setFps(g.perf ? g.perf.fps : 0, {
+      calls: g._calls || 0,
+      dpr: g.renderer.getPixelRatio(),
+      shadow: g.renderer.shadowMap.enabled,
+      cap: g.mobCap,
+      level: g.perf ? g.perf.level : 0
     });
   },
 
