@@ -3282,6 +3282,37 @@ const Game = {
     return { ok: true, setName: r.setName, piece: r.piece, cost };
   },
 
+  /* ---------------- 定向洗炼（v1.2）：锁定单条词条，数值只升不降 ----------------
+   * 每次只动选中的那 1 条，词条不变，新数值必定 > 洗练前数值。
+   * 封顶后不再扣费，提示换更高 ilvl 的装备。 */
+  upgradeAffixItem(item, index) {
+    if (!item || !Array.isArray(item.affixes) || index < 0 || index >= item.affixes.length) {
+      return { ok: false, msg: '没有这条词缀。' };
+    }
+    const cur = item.affixes[index];
+    if (!cur || !cur.key || !STATS[cur.key]) return { ok: false, msg: '这条词缀不可升级。' };
+    const def = AFFIXES.find(a => a.key === cur.key);
+    if (!def) return { ok: false, msg: '词条数据异常。' };
+    const label = STATS[cur.key].label;
+    const cap = affixValueCap(def, item.ilvl || 1);
+    if (cur.val >= cap) {
+      return { ok: false, capped: true, msg: '「' + label + '」已达本装备等级上限 +' + cur.val + '，升不动了。' };
+    }
+    const cost = reforgeCost(item);
+    if (this.crystalCount() < cost) return { ok: false, msg: '玄晶不足，需要 ' + cost + ' 枚。' };
+    this.addCrystal(-cost);
+    const r = upgradeAffix(item, index);
+    if (!r) { this.addCrystal(cost); return { ok: false, msg: '升级失败，玄晶已退回。' }; }   // 兜底退款
+    this.recalc();
+    SFX.cast();
+    UI.log('定向洗炼 · ' + item.name + '：' + label + ' +' + r.prev + ' → +' + r.affix.val +
+      '（+' + r.gain + ' 点' + (r.affix.val >= r.cap ? '，已封顶 ' + r.cap : '') + '）', 'good');
+    UI.renderInventory();
+    UI.renderHUD();
+    this.save();
+    return { ok: true, affix: r.affix, prev: r.prev, gain: r.gain, cap: r.cap, cost, forced: r.forced };
+  },
+
   /* ---------------- 定向洗炼（v1.1.3）：自动洗到指定词条才停 ---------------- */
   targetedReforge(item, index, targetKey) {
     if (!item || !Array.isArray(item.affixes) || index < 0 || index >= item.affixes.length) {

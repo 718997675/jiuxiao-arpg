@@ -237,7 +237,49 @@ function reforgeAffix(item, index) {
   return a;
 }
 
-/* ---------------- 定向洗炼（v1.1.3） ----------------
+/* 词缀数值理论上限：品质拉满（q4 → affixValue 的 mul 1.30）时的最高取值。
+ * 定向升级用它判断「还能不能升」，避免在分布尾巴上无限重掷。 */
+function affixValueCap(def, ilvl) {
+  if (!def) return 0;
+  return Math.max(1, Math.round(def.max * (1 + (ilvl || 1) * 0.055) * 1.30));
+}
+
+/* ---------------- 定向洗炼（v1.2）：单条词条升级 ----------------
+ * 每次只动选中的那 1 条：词条 key 不变，新数值严格大于旧值，
+ * 永远不产生「洗练后数值下降」的结果。
+ * 接近上限时正常 roll 掷不出更高值，退化 +1 保底；封顶后返回 null。 */
+function upgradeAffix(item, index) {
+  if (!item || !Array.isArray(item.affixes)) return null;
+  const idx = Number(index);
+  if (!(idx >= 0 && idx < item.affixes.length)) return null;
+  const old = item.affixes[idx];
+  if (!old || !old.key) return null;
+  const def = AFFIXES.find(a => a.key === old.key);
+  if (!def) return null;
+  const ilvl = item.ilvl || 1;
+  const cap = affixValueCap(def, ilvl);
+  const prev = Math.round(Number(old.val) || 0);
+  if (prev >= cap) return null;                 // 已封顶，升不动
+  let a = null, forced = false;
+  for (let i = 0; i < 240; i++) {
+    const q = rollAffixQuality();
+    const val = affixValue(def, ilvl, q);
+    if (val > prev) {
+      a = { key: def.key, val, pre: def.pre, suf: def.suf, tier: def.tier, q };
+      break;
+    }
+  }
+  if (!a) {
+    /* 旧值已贴到分布尾部：保底 +1，仍然严格上升且不越上限 */
+    a = { key: def.key, val: Math.min(cap, prev + 1), pre: def.pre, suf: def.suf, tier: def.tier, q: old.q || 1 };
+    forced = true;
+  }
+  item.affixes[idx] = a;
+  item.reforges = (item.reforges || 0) + 1;
+  return { affix: a, prev, cap, gain: a.val - prev, forced };
+}
+
+/* ---------------- 定向洗炼（v1.1.3）· 换成指定词条 ----------------
  * 候选词条 = 全部 AFFIXES 去掉「其他词缀位已占用」的 key
  * （makeAffix 的 used 规则决定：同装备不会出重复词条）。
  * 当前位已有的 key 允许再中——那等于已经达标。 */

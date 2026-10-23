@@ -21,6 +21,7 @@ const load = f => vm.runInContext(
 );
 load('data/data-core.js');
 load('data/data-items.js');
+load('data/data-uniques.js');   // items.js 顶部会建 UNIQUE_BY_ID 索引，必须先加载
 load('items.js');
 
 const pick = name => vm.runInContext(name, ctx);

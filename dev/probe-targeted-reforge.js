@@ -1,9 +1,10 @@
 /* ============================================================
- * 回归探针：定向洗炼（v1.1.3）
- * 覆盖：候选词条排除其他位已占用；一键自动洗到指定词条即停；
- *       次数与花费统计正确；材料不足自动中断不浪费；
- *       已是目标词条 / 其他位占用同一词条 的拒绝；
- *       单次洗练仍可用；UI 渲染（定向按钮/候选芯片/预估/开始按钮）。
+ * 回归探针：定向洗炼
+ * v1.2 核心：每次只动 1 条词缀，升级后数值必须严格高于洗练前，
+ *            绝不出现数值下降；封顶后拒绝且不扣费。
+ * 兼容覆盖：候选词条排除其他位已占用；一键洗到指定词条即停；
+ *            次数与花费统计；材料不足自动中断；单次洗练仍可用；
+ *            UI 渲染（定向按钮 / 升级按钮 / 进度条 / 候选芯片 / 预估）。
  * ============================================================ */
 const http = require('http');
 const fs = require('fs');
@@ -12,7 +13,9 @@ const puppeteer = require('puppeteer-core');
 
 const ROOT = path.resolve(__dirname, '..');
 const PORT = 8894;
-const EDGE = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
+const BROWSER = process.platform === 'darwin'
+  ? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
+  : 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
 
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'application/javascript; charset=utf-8', '.css': 'text/css' };
 
@@ -21,7 +24,7 @@ const server = http.createServer((req, res) => {
   if (p === '/') p = '/index.html';
   const f = path.join(ROOT, p);
   if (!f.startsWith(ROOT) || !fs.existsSync(f) || fs.statSync(f).isDirectory()) { res.writeHead(404); res.end('nf'); return; }
-  res.writeHead(200, { 'Content-Type': MIME[path.extname(f).toLowerCase()] || 'application/octet-stream' });
+  res.writeHead(200, { 'Content-Type': MIME[path.extname(f).toLowerCase()] || 'application/octet-stream', 'Cache-Control': 'no-store' });
   fs.createReadStream(f).pipe(res);
 });
 
@@ -32,7 +35,7 @@ const bad = m => { results.push(0); console.log('  [FAIL] ' + m); };
 (async () => {
   await new Promise(r => server.listen(PORT, '127.0.0.1', r));
   const browser = await puppeteer.launch({
-    executablePath: EDGE, headless: 'new',
+    executablePath: BROWSER, headless: 'new',
     args: ['--no-sandbox', '--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--disable-dev-shm-usage']
   });
   const errors = [];
@@ -53,8 +56,8 @@ const bad = m => { results.push(0); console.log('  [FAIL] ' + m); };
     if (typeof Game === 'undefined' || !Game.state) { out.started = false; return out; }
     out.started = true;
 
-    const mk = () => normalizeItem({
-      kind: 'chest', slot: 'chest', name: '试炼胸甲', rarity: 'rare', ilvl: 25, cls: 'warrior',
+    const mk = (name) => normalizeItem({
+      kind: 'chest', slot: 'chest', name: name || '试炼胸甲', rarity: 'rare', ilvl: 25, cls: 'warrior',
       baseArmor: 90, sockets: 0, runes: [],
       affixes: [
         { key: 'str', val: 10, pre: '', suf: '', tier: 2, q: 1 },
@@ -64,36 +67,96 @@ const bad = m => { results.push(0); console.log('  [FAIL] ' + m); };
     });
     let item = mk();
     Game.state.inventory.push(item);
-    Game.addCrystal(2000000);   // 定向洗炼期望上百次，费用递增，需备足
+    Game.addCrystal(2000000);
+
+    /* ================= v1.2 核心：单条升级只升不降 ================= */
+    const key0 = item.affixes[0].key;
+    const def0 = AFFIXES.find(a => a.key === key0);
+    const cap0 = affixValueCap(def0, item.ilvl || 1);
+    out.upCap = cap0;
+    const seq = [item.affixes[0].val];
+    let mono = true, keyKept = true, overCap = false, chargedOk = true, steps = 0;
+    for (let i = 0; i < 40; i++) {
+      const before = item.affixes[0].val;
+      const crystalBefore = Game.crystalCount();
+      const r = Game.upgradeAffixItem(item, 0);
+      if (!r.ok) { out.upStopMsg = r.msg || ''; out.upStopCapped = !!r.capped; break; }
+      steps++;
+      const after = item.affixes[0].val;
+      if (!(after > before)) mono = false;                       // 必须严格上升
+      if (item.affixes[0].key !== key0) keyKept = false;          // 词条 key 不变
+      if (after > cap0) overCap = true;                          // 不越上限
+      if (crystalBefore - Game.crystalCount() !== r.cost) chargedOk = false;  // 扣费 = 返回的 cost
+      seq.push(after);
+    }
+    out.upSeq = seq;
+    out.upSteps = steps;
+    out.upMono = mono;
+    out.upKeyKept = keyKept;
+    out.upOverCap = overCap;
+    out.upChargedOk = chargedOk;
+    out.upAtCap = item.affixes[0].val === cap0;
+    out.upOtherIntact = item.affixes[1].key === 'vit' && item.affixes[2].key === 'def';
+
+    /* 封顶后再点：拒绝 + 不扣费 */
+    const cBefore = Game.crystalCount();
+    const rCap = Game.upgradeAffixItem(item, 0);
+    out.cappedRejected = !rCap.ok && rCap.capped === true;
+    out.cappedNoCharge = Game.crystalCount() === cBefore;
+
+    /* upgradeAffix 裸函数：封顶直接返回 null */
+    out.rawCappedNull = upgradeAffix(item, 0) === null;
+
+    /* 极端：手工把数值顶到 cap-1，仍须能升满 1 点且不越界 */
+    let itemEdge = mk('临顶甲');
+    const capStr = affixValueCap(AFFIXES.find(a => a.key === 'str'), itemEdge.ilvl || 1);
+    itemEdge.affixes[0] = { key: 'str', val: capStr - 1, pre: '', suf: '', tier: 1, q: 1 };
+    Game.state.inventory.push(itemEdge);
+    const rEdge = Game.upgradeAffixItem(itemEdge, 0);
+    out.edgeOk = rEdge.ok && itemEdge.affixes[0].val === capStr;
+
+    /* 玄晶不足时不得改动词条 */
+    let itemPoor = mk('穷甲');
+    Game.state.inventory.push(itemPoor);
+    const keep = Game.crystalCount();
+    Game.addCrystal(-(Game.crystalCount() - 1));   // 只留 1 枚
+    const rUpPoor = Game.upgradeAffixItem(itemPoor, 0);
+    out.poorUpRejected = !rUpPoor.ok && /玄晶不足/.test(rUpPoor.msg || '');
+    out.poorUpUntouched = itemPoor.affixes[0].val === 10 && Game.crystalCount() === 1;
+    Game.addCrystal(keep);
+
+    /* ================= 兼容：旧「改为指定词条」流程 ================= */
+    let item3 = mk('换条甲');
+    Game.state.inventory.push(item3);
 
     /* 1) 候选词条：不含其他位已占用的 vit/def（当前位自己的 str 允许再中） */
-    const cands = reforgeTargets(item, 0).map(a => a.key);
+    const cands = reforgeTargets(item3, 0).map(a => a.key);
     out.candHasCrit = cands.includes('crit');
     out.candExcludesUsed = !cands.includes('vit') && !cands.includes('def');
 
-    /* 2) 定向洗到暴击率：应成功且停在目标上 */
+    /* 2) 洗到暴击率：应成功且停在目标上 */
     const before = Game.crystalCount();
-    const r = Game.targetedReforge(item, 0, 'crit');
+    const r = Game.targetedReforge(item3, 0, 'crit');
     out.ok = r.ok;
     out.msg = r.msg || '';
     out.attempts = r.attempts;
     out.spent = r.spent;
-    out.key = item.affixes[0].key;
+    out.key = item3.affixes[0].key;
     out.spentMatches = r.spent === (before - Game.crystalCount());
     out.costEscalated = r.spent > r.attempts * 24;   // 费用递增，总价高于线性
-    out.otherAffixesIntact = item.affixes[1].key === 'vit' && item.affixes[2].key === 'def';
-    out.rarityKept = item.rarity === 'rare';
+    out.otherAffixesIntact = item3.affixes[1].key === 'vit' && item3.affixes[2].key === 'def';
+    out.rarityKept = item3.rarity === 'rare';
 
     /* 3) 已是目标词条 → 拒绝 */
-    const rAlready = Game.targetedReforge(item, 0, 'crit');
+    const rAlready = Game.targetedReforge(item3, 0, 'crit');
     out.alreadyRejected = !rAlready.ok && rAlready.already === true;
 
     /* 4) 其他位已占用同一词条 → 拒绝 */
-    const rClash = Game.targetedReforge(item, 1, 'crit');
+    const rClash = Game.targetedReforge(item3, 1, 'crit');
     out.clashRejected = !rClash.ok && /不重复/.test(rClash.msg || '');
 
     /* 5) 材料不足 → 中断且不浪费（返回已洗次数，词条保持洗完状态） */
-    let item2 = mk();
+    let item2 = mk('缺晶甲');
     Game.state.inventory.push(item2);
     Game.addCrystal(-(Game.crystalCount() - 60));   // 只留 60 玄晶，只够洗 1~2 次
     const rPoor = Game.targetedReforge(item2, 0, 'crit');
@@ -116,16 +179,32 @@ const bad = m => { results.push(0); console.log('  [FAIL] ' + m); };
     /* 8) 存档往返：洗出来的 crit 词条要活着 */
     Game.save();
     const flat = SaveManager.load(1);
-    const c = flat.equipment.chest || flat.inventory.find(it => it.name === '试炼胸甲');
-    out.savedKey = flat.inventory.filter(it => it.name === '试炼胸甲').map(it => it.affixes[0].key);
+    out.savedKey = flat.inventory.filter(it => it.name === '换条甲').map(it => it.affixes[0].key);
     return out;
   });
 
   if (!r1.started) { bad('游戏未开局'); }
   else {
-    if (r1.candHasCrit && r1.candExcludesUsed) ok('候选词条含暴击率，且排除其他位已占用的 str/vit/def');
+    if (r1.upMono && r1.upSteps >= 5) ok('单条升级连续 ' + r1.upSteps + ' 次，数值严格单调上升（' + r1.upSeq.join('→') + '）');
+    else bad('数值出现下降或未升满：mono=' + r1.upMono + ' seq=' + JSON.stringify(r1.upSeq));
+    if (r1.upKeyKept && r1.upOtherIntact) ok('升级只动选中的那 1 条：词条 key 与其他词缀均不变');
+    else bad('升级波及了别的词缀：keyKept=' + r1.upKeyKept + ' other=' + r1.upOtherIntact);
+    if (!r1.upOverCap && r1.upAtCap) ok('数值升到本装备等级上限 ' + r1.upCap + ' 后不再越界');
+    else bad('上限处理异常：overCap=' + r1.upOverCap + ' atCap=' + r1.upAtCap + ' cap=' + r1.upCap);
+    if (r1.upChargedOk) ok('每次升级扣费与返回的 cost 一致');
+    else bad('扣费与 cost 不一致');
+    if (r1.cappedRejected && r1.cappedNoCharge) ok('封顶后再升级被拒绝且不扣玄晶');
+    else bad('封顶处理异常：rejected=' + r1.cappedRejected + ' noCharge=' + r1.cappedNoCharge);
+    if (r1.rawCappedNull) ok('upgradeAffix 封顶返回 null（不产生下降结果）');
+    else bad('upgradeAffix 封顶未返回 null');
+    if (r1.edgeOk) ok('距上限 1 点时仍能保底升满，不越界');
+    else bad('临顶边界异常');
+    if (r1.poorUpRejected && r1.poorUpUntouched) ok('玄晶不足时拒绝升级且词条原封不动');
+    else bad('玄晶不足处理异常');
+
+    if (r1.candHasCrit && r1.candExcludesUsed) ok('候选词条含暴击率，且排除其他位已占用的 vit/def');
     else bad('候选词条异常：hasCrit=' + r1.candHasCrit + ' excludes=' + r1.candExcludesUsed);
-    if (r1.ok && r1.key === 'crit') ok('定向洗炼成功洗出暴击率并停止（' + r1.attempts + ' 次 / ' + r1.spent + ' 玄晶）');
+    if (r1.ok && r1.key === 'crit') ok('改为指定词条：成功洗出暴击率并停止（' + r1.attempts + ' 次 / ' + r1.spent + ' 玄晶）');
     else bad('定向洗炼失败：ok=' + r1.ok + ' key=' + r1.key);
     if (r1.spentMatches && r1.costEscalated) ok('花费统计与扣减一致，且费用随次数递增');
     else bad('花费异常：spent=' + r1.spent + ' match=' + r1.spentMatches + ' escalated=' + r1.costEscalated);
@@ -145,43 +224,60 @@ const bad = m => { results.push(0); console.log('  [FAIL] ' + m); };
     else bad('读档后词条丢失：' + JSON.stringify(r1.savedKey));
   }
 
-  /* ---------- UI：定向按钮 / 候选芯片 / 预估 / 开始按钮 ---------- */
+  /* ---------- UI：定向按钮 / 升级面板 / 进度条 / 切换候选 / 开始按钮 ---------- */
   const ui = await page.evaluate(() => {
     Game.addCrystal(2000000);
-    /* 用一件新胸甲，避免命中「已是目标词条」的拒绝分支 */
     const fresh = normalizeItem({
       kind: 'chest', slot: 'chest', name: '新胸甲', rarity: 'rare', ilvl: 25, cls: 'warrior',
       baseArmor: 90, sockets: 0, runes: [],
       affixes: [
-        { key: 'str', val: 10, pre: '', suf: '', tier: 2, q: 1 },
+        { key: 'str', val: 5, pre: '', suf: '', tier: 2, q: 1 },
         { key: 'vit', val: 8, pre: '', suf: '', tier: 2, q: 1 },
         { key: 'def', val: 20, pre: '', suf: '', tier: 1, q: 1 }
       ]
     });
     Game.state.inventory.push(fresh);
     const idx = Game.state.inventory.length - 1;
-    UI.forgeTab = 'reforge';
-    UI.forgeRef = 'inv:' + idx;
     UI.forgeTarget = null;
     UI.openForge('inv:' + idx);
     UI.forgeTab = 'reforge';
     UI.renderForge();
+
     const dirBtns = document.querySelectorAll('#forgeMain [data-ftarget]').length;
     document.querySelector('#forgeMain [data-ftarget="0"]').click();
+    const upBtn = document.querySelector('#forgeMain [data-fupgrade]');
+    const upTxt = upBtn ? upBtn.textContent.trim() : '';
+    const hasBar = !!document.querySelector('#forgeMain .fup-bar');
+    const boxTxt = (document.querySelector('#forgeMain .ftarget-box') || {}).textContent || '';
+    const singleBtn = !!document.querySelector('#forgeMain [data-freforge="0"]');
+
+    /* 连点 4 次升级，收数值序列 */
+    const seq = [fresh.affixes[0].val];
+    for (let i = 0; i < 4; i++) {
+      const b = document.querySelector('#forgeMain [data-fupgrade]');
+      if (b && !b.disabled) b.click(); else break;
+      seq.push(fresh.affixes[0].val);
+    }
+
+    /* 切到「改为指定词条」 */
+    document.querySelector('#forgeMain [data-fpickmode]').click();
     const picks = document.querySelectorAll('#forgeMain [data-fpick]').length;
     const hasCritChip = [...document.querySelectorAll('#forgeMain [data-fpick]')].some(e => e.dataset.fpick === 'crit');
-    /* 选暴击率 → 出现预估与开始按钮 */
+    const backBtn = !!document.querySelector('#forgeMain [data-fback]');
     [...document.querySelectorAll('#forgeMain [data-fpick]')].find(e => e.dataset.fpick === 'crit').click();
     const autoBtn = document.querySelector('#forgeMain [data-fauto]');
     const autoTxt = autoBtn ? autoBtn.textContent.trim() : '';
     const estTxt = (document.querySelector('#forgeMain .ftarget-box .hintline') || {}).textContent || '';
-    const singleBtn = !!document.querySelector('#forgeMain [data-freforge="0"]');
-    return { dirBtns, picks, hasCritChip, autoTxt, estTxt, singleBtn };
+    return { dirBtns, upTxt, hasBar, boxTxt, seq, picks, hasCritChip, backBtn, autoTxt, estTxt, singleBtn };
   });
   if (ui.dirBtns === 3) ok('每条词缀行都有「定向」按钮（单次洗练按钮仍在）');
   else bad('定向按钮数量异常：' + ui.dirBtns);
-  if (ui.picks > 10 && ui.hasCritChip) ok('候选词条面板渲染 ' + ui.picks + ' 个芯片（含暴击率）');
-  else bad('候选面板异常：picks=' + ui.picks);
+  if (/升级此条/.test(ui.upTxt) && ui.hasBar && /只升不降/.test(ui.boxTxt)) ok('定向面板默认进入升级模式（含进度条与只升不降说明）');
+  else bad('升级面板异常：btn=' + ui.upTxt + ' bar=' + ui.hasBar);
+  if (ui.seq.length >= 4 && ui.seq.every((v, i) => i === 0 || v > ui.seq[i - 1])) ok('UI 连点升级，数值逐次上升（' + ui.seq.join('→') + '）');
+  else bad('UI 升级数值异常：' + JSON.stringify(ui.seq));
+  if (ui.picks > 10 && ui.hasCritChip && ui.backBtn) ok('「改为指定词条」切出 ' + ui.picks + ' 个候选芯片（含暴击率），可返回升级');
+  else bad('候选面板异常：picks=' + ui.picks + ' back=' + ui.backBtn);
   if (/开始定向洗炼/.test(ui.autoTxt) && /预计约/.test(ui.estTxt)) ok('选中目标后显示预估与「开始定向洗炼」按钮');
   else bad('确认条异常：' + ui.autoTxt);
 

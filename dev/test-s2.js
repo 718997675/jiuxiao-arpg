@@ -23,6 +23,7 @@ const load = f => vm.runInContext(
 load('data/data-core.js');
 load('data/data-icons.js');
 load('data/data-items.js');
+load('data/data-uniques.js');   // items.js 顶部会建 UNIQUE_BY_ID 索引，必须先加载
 load('items.js');
 
 const pick = name => vm.runInContext(name, ctx);
@@ -266,9 +267,9 @@ console.log('\n四、洗练');
 console.log('\n五、旧档 / 脏数据归一化');
 {
   const a = normalizeItem({ slot: 'chest', rarity: 'rare', affixes: [], sockets: 9, runes: ['el', 'nope', 3] });
-  ok(a.sockets === 4, '孔数应被夹到 4', 'got ' + a.sockets);
-  ok(a.runes.length === 4 && a.runes[0] === 'el', '合法符文保留，数组补足');
-  ok(a.runes[1] === null && a.runes[2] === null && a.runes[3] === null, '非法符文应置空');
+  ok(a.sockets === FORGE.drillMax, '孔数应被夹到 drillMax=' + FORGE.drillMax, 'got ' + a.sockets);
+  ok(a.runes.length === FORGE.drillMax && a.runes[0] === 'el', '合法符文保留，数组补足');
+  ok(a.runes.slice(1).every(r => r === null), '非法符文应置空');
 
   const b = normalizeItem({ slot: 'ring', rarity: 'rare', affixes: [], sockets: 3, runes: ['el', 'sol', 'tal'] });
   ok(b.sockets === 0 && b.runes.length === 0, '戒指应强制无孔');
