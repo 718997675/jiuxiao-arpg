@@ -553,18 +553,22 @@ function applyPaperDoll(p) {
   const cls = CLASSES[p.cls];
   const P = a.parts;
 
-  /* 身体基础色随职业 */
-  P.clothMat.color.setHex(cls.color);
-  P.cloth2Mat.color.setHex(cls.cloth);
-  P.sleeveMat.color.setHex(cls.color);
-  P.legMat.color.setHex(cls.cloth);
-  P.bootMat.color.setHex(cls.cloth);
-  P.handMat.color.setHex(cls.cloth);
+  /* 身体基础色随职业：古风角色有自己的配色，只在没有装备时保留，
+   * 有装备时下面各分支会按装备色覆盖 */
+  if (!a.cf) {
+    P.clothMat.color.setHex(cls.color);
+    P.cloth2Mat.color.setHex(cls.cloth);
+    P.sleeveMat.color.setHex(cls.color);
+    P.legMat.color.setHex(cls.cloth);
+    P.bootMat.color.setHex(cls.cloth);
+    P.handMat.color.setHex(cls.cloth);
+  }
   P.chestMesh.material = P.clothMat;
 
-  /* 护甲：躯干颜色、金属质感 */
+  /* 护甲：躯干颜色、金属质感。古风角色保留自己的配色，
+   * 装备只通过头盔/护肩/披风/武器体现，避免把整套古风色冲掉 */
   const chest = eq.chest;
-  if (chest) {
+  if (chest && !a.cf) {
     const c = itemVisualColor(chest);
     P.clothMat.color.setHex(c.base);
     P.clothMat.metalness = c.metal;
@@ -646,9 +650,15 @@ function applyPaperDoll(p) {
   if (wp) {
     const c = itemVisualColor(wp);
     const w = buildWeapon(wp.shape || 'sword', c.base, wp.rarity === 'common' ? null : c.glow);
-    if (wp.shape === 'staff' || wp.shape === 'charm') w.rotation.set(0, 0, -0.08);
-    else w.rotation.set(-0.12, 0, -0.85);
-    w.position.set(0.1, 0.06, 0.04);
+    if (a.cf) {
+      /* 古风手型：刀剑自然下垂，杖/符立握 */
+      if (wp.shape === 'staff' || wp.shape === 'charm') { w.rotation.set(0.05, 0, -0.06); w.position.set(0.02, -0.05, 0.02); }
+      else { w.rotation.set(0.08, 0, Math.PI - 0.12); w.position.set(0.02, 0.02, 0.03); }
+    } else {
+      if (wp.shape === 'staff' || wp.shape === 'charm') w.rotation.set(0, 0, -0.08);
+      else w.rotation.set(-0.12, 0, -0.85);
+      w.position.set(0.1, 0.06, 0.04);
+    }
     P.weaponHand.add(w);
     P.weaponMat = c;
   }
@@ -773,6 +783,8 @@ const ATK_KEYS = {
 
 function updateActorAnim(a, dt) {
   const P = a.parts;
+  /* 古风角色（charforge）：走自己的动作曲线，多一节屈膝与袖子/下摆摆动 */
+  if (a.cf && typeof CharForge !== 'undefined') return CharForge.update(a, dt);
   const t = a.time = (a.time || 0) + dt;
   if (!P.torso) return;
 

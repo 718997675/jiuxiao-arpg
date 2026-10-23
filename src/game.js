@@ -404,11 +404,14 @@ const Game = {
   setupPlayer() {
     const cls = CLASSES[this.state.cls];
     if (this.actor) { this.scene.remove(this.actor.group); }
-    const a = buildHumanoid({
-      color: cls.color, cloth: cls.cloth, skin: 0xe8c8a8,
-      legColor: cls.cloth, bootColor: 0x2a2018, sleeve: cls.color, glove: cls.cloth
-    });
-    a.group.scale.setScalar(1.12);
+    /* 古风角色优先；任何异常都退回盒子人，保证一定能进游戏 */
+    const a = (typeof CharForge !== 'undefined' && CharForge.has(this.state.cls))
+      ? CharForge.build(this.state.cls)
+      : buildHumanoid({
+        color: cls.color, cloth: cls.cloth, skin: 0xe8c8a8,
+        legColor: cls.cloth, bootColor: 0x2a2018, sleeve: cls.color, glove: cls.cloth
+      });
+    a.group.scale.setScalar(a.cf ? 1.0 : 1.12);
     this.actor = a;
     const foot = new THREE.Mesh(ringGeo(0.5, 0.62, 20), new THREE.MeshBasicMaterial({ color: 0x9ad8ff, transparent: true, opacity: 0.32, side: THREE.DoubleSide, depthWrite: false }));
     foot.rotation.x = -Math.PI / 2; foot.position.y = 0.04;
