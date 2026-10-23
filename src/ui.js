@@ -803,9 +803,10 @@ const UI = {
     document.getElementById('travelPanel').classList.add('open');
   },
 
-  /* ---------------- 炼金师（分解 / 升级） ---------------- */
+  /* ---------------- 炼金师（分解 / 升级 / 套装打造） ---------------- */
   alchemistTab: 'decompose',
   alchemistRef: null,
+  alchemistSetId: null,
   _alchemistBound: false,
 
   openDecompose() {
@@ -814,6 +815,11 @@ const UI = {
   },
   openUpgradeQuality() {
     this.alchemistTab = 'upgrade';
+    this.openAlchemist();
+  },
+  openSetCraft() {
+    this.alchemistTab = 'setcraft';
+    this.alchemistSetId = null;
     this.openAlchemist();
   },
   openAlchemist() {
@@ -833,6 +839,7 @@ const UI = {
       if (this.alchemistTab === b.dataset.atab) return;
       this.alchemistTab = b.dataset.atab;
       this.alchemistRef = null;
+      this.alchemistSetId = null;
       SFX.ui();
       this.renderAlchemist();
     }));
@@ -859,6 +866,20 @@ const UI = {
         const r = Game.upgradeItemQuality(item);
         if (r.ok) this.renderAlchemist();
         else if (r.msg) UI.log(r.msg, 'bad');
+        return;
+      }
+      /* 套装打造：先点目标套装卡片选中，再点打造按钮 */
+      const asetEl = e.target.closest('[data-aset]');
+      if (asetEl) {
+        this.alchemistSetId = asetEl.dataset.aset;
+        SFX.ui();
+        this.renderAlchemist();
+        return;
+      }
+      if (e.target.closest('[data-setscraft]')) {
+        const r = Game.craftSetItem(item, this.alchemistSetId);
+        if (r.ok) { this.alchemistSetId = null; this.renderAlchemist(); }
+        else if (r.msg) UI.log(r.msg, 'bad');
       }
     });
   },
@@ -884,6 +905,7 @@ const UI = {
 
     const all = this._alchemistItems();
     const list = this.alchemistTab === 'decompose' ? all : all.filter(x => {
+      if (this.alchemistTab === 'setcraft') return setCraftTargets(x.item).length > 0;
       const r = x.item.rarity;
       return r === 'common' || r === 'magic' || r === 'rare';
     });
@@ -916,6 +938,29 @@ const UI = {
       const y = Game.previewDecompose(item);
       h += `<div class="hintline">分解后可获得：${y ? y.text : '无'}</div>`;
       h += `<div style="margin-top:10px"><button class="btn primary" data-decompose="1">确认分解</button></div>`;
+    } else if (this.alchemistTab === 'setcraft') {
+      const targets = setCraftTargets(item);
+      if (!targets.length) {
+        h += `<div class="hintline">这件装备无法打造成套装（传世装备与已有套装不行）。</div>`;
+      } else {
+        h += `<div class="frune-label">选择目标套装 · 部位自动对应该装备所在部位</div>`;
+        for (const st of targets) {
+          const owned = (Game.state.setCount && Game.state.setCount[st.id]) || 0;
+          const on = this.alchemistSetId === st.id;
+          h += `<div class="fword ${on ? 'sel' : ''}" data-aset="${st.id}"
+            style="border-color:${on ? st.color : st.color + '44'};cursor:pointer;${on ? 'box-shadow:0 0 12px ' + st.color + '55' : ''}">
+            <div class="fwn" style="color:${st.color}">${st.name}${on ? ' · 已选中' : ''}</div>
+            <div class="fws">${st.bonuses.map(b => `${b.need}件：${b.text}`).join('；')}</div>
+            <div class="fwd">${st.pieces[st.slots.indexOf(item.slot)] || ''} · 当前已集 ${owned} 件${st.cls ? ' · 限' + CLASSES[st.cls].name : ' · 全职业'}</div>
+          </div>`;
+        }
+        const cost = setCraftCost(item);
+        const costTxt = cost.crystal.map((n, i) => n ? n + CRYSTAL_TIERS[i].name : '').filter(Boolean).join('、');
+        const can = this.alchemistSetId && cost.crystal.every((n, i) => Game.crystalTierCount(i + 1) >= n) && Game.state.gold >= cost.gold;
+        h += `<div class="hintline" style="margin-top:10px">打造费用：${costTxt} + ${cost.gold} 金币</div>`;
+        h += `<div class="hintline">原有词缀、孔位与已镶符文全部保留；基底按套装档位重算，词缀不足 3 条会自动补足。</div>`;
+        h += `<div style="margin-top:10px"><button class="btn primary" data-setscraft="1" ${can ? '' : 'disabled'}>${this.alchemistSetId ? '打造为 ' + SETS[this.alchemistSetId].name + '「' + (SETS[this.alchemistSetId].pieces[SETS[this.alchemistSetId].slots.indexOf(item.slot)] || '') + '」' : '先选择目标套装'}</button></div>`;
+      }
     } else {
       const chain = ['common', 'magic', 'rare', 'legendary'];
       const idx = chain.indexOf(item.rarity);

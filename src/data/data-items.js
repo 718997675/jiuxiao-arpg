@@ -538,5 +538,8 @@ const FORGE = {
   enhanceCostBase: { common: 12, magic: 20, rare: 35, legendary: 55, set: 45 },
   enhanceStep: 0.45,          // 每强化一次费用 +45%
   drillMax: 5,                // 打孔上限：一件装备最多 5 孔（自然掉落最多 4 孔）
-  drillCost: [14, 20, 28, 38, 50]  // 打出第 N+1 个孔的玄晶价（索引 = 当前孔数）
+  drillCost: [14, 20, 28, 38, 50],  // 打出第 N+1 个孔的玄晶价（索引 = 当前孔数）
+  /* 套装打造：把属性满意的装备打造成指定套装的对应件。
+   * crystal 按「凡/灵/玄/神」四级索引；金币随 ilvl 上浮。 */
+  setCraft: { crystal: [0, 0, 10, 4], goldBase: 3000, goldPerIlvl: 250 }
 };

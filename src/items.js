@@ -170,6 +170,56 @@ function drillSocket(item) {
   return item.sockets;
 }
 
+/* ---------------- 套装打造（v1.1.2） ----------------
+ * 把一件属性满意的装备打造成指定套装的对应部位：
+ * 保留原有词缀 / 孔位 / 已镶符文 / 强化次数，基底按套装档位系数重算，
+ * 词缀不足 3 条时补足。传世（unique）与已是套装的装备不可打造。 */
+function setCraftCost(item) {
+  if (!item) return { crystal: [0, 0, 0, 0], gold: 0 };
+  return {
+    crystal: FORGE.setCraft.crystal.slice(),
+    gold: FORGE.setCraft.goldBase + (item.ilvl || 1) * FORGE.setCraft.goldPerIlvl
+  };
+}
+
+/* 这件装备能打进哪些套装（按部位匹配） */
+function setCraftTargets(item) {
+  if (!item || item.setId || item.rarity === 'unique') return [];
+  return Object.values(SETS).filter(s => s.slots.indexOf(item.slot) >= 0);
+}
+
+/* 打造成指定套装。成功返回 { setId, setName, piece, pieceIndex }，失败返回 null */
+function craftSetItem(item, setId) {
+  if (!item || item.setId || item.rarity === 'unique') return null;
+  const set = SETS[setId];
+  if (!set) return null;
+  const idx = set.slots.indexOf(item.slot);
+  if (idx < 0) return null;                       // 该套装没有这个部位
+  /* 基底按套装系数重算（套装基底比原品质更厚） */
+  const k = RARITY.set.mul / (RARITY[item.rarity] ? RARITY[item.rarity].mul : 1);
+  if (Array.isArray(item.baseDmg)) {
+    item.baseDmg = [Math.round(item.baseDmg[0] * k), Math.round(item.baseDmg[1] * k)];
+  }
+  if (item.baseArmor) item.baseArmor = Math.round(item.baseArmor * k);
+  /* 套装备份：稀有度 / 套装标识 / 名字 / 职业限制 */
+  const oldName = item.name;
+  item.rarity = 'set';
+  item.setId = set.id;
+  item.setName = set.name;
+  item.name = set.pieces[idx] || set.pieces[0];
+  item.cls = set.cls || null;
+  /* 词缀全保留（玩家投入的洗练/强化不白费），不足 3 条补足 */
+  const used = new Set();
+  (item.affixes || []).forEach(a => { if (a && a.key) used.add(a.key); });
+  while ((item.affixes || []).length < 3) {
+    const a = makeAffix(item.ilvl || 1, used);
+    if (!a) break;
+    item.affixes.push(a);
+    used.add(a.key);
+  }
+  return { setId: set.id, setName: set.name, piece: item.name, pieceIndex: idx, oldName };
+}
+
 /* 重 roll 指定词缀：稀有度 / 词缀数量不变，新词缀一定换 key，同时重 roll 品质 */
 function reforgeAffix(item, index) {
   if (!item || !Array.isArray(item.affixes)) return null;

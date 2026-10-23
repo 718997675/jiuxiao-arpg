@@ -2880,6 +2880,7 @@ const Game = {
       UI.showDialog(npc.name, PICK(npc.lines), [
         { label: '分解装备', action: () => UI.openDecompose() },
         { label: '升级品质', action: () => UI.openUpgradeQuality() },
+        { label: '套装打造', action: () => UI.openSetCraft() },
         { label: '离开', action: () => UI.closeAll() }
       ]);
     }
@@ -3248,6 +3249,34 @@ const Game = {
     UI.renderHUD();
     this.save();
     return { ok: true, sockets: n, cost };
+  },
+
+  /* ---------------- 套装打造（v1.1.2）：把装备打造成指定套装件 ---------------- */
+  craftSetItem(item, setId) {
+    if (!item) return { ok: false, msg: '没有这件装备。' };
+    if (item.setId) return { ok: false, msg: '该装备已是套装（' + (item.setName || '') + '）。' };
+    if (item.rarity === 'unique') return { ok: false, msg: '传世装备无法打造为套装。' };
+    const targets = setCraftTargets(item);
+    if (!targets.some(s => s.id === setId)) return { ok: false, msg: '该套装没有这个部位，打造不了。' };
+    const cost = setCraftCost(item);
+    if (this.state.gold < cost.gold) return { ok: false, msg: '金币不足，需要 ' + cost.gold + '。' };
+    for (let i = 0; i < 4; i++) {
+      if (this.crystalTierCount(i + 1) < cost.crystal[i]) {
+        return { ok: false, msg: CRYSTAL_TIERS[i].name + '不足，需要 ' + cost.crystal[i] + ' 枚。' };
+      }
+    }
+    this.state.gold -= cost.gold;
+    for (let i = 0; i < 4; i++) this.addCrystalTier(i + 1, -cost.crystal[i]);
+    const r = craftSetItem(item, setId);
+    if (!r) return { ok: false, msg: '打造失败。' };
+    this.recalc();
+    SFX.levelup();
+    UI.log('套装打造 · ' + r.oldName + ' → ' + r.setName + '「' + r.piece + '」', 'lv');
+    UI.toast(r.setName + ' · ' + r.piece, 'lv');
+    UI.renderInventory();
+    UI.renderHUD();
+    this.save();
+    return { ok: true, setName: r.setName, piece: r.piece, cost };
   },
 
   /* [S3] 分解装备 → 玄晶分级材料 */
