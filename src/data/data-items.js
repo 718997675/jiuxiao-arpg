@@ -528,6 +528,10 @@ const AFFIX_QUALITY_COLOR = {
   4: '#ffd166'    // 史诗
 };
 
+/* 词缀池档位色（Ⅰ 常规 / Ⅱ 进阶 / Ⅲ 稀有特效） */
+const AFFIX_TIER_COLOR = { 1: '#b8b8a8', 2: '#8fd0a0', 3: '#e0a8ff' };
+const AFFIX_TIER_NAME = { 1: '常规', 2: '进阶', 3: '特效' };
+
 /* ---------------- 炼器台 ---------------- */
 const FORGE = {
   matName: '玄晶',

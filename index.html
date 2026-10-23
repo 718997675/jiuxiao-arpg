@@ -332,6 +332,15 @@
   .faff-row .btn:disabled{opacity:.34;cursor:default}
   .faff-row .btn:disabled:hover{border-color:var(--line);background:linear-gradient(180deg,rgba(60,48,28,.9),rgba(20,18,14,.95));color:#d8ccb0}
 
+  /* ---------- 定向洗炼 ---------- */
+  .ftarget-box{margin-top:10px;padding:10px 10px 4px;border:1px solid rgba(216,178,90,.28);border-radius:3px;
+    background:rgba(30,26,18,.45);box-shadow:inset 0 0 18px rgba(216,178,90,.06)}
+  .fpicks{display:flex;flex-wrap:wrap;gap:6px;max-height:172px;overflow-y:auto;padding-right:4px}
+  .fpick{display:flex;align-items:center;gap:6px;padding:4px 9px;background:rgba(0,0,0,.35);border:1px solid;
+    font-size:11.5px;color:#d8ccb0;cursor:pointer;transition:.12s;letter-spacing:.5px}
+  .fpick:hover{background:rgba(80,62,30,.5);color:#f0dca8;transform:translateY(-1px)}
+  .fpick-v{font-size:10px;color:#8a8474;font-variant-numeric:tabular-nums}
+
   /* ---------- 存档管理 ---------- */
   /* 可能从开始界面打开，所以要压过 #start 的 z-index:60 */
   #savePanel{left:50%;top:50%;transform:translate(-50%,-50%);width:640px;max-height:88vh;overflow:hidden;z-index:70}
@@ -905,7 +914,7 @@
       <div class="forge-list" id="forgeList"></div>
       <div class="forge-main" id="forgeMain"></div>
     </div>
-    <div class="hintline">符文镶嵌后即刻生效；洗练只替换选中的那一条词缀；强化可为装备扩充额外词缀（上限 3 条）；打孔可消耗玄晶为装备开孔（上限 5 孔，戒指/项链除外）。符文与玄晶不占背包格。</div>
+    <div class="hintline">符文镶嵌后即刻生效；洗练只替换选中的那一条词缀，「定向」可指定目标词条一键自动洗炼；强化可为装备扩充额外词缀（上限 3 条）；打孔可消耗玄晶为装备开孔（上限 5 孔，戒指/项链除外）。符文与玄晶不占背包格。</div>
   </div>
 </div>
 

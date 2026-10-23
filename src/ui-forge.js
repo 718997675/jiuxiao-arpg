@@ -9,6 +9,7 @@ Object.assign(UI, {
   forgeTab: 'rune',
   forgeRef: null,
   forgeSocket: -1,
+  forgeTarget: null,          // 定向洗炼 { index, key }
   _forgeBound: false,
 
   toggleForge() {
@@ -38,6 +39,7 @@ Object.assign(UI, {
       if (this.forgeTab === b.dataset.ftab) return;
       this.forgeTab = b.dataset.ftab;
       this.forgeSocket = -1;
+      this.forgeTarget = null;
       const list = this.forgeItemList();
       if (!list.some(x => x.ref === this.forgeRef)) this.forgeRef = list.length ? list[0].ref : null;
       SFX.ui();
@@ -49,6 +51,7 @@ Object.assign(UI, {
       if (!row || row.dataset.fref === this.forgeRef) return;
       this.forgeRef = row.dataset.fref;
       this.forgeSocket = -1;
+      this.forgeTarget = null;
       SFX.ui();
       this.renderForge();
     });
@@ -107,6 +110,40 @@ Object.assign(UI, {
         const r = Game.reforgeItem(item, idx);
         if (r.ok) this.renderForge();
         else if (r.msg) UI.log(r.msg, 'bad');
+        return;
+      }
+
+      /* ---- 定向洗炼：开面板 / 选目标词条 / 一键自动洗 / 取消 ---- */
+      const tEl = e.target.closest('[data-ftarget]');
+      if (tEl) {
+        const idx = parseInt(tEl.dataset.ftarget, 10);
+        const same = this.forgeTarget && this.forgeTarget.index === idx;
+        this.forgeTarget = same ? null : { index: idx, key: null };
+        SFX.ui();
+        this.renderForge();
+        return;
+      }
+      const pEl = e.target.closest('[data-fpick]');
+      if (pEl) {
+        if (!this.forgeTarget) return;
+        this.forgeTarget = Object.assign({}, this.forgeTarget, { key: pEl.dataset.fpick });
+        SFX.ui();
+        this.renderForge();
+        return;
+      }
+      if (e.target.closest('[data-fcanceltarget]')) {
+        this.forgeTarget = null;
+        SFX.ui();
+        this.renderForge();
+        return;
+      }
+      const aEl = e.target.closest('[data-fauto]');
+      if (aEl) {
+        if (!this.forgeTarget) return;
+        const r = Game.targetedReforge(item, this.forgeTarget.index, this.forgeTarget.key);
+        if (r.ok) this.forgeTarget = null;
+        this.renderForge();
+        return;
       }
     });
   },
@@ -270,10 +307,50 @@ Object.assign(UI, {
         <span class="fsub">不可洗练</span></div>`;
     }
     for (let i = 0; i < item.affixes.length; i++) {
+      const targeting = this.forgeTarget && this.forgeTarget.index === i;
       h += `<div class="faff-row">
         <span class="fa">${affixText(item.affixes[i])}</span>
-        <button class="btn" data-freforge="${i}" ${have < cost ? 'disabled' : ''}>洗练 · ${cost} 玄晶</button></div>`;
+        <span style="display:flex;gap:6px;flex:none">
+          <button class="btn" data-freforge="${i}" ${have < cost ? 'disabled' : ''}>洗练 · ${cost} 玄晶</button>
+          <button class="btn ${targeting ? 'primary' : ''}" data-ftarget="${i}">${targeting ? '收起定向' : '定向'}</button>
+        </span></div>`;
     }
+
+    /* ---- 定向洗炼面板 ---- */
+    const tg = this.forgeTarget;
+    if (tg && tg.index >= 0 && tg.index < item.affixes.length) {
+      h += `<div class="ftarget-box">
+        <div class="frune-label">定向洗炼 · 第 ${tg.index + 1} 条词缀 · 自动消耗玄晶，洗出指定词条立即停</div>`;
+      if (!tg.key) {
+        const cands = reforgeTargets(item, tg.index);
+        h += `<div class="fpicks">`;
+        for (const a of cands) {
+          const s = STATS[a.key];
+          const f = 1 + (item.ilvl || 1) * 0.055;
+          const lo = Math.max(1, Math.round(a.min * f)), hi = Math.max(lo, Math.round(a.max * f));
+          h += `<div class="fpick" data-fpick="${a.key}" style="border-color:${AFFIX_TIER_COLOR[a.tier]}66"
+            title="${AFFIX_TIER_NAME[a.tier]}词条 · 数值随 ilvl 与品质浮动">
+            <span style="color:${AFFIX_TIER_COLOR[a.tier]}">${s.label}</span>
+            <span class="fpick-v">+${lo}~${hi}${s.pct ? '%' : ''}</span></div>`;
+        }
+        h += `</div>
+        <div class="hintline">点一个词条设为目标。同一装备不会出重复词条，所以其他词缀位已占用的不会出现在这里。</div>`;
+      } else {
+        const def = AFFIXES.find(a => a.key === tg.key);
+        const s = STATS[tg.key];
+        const est = estimateTargetedReforge(item, tg.index, def);
+        const can = have >= reforgeCost(item);
+        h += `<div class="faff-row" style="margin-top:8px">
+          <span class="fa" style="color:${AFFIX_TIER_COLOR[def.tier]}">目标：${s.label} +${Math.max(1, Math.round(def.min * (1 + (item.ilvl || 1) * 0.055)))}~${Math.max(1, Math.round(def.max * (1 + (item.ilvl || 1) * 0.055)))}${s.pct ? '%' : ''}（${AFFIX_TIER_NAME[def.tier]}）</span>
+          <span style="display:flex;gap:6px;flex:none">
+            <button class="btn" data-fcanceltarget="1">换个目标</button>
+            <button class="btn primary" data-fauto="1" ${can ? '' : 'disabled'}>开始定向洗炼</button>
+          </span></div>
+        <div class="hintline">预计约 <b style="color:#e8d8ff">${est.attempts}</b> 次、约 <b style="color:#e8d8ff">${est.cost}</b> 玄晶（每次费用 +${Math.round(FORGE.reforgeStep * 100)}%，越洗越贵）；玄晶不足会自动中断，已洗的次数不浪费。</div>`;
+      }
+      h += `</div>`;
+    }
+
     h += `<div class="hintline">持有玄晶 ${have} 枚。每次洗练后费用 +${Math.round(FORGE.reforgeStep * 100)}%。</div>`;
     return h;
   },

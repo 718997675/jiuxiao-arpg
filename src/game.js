@@ -3279,6 +3279,48 @@ const Game = {
     return { ok: true, setName: r.setName, piece: r.piece, cost };
   },
 
+  /* ---------------- 定向洗炼（v1.1.3）：自动洗到指定词条才停 ---------------- */
+  targetedReforge(item, index, targetKey) {
+    if (!item || !Array.isArray(item.affixes) || index < 0 || index >= item.affixes.length) {
+      return { ok: false, msg: '没有这条词缀。' };
+    }
+    const def = AFFIXES.find(a => a.key === targetKey);
+    if (!def) return { ok: false, msg: '没有这个词条。' };
+    const label = (STATS[targetKey] || {}).label || targetKey;
+    const cur = item.affixes[index];
+    if (cur && cur.key === targetKey) return { ok: false, msg: '这条词缀已经是「' + label + '」了。', already: true };
+    /* 同装备不会出重复词条：其他位已占用同一 key 时永远洗不出来 */
+    const clash = item.affixes.some((a, i) => i !== index && a && a.key === targetKey);
+    if (clash) return { ok: false, msg: '其他词缀位已有「' + label + '」，同装备不重复，换个目标吧。' };
+
+    const MAX_TRY = 500;   // 安全阀：费用逐次 +35%，正常会先被玄晶耗尽拦住
+    let attempts = 0, spent = 0;
+    while (attempts < MAX_TRY) {
+      const cost = reforgeCost(item);
+      if (this.crystalCount() < cost) {
+        this.recalc(); SFX.ui();
+        UI.renderInventory(); UI.renderHUD(); this.save();
+        return { ok: false, msg: '玄晶不足，定向洗炼中断（已洗 ' + attempts + ' 次，消耗 ' + spent + ' 玄晶）。', attempts, spent };
+      }
+      this.addCrystal(-cost);
+      spent += cost;
+      const a = reforgeAffix(item, index);
+      attempts++;
+      if (a && a.key === targetKey) {
+        this.recalc();
+        SFX.levelup();
+        UI.log('定向洗炼成功 · ' + item.name + ' 第 ' + (index + 1) + ' 条 → ' + affixText(a) +
+          '（' + attempts + ' 次 / ' + spent + ' 玄晶）', 'lv');
+        UI.toast('洗出 ' + label + ' · ' + attempts + ' 次', 'lv');
+        UI.renderInventory(); UI.renderHUD(); this.save();
+        return { ok: true, affix: a, attempts, spent };
+      }
+    }
+    this.recalc(); SFX.ui();
+    UI.renderInventory(); UI.renderHUD(); this.save();
+    return { ok: false, msg: '已洗 ' + MAX_TRY + ' 次仍未洗出「' + label + '」，建议换个目标或攒够玄晶再来。', attempts, spent };
+  },
+
   /* [S3] 分解装备 → 玄晶分级材料 */
   previewDecompose(item) {
     if (!item) return null;

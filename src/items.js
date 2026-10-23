@@ -237,6 +237,38 @@ function reforgeAffix(item, index) {
   return a;
 }
 
+/* ---------------- 定向洗炼（v1.1.3） ----------------
+ * 候选词条 = 全部 AFFIXES 去掉「其他词缀位已占用」的 key
+ * （makeAffix 的 used 规则决定：同装备不会出重复词条）。
+ * 当前位已有的 key 允许再中——那等于已经达标。 */
+function reforgeTargets(item, index) {
+  if (!item || !Array.isArray(item.affixes) || index < 0 || index >= item.affixes.length) return [];
+  const usedElsewhere = new Set();
+  item.affixes.forEach((a, i) => { if (i !== index && a && a.key) usedElsewhere.add(a.key); });
+  return AFFIXES.filter(a => !usedElsewhere.has(a.key));
+}
+
+/* 预估：单次 roll 出目标词条的概率 → 期望次数 → 考虑 +35% 递增后的总花费。
+ * 只作心理预期展示，不参与实际扣费。 */
+function estimateTargetedReforge(item, index, affixDef) {
+  if (!item || !affixDef) return { attempts: 0, cost: 0 };
+  const targets = reforgeTargets(item, index);
+  const avail = new Set(targets.map(a => a.key));
+  const tierW = { 1: 0, 2: 0, 3: 0 };
+  for (const a of targets) tierW[a.tier] += (a.weight || 1);
+  const pWant = { 1: 0.62, 2: 0.28, 3: 0.10 };
+  let p = 0;
+  for (const t of [1, 2, 3]) {
+    if (!tierW[t] || !avail.has(affixDef.key) || affixDef.tier !== t) continue;
+    p += pWant[t] * ((affixDef.weight || 1) / tierW[t]);
+  }
+  if (p <= 0) return { attempts: 0, cost: 0 };
+  const n = Math.max(1, Math.ceil(1 / p));
+  let cost = 0;
+  for (let k = 0; k < n; k++) cost += Math.round((FORGE.reforgeCost[item.rarity] || 10) * (1 + ((item.reforges || 0) + k) * FORGE.reforgeStep));
+  return { attempts: n, cost };
+}
+
 /* 旧档 / 导入档的物品整形：孔位、符文、词缀、固有属性都要能被信任 */
 function normalizeItem(item) {
   if (!item || typeof item !== 'object') return null;
