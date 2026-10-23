@@ -110,11 +110,19 @@ const Game = {
 
   /* ======================================================= */
   bindInput() {
+    /* [FIX-BUG1] keydown repeat 问题：
+     * Windows 上按住任意键时 keydown 会持续触发（e.repeat=true），
+     * 如果用户开着中文输入法或某些系统热键软件，按住 WASD 移动时
+     * 可能额外触发空格 keydown → tryDash() 被反复调用（"回馈"）。
+     * 修复：repeat 的 keydown 不执行任何动作逻辑，只更新 keys 状态。 */
     window.addEventListener('keydown', e => {
       const k = e.key.toLowerCase();
       this.keys[k] = true;
-      if (k === ' ') { this.tryDash(); e.preventDefault(); }
+      /* 输入框聚焦时不拦截游戏按键 */
       if (document.activeElement && document.activeElement.tagName === 'INPUT') return;
+      /* repeat 的 keydown 不触发翻滚/技能/药水等动作，避免持续触发 */
+      if (e.repeat) return;
+      if (k === ' ') { this.tryDash(); e.preventDefault(); return; }
       if (k >= '1' && k <= '6') {
         const id = SKILL_ORDER[this.state ? this.state.cls : 'warrior'][parseInt(k) - 1];
         if (id) this.castSkill(id);
@@ -123,7 +131,27 @@ const Game = {
       if (k === '8') this.usePotion('mp');
       if (k === 'f') this.interact();
     });
-    window.addEventListener('keyup', e => { this.keys[e.key.toLowerCase()] = false; });
+    /* [FIX-BUG1] keyup 兜底：中文输入法激活时 keyup 的 e.key 可能返回
+     * 'process' 或 'unidentified'，导致 keys['w'] 等永远无法清除。
+     * 修复：keyup 时同时用 e.code（物理键位）做兜底清除。 */
+    window.addEventListener('keyup', e => {
+      const k = e.key.toLowerCase();
+      this.keys[k] = false;
+      /* 用 code 兜底：KeyW → w, KeyA → a, Space → space */
+      const codeMap = {
+        'KeyW': 'w', 'KeyA': 'a', 'KeyS': 's', 'KeyD': 'd',
+        'Space': ' ', 'ArrowUp': 'arrowup', 'ArrowDown': 'arrowdown',
+        'ArrowLeft': 'arrowleft', 'ArrowRight': 'arrowright',
+        'KeyQ': 'q', 'KeyE': 'e', 'KeyF': 'f',
+        'Digit1': '1', 'Digit2': '2', 'Digit3': '3',
+        'Digit4': '4', 'Digit5': '5', 'Digit6': '6',
+        'Digit7': '7', 'Digit8': '8'
+      };
+      const mapped = codeMap[e.code];
+      if (mapped) this.keys[mapped] = false;
+    });
+    /* [FIX-BUG1] 窗口失焦时清除所有按键状态，防止按键"卡住" */
+    window.addEventListener('blur', () => { this.keys = {}; this.mouseDown = false; });
 
     const cv = this.renderer.domElement;
     cv.addEventListener('mousedown', e => {

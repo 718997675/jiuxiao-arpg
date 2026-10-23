@@ -362,17 +362,27 @@
    * 移动端（body.touch 由 mobile.js 添加，PC 上完全不生效）
    * ============================================================ */
   body.touch{-webkit-user-select:none;user-select:none;overscroll-behavior:none;
-    touch-action:manipulation}
+    touch-action:none;        /* [FIX-BUG2] 从 manipulation 改为 none，完全阻止 Safari 手势干扰 */
+    -webkit-touch-callout:none;
+    -webkit-overflow-scrolling:auto}  /* 关掉 momentum scrolling，防止地址栏跳动 */
   body.touch #gl,body.touch #mtouch,body.touch #mJoy{touch-action:none}
+  /* [FIX-BUG2] 面板内部允许滚动 */
+  body.touch .panel,body.touch #dialog{touch-action:auto}
   /* iOS Safari 的规矩：输入框字号 < 16px 时，一旦聚焦就自动把整页放大，
    * 而且键盘收起后不会还原。页面被放大 → 固定定位的摇杆被推出可视区（看起来「消失」）、
    * 右侧按钮整体显得更大。所以触屏下所有可输入控件一律 ≥16px。 */
   body.touch input,body.touch textarea{font-size:16px!important;letter-spacing:1px}
   body.touch #newName{width:132px;padding:6px 8px}
-  html,body{overflow:hidden;overscroll-behavior:none}
+  html,body{overflow:hidden;overscroll-behavior:none;
+    position:fixed;width:100%;height:100%;top:0;left:0}  /* [FIX-BUG2] position:fixed 阻止 Safari 地址栏收起时的页面滚动 */
 
   /* ---- 虚拟按键 ---- */
-  #mtouch{position:fixed;inset:0;z-index:12;pointer-events:none;display:none}
+  /* [FIX-BUG2] position:fixed 在 iOS Safari 上地址栏收起时会跳动，
+   * 但改为 position:absolute 会导致滚动时跟着走。
+   * 保持 fixed 但用 will-change 和 backface-visibility 优化，
+   * 并在 JS 中实时校正位置（layout 方法已处理）。 */
+  #mtouch{position:fixed;inset:0;z-index:12;pointer-events:none;display:none;
+    will-change:transform;-webkit-backface-visibility:hidden;backface-visibility:hidden}
   body.touch #mtouch{display:block}
   #mtouch .mbtn{position:absolute;border-radius:50%;pointer-events:auto;
     display:flex;align-items:center;justify-content:center;

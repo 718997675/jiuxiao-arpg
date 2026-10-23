@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>Bug 2 测试 - iPhone Safari 触屏问题</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  body { background: #0b0c10; color: #e8e2d4; font-family: monospace; padding: 16px;
+    width: 100%; height: 100%; overflow: hidden; position: fixed; top: 0; left: 0;
+    touch-action: none; overscroll-behavior: none; user-select: none; }
+  .box { background: rgba(20,20,30,.9); border: 1px solid #d8b25a; border-radius: 4px; padding: 12px; margin: 8px 0; }
+  h3 { color: #d8b25a; font-size: 14px; margin-bottom: 8px; }
+  p { font-size: 12px; line-height: 1.6; color: #9a9488; }
+  .ok { color: #5ce08a; }
+  .bad { color: #c8362e; font-weight: bold; }
+  .log { font-size: 11px; line-height: 1.6; max-height: 200px; overflow-y: auto; background: #050608; padding: 8px; border-radius: 4px; touch-action: pan-y; }
+  .joystick { position: fixed; left: 20px; bottom: 20px; width: 120px; height: 120px;
+    border: 2px solid rgba(216,178,90,.42); border-radius: 50%; background: rgba(10,10,14,.92);
+    z-index: 12; touch-action: none; }
+  .knob { position: absolute; left: 30px; top: 30px; width: 60px; height: 60px;
+    border-radius: 50%; background: radial-gradient(circle at 36% 28%, rgba(62,52,34,.94), rgba(10,10,14,.92));
+    border: 1.5px solid rgba(216,178,90,.42); }
+  .atk { position: fixed; right: 20px; bottom: 20px; width: 90px; height: 90px;
+    border-radius: 50%; background: radial-gradient(circle at 36% 28%, rgba(132,46,36,.96), rgba(28,10,10,.94));
+    border: 1.5px solid rgba(232,110,78,.62); color: #ffdcc6; display: flex; align-items: center;
+    justify-content: center; font-size: 17px; z-index: 12; touch-action: none; }
+  .stat { display: inline-block; margin-right: 12px; font-size: 11px; }
+</style>
+</head>
+<body>
+<h3 style="color:#d8b25a;font-size:16px;margin-bottom:12px">Bug 2 测试：iPhone Safari 触屏问题</h3>
+
+<div class="box">
+  <h3>测试说明</h3>
+  <p>1. 触摸摇杆区域，观察是否移动到错误位置</p>
+  <p>2. 触摸右侧按钮区域，观察是否消失</p>
+  <p>3. 双指缩放页面，观察是否被阻止</p>
+  <p>4. 上下滑动，观察页面是否被拖动</p>
+</div>
+
+<div class="box">
+  <h3>事件统计</h3>
+  <div class="stat">touchstart: <span id="tsCount">0</span></div>
+  <div class="stat">touchmove: <span id="tmCount">0</span></div>
+  <div class="stat">gesture阻止: <span id="gBlock">0</span></div>
+  <div class="stat">双指阻止: <span id="pinchBlock">0</span></div>
+  <div class="stat">双击阻止: <span id="dblBlock">0</span></div>
+  <div class="stat">vv.scale: <span id="vvScale">1.00</span></div>
+  <br><br>
+  <div class="log" id="log"></div>
+</div>
+
+<div class="joystick" id="joy"><div class="knob" id="knob"></div></div>
+<div class="atk" id="atk">攻</div>
+
+<script>
+let tsCount = 0, tmCount = 0, gBlock = 0, pinchBlock = 0, dblBlock = 0;
+
+function log(msg, type) {
+  const el = document.getElementById('log');
+  const span = document.createElement('div');
+  span.innerHTML = `<span class="${type || ''}">${msg}</span>`;
+  el.insertBefore(span, el.firstChild);
+  while (el.children.length > 30) el.removeChild(el.lastChild);
+}
+
+// [FIX-BUG2] 阻止 Safari 的所有缩放手势
+['gesturestart', 'gesturechange', 'gestureend'].forEach(t =>
+  document.addEventListener(t, e => {
+    e.preventDefault();
+    gBlock++;
+    document.getElementById('gBlock').textContent = gBlock;
+    log(`gesture 阻止: ${t}`, 'ok');
+  }, { passive: false }));
+
+document.addEventListener('touchstart', e => {
+  tsCount++;
+  document.getElementById('tsCount').textContent = tsCount;
+  if (e.touches.length >= 2) {
+    e.preventDefault();
+    pinchBlock++;
+    document.getElementById('pinchBlock').textContent = pinchBlock;
+    log('双指 touchstart 已阻止', 'ok');
+  }
+}, { passive: false });
+
+let lastTouchEnd = 0;
+document.addEventListener('touchend', e => {
+  const now = Date.now();
+  if (now - lastTouchEnd <= 300) {
+    e.preventDefault();
+    dblBlock++;
+    document.getElementById('dblBlock').textContent = dblBlock;
+    log('双击缩放已阻止', 'ok');
+  }
+  lastTouchEnd = now;
+}, { passive: false });
+
+document.addEventListener('touchmove', e => {
+  tmCount++;
+  document.getElementById('tmCount').textContent = tmCount;
+  if (e.touches.length >= 1) {
+    e.preventDefault();
+  }
+}, { passive: false });
+
+document.addEventListener('dblclick', e => e.preventDefault(), { passive: false });
+
+// 监控 visualViewport 变化
+if (window.visualViewport) {
+  const updateVV = () => {
+    const vv = window.visualViewport;
+    document.getElementById('vvScale').textContent = vv.scale.toFixed(2);
+    if (vv.scale > 1.05) {
+      log(`页面被缩放! scale=${vv.scale.toFixed(2)}`, 'bad');
+    }
+  };
+  window.visualViewport.addEventListener('resize', updateVV);
+  window.visualViewport.addEventListener('scroll', updateVV);
+  setInterval(updateVV, 200);
+}
+
+// 摇杆交互
+const joy = document.getElementById('joy');
+const knob = document.getElementById('knob');
+let joyId = null;
+
+joy.addEventListener('pointerdown', e => {
+  e.preventDefault(); e.stopPropagation();
+  joyId = e.pointerId;
+  try { joy.setPointerCapture(e.pointerId); } catch (err) {}
+  joy.classList.add('active');
+});
+
+joy.addEventListener('pointermove', e => {
+  if (e.pointerId !== joyId) return;
+  e.preventDefault();
+  const rect = joy.getBoundingClientRect();
+  const cx = rect.left + rect.width / 2;
+  const cy = rect.top + rect.height / 2;
+  let dx = e.clientX - cx;
+  let dy = e.clientY - cy;
+  const max = 40;
+  const len = Math.hypot(dx, dy);
+  if (len > max) { dx = dx / len * max; dy = dy / len * max; }
+  knob.style.transform = `translate(${dx}px,${dy}px)`;
+});
+
+const endJoy = e => {
+  if (e.pointerId !== joyId) return;
+  joyId = null;
+  knob.style.transform = 'translate(0,0)';
+};
+joy.addEventListener('pointerup', endJoy);
+joy.addEventListener('pointercancel', endJoy);
+
+log('测试页面已加载');
+</script>
+</body>
+</html>

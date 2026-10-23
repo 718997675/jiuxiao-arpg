@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>Bug 1 测试 - 键盘输入冲突检测</title>
+<style>
+  body { background: #0b0c10; color: #e8e2d4; font-family: monospace; padding: 20px; }
+  .box { background: rgba(20,20,30,.9); border: 1px solid #d8b25a; border-radius: 4px; padding: 16px; margin: 10px 0; }
+  .ok { color: #5ce08a; }
+  .bad { color: #c8362e; font-weight: bold; }
+  .log { font-size: 13px; line-height: 1.8; max-height: 300px; overflow-y: auto; background: #050608; padding: 10px; border-radius: 4px; }
+  .key { display: inline-block; padding: 2px 8px; background: #2a2418; border: 1px solid #d8b25a44; border-radius: 3px; margin: 2px; font-size: 12px; }
+  .active { background: #d8b25a; color: #0b0c10; }
+  h3 { color: #d8b25a; }
+  button { background: #2a2418; color: #e8e2d4; border: 1px solid #d8b25a44; padding: 8px 16px; border-radius: 3px; cursor: pointer; }
+  button:hover { border-color: #d8b25a; }
+  .stat { display: inline-block; margin-right: 20px; }
+</style>
+</head>
+<body>
+<h2>Bug 1 测试：PC 端点击移动触发回馈</h2>
+
+<div class="box">
+  <h3>测试说明</h3>
+  <p>1. 按住 W/A/S/D 移动键，观察是否触发 Dash（翻滚）或 Attack（攻击）</p>
+  <p>2. 模拟中文输入法场景：打开输入法后按 WASD，观察 keyup 是否正确清除</p>
+  <p>3. 切换窗口焦点（Alt+Tab）再切回来，观察按键是否卡住</p>
+  <p>4. 按住空格键，观察是否只触发一次 Dash（而非反复触发）</p>
+</div>
+
+<div class="box">
+  <h3>当前按键状态</h3>
+  <div id="keyDisplay">
+    <span class="key" data-key="w">W</span>
+    <span class="key" data-key="a">A</span>
+    <span class="key" data-key="s">S</span>
+    <span class="key" data-key="d">D</span>
+    <span class="key" data-key=" ">Space</span>
+    <span class="key" data-key="f">F</span>
+    <span class="key" data-key="q">Q</span>
+    <span class="key" data-key="e">E</span>
+  </div>
+</div>
+
+<div class="box">
+  <h3>事件日志</h3>
+  <div class="stat">Dash 触发次数: <span id="dashCount">0</span></div>
+  <div class="stat">Attack 触发次数: <span id="atkCount">0</span></div>
+  <div class="stat">e.repeat 拦截次数: <span id="repeatBlocked">0</span></div>
+  <div class="stat">blur 清除次数: <span id="blurCount">0</span></div>
+  <br><br>
+  <button onclick="clearLogs()">清除日志</button>
+  <button onclick="simulateIME()">模拟输入法 keyup 异常</button>
+  <div class="log" id="log"></div>
+</div>
+
+<script>
+// 模拟修复后的 Game.bindInput 逻辑
+const keys = {};
+let mouseDown = false;
+let dashCount = 0;
+let atkCount = 0;
+let repeatBlocked = 0;
+let blurCount = 0;
+let dashCd = 0;
+
+function log(msg, type) {
+  const el = document.getElementById('log');
+  const time = new Date().toLocaleTimeString('zh-CN', { hour12: false }) + '.' + String(Date.now() % 1000).padStart(3, '0');
+  const span = document.createElement('div');
+  span.innerHTML = `<span style="color:#9a9488">[${time}]</span> <span class="${type || ''}">${msg}</span>`;
+  el.insertBefore(span, el.firstChild);
+  while (el.children.length > 50) el.removeChild(el.lastChild);
+}
+
+function updateKeyDisplay() {
+  document.querySelectorAll('.key').forEach(el => {
+    el.classList.toggle('active', !!keys[el.dataset.key]);
+  });
+}
+
+function tryDash() {
+  if (dashCd > 0) return;
+  dashCd = 1.3;
+  dashCount++;
+  document.getElementById('dashCount').textContent = dashCount;
+  log('<span class="bad">Dash 触发！</span> (tryDash 被调用)');
+}
+
+function doBasicAttack() {
+  atkCount++;
+  document.getElementById('atkCount').textContent = atkCount;
+  log('<span class="bad">Attack 触发！</span> (doBasicAttack 被调用)');
+}
+
+// [FIX-BUG1] 修复后的 keydown 处理
+window.addEventListener('keydown', e => {
+  const k = e.key.toLowerCase();
+  keys[k] = true;
+  updateKeyDisplay();
+
+  if (document.activeElement && document.activeElement.tagName === 'INPUT') return;
+
+  // [FIX] repeat 的 keydown 不触发动作
+  if (e.repeat) {
+    repeatBlocked++;
+    document.getElementById('repeatBlocked').textContent = repeatBlocked;
+    return;
+  }
+
+  if (k === ' ') {
+    tryDash();
+    e.preventDefault();
+    return;
+  }
+  log(`keydown: <span class="key">${k}</span> (code: ${e.code}, repeat: ${e.repeat})`);
+});
+
+// [FIX-BUG1] 修复后的 keyup - 用 code 兜底
+const codeMap = {
+  'KeyW': 'w', 'KeyA': 'a', 'KeyS': 's', 'KeyD': 'd',
+  'Space': ' ', 'ArrowUp': 'arrowup', 'ArrowDown': 'arrowdown',
+  'ArrowLeft': 'arrowleft', 'ArrowRight': 'arrowright',
+  'KeyQ': 'q', 'KeyE': 'e', 'KeyF': 'f'
+};
+
+window.addEventListener('keyup', e => {
+  const k = e.key.toLowerCase();
+  keys[k] = false;
+  const mapped = codeMap[e.code];
+  if (mapped) keys[mapped] = false;
+  updateKeyDisplay();
+  log(`keyup: <span class="key">${k}</span> (code: ${e.code})`);
+});
+
+// [FIX-BUG1] 窗口失焦时清除所有按键
+window.addEventListener('blur', () => {
+  for (const k in keys) keys[k] = false;
+  mouseDown = false;
+  blurCount++;
+  document.getElementById('blurCount').textContent = blurCount;
+  updateKeyDisplay();
+  log('<span class="ok">window blur → 清除所有按键状态</span>');
+});
+
+// 模拟每帧检查攻击
+setInterval(() => {
+  if (dashCd > 0) dashCd -= 0.05;
+  if (mouseDown) doBasicAttack();
+}, 50);
+
+function clearLogs() {
+  document.getElementById('log').innerHTML = '';
+  dashCount = 0; atkCount = 0; repeatBlocked = 0; blurCount = 0;
+  document.getElementById('dashCount').textContent = 0;
+  document.getElementById('atkCount').textContent = 0;
+  document.getElementById('repeatBlocked').textContent = 0;
+  document.getElementById('blurCount').textContent = 0;
+}
+
+function simulateIME() {
+  // 模拟中文输入法导致的 keyup 异常：keydown 返回 'w'，但 keyup 返回 'process'
+  log('<span class="bad">模拟输入法异常：keydown=w, keyup=process</span>');
+  keys['w'] = true;
+  updateKeyDisplay();
+  setTimeout(() => {
+    // 输入法吞掉了 keyup，返回 'Process' 而非 'w'
+    const fakeEvent = { key: 'Process', code: 'KeyW' };
+    const k = fakeEvent.key.toLowerCase(); // 'process'
+    keys[k] = false; // keys['process'] = false，但 keys['w'] 仍为 true！
+    // 修复后会检查 code: KeyW → w
+    const mapped = codeMap[fakeEvent.code];
+    if (mapped) keys[mapped] = false;
+    updateKeyDisplay();
+    if (keys['w']) {
+      log('<span class="bad">BUG: keys.w 仍为 true（输入法吞掉了 keyup）</span>');
+    } else {
+      log('<span class="ok">FIX: code 兜底成功，keys.w 已清除</span>');
+    }
+  }, 500);
+}
+
+log('测试页面已加载，请按 WASD/空格键测试');
+</script>
+</body>
+</html>
