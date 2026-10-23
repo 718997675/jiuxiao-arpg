@@ -216,10 +216,12 @@ const Game = {
   },
 
   /* ======================================================= */
-  newState(cls, name) {
+  newState(cls, name, difficulty) {
     const eq = makeStarterSet(cls);
+    const diff = DIFFS[difficulty] ? difficulty : (this.pendingDifficulty || DEFAULT_DIFF);
     const s = {
       cls, name, level: 1, xp: 0, xpNext: 120, gold: 120,
+      difficulty: diff,
       potions: { hp: 4, mp: 3 },
       hp: 100, mp: 50,
       equipment: { helm: null, chest: eq.chest, shoulders: null, gloves: null, boots: null, belt: null, amulet: null, ring1: null, ring2: null, weapon: eq.weapon, offhand: null },
@@ -230,6 +232,11 @@ const Game = {
       bossKilled: {}, playTime: 0
     };
     return s;
+  },
+
+  /* 当前难度的配置。旧档没有 difficulty 字段时回落到普通，不报错。 */
+  diff() {
+    return getDiff(this.state && this.state.difficulty);
   },
 
   /* ---------------- 材料（S2：玄晶 / 符文） ----------------
@@ -277,10 +284,12 @@ const Game = {
     s.stash.items = s.stash.items.map(normalizeItem).filter(Boolean);
   },
 
-  startNew(cls, name, slot) {
+  startNew(cls, name, slot, difficulty) {
     SFX.init();
     // 已有进度先落盘，避免切档丢东西
     if (this.running && this.state) this.save();
+    /* 难度在开档时定死，中途不可改（避免打不过就切新手刷收益） */
+    this.pendingDifficulty = DIFFS[difficulty] ? difficulty : (this.pendingDifficulty || DEFAULT_DIFF);
     let target = slot || 0;
     if (typeof SaveManager !== 'undefined') {
       const r = SaveManager.createCharacter(cls, name, target);
@@ -301,7 +310,7 @@ const Game = {
     this.running = true;
     this.dead = false;
     this.save();
-    UI.toast('踏入山海 · ' + CLASSES[cls].name, 'lv');
+    UI.toast('踏入山海 · ' + CLASSES[cls].name + ' · ' + this.diff().name, 'lv');
     setTimeout(() => UI.log('【桃源村】村口的老者似乎在等你。', 'good'), 600);
     return true;
   },
@@ -421,11 +430,13 @@ const Game = {
     const m = MAPS[this.state.mapId];
     if (m.safe || !m.spawns) return;
     const count = m.spawnCount || 14;
+    /* [DIFF] 精英出现概率由难度决定：新手 3%，普通 8%，困难 16%，极难 26% */
+    const D = this.diff();
     for (let i = 0; i < count; i++) {
       const ang = Math.random() * Math.PI * 2;
       const r = RND(16, m.size * 0.46);
       const kind = PICK(m.spawns);
-      this.spawnEnemy(kind, Math.cos(ang) * r, Math.sin(ang) * r);
+      this.spawnEnemy(kind, Math.cos(ang) * r, Math.sin(ang) * r, CHANCE(D.elite));
     }
   },
 
@@ -446,14 +457,27 @@ const Game = {
     a.fly = !!cfg.fly;
     this.scene.add(a.group);
 
+    /* [DIFF] 难度系数在这里一次性乘进怪物基础属性。
+     * 之后所有战斗计算（伤害、掉落、经验）都按已放大的数值走，不用到处再判难度。 */
+    const D = this.diff();
     let hp = isBoss ? cfg.hp : cfg.hp * (1 + lvl * 0.48);
     if (elite) hp *= 2.1;
+    hp *= D.mobHp;
+
+    /* [DIFF] 极难：给原本没有元素属性的怪随机附一个元素，
+     * 让「火/冰/毒抗」这三条冷门属性真正有用。Boss 自带的元素不覆盖。 */
+    let ecfg = cfg;
+    if (D.elem && !isBoss && !cfg.fire && !cfg.ice && !cfg.poison) {
+      const el = PICK(['fire', 'ice', 'poison']);
+      ecfg = Object.assign({}, cfg, { [el]: true, elemBoost: el });
+    }
+
     const e = {
       id: 'e' + Math.random().toString(36).slice(2),
-      kind: bossId || kind, cfg, actor: a, boss: isBoss, elite: !!elite,
+      kind: bossId || kind, cfg: ecfg, actor: a, boss: isBoss, elite: !!elite,
       level: lvl, hp, maxHp: hp,
-      dmg: (cfg.atk || 10) * (1 + lvl * (isBoss ? 0.09 : 0.18)) * (elite ? 1.3 : 1),
-      spd: cfg.spd || 3, range: cfg.range || 2.2,
+      dmg: (cfg.atk || 10) * (1 + lvl * (isBoss ? 0.09 : 0.18)) * (elite ? 1.3 : 1) * D.mobDmg,
+      spd: (cfg.spd || 3) * D.mobSpd, range: cfg.range || 2.2,
       radius: (isBoss ? 1.4 : 0.7) * (scale > 1.5 ? 1.5 : 1),
       pos: new THREE.Vector3(x, 0, z), dead: false,
       atkCd: RND(0.3, 1.4), windup: 0, anim: 0, hitFlash: 0,
@@ -505,6 +529,14 @@ const Game = {
     }
   },
 
+  /* 用本帧最终相机姿态校正所有血条朝向（详见 animate 里的说明） */
+  faceHpBars() {
+    if (!this.camera || typeof faceHpBar !== 'function') return;
+    for (const e of this.enemies) {
+      if (e.bar && e.bar.group.visible) faceHpBar(e.bar, this.camera);
+    }
+  },
+
   /* ======================================================= */
   animate() {
     requestAnimationFrame(() => this.animate());
@@ -515,6 +547,11 @@ const Game = {
     if (this.running && this.state && !this.dead) this.update(dt, raw);
     if (this.running && this.state) {
       this.updateCamera(raw);
+      /* [FIX-HPBAR] 血条朝向必须在相机更新「之后」再校正一次。
+       * updateEnemies 里那次校正用的是上一帧的相机朝向，而 updateCamera 随后又会改相机，
+       * 两者差一帧就会残留可见偏差（实测 dot≈0.955，约 34°）。放在这里等于用本帧
+       * 最终相机姿态对齐，怪物转身与镜头移动都不会再让血条错位。 */
+      this.faceHpBars();
       FX.update(dt);
       this.drawMinimapThrottled(raw);
       UI.updateSkillbar();
@@ -1518,7 +1555,9 @@ const Game = {
     }
 
     const reduce = Math.min(0.75, st.def / (st.def + 320 + this.state.level * 22));
-    let dmg = amount * (1 - reduce);
+    /* [DIFF] 玩家承受伤害系数：放在减伤之后，保证「护甲收益」在四档难度里一致，
+     * 难度只放大最终结果，不扭曲装备词条的价值。 */
+    let dmg = amount * (1 - reduce) * this.diff().taken;
 
     /* [S1] 格挡：伤害减半（先于抗性结算） */
     if (st.block && CHANCE(st.block / 100)) {
@@ -1574,8 +1613,13 @@ const Game = {
     SFX.die();
     this.shake = 0.8;
     UI.closeAll(); UI.showDeath('你的道，还未走完。');
-    const lost = Math.floor(this.state.gold * 0.1);
-    this.state.gold -= lost;
+    /* [DIFF] 死亡惩罚按难度：新手 0%，普通 10%，困难 15%，极难 25% */
+    const rate = this.diff().deathPenalty;
+    const lost = Math.floor(this.state.gold * rate);
+    if (lost > 0) {
+      this.state.gold -= lost;
+      UI.log('身陨 · 失落 ' + fmt(lost) + ' 金币', 'bad');
+    }
     this.state.hp = 0;
   },
 
@@ -1613,7 +1657,8 @@ const Game = {
         const cp = this.camera.position;
         const bd = Math.hypot(a.group.position.x - cp.x, a.group.position.y + 2 - cp.y, a.group.position.z - cp.z);
         e.bar.group.visible = bd < 36;
-        updateHpBar(e.bar, e.hp / e.maxHp, bd);
+        // 传入相机：血条组需要每帧校正到世界空间正对相机，否则怪物转身会把填充条甩开
+        updateHpBar(e.bar, e.hp / e.maxHp, bd, this.camera);
       }
 
       if (e.stun > 0) { e.stun -= dt; a.moving = false; updateActorAnim(a, dt); continue; }
@@ -1645,8 +1690,8 @@ const Game = {
         continue;
       }
       if (e.boss) { this.updateBossAI(e, dt, d, pp); }      else {
-        // 普怪 AI
-        if (d < 26 || e.aggro) {
+        // 普怪 AI（[DIFF] 索敌半径按难度缩放，极难更远，容易被围）
+        if (d < 26 * this.diff().aggro || e.aggro) {
           e.aggro = true;
           if (e.cfg.ranged) {
             if (d > e.range * 0.85) this.moveEnemy(e, pp, spd, dt);
@@ -1757,7 +1802,11 @@ const Game = {
     if (e.dead) return;
     const a = e.actor;
     const hpRatio = e.hp / e.maxHp;
-    const newPhase = hpRatio < 0.3 ? 2 : (hpRatio < 0.6 ? 1 : 0);
+    /* [DIFF] 困难/极难：Boss 提前进阶段（75% / 45%），压迫感更强 */
+    const rush = this.diff().bossRush;
+    const newPhase = rush
+      ? (hpRatio < 0.45 ? 2 : (hpRatio < 0.75 ? 1 : 0))
+      : (hpRatio < 0.3 ? 2 : (hpRatio < 0.6 ? 1 : 0));
     if (newPhase > e.phase) {
       e.phase = newPhase;
       UI.toast(e.cfg.name + ' 狂怒', 'lv');
@@ -2186,19 +2235,22 @@ const Game = {
     this.hitstop = e.boss ? 140 : 30;
     this.shake = Math.max(this.shake, e.boss ? 0.7 : 0.14);
 
-    // 经验
+    // 经验（[DIFF] 难度越高给得越多，作为硬核的正反馈）
+    const D = this.diff();
     const baseXp = e.boss ? (e.cfg.level * 45) : (e.cfg.xp || 12) * (1 + e.level * 0.18);
-    const xp = Math.round(baseXp * (e.elite ? 2 : 1));
+    const xp = Math.round(baseXp * (e.elite ? 2 : 1) * D.xp);
     this.gainXp(xp);
 
     // 金币
     const goldBase = e.boss ? RND(300, 600) : (e.elite ? RND(30, 60) : RND(6, 18));
-    this.spawnLoot(p, null, Math.round(goldBase * (1 + e.level * 0.05)));
+    this.spawnLoot(p, null, Math.round(goldBase * (1 + e.level * 0.05) * D.gold));
 
     // 装备
     const sto = this.state.stats;
     const ilvl = Math.max(1, e.level + (e.boss ? 2 : 0));
     let dropChance = e.boss ? 1 : (e.elite ? 0.85 : 0.3);
+    /* [DIFF] 掉落率随难度提高（打得更难，回报也更高） */
+    dropChance = Math.min(1, dropChance * D.drop);
     /* [S1] 掉落数量：按一半概率额外多掉一件，封顶 60% */
     let drops = e.boss ? 3 : 1;
     if (sto.dropRate && CHANCE(Math.min(0.6, sto.dropRate / 200))) drops += 1;
@@ -2220,7 +2272,9 @@ const Game = {
      * seeker（山海套）提高符文与玄晶的出率、数量。 */
     const seeker = !!sto.flags.seeker;
     const runeChance = e.boss ? 1 : (e.elite ? (seeker ? 0.3 : 0.18) : (seeker ? 0.05 : 0.025));
-    if (CHANCE(runeChance)) {
+    /* [DIFF] 符文/玄晶出率同步按难度提升 */
+    const runeRoll = Math.min(1, runeChance * D.rune);
+    if (CHANCE(runeRoll)) {
       const n = e.boss ? (seeker ? 3 : 2) : 1;
       for (let i = 0; i < n; i++) this.spawnLoot(p, null, 0, { rune: rollRune(ilvl) });
     }
@@ -2312,7 +2366,8 @@ const Game = {
       const n = Math.min(3, cap - alive);
       for (let i = 0; i < n; i++) {
         const ang = Math.random() * 6.28, r = RND(22, m.size * 0.44);
-        const e = this.spawnEnemy(PICK(m.spawns), Math.cos(ang) * r, Math.sin(ang) * r);
+        /* [DIFF] 刷新怪同样按难度滚精英 */
+        const e = this.spawnEnemy(PICK(m.spawns), Math.cos(ang) * r, Math.sin(ang) * r, CHANCE(this.diff().elite));
         if (e) FX.flashCircle(e.pos, 1.2, 0x9a66ff, 0.5);
       }
     }

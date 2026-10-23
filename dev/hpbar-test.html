@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>血条错位复现 / 修复验证</title>
+<style>
+  body{margin:0;background:#0b0c10;color:#e8e2d4;font-family:monospace;overflow:hidden}
+  #c{display:block;width:100vw;height:100vh}
+  #hud{position:fixed;left:12px;top:12px;background:rgba(10,12,18,.88);border:1px solid #d8b25a55;
+    padding:12px 14px;border-radius:4px;font-size:12.5px;line-height:1.9;z-index:10;min-width:290px}
+  .k{color:#9a9488}
+  .ok{color:#5ce08a;font-weight:bold}
+  .bad{color:#e8564a;font-weight:bold}
+  .row{margin-top:6px;border-top:1px solid #ffffff14;padding-top:6px}
+  button{background:#2a2418;color:#e8e2d4;border:1px solid #d8b25a55;padding:6px 12px;
+    border-radius:3px;cursor:pointer;font-family:inherit;font-size:12px;margin-top:8px}
+  button:hover{border-color:#d8b25a}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="hud">
+  <div><b>血条错位复现 / 修复验证</b></div>
+  <div class="k">模型持续自转，模拟怪物转身</div>
+  <div class="row">
+    <div>旋转角度: <span id="ang">0°</span></div>
+    <div>血量比例: <span id="ratio">100%</span></div>
+  </div>
+  <div class="row">
+    <div>未修复（不传 camera）最大偏差: <span id="bad" class="bad">-</span></div>
+    <div>已修复（传 camera）最大偏差: <span id="good" class="ok">-</span></div>
+  </div>
+  <div class="row k" style="font-size:11.5px">
+    偏差 = 填充条左边缘 与 底槽左边缘 的屏幕像素距离<br>
+    正常应恒为 0（两条永远贴合）
+  </div>
+  <button id="reset">重置最大值</button>
+</div>
+
+<script src="../lib/three.min.js"></script>
+<script>
+  /* ---- 为 fx.js 提供最小依赖 ----
+   * 注意：SFX 由 fx.js 自己声明，这里不能再声明一次，
+   * 否则会报 "Identifier 'SFX' has already been declared"，整个 fx.js 加载失败。 */
+  const CLAMP = (v, a, b) => v < a ? a : (v > b ? b : v);
+  const markShared = () => {};
+  const Game = { camYaw: 0, camDist: 12, camHeight: 12 };
+</script>
+<script src="../src/fx.js"></script>
+<script>
+  const canvas = document.getElementById('c');
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  renderer.setSize(innerWidth, innerHeight);
+
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x14181f);
+  const camera = new THREE.PerspectiveCamera(46, innerWidth / innerHeight, 0.1, 200);
+  camera.position.set(0, 5.2, 12);
+  camera.lookAt(0, 1.6, 0);
+
+  scene.add(new THREE.HemisphereLight(0xdfe8ff, 0x3a3020, 1.1));
+  const dl = new THREE.DirectionalLight(0xfff0d0, 1.0); dl.position.set(4, 9, 6); scene.add(dl);
+
+  /* 地面参考 */
+  const grid = new THREE.GridHelper(24, 24, 0x33404f, 0x1e252e);
+  scene.add(grid);
+
+  /* 造一个「怪物」：带包围盒的 group，血条会挂在它下面 */
+  function makeMonster(x, color) {
+    const host = new THREE.Group();
+    const body = new THREE.Mesh(
+      new THREE.BoxGeometry(1.1, 1.7, 0.9),
+      new THREE.MeshLambertMaterial({ color })
+    );
+    body.position.y = 0.85;
+    host.add(body);
+    const head = new THREE.Mesh(
+      new THREE.SphereGeometry(0.42, 16, 12),
+      new THREE.MeshLambertMaterial({ color: 0xe8c8a8 })
+    );
+    head.position.y = 2.0;
+    host.add(head);
+    host.position.set(x, 0, 0);
+    scene.add(host);
+    return host;
+  }
+
+  /* 左边：走旧逻辑（不传 camera）  右边：走新逻辑（传 camera） */
+  const hostBuggy = makeMonster(-2.6, 0x8a4a3a);
+  const hostFixed = makeMonster( 2.6, 0x3a5a8a);
+  const barBuggy = makeHpBar(hostBuggy, { gap: 0.5 });
+  const barFixed = makeHpBar(hostFixed, { gap: 0.5 });
+
+  /* 屏幕投影：把世界坐标转成像素坐标 */
+  const v3 = new THREE.Vector3();
+  function toScreen(obj) {
+    obj.getWorldPosition(v3);
+    v3.project(camera);
+    return { x: (v3.x * 0.5 + 0.5) * innerWidth, y: (-v3.y * 0.5 + 0.5) * innerHeight };
+  }
+
+  /* 计算「填充条左边缘」相对「底槽中心」的屏幕偏移。
+     填充条 center.x=0，它的世界位置就是左边缘；底槽是居中锚点，位置即中心。
+     这个偏移在正确实现下应当是恒定值，随角度变化就说明错位了。 */
+  function fillOffset(bar) {
+    return toScreen(bar.fill).x - toScreen(bar.bg).x;
+  }
+
+  let maxBad = 0, maxGood = 0;
+  let baseBad = null, baseGood = null;
+  const elAng = document.getElementById('ang');
+  const elBad = document.getElementById('bad');
+  const elGood = document.getElementById('good');
+  const elRatio = document.getElementById('ratio');
+
+  document.getElementById('reset').onclick = () => {
+    maxBad = 0; maxGood = 0; baseBad = null; baseGood = null;
+    elBad.textContent = '0.0 px'; elGood.textContent = '0.0 px';
+  };
+
+  let t = 0;
+  function tick() {
+    t += 0.016;
+    const angle = t * 1.1;
+    hostBuggy.rotation.y = angle;
+    hostFixed.rotation.y = angle;
+    /* 血量在 100% ↔ 35% 之间来回，覆盖不同宽度 */
+    const ratio = 0.35 + 0.65 * (0.5 + 0.5 * Math.sin(t * 0.7));
+
+    updateHpBar(barBuggy, ratio, 12);            // 旧：不传 camera
+    updateHpBar(barFixed, ratio, 12, camera);    // 新：传 camera
+
+    hostBuggy.updateMatrixWorld(true);
+    hostFixed.updateMatrixWorld(true);
+
+    const ob = fillOffset(barBuggy);
+    const og = fillOffset(barFixed);
+    if (baseBad === null) baseBad = ob;
+    if (baseGood === null) baseGood = og;
+    maxBad = Math.max(maxBad, Math.abs(ob - baseBad));
+    maxGood = Math.max(maxGood, Math.abs(og - baseGood));
+
+    elAng.textContent = ((angle * 180 / Math.PI) % 360).toFixed(0) + '°';
+    elRatio.textContent = (ratio * 100).toFixed(0) + '%';
+    elBad.textContent = maxBad.toFixed(1) + ' px';
+    elGood.textContent = maxGood.toFixed(1) + ' px';
+
+    renderer.render(scene, camera);
+    requestAnimationFrame(tick);
+  }
+
+  addEventListener('resize', () => {
+    camera.aspect = innerWidth / innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(innerWidth, innerHeight);
+  });
+
+  tick();
+</script>
+</body>
+</html>

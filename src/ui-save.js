@@ -212,12 +212,15 @@ const SaveUI = {
     const nameEl = this.$('newName');
     const name = ((nameEl && nameEl.value) || '').trim() || '无名客';
     const slot = this.slotForNew || 0;
+    /* [DIFF] 存档面板新建角色时，沿用开始界面选的难度 */
+    const diff = (typeof UI !== 'undefined' && UI.selectedDiff) || DEFAULT_DIFF;
+    if (typeof Game !== 'undefined') Game.pendingDifficulty = diff;
     const r = SaveManager.createCharacter(this.selectedCls, name, slot);
     if (!r.ok) { this.hint('建档失败：' + r.error, true); try { UI.toast(r.error, 'bad'); } catch (e) { } return; }
     this.slotForNew = 0;
     if (nameEl) nameEl.value = '';
     try { SFX.ui(); } catch (e) { }
-    const started = (typeof Game !== 'undefined') && Game.startNew(this.selectedCls, name, r.slot);
+    const started = (typeof Game !== 'undefined') && Game.startNew(this.selectedCls, name, r.slot, diff);
     if (!started) { this.render(); this.syncStart(); }
     this.close();
   },

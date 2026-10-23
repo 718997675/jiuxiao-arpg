@@ -364,6 +364,24 @@
   .cclass .cn{font-size:16px;letter-spacing:4px;margin-top:8px;color:#f0e4c8}
   .cclass .ct{font-size:10.5px;letter-spacing:2px;color:#9a8a6a;margin-top:2px}
   .cclass .cd{font-size:11px;line-height:1.75;color:#9a9488;margin-top:9px;text-align:left}
+
+  /* ---- 难度选择 ---- */
+  .diffs{display:flex;gap:10px;flex-wrap:wrap;justify-content:center}
+  .cdiff{min-width:118px;padding:9px 14px;border:1px solid rgba(216,178,90,.22);
+    background:linear-gradient(180deg,rgba(40,34,24,.5),rgba(10,10,12,.7));
+    cursor:pointer;transition:.18s;text-align:center;border-radius:2px}
+  .cdiff:hover{border-color:rgba(216,178,90,.55);transform:translateY(-2px)}
+  .cdiff.sel{border-color:var(--gold);background:linear-gradient(180deg,rgba(80,62,30,.6),rgba(16,14,12,.85));
+    box-shadow:0 0 18px rgba(216,178,90,.22)}
+  .cdiff .dn{font-size:14px;letter-spacing:3px;color:#f0e4c8;font-family:"STKaiti","KaiTi",serif}
+  .cdiff .dt2{font-size:10px;letter-spacing:1px;margin-top:3px;opacity:.85}
+  #diffDesc{margin-top:11px;font-size:11.5px;line-height:1.75;color:#9a9488;
+    max-width:520px;text-align:center;min-height:2.6em}
+  body.touch .diffs{gap:6px}
+  body.touch .cdiff{min-width:72px;padding:7px 8px}
+  body.touch .cdiff .dn{font-size:12.5px;letter-spacing:1px}
+  body.touch .cdiff .dt2{font-size:9px}
+  body.touch #diffDesc{font-size:10px;line-height:1.6;max-width:92vw;margin-top:7px;min-height:3.2em}
   #start .bottom{margin-top:26px;display:flex;gap:12px;align-items:center}
   #start .tips{position:absolute;bottom:22px;font-size:10.5px;color:#6a6458;letter-spacing:1px;text-align:center;line-height:1.9}
   #start .tips b{color:#a89878;font-weight:400}
@@ -672,7 +690,8 @@
   <div id="charplate">
     <div id="portrait"><span class="glyph" id="pGlyph">刀</span><span class="lv" id="pLv">1</span></div>
     <div class="bars">
-      <div class="pname"><span id="pName">无名</span><small id="pClass">战士</small></div>
+      <div class="pname"><span id="pName">无名</span>
+        <span style="display:flex;gap:7px;align-items:baseline"><small id="pClass">战士</small><small id="pDiff">普通</small></span></div>
       <div class="bar hp"><i id="hpFill"></i><span id="hpText">100 / 100</span></div>
       <div class="bar mp"><i id="mpFill"></i><span id="mpText">50 / 50</span></div>
       <div class="bar xp"><i id="xpFill"></i></div>
@@ -825,6 +844,9 @@
   <div class="divider"></div>
   <div class="pick">择 一 道 而 行</div>
   <div class="classes" id="classPick"></div>
+  <div class="pick" style="margin-top:20px">择 一 难 度</div>
+  <div class="diffs" id="diffPick"></div>
+  <div id="diffDesc"></div>
   <div class="bottom">
     <input id="nameInput" maxlength="8" placeholder="道号" style="pointer-events:auto;background:rgba(0,0,0,.6);border:1px solid var(--line);
       color:#f0e0b8;padding:9px 14px;width:150px;font-family:inherit;font-size:13px;letter-spacing:2px;outline:none;text-align:center">

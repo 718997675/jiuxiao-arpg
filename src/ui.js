@@ -10,6 +10,7 @@ const UI = {
   init() {
     this.tooltipEl = document.getElementById('tooltip');
     this.buildClassCards();
+    this.buildDiffCards();
     this.bindEvents();
     // 有任意角色位可读，就亮出「继续前世（含档位与等级）」
     try {
@@ -55,10 +56,44 @@ const UI = {
     });
   },
 
+  /* ---------------- 难度选择 ----------------
+   * 四档难度在开档时确定，中途不可改。选中项存 UI.selectedDiff，
+   * 点「踏入山海」时随 startNew 一起传进去。 */
+  buildDiffCards() {
+    const wrap = document.getElementById('diffPick');
+    if (!wrap) return;
+    if (!this.selectedDiff) this.selectedDiff = DEFAULT_DIFF;
+    wrap.innerHTML = DIFF_ORDER.map(k => {
+      const d = DIFFS[k];
+      return `<div class="cdiff ${k === this.selectedDiff ? 'sel' : ''}" data-diff="${k}">
+        <div class="dn" style="color:${d.color}">${d.name}</div>
+        <div class="dt2" style="color:${d.color}">${d.tag}</div>
+      </div>`;
+    }).join('');
+    this.renderDiffDesc();
+    wrap.addEventListener('click', e => {
+      const el = e.target.closest('.cdiff');
+      if (!el) return;
+      this.selectedDiff = el.dataset.diff;
+      wrap.querySelectorAll('.cdiff').forEach(x => x.classList.toggle('sel', x === el));
+      this.renderDiffDesc();
+      SFX.ui();
+    });
+  },
+
+  renderDiffDesc() {
+    const el = document.getElementById('diffDesc');
+    if (!el) return;
+    const d = getDiff(this.selectedDiff);
+    el.innerHTML = d.desc;
+    el.style.color = d.color;
+    el.style.opacity = '.9';
+  },
+
   bindEvents() {
     document.getElementById('startBtn').addEventListener('click', () => {
       const n = (document.getElementById('nameInput').value || '').trim() || '无名客';
-      Game.startNew(this.selectedCls, n);
+      Game.startNew(this.selectedCls, n, 0, this.selectedDiff);
     });
 
     /* 调试直连：index.html?cls=warrior|mage|taoist 跳过标题页直接开局。
@@ -70,7 +105,15 @@ const UI = {
       const wrap = document.getElementById('classPick');
       if (wrap) wrap.querySelectorAll('.cclass').forEach(x => x.classList.toggle('sel', x.dataset.cls === auto));
       const nm = (q.get('name') || '').trim() || '无名客';
-      setTimeout(() => Game.startNew(auto, nm), 80);
+      /* 支持 ?cls=warrior&diff=hard 直接按指定难度开局，方便测试四档数值 */
+      const df = q.get('diff');
+      if (df && DIFFS[df]) {
+        this.selectedDiff = df;
+        const dw = document.getElementById('diffPick');
+        if (dw) dw.querySelectorAll('.cdiff').forEach(x => x.classList.toggle('sel', x.dataset.diff === df));
+        this.renderDiffDesc();
+      }
+      setTimeout(() => Game.startNew(auto, nm, 0, this.selectedDiff), 80);
     }
     document.getElementById('continueBtn').addEventListener('click', e => {
       const slot = parseInt(e.currentTarget.dataset.slot, 10);
@@ -189,6 +232,13 @@ const UI = {
     document.getElementById('pLv').textContent = s.level;
     document.getElementById('pName').textContent = s.name;
     document.getElementById('pClass').textContent = CLASSES[s.cls].name + ' · ' + CLASSES[s.cls].title;
+    /* [DIFF] 难度徽标：颜色跟难度走，一眼能看出这档有多硬 */
+    const dEl = document.getElementById('pDiff');
+    if (dEl) {
+      const d = getDiff(s.difficulty);
+      dEl.textContent = d.name;
+      dEl.style.color = d.color;
+    }
     const hpP = CLAMP(s.hp / st.hpMax * 100, 0, 100);
     document.getElementById('hpFill').style.width = hpP + '%';
     document.getElementById('hpText').textContent = `${Math.ceil(s.hp)} / ${Math.round(st.hpMax)}`;

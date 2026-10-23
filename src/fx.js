@@ -132,18 +132,49 @@ function makeHpBar(host, opts = {}) {
   return { group: g, fill, bg, w: HPBAR_W, s };
 }
 
+/* 复用的四元数，避免每帧为每条血条 new 对象 */
+const _qBarParent = new THREE.Quaternion();
+
+/**
+ * 把血条组校正到「世界空间正对相机」。
+ *
+ * 血条由「底槽 + 填充」两张 Sprite 组成，填充用 position.x=-W/2 左对齐。
+ * Sprite 的朝向恒面向相机，但位置会被父级矩阵变换——怪物转身时那个 -W/2 偏移
+ * 就在世界空间里绕着血条中心画圆，于是填充条和底槽被甩开，看起来是「两条分开的横条」。
+ * 反向旋转后，血条组的局部 X 轴恒等于屏幕右方向，偏移只发生在屏幕平面内，两者不会再错位。
+ *
+ * 注意：必须用「本帧最终的相机姿态」调用（见 game.js animate 里的 faceHpBars），
+ * 在相机更新之前调用会差一帧，留下可见偏差。
+ */
+function faceHpBar(bar, camera) {
+  if (!bar || !bar.group || !camera) return;
+  const parent = bar.group.parent;
+  if (parent) {
+    parent.getWorldQuaternion(_qBarParent);   // 父级世界朝向
+    _qBarParent.invert();
+    _qBarParent.multiply(camera.quaternion);  // local = inv(parentWorld) * camera
+    bar.group.quaternion.copy(_qBarParent);
+  } else {
+    bar.group.quaternion.copy(camera.quaternion);
+  }
+}
+
 /**
  * 刷新血条：长度按血量比例，尺寸按屏幕像素恒定（手机上也看得清）
  * @param {object} bar makeHpBar 的返回值
  * @param {number} ratio 剩余血量比例
  * @param {number} [dist] 血条到相机的距离，传入则同步尺寸
+ * @param {THREE.Camera} [camera] 传入则顺带校正朝向（每帧的最终校正走 faceHpBars）
  */
-function updateHpBar(bar, ratio, dist) {
+function updateHpBar(bar, ratio, dist, camera) {
   const r = CLAMP(ratio, 0, 1);
   bar.fill.scale.x = Math.max(0.001, bar.w * r);
   bar.fill.visible = r > 0.002;
   const col = r > 0.6 ? 0x46c651 : (r > 0.28 ? 0xd8b13a : 0xd2402f);
   if (bar.fill.material.color.getHex() !== col) bar.fill.material.color.setHex(col);
+
+  if (camera) faceHpBar(bar, camera);
+
   // 屏幕上高度恒定：大屏 9px、小屏 7px，远近一致
   if (dist > 0.1) {
     const H = window.innerHeight || 900;

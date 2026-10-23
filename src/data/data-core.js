@@ -114,6 +114,55 @@ const STATS = {
   pickupRadius: { label: '拾取范围', pct: false }
 };
 
+/* ---------------- 难度 ----------------
+ * 四档难度：数值系数 + 玩法机制都不同，不是单纯加血。
+ *
+ * 数值（系数）：
+ *   mobHp   怪物生命      mobDmg  怪物伤害      mobSpd  怪物移速
+ *   taken   玩家受到伤害  xp      经验获取      gold    金币获取
+ *   drop    装备掉落率    rune    符文/玄晶出率
+ * 机制（开关/概率）：
+ *   elite       精英怪出现概率（精英 2.1 倍血、1.3 倍伤、掉落更好）
+ *   aggro       怪物索敌半径倍率（越大越容易被围攻）
+ *   elem        怪物附带随机元素（火/冰/毒），逼玩家堆对应抗性
+ *   deathPenalty 死亡损失金币比例
+ *   bossRush    Boss 阶段切换更早（60%/30% → 75%/45%）
+ */
+const DIFFS = {
+  novice: {
+    key: 'novice', name: '新手', color: '#5ce08a', tag: '轻松体验',
+    mobHp: 0.65, mobDmg: 0.55, mobSpd: 0.90, taken: 0.70,
+    xp: 0.85, gold: 0.90, drop: 0.90, rune: 0.90,
+    elite: 0.03, aggro: 0.80, elem: false, deathPenalty: 0, bossRush: false,
+    desc: '怪物更弱更慢，索敌范围小；死亡不掉金币。适合熟悉操作与剧情。'
+  },
+  normal: {
+    key: 'normal', name: '普通', color: '#d8b25a', tag: '标准历练',
+    mobHp: 1.00, mobDmg: 1.00, mobSpd: 1.00, taken: 1.00,
+    xp: 1.00, gold: 1.00, drop: 1.00, rune: 1.00,
+    elite: 0.08, aggro: 1.00, elem: false, deathPenalty: 0.10, bossRush: false,
+    desc: '原始数值，标准山海历练。死亡损失 10% 金币。'
+  },
+  hard: {
+    key: 'hard', name: '困难', color: '#ff9a44', tag: '硬核挑战',
+    mobHp: 1.60, mobDmg: 1.45, mobSpd: 1.10, taken: 1.35,
+    xp: 1.35, gold: 1.25, drop: 1.20, rune: 1.20,
+    elite: 0.16, aggro: 1.25, elem: false, deathPenalty: 0.15, bossRush: true,
+    desc: '怪物更硬更凶，精英频出，索敌更远；Boss 提前进阶段。收益 +35% 经验。'
+  },
+  nightmare: {
+    key: 'nightmare', name: '极难', color: '#e8564a', tag: '九幽炼狱',
+    mobHp: 2.40, mobDmg: 1.95, mobSpd: 1.20, taken: 1.70,
+    xp: 1.80, gold: 1.50, drop: 1.45, rune: 1.45,
+    elite: 0.26, aggro: 1.45, elem: true, deathPenalty: 0.25, bossRush: true,
+    desc: '怪物附带火/冰/毒元素，精英成群，死亡损 25% 金币。收益 +80% 经验。'
+  }
+};
+const DIFF_ORDER = ['novice', 'normal', 'hard', 'nightmare'];
+const DEFAULT_DIFF = 'normal';
+/* 兼容旧档：没有 difficulty 字段一律按普通处理 */
+function getDiff(key) { return DIFFS[key] || DIFFS[DEFAULT_DIFF]; }
+
 /* ---------------- 职业 ---------------- */
 const CLASSES = {
   warrior: {
