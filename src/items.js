@@ -146,6 +146,30 @@ function reforgeCost(item) {
   return Math.round(base * (1 + (item.reforges || 0) * FORGE.reforgeStep));
 }
 
+/* 打孔价：按「当前已有孔数」递增，越往后越贵；戒指/项链永不出孔，也不给打 */
+function drillCost(item) {
+  if (!item) return 0;
+  if (item.slot === 'ring' || item.slot === 'amulet') return 0;
+  const n = CLAMP(socketCount(item), 0, FORGE.drillMax);
+  if (n >= FORGE.drillMax) return 0;
+  return FORGE.drillCost[n] || Math.round(14 * Math.pow(1.4, n));
+}
+
+/* 戒指 / 项链不可打孔（与自然掉落规则一致，避免首饰被符文之语垄断） */
+function canDrill(item) {
+  return !!item && item.slot !== 'ring' && item.slot !== 'amulet' && socketCount(item) < FORGE.drillMax;
+}
+
+/* 打一个孔：sockets +1，runes 补一个空位。返回新孔数，失败返回 0 */
+function drillSocket(item) {
+  if (!canDrill(item)) return 0;
+  item.sockets = socketCount(item) + 1;
+  if (!Array.isArray(item.runes)) item.runes = [];
+  item.runes.length = item.sockets;
+  for (let i = 0; i < item.sockets; i++) if (item.runes[i] === undefined) item.runes[i] = null;
+  return item.sockets;
+}
+
 /* 重 roll 指定词缀：稀有度 / 词缀数量不变，新词缀一定换 key，同时重 roll 品质 */
 function reforgeAffix(item, index) {
   if (!item || !Array.isArray(item.affixes)) return null;
@@ -170,7 +194,7 @@ function normalizeItem(item) {
   item.affixes = item.affixes.filter(a => a && typeof a.key === 'string' && STATS[a.key] && isFinite(a.val));
   // 旧档词缀没有 q，补齐为 1
   for (const a of item.affixes) { if (!a.q) a.q = 1; }
-  let n = CLAMP(Math.round(Number(item.sockets) || 0), 0, 4);
+  let n = CLAMP(Math.round(Number(item.sockets) || 0), 0, FORGE.drillMax);
   if (item.slot === 'ring' || item.slot === 'amulet') n = 0;
   item.sockets = n;
   const src = Array.isArray(item.runes) ? item.runes : [];

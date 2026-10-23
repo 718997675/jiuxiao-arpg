@@ -93,6 +93,14 @@ Object.assign(UI, {
         return;
       }
 
+      const drillEl = e.target.closest('[data-fdrill]');
+      if (drillEl) {
+        const r = Game.drillSocketItem(item);
+        if (r.ok) this.renderForge();
+        else if (r.msg) UI.log(r.msg, 'bad');
+        return;
+      }
+
       const rfEl = e.target.closest('[data-freforge]');
       if (rfEl) {
         const idx = parseInt(rfEl.dataset.freforge, 10);
@@ -115,7 +123,7 @@ Object.assign(UI, {
     const want = tab || this.forgeTab;
     const ok = it => {
       if (!it) return false;
-      if (want === 'rune') return socketCount(it) > 0;
+      if (want === 'rune') return socketCount(it) > 0 || canDrill(it);
       if (want === 'enhance') {
         const maxBase = RARITY[it.rarity].affixes || 0;
         return (it.affixes && it.affixes.length > 0) && (it.affixes.length - maxBase) < FORGE.enhanceMax;
@@ -166,7 +174,7 @@ Object.assign(UI, {
           <div class="fs">${sub} · ${x.where}</div>
         </div></div>`;
     }).join('') : `<div class="fempty">${this.forgeTab === 'rune'
-      ? '没有带孔的装备。<br>精英与首领会掉更多带孔装备。'
+      ? '没有可打孔或镶嵌的装备。<br>精英与首领会掉更多带孔装备；任何装备（戒指/项链除外）都可消耗玄晶自行打孔。'
       : '没有可洗练的装备。'}</div>`;
 
     const item = this.itemFromRef(this.forgeRef);
@@ -197,6 +205,22 @@ Object.assign(UI, {
         ${rid ? runeIcon(rid, 28) : '◇'}<span class="fn2">${i + 1}</span></div>`;
     }
     h += `</div>`;
+
+    /* 打孔区：0 孔装备也能进来打；到上限或首饰不给打 */
+    const drillable = canDrill(item);
+    const dCost = drillCost(item);
+    const dHave = Game.crystalCount();
+    if (item.slot === 'ring' || item.slot === 'amulet') {
+      h += `<div class="hintline" style="margin-top:10px">戒指与项链不可打孔。</div>`;
+    } else if (drillable) {
+      h += `<div style="margin-top:10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <span class="fsub">孔数 ${item.sockets}/${FORGE.drillMax}</span>
+        <button class="btn primary" data-fdrill="1" ${dHave < dCost ? 'disabled' : ''}
+          title="消耗 ${dCost} 玄晶，为装备增加 1 个孔位（上限 ${FORGE.drillMax}）">打 孔 · ${dCost} 玄晶</button>
+      </div>`;
+    } else {
+      h += `<div class="hintline" style="margin-top:10px;color:#ffd166">该装备已达到孔数上限（${FORGE.drillMax} 孔）。</div>`;
+    }
 
     const cands = runeWordCandidates(item).slice(0, 4);
     if (cands.length) {

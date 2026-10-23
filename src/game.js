@@ -3231,6 +3231,25 @@ const Game = {
     return { ok: true, affix: a, cost };
   },
 
+  /* ---------------- 打孔（v1.1.1）：消耗玄晶给装备开孔，上限 FORGE.drillMax ---------------- */
+  drillSocketItem(item) {
+    if (!item) return { ok: false, msg: '没有这件装备。' };
+    if (item.slot === 'ring' || item.slot === 'amulet') return { ok: false, msg: '戒指与项链不可打孔。' };
+    if (socketCount(item) >= FORGE.drillMax) return { ok: false, msg: '该装备已达到孔数上限（' + FORGE.drillMax + ' 孔）。' };
+    const cost = drillCost(item);
+    if (this.crystalCount() < cost) return { ok: false, msg: '玄晶不足，需要 ' + cost + ' 枚。' };
+    this.addCrystal(-cost);
+    const n = drillSocket(item);
+    if (!n) return { ok: false, msg: '打孔失败。' };
+    this.recalc();
+    SFX.cast();
+    UI.log('打孔 ' + item.name + '：第 ' + n + ' 孔（上限 ' + FORGE.drillMax + '）', 'good');
+    UI.renderInventory();
+    UI.renderHUD();
+    this.save();
+    return { ok: true, sockets: n, cost };
+  },
+
   /* [S3] 分解装备 → 玄晶分级材料 */
   previewDecompose(item) {
     if (!item) return null;

@@ -536,5 +536,7 @@ const FORGE = {
   socketRuneReturn: true,     // 卸下符文全额返还
   enhanceMax: 3,              // 强化上限：最多扩充 3 条额外词缀
   enhanceCostBase: { common: 12, magic: 20, rare: 35, legendary: 55, set: 45 },
-  enhanceStep: 0.45           // 每强化一次费用 +45%
+  enhanceStep: 0.45,          // 每强化一次费用 +45%
+  drillMax: 5,                // 打孔上限：一件装备最多 5 孔（自然掉落最多 4 孔）
+  drillCost: [14, 20, 28, 38, 50]  // 打出第 N+1 个孔的玄晶价（索引 = 当前孔数）
 };
