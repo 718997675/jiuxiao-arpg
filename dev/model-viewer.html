@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>模型单测</title>
+<style>html,body{margin:0;height:100%;background:#9aa7b4;overflow:hidden}canvas{display:block}</style>
+</head>
+<body>
+<script src="/lib/three.min.js"></script>
+<script src="/lib/GLTFLoader.js"></script>
+<script src="/lib/SkeletonUtils.js"></script>
+<script>
+/* 最小复现页：只加载 GLB，不做任何加工，用来判断黑线是模型自带还是游戏层引入的 */
+const params = new URLSearchParams(location.search);
+const url = params.get('url') || '/assets/char/warrior.glb';
+const clipName = params.get('clip') || '';
+
+const W = innerWidth, H = innerHeight;
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(W, H);
+renderer.setPixelRatio(1);
+renderer.outputEncoding = THREE.sRGBEncoding;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x9aa7b4);
+scene.add(new THREE.HemisphereLight(0xffffff, 0x444444, 1.1));
+const dir = new THREE.DirectionalLight(0xffffff, 1.0);
+dir.position.set(3, 6, 4);
+scene.add(dir);
+
+const camera = new THREE.PerspectiveCamera(35, W / H, 0.1, 100);
+camera.position.set(2.2, 1.6, 3.4);
+camera.lookAt(0, 0.95, 0);
+
+const clock = new THREE.Clock();
+let mixer = null;
+const holder = new THREE.Group();
+scene.add(holder);
+
+new THREE.GLTFLoader().load(url, gltf => {
+  const inst = THREE.SkeletonUtils ? THREE.SkeletonUtils.clone(gltf.scene) : gltf.scene;
+  holder.add(inst);
+
+  const bb = new THREE.Box3().setFromObject(inst);
+  const size = new THREE.Vector3(); bb.getSize(size);
+  inst.position.y = -bb.min.y;
+  const s = 1.9 / Math.max(size.y, 1e-4);
+  if (Math.abs(s - 1) > 1e-3) inst.scale.setScalar(s);
+  inst.position.y *= s;
+  window.__size = [size.x, size.y, size.z];
+  window.__clips = (gltf.animations || []).map(a => a.name);
+  window.__bones = (() => { let n = 0; inst.traverse(o => { if (o.isBone) n++; }); return n; })();
+
+  if (clipName && gltf.animations && gltf.animations.length) {
+    mixer = new THREE.AnimationMixer(inst);
+    const c = gltf.animations.find(a => a.name.toLowerCase().includes(clipName.toLowerCase())) || gltf.animations[0];
+    mixer.clipAction(c).play();
+  }
+  window.__ready = true;
+}, undefined, e => { window.__err = String(e && e.message || e); });
+
+(function loop() {
+  requestAnimationFrame(loop);
+  if (mixer) mixer.update(clock.getDelta()); else clock.getDelta();
+  renderer.render(scene, camera);
+})();
+</script>
+</body>
+</html>

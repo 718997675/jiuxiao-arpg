@@ -1,22 +1,59 @@
 #!/usr/bin/env bash
-# 用 GitHub API 创建 Release（GitHub 的 Release 条目和 git tag 是两回事，推 tag 不会自动生成）
+# 用 GitHub API 创建 Release
+#
+# GitHub 的 Release 条目和 git tag 是两套东西：推 tag 只会在 /tags 页面出现，
+# Releases 页面必须显式调 POST /repos/{owner}/{repo}/releases 才会多一条。
 #
 # 用法：
-#   GH_TOKEN=<fine-grained PAT，Contents: Read and write> bash dev/make-release.sh v1.1.6
-#   GH_TOKEN=... bash dev/make-release.sh v1.1.6 "v1.1.6 · 自定义标题"
+#   bash dev/make-release.sh v1.1.6                  # 标题自动取版本说明的一级标题
+#   bash dev/make-release.sh v1.1.6 "v1.1.6 · 标题"
 #   DRY_RUN=1 bash dev/make-release.sh v1.1.6        # 只打印请求体，不真的发
 #
-# 正文默认取 docs/releases/<tag>.md。若该文件不存在则报错退出。
+# 凭据按以下顺序查找（找到第一个就用）：
+#   1. 环境变量 GH_TOKEN
+#   2. 环境变量 GITHUB_TOKEN
+#   3. 文件 ~/.config/jiuxiao-arpg/gh_token（推荐：存一次，以后全自动）
+#   4. gh auth token（若装了 GitHub CLI）
+#
+# 正文默认取 docs/releases/<tag>.md。
 set -euo pipefail
 
 REPO="${REPO:-718997675/jiuxiao-arpg}"
 TAG="${1:-}"
 TITLE="${2:-}"
 DRY_RUN="${DRY_RUN:-0}"
+TOKEN_FILE="${GH_TOKEN_FILE:-$HOME/.config/jiuxiao-arpg/gh_token}"
 
 if [ -z "$TAG" ]; then
-  echo "用法: GH_TOKEN=xxx bash dev/make-release.sh <tag> [标题]" >&2
+  echo "用法: bash dev/make-release.sh <tag> [标题]" >&2
   exit 2
+fi
+
+# ---- 解析 token ----
+TOKEN_SRC=""
+if [ -n "${GH_TOKEN:-}" ]; then
+  TOKEN_SRC="环境变量 GH_TOKEN"
+elif [ -n "${GITHUB_TOKEN:-}" ]; then
+  GH_TOKEN="$GITHUB_TOKEN"; TOKEN_SRC="环境变量 GITHUB_TOKEN"
+elif [ -f "$TOKEN_FILE" ]; then
+  GH_TOKEN=$(tr -d '[:space:]' < "$TOKEN_FILE"); TOKEN_SRC="文件 $TOKEN_FILE"
+elif command -v gh >/dev/null 2>&1 && [ -n "$(gh auth token 2>/dev/null || true)" ]; then
+  GH_TOKEN=$(gh auth token); TOKEN_SRC="gh auth token"
+fi
+
+# ---- 前置校验：tag 必须在远程，否则 Release 会挂到不存在的 tag 上 ----
+if ! git ls-remote --tags origin "refs/tags/$TAG" 2>/dev/null | grep -q .; then
+  echo "远程没有 tag ${TAG}，先 git push origin ${TAG}" >&2
+  exit 1
+fi
+
+# ---- 前置校验：已存在就不重复建（避免 422） ----
+EXIST=$(curl -sS -o /dev/null -w '%{http_code}' \
+  -H "Accept: application/vnd.github+json" \
+  "https://api.github.com/repos/$REPO/releases/tags/$TAG" || echo 000)
+if [ "$EXIST" = "200" ]; then
+  echo "Release $TAG 已存在，无需重建：https://github.com/$REPO/releases/tag/$TAG"
+  exit 0
 fi
 
 # 没给标题就从版本说明的一级标题里取（形如 “# v1.1.5 · 古风角色与单条洗炼”）
@@ -45,7 +82,23 @@ if [ "$DRY_RUN" = "1" ]; then
   exit 0
 fi
 
-: "${GH_TOKEN:?需要 GH_TOKEN 环境变量（fine-grained PAT，Contents 设为 Read and write）}"
+if [ -z "${GH_TOKEN:-}" ]; then
+  cat >&2 <<'ERR'
+== 缺少 GitHub 凭据 ==
+任选一种方式提供（fine-grained PAT 需要 Contents: Read and write）：
+
+  A) 存到文件，之后每次发版全自动（推荐）
+     mkdir -p ~/.config/jiuxiao-arpg
+     printf '%s' 'github_pat_xxx' > ~/.config/jiuxiao-arpg/gh_token
+     chmod 600 ~/.config/jiuxiao-arpg/gh_token
+
+  B) 本次临时用
+     GH_TOKEN='github_pat_xxx' bash dev/make-release.sh vX.Y.Z
+ERR
+  exit 1
+fi
+
+echo "凭据来源：$TOKEN_SRC"
 
 RESP=$(curl -sS -w '\n__HTTP__%{http_code}' -X POST \
   -H "Authorization: Bearer $GH_TOKEN" \

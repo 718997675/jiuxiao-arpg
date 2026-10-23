@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>古风低模 · 三职业样稿</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #191512; }
+  body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; }
+  #view { position: fixed; inset: 0; }
+  #hud {
+    position: fixed; left: 0; right: 0; top: 0; padding: 14px 18px;
+    display: flex; align-items: center; gap: 14px; pointer-events: none;
+    background: linear-gradient(180deg, rgba(12,10,8,.78), rgba(12,10,8,0));
+  }
+  #title { color: #e8d9b5; font-size: 15px; letter-spacing: 2px; font-weight: 600; }
+  #title small { display: block; font-size: 11px; letter-spacing: 1px; color: #8d8272; font-weight: 400; margin-top: 3px; }
+  #bar { position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%); display: flex; gap: 10px; }
+  button {
+    font: inherit; font-size: 13px; letter-spacing: 1px; cursor: pointer;
+    padding: 9px 20px; border-radius: 3px; color: #d9c9a4;
+    background: rgba(30,25,20,.86); border: 1px solid rgba(201,162,39,.32);
+    transition: .15s;
+  }
+  button:hover { border-color: rgba(201,162,39,.75); color: #f0e2c0; }
+  button.on { background: rgba(201,162,39,.9); color: #241a0a; border-color: #c9a227; font-weight: 600; }
+  #tips { position: fixed; right: 16px; bottom: 24px; color: #6f6558; font-size: 11px; line-height: 1.7; text-align: right; }
+</style>
+</head>
+<body>
+<div id="view"></div>
+<div id="hud">
+  <div id="title">九霄 · 山海录 —— 古风低模角色样稿
+    <small>交领右衽 / 广袖 / 腰封 / 发髻 / 甲裙 / 道冠　·　程序化生成，零外部素材</small>
+  </div>
+</div>
+<div id="bar">
+  <button id="b-idle" class="on">待机</button>
+  <button id="b-walk">行走</button>
+  <button id="b-atk">施法 / 挥击</button>
+</div>
+<div id="tips">拖动旋转　滚轮缩放</div>
+
+<script src="../lib/three.min.js"></script>
+<script src="charforge.js"></script>
+<script>
+const wrap = document.getElementById('view');
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.outputEncoding = THREE.sRGBEncoding;
+wrap.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x1b1714);
+scene.fog = new THREE.Fog(0x1b1714, 9, 22);
+
+const camera = new THREE.PerspectiveCamera(38, innerWidth / innerHeight, 0.1, 100);
+
+/* 灯光：主光偏暖，补光偏青，压出古画的冷暖对比 */
+const hemi = new THREE.HemisphereLight(0xbfd4e8, 0x3a2f22, 0.55);
+scene.add(hemi);
+
+const key = new THREE.DirectionalLight(0xffe6bd, 1.55);
+key.position.set(3.2, 6.0, 4.2);
+key.castShadow = true;
+key.shadow.mapSize.set(2048, 2048);
+key.shadow.camera.left = -5; key.shadow.camera.right = 5;
+key.shadow.camera.top = 5; key.shadow.camera.bottom = -3;
+key.shadow.bias = -0.0008;
+scene.add(key);
+
+const rim = new THREE.DirectionalLight(0x6f9fd8, 0.75);
+rim.position.set(-4, 3, -5);
+scene.add(rim);
+
+/* 地面 */
+const ground = new THREE.Mesh(
+  new THREE.CircleGeometry(14, 48),
+  new THREE.MeshStandardMaterial({ color: 0x2b2620, roughness: 0.95 })
+);
+ground.rotation.x = -Math.PI / 2;
+ground.receiveShadow = true;
+scene.add(ground);
+
+const disc = new THREE.Mesh(
+  new THREE.RingGeometry(3.4, 3.46, 64),
+  new THREE.MeshBasicMaterial({ color: 0x6b5a36, transparent: true, opacity: 0.5 })
+);
+disc.rotation.x = -Math.PI / 2;
+disc.position.y = 0.004;
+scene.add(disc);
+
+/* 三个职业 */
+const CLASSES = ['warrior', 'mage', 'taoist'];
+const actors = [];
+CLASSES.forEach((cls, i) => {
+  const a = CharForge.build(cls);
+  a.group.position.x = (i - 1) * 1.95;
+  a.group.rotation.y = 0;   // 角色朝 +Z，正对镜头
+  scene.add(a.group);
+  actors.push(a);
+
+  /* 名牌 */
+  const cv = document.createElement('canvas');
+  cv.width = 256; cv.height = 64;
+  const c = cv.getContext('2d');
+  c.fillStyle = '#e8d9b5';
+  c.font = '600 30px -apple-system, "PingFang SC", sans-serif';
+  c.textAlign = 'center';
+  c.fillText(CharForge.CFG[cls].label, 128, 40);
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: new THREE.CanvasTexture(cv), transparent: true, depthWrite: false
+  }));
+  sp.scale.set(1.6, 0.4, 1);
+  sp.position.set((i - 1) * 1.95, 2.42, 0);
+  scene.add(sp);
+});
+
+/* ---------------- 交互状态 ---------------- */
+let mode = 'idle';      // idle | walk | atk
+let atkTime = -1;       // 0..1
+const ATK_DUR = 1.25;
+
+document.getElementById('b-idle').onclick = () => setMode('idle');
+document.getElementById('b-walk').onclick = () => setMode('walk');
+document.getElementById('b-atk').onclick = () => setMode('atk');
+
+function setMode(m) {
+  mode = m;
+  ['idle', 'walk', 'atk'].forEach(k => {
+    document.getElementById('b-' + k).classList.toggle('on', k === m);
+  });
+  if (m === 'atk') atkTime = 0;
+}
+
+/* 相机环绕 */
+let camYaw = 0, camPitch = 0.30, camDist = 6.4;
+let drag = false, lastX = 0, lastY = 0;
+
+renderer.domElement.addEventListener('pointerdown', e => { drag = true; lastX = e.clientX; lastY = e.clientY; });
+addEventListener('pointerup', () => { drag = false; });
+addEventListener('pointermove', e => {
+  if (!drag) return;
+  camYaw -= (e.clientX - lastX) * 0.006;
+  camPitch = Math.max(0.02, Math.min(0.95, camPitch + (e.clientY - lastY) * 0.004));
+  lastX = e.clientX; lastY = e.clientY;
+});
+addEventListener('wheel', e => {
+  camDist = Math.max(2.6, Math.min(12, camDist + e.deltaY * 0.0035));
+}, { passive: true });
+
+function placeCamera() {
+  const h = Math.sin(camPitch) * camDist;
+  const r = Math.cos(camPitch) * camDist;
+  camera.position.set(Math.sin(camYaw) * r, h + 1.0, Math.cos(camYaw) * r);
+  camera.lookAt(0, 1.05, 0);
+}
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+const clock = new THREE.Clock();
+function loop() {
+  requestAnimationFrame(loop);
+  const dt = Math.min(clock.getDelta(), 0.05);
+
+  if (mode === 'atk') {
+    atkTime += dt / ATK_DUR;
+    if (atkTime >= 1.35) atkTime = -1, setModeSilent('idle');
+  }
+
+  for (const a of actors) {
+    CharForge.update(a, dt, {
+      moving: mode === 'walk',
+      attack: atkTime >= 0 ? Math.min(1, atkTime) : -1
+    });
+  }
+
+  placeCamera();
+  renderer.render(scene, camera);
+}
+
+function setModeSilent(m) {
+  mode = m;
+  ['idle', 'walk', 'atk'].forEach(k => {
+    document.getElementById('b-' + k).classList.toggle('on', k === m);
+  });
+}
+
+placeCamera();
+loop();
+</script>
+</body>
+</html>

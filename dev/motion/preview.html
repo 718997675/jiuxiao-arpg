@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>bake-motion 预览台 · 九霄山海录</title>
+<style>
+  html,body{margin:0;height:100%;background:#0d1119;color:#e8e2d4;font-family:"PingFang SC",system-ui,sans-serif;overflow:hidden}
+  #view{position:fixed;left:0;top:0;bottom:0;right:340px}
+  #panel{position:fixed;right:0;top:0;bottom:0;width:340px;background:rgba(11,12,16,.97);
+    border-left:1px solid rgba(216,178,90,.28);padding:14px;display:flex;flex-direction:column;gap:10px;z-index:5}
+  h1{font-size:14px;font-weight:500;margin:0;color:#d8b25a;letter-spacing:1px}
+  .hint{font-size:11px;color:#8b8578;line-height:1.5}
+  textarea{flex:1;min-height:180px;background:#07080c;color:#b8d4a0;border:1px solid rgba(216,178,90,.22);
+    border-radius:4px;padding:8px;font-family:ui-monospace,Menlo,monospace;font-size:11px;line-height:1.5;resize:none;outline:none}
+  .row{display:flex;gap:6px;align-items:center}
+  button{flex:1;background:#1a1d24;color:#e8e2d4;border:1px solid rgba(216,178,90,.3);border-radius:3px;
+    padding:7px 0;font-size:12px;cursor:pointer;font-family:inherit}
+  button:hover{border-color:#d8b25a;background:#232732}
+  button.on{background:#8a2e22;border-color:#c86a40;color:#ffe0b0}
+  label{font-size:11px;color:#9a9488;white-space:nowrap}
+  input[type=range]{flex:1;accent-color:#d8b25a}
+  #stat{font-size:11px;color:#8b8578;font-family:ui-monospace,monospace;height:14px}
+  #err{font-size:11px;color:#ff8a7a;font-family:ui-monospace,monospace;white-space:pre-wrap;max-height:80px;overflow:auto}
+</style>
+</head>
+<body>
+<div id="view"></div>
+<div id="panel">
+  <h1>烘焙关键帧预览台</h1>
+  <div class="hint">把 bake-motion.mjs 输出的 <b>键名: { ... }</b> 整段粘进来，点应用。<br>
+  三个职业同屏播放，用来判断角度符号、镜像和节奏对不对。</div>
+  <textarea id="src" spellcheck="false"></textarea>
+  <div class="row">
+    <button id="apply">应用</button>
+    <button id="play" class="on">暂停</button>
+  </div>
+  <div class="row">
+    <label>进度</label>
+    <input type="range" id="seek" min="0" max="1000" value="0">
+  </div>
+  <div class="row">
+    <label>慢放</label>
+    <input type="range" id="slow" min="10" max="100" value="100">
+    <span id="slowv" style="font-size:11px;width:34px">1.0×</span>
+  </div>
+  <div id="stat"></div>
+  <div id="err"></div>
+</div>
+<script src="../../lib/three.min.js"></script>
+<script src="../../src/actors.js"></script>
+<script>
+/* ---------------- 场景 ---------------- */
+const view = document.getElementById('view');
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(view.clientWidth, view.clientHeight);
+renderer.shadowMap.enabled = true;
+view.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0d1119);
+scene.fog = new THREE.Fog(0x0d1119, 7, 16);
+
+const camera = new THREE.PerspectiveCamera(42, view.clientWidth / view.clientHeight, 0.1, 100);
+let camYaw = 0.16, camDist = 5.0, camH = 1.75;
+function placeCamera() {
+  camera.position.set(Math.sin(camYaw) * camDist, camH, Math.cos(camYaw) * camDist);
+  camera.lookAt(0, 0.92, 0);
+}
+placeCamera();
+
+scene.add(new THREE.HemisphereLight(0x8fa8d0, 0x14161c, 0.85));
+const key = new THREE.DirectionalLight(0xfff0d8, 1.15);
+key.position.set(3.2, 6, 4);
+key.castShadow = true;
+key.shadow.mapSize.set(1024, 1024);
+key.shadow.camera.left = -6; key.shadow.camera.right = 6;
+key.shadow.camera.top = 6; key.shadow.camera.bottom = -6;
+scene.add(key);
+const rim = new THREE.DirectionalLight(0x4a6fa8, 0.55);
+rim.position.set(-4, 3, -5);
+scene.add(rim);
+
+const ground = new THREE.Mesh(
+  new THREE.CircleGeometry(9, 48),
+  new THREE.MeshStandardMaterial({ color: 0x1a2029, roughness: 0.95 })
+);
+ground.rotation.x = -Math.PI / 2;
+ground.receiveShadow = true;
+scene.add(ground);
+
+/* ---------------- 三个职业 ---------------- */
+const CLS = [
+  { name: '战士', color: 0x8e2f24, cloth: 0x5c1f18 },
+  { name: '法师', color: 0x2b4a7a, cloth: 0x1d3355 },
+  { name: '道士', color: 0x2f6b4c, cloth: 0x1e4432 }
+];
+const actors = CLS.map((c, i) => {
+  const a = buildHumanoid({
+    color: c.color, cloth: c.cloth, skin: 0xe8c8a8,
+    legColor: c.cloth, bootColor: 0x2a2018, sleeve: c.color, glove: c.cloth
+  });
+  a.group.position.x = (i - 1) * 1.62;
+  a.group.scale.setScalar(1.1);
+  scene.add(a.group);
+  return a;
+});
+
+/* 武器：给战士一把刀，方便判断手的朝向 */
+const blade = new THREE.Mesh(
+  new THREE.BoxGeometry(0.07, 1.15, 0.15),
+  new THREE.MeshStandardMaterial({ color: 0xb8c4d0, metalness: 0.8, roughness: 0.35 })
+);
+blade.position.set(0, -0.5, 0);
+if (actors[0].parts.weaponHand) actors[0].parts.weaponHand.add(blade);
+
+/* ---------------- 关键帧驱动 ---------------- */
+let TABLE = null, playing = true, speed = 1, t = 0, duration = 2;
+
+const CH = {
+  armRx: 'armRx', armRy: 'armRy', armRz: 'armRz',
+  armLx: 'armLx', armLz: 'armLz',
+  torsoX: 'torsoX', torsoY: 'torsoY', torsoZ: 'torsoZ',
+  legRx: 'legRx', legLx: 'legLx',
+  handRx: 'handRx', handRz: 'handRz',
+  tPosZ: 'tPosZ', tPosY: 'tPosY'
+};
+
+function K(p, keys) {
+  if (!keys || !keys.length) return 0;
+  return keyLerp(p, keys);   // 直接用 actors.js 里的插值，保证和游戏内一致
+}
+
+function applyPose(a, p) {
+  const P = a.parts, T = TABLE || {};
+  const g = (n) => K(p, T[n]);
+
+  if (P.legL) P.legL.rotation.x = g('legLx');
+  if (P.legR) P.legR.rotation.x = g('legRx');
+  if (P.armL) { P.armL.rotation.x = g('armLx'); P.armL.rotation.z = g('armLz'); }
+  if (P.armR) P.armR.rotation.set(g('armRx'), g('armRy'), g('armRz'));
+  P.torso.position.y = 0.92 + g('tPosY');
+  P.torso.position.z = g('tPosZ');
+  P.torso.rotation.set(g('torsoX'), g('torsoY'), g('torsoZ'));
+  if (P.weaponHand) P.weaponHand.rotation.set(g('handRx'), 0, g('handRz'));
+  if (P.headG) P.headG.rotation.set(0, 0, 0);
+  if (P.capeG) P.capeG.rotation.x = 0.12;
+}
+
+/* ---------------- 界面 ---------------- */
+const $src = document.getElementById('src');
+const $err = document.getElementById('err');
+const $stat = document.getElementById('stat');
+const $seek = document.getElementById('seek');
+const $play = document.getElementById('play');
+const $slow = document.getElementById('slow');
+const $slowv = document.getElementById('slowv');
+
+const SAMPLE = `test_walk: {
+  armRx: [[0, 0], [0.161, 0.378], [0.226, 0.435], [0.29, 0.351], [0.613, -0.378], [0.71, -0.471], [0.774, -0.42], [1, 0]],
+  armRz: [[0, 0], [0.129, 0.145], [0.226, 0.168], [0.355, 0.119], [0.71, -0.164], [1, 0]],
+  armLx: [[0, 0], [0.129, -0.318], [0.226, -0.344], [0.323, -0.205], [0.516, 0.254], [0.71, 0.611], [0.774, 0.559], [1, 0]],
+  armLz: [[0, 0], [0.226, 0.159], [0.387, 0.026], [0.742, -0.101], [1, 0]],
+  legRx: [[0, 0], [0.065, -0.209], [0.161, -0.357], [0.258, -0.574], [0.29, -0.556], [0.323, -0.442], [0.419, 0.046], [0.484, 0.298], [0.581, 0.529], [0.613, 0.519], [0.677, 0.341], [0.774, 0.444], [0.839, 0.433], [0.903, 0.32], [1, 0]],
+  legLx: [[0, 0], [0.065, -0.013], [0.161, 0.173], [0.258, 0.116], [0.355, 0.187], [0.419, 0.077], [0.677, -0.744], [0.742, -0.869], [0.774, -0.852], [0.806, -0.747], [0.903, -0.271], [0.968, -0.056], [1, 0]],
+  torsoX: [[0, 0], [0.161, 0.045], [0.677, 0.054], [1, 0]],
+  torsoY: [[0, 0], [0.129, -0.084], [0.323, -0.093], [0.645, 0.114], [0.839, 0.098], [1, 0]],
+  torsoZ: [[0, 0], [0.161, 0.064], [0.323, -0.031], [0.645, -0.094], [0.806, -0.014], [1, 0]],
+  tPosY: [[0, 0], [0.355, -0.068], [0.581, -0.009], [0.839, -0.066], [1, 0]],
+  tPosZ: [[0, 0], [0.806, -0.039], [1, 0]]
+},`;
+
+$src.value = SAMPLE;
+
+function apply() {
+  $err.textContent = '';
+  try {
+    const body = $src.value.trim().replace(/,\s*$/, '');
+    const obj = new Function('return {' + body + '};')();
+    const keys = Object.keys(obj);
+    if (!keys.length) throw new Error('没解析出任何动作');
+    TABLE = obj[keys[0]];
+    /* 时长从粘贴的注释头里读（烘焙脚本会写 "· 1.03s ·"），读不到就用 2 秒 */
+    const m = $src.value.match(/(\d+(?:\.\d+)?)\s*s\b/);
+    duration = m ? Math.max(0.3, Number(m[1])) : 2;
+    t = 0;
+    $stat.textContent = `已载入 ${keys[0]} · ${Object.keys(TABLE).length} 个通道 · ${duration.toFixed(2)}s`;
+  } catch (e) {
+    TABLE = null;
+    $err.textContent = String(e.message || e);
+    $stat.textContent = '解析失败';
+  }
+}
+
+document.getElementById('apply').onclick = apply;
+$play.onclick = () => {
+  playing = !playing;
+  $play.textContent = playing ? '暂停' : '播放';
+  $play.classList.toggle('on', playing);
+};
+$seek.oninput = () => { t = ($seek.value / 1000) * duration; playing = false; $play.textContent = '播放'; $play.classList.remove('on'); };
+$slow.oninput = () => { speed = $slow.value / 100; $slowv.textContent = speed.toFixed(1) + '×'; };
+
+/* 鼠标拖拽转视角 */
+let drag = false, lastX = 0;
+renderer.domElement.addEventListener('pointerdown', e => { drag = true; lastX = e.clientX; });
+addEventListener('pointerup', () => (drag = false));
+addEventListener('pointermove', e => {
+  if (!drag) return;
+  camYaw -= (e.clientX - lastX) * 0.006;
+  lastX = e.clientX;
+  camYaw = Math.max(-1.1, Math.min(1.1, camYaw));
+  placeCamera();
+});
+
+/* ---------------- 主循环 ---------------- */
+const clock = new THREE.Clock();
+let acc = 0;
+
+function loop() {
+  requestAnimationFrame(loop);
+  const dt = Math.min(clock.getDelta(), 0.05);
+  if (playing) { t += dt * speed; if (t > duration) t -= duration; }
+
+  const p = duration > 0 ? t / duration : 0;
+  if (TABLE) for (const a of actors) applyPose(a, p);
+  if (!playing) $seek.value = String(Math.round(p * 1000));
+
+  renderer.render(scene, camera);
+}
+
+addEventListener('resize', () => {
+  camera.aspect = view.clientWidth / view.clientHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(view.clientWidth, view.clientHeight);
+});
+
+apply();
+loop();
+</script>
+</body>
+</html>
