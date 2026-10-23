@@ -97,9 +97,10 @@
     const wood = MAT(0x6b4a2c, { rough: 0.95 });
 
     if (kind === 'saber') {
-      const blade = put(g, G.box(0.105, 1.02, 0.045), metal, 0, 0.70, 0);
+      /* 刀长控制在 1.24 米（原本 1.40，举刀时会顶出画面、劈砍时容易扎穿地面） */
+      const blade = put(g, G.box(0.105, 0.88, 0.045), metal, 0, 0.62, 0);
       blade.rotation.z = -0.04;
-      put(g, G.cone(0.060, 0.26, 4), metal, 0.045, 1.27, 0).rotation.z = -0.10;
+      put(g, G.cone(0.060, 0.26, 4), metal, 0.045, 1.11, 0).rotation.z = -0.10;
       put(g, G.cyl(0.072, 0.072, 0.05, 8), gold, 0, 0.185, 0);
       put(g, G.cyl(0.034, 0.040, 0.34, 6), wood, 0, 0.01, 0);
       put(g, G.box(0.05, 0.06, 0.05), gold, 0, -0.17, 0);
@@ -321,7 +322,7 @@
     /* ================= 自带武器 ================= */
     if (cfg.weapon && !opt.noWeapon) {
       const w3 = weapon(cfg.weapon, cfg);
-      if (cfg.weapon === 'saber') { w3.position.set(0.012, -0.02, 0.02); w3.rotation.set(0, 0, Math.PI - 0.10); }
+      if (cfg.weapon === 'saber') { w3.position.set(0.012, -0.02, 0.02); w3.rotation.set(-1.02, 0, Math.PI - 0.10); }
       else if (cfg.weapon === 'staff') { w3.position.set(0.02, -0.30, 0.02); w3.rotation.set(0, 0, -0.06); }
       else { w3.position.set(0.004, -0.02, 0.02); w3.rotation.set(0, 0, Math.PI + 0.10); }
       A.parts.weaponHand.add(w3);
@@ -350,14 +351,26 @@
     return keys[keys.length - 1][1];
   }
 
-  /* 各职业招牌动作：0→1 一次完整挥击 */
+  /* 各职业招牌动作：0→1 一次完整挥击
+   * 通道说明：
+   *   armRx / armRy / armRz  右肩三轴（x=前后抬落，y=水平横扫，z=外展内收）
+   *   armL / elbowL          左手配合（挥击时向后甩，起平衡作用）
+   *   twist                  拧腰（躯干绕 Y），是横向力量的主要来源
+   *   lean                   前倾 / 后仰
+   * 斜劈的关键：光靠 armRx 只会「手上下动」，必须 twist + armRy 叠加出水平弧线 */
   const ATK = {
     warrior: {
-      armR: [[0, 0], [0.24, -2.35], [0.42, -2.55], [0.60, 0.95], [0.76, 0.45], [1, 0]],
-      armRz: [[0, 0], [0.24, -0.35], [0.42, -0.15], [0.60, 0.55], [1, 0]],
-      elbowR: [[0, 0], [0.24, -0.75], [0.42, -0.55], [0.60, -0.15], [1, 0]],
-      twist: [[0, 0], [0.26, 0.55], [0.44, 0.62], [0.62, -0.50], [0.82, -0.18], [1, 0]],
-      lean: [[0, 0], [0.30, -0.10], [0.62, 0.16], [1, 0]]
+      /* 右上蓄力 → 扫过正前 → 左下触底 → 收势（收势时手臂留在身前，避免刀尖扎进地面） */
+      armRx: [[0, 0], [0.16, -1.10], [0.30, -1.62], [0.40, -1.68], [0.52, -1.38], [0.66, -0.98], [0.80, -0.70], [0.92, -0.30], [1, 0]],
+      armRy: [[0, 0], [0.16, 0.52], [0.30, 0.90], [0.40, 0.92], [0.52, -0.20], [0.66, -1.02], [0.80, -0.45], [0.92, -0.12], [1, 0]],
+      armRz: [[0, 0], [0.16, 0.55], [0.30, 0.92], [0.40, 0.94], [0.52, 0.06], [0.66, -0.46], [0.80, -0.22], [0.92, -0.05], [1, 0]],
+      elbowR: [[0, 0], [0.16, -0.62], [0.30, -1.08], [0.40, -1.12], [0.52, -0.42], [0.66, -0.18], [0.80, -0.10], [1, 0]],
+      armL: [[0, 0], [0.30, 0.30], [0.40, 0.34], [0.58, -0.42], [0.74, -0.28], [0.90, -0.10], [1, 0]],
+      elbowL: [[0, 0], [0.30, -0.50], [0.58, -0.30], [1, 0]],
+      twist: [[0, 0], [0.16, 0.26], [0.30, 0.78], [0.40, 0.82], [0.52, -0.04], [0.66, -0.78], [0.80, -0.42], [0.92, -0.14], [1, 0]],
+      lean: [[0, 0], [0.30, -0.10], [0.40, -0.13], [0.52, 0.05], [0.66, 0.22], [0.80, 0.14], [0.92, 0.04], [1, 0]],
+      /* 沉身：屈膝 + 重心下压，挥砍的力量感主要来自这里 */
+      sink: [[0, 0], [0.30, 0.10], [0.40, 0.12], [0.52, 0.32], [0.66, 0.46], [0.80, 0.34], [0.92, 0.12], [1, 0]]
     },
     mage: {
       armR: [[0, 0], [0.30, -1.10], [0.48, -1.15], [0.66, -1.95], [1, 0]],
@@ -374,6 +387,17 @@
       elbowL: [[0, 0], [0.30, -1.60], [0.50, -1.70], [1, 0]],
       twist: [[0, 0], [0.30, -0.28], [0.58, 0.12], [1, 0]]
     }
+  };
+
+  /* 武器相对手的翻腕曲线（rotation.x）
+   * 注意方向：负值让刀沿手的「前方」抬起，手臂举高后「前方」就变成了上方，
+   * 刀尖反而翘起；要劈下去必须走正值（朝手的「下方」翻）。
+   *   待机  -1.02  刀尖朝前下方，1.34 米长刀才不会插进地面
+   *   蓄力  -0.26  刀顺着举臂朝上后方，像把刀举过头顶
+   *   挥出  +0.60 甩腕翻下去
+   *   触底  +0.95 刀尖扎向地面 */
+  const WPN = {
+    warrior: [[0, -1.02], [0.20, -0.80], [0.34, -0.88], [0.44, -0.86], [0.56, 0.16], [0.68, 0.10], [0.80, -0.55], [0.92, -0.85], [1, -1.02]]
   };
 
   function update(a, dt) {
@@ -441,14 +465,33 @@
     /* —— 攻击覆盖 —— */
     if (p >= 0 && !spin) {
       const K = ATK[a.cls] || ATK.warrior;
-      if (K.armR) P.armR.rotation.x = keyLerp(K.armR, p);
-      if (K.armRz) P.armR.rotation.z = keyLerp(K.armRz, p);
+      /* 三轴一起覆盖：只改 x 的话，y/z 会残留待机姿态，挥击方向被拖偏 */
+      const rx = K.armRx || K.armR;
+      P.armR.rotation.set(
+        rx ? keyLerp(rx, p) : P.armR.rotation.x,
+        K.armRy ? keyLerp(K.armRy, p) : 0,
+        K.armRz ? keyLerp(K.armRz, p) : -0.06
+      );
       if (K.elbowR && P.elbowR) P.elbowR.rotation.x = keyLerp(K.elbowR, p);
       if (K.armL) P.armL.rotation.x = keyLerp(K.armL, p);
       if (K.elbowL && P.elbowL) P.elbowL.rotation.x = keyLerp(K.elbowL, p);
       if (K.twist) P.torso.rotation.y = keyLerp(K.twist, p);
       if (K.lean) P.torso.rotation.x = keyLerp(K.lean, p);
+
+      /* 屈膝沉身：只有手臂在动的话看着像挥拍，加上重心下压才有劈砍的分量 */
+      if (K.sink) {
+        const sink = keyLerp(K.sink, p);
+        if (P.kneeL) P.kneeL.rotation.x = sink * 1.55;
+        if (P.kneeR) P.kneeR.rotation.x = sink * 1.30;
+        P.legL.rotation.x = -sink * 0.42;
+        P.legR.rotation.x = -sink * 0.30;
+        P.torso.position.y = a.torsoBaseY - sink * 0.15;
+      }
     }
+
+    /* —— 武器翻腕 —— */
+    const WK = WPN[a.cls];
+    if (WK && a.weapon) a.weapon.rotation.x = keyLerp(WK, p >= 0 ? p : 0);
 
     /* —— 受击白闪 —— */
     if (a.flash > 0) {

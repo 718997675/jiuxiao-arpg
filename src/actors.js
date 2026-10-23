@@ -651,8 +651,10 @@ function applyPaperDoll(p) {
     const c = itemVisualColor(wp);
     const w = buildWeapon(wp.shape || 'sword', c.base, wp.rarity === 'common' ? null : c.glow);
     if (a.cf) {
-      /* 古风手型：刀剑自然下垂，杖/符立握 */
+      /* 古风手型：大刀斜持（刀长 1.24 米，垂直握会插进地面），
+       * 这个倾角也让挥砍带出横向刀光；杖/符立握，桃木剑保持原样 */
       if (wp.shape === 'staff' || wp.shape === 'charm') { w.rotation.set(0.05, 0, -0.06); w.position.set(0.02, -0.05, 0.02); }
+      else if (wp.shape === 'saber') { w.rotation.set(-1.02, 0, Math.PI - 0.12); w.position.set(0.02, 0.02, 0.03); }
       else { w.rotation.set(0.08, 0, Math.PI - 0.12); w.position.set(0.02, 0.02, 0.03); }
     } else {
       if (wp.shape === 'staff' || wp.shape === 'charm') w.rotation.set(0, 0, -0.08);
@@ -660,6 +662,8 @@ function applyPaperDoll(p) {
       w.position.set(0.1, 0.06, 0.04);
     }
     P.weaponHand.add(w);
+    /* 古风角色要按攻击进度调刀，必须把引用指到这把新武器上 */
+    if (a.cf) a.weapon = w;
     P.weaponMat = c;
   }
 

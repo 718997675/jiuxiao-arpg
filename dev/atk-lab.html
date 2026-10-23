@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>挥刀动作调试台 · 九霄·山海录</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; overflow: hidden; background: #0e1116; }
+  canvas { display: block; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", sans-serif;
+    color: #e8e2d6; -webkit-font-smoothing: antialiased;
+  }
+  #panel {
+    position: fixed; left: 16px; top: 16px; width: 268px;
+    background: rgba(20, 23, 29, .88);
+    border: 1px solid rgba(201, 162, 39, .22);
+    border-radius: 10px; padding: 14px 15px 15px;
+    backdrop-filter: blur(10px);
+    box-shadow: 0 10px 34px rgba(0, 0, 0, .45);
+  }
+  #panel h1 {
+    font-size: 13px; font-weight: 600; letter-spacing: .12em;
+    color: #c9a227; margin-bottom: 3px;
+  }
+  #panel .sub { font-size: 11px; color: #6d7580; margin-bottom: 13px; letter-spacing: .04em; }
+  .row { display: flex; gap: 6px; margin-bottom: 11px; }
+  .btn {
+    flex: 1; padding: 6px 0; font-size: 11.5px; text-align: center; cursor: pointer;
+    background: rgba(255, 255, 255, .045); border: 1px solid rgba(255, 255, 255, .09);
+    border-radius: 6px; color: #b9b2a6; transition: .16s; user-select: none;
+    font-family: inherit;
+  }
+  .btn:hover { background: rgba(255, 255, 255, .09); color: #e8e2d6; }
+  .btn.on { background: rgba(201, 162, 39, .17); border-color: rgba(201, 162, 39, .5); color: #e3c564; }
+  label.cap {
+    display: flex; justify-content: space-between; align-items: baseline;
+    font-size: 10.5px; color: #79818c; letter-spacing: .06em; margin-bottom: 5px;
+  }
+  label.cap b { color: #d8cfa8; font-variant-numeric: tabular-nums; font-weight: 600; }
+  input[type=range] { width: 100%; -webkit-appearance: none; height: 3px; border-radius: 2px;
+    background: rgba(255,255,255,.13); outline: none; margin-bottom: 12px; }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 13px; height: 13px; border-radius: 50%;
+    background: #c9a227; cursor: pointer; border: 2px solid #14171d;
+  }
+  #readout { font-size: 11px; color: #8b93a0; line-height: 1.75; }
+  #readout b { color: #d8cfa8; font-variant-numeric: tabular-nums; }
+  .tag { display: inline-block; padding: 1px 6px; border-radius: 3px; font-size: 10px; margin-left: 4px; }
+  .tag.v { background: rgba(90, 160, 240, .18); color: #7fb6ee; }
+  .tag.h { background: rgba(230, 130, 90, .18); color: #e8a07a; }
+  #hint {
+    position: fixed; right: 16px; bottom: 14px; font-size: 11px; color: #4e5661;
+    text-align: right; line-height: 1.7; letter-spacing: .03em;
+  }
+</style>
+</head>
+<body>
+<div id="panel">
+  <h1>挥刀动作调试台</h1>
+  <div class="sub">CHARFORGE · ATTACK LAB</div>
+
+  <div class="row" id="clsRow">
+    <div class="btn on" data-cls="warrior">战士</div>
+    <div class="btn" data-cls="mage">法师</div>
+    <div class="btn" data-cls="taoist">道士</div>
+  </div>
+
+  <label class="cap"><span>动作进度</span><b id="pVal">0.00</b></label>
+  <input id="pSlider" type="range" min="0" max="1" step="0.01" value="0">
+
+  <div class="row">
+    <div class="btn" id="playBtn">播放</div>
+    <div class="btn on" id="trailBtn">轨迹</div>
+  </div>
+
+  <div id="readout">
+    刀尖轨迹跨度：<b id="span">—</b><br>
+    竖直 / 水平比：<b id="ratio">—</b><span id="ratioTag"></span>
+  </div>
+</div>
+
+<div id="hint">拖拽旋转 · 滚轮缩放 · ← → 微调<br>右侧数字：比值 &gt; 1 = 上下劈，&lt; 1 = 横劈</div>
+
+<script src="../lib/three.min.js"></script>
+<script src="../src/charforge.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  const W = window.innerWidth, H = window.innerHeight;
+  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setSize(W, H);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  document.body.appendChild(renderer.domElement);
+
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x0e1116);
+  scene.fog = new THREE.Fog(0x0e1116, 11, 26);
+
+  const camera = new THREE.PerspectiveCamera(40, W / H, 0.05, 200);
+  let camYaw = 0.62, camPitch = 0.20, camDist = 4.4;
+  function placeCam() {
+    const cy = Math.cos(camYaw), sy = Math.sin(camYaw);
+    const cp = Math.cos(camPitch), sp = Math.sin(camPitch);
+    camera.position.set(sy * cp * camDist, 1.02 + sp * camDist, cy * cp * camDist);
+    camera.lookAt(0, 1.02, 0);
+  }
+  placeCam();
+
+  /* ---- 灯 ---- */
+  scene.add(new THREE.HemisphereLight(0xb8cdf0, 0x2a231c, 0.92));
+  const key = new THREE.DirectionalLight(0xfff2da, 1.25);
+  key.position.set(3.2, 6.4, 3.6);
+  key.castShadow = true;
+  key.shadow.mapSize.set(1024, 1024);
+  key.shadow.camera.left = -4; key.shadow.camera.right = 4;
+  key.shadow.camera.top = 4; key.shadow.camera.bottom = -4;
+  scene.add(key);
+  const rim = new THREE.DirectionalLight(0x88a8e0, 0.55);
+  rim.position.set(-3.4, 2.4, -3.2);
+  scene.add(rim);
+
+  /* ---- 地面 ---- */
+  const ground = new THREE.Mesh(
+    new THREE.CircleGeometry(3.4, 48),
+    new THREE.MeshStandardMaterial({ color: 0x1a1f26, roughness: 0.96, metalness: 0 })
+  );
+  ground.rotation.x = -Math.PI / 2;
+  ground.receiveShadow = true;
+  scene.add(ground);
+
+  const grid = new THREE.GridHelper(6.8, 17, 0x2c333d, 0x222831);
+  grid.position.y = 0.003;
+  grid.material.transparent = true;
+  grid.material.opacity = 0.55;
+  scene.add(grid);
+
+  /* 正前方标记，用来判断「前 / 后」 */
+  const fwd = new THREE.Mesh(
+    new THREE.ConeGeometry(0.075, 0.26, 4),
+    new THREE.MeshStandardMaterial({ color: 0x6f7f96, roughness: 0.7 })
+  );
+  fwd.position.set(0, 0.02, 1.35);
+  fwd.rotation.x = Math.PI / 2;
+  scene.add(fwd);
+
+  /* ---- 角色 ---- */
+  let a = null, cls = 'warrior';
+  function spawn(which) {
+    if (a) { scene.remove(a.group); }
+    cls = which;
+    a = CharForge.build(which);
+    a.group.position.set(0, 0, 0);
+    scene.add(a.group);
+    document.querySelectorAll('#clsRow .btn').forEach(b => b.classList.toggle('on', b.dataset.cls === which));
+  }
+
+  /* ---- 轨迹 ---- */
+  const TRAIL_N = 26;
+  let trailGroup = new THREE.Group();
+  scene.add(trailGroup);
+  let showTrail = true;
+
+  const tipLocalSaber = new THREE.Vector3(0, 1.20, 0);
+  const tipLocalStaff = new THREE.Vector3(0, 1.44, 0);
+  const tipLocalSword = new THREE.Vector3(0, 1.10, 0);
+
+  function tipWorld() {
+    if (!a || !a.weapon) return null;
+    const off = cls === 'mage' ? tipLocalStaff : (cls === 'taoist' ? tipLocalSword : tipLocalSaber);
+    a.weapon.updateWorldMatrix(true, false);
+    return a.weapon.localToWorld(off.clone());
+  }
+
+  function setP(p) {
+    if (!a) return;
+    a.atkAnim = 1 - p;
+    a.atkSpeed = 1e-6;
+    a.atkType = 'basic';
+    CharForge.update(a, 0);
+  }
+
+  const stats = { spanY: 0, spanH: 0 };
+  function buildTrail() {
+    while (trailGroup.children.length) {
+      const c = trailGroup.children.pop();
+      if (c.geometry) c.geometry.dispose();
+      if (c.material) c.material.dispose();
+      trailGroup.remove(c);
+    }
+    if (!a || !a.weapon) return;
+
+    const pts = [];
+    for (let i = 0; i <= TRAIL_N; i++) {
+      setP(i / TRAIL_N);
+      const t = tipWorld();
+      if (t) pts.push(t);
+    }
+    /* 采样会把姿态停在 p=1，必须还原，否则画面永远是待机姿势 */
+    setP(P);
+    if (pts.length < 2) return;
+
+    /* 轨迹包围盒 → 判断是竖劈还是横劈 */
+    const box = new THREE.Box3().setFromPoints(pts);
+    const size = new THREE.Vector3();
+    box.getSize(size);
+    stats.spanY = size.y;
+    stats.spanH = Math.max(size.x, size.z);
+
+    const colors = [];
+    const c0 = new THREE.Color(0x4f9df0);   // 起手：蓝
+    const c1 = new THREE.Color(0xf0b44f);   // 蓄力：金
+    const c2 = new THREE.Color(0xe8604a);   // 触底：红
+    for (let i = 0; i < pts.length; i++) {
+      const k = i / (pts.length - 1);
+      const c = k < 0.5 ? c0.clone().lerp(c1, k * 2) : c1.clone().lerp(c2, (k - 0.5) * 2);
+      colors.push(c.r, c.g, c.b);
+    }
+    const geo = new THREE.BufferGeometry().setFromPoints(pts);
+    geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+    const line = new THREE.Line(geo, new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.85 }));
+    trailGroup.add(line);
+
+    /* 采样点小球 */
+    const dotGeo = new THREE.SphereGeometry(0.022, 8, 6);
+    for (let i = 0; i < pts.length; i += 2) {
+      const k = i / (pts.length - 1);
+      const c = k < 0.5 ? c0.clone().lerp(c1, k * 2) : c1.clone().lerp(c2, (k - 0.5) * 2);
+      const dot = new THREE.Mesh(dotGeo, new THREE.MeshBasicMaterial({ color: c }));
+      dot.position.copy(pts[i]);
+      trailGroup.add(dot);
+    }
+
+    updateReadout();
+  }
+
+  const $p = document.getElementById('pVal');
+  const $span = document.getElementById('span');
+  const $ratio = document.getElementById('ratio');
+  const $tag = document.getElementById('ratioTag');
+
+  function updateReadout() {
+    $span.textContent = '竖直 ' + stats.spanY.toFixed(2) + ' m / 水平 ' + stats.spanH.toFixed(2) + ' m';
+    if (stats.spanH < 0.001) { $ratio.textContent = '∞'; $tag.className = 'tag v'; $tag.textContent = '纯上下'; return; }
+    const r = stats.spanY / stats.spanH;
+    $ratio.textContent = r.toFixed(2);
+    $tag.className = 'tag ' + (r > 1 ? 'v' : 'h');
+    $tag.textContent = r > 1 ? '偏上下劈' : '偏横劈';
+  }
+
+  /* ---- 交互 ---- */
+  let P = 0, playing = false;
+  const slider = document.getElementById('pSlider');
+
+  function applyP(p, rebuild) {
+    P = Math.round(p * 100) / 100;
+    setP(P);
+    slider.value = P;
+    $p.textContent = P.toFixed(2);
+    if (rebuild) buildTrail();
+  }
+
+  slider.addEventListener('input', e => {
+    playing = false;
+    document.getElementById('playBtn').classList.remove('on');
+    applyP(parseFloat(e.target.value), false);
+  });
+
+  document.getElementById('playBtn').addEventListener('click', e => {
+    playing = !playing;
+    e.currentTarget.classList.toggle('on', playing);
+    e.currentTarget.textContent = playing ? '暂停' : '播放';
+  });
+
+  document.getElementById('trailBtn').addEventListener('click', e => {
+    showTrail = !showTrail;
+    trailGroup.visible = showTrail;
+    e.currentTarget.classList.toggle('on', showTrail);
+  });
+
+  document.querySelectorAll('#clsRow .btn').forEach(b => {
+    b.addEventListener('click', () => {
+      spawn(b.dataset.cls);
+      applyP(P, true);
+    });
+  });
+
+  /* 拖拽旋转 */
+  let drag = false, lx = 0, ly = 0;
+  renderer.domElement.addEventListener('pointerdown', e => { drag = true; lx = e.clientX; ly = e.clientY; });
+  window.addEventListener('pointerup', () => drag = false);
+  window.addEventListener('pointermove', e => {
+    if (!drag) return;
+    camYaw -= (e.clientX - lx) * 0.008;
+    camPitch = Math.max(-0.25, Math.min(0.95, camPitch + (e.clientY - ly) * 0.006));
+    lx = e.clientX; ly = e.clientY;
+    placeCam();
+  });
+  renderer.domElement.addEventListener('wheel', e => {
+    camDist = Math.max(2.0, Math.min(9, camDist + e.deltaY * 0.0022));
+    placeCam();
+    e.preventDefault();
+  }, { passive: false });
+
+  window.addEventListener('keydown', e => {
+    if (e.key === 'ArrowLeft') { playing = false; applyP(Math.max(0, P - 0.01), false); }
+    if (e.key === 'ArrowRight') { playing = false; applyP(Math.min(1, P + 0.01), false); }
+    if (e.key === ' ') { e.preventDefault(); document.getElementById('playBtn').click(); }
+  });
+
+  window.addEventListener('resize', () => {
+    camera.aspect = W / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+  });
+
+  /* ---- 启动 ---- */
+  spawn('warrior');
+  applyP(0, true);
+
+  /* 暴露给自动化脚本 */
+  window.LAB = {
+    setP: p => applyP(p, true),
+    setCls: c => { spawn(c); applyP(P, true); },
+    stats: () => ({ ...stats }),
+    atk: () => CharForge.ATK,
+    cam: (yaw, pitch, dist) => { camYaw = yaw; camPitch = pitch; camDist = dist; placeCam(); },
+    probe: p => {
+      applyP(p, false);
+      const f = n => +a.parts[n].rotation[n.includes('armR') ? 'x' : 'x'].toFixed(2);
+      const hand = a.parts.weaponHand, wpn = a.weapon;
+      hand.updateWorldMatrix(true, false);
+      wpn.updateWorldMatrix(true, false);
+      const handPos = new THREE.Vector3().setFromMatrixPosition(hand.matrixWorld);
+      const tip = tipWorld();
+      const btip = new THREE.Vector3(0, 0.02, 0);   // 握把位置
+      const grip = wpn.localToWorld(btip.clone());
+      return {
+        p,
+        armRx: +a.parts.armR.rotation.x.toFixed(2),
+        armRy: +a.parts.armR.rotation.y.toFixed(2),
+        armRz: +a.parts.armR.rotation.z.toFixed(2),
+        elbowRx: a.parts.elbowR ? +a.parts.elbowR.rotation.x.toFixed(2) : null,
+        twist: +a.parts.torso.rotation.y.toFixed(2),
+        hand: [handPos.x, handPos.y, handPos.z].map(v => +v.toFixed(2)),
+        grip: [grip.x, grip.y, grip.z].map(v => +v.toFixed(2)),
+        tip: [tip.x, tip.y, tip.z].map(v => +v.toFixed(2)),
+        bladeDir: [tip.x - grip.x, tip.y - grip.y, tip.z - grip.z].map(v => +v.toFixed(2))
+      };
+    }
+  };
+
+  let last = performance.now();
+  function loop(now) {
+    requestAnimationFrame(loop);
+    const dt = Math.min(0.05, (now - last) / 1000);
+    last = now;
+    if (playing) {
+      let np = P + dt * 0.85;
+      if (np > 1) np = 0;
+      applyP(np, false);
+    }
+    renderer.render(scene, camera);
+  }
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
