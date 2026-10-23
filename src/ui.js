@@ -137,6 +137,39 @@ const UI = {
       });
     }
 
+    /* 一键分解（v1.1.4）：展开确认条 → 预估产出 → 确认/取消 */
+    const dj = document.getElementById('invDecomposeBtn');
+    if (dj) dj.addEventListener('click', () => {
+      this.invJunkOpen = !this.invJunkOpen;
+      SFX.ui();
+      this.renderInventory();
+    });
+    const jb = document.getElementById('invJunkBar');
+    if (jb) jb.addEventListener('click', e => {
+      if (e.target.closest('[data-junkmagic]')) {
+        this.invJunkMagic = !this.invJunkMagic;
+        SFX.ui();
+        this.renderInventory();
+        return;
+      }
+      if (e.target.closest('[data-junkok]')) {
+        const r = Game.decomposeJunk(this.invJunkMagic);
+        this.invJunkOpen = false;
+        if (!r.ok && r.msg) UI.log(r.msg, 'bad');
+        this.renderInventory();
+        return;
+      }
+      if (e.target.closest('[data-junkcancel]')) {
+        this.invJunkOpen = false;
+        SFX.ui();
+        this.renderInventory();
+      }
+    });
+
+    /* 套装图鉴 */
+    const sc = document.getElementById('invCodexBtn');
+    if (sc) sc.addEventListener('click', () => this.openSetCodex());
+
     // 物品悬停 / 点击（事件委托）
     document.addEventListener('mouseover', e => {
       if (IS_TOUCH) return;   // 触屏改为一指点开、按钮操作
@@ -499,6 +532,8 @@ const UI = {
   },
 
   /* ---------------- 背包 ---------------- */
+  invJunkOpen: false,      // 一键分解确认条是否展开
+  invJunkMagic: false,     // 一键分解是否连带法器
   toggleInv() { const p = document.getElementById('invPanel'); this.closeAll(p); p.classList.toggle('open'); if (p.classList.contains('open')) this.renderInventory(); },
   toggleStat() { const p = document.getElementById('statPanel'); this.closeAll(p); p.classList.toggle('open'); if (p.classList.contains('open')) this.renderStats(); },
   toggleQuest() { const p = document.getElementById('questPanel'); this.closeAll(p); p.classList.toggle('open'); if (p.classList.contains('open')) this.renderQuests(); },
@@ -549,6 +584,20 @@ const UI = {
       <div>生命 <b>${Math.round(st.hpMax)}</b></div><div>灵力 <b>${Math.round(st.mpMax)}</b></div>
       <div>暴击 <b>${st.crit.toFixed(1)}%</b></div><div>爆伤 <b>${Math.round(st.critDmg)}%</b></div>`;
 
+    /* 一键分解确认条：默认只分凡品，可勾选连带法器；预估产出实时更新 */
+    const jb = document.getElementById('invJunkBar');
+    if (jb) {
+      if (this.invJunkOpen) {
+        const pv = Game.previewDecomposeJunk(this.invJunkMagic);
+        jb.style.display = '';
+        jb.innerHTML = `<span class="jl">一键分解</span>
+          <span class="jt">将分解 <b style="color:#e8d8b0">${pv.count}</b> 件${this.invJunkMagic ? '凡品/法器' : '凡品'}装备，预计获得 <b style="color:#c9b8ff">${pv.text}</b></span>
+          <label class="jchk"><input type="checkbox" data-junkmagic ${this.invJunkMagic ? 'checked' : ''}>连带法器（${pv.magicCount} 件）</label>
+          <button class="btn primary" data-junkok ${pv.count ? '' : 'disabled'}>确认分解</button>
+          <button class="btn" data-junkcancel>取消</button>`;
+      } else { jb.style.display = 'none'; jb.innerHTML = ''; }
+    }
+
     const sets = Object.keys(st.setCount).filter(k => st.setCount[k] >= 2);
     const line = document.getElementById('setLine');
     if (sets.length) {
@@ -558,6 +607,70 @@ const UI = {
         return `<div style="color:${set.color}">【${set.name}】${n}/${set.pieces.length}　<span style="color:#9ad0a8">${active}</span></div>`;
       }).join('');
     } else line.innerHTML = '<span style="color:#6a6458">集齐套装可获得额外之力（绿色边框为套装部件）</span>';
+  },
+
+  /* ---------------- 套装图鉴（v1.1.4） ----------------
+   * 汇总 12 套套装：每套显示部件清单（含已获得件数与 ilvl/品质）、
+   * 各档加成与当前是否激活。已获得 = 已装备 + 行囊 + 账号仓库。 */
+  openSetCodex() {
+    if (!Game.state) return;
+    const p = document.getElementById('setCodexPanel');
+    if (!p) return;
+    this.closeAll(p);
+    p.classList.add('open');
+    this.renderSetCodex();
+  },
+
+  renderSetCodex() {
+    const p = document.getElementById('setCodexPanel');
+    if (!p || !Game.state) return;
+    const s = Game.state;
+    /* 收集全部已拥有的套装件（装备 + 行囊 + 仓库） */
+    const owned = {};
+    const pool = [];
+    for (const slot in s.equipment) if (s.equipment[slot]) pool.push(s.equipment[slot]);
+    (s.inventory || []).forEach(it => { if (it) pool.push(it); });
+    if (s.stash && Array.isArray(s.stash.items)) s.stash.items.forEach(it => { if (it) pool.push(it); });
+    for (const it of pool) {
+      if (!it.setId) continue;
+      (owned[it.setId] = owned[it.setId] || []).push(it);
+    }
+
+    let totalOwned = 0, totalPieces = 0;
+    const sets = Object.values(SETS);
+    let h = '';
+    for (const set of sets) {
+      const mine = owned[set.id] || [];
+      totalOwned += mine.length;
+      totalPieces += set.pieces.length;
+      const clsTxt = set.cls ? '限 ' + CLASSES[set.cls].name : '全职业';
+      h += `<div class="cx-set" style="border-color:${set.color}33">
+        <div class="cx-head">
+          <span class="cx-name" style="color:${set.color}">${set.name}</span>
+          <span class="cx-sub">${clsTxt} · 已集 <b style="color:${set.color}">${mine.length}</b> / ${set.pieces.length}</span>
+        </div>
+        <div class="cx-pieces">`;
+      for (let i = 0; i < set.slots.length; i++) {
+        const sl = set.slots[i];
+        const got = mine.find(it => it.name === set.pieces[i]) || null;
+        const r = got ? RARITY[got.rarity] : null;
+        h += `<div class="cx-piece ${got ? 'got' : ''}" ${got ? `style="border-color:${r.color}55"` : ''}
+          title="${got ? got.name + ' · ilv' + got.ilvl + ' · ' + r.name : '未获得'}">
+          <span class="cx-pslot">${SLOT_NAME[sl] || sl}</span>
+          <span class="cx-pname" style="${got ? 'color:' + r.color : ''}">${got ? got.name : set.pieces[i]}</span>
+          ${got ? `<span class="cx-pilv">ilv${got.ilvl}</span>` : ''}
+        </div>`;
+      }
+      h += `</div><div class="cx-bonus">`;
+      for (const b of set.bonuses) {
+        const on = mine.length >= b.need;
+        h += `<div class="cx-b ${on ? 'on' : ''}"><span class="cx-bn">${b.need}件</span>${b.text}</div>`;
+      }
+      h += `</div></div>`;
+    }
+    document.getElementById('setCodexList').innerHTML = h;
+    document.getElementById('setCodexSum').innerHTML =
+      `共 <b>${sets.length}</b> 套 · <b>${totalPieces}</b> 件部件 · 已收集 <b style="color:#ffd166">${totalOwned}</b> 件`;
   },
 
   renderStats() {

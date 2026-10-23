@@ -189,6 +189,36 @@
   .sbtn:hover{border-color:rgba(216,178,90,.55);color:#e8d8b0;background:rgba(216,178,90,.1)}
   .sbtn.on{border-color:var(--gold);color:#1a1510;background:linear-gradient(180deg,#e0c070,#b89840);font-weight:600}
   .inv-tip{display:block;margin-bottom:6px}
+
+  /* ---------- 一键分解确认条 ---------- */
+  .junkbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:7px 10px;margin-bottom:6px;
+    border:1px solid rgba(216,178,90,.3);border-radius:3px;background:rgba(30,26,18,.5);font-size:11px;color:#b8ad90}
+  .junkbar .jl{letter-spacing:2px;color:#e8d8b0;font-size:11.5px}
+  .junkbar .jt b{font-weight:600}
+  .junkbar .jchk{display:flex;align-items:center;gap:4px;cursor:pointer;color:#9ad0a8;user-select:none}
+  .junkbar .btn{padding:3px 12px;font-size:11px;letter-spacing:1px}
+
+  /* ---------- 套装图鉴 ---------- */
+  #setCodexPanel{left:50%;top:50%;transform:translate(-50%,-50%);width:720px;max-height:88vh;z-index:65}
+  .codex-list{display:flex;flex-direction:column;gap:10px;margin-top:8px;max-height:66vh;overflow-y:auto;padding-right:4px}
+  .cx-set{border:1px solid;border-radius:3px;padding:9px 11px;background:rgba(20,18,14,.45)}
+  .cx-head{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-bottom:7px}
+  .cx-name{font-size:14px;letter-spacing:2px}
+  .cx-sub{font-size:10.5px;color:#8a8474;letter-spacing:1px}
+  .cx-pieces{display:flex;flex-wrap:wrap;gap:6px}
+  .cx-piece{display:flex;align-items:center;gap:5px;padding:3px 8px;border:1px solid rgba(255,255,255,.1);
+    border-radius:2px;background:rgba(0,0,0,.3);font-size:11px}
+  .cx-piece.got{background:rgba(60,48,28,.35)}
+  .cx-pslot{font-size:9.5px;color:#6a6458}
+  .cx-pname{color:#5a5448}
+  .cx-piece.got .cx-pname{color:#d8ccb0}
+  .cx-pilv{font-size:9.5px;color:#8a8474;font-variant-numeric:tabular-nums}
+  .cx-bonus{display:flex;flex-wrap:wrap;gap:6px;margin-top:7px}
+  .cx-b{display:flex;align-items:center;gap:5px;padding:2px 8px;border:1px solid rgba(255,255,255,.08);
+    border-radius:2px;font-size:10.5px;color:#5a5448}
+  .cx-b .cx-bn{font-size:9.5px;color:#4a453c;border:1px solid rgba(255,255,255,.12);padding:0 4px;border-radius:2px}
+  .cx-b.on{color:#9ad0a8;border-color:rgba(120,200,140,.35)}
+  .cx-b.on .cx-bn{color:#9ad0a8;border-color:rgba(120,200,140,.4)}
   .igrid{display:grid;grid-template-columns:repeat(8,1fr);gap:6px}
   .islot{aspect-ratio:1;background:linear-gradient(160deg,rgba(38,34,28,.75),rgba(0,0,0,.55));
     border:1px solid rgba(255,255,255,.115);box-shadow:inset 0 0 6px rgba(0,0,0,.55);position:relative;cursor:pointer;
@@ -849,9 +879,12 @@
           <button class="sbtn" data-sort="rarity">品质</button>
           <button class="sbtn" data-sort="slot">部位</button>
           <button class="sbtn" data-sort="level">等级</button>
+          <button class="sbtn" id="invDecomposeBtn">一键分解</button>
+          <button class="sbtn" id="invCodexBtn">套装图鉴</button>
         </div>
       </div>
       <div class="cap inv-tip" id="invTip">左键装备 · Shift+左键出售</div>
+      <div class="junkbar" id="invJunkBar" style="display:none"></div>
       <div class="igrid" id="invGrid"></div>
       <div class="hintline" id="setLine"></div>
     </div>
@@ -864,6 +897,15 @@
   <div class="pb">
     <div class="statlist" id="statList"></div>
     <div class="setshow" id="setShow"></div>
+  </div>
+</div>
+
+<!-- 套装图鉴 -->
+<div class="panel" id="setCodexPanel">
+  <div class="ph"><h3>套 装 图 鉴</h3><span class="x" onclick="UI.closeAll()">✕</span></div>
+  <div class="pb">
+    <div class="hintline" id="setCodexSum" style="margin-top:0"></div>
+    <div class="codex-list" id="setCodexList"></div>
   </div>
 </div>
 

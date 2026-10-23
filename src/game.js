@@ -3322,8 +3322,8 @@ const Game = {
   },
 
   /* [S3] 分解装备 → 玄晶分级材料 */
-  previewDecompose(item) {
-    if (!item) return null;
+  /* 分解产出表（稀有度 + ilvl 折算），preview / 单个 / 一键分解共用 */
+  _decomposeYield(item) {
     const yields = {
       common:   [3, 0, 0, 0],
       magic:    [2, 1, 0, 0],
@@ -3334,30 +3334,70 @@ const Game = {
     };
     const base = yields[item.rarity] || [1, 0, 0, 0];
     const mul = 1 + (item.ilvl || 1) * 0.06;
-    const out = base.map(n => Math.max(0, Math.round(n * mul)));
+    return base.map(n => Math.max(0, Math.round(n * mul)));
+  },
+
+  previewDecompose(item) {
+    if (!item) return null;
+    const out = this._decomposeYield(item);
     const txt = out.map((n, i) => n ? n + CRYSTAL_TIERS[i].name : '').filter(Boolean).join('、') || '无';
     return { yields: out, text: txt };
   },
 
   decomposeItem(item) {
     if (!item) return { ok: false, msg: '没有可分解的装备。' };
-    const yields = {
-      common:   [3, 0, 0, 0],
-      magic:    [2, 1, 0, 0],
-      rare:     [0, 2, 1, 0],
-      legendary:[0, 0, 2, 1],
-      set:      [0, 3, 1, 0],
-      unique:   [0, 0, 3, 2]
-    };
-    const base = yields[item.rarity] || [1, 0, 0, 0];
-    const mul = 1 + (item.ilvl || 1) * 0.06;
-    const out = base.map(n => Math.max(0, Math.round(n * mul)));
+    const out = this._decomposeYield(item);
     for (let i = 0; i < 4; i++) this.addCrystalTier(i + 1, out[i]);
     const txt = out.map((n, i) => n ? n + CRYSTAL_TIERS[i].name : '').filter(Boolean).join('、');
     SFX.cast();
     UI.log('分解 ' + item.name + ' 获得 ' + txt, 'good');
     this.save();
     return { ok: true, yields: out, text: txt };
+  },
+
+  /* ---------------- 一键分解（v1.1.4） ----------------
+   * 默认只分凡品；includeMagic 时连带法器。
+   * 带镶嵌的装备先自动卸下符文（全额返还）再分解，符文不会被吞。 */
+  previewDecomposeJunk(includeMagic) {
+    const s = this.state;
+    const rarities = includeMagic ? ['common', 'magic'] : ['common'];
+    const list = s.inventory.filter(it => it && rarities.includes(it.rarity));
+    const total = [0, 0, 0, 0];
+    for (const it of list) {
+      const y = this._decomposeYield(it);
+      for (let i = 0; i < 4; i++) total[i] += y[i];
+    }
+    return {
+      count: list.length,
+      magicCount: list.filter(it => it.rarity === 'magic').length,
+      yields: total,
+      text: total.map((n, i) => n ? n + CRYSTAL_TIERS[i].name : '').filter(Boolean).join('、') || '无'
+    };
+  },
+
+  decomposeJunk(includeMagic) {
+    const s = this.state;
+    const rarities = includeMagic ? ['common', 'magic'] : ['common'];
+    const targets = s.inventory.filter(it => it && rarities.includes(it.rarity));
+    if (!targets.length) {
+      return { ok: false, msg: '没有可分解的' + (includeMagic ? '凡品/法器装备' : '凡品装备') + '。' };
+    }
+    const total = [0, 0, 0, 0];
+    for (const it of targets) {
+      this._unsocketAll(it);
+      const y = this._decomposeYield(it);
+      for (let i = 0; i < 4; i++) total[i] += y[i];
+    }
+    s.inventory = s.inventory.filter(it => !(it && rarities.includes(it.rarity)));
+    for (let i = 0; i < 4; i++) this.addCrystalTier(i + 1, total[i]);
+    const txt = total.map((n, i) => n ? n + CRYSTAL_TIERS[i].name : '').filter(Boolean).join('、');
+    SFX.levelup();
+    UI.log('一键分解 ' + targets.length + ' 件装备，获得 ' + txt, 'lv');
+    UI.toast('分解 ' + targets.length + ' 件 · ' + txt, 'lv');
+    UI.renderInventory();
+    UI.renderHUD();
+    this.save();
+    return { ok: true, count: targets.length, yields: total };
   },
 
   /* [S3] 升级装备品质：common→magic→rare→legendary */
