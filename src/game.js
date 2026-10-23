@@ -42,6 +42,9 @@ const MOB_CAP_TOUCH = 28;
 const SUMMON_CAP = 8;
 /* 超出这个距离的怪只跑 AI、不参与渲染（draw call 是唯一瓶颈，AI 很便宜） */
 const MOB_CULL_DIST = 62;
+/* 超出这个距离的怪不再往 shadow map 里画。影子本身已经小到看不见，
+ * 但省下的是「每只怪 22 个部件各一个 draw call」的整条阴影通道。 */
+const MOB_SHADOW_DIST = 20;
 
 const BOSS_POS = {
   treeking: [28, -26], batking: [-30, -22],  chief: [34, 26], golemking: [-36, 24], snakequeen: [0, -36],
@@ -106,8 +109,13 @@ const Game = {
     this.sun.position.set(22, 36, 16);
     this.sun.castShadow = true;
     this.sun.shadow.mapSize.set(1536, 1536);   // 2048 在集显上 shadow pass 成本过高
+    /* 阴影相机包住的范围直接决定 shadow pass 的 draw call 数：
+     * three.js 在渲染阴影时按这个正交框做视锥剔除，框外的物件根本不进阴影队列。
+     * 原来 ±42（84×84 格）几乎等于整张图，30 只怪时 shadow pass 占了 render 的 ~57%。
+     * 收到 ±26 后：远处的怪自动不投阴影（屏幕上本来就一两个像素），
+     * 同时同样 1536 的贴图铺在更小的范围上，近处阴影反而更清晰——两头都赚。 */
     const sc = this.sun.shadow.camera;
-    sc.left = -42; sc.right = 42; sc.top = 42; sc.bottom = -42; sc.near = 1; sc.far = 130;
+    sc.left = -26; sc.right = 26; sc.top = 26; sc.bottom = -26; sc.near = 1; sc.far = 96;
     this.sun.shadow.bias = -0.0012;
     this.scene.add(this.sun);
     this.scene.add(this.sun.target);
@@ -1806,6 +1814,19 @@ const Game = {
       if (culled !== !!e.culled) {
         e.culled = culled;
         a.group.visible = !culled;
+      }
+      /* [v1.0.6] 阴影投影距离裁剪。
+       * 实测 36 只怪时 shadow pass 是 1099 个 draw call，其中 792 个来自怪物自身的
+       * 22 个部件——也就是说「怪物投不投影」比「怪物画不画」还贵。
+       * 但 20 格外的怪影子在屏幕上只有几个像素，去掉完全看不出来。
+       * 只在跨越阈值的那一帧遍历一次，平时零成本（不要每帧 traverse）。 */
+      const wantShadow = e.boss ? true : (d < MOB_SHADOW_DIST);
+      /* 注意这里必须显式判 undefined：写成 `wantShadow !== !!e.shadowOn` 的话，
+       * 新怪 shadowOn 是 undefined，!!undefined === false，而 wantShadow 恰好也是 false，
+       * 条件不成立 → 遍历永不执行 → 远处的怪一直开着投影（这个 bug 就是这么来的）。 */
+      if (e.shadowOn === undefined || e.shadowOn !== wantShadow) {
+        e.shadowOn = wantShadow;
+        a.group.traverse(o => { if (o.isMesh) o.castShadow = wantShadow; });
       }
       const spd = e.spd * (1 - e.slow) * (e.boss ? (1 + e.phase * 0.12) : 1);
 

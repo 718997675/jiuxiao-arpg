@@ -159,20 +159,21 @@ const chk = (c, m) => (c ? ok(m) : bad(m));
     document.getElementById('death').style.display = 'none';
     const alive = !Game.dead && Game.running;
     /* 先量一段正常帧推进速度做基准：headless + swiftshader 的帧率本身就不稳，
-     * 用绝对值判断会误判，只比「抛异常时是否明显掉到停滞」 */
+     * 用绝对值判断会误判，只比「抛异常时是否明显掉到停滞」。
+     * 窗口给到 1.6s：软件渲染下这里只有 3~5fps，600ms 常常一帧都采不到。 */
     const b0 = Game.time;
-    await new Promise(r => setTimeout(r, 600));
+    await new Promise(r => setTimeout(r, 1600));
     const baseAdv = Game.time - b0;
     const t0 = Game.time;
     const realUpdate = Game.update;
     Game.update = () => { throw new Error('故意抛出的测试异常'); };
-    await new Promise(r => setTimeout(r, 600));
+    await new Promise(r => setTimeout(r, 1600));
     const errs = Game._errCount || 0;
     const advanced = Game.time - t0;
     Game.update = realUpdate;
-    await new Promise(r => setTimeout(r, 250));
+    await new Promise(r => setTimeout(r, 600));
     const t1 = Game.time;
-    await new Promise(r => setTimeout(r, 250));
+    await new Promise(r => setTimeout(r, 900));
     return { alive, errs, advanced, baseAdv, recovered: Game.time > t1 + 0.02, hasGuard: typeof Game.onFrameError === 'function' };
   });
   chk(guard.alive, '测试前游戏处于运行态');

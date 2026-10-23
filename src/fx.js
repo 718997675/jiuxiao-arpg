@@ -296,22 +296,46 @@ const FX = {
     const speed = opts.speed || 6;
     const size = opts.size || 0.1;
     const life = opts.life || 0.5;
-    const geo = boxGeo(size, size, size);
-    const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 1, blending: opts.additive ? THREE.AdditiveBlending : THREE.NormalBlending, depthWrite: false });
-    const group = new THREE.Group();
-    group.position.copy(pos);
-    this.scene.add(group);
-    const list = [];
+
+    /* [v1.0.6] 一次爆发 = 一个 THREE.Points = 一次 draw call。
+     *
+     * 旧实现是 count 个独立 Mesh（各自挂在一个 Group 下），也就是 count 次 draw call。
+     * Boss 死亡/爆血一次就是 40 颗，同时堆满 40 组 = 最多 1600 次绘制，
+     * 光粒子就能把浏览器主线程压死 —— 这是「Boss 战特别卡」的头号原因。
+     * 现在整组共用一个 BufferGeometry，位置在 CPU 端逐帧更新，
+     * 一簇粒子从 count 次绘制降到 1 次，视觉上只是方块变方点，小尺寸下看不出差别。
+     */
+    const n3 = count * 3;
+    const arr = new Float32Array(n3);
+    const vel = new Float32Array(n3);
     for (let i = 0; i < count; i++) {
-      const m = new THREE.Mesh(geo, mat);
-      m.position.set(RND(-0.2, 0.2), RND(-0.1, 0.3), RND(-0.2, 0.2));
-      group.add(m);
+      const k = i * 3;
+      arr[k] = pos.x + RND(-0.2, 0.2);
+      arr[k + 1] = pos.y + RND(-0.1, 0.3);
+      arr[k + 2] = pos.z + RND(-0.2, 0.2);
       const ang = Math.random() * Math.PI * 2, el = RND(0.1, 0.9);
-      list.push({
-        m, v: new THREE.Vector3(Math.cos(ang) * speed * RND(0.4, 1), el * speed * RND(0.5, 1.1), Math.sin(ang) * speed * RND(0.4, 1))
-      });
+      vel[k] = Math.cos(ang) * speed * RND(0.4, 1);
+      vel[k + 1] = el * speed * RND(0.5, 1.1);
+      vel[k + 2] = Math.sin(ang) * speed * RND(0.4, 1);
     }
-    this.parts.push({ group, mat, list, life, max: life, gravity: opts.gravity !== undefined ? opts.gravity : 14, drag: opts.drag || 2.6 });
+    const geo = new THREE.BufferGeometry();
+    const attr = new THREE.BufferAttribute(arr, 3);
+    attr.dynamic = true;
+    geo.setAttribute('position', attr);
+    const mat = new THREE.PointsMaterial({
+      color, size, sizeAttenuation: true,
+      transparent: true, opacity: 1, depthWrite: false,
+      blending: opts.additive ? THREE.AdditiveBlending : THREE.NormalBlending
+    });
+    const pts = new THREE.Points(geo, mat);
+    pts.frustumCulled = false;      // 顶点每帧在动，包围盒不更新，交给它自己判断反而会误剔
+    this.scene.add(pts);
+    this.parts.push({
+      obj: pts, geo, mat, attr, arr, vel, n: count,
+      life, max: life,
+      gravity: opts.gravity !== undefined ? opts.gravity : 14,
+      drag: opts.drag || 2.6
+    });
   },
 
   spark(pos, color = 0xffe0a0, count = 8) { this.burst(pos, color, count, { speed: 8, size: 0.07, life: 0.28, additive: true, gravity: 6 }); },
@@ -484,18 +508,25 @@ const FX = {
   },
 
   update(dt) {
-    // 粒子
+    // 粒子（THREE.Points：整组一个 draw call，位置在这里逐帧刷新）
     for (let i = this.parts.length - 1; i >= 0; i--) {
       const p = this.parts[i];
       p.life -= dt;
       p.mat.opacity = Math.max(0, p.life / p.max);
-      for (const q of p.list) {
-        q.v.y -= p.gravity * dt;
-        q.v.multiplyScalar(Math.max(0, 1 - p.drag * dt));
-        q.m.position.addScaledVector(q.v, dt);
+      const arr = p.arr, vel = p.vel, n = p.n;
+      const damp = Math.max(0, 1 - p.drag * dt);
+      const g = p.gravity * dt;
+      for (let k = 0; k < n * 3; k += 3) {
+        vel[k + 1] -= g;
+        vel[k] *= damp; vel[k + 1] *= damp; vel[k + 2] *= damp;
+        arr[k] += vel[k] * dt;
+        arr[k + 1] += vel[k + 1] * dt;
+        arr[k + 2] += vel[k + 2] * dt;
       }
+      p.attr.needsUpdate = true;
       if (p.life <= 0) {
-        this.scene.remove(p.group);
+        this.scene.remove(p.obj);
+        p.geo.dispose();
         p.mat.dispose();
         this.parts.splice(i, 1);
       }
@@ -603,7 +634,8 @@ const FX = {
     }
     this.zones.length = 0;
     for (const pa of this.parts) {
-      if (pa.group.parent) pa.group.parent.remove(pa.group);
+      if (pa.obj.parent) pa.obj.parent.remove(pa.obj);
+      pa.geo.dispose();
       pa.mat.dispose();
     }
     this.parts.length = 0;
