@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>九霄·山海录 — 性能优化方案 v1.0.6</title>
+<style>
+  :root{
+    --bg:#f6f5f2; --card:#fff; --ink:#1f1d1a; --dim:#6b665e; --line:#e2ded6;
+    --red:#b3352a; --red-bg:#fbeeec; --green:#2f7a4f; --green-bg:#eaf5ee;
+    --amber:#9a6a12; --amber-bg:#fdf3e0; --blue:#2b5f9e; --blue-bg:#ecf2fa;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0;padding:48px 24px 80px;background:var(--bg);color:var(--ink);
+    font:15px/1.75 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:900px;margin:0 auto}
+  h1{font-size:27px;letter-spacing:.5px;margin:0 0 6px;font-weight:700}
+  .sub{color:var(--dim);font-size:13.5px;margin-bottom:36px}
+  h2{font-size:18px;margin:44px 0 14px;padding-bottom:9px;border-bottom:2px solid var(--ink);letter-spacing:.4px}
+  h3{font-size:15px;margin:26px 0 8px;color:var(--ink)}
+  p{margin:10px 0}
+  .lead{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--red);
+    padding:18px 22px;border-radius:3px;margin:0 0 8px;font-size:15px}
+  .lead b{color:var(--red)}
+  table{width:100%;border-collapse:collapse;margin:16px 0;font-size:13.5px;background:var(--card)}
+  th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{background:#efede8;font-weight:600;font-size:12.5px;letter-spacing:.3px;color:var(--dim)}
+  td.num{font-variant-numeric:tabular-nums;white-space:nowrap}
+  .good{color:var(--green);font-weight:600}
+  .bad{color:var(--red);font-weight:600}
+  .mute{color:var(--dim)}
+  .tag{display:inline-block;padding:1px 8px;border-radius:10px;font-size:11.5px;font-weight:600;letter-spacing:.3px;white-space:nowrap}
+  .t-ok{background:var(--green-bg);color:var(--green)}
+  .t-todo{background:var(--amber-bg);color:var(--amber)}
+  .t-no{background:var(--red-bg);color:var(--red)}
+  .t-info{background:var(--blue-bg);color:var(--blue)}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:4px;padding:18px 22px;margin:14px 0}
+  .card h3{margin-top:0}
+  .route{border-left:4px solid var(--line)}
+  .route.a{border-left-color:var(--green)}
+  .route.b{border-left-color:var(--blue)}
+  .route.c{border-left-color:var(--amber)}
+  ul{margin:8px 0;padding-left:22px}
+  li{margin:5px 0}
+  code{background:#eeece6;padding:1px 5px;border-radius:3px;font-size:12.5px;
+    font-family:ui-monospace,SFMono-Regular,Consolas,monospace}
+  .bar{height:16px;background:#e8e5df;border-radius:2px;overflow:hidden;min-width:120px}
+  .bar i{display:block;height:100%}
+  .bar i.on{background:#c0503f}
+  .bar i.off{background:#7aa88c}
+  .note{font-size:12.5px;color:var(--dim);margin-top:8px}
+  .kv{display:flex;gap:26px;flex-wrap:wrap;margin:14px 0 4px}
+  .kv div{font-size:13px}
+  .kv b{display:block;font-size:22px;font-variant-numeric:tabular-nums;letter-spacing:-.5px}
+  .kv span{color:var(--dim)}
+  footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);color:var(--dim);font-size:12.5px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>九霄·山海录 — 性能优化方案</h1>
+<div class="sub">v1.0.6 ｜ 瓶颈定位、已完成的改动、以及「继续优化网页 / 做 EXE / 换引擎」三条路怎么选</div>
+
+<div class="lead">
+一句话结论：<b>现在卡的原因是 draw call 太多，不是浏览器不行</b>。换 Electron 做 EXE 一个 draw call 都不会少，
+换引擎要重写整个项目。所以先走「继续压网页版」这条路——本轮已经压掉一半，还剩两处可以再压一半左右。
+</div>
+
+<h2>1. 瓶颈在哪：用数据说话</h2>
+
+<p>先说清楚一件事：卡顿有两种，一种是「算得慢」（JS 逻辑、物理、AI），一种是「画得慢」（渲染）。这个项目是后者。</p>
+
+<div class="kv">
+  <div><b>1~7 ms</b><span>每帧逻辑耗时（update）</span></div>
+  <div><b>20~120 ms</b><span>每帧渲染耗时（render）</span></div>
+  <div><b>22</b><span>单只怪的网格数量</span></div>
+  <div><b>2133</b><span>最坏情况每帧 draw call</span></div>
+</div>
+
+<p>逻辑几乎不花钱，渲染是 10~20 倍的差距。而渲染里最贵的不是「像素多」，是 <b>draw call 数量</b>——
+每一个网格、每一盏灯的每一个投影体，都要 CPU 单独提交一次绘制指令。这个项目的 draw call 构成是这样的：</p>
+
+<table>
+  <thead><tr><th>来源</th><th class="num">数量</th><th>说明</th></tr></thead>
+  <tbody>
+    <tr><td>场景本体（地形 / 建筑 / 植被）</td><td class="num">约 170</td><td>固定成本，不随战斗变化</td></tr>
+    <tr><td>场景本体的阴影</td><td class="num">约 307</td><td>固定成本</td></tr>
+    <tr><td>每只普通怪（主画面）</td><td class="num">22</td><td>头 / 发 / 眼×2 / 躯干 / 衣襟 / 腰 / 扣 / 领口 / 腿×2 / 靴×2 / 臂×2 / 手×2 / 武器 2~4</td></tr>
+    <tr><td>每只普通怪（阴影通道）</td><td class="num">22</td><td><b>和主画面一样多</b>——这是之前没注意到的大头</td></tr>
+    <tr><td>每颗粒子（旧实现）</td><td class="num">1</td><td>一次技能爆发几十上百颗</td></tr>
+  </tbody>
+</table>
+
+<p>所以 36 只怪挤在一起时：<code>170 + 307 + 36×22 + 36×22 ≈ 2133</code>。其中 <b>1584 个是怪物贡献的</b>，
+而怪物投不投影（1584 里的 792）比怪物画不画还贵。</p>
+
+<h2>2. v1.0.6 已经做完的（本地已验证，未发布）</h2>
+
+<table>
+  <thead><tr><th>改动</th><th>做法</th><th class="num">效果</th><th>状态</th></tr></thead>
+  <tbody>
+    <tr>
+      <td>粒子批处理</td>
+      <td>原来一颗粒子一个 Mesh，改成每次爆发合成一个 <code>THREE.Points</code>，位置/速度放进 <code>Float32Array</code> 直接积分</td>
+      <td class="num good">1600 粒：+1600 → +40</td>
+      <td><span class="tag t-ok">已完成</span></td>
+    </tr>
+    <tr>
+      <td>阴影视锥收紧</td>
+      <td>three.js 画 shadow map 时会按正交框剔除，框外的物件不进阴影队列。正交框从 ±42 收到 ±26</td>
+      <td class="num good">阴影通道 −28%</td>
+      <td><span class="tag t-ok">已完成</span></td>
+    </tr>
+    <tr>
+      <td>按距离关投影</td>
+      <td>20 格外的怪不再往 shadow map 里画；只在跨越阈值那一帧遍历一次，平时零成本</td>
+      <td class="num good">阴影通道再 −60%</td>
+      <td><span class="tag t-ok">已完成</span></td>
+    </tr>
+  </tbody>
+</table>
+
+<p>同一场景、同一批怪、主通道和阴影通道分开计数：</p>
+
+<table>
+  <thead><tr><th>场景</th><th class="num">v1.0.5</th><th class="num">v1.0.6</th><th class="num">变化</th><th>每帧耗时对比</th></tr></thead>
+  <tbody>
+    <tr><td>12 只怪，散布 6~40 格</td><td class="num">765</td><td class="num">534</td><td class="num good">−30%</td>
+      <td><span class="bar"><i class="off" style="width:70%"></i></span></td></tr>
+    <tr><td>24 只怪，散布 6~40 格</td><td class="num">1066</td><td class="num">595</td><td class="num good">−44%</td>
+      <td><span class="bar"><i class="off" style="width:56%"></i></span></td></tr>
+    <tr><td>36 只怪，散布 6~40 格</td><td class="num">1299</td><td class="num">650</td><td class="num good">−50%</td>
+      <td><span class="bar"><i class="off" style="width:50%"></i></span></td></tr>
+    <tr><td>36 只怪，全挤在 8 格内</td><td class="num">2133</td><td class="num">2122</td><td class="num bad">−1%</td>
+      <td><span class="bar"><i class="on" style="width:99%"></i></span></td></tr>
+  </tbody>
+</table>
+
+<p class="note">最后一行是诚实的坏消息：怪全挤在玩家身边时，「按距离关投影」不起作用，最坏情况一点没改善。
+这一行要靠第 3 节的「合批」来解决。</p>
+
+<h2>3. 三条路怎么选</h2>
+
+<table>
+  <thead><tr><th>路线</th><th>能解决什么</th><th>解决不了什么</th><th>成本</th><th>建议</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><b>A. 继续优化网页版</b></td>
+      <td>draw call 数量本身</td>
+      <td>低端集显的填充率上限</td>
+      <td>低，不动交付形态</td>
+      <td><span class="tag t-ok">先做这个</span></td>
+    </tr>
+    <tr>
+      <td><b>B. Electron 打 EXE</b></td>
+      <td>浏览器标签页节流、WebGL 上下文丢失、用户浏览器差异、能指定 GPU 后端</td>
+      <td><b>draw call 一个不少</b>——里面跑的仍是同一个 Chromium + 同一个 WebGL</td>
+      <td>安装包 150MB+、每次更新要重新分发、失去「发链接就能玩」</td>
+      <td><span class="tag t-info">等 A 做完再考虑</span></td>
+    </tr>
+    <tr>
+      <td><b>C. 换技术栈</b></td>
+      <td>Unity 的 SRP Batcher / GPU Instancing 能自动合批；WebGPU 能做 indirect draw</td>
+      <td>——</td>
+      <td>8,200 行 JS 全部重写，纸娃娃 / 存档 / UI / 技能全重做，等于重开项目</td>
+      <td><span class="tag t-no">除非要商业化发行</span></td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="card route a">
+  <h3>A. 继续优化网页版 — 推荐</h3>
+  <p>还剩四件事可做，按性价比排序：</p>
+  <table>
+    <thead><tr><th>#</th><th>做法</th><th class="num">预期</th><th>风险</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td><b>同材质静态部件合并</b>：躯干的衣襟/腰/领口/下摆是同一种材质，四个盒子合成一个几何体；双眼合一、头发合一。单只怪 22 → 14 个网格</td>
+        <td class="num good">最坏情况 −30%<br>（2133 → 约 1500）</td><td>低，画面完全不变</td></tr>
+      <tr><td>2</td><td><b>小怪改假影</b>：实时阴影换成脚下一张椭圆贴图，shadow 通道从「307 + 22×怪」变成固定 307</td>
+        <td class="num good">再 −500</td><td>低，风格化游戏里假影更常见</td></tr>
+      <tr><td>3</td><td><b>同类型怪走 InstancedMesh</b>：所有 halfork 共用一个实例化网格，36 只怪 22 个网格 → 4~6 个</td>
+        <td class="num good">最坏情况 −80%<br>（2133 → 约 400）</td><td><b>高</b>：受击白闪、独立动作、纸娃娃换装都要重做</td></tr>
+      <tr><td>4</td><td><b>把「同屏怪数」纳入已有画质自适应</b>：现在 L1/L2 只降 dpr / 关阴影 / 减粒子，可以再加一档降怪数</td>
+        <td class="num good">兜底</td><td>低</td></tr>
+    </tbody>
+  </table>
+  <p class="note">1 + 2 做完，最坏情况大约能到 1000 以内，正常战斗到 400 以内——这个量级在任何有独显的机器上都是稳 60 帧。
+  3 是核弹，只有在还需要「同屏几十上百只」时才值得动。</p>
+</div>
+
+<div class="card route b">
+  <h3>B. Electron 做 EXE — 不是渲染优化</h3>
+  <p>这个方向常被误解。Electron 的本质是「把 Chromium 打包进安装包」，所以：</p>
+  <ul>
+    <li><span class="tag t-no">不会减少</span> 任何一个 draw call。2133 还是 2133。</li>
+    <li><span class="tag t-ok">会改善</span> 标签页在后台被降频、切走再切回来卡一下、部分浏览器默认不开硬件加速、WebGL 上下文丢失后不恢复。</li>
+    <li><span class="tag t-ok">会改善</span> 可以强制指定 <code>--use-angle=d3d11</code> 之类的后端，绕开驱动兼容问题。</li>
+  </ul>
+  <p>换句话说：<b>它是「交付方式」的升级，不是「性能」的升级。</b> 如果目标只是「不卡」，做了 EXE 还是会卡；
+  如果目标是「能离线玩 / 能发安装包 / 不受用户浏览器影响」，那它有价值。</p>
+  <p class="note">成本：安装包 150MB 起（Chromium 本体）、要处理自动更新、Mac/Windows 分别签名、失去「发个链接就能玩」这个最大优势。
+  建议 A 做完之后，如果仍然需要桌面发行再做，并且保留网页版。</p>
+</div>
+
+<div class="card route c">
+  <h3>C. 换技术栈 — 现在不划算</h3>
+  <ul>
+    <li><b>PixiJS</b>：2D 渲染库，这个项目是 3D，不合适。</li>
+    <li><b>WebGPU 自研</b>：确实能把 draw call 压到个位数（indirect draw + 实例化），但要重写整个渲染层，而且老设备 / Safari 支持还不完整。</li>
+    <li><b>Unity / Godot</b>：真正的优势是引擎自带 SRP Batcher、GPU Instancing、LOD、遮挡剔除，不用自己写。
+      代价是 8,200 行 JS 全部作废——纸娃娃系统、存档、装备词缀、符文之语、Boss AI 都要重做，约等于重开一个项目。</li>
+  </ul>
+  <p class="note">判断标准很简单：如果这个项目要变成「要卖的产品」或者需要同屏几百个单位，才值得换；
+  如果是一个自己玩 / 小范围分享的作品，A 路线的性价比高一个数量级。</p>
+</div>
+
+<h2>4. 建议的执行顺序</h2>
+<table>
+  <thead><tr><th class="num">步骤</th><th>做什么</th><th>预期结果</th></tr></thead>
+  <tbody>
+    <tr><td class="num">现在</td><td>发布 v1.0.6（粒子 + 阴影优化，已验证）</td><td>粒子多的场景和散布的怪群立刻变顺</td></tr>
+    <tr><td class="num">下一步</td><td>A-1 同材质部件合并 + A-2 小怪假影</td><td>最坏情况 2133 → 约 1000</td></tr>
+    <tr><td class="num">视情况</td><td>A-3 InstancedMesh（如果还要更多同屏怪）</td><td>最坏情况 → 约 400</td></tr>
+    <tr><td class="num">有需要时</td><td>B Electron 桌面版（离线 / 发行需求）</td><td>交付形态升级，性能不变</td></tr>
+    <tr><td class="num">不推荐</td><td>C 换引擎</td><td>除非要商业化</td></tr>
+  </tbody>
+</table>
+
+<h2>5. 需要你确认的两件事</h2>
+<div class="card">
+  <p><b>① 你现在是在什么设备上觉得卡？</b> 这个信息很关键。如果是一台只有集显的笔记本、浏览器缩放 150%、屏幕 2K/4K，
+  那瓶颈可能是「填充率」而不是 draw call——那种情况下 A 路线收益有限，正确的做法是降分辨率 / 关抗锯齿，
+  而 B（Electron）和 C（换引擎）都救不了。</p>
+  <p>看的方法：游戏里按 F12 打开控制台，输入 <code>Game.perf.fps</code> 和 <code>Game.perf.level</code>，
+  把数值告诉我。如果 <code>level</code> 已经自己降到 2，说明自适应已经把 dpr 压到 1.0 并关了阴影还是不够，
+  那就是硬瓶颈，需要走 A-3。</p>
+  <p style="margin-bottom:0"><b>② 这个项目最终要交付成什么？</b> 「发个链接就能玩」还是「要一个能下载的安装包」？
+  这直接决定 B 要不要做。</p>
+</div>
+
+<footer>
+数据来源：headless Edge + SwiftShader 软件渲染下的 draw call 计数（确定性指标，与显卡无关）。
+耗时数字仅用于同环境下的相对比较，绝对值不代表真实机器表现。
+测试脚本：<code>dev/final-perf.js</code>、<code>dev/prof-casters.js</code>、<code>dev/smoke-v106.js</code>
+</footer>
+
+</div>
+</body>
+</html>
