@@ -23,7 +23,7 @@
 | 2 | 同步 `README.md` | 过一遍功能描述、目录结构、顶部标语。有变化就改；确认无需改时，在版本说明里写一句"README 无变更"。 |
 | 3 | 更新本表 + 写版本说明 | 表格最上方加一行并改「当前版本」；新建 `docs/releases/vX.Y.Z.md`，照既有格式（标题 / 发布日期 / 按主题分节 / 验证）。 |
 | 4 | 提交 | `feat(vX.Y.Z): 标题` 或 `fix(vX.Y.Z): 标题`，正文分条列出改动与验证结果。代码与文档同一个提交。 |
-| 5 | 打 tag 并推送 | `git tag -a vX.Y.Z -m "vX.Y.Z: 短主题"`，然后推三个目标：工作分支、`dev-v3`（快进，禁用强推）、tag。 |
+| 5 | 打 tag 并推送 | `git tag -a vX.Y.Z -m "vX.Y.Z: 短主题"`，然后 `git push origin vX.Y.Z`。**分支推送只推 `dev-v3`**（`git push origin dev-v3`），先 `git fetch` 核对，只快进、禁用强推。 |
 | 6 | 建 GitHub Release | `bash dev/make-release.sh vX.Y.Z "vX.Y.Z · 标题"`。凭据自动从 `~/.config/jiuxiao-arpg/gh_token` 读，不必每次带 `GH_TOKEN`。脚本会先校验 tag 在远程、且 Release 未存在。 |
 | 7 | **自检对齐** | `bash dev/check-release.sh`。它会列出「远程有 tag 但没建 Release」的缺口；退出码 0 才算真的发完。 |
 
