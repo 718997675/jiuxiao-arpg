@@ -315,7 +315,7 @@ const SETS = {
   },
   jiuyou: {
     id: 'jiuyou', name: '九幽', cls: null, color: '#b98cff',
-    pieces: ['九幽魂链', '九幽魔戒', '九幽腰带', '九幽令'],
+    pieces: ['九幽锁魂链', '九幽噬魂戒', '九幽腰带', '九幽令'],
     slots: ['amulet', 'ring', 'belt', 'offhand'],
     bonuses: [
       { need: 2, text: '移动速度 +10%', stats: { moveSpd: 10 } },
@@ -332,5 +332,190 @@ const SETS = {
       { need: 3, text: '技能伤害 +30%，冷却缩减 +12%', stats: { skillDmg: 30, cdr: 12 } },
       { need: 5, text: '对首领伤害 +40%，全属性 +25', stats: { str: 25, agi: 25, vit: 25, int: 25 }, flag: 'bossSlayer' }
     ]
+  },
+
+  /* ---------------- S2 新增 7 套：每职业 3 套（低/中/高）+ 通用 3 套 ---------------- */
+  chixiao: {
+    id: 'chixiao', name: '赤霄战魂', cls: 'warrior', color: '#ff6b4a',
+    pieces: ['赤霄战盔', '赤霄战甲', '赤霄护肩', '赤霄护手', '赤霄战靴'],
+    slots: ['helm', 'chest', 'shoulders', 'gloves', 'boots'],
+    bonuses: [
+      { need: 2, text: '攻击力 +18%', stats: { atkPct: 18 } },
+      { need: 3, text: '攻速 +15%，暴击伤害 +20%', stats: { aspd: 15, critDmg: 20 } },
+      { need: 5, text: '击杀后进入血怒：攻速与移速提升 4 秒', stats: { atkPct: 15 }, flag: 'bloodRush' }
+    ]
+  },
+  jiuli: {
+    id: 'jiuli', name: '九黎战铠', cls: 'warrior', color: '#c86a3a',
+    pieces: ['九黎战盔', '九黎战甲', '九黎护肩', '九黎护手', '九黎战靴', '九黎战刃'],
+    slots: ['helm', 'chest', 'shoulders', 'gloves', 'boots', 'weapon'],
+    bonuses: [
+      { need: 2, text: '护甲穿透 +15%，攻击力 +10%', stats: { armorPen: 15, atkPct: 10 } },
+      { need: 3, text: '生命上限 +15%，护甲 +40', stats: { hpPct: 15, def: 40 } },
+      { need: 5, text: '对首领伤害 +40%，首领伤害 +20%', stats: { bossDmg: 20 }, flag: 'bossSlayer' }
+    ]
+  },
+  xuanbing: {
+    id: 'xuanbing', name: '玄冰', cls: 'mage', color: '#8ad8ff',
+    pieces: ['玄冰冠', '玄冰法袍', '玄冰云肩', '玄冰手衣', '玄冰云履'],
+    slots: ['helm', 'chest', 'shoulders', 'gloves', 'boots'],
+    bonuses: [
+      { need: 2, text: '冰霜抗性 +20%，技能伤害 +10%', stats: { iceRes: 20, skillDmg: 10 } },
+      { need: 3, text: '冷却缩减 +10%，冻结几率 +8%', stats: { cdr: 10, freezeChance: 8 } },
+      { need: 5, text: '受击时释放玄冰冰环，冻结周围敌人', stats: { skillDmg: 25 }, flag: 'frostBurst' }
+    ]
+  },
+  tianlei: {
+    id: 'tianlei', name: '天雷', cls: 'mage', color: '#b98cff',
+    pieces: ['天雷冠', '天雷法袍', '天雷云肩', '天雷手衣', '天雷云履', '天雷杖'],
+    slots: ['helm', 'chest', 'shoulders', 'gloves', 'boots', 'weapon'],
+    bonuses: [
+      { need: 2, text: '暴击率 +10%，技能伤害 +15%', stats: { crit: 10, skillDmg: 15 } },
+      { need: 3, text: '冷却缩减 +15%，伤害加成 +10%', stats: { cdr: 15, dmgAll: 10 } },
+      { need: 5, text: '普攻附带天雷，技能伤害 +20%', stats: { skillDmg: 20 }, flag: 'thunder' }
+    ]
+  },
+  qingmu: {
+    id: 'qingmu', name: '青木', cls: 'taoist', color: '#7ee0a0',
+    pieces: ['青木冠', '青木道袍', '青木云肩', '青木手衣', '青木云履'],
+    slots: ['helm', 'chest', 'shoulders', 'gloves', 'boots'],
+    bonuses: [
+      { need: 2, text: '生命上限 +15%，治疗效果 +20%', stats: { hpPct: 15, healBonus: 20 } },
+      { need: 3, text: '召唤物伤害 +40%，灵力上限 +10%', stats: { summonDmg: 40, mpPct: 10 } },
+      { need: 5, text: '回春咒变为群体治疗并附加护盾', stats: { healBonus: 20 }, flag: 'groupheal' }
+    ]
+  },
+  zifu: {
+    id: 'zifu', name: '紫府', cls: 'taoist', color: '#c8a0ff',
+    pieces: ['紫府冠', '紫府道袍', '紫府云肩', '紫府手衣', '紫府云履', '紫府符剑'],
+    slots: ['helm', 'chest', 'shoulders', 'gloves', 'boots', 'weapon'],
+    bonuses: [
+      { need: 2, text: '召唤物伤害 +25%，技能伤害 +12%', stats: { summonDmg: 25, skillDmg: 12 } },
+      { need: 3, text: '持续伤害 +30%，灵力回复 +6/秒', stats: { dotDmg: 30, mpReg: 6 } },
+      { need: 5, text: '技能有 15% 概率不进入冷却', stats: { skillDmg: 20 }, flag: 'echo' }
+    ]
+  },
+  shanhai: {
+    id: 'shanhai', name: '山海', cls: null, color: '#6ad8c0',
+    pieces: ['山海盔', '山海战甲', '山海护肩', '山海战靴', '山海护符', '山海令'],
+    slots: ['helm', 'chest', 'shoulders', 'boots', 'amulet', 'offhand'],
+    bonuses: [
+      { need: 2, text: '奇遇机缘 +20%，金币获取 +20%', stats: { magicFind: 20, goldFind: 20 } },
+      { need: 3, text: '经验获取 +15%，掉落数量 +10%', stats: { expGain: 15, dropRate: 10 } },
+      { need: 5, text: '全元素抗性 +15%，玄晶掉落提升，拾取范围扩大', stats: { allRes: 15, hpPct: 10, pickupRadius: 2 }, flag: 'seeker' }
+    ]
   }
+};
+
+/* ---------------- 符文 ----------------
+ * S2：24 符文，tier 1-4。单个符文是「小属性」，真正的价值在符文之语。
+ * 符文属性全部走 STATS 里已有的 key，不许出现假属性。
+ */
+const RUNE_TIERS = {
+  1: { name: '凡纹', color: '#cfcfd6', weight: 100 },
+  2: { name: '灵纹', color: '#67a9ff', weight: 45 },
+  3: { name: '玄纹', color: '#b98cff', weight: 18 },
+  4: { name: '神纹', color: '#ffc857', weight: 6 }
+};
+
+const RUNES = {
+  el: { id: 'el', name: '艾尔', tier: 1, stats: { atk: 8 } },
+  eld: { id: 'eld', name: '艾德', tier: 1, stats: { eliteDmg: 6 } },
+  tir: { id: 'tir', name: '提尔', tier: 1, stats: { mp: 14 } },
+  nef: { id: 'nef', name: '奈夫', tier: 1, stats: { def: 12 } },
+  eth: { id: 'eth', name: '爱斯', tier: 1, stats: { armorPen: 5 } },
+  ith: { id: 'ith', name: '伊司', tier: 1, stats: { critDmg: 14 } },
+  tal: { id: 'tal', name: '塔尔', tier: 2, stats: { poisonRes: 8 } },
+  ral: { id: 'ral', name: '拉尔', tier: 2, stats: { fireRes: 8 } },
+  ort: { id: 'ort', name: '欧特', tier: 2, stats: { iceRes: 8 } },
+  thul: { id: 'thul', name: '图尔', tier: 2, stats: { freezeChance: 3 } },
+  amn: { id: 'amn', name: '安姆', tier: 2, stats: { lifesteal: 2 } },
+  sol: { id: 'sol', name: '索尔', tier: 2, stats: { crit: 3 } },
+  shael: { id: 'shael', name: '沙尔', tier: 3, stats: { aspd: 5 } },
+  dol: { id: 'dol', name: '多尔', tier: 3, stats: { hpRegen: 3 } },
+  hel: { id: 'hel', name: '海尔', tier: 3, stats: { hpPct: 4 } },
+  io: { id: 'io', name: '埃欧', tier: 3, stats: { mpPct: 5 } },
+  lum: { id: 'lum', name: '卢姆', tier: 3, stats: { mpReg: 2 } },
+  ko: { id: 'ko', name: '科', tier: 3, stats: { cdrFlat: 1 } },
+  fal: { id: 'fal', name: '法尔', tier: 4, stats: { moveSpd: 3 } },
+  lem: { id: 'lem', name: '蓝姆', tier: 4, stats: { goldFind: 10 } },
+  pul: { id: 'pul', name: '普尔', tier: 4, stats: { magicFind: 8 } },
+  um: { id: 'um', name: '乌姆', tier: 4, stats: { allRes: 5 } },
+  mal: { id: 'mal', name: '马尔', tier: 4, stats: { dmgReduce: 3 } },
+  ist: { id: 'ist', name: '伊司特', tier: 4, stats: { skillDmg: 7 } }
+};
+
+/* ---------------- 符文之语 ----------------
+ * 与暗黑 2 一致：孔数必须与序列长度相同、顺序一致、全部填满才成立。
+ * 达成的符文之语会叠加在「每个符文本身」的属性之上。
+ */
+const RUNE_WORDS = [
+  {
+    id: 'thunder', name: '雷霆之语', runes: ['el', 'sol', 'tal'], color: '#88ddff',
+    stats: { atkPct: 10, crit: 5 }, flag: 'thunder',
+    desc: '普攻有 18% 概率召下连锁天雷。'
+  },
+  {
+    id: 'inferno', name: '炎狱之语', runes: ['ral', 'ort', 'thul'], color: '#ff7a30',
+    stats: { fireRes: 12, burnChance: 8 }, flag: 'explode',
+    desc: '击杀敌人时引发一次火焰爆炸。'
+  },
+  {
+    id: 'bloodthirst', name: '饮血之语', runes: ['amn', 'nef'], color: '#e0424a',
+    stats: { lifesteal: 5, killHeal: 10 },
+    desc: '攻击吸取生命，击杀后回复生命。'
+  },
+  {
+    id: 'frost', name: '玄冰之语', runes: ['ort', 'thul', 'shael'], color: '#8ad8ff',
+    stats: { iceRes: 12, freezeChance: 5 }, flag: 'frostBurst',
+    desc: '受击时释放冰环，冻结周围敌人（4 秒冷却）。'
+  },
+  {
+    id: 'gale', name: '疾风之语', runes: ['shael', 'eth', 'fal'], color: '#9ae0b0',
+    stats: { aspd: 8, moveSpd: 6, dodge: 4 },
+    desc: '攻速、移速与闪避同时提升。'
+  },
+  {
+    id: 'bulwark', name: '磐石之语', runes: ['nef', 'eth', 'tir'], color: '#b8b0a0',
+    stats: { def: 30, block: 4, dmgReduce: 4 },
+    desc: '护甲、格挡与固定减伤同时提升。'
+  },
+  {
+    id: 'hunter', name: '猎杀之语', runes: ['eld', 'ith', 'sol'], color: '#ffc857',
+    stats: { eliteDmg: 15, bossDmg: 15, executeDmg: 10 },
+    desc: '对精英、首领与残血目标造成额外伤害。'
+  },
+  {
+    id: 'mystic', name: '通玄之语', runes: ['tir', 'io', 'lum'], color: '#b98cff',
+    stats: { mp: 40, mpPct: 8, skillDmg: 8, cdr: 4 },
+    desc: '灵力、技能伤害与冷却缩减全面提升。'
+  },
+  {
+    id: 'rage', name: '血怒之语', runes: ['amn', 'ith', 'mal'], color: '#ff4a4a',
+    stats: { lifesteal: 8, crit: 5, critDmg: 20 }, flag: 'bloodRush',
+    desc: '击杀后回复生命，并进入 4 秒血怒。'
+  },
+  {
+    id: 'echo', name: '回响之语', runes: ['ko', 'ist'], color: '#6ad8c0',
+    stats: { cdr: 6, cdrFlat: 1 }, flag: 'echo',
+    desc: '技能有 15% 概率不进入冷却。'
+  },
+  {
+    id: 'fortune', name: '聚宝之语', runes: ['lem', 'pul', 'fal'], color: '#ffd166',
+    stats: { goldFind: 30, magicFind: 20, dropRate: 8 },
+    desc: '金币、奇遇机缘与掉落数量提升。'
+  },
+  {
+    id: 'guardian', name: '护法之语', runes: ['um', 'mal', 'hel'], color: '#7ec8ff',
+    stats: { allRes: 10, hpPct: 8, dmgReduce: 4, shieldBonus: 15 },
+    desc: '全抗、生命与护盾强度提升，受到伤害降低。'
+  }
+];
+
+/* ---------------- 炼器台 ---------------- */
+const FORGE = {
+  matName: '玄晶',
+  reforgeCost: { common: 8, magic: 14, rare: 24, legendary: 40, set: 32 },
+  reforgeStep: 0.35,          // 同一件装备每洗一次，成本 +35%
+  socketRuneReturn: true      // 卸下符文全额返还
 };

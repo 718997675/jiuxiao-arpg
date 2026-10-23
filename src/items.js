@@ -17,6 +17,159 @@ const UNIQUES = {
   amulet: [{ name: '天机玉珏', power: 'magicfind', desc: '奇遇机缘 +30%。', stats: { magicFind: 30 } }]
 };
 
+const RUNE_WORD_MAP = new Map(RUNE_WORDS.map(w => [w.runes.join('|'), w]));
+
+/* ---------------- 符文 / 孔位（S2） ---------------- */
+function runeIcon(id, size = 24, cls = '') {
+  const rune = RUNES[id];
+  if (!rune) return '';
+  const tier = RUNE_TIERS[rune.tier] || RUNE_TIERS[1];
+  return iconSvg('rune_' + id, { size, cls, style: `color:${tier.color}` });
+}
+
+function socketCount(item) {
+  return item && item.sockets ? item.sockets : 0;
+}
+
+function itemRunes(item) {
+  if (!item) return [];
+  if (!Array.isArray(item.runes)) item.runes = new Array(socketCount(item)).fill(null);
+  return item.runes;
+}
+
+function runeWordOf(item) {
+  const n = socketCount(item);
+  if (!n) return null;
+  const rs = itemRunes(item);
+  if (rs.length !== n || rs.some(r => !r)) return null;
+  return RUNE_WORD_MAP.get(rs.join('|')) || null;
+}
+
+/* 当前孔数下「还差哪些符文」——用于炼器台的半成品提示 */
+function runeWordCandidates(item) {
+  const n = socketCount(item);
+  if (!n) return [];
+  const rs = itemRunes(item);
+  return RUNE_WORDS.filter(w => {
+    if (w.runes.length !== n) return false;
+    for (let i = 0; i < n; i++) if (rs[i] && rs[i] !== w.runes[i]) return false;
+    return true;
+  });
+}
+
+function insertRune(item, index, runeId) {
+  if (!item || !RUNES[runeId]) return false;
+  const n = socketCount(item);
+  if (index < 0 || index >= n) return false;
+  const rs = itemRunes(item);
+  if (rs[index]) return false;
+  rs[index] = runeId;
+  return true;
+}
+
+function removeRuneAt(item, index) {
+  if (!item || !Array.isArray(item.runes)) return null;
+  if (index < 0 || index >= item.runes.length) return null;
+  const id = item.runes[index];
+  if (!id) return null;
+  item.runes[index] = null;
+  return id;
+}
+
+/* 孔数按稀有度滚；戒指 / 项链不出孔（避免首饰位被符文之语垄断） */
+function rollSocketCount(slot, rarity) {
+  if (slot === 'ring' || slot === 'amulet') return 0;
+  const r = Math.random();
+  switch (rarity) {
+    case 'common': return r < 0.08 ? 1 : 0;
+    case 'magic': return r < 0.08 ? 2 : (r < 0.33 ? 1 : 0);
+    case 'rare': return r < 0.05 ? 3 : (r < 0.23 ? 2 : (r < 0.48 ? 1 : 0));
+    case 'legendary': return r < 0.08 ? 4 : (r < 0.38 ? 3 : (r < 0.68 ? 2 : (r < 0.83 ? 1 : 0)));
+    case 'set': return r < 0.08 ? 4 : (r < 0.33 ? 3 : (r < 0.63 ? 2 : (r < 0.83 ? 1 : 0)));
+  }
+  return 0;
+}
+
+/* 符文掉落：按 ilvl 限制最高 tier，再按 tier 权重抽 */
+function rollRune(ilvl) {
+  const maxTier = ilvl >= 28 ? 4 : (ilvl >= 18 ? 3 : (ilvl >= 8 ? 2 : 1));
+  const pool = Object.values(RUNES).filter(r => r.tier <= maxTier);
+  let total = 0;
+  for (const r of pool) total += RUNE_TIERS[r.tier].weight;
+  let x = Math.random() * total;
+  for (const r of pool) {
+    x -= RUNE_TIERS[r.tier].weight;
+    if (x < 0) return r.id;
+  }
+  return pool[pool.length - 1].id;
+}
+
+function runeStatsText(rune) {
+  const parts = [];
+  for (const k in rune.stats) {
+    const s = STATS[k];
+    if (s) parts.push('+' + rune.stats[k] + (s.pct ? '%' : '') + ' ' + s.label);
+  }
+  return parts.join('，');
+}
+
+function runeWordStatsText(word) {
+  const parts = [];
+  for (const k in word.stats) {
+    const s = STATS[k];
+    if (s) parts.push('+' + word.stats[k] + (s.pct ? '%' : '') + ' ' + s.label);
+  }
+  return parts.join('，');
+}
+
+/* ---------------- 洗练（S2） ---------------- */
+function reforgeCost(item) {
+  if (!item) return 0;
+  const base = FORGE.reforgeCost[item.rarity] || 10;
+  return Math.round(base * (1 + (item.reforges || 0) * FORGE.reforgeStep));
+}
+
+/* 重 roll 指定词缀：稀有度 / 词缀数量不变，新词缀一定换 key */
+function reforgeAffix(item, index) {
+  if (!item || !Array.isArray(item.affixes)) return null;
+  if (index < 0 || index >= item.affixes.length) return null;
+  const used = new Set();
+  item.affixes.forEach((a, i) => {
+    if (i === index) return;
+    if (a && a.key) used.add(a.key);
+  });
+  const old = item.affixes[index];
+  if (old && old.key) used.add(old.key);
+  const a = makeAffix(item.ilvl || 1, used);
+  item.affixes[index] = a;
+  item.reforges = (item.reforges || 0) + 1;
+  return a;
+}
+
+/* 旧档 / 导入档的物品整形：孔位、符文、词缀、固有属性都要能被信任 */
+function normalizeItem(item) {
+  if (!item || typeof item !== 'object') return null;
+  if (!Array.isArray(item.affixes)) item.affixes = [];
+  item.affixes = item.affixes.filter(a => a && typeof a.key === 'string' && STATS[a.key] && isFinite(a.val));
+  let n = CLAMP(Math.round(Number(item.sockets) || 0), 0, 4);
+  if (item.slot === 'ring' || item.slot === 'amulet') n = 0;
+  item.sockets = n;
+  const src = Array.isArray(item.runes) ? item.runes : [];
+  item.runes = [];
+  for (let i = 0; i < n; i++) {
+    const id = src[i];
+    item.runes.push(typeof id === 'string' && RUNES[id] ? id : null);
+  }
+  if (item.implicit && (!STATS[item.implicit.key] || !isFinite(item.implicit.val))) item.implicit = null;
+  if (item.uniqueStats && typeof item.uniqueStats === 'object') {
+    for (const k in item.uniqueStats) {
+      if (!STATS[k] || !isFinite(item.uniqueStats[k])) delete item.uniqueStats[k];
+    }
+  }
+  if (!isFinite(item.reforges) || item.reforges < 0) item.reforges = 0;
+  return item;
+}
+
 function tierIndex(ilvl) { return CLAMP(Math.floor((ilvl - 1) / 8), 0, 4); }
 
 function itemPower(item) {
@@ -82,7 +235,7 @@ function rollItem(ilvl, opts = {}) {
   const isRing = slot === 'ring';
   const item = {
     uid: ITEM_UID++, slot, ilvl, rarity, cls: null, affixes: [],
-    implicit: null,
+    implicit: null, sockets: 0, runes: [], reforges: 0,
     setId: null, setName: null, power: null, powerDesc: null, reqLv: Math.max(1, ilvl - 1)
   };
 
@@ -158,6 +311,10 @@ function rollItem(ilvl, opts = {}) {
     }
   }
 
+  /* ---- 孔位（S2）：1-4 孔，戒指/项链不出孔 ---- */
+  item.sockets = rollSocketCount(slot, item.rarity);
+  item.runes = item.sockets ? new Array(item.sockets).fill(null) : [];
+
   /* ---- 词缀 ---- */
   let count = RARITY[item.rarity].affixes;
   if (item.rarity === 'rare' && CHANCE(0.5)) count = 4;
@@ -202,6 +359,15 @@ function sumItemStats(item, out) {
   /* 基底固有属性：S1 新增，全槽通用 */
   if (item.implicit) out[item.implicit.key] = (out[item.implicit.key] || 0) + item.implicit.val;
   for (const a of item.affixes) out[a.key] = (out[a.key] || 0) + a.val;
+  /* S2 符文：单个符文的属性 */
+  for (const rid of itemRunes(item)) {
+    const r = RUNES[rid];
+    if (!r) continue;
+    for (const k in r.stats) out[k] = (out[k] || 0) + r.stats[k];
+  }
+  /* S2 符文之语：在符文属性之上再叠一层 */
+  const rw = runeWordOf(item);
+  if (rw) for (const k in rw.stats) out[k] = (out[k] || 0) + rw.stats[k];
   if (item.uniqueStats) for (const k in item.uniqueStats) out[k] = (out[k] || 0) + item.uniqueStats[k];
   if (item.power === 'vampire') out.lifesteal += 5;
   if (item.power === 'speed') out.moveSpd += 8;
@@ -220,6 +386,8 @@ function aggregate(equipped) {
     sumItemStats(it, st);
     if (it.setId) setCount[it.setId] = (setCount[it.setId] || 0) + 1;
     if (it.power) flags[it.power] = true;
+    const rw = runeWordOf(it);
+    if (rw && rw.flag) flags[rw.flag] = true;
   }
   const setBonuses = [];
   for (const sid in setCount) {
@@ -398,6 +566,29 @@ function itemTooltip(item, opts = {}) {
   }
   for (const a of item.affixes) {
     h += `<div class="tt-aff">${affixText(a)}</div>`;
+  }
+  /* S2 孔位与符文之语 */
+  if (item.sockets) {
+    h += `<div class="tt-socks">`;
+    for (let i = 0; i < item.sockets; i++) {
+      const rid = item.runes && item.runes[i];
+      h += rid
+        ? `<span class="tsock on" title="${RUNES[rid].name}">${runeIcon(rid, 22)}</span>`
+        : `<span class="tsock">◇</span>`;
+    }
+    h += `</div>`;
+    const rw = runeWordOf(item);
+    if (rw) {
+      h += `<div class="tt-rw" style="--rwc:${rw.color}">
+        <div class="tt-rw-t">符文之语 · ${rw.name}</div>
+        <div class="tt-rw-s">${runeWordStatsText(rw)}</div>
+        <div class="tt-rw-d">${rw.desc}</div></div>`;
+    } else {
+      const cands = runeWordCandidates(item);
+      if (cands.length && itemRunes(item).some(Boolean)) {
+        h += `<div class="tt-rw-hint">符文之语未成：${cands.slice(0, 2).map(w => w.name).join(' / ')}</div>`;
+      }
+    }
   }
   if (item.powerDesc) h += `<div class="tt-power">神兵特效：${item.powerDesc}</div>`;
   if (item.setId) {

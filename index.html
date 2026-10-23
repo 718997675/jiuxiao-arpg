@@ -136,7 +136,8 @@
   .panel{position:absolute;background:var(--panel);border:1px solid var(--line);display:none;pointer-events:auto;
     box-shadow:0 20px 60px rgba(0,0,0,.85),inset 0 0 40px rgba(216,178,90,.04);z-index:20}
   .panel.open{display:block;animation:popen .16s ease-out}
-  @keyframes popen{from{opacity:0;transform:scale(.985)}to{opacity:1;transform:none}}
+  /* 只动透明度：面板靠 transform:translate(-50%,-50%) 居中，动画覆盖 transform 会让它从右下角飞入 */
+  @keyframes popen{from{opacity:0}to{opacity:1}}
   .ph{display:flex;justify-content:space-between;align-items:center;padding:10px 14px;
     background:linear-gradient(180deg,rgba(60,48,28,.55),rgba(20,18,14,.2));border-bottom:1px solid var(--line)}
   .ph h3{font-family:"STKaiti","KaiTi",serif;font-size:16px;font-weight:500;letter-spacing:5px;color:#f0dca8}
@@ -182,6 +183,9 @@
   .islot.r-rare{border-color:rgba(255,200,87,.5);box-shadow:inset 0 0 10px rgba(255,200,87,.13)}
   .islot.r-legendary{border-color:rgba(255,122,60,.65);box-shadow:inset 0 0 12px rgba(255,122,60,.2)}
   .islot.r-set{border-color:rgba(92,224,138,.6);box-shadow:inset 0 0 12px rgba(92,224,138,.18)}
+  .sockbadge{position:absolute;left:2px;top:1px;font-size:8px;line-height:1.2;color:#b98cff;letter-spacing:0;
+    pointer-events:none;text-shadow:0 1px 2px rgba(0,0,0,.9)}
+  body.touch .sockbadge{font-size:7.5px;left:1px;top:0}
   .statbox{display:grid;grid-template-columns:1fr 1fr;gap:2px 12px;margin-top:10px;font-size:11.5px;
     color:#b8b0a0;border-top:1px solid rgba(255,255,255,.07);padding-top:8px}
   .statbox b{color:#f0e0b8;font-weight:500;float:right}
@@ -236,6 +240,65 @@
   .trow.locked{opacity:.4}
   .trow .tn{font-size:13px;color:#e8dcc0;letter-spacing:2px}
   .trow .tl{font-size:10.5px;color:#8a8474}
+
+  /* ---------- 炼器台（S2） ---------- */
+  #forgePanel{left:50%;top:50%;transform:translate(-50%,-50%);width:760px;max-height:88vh;overflow:hidden}
+  .forge-wrap{display:flex;flex-direction:column;gap:9px}
+  .forge-tabs{display:flex;align-items:center;gap:8px}
+  .ftab{padding:6px 18px;background:rgba(0,0,0,.4);border:1px solid rgba(216,178,90,.22);color:#b8a888;
+    font-family:inherit;font-size:12px;letter-spacing:3px;cursor:pointer;transition:.15s;pointer-events:auto}
+  .ftab:hover{border-color:rgba(216,178,90,.55);color:#f0dca8}
+  .ftab.on{border-color:var(--gold);color:#f0dca8;background:rgba(80,62,30,.5);box-shadow:inset 0 0 14px rgba(216,178,90,.12)}
+  .forge-mat{margin-left:auto;font-size:11.5px;color:#c9b8ff;letter-spacing:1px}
+  .forge-mat b{color:#e8d8ff;font-weight:500}
+  .forge-body{display:flex;gap:12px;min-height:340px}
+  .forge-list{width:212px;flex:none;max-height:60vh;overflow-y:auto;border-right:1px solid rgba(255,255,255,.07);padding-right:8px}
+  .fitem{display:flex;align-items:center;gap:8px;padding:6px 7px;border:1px solid transparent;cursor:pointer;transition:.12s;min-width:0}
+  .fitem:hover{background:rgba(216,178,90,.07)}
+  .fitem.sel{border-color:rgba(216,178,90,.5);background:rgba(80,62,30,.3)}
+  .fitem .fi{width:30px;height:30px;flex:none;display:flex;align-items:center;justify-content:center;border:1px solid rgba(255,255,255,.12)}
+  .fitem .fi .it-ico{width:25px;height:25px}
+  .fitem .fn{font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .fitem .fs{font-size:10px;color:#8a8474;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .fempty{padding:40px 10px;text-align:center;font-size:12px;color:#7a7466;line-height:2}
+  .forge-main{flex:1;min-width:0;max-height:60vh;overflow-y:auto;padding-right:2px}
+  .fhead{display:flex;align-items:center;gap:10px;padding-bottom:8px;border-bottom:1px solid rgba(255,255,255,.07);margin-bottom:9px}
+  .fhead .fi{width:38px;height:38px;flex:none;display:flex;align-items:center;justify-content:center;border:1px solid rgba(255,255,255,.14)}
+  .fhead .fi .it-ico{width:31px;height:31px}
+  .fhead .fname{font-size:13px;letter-spacing:1px}
+  .fhead .fsub{font-size:10.5px;color:#8a8474;margin-top:2px}
+  .frune-label{font-size:10.5px;color:#8a8474;letter-spacing:2px;margin:9px 0 6px}
+  .fsocks{display:flex;gap:8px;flex-wrap:wrap}
+  .fsock{width:48px;height:48px;display:flex;align-items:center;justify-content:center;border:1px dashed rgba(216,178,90,.35);
+    background:rgba(0,0,0,.4);cursor:pointer;position:relative;color:#5a5448;font-size:18px;transition:.12s}
+  .fsock:hover{border-color:var(--gold);background:rgba(80,64,36,.25)}
+  .fsock.on{border-style:solid;border-color:rgba(185,140,255,.55);background:rgba(60,44,90,.25)}
+  .fsock.sel{border-color:var(--gold);box-shadow:0 0 12px rgba(216,178,90,.35)}
+  .fsock .fn2{position:absolute;right:2px;bottom:1px;font-size:8px;color:#6a6458}
+  .frunes{display:grid;grid-template-columns:repeat(8,1fr);gap:6px}
+  .frune{position:relative;height:54px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;
+    border:1px solid rgba(255,255,255,.1);background:rgba(0,0,0,.35);cursor:pointer;transition:.12s}
+  .frune:hover{border-color:var(--gold);background:rgba(80,64,36,.25)}
+  .frune.off{opacity:.26;cursor:default}
+  .frune.off:hover{border-color:rgba(255,255,255,.1);background:rgba(0,0,0,.35)}
+  .frune .frn{font-size:9px;color:#b8b0a0;letter-spacing:0}
+  .frune .frc{position:absolute;right:2px;top:0;font-size:9px;color:#e8dcc0}
+  .frune.t1{border-color:rgba(207,207,214,.25)}
+  .frune.t2{border-color:rgba(103,169,255,.3)}
+  .frune.t3{border-color:rgba(185,140,255,.42)}
+  .frune.t4{border-color:rgba(255,200,87,.5);box-shadow:inset 0 0 10px rgba(255,200,87,.1)}
+  .fword{border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.02);padding:6px 9px;margin-bottom:5px}
+  .fword .fwn{font-size:11.5px;letter-spacing:1px}
+  .fword .fws{font-size:10.5px;color:#9ad0a8;margin-top:3px;line-height:1.6}
+  .fword .fwd{font-size:10px;color:#8a8474;line-height:1.5;margin-top:2px}
+  .fword .fwr{display:flex;align-items:center;gap:3px;flex-wrap:wrap;margin-top:3px}
+  .fword .fwr .miss{opacity:.32}
+  .fword .fwr .arw{color:#5a5448;font-size:9px}
+  .faff-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:7px 2px;border-bottom:1px solid rgba(255,255,255,.05)}
+  .faff-row .fa{font-size:12px;color:#9ad0ff}
+  .faff-row .btn{padding:4px 12px;font-size:11px;letter-spacing:1px;white-space:nowrap}
+  .faff-row .btn:disabled{opacity:.34;cursor:default}
+  .faff-row .btn:disabled:hover{border-color:var(--line);background:linear-gradient(180deg,rgba(60,48,28,.9),rgba(20,18,14,.95));color:#d8ccb0}
 
   /* ---------- 存档管理 ---------- */
   /* 可能从开始界面打开，所以要压过 #start 的 z-index:60 */
@@ -326,6 +389,17 @@
   .tt-aff{font-size:12px;color:#9ad0ff;line-height:1.6}
   .tt-imp{font-size:12px;color:#c9b8ff;line-height:1.6;margin-top:3px;padding:1px 0 1px 5px;border-left:2px solid rgba(185,140,255,.5)}
   .tt-aff .dim{color:#7f9ab0;font-size:10px}
+  /* S2 孔位 / 符文之语 */
+  .tt-socks{display:flex;gap:5px;margin-top:6px;padding-top:5px;border-top:1px dashed rgba(255,255,255,.08);flex-wrap:wrap}
+  .tsock{width:26px;height:26px;display:flex;align-items:center;justify-content:center;border:1px dashed rgba(216,178,90,.3);
+    color:#5a5448;font-size:13px;background:rgba(0,0,0,.35)}
+  .tsock.on{border-style:solid;border-color:rgba(185,140,255,.5);background:rgba(60,44,90,.2)}
+  .tsock svg{width:20px;height:20px}
+  .tt-rw{margin-top:5px;padding:5px 7px;border:1px solid var(--rwc,rgba(185,140,255,.4));background:rgba(30,20,46,.4)}
+  .tt-rw-t{font-size:11.5px;letter-spacing:1px;color:var(--rwc,#c9b8ff)}
+  .tt-rw-s{font-size:11px;color:#9ad0a8;line-height:1.65;margin-top:2px}
+  .tt-rw-d{font-size:10px;color:#8a8474;line-height:1.6;margin-top:2px}
+  .tt-rw-hint{font-size:10px;color:#8a7a5a;margin-top:4px}
   .tt-power{font-size:11.5px;color:#ff9a5c;margin-top:6px;line-height:1.6;border-top:1px dashed rgba(255,122,60,.25);padding-top:5px}
   .tt-set{margin-top:6px;border-top:1px dashed rgba(92,224,138,.25);padding-top:5px}
   .tt-set-t{font-size:11px;letter-spacing:1px}
@@ -474,6 +548,16 @@
   body.touch #questPanel{width:min(520px,94vw);max-height:84vh;max-height:84dvh}
   body.touch #shopPanel{width:min(560px,94vw)}
   body.touch #travelPanel{width:min(460px,94vw)}
+  body.touch #forgePanel{width:min(760px,96vw);max-height:88vh;max-height:88dvh}
+  body.touch .forge-body{flex-direction:column;min-height:0;gap:8px}
+  body.touch .forge-list{width:100%;max-height:17dvh;display:flex;gap:6px;overflow-x:auto;overflow-y:hidden;
+    border-right:none;border-bottom:1px solid rgba(255,255,255,.07);padding:0 0 6px}
+  body.touch .fitem{flex:none;width:148px}
+  /* 88dvh 减去标题/页签/物品条/底注后的剩余高度；横屏 390 高时底注不会被裁掉 */
+  body.touch .forge-main{max-height:calc(88dvh - 190px)}
+  body.touch .frunes{grid-template-columns:repeat(6,1fr);gap:5px}
+  body.touch .frune{height:48px}
+  body.touch .fsock{width:42px;height:42px}
   body.touch #savePanel{width:min(640px,96vw)}
   body.touch #savePanel .pb{-webkit-overflow-scrolling:touch;touch-action:pan-y}
   body.touch .sacts .btn{padding:7px 12px;font-size:11.5px}
@@ -617,6 +701,7 @@
     <button class="btn" onclick="UI.toggleInv()">背包 <span class="dim">I</span></button>
     <button class="btn" onclick="UI.toggleStat()">属性 <span class="dim">C</span></button>
     <button class="btn" onclick="UI.toggleQuest()">任务 <span class="dim">L</span></button>
+    <button class="btn" onclick="UI.toggleForge()">炼器 <span class="dim">R</span></button>
     <button class="btn" onclick="SaveUI.open()">存档 <span class="dim">P</span></button>
   </div>
 </div>
@@ -680,6 +765,23 @@
     <div class="hintline">深入更险之地，需先达到对应境界。</div></div>
 </div>
 
+<!-- 炼器台 -->
+<div class="panel" id="forgePanel">
+  <div class="ph"><h3>炼 器 台</h3><span class="x" onclick="UI.closeAll()">✕</span></div>
+  <div class="pb forge-wrap">
+    <div class="forge-tabs">
+      <button class="ftab on" data-ftab="rune">符 文</button>
+      <button class="ftab" data-ftab="reforge">洗 练</button>
+      <span class="forge-mat" id="forgeMat"></span>
+    </div>
+    <div class="forge-body">
+      <div class="forge-list" id="forgeList"></div>
+      <div class="forge-main" id="forgeMain"></div>
+    </div>
+    <div class="hintline">符文镶嵌后即刻生效；洗练只替换选中的那一条词缀，稀有度、孔位与已镶符文不变。符文与玄晶不占背包格。</div>
+  </div>
+</div>
+
 <!-- 存档管理 -->
 <div class="panel" id="savePanel">
   <div class="ph"><h3>存 档 管 理</h3><span class="x" onclick="SaveUI.close()">✕</span></div>
@@ -731,8 +833,8 @@
     <button class="btn" id="saveMgrBtn">存 档</button>
   </div>
   <div class="tips" id="startTips">
-    <b>WASD</b> 移动 · <b>鼠标</b> 瞄准 · <b>左键</b> 普攻 · <b>1-6</b> 技能 · <b>空格</b> 翻滚 · <b>F</b> 交互 · <b>I</b> 背包 · <b>C</b> 属性 · <b>L</b> 任务 · <b>P</b> 存档<br>
-    拾取装备可穿戴，纸娃娃实时变化 · 绿字为套装 · 橙字为神兵 · 三个角色位，可导出备份
+    <b>WASD</b> 移动 · <b>鼠标</b> 瞄准 · <b>左键</b> 普攻 · <b>1-6</b> 技能 · <b>空格</b> 翻滚 · <b>F</b> 交互 · <b>R</b> 炼器 · <b>I</b> 背包 · <b>C</b> 属性 · <b>L</b> 任务 · <b>P</b> 存档<br>
+    拾取装备可穿戴，纸娃娃实时变化 · 符文镶入孔位可成符文之语 · 玄晶可洗练词缀 · 三个角色位，可导出备份
   </div>
 </div>
 
@@ -755,6 +857,7 @@
 <script src="src/core/save.js"></script>
 <!-- 数据层：基础 / 装备 / 技能 / 怪物 / 世界（顺序不可换，后者依赖前者的常量） -->
 <script src="src/data/data-core.js"></script>
+<script src="src/data/data-icons.js"></script>
 <script src="src/data/data-items.js"></script>
 <script src="src/data/data-skills.js"></script>
 <script src="src/data/data-monsters.js"></script>
@@ -765,6 +868,7 @@
 <script src="src/fx.js"></script>
 <script src="src/world.js"></script>
 <script src="src/ui.js"></script>
+<script src="src/ui-forge.js"></script>
 <script src="src/mobile.js"></script>
 <script src="src/ui-save.js"></script>
 <script src="src/game.js"></script>

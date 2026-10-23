@@ -89,7 +89,7 @@ const Game = {
     this.mouseY = window.innerHeight / 2;
     try { this.buildTitleScene(); } catch (e) { showFatal('标题场景构建失败：' + (e.stack || e.message)); }
     try {
-      UI.setHelp('<b>WASD</b> 移动 · <b>左键</b> 攻击 · <b>1-6</b> 技能 · <b>空格</b> 翻滚 · <b>F</b> 交互<br><b>Q/E</b> 转视角 · <b>滚轮</b> 缩放 · <b>I</b> 背包 · <b>C</b> 属性 · <b>L</b> 任务 · <b>P</b> 存档');
+      UI.setHelp('<b>WASD</b> 移动 · <b>左键</b> 攻击 · <b>1-6</b> 技能 · <b>空格</b> 翻滚 · <b>F</b> 交互<br><b>Q/E</b> 转视角 · <b>滚轮</b> 缩放 · <b>R</b> 炼器 · <b>I</b> 背包 · <b>C</b> 属性 · <b>L</b> 任务 · <b>P</b> 存档');
     } catch (e) { }
 
     window.addEventListener('resize', () => this.updateViewport());
@@ -224,11 +224,57 @@ const Game = {
       hp: 100, mp: 50,
       equipment: { helm: null, chest: eq.chest, shoulders: null, gloves: null, boots: null, belt: null, amulet: null, ring1: null, ring2: null, weapon: eq.weapon, offhand: null },
       inventory: [], maxInv: 40,
+      stash: { items: [], mats: {} },
       quests: { active: [], done: [], next: 'q1', announced: {} },
       mapId: 'village', playerPos: { x: 0, z: 10 },
       bossKilled: {}, playTime: 0
     };
     return s;
+  },
+
+  /* ---------------- 材料（S2：玄晶 / 符文） ----------------
+   * 统一放在 state.stash.mats，和 S6 的账号仓库材料仓同一处；
+   * 键：xuanjing、rune_<id>。旧档没有 stash 时在这里补。 */
+  mats() {
+    const s = this.state;
+    if (!s) return {};
+    if (!s.stash || typeof s.stash !== 'object') s.stash = { items: [], mats: {} };
+    if (!s.stash.mats || typeof s.stash.mats !== 'object') s.stash.mats = {};
+    return s.stash.mats;
+  },
+
+  matCount(key) {
+    const v = Math.round(Number(this.mats()[key]) || 0);
+    return Math.max(0, v);
+  },
+
+  addMat(key, n) {
+    const m = this.mats();
+    m[key] = Math.max(0, Math.round((Number(m[key]) || 0) + n));
+    return m[key];
+  },
+
+  crystalCount() { return this.matCount('xuanjing'); },
+
+  runeCount(id) { return this.matCount('rune_' + id); },
+
+  addRune(id, n = 1) {
+    if (!RUNES[id]) return 0;
+    return this.addMat('rune_' + id, n);
+  },
+
+  addCrystal(n) { return this.addMat('xuanjing', n); },
+
+  /* 读档 / 导入后统一整形：旧物品补 sockets=0，非法符文清空 */
+  normalizePlayerItems(s) {
+    if (!s) return;
+    if (!s.stash || typeof s.stash !== 'object') s.stash = { items: [], mats: {} };
+    if (!s.stash.mats || typeof s.stash.mats !== 'object') s.stash.mats = {};
+    if (!Array.isArray(s.stash.items)) s.stash.items = [];
+    const eq = s.equipment || (s.equipment = {});
+    for (const k in eq) if (eq[k]) eq[k] = normalizeItem(eq[k]);
+    if (Array.isArray(s.inventory)) s.inventory = s.inventory.map(normalizeItem).filter(Boolean);
+    s.stash.items = s.stash.items.map(normalizeItem).filter(Boolean);
   },
 
   startNew(cls, name, slot) {
@@ -720,6 +766,7 @@ const Game = {
     this.atkCd = Math.max(0, this.atkCd - dt);
     this.dashCd = Math.max(0, this.dashCd - dt);
     this.invuln = Math.max(0, this.invuln - dt);
+    this.frostBurstCd = Math.max(0, (this.frostBurstCd || 0) - dt);
     this.updateBuffs(dt);
     this.updatePlayer(dt);
     this.updateEnemies(dt);
@@ -961,11 +1008,17 @@ const Game = {
     const cost = this.skillCost(sk);
     if (s.mp < cost) { UI.log(s.cls === 'warrior' ? '怒气不足' : '灵力不足'); SFX.ui(); return; }
     s.mp -= cost;
-    this.cooldowns[id] = this.skillCd(sk);
+    const st = s.stats;
+    /* [S2] 回响之语 / 紫府套：15% 概率不进入冷却 */
+    if (st.flags.echo && CHANCE(0.15)) {
+      this.cooldowns[id] = 0;
+      FX.text(new THREE.Vector3(this.playerGroup.position.x, 2.8, this.playerGroup.position.z), '回响', 'info', { life: 0.8 });
+    } else {
+      this.cooldowns[id] = this.skillCd(sk);
+    }
     this.attacking = 0.35;
     this.camPunch = 0.16;
     this.combatRecently = 5;
-    const st = s.stats;
     /* [S1] 技能类型 → 伤害乘区标记。
      * 同步结算的技能直接读 this._tag；投射物 / 地板等异步伤害在 opts 里显式传 tag。 */
     const TAG_OF = {
@@ -1498,6 +1551,18 @@ const Game = {
     this.actor.flash = 0.45; this.actor.flashWas = true;
     SFX.hit();
     if (st.thorns > 0 && source && !source.dead) this.damageEnemy(source, dmg * st.thorns / 100, false, { silent: true });
+    /* [S2] 玄冰套 / 玄冰之语：受击时释放冰环冻结周围敌人（4 秒内置冷却） */
+    if (st.flags.frostBurst && (this.frostBurstCd || 0) <= 0) {
+      this.frostBurstCd = 4;
+      const pp = this.playerGroup.position;
+      FX.ring(new THREE.Vector3(pp.x, 0.2, pp.z), 5, 0x8ad8ff, 0.5, 0.28);
+      for (const e of this.enemies) {
+        if (e.dead || DIST2D(e.pos, pp) > 5.2) continue;
+        e.slow = e.boss ? 0.45 : 1;
+        e.slowT = Math.max(e.slowT || 0, e.boss ? 1 : 1.4);
+        FX.burst(new THREE.Vector3(e.pos.x, 1, e.pos.z), 0x8ad8ff, 5, { speed: 2, size: 0.09, life: 0.5, additive: true });
+      }
+    }
     if (s.hp <= 0) this.die();
   },
 
@@ -1994,10 +2059,29 @@ const Game = {
   },
 
   /* ---------------- 掉落与拾取 ---------------- */
-  spawnLoot(pos, item, gold) {
+  spawnLoot(pos, item, gold, extra) {
     const g = new THREE.Group();
     g.position.set(pos.x + RND(-0.6, 0.6), 0, pos.z + RND(-0.6, 0.6));
-    if (item) {
+    if (extra && extra.rune) {
+      const rune = RUNES[extra.rune];
+      const c = new THREE.Color(RUNE_TIERS[rune.tier].color);
+      const box = new THREE.Mesh(new THREE.OctahedronGeometry(0.3, 0), new THREE.MeshStandardMaterial({ color: c, emissive: c, emissiveIntensity: 1.1, metalness: 0.6, roughness: 0.25 }));
+      box.position.y = 0.7;
+      g.add(box);
+      const beam = new THREE.Mesh(cylGeo(0.12, 0.24, 5, 6), new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: 0.3, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }));
+      beam.position.y = 2.5;
+      g.add(beam);
+      this.loot.push({ obj: g, pos: g.position.clone(), item: null, gold: 0, rune: extra.rune, box, t: 0 });
+    } else if (extra && extra.crystal) {
+      const c = new THREE.Color(0xb98cff);
+      const box = new THREE.Mesh(new THREE.TetrahedronGeometry(0.3, 0), new THREE.MeshStandardMaterial({ color: c, emissive: c, emissiveIntensity: 1.0, metalness: 0.7, roughness: 0.2 }));
+      box.position.y = 0.55;
+      g.add(box);
+      const beam = new THREE.Mesh(cylGeo(0.1, 0.2, 4, 6), new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: 0.28, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }));
+      beam.position.y = 2;
+      g.add(beam);
+      this.loot.push({ obj: g, pos: g.position.clone(), item: null, gold: 0, crystal: extra.crystal, box, t: 0 });
+    } else if (item) {
       const col = RARITY[item.rarity].color;
       const c = new THREE.Color(col);
       const box = new THREE.Mesh(boxGeo(0.42, 0.42, 0.42), new THREE.MeshStandardMaterial({ color: c, emissive: c, emissiveIntensity: 0.8, metalness: 0.5, roughness: 0.3 }));
@@ -2037,7 +2121,24 @@ const Game = {
         l.pos.z += (pp.z - l.pos.z) * dt * 6;
         l.obj.position.x = l.pos.x; l.obj.position.z = l.pos.z;
         if (d < grabR) {
-          if (l.item) {
+          if (l.rune) {
+            const rd = RUNES[l.rune];
+            const tier = RUNE_TIERS[rd.tier];
+            this.addRune(l.rune, 1);
+            SFX.loot('rare');
+            FX.text(new THREE.Vector3(l.pos.x, 1.4, l.pos.z), '+ ' + rd.name + '（' + tier.name + '）', 'info', { life: 1.1 });
+            UI.log('获得符文 · ' + rd.name + '（' + tier.name + '）', rd.tier >= 3 ? 'good' : '');
+            UI.toast('符文 · ' + rd.name, 'item');
+            disposeTree(l.obj);
+            this.loot.splice(i, 1);
+          } else if (l.crystal) {
+            this.addCrystal(l.crystal);
+            SFX.coin();
+            FX.text(new THREE.Vector3(l.pos.x, 1.4, l.pos.z), '+' + l.crystal + ' 玄晶', 'info', { life: 0.9 });
+            UI.log('获得 玄晶 ×' + l.crystal, 'good');
+            disposeTree(l.obj);
+            this.loot.splice(i, 1);
+          } else if (l.item) {
             if (this.state.inventory.length >= this.state.maxInv) {
               if (!l.warned) { l.warned = true; UI.log('行囊已满，先清理背包。', 'bad'); }
             } else if (this.addItem(l.item)) {
@@ -2096,6 +2197,7 @@ const Game = {
 
     // 装备
     const sto = this.state.stats;
+    const ilvl = Math.max(1, e.level + (e.boss ? 2 : 0));
     let dropChance = e.boss ? 1 : (e.elite ? 0.85 : 0.3);
     /* [S1] 掉落数量：按一半概率额外多掉一件，封顶 60% */
     let drops = e.boss ? 3 : 1;
@@ -2103,7 +2205,6 @@ const Game = {
     for (let i = 0; i < drops; i++) {
       if (i > 0 && !CHANCE(0.55)) continue;
       if (Math.random() > dropChance) continue;
-      const ilvl = Math.max(1, e.level + (e.boss ? 2 : 0));
       let opts = { cls: CHANCE(0.78) ? this.state.cls : PICK(['warrior', 'mage', 'taoist']), magicFind: this.state.stats.magicFind };
       if (e.boss) {
         const r = Math.random();
@@ -2115,9 +2216,29 @@ const Game = {
       this.spawnLoot(p, it, 0);
     }
 
+    /* [S2] 符文 / 玄晶：材料直接进 state.stash.mats，不占背包格。
+     * seeker（山海套）提高符文与玄晶的出率、数量。 */
+    const seeker = !!sto.flags.seeker;
+    const runeChance = e.boss ? 1 : (e.elite ? (seeker ? 0.3 : 0.18) : (seeker ? 0.05 : 0.025));
+    if (CHANCE(runeChance)) {
+      const n = e.boss ? (seeker ? 3 : 2) : 1;
+      for (let i = 0; i < n; i++) this.spawnLoot(p, null, 0, { rune: rollRune(ilvl) });
+    }
+    const crystalChance = e.boss ? 1 : (e.elite ? (seeker ? 0.9 : 0.7) : (seeker ? 0.2 : 0.1));
+    if (CHANCE(crystalChance)) {
+      const base = e.boss ? RND(8, 14) : (e.elite ? RND(2, 4) : 1);
+      this.spawnLoot(p, null, 0, { crystal: Math.round(base * (seeker ? 1.5 : 1)) });
+    }
+
     // 击杀回复
     if (sto.killHeal) this.healPlayer(sto.killHeal, true);
     if (sto.mpOnKill) this.state.mp = Math.min(sto.mpMax, this.state.mp + sto.mpOnKill);
+    /* [S2] 血怒：击杀后攻速/移速提升 4 秒，重复触发只刷新时间不叠加 */
+    if (sto.flags.bloodRush) {
+      const cur = this.buffs.find(b => b.name === '血怒');
+      if (cur) { cur.dur = 4; }
+      else this.addBuff('血怒', { aspd: 25, moveSpd: 20, dur: 4 }, '#ff6b4a');
+    }
     /* [S1] 溢出伤害转护盾：把超过致死的那部分按比例变成护盾，上限 30% 生命 */
     if (sto.overkillShield && e.overkill > 0) {
       const add = Math.min(sto.hpMax * 0.1, e.overkill * sto.overkillShield / 100);
@@ -2250,6 +2371,7 @@ const Game = {
       this.genShop();
       UI.showDialog(npc.name, PICK(npc.lines), [
         { label: '看看货（购买）', action: () => UI.openShop(this.shopItems, '铁匠铺') },
+        { label: '借用炼器台', action: () => UI.openForge() },
         { label: '出售凡品（Shift+左键可单卖）', action: () => { this.sellJunk(); UI.showDialog(npc.name, '凡品已经收走了，银货两讫。', [{ label: '告辞', action: () => UI.closeAll() }]); } },
         { label: '离开', action: () => UI.closeAll() }
       ]);
@@ -2487,6 +2609,62 @@ const Game = {
     if (document.getElementById('shopPanel').classList.contains('open')) UI.openShop(this.shopItems, '铁匠铺');
   },
 
+  /* ---------------- 炼器台（S2） ---------------- */
+  socketRune(item, index, runeId) {
+    if (!item || !RUNES[runeId]) return { ok: false, msg: '没有这个符文。' };
+    if (this.runeCount(runeId) <= 0) return { ok: false, msg: '符文不足。' };
+    if (index < 0 || index >= socketCount(item)) return { ok: false, msg: '没有这个孔位。' };
+    if (itemRunes(item)[index]) return { ok: false, msg: '该孔已有符文。' };
+    if (!insertRune(item, index, runeId)) return { ok: false, msg: '无法镶嵌。' };
+    this.addRune(runeId, -1);
+    this.recalc();
+    SFX.cast();
+    const rd = RUNES[runeId];
+    UI.log('镶嵌 ' + rd.name + ' · ' + item.name, 'good');
+    const w = runeWordOf(item);
+    if (w) {
+      UI.log('符文之语成形 · ' + w.name, 'good');
+      UI.toast(w.name, 'lv');
+      SFX.levelup();
+      FX.burst(new THREE.Vector3(this.playerGroup.position.x, 1.4, this.playerGroup.position.z), new THREE.Color(w.color).getHex(), 24, { speed: 3, size: 0.12, life: 1, gravity: -2, additive: true });
+    }
+    UI.renderInventory();
+    UI.renderHUD();
+    this.save();
+    return { ok: true };
+  },
+
+  unsocketRune(item, index) {
+    const id = removeRuneAt(item, index);
+    if (!id) return { ok: false, msg: '这个孔是空的。' };
+    if (FORGE.socketRuneReturn) this.addRune(id, 1);
+    this.recalc();
+    SFX.ui();
+    UI.log('取下 ' + RUNES[id].name + (FORGE.socketRuneReturn ? '，已放回符文袋' : ''), 'good');
+    UI.renderInventory();
+    UI.renderHUD();
+    this.save();
+    return { ok: true, rune: id };
+  },
+
+  reforgeItem(item, index) {
+    if (!item || !Array.isArray(item.affixes) || index < 0 || index >= item.affixes.length) {
+      return { ok: false, msg: '没有这条词缀。' };
+    }
+    const cost = reforgeCost(item);
+    if (this.crystalCount() < cost) return { ok: false, msg: '玄晶不足，需要 ' + cost + ' 枚。' };
+    this.addCrystal(-cost);
+    const a = reforgeAffix(item, index);
+    if (!a) return { ok: false, msg: '洗练失败。' };
+    this.recalc();
+    SFX.cast();
+    UI.log('洗练 ' + item.name + '：' + affixText(a), 'good');
+    UI.renderInventory();
+    UI.renderHUD();
+    this.save();
+    return { ok: true, affix: a, cost };
+  },
+
   genShop() {
     const lv = this.state.level;
     const items = [];
@@ -2598,6 +2776,7 @@ const Game = {
     const flat = SaveManager.load(n);
     if (!flat) { UI.log('该角色位没有存档。', 'bad'); return false; }
     this.state = flat;
+    this.normalizePlayerItems(this.state);
     this.state.quests = this.state.quests || { active: [], done: [], next: 'q1', announced: {} };
     this.state.quests.announced = this.state.quests.announced || {};
     this.savedSlot = n;

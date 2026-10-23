@@ -122,6 +122,7 @@ const UI = {
       if (k === 'i') { this.toggleInv(); e.preventDefault(); }
       else if (k === 'c') { this.toggleStat(); e.preventDefault(); }
       else if (k === 'l') { this.toggleQuest(); e.preventDefault(); }
+      else if (k === 'r') { this.toggleForge(); e.preventDefault(); }
       else if (k === 'escape') { this.closeAll(); }
     });
   },
@@ -285,8 +286,10 @@ const UI = {
     grid.innerHTML = order.map(slot => {
       const it = eq[slot];
       const r = it ? RARITY[it.rarity] : null;
+      const sb = it && it.sockets ? `<span class="sockbadge">◆${(it.runes || []).filter(Boolean).length}/${it.sockets}</span>` : '';
       return `<div class="eslot ${it ? 'filled' : 'empty'}" ${it ? `data-ref="eq:${slot}"` : ''} style="${it ? `border-color:${r.color}55;box-shadow:inset 0 0 12px ${r.color}22` : ''}">
         <span class="lbl">${SLOT_NAME[slot]}</span>
+        ${sb}
         ${it ? `<span class="ico">${itemIcon(it)}</span>` : `<span class="ico empty"></span>`}
       </div>`;
     }).join('');
@@ -299,8 +302,9 @@ const UI = {
       const it = inv[i];
       if (it) {
         const tag = (SLOTS[it.slot] || {}).name || it.kind || '';
+        const sb = it.sockets ? `<span class="sockbadge">◆${(it.runes || []).filter(Boolean).length}/${it.sockets}</span>` : '';
         html += `<div class="islot r-${it.rarity}" data-ref="inv:${i}">
-          <span class="ico">${itemIcon(it)}</span><span class="slot-tag">${tag.slice(0, 1)}</span></div>`;
+          <span class="ico">${itemIcon(it)}</span>${sb}<span class="slot-tag">${tag.slice(0, 1)}</span></div>`;
       } else {
         html += `<div class="islot"></div>`;
       }
