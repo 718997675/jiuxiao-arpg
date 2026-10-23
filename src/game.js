@@ -1055,6 +1055,7 @@ const Game = {
     this.dashCd = Math.max(0, this.dashCd - dt);
     this.invuln = Math.max(0, this.invuln - dt);
     this.frostBurstCd = Math.max(0, (this.frostBurstCd || 0) - dt);
+    if (this.state) this.state.phoenixCd = Math.max(0, (this.state.phoenixCd || 0) - dt);
     this.updateBuffs(dt);
     this.updatePlayer(dt);
     this.updateEnemies(dt);
@@ -1285,6 +1286,20 @@ const Game = {
     return Math.max(0.5, sk.cd * (1 - st.cdr / 100) - (st.cdrFlat || 0));
   },
 
+  /* 传世技能效果：把「通用(*) / 指定技能」两种修正合并成一个对象 */
+  skillMod(id) {
+    const st = this.state && this.state.stats;
+    if (!st || !st.skillMods) return null;
+    const a = st.skillMods[id], b = st.skillMods['*'];
+    if (!a && !b) return null;
+    const out = {};
+    for (const src of [b, a]) {
+      if (!src) continue;
+      for (const k in src) out[k] = (out[k] || 0) + src[k];
+    }
+    return out;
+  },
+
   castSkill(id) {
     const s = this.state;
     if (!s || this.dead || !this.running) return;
@@ -1292,8 +1307,12 @@ const Game = {
     if (!sk) return;
     if (s.level < sk.unlock && !this.skillFlags[id]) { UI.log('尚未领悟「' + sk.name + '」'); SFX.ui(); return; }
     if ((this.cooldowns[id] || 0) > 0.02) return;
-    /* [S1] 技能消耗降低 */
-    const cost = this.skillCost(sk);
+    const smod = this.skillMod(id);
+    const spow = smod ? 1 + (smod.dmg || 0) / 100 : 1;
+    const srad = smod ? 1 + (smod.radius || 0) / 100 : 1;
+    const sextra = smod ? (smod.count || 0) : 0;
+    /* [S1] 技能消耗降低；传世还能再减该技能的消耗 */
+    const cost = Math.max(1, Math.round(this.skillCost(sk) * (1 - (smod && smod.cost ? smod.cost : 0) / 100)));
     if (s.mp < cost) { UI.log(s.cls === 'warrior' ? '怒气不足' : '灵力不足'); SFX.ui(); return; }
     s.mp -= cost;
     const st = s.stats;
@@ -1302,7 +1321,7 @@ const Game = {
       this.cooldowns[id] = 0;
       FX.text(new THREE.Vector3(this.playerGroup.position.x, 2.8, this.playerGroup.position.z), '回响', 'info', { life: 0.8 });
     } else {
-      this.cooldowns[id] = this.skillCd(sk);
+      this.cooldowns[id] = Math.max(0.5, this.skillCd(sk) * (1 - (smod && smod.cd ? smod.cd : 0) / 100));
     }
     this.attacking = 0.35;
     this.camPunch = 0.16;
@@ -1328,12 +1347,13 @@ const Game = {
         this.actor.atkAnim = 1; this.actor.atkType = 'spin'; this.actor.atkSpeed = 3.2;
         SFX.swing(); SFX.hit();
         const mult = 1.5 * (st.flags.thunder ? 2.2 : 1);
-        const hits = this.enemies.filter(e => !e.dead && DIST2D(e.pos, pp) < 4.3 + e.radius);
+        const rad = 4.3 * srad;
+        const hits = this.enemies.filter(e => !e.dead && DIST2D(e.pos, pp) < rad + e.radius);
         for (const e of hits) {
-          const { dmg, crit } = this.rollDamage(st.atk * mult);
+          const { dmg, crit } = this.rollDamage(st.atk * mult * spow);
           this.damageEnemy(e, dmg, crit, { knock: 1.2 });
         }
-        FX.ring(pp, 4.3, 0xffd8a0, 0.4);
+        FX.ring(pp, rad, 0xffd8a0, 0.4);
         FX.spark(new THREE.Vector3(pp.x, 1, pp.z), 0xffd8a0, 18);
         this.shake = 0.25; this.hitstop = 60;
         s.mp = Math.min(st.mpMax, s.mp + 8);
@@ -1364,6 +1384,10 @@ const Game = {
       case 'warcry': case 'bloodrage': case 'taiji': {
         this.actor.atkAnim = 1; this.actor.atkType = 'cast';
         const buff = Object.assign({}, sk.buff);
+        /* 传世技能效果：增益类技能按 spow 放大（持续时间不变） */
+        if (spow !== 1) for (const k in buff) {
+          if (typeof buff[k] === 'number' && k !== 'dur') buff[k] = Math.round(buff[k] * spow);
+        }
         this.addBuff(sk.name, buff, id === 'taiji' ? 0x88ffd0 : (id === 'warcry' ? 0xff8a4a : 0xff4a4a));
         FX.ring(pp, 5, id === 'taiji' ? 0x88ffd0 : 0xff8a4a, 0.7, 0.25);
         FX.burst(new THREE.Vector3(pp.x, 1.2, pp.z), id === 'taiji' ? 0x88ffd0 : 0xff8a4a, 26, { speed: 3, size: 0.12, life: 0.8, gravity: -2, additive: true });
@@ -1374,14 +1398,14 @@ const Game = {
       case 'quake': {
         this.actor.atkAnim = 1; this.actor.atkType = 'slam'; this.actor.atkSpeed = 2.0;
         SFX.explode(); this.shake = 0.55; this.hitstop = 90;
-        const hits = this.enemies.filter(e => !e.dead && DIST2D(e.pos, pp) < 5.8 + e.radius);
+        const hits = this.enemies.filter(e => !e.dead && DIST2D(e.pos, pp) < 5.8 * srad + e.radius);
         for (const e of hits) {
-          const { dmg, crit } = this.rollDamage(st.atk * 3.2);
+          const { dmg, crit } = this.rollDamage(st.atk * 3.2 * spow);
           this.damageEnemy(e, dmg, crit, { knock: 1.6 });
           e.stun = Math.max(e.stun, 1.6);
         }
-        FX.ring(pp, 6, 0xffaa60, 0.6, 0.3);
-        FX.flashCircle(pp, 5.8, 0xffcc88, 0.35);
+        FX.ring(pp, 6 * srad, 0xffaa60, 0.6, 0.3);
+        FX.flashCircle(pp, 5.8 * srad, 0xffcc88, 0.35);
         for (let i = 0; i < 3; i++) setTimeout(() => {
           FX.burst(new THREE.Vector3(pp.x + RND(-4, 4), 0.2, pp.z + RND(-4, 4)), 0xaa8866, 12, { speed: 6, size: 0.14, life: 0.7, gravity: 16 });
         }, i * 70);
@@ -1406,13 +1430,13 @@ const Game = {
       case 'fireball': {
         this.actor.atkAnim = 1; this.actor.atkType = 'cast';
         SFX.fire();
-        const radius = 2.4 * (st.flags.firetrail ? 1.6 : 1);
+        const radius = 2.4 * (st.flags.firetrail ? 1.6 : 1) * srad;
         const p = FX.projectile({
           pos: new THREE.Vector3(pp.x + dir.x * 0.8, 1.4, pp.z + dir.z * 0.8),
           dir, speed: 21, color: 0xff7a30, radius: 0.32, hitRadius: 0.62, team: 'player',
-          dmg: st.atk * 1.9, life: 1.6, elem: 'fire', trail: true,
+          dmg: st.atk * 1.9 * spow, life: 1.6, elem: 'fire', trail: true,
           onHit: (e, proj) => {
-            this.explodeAt(proj.pos.clone(), radius, st.atk * 1.9, 0xff7a30);
+            this.explodeAt(proj.pos.clone(), radius, st.atk * 1.9 * spow, 0xff7a30);
             if (st.flags.firetrail) this.createFirePatch(proj.pos.clone(), radius);
           }
         });
@@ -1421,14 +1445,14 @@ const Game = {
       case 'frostnova': {
         this.actor.atkAnim = 1; this.actor.atkType = 'cast';
         SFX.ice();
-        const hits = this.enemies.filter(e => !e.dead && DIST2D(e.pos, pp) < 6 + e.radius);
+        const hits = this.enemies.filter(e => !e.dead && DIST2D(e.pos, pp) < 6 * srad + e.radius);
         for (const e of hits) {
-          const { dmg, crit } = this.rollDamage(st.atk * 2.2);
+          const { dmg, crit } = this.rollDamage(st.atk * 2.2 * spow);
           this.damageEnemy(e, dmg, crit, {});
           e.slow = 0.45; e.slowT = 3.5;
         }
-        FX.ring(pp, 6, 0x8ad8ff, 0.7, 0.3);
-        FX.flashCircle(pp, 6, 0x8ad8ff, 0.45);
+        FX.ring(pp, 6 * srad, 0x8ad8ff, 0.7, 0.3);
+        FX.flashCircle(pp, 6 * srad, 0x8ad8ff, 0.45);
         for (let i = 0; i < 30; i++) {
           const ang = Math.random() * 7, r = RND(1, 6);
           FX.burst(new THREE.Vector3(pp.x + Math.cos(ang) * r, RND(0.1, 1), pp.z + Math.sin(ang) * r), 0xaae8ff, 2, { speed: 2, size: 0.12, life: 0.8, gravity: -1, additive: true });
@@ -1443,11 +1467,11 @@ const Game = {
         const hitSet = new Set();
         let from = new THREE.Vector3(pp.x, 1.5, pp.z);
         let jumps = 0;
-        while (cur && jumps < 5 && !hitSet.has(cur)) {
+        while (cur && jumps < 5 + sextra && !hitSet.has(cur)) {
           hitSet.add(cur);
           const to = new THREE.Vector3(cur.pos.x, 1.2, cur.pos.z);
           FX.beam(from, to, 0x88ddff, 0.2);
-          const { dmg, crit } = this.rollDamage(st.atk * 1.7 * Math.pow(0.85, jumps));
+          const { dmg, crit } = this.rollDamage(st.atk * 1.7 * spow * Math.pow(0.85, jumps));
           this.damageEnemy(cur, dmg, crit, {});
           from = to; jumps++;
           let next = null, bd = 9;
@@ -1465,8 +1489,8 @@ const Game = {
         this.actor.atkAnim = 1; this.actor.atkType = 'cast';
         SFX.cast();
         const target = aim.clone();
-        FX.telegraph(target, 5.5, 0.9, () => {
-          this.explodeAt(target, 5.5, st.atk * 4.2, 0xff5522, true);
+        FX.telegraph(target, 5.5 * srad, 0.9, () => {
+          this.explodeAt(target, 5.5 * srad, st.atk * 4.2 * spow, 0xff5522, true);
           SFX.explode(); this.shake = 0.6;
           for (let i = 0; i < 4; i++) setTimeout(() => {
             FX.burst(new THREE.Vector3(target.x + RND(-4, 4), 0.3, target.z + RND(-4, 4)), 0xff7a20, 14, { speed: 9, size: 0.16, life: 0.8, gravity: -3, additive: true });
@@ -1488,7 +1512,7 @@ const Game = {
       case 'iceshield': {
         this.actor.atkAnim = 1; this.actor.atkType = 'cast';
         SFX.ice();
-        this.shield = st.hpMax * 0.35 * (1 + (st.shieldBonus || 0) / 100);   // [S1] 护盾强度
+        this.shield = st.hpMax * 0.35 * (1 + (st.shieldBonus || 0) / 100) * spow;   // [S1] 护盾强度，传世可再强化
         this.shieldT = 10;
         FX.ring(pp, 2, 0x9ae0ff, 0.6, 0.2);
         UI.toast('玄冰护盾 ' + Math.round(this.shield));
@@ -1528,7 +1552,7 @@ const Game = {
           team: 'player', style: 'talisman', life: 2.0, trail: true, tag: 'proj',
           homing: target ? target.pos : null, homeTurn: 9,
           onHit: (e, proj) => {
-            const { dmg, crit } = this.rollDamage(st.atk * 1.7);
+            const { dmg, crit } = this.rollDamage(st.atk * 1.7 * spow);
             this.damageEnemy(e, dmg, crit, { tag: 'proj' });
             // 符纸炸开 → 天雷落地
             FX.beam(new THREE.Vector3(e.pos.x, 4.2, e.pos.z), new THREE.Vector3(e.pos.x, 0.9, e.pos.z), 0x9affd0, 0.16);
@@ -1552,10 +1576,10 @@ const Game = {
       case 'heal': {
         this.actor.atkAnim = 1; this.actor.atkType = 'cast';
         SFX.heal();
-        const amount = st.hpMax * 0.28;
+        const amount = st.hpMax * 0.28 * spow;
         this.healPlayer(amount);
-        this.regen = (this.regen || 0) + st.hpMax * 0.03;
-        setTimeout(() => { this.regen = Math.max(0, (this.regen || 0) - st.hpMax * 0.03); }, 4000);
+        this.regen = (this.regen || 0) + st.hpMax * 0.03 * spow;
+        setTimeout(() => { this.regen = Math.max(0, (this.regen || 0) - st.hpMax * 0.03 * spow); }, 4000);
         FX.ring(pp, 2.2, 0x8affb0, 0.6);
         for (let i = 0; i < 14; i++) FX.burst(new THREE.Vector3(pp.x + RND(-1, 1), RND(0.3, 2.2), pp.z + RND(-1, 1)), 0x8affb0, 2, { speed: 1.5, size: 0.1, life: 0.9, gravity: -3, additive: true });
         if (st.flags.groupheal) this.shield = Math.max(this.shield, st.hpMax * 0.2 * (1 + (st.shieldBonus || 0) / 100));   // [S1]
@@ -1574,7 +1598,7 @@ const Game = {
           for (const e of this.enemies) {
             if (e.dead) continue;
             if (DIST2D(e.pos, c) < 5 + e.radius) {
-              const { dmg } = this.rollDamage(st.atk * 0.75);
+              const { dmg } = this.rollDamage(st.atk * 0.75 * spow);
               this.damageEnemy(e, dmg, false, { silent: true, elem: 'poison' });
             }
           }
@@ -1603,11 +1627,11 @@ const Game = {
             if (k < 1) requestAnimationFrame(anim);
             else {
               this.scene.remove(sword);
-              this.explodeAt(t, 2.6, st.atk * sk.mult, 0x9affd0, false, true);
+              this.explodeAt(t, 2.6, st.atk * sk.mult * spow, 0x9affd0, false, true);
             }
           };
           anim();
-          if (n >= 22) clearInterval(iv);
+          if (n >= 22 + sextra) clearInterval(iv);
         }, 150);
         break;
       }
@@ -1695,6 +1719,12 @@ const Game = {
     e.hp -= final;
     if (e.hp < 0) e.overkill = -e.hp;      // [S1] 记下溢出量，击杀时可能转成护盾
     if (crit && st.aspdOnCrit) this.aspdCritT = 2.5;   // [S1] 暴击后攻速
+    /* 传世特性·裂魂：暴击时小概率引发小范围爆炸（爆炸伤害不再连锁触发） */
+    if (crit && !opts.silent && !this._critbursting && st.specials && st.specials.critburst && CHANCE(0.2)) {
+      this._critbursting = true;
+      this.explodeAt(e.pos.clone(), 2.4, final * 0.35, 0xffb040, false, true);
+      this._critbursting = false;
+    }
     e.hitFlash = 1;
     e.actor.flash = opts.silent ? 0.08 : 0.22;
     e.actor.flashWas = true;
@@ -1846,6 +1876,18 @@ const Game = {
     }
     if (dmg <= 0) return;
     s.hp -= dmg;
+    /* 传世特性·涅槃：致命伤时以 35% 生命复活（60 秒内置冷却） */
+    if (s.hp <= 0 && st.specials && st.specials.phoenix && (s.phoenixCd || 0) <= 0) {
+      s.phoenixCd = 60;
+      this.invuln = Math.max(this.invuln || 0, 1.5);
+      s.hp = Math.max(1, Math.round(st.hpMax * 0.35));
+      const pp = this.playerGroup.position;
+      FX.ring(new THREE.Vector3(pp.x, 0.2, pp.z), 6, 0xffd166, 0.8, 0.35);
+      FX.text(new THREE.Vector3(pp.x, 2.8, pp.z), '涅槃', 'info', { life: 1.1 });
+      FX.burst(new THREE.Vector3(pp.x, 1.2, pp.z), 0xffd166, 30, { speed: 4, size: 0.13, life: 1, gravity: -2, additive: true });
+      UI.log('涅槃重生！', 'good');
+      SFX.levelup();
+    }
     this.shake = Math.max(this.shake, Math.min(0.5, 0.12 + dmg / 180));
     this.hitstop = 40;
     FX.text(new THREE.Vector3(this.playerGroup.position.x, 2.2, this.playerGroup.position.z), '-' + Math.round(dmg), 'player');
@@ -2574,9 +2616,10 @@ const Game = {
       let opts = { cls: CHANCE(0.78) ? this.state.cls : PICK(['warrior', 'mage', 'taoist']), magicFind: this.state.stats.magicFind };
       if (e.boss) {
         const r = Math.random();
-        opts.rarity = r < 0.18 ? 'set' : (r < 0.42 ? 'legendary' : 'rare');
+        /* 首领必掉，且有 8% 直接掉传世；传世池不够时 rollItem 会自动退化为神兵 */
+        opts.rarity = r < 0.08 ? 'unique' : (r < 0.24 ? 'set' : (r < 0.48 ? 'legendary' : 'rare'));
       } else if (e.elite) {
-        opts.rarity = CHANCE(0.35) ? 'rare' : 'magic';
+        opts.rarity = CHANCE(0.05) ? 'unique' : (CHANCE(0.35) ? 'rare' : 'magic');
       }
       const it = rollItem(ilvl, opts);
       this.spawnLoot(p, it, 0);
@@ -2606,6 +2649,15 @@ const Game = {
       const cur = this.buffs.find(b => b.name === '血怒');
       if (cur) { cur.dur = 4; }
       else this.addBuff('血怒', { aspd: 25, moveSpd: 20, dur: 4 }, '#ff6b4a');
+    }
+    /* 传世特性：收魂（击杀回血）/ 狂战（击杀后短时攻速） */
+    if (sto.specials) {
+      if (sto.specials.soulharvest) this.healPlayer(sto.hpMax * 0.03, true);
+      if (sto.specials.berserk) {
+        const cur = this.buffs.find(b => b.name === '狂战');
+        if (cur) cur.dur = 3;
+        else this.addBuff('狂战', { aspd: 25, dur: 3 }, '#ff9a4a');
+      }
     }
     /* [S1] 溢出伤害转护盾：把超过致死的那部分按比例变成护盾，上限 30% 生命 */
     if (sto.overkillShield && e.overkill > 0) {
@@ -2926,7 +2978,7 @@ const Game = {
   sortInventory(mode) {
     const s = this.state;
     if (!s || !Array.isArray(s.inventory)) return 0;
-    const RANK = { set: 5, legendary: 4, rare: 3, magic: 2, common: 1 };
+    const RANK = { unique: 6, set: 5, legendary: 4, rare: 3, magic: 2, common: 1 };
     const slotIdx = k => {
       const key = (k === 'ring') ? 'ring1' : k;      // item.slot 只有 ring，SLOT_ORDER 里是 ring1/ring2
       const i = (typeof SLOT_ORDER !== 'undefined') ? SLOT_ORDER.indexOf(key) : -1;
@@ -3124,7 +3176,8 @@ const Game = {
       magic:    [2, 1, 0, 0],
       rare:     [0, 2, 1, 0],
       legendary:[0, 0, 2, 1],
-      set:      [0, 3, 1, 0]
+      set:      [0, 3, 1, 0],
+      unique:   [0, 0, 3, 2]
     };
     const base = yields[item.rarity] || [1, 0, 0, 0];
     const mul = 1 + (item.ilvl || 1) * 0.06;
@@ -3140,7 +3193,8 @@ const Game = {
       magic:    [2, 1, 0, 0],
       rare:     [0, 2, 1, 0],
       legendary:[0, 0, 2, 1],
-      set:      [0, 3, 1, 0]
+      set:      [0, 3, 1, 0],
+      unique:   [0, 0, 3, 2]
     };
     const base = yields[item.rarity] || [1, 0, 0, 0];
     const mul = 1 + (item.ilvl || 1) * 0.06;

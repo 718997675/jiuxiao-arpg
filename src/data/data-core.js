@@ -22,7 +22,9 @@ const RARITY = {
   magic: { key: 'magic', name: '灵品', color: '#67a9ff', mul: 1.12, affixes: 2, weight: 30 },
   rare: { key: 'rare', name: '玄品', color: '#ffc857', mul: 1.28, affixes: 3, weight: 15 },
   legendary: { key: 'legendary', name: '神兵', color: '#ff7a3c', mul: 1.55, affixes: 4, weight: 6 },
-  set: { key: 'set', name: '套装', color: '#5ce08a', mul: 1.42, affixes: 3, weight: 3 }
+  set: { key: 'set', name: '套装', color: '#5ce08a', mul: 1.42, affixes: 3, weight: 3 },
+  /* 传世：固定名字 + 固定词条 + 特性 + 技能效果，可重复掉落 */
+  unique: { key: 'unique', name: '传世', color: '#d9a441', mul: 1.7, affixes: 0, weight: 2 }
 };
 
 /* ---------------- 属性定义 ----------------

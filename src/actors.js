@@ -539,6 +539,7 @@ function clearGroup(g) { while (g.children.length) g.remove(g.children[0]); }
 
 function rarityGlow(item) {
   if (!item) return null;
+  if (item.rarity === 'unique') return 0xd9a441;
   if (item.rarity === 'legendary') return 0xff7a3c;
   if (item.rarity === 'set') return 0x5ce08a;
   if (item.rarity === 'rare') return 0xffc857;
@@ -631,7 +632,7 @@ function applyPaperDoll(p) {
   /* 披风 */
   clearGroup(P.capeG);
   const capeItem = eq.chest;
-  if (capeItem && (capeItem.rarity === 'legendary' || capeItem.rarity === 'set' || capeItem.rarity === 'rare')) {
+  if (capeItem && (capeItem.rarity === 'unique' || capeItem.rarity === 'legendary' || capeItem.rarity === 'set' || capeItem.rarity === 'rare')) {
     const c = itemVisualColor(capeItem);
     const cm = M(c.dark, { rough: 0.9, side: THREE.DoubleSide, emissive: c.glow, ei: 0.18 });
     a.mats.push(cm);

@@ -4,18 +4,34 @@
 
 let ITEM_UID = 1;
 
-const UNIQUES = {
-  weapon: [
-    { name: '斩月·霜寒', power: 'frost', desc: '攻击有 25% 几率使敌人减速 40%，持续 2 秒。', stats: { crit: 6, critDmg: 25 }, cls: 'warrior' },
-    { name: '焚天·赤霄', power: 'explode', desc: '击杀敌人时引发一次火焰爆炸。', stats: { atkPct: 12, skillDmg: 15 }, cls: 'mage' },
-    { name: '太初·无相', power: 'thunder', desc: '攻击有 18% 几率召下连锁天雷。', stats: { int: 12, cdr: 8 }, cls: 'taoist' }
-  ],
-  helm: [{ name: '九幽面纱', power: 'vampire', desc: '生命偷取额外 +5%。', stats: { hp: 60, crit: 4 } }],
-  chest: [{ name: '玄冥战衣', power: 'thorns', desc: '受到攻击时反弹 30% 伤害。', stats: { def: 40, hp: 100 } }],
-  boots: [{ name: '踏云履', power: 'speed', desc: '移动速度额外 +8%。', stats: { moveSpd: 8 } }],
-  ring: [{ name: '轮回之戒', power: 'lifesteal', desc: '所有伤害的 6% 转化为生命。', stats: { lifesteal: 6, crit: 4 } }],
-  amulet: [{ name: '天机玉珏', power: 'magicfind', desc: '奇遇机缘 +30%。', stats: { magicFind: 30 } }]
-};
+/* ---------------- 唯一装备（传世） ----------------
+ * 目录与特性定义在 src/data/data-uniques.js，这里只做查询与生成。
+ * 一次性建索引；目录是静态数据，不需要每次掉落都线性扫。
+ */
+const UNIQUE_BY_ID = new Map(UNIQUE_ITEMS.map(u => [u.id, u]));
+const UNIQUE_SLOT_INDEX = {};
+for (const u of UNIQUE_ITEMS) (UNIQUE_SLOT_INDEX[u.slot] || (UNIQUE_SLOT_INDEX[u.slot] = [])).push(u);
+
+/* 某等级 / 职业能掉落的唯一装备池；slot 不传表示全部位 */
+function uniquePool(ilvl, cls, slot) {
+  let list = slot ? (UNIQUE_SLOT_INDEX[slot] || []) : UNIQUE_ITEMS;
+  return list.filter(u => u.ilvl <= ilvl && (!u.cls || u.cls === cls));
+}
+
+/* 固定词条区间 → 实例数值；超出设计等级后按每级 2% 缓慢成长 */
+function rollUniqueStats(def, ilvl) {
+  const out = {};
+  if (!def || !def.stats) return out;
+  const grow = 1 + Math.max(0, ilvl - def.ilvl) * 0.02;
+  for (const k in def.stats) {
+    if (!STATS[k]) continue;
+    const r = def.stats[k];
+    const lo = Array.isArray(r) ? r[0] : r;
+    const hi = Array.isArray(r) ? r[1] : r;
+    out[k] = Math.max(1, Math.round(RND(lo, hi) * grow));
+  }
+  return out;
+}
 
 const RUNE_WORD_MAP = new Map(RUNE_WORDS.map(w => [w.runes.join('|'), w]));
 
@@ -85,6 +101,7 @@ function rollSocketCount(slot, rarity) {
     case 'magic': return r < 0.08 ? 2 : (r < 0.33 ? 1 : 0);
     case 'rare': return r < 0.05 ? 3 : (r < 0.23 ? 2 : (r < 0.48 ? 1 : 0));
     case 'legendary': return r < 0.08 ? 4 : (r < 0.38 ? 3 : (r < 0.68 ? 2 : (r < 0.83 ? 1 : 0)));
+    case 'unique': return r < 0.03 ? 4 : (r < 0.23 ? 3 : (r < 0.58 ? 2 : (r < 0.83 ? 1 : 0)));
     case 'set': return r < 0.08 ? 4 : (r < 0.33 ? 3 : (r < 0.63 ? 2 : (r < 0.83 ? 1 : 0)));
   }
   return 0;
@@ -168,6 +185,14 @@ function normalizeItem(item) {
       if (!STATS[k] || !isFinite(item.uniqueStats[k])) delete item.uniqueStats[k];
     }
   }
+  /* 唯一装备：目录 id / 特性 / 技能效果都要能被信任，损坏的字段直接清掉 */
+  if (item.rarity === 'unique') {
+    if (typeof item.uniqueId !== 'string' || !UNIQUE_BY_ID.has(item.uniqueId)) item.uniqueId = null;
+    if (!Array.isArray(item.traits)) item.traits = [];
+    item.traits = item.traits.filter(t => typeof t === 'string' && UNIQUE_TRAITS[t]);
+    if (item.uniqueSkill && (typeof item.uniqueSkill !== 'object' || typeof item.uniqueSkill.id !== 'string')) item.uniqueSkill = null;
+    if (typeof item.lore !== 'string') item.lore = '';
+  }
   if (!isFinite(item.reforges) || item.reforges < 0) item.reforges = 0;
   if (!isFinite(item.enhances) || item.enhances < 0) item.enhances = 0;
   return item;
@@ -185,7 +210,7 @@ function itemPower(item) {
 }
 
 function itemValue(item) {
-  const r = { common: 1, magic: 1.8, rare: 3, legendary: 6, set: 5 }[item.rarity];
+  const r = { common: 1, magic: 1.8, rare: 3, legendary: 6, set: 5, unique: 10 }[item.rarity];
   return Math.round((12 + item.ilvl * 8) * r * (1 + item.affixes.length * 0.15));
 }
 
@@ -248,8 +273,8 @@ function baseTierFor(slot, ilvl) {
 /* 生成一件装备 */
 function rollItem(ilvl, opts = {}) {
   ilvl = CLAMP(Math.round(ilvl), 1, 40);
-  const slot = opts.slot || PICK(['helm', 'chest', 'shoulders', 'gloves', 'boots', 'belt', 'amulet', 'ring', 'weapon', 'offhand']);
-  const cls = opts.cls || PICK(['warrior', 'mage', 'taoist']);
+  let slot = opts.slot || PICK(['helm', 'chest', 'shoulders', 'gloves', 'boots', 'belt', 'amulet', 'ring', 'weapon', 'offhand']);
+  let cls = opts.cls || PICK(['warrior', 'mage', 'taoist']);
   let rarity = opts.rarity;
   if (!rarity) {
     const mf = opts.magicFind || 0;
@@ -258,12 +283,28 @@ function rollItem(ilvl, opts = {}) {
       ['magic', RARITY.magic.weight + mf * 0.16],
       ['rare', RARITY.rare.weight + mf * 0.1],
       ['legendary', RARITY.legendary.weight + mf * 0.05],
-      ['set', RARITY.set.weight + mf * 0.04]
+      ['set', RARITY.set.weight + mf * 0.04],
+      ['unique', RARITY.unique.weight + mf * 0.03]
     ];
     let total = w.reduce((s, x) => s + x[1], 0), r = Math.random() * total;
     for (const [k, v] of w) { if (r < v) { rarity = k; break; } r -= v; }
     if (!rarity) rarity = 'common';
   }
+
+  /* ---- 唯一装备：先定目录条目，再由它决定部位与职业 ----
+   * 掉不出对应部位的传世就退化成神兵，保证不会生成空壳物品。 */
+  let uniqueDef = null;
+  if (rarity === 'unique') {
+    const pool = uniquePool(ilvl, cls, opts.slot);
+    if (pool.length) {
+      uniqueDef = PICK(pool);
+      slot = uniqueDef.slot;
+      cls = uniqueDef.cls || cls;
+    } else {
+      rarity = 'legendary';
+    }
+  }
+
   const isRing = slot === 'ring';
   const item = {
     uid: ITEM_UID++, slot, ilvl, rarity, cls: null, affixes: [],
@@ -330,17 +371,21 @@ function rollItem(ilvl, opts = {}) {
     } else rarity = item.rarity = 'rare';
   }
 
-  /* ---- 唯一神兵 ---- */
-  if (item.rarity === 'legendary' && !item.setId && CHANCE(0.55)) {
-    const pool = (UNIQUES[slot] || []).filter(u => !u.cls || u.cls === cls);
-    if (pool.length) {
-      const u = PICK(pool);
-      item.name = u.name;
-      item.power = u.power;
-      item.powerDesc = u.desc;
-      item.uniqueStats = u.stats || {};
-      item.cls = cls;
-    }
+  /* ---- 唯一装备（传世） ----
+   * 固定名字 / 固定词条区间 / 特性 / 技能效果；每次掉落重新 roll 数值，
+   * 所以同一件传世也能反复刷、反复比较。 */
+  if (uniqueDef) {
+    item.rarity = 'unique';
+    item.uniqueId = uniqueDef.id;
+    item.name = uniqueDef.name;
+    item.lore = uniqueDef.lore || '';
+    item.traits = (uniqueDef.traits || []).slice();
+    item.uniqueSkill = uniqueDef.skill ? Object.assign({}, uniqueDef.skill) : null;
+    item.uniqueStats = rollUniqueStats(uniqueDef, ilvl);
+    item.reqLv = Math.max(1, uniqueDef.ilvl);
+    if (uniqueDef.shape) item.shape = uniqueDef.shape;
+    if (uniqueDef.baseName) item.baseName = uniqueDef.baseName;
+    if (uniqueDef.cls) item.cls = uniqueDef.cls;
   }
 
   /* ---- 孔位（S2）：1-4 孔，戒指/项链不出孔 ---- */
@@ -355,7 +400,7 @@ function rollItem(ilvl, opts = {}) {
   for (let i = 0; i < count; i++) item.affixes.push(makeAffix(ilvl, used));
 
   /* ---- 命名 ---- */
-  if (!item.setId && !item.power) {
+  if (!item.setId && !item.power && !item.uniqueId) {
     if (item.rarity === 'magic') {
       const a = item.affixes[0];
       item.name = (CHANCE(0.5) ? PICK(a.pre) : '') + item.baseName + (CHANCE(0.35) ? PICK(a.suf).replace(/^·\s*/, '·') : '');
@@ -401,6 +446,12 @@ function sumItemStats(item, out) {
   const rw = runeWordOf(item);
   if (rw) for (const k in rw.stats) out[k] = (out[k] || 0) + rw.stats[k];
   if (item.uniqueStats) for (const k in item.uniqueStats) out[k] = (out[k] || 0) + item.uniqueStats[k];
+  /* 传世特性：只吃 stats 那部分，flags / special 在 aggregate 里处理 */
+  for (const tid of (item.traits || [])) {
+    const t = UNIQUE_TRAITS[tid];
+    if (!t || !t.stats) continue;
+    for (const k in t.stats) out[k] = (out[k] || 0) + t.stats[k];
+  }
   if (item.power === 'vampire') out.lifesteal += 5;
   if (item.power === 'speed') out.moveSpd += 8;
   if (item.power === 'thorns') out.thorns += 30;
@@ -412,6 +463,8 @@ function aggregate(equipped) {
   const st = emptyStats();
   const setCount = {};
   const flags = {};
+  const skillMods = {};
+  const specials = {};
   for (const slot in equipped) {
     const it = equipped[slot];
     if (!it) continue;
@@ -420,6 +473,19 @@ function aggregate(equipped) {
     if (it.power) flags[it.power] = true;
     const rw = runeWordOf(it);
     if (rw && rw.flag) flags[rw.flag] = true;
+    /* 传世特性：flags → 战斗判定；special → game.js 里的钩子 */
+    for (const tid of (it.traits || [])) {
+      const t = UNIQUE_TRAITS[tid];
+      if (!t) continue;
+      if (t.flags) for (const f of t.flags) flags[f] = true;
+      if (t.special) specials[t.special] = true;
+    }
+    /* 传世技能效果：'*' 是所有技能的通用修正，具体技能进入 skillMods */
+    const us = it.uniqueSkill;
+    if (us && us.id) {
+      const m = skillMods[us.id] || (skillMods[us.id] = { dmg: 0, cd: 0, cost: 0, radius: 0, count: 0 });
+      for (const k of ['dmg', 'cd', 'cost', 'radius', 'count']) if (us[k]) m[k] += us[k];
+    }
   }
   const setBonuses = [];
   for (const sid in setCount) {
@@ -432,7 +498,7 @@ function aggregate(equipped) {
       }
     }
   }
-  return { stats: st, setCount, setBonuses, flags };
+  return { stats: st, setCount, setBonuses, flags, skillMods, specials };
 }
 
 /* [S1] 概率 / 倍率类属性的硬上限。
@@ -476,7 +542,8 @@ function computePlayerStats(p) {
     str, agi, vit, int, atk, hpMax: Math.round(hpMax), mpMax: Math.round(mpMax),
     crit, critDmg, aspd, moveSpd, def, cdr,
     mpReg: 3 + st.mpReg,
-    setBonuses: agg.setBonuses, setCount: agg.setCount, flags: agg.flags, raw: st
+    setBonuses: agg.setBonuses, setCount: agg.setCount, flags: agg.flags,
+    skillMods: agg.skillMods, specials: agg.specials, raw: st
   };
   /* 其余属性一律透传。
    * S1 新增的 40 个属性（dodge/block/dmgAll/armorPen/...) 全走这条路，
@@ -569,7 +636,7 @@ function itemIcon(item, opts = {}) {
   if (!item) return '';
   const r = RARITY[item.rarity] || RARITY.common;
   const key = itemIconKey(item);
-  const glow = item.rarity === 'legendary' || item.rarity === 'set';
+  const glow = item.rarity === 'legendary' || item.rarity === 'set' || item.rarity === 'unique';
   const style = `color:${r.color}${glow ? `;filter:drop-shadow(0 0 3px ${r.color}bb)` : ''}`;
   return `<svg class="it-ico${opts.cls ? ' ' + opts.cls : ''}" viewBox="0 0 32 32" fill="currentColor" style="${style}" aria-hidden="true">${ITEM_ICONS[key]}</svg>`;
 }
@@ -614,6 +681,13 @@ function itemStatMap(item) {
   if (item.baseArmor) m._armor = item.baseArmor;
   if (item.implicit) m[item.implicit.key] = (m[item.implicit.key] || 0) + item.implicit.val;
   for (const a of (item.affixes || [])) m[a.key] = (m[a.key] || 0) + a.val;
+  /* 传世固定词条与特性也要参与评分，否则传世会被算得比同数值的玄品还低 */
+  if (item.uniqueStats) for (const k in item.uniqueStats) m[k] = (m[k] || 0) + item.uniqueStats[k];
+  for (const tid of (item.traits || [])) {
+    const t = UNIQUE_TRAITS[tid];
+    if (!t || !t.stats) continue;
+    for (const k in t.stats) m[k] = (m[k] || 0) + t.stats[k];
+  }
   /* 已成的符文之语也算进去，否则镶好符文的装备评分反而比裸装低 */
   const rw = (typeof runeWordOf === 'function') ? runeWordOf(item) : null;
   if (rw && rw.stats) for (const k in rw.stats) m[k] = (m[k] || 0) + rw.stats[k];
@@ -693,6 +767,7 @@ function itemTooltip(item, opts = {}) {
   h += `<div class="tt-name" style="color:${r.color}">${item.name}</div>`;
   h += `<div class="tt-sub">${r.name} · ${SLOT_NAME[item.slot] || item.kind}${item.setName ? ' · ' + item.setName + '套装' : ''}</div>`;
   h += `</div></div>`;
+  if (item.lore) h += `<div class="tt-lore">${item.lore}</div>`;
   if (item.baseDmg) {
     const dps = ((item.baseDmg[0] + item.baseDmg[1]) / 2 / (item.speed || 1)).toFixed(1);
     h += `<div class="tt-main">攻击 ${item.baseDmg[0]} - ${item.baseDmg[1]}　<span class="dim">速度 ${(item.speed || 1).toFixed(2)}　DPS ${dps}</span></div>`;
@@ -703,6 +778,14 @@ function itemTooltip(item, opts = {}) {
   if (item.implicit) {
     const s = STATS[item.implicit.key];
     h += `<div class="tt-imp">固有　+${item.implicit.val}${s.pct ? '%' : ''} ${s.label}</div>`;
+  }
+  /* 传世固定词条：与随机词缀分开着色，方便一眼区分「这件传世自带什么」 */
+  if (item.uniqueStats) {
+    for (const k in item.uniqueStats) {
+      const s = STATS[k];
+      if (!s) continue;
+      h += `<div class="tt-uaff">+${item.uniqueStats[k]}${s.pct ? '%' : ''} ${s.label}</div>`;
+    }
   }
   for (const a of item.affixes) {
     h += `<div class="tt-aff">${affixText(a)}</div>`;
@@ -731,6 +814,18 @@ function itemTooltip(item, opts = {}) {
     }
   }
   if (item.powerDesc) h += `<div class="tt-power">神兵特效：${item.powerDesc}</div>`;
+  /* 传世特性 / 技能效果：都来自 data-uniques.js，提示框文字与实战判定同源 */
+  if (item.traits && item.traits.length) {
+    h += `<div class="tt-unq">`;
+    for (const tid of item.traits) {
+      const t = UNIQUE_TRAITS[tid];
+      if (t) h += `<div class="tt-trait"><b>${t.name}</b><span>${t.desc}</span></div>`;
+    }
+    h += `</div>`;
+  }
+  if (item.uniqueSkill && item.uniqueSkill.desc) {
+    h += `<div class="tt-skill"><b>${item.uniqueSkill.name || '技能效果'}</b><span>${item.uniqueSkill.desc}</span></div>`;
+  }
   if (item.setId) {
     const set = SETS[item.setId];
     const have = (Game.state ? (Game.state.setCount[item.setId] || 0) : 0);

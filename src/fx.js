@@ -55,7 +55,10 @@ const SFX = {
   die() { this.tone(200, 0.4, 'sawtooth', 0.08, 50); this.noise(0.4, 0.15, 400, 0.6); },
   ui() { this.tone(760, 0.05, 'square', 0.03); },
   boss() { this.tone(60, 1.4, 'sawtooth', 0.18, 42); this.noise(1.2, 0.12, 220, 0.4); },
-  loot(r) { if (r === 'legendary' || r === 'set') {[784, 1046, 1318].forEach((f, i) => setTimeout(() => this.tone(f, 0.4, 'triangle', 0.1), i * 100)); } }
+  loot(r) {
+    if (r === 'unique') {[659, 784, 988, 1318, 1568].forEach((f, i) => setTimeout(() => this.tone(f, 0.5, 'triangle', 0.11), i * 90)); return; }
+    if (r === 'legendary' || r === 'set') {[784, 1046, 1318].forEach((f, i) => setTimeout(() => this.tone(f, 0.4, 'triangle', 0.1), i * 100)); }
+  }
 };
 
 /* ---------------- 怪物血条 ---------------- */
