@@ -85,6 +85,14 @@ Object.assign(UI, {
         return;
       }
 
+      const enhEl = e.target.closest('[data-fenhance]');
+      if (enhEl) {
+        const r = Game.enhanceItem(item);
+        if (r.ok) this.renderForge();
+        else if (r.msg) UI.log(r.msg, 'bad');
+        return;
+      }
+
       const rfEl = e.target.closest('[data-freforge]');
       if (rfEl) {
         const idx = parseInt(rfEl.dataset.freforge, 10);
@@ -105,7 +113,15 @@ Object.assign(UI, {
     const s = Game.state;
     if (!s) return [];
     const want = tab || this.forgeTab;
-    const ok = it => it && (want === 'rune' ? socketCount(it) > 0 : (it.affixes && it.affixes.length > 0));
+    const ok = it => {
+      if (!it) return false;
+      if (want === 'rune') return socketCount(it) > 0;
+      if (want === 'enhance') {
+        const maxBase = RARITY[it.rarity].affixes || 0;
+        return (it.affixes && it.affixes.length > 0) && (it.affixes.length - maxBase) < FORGE.enhanceMax;
+      }
+      return it.affixes && it.affixes.length > 0;
+    };
     const out = [];
     const order = ['weapon', 'helm', 'chest', 'shoulders', 'gloves', 'boots', 'belt', 'amulet', 'ring1', 'ring2', 'offhand'];
     for (const slot of order) {
@@ -136,9 +152,13 @@ Object.assign(UI, {
     const listEl = document.getElementById('forgeList');
     listEl.innerHTML = list.length ? list.map(x => {
       const it = x.item, r = RARITY[it.rarity];
+      const maxBase = RARITY[it.rarity].affixes || 0;
+      const extra = it.affixes.length - maxBase;
       const sub = this.forgeTab === 'rune'
         ? `孔 ${(it.runes || []).filter(Boolean).length}/${it.sockets}`
-        : `${it.affixes.length} 条词缀${it.reforges ? ' · 洗 ' + it.reforges + ' 次' : ''}`;
+        : (this.forgeTab === 'enhance'
+          ? `${it.affixes.length} 条词缀${extra > 0 ? ' · 已强化 ' + extra : ''}`
+          : `${it.affixes.length} 条词缀${it.reforges ? ' · 洗 ' + it.reforges + ' 次' : ''}`);
       return `<div class="fitem ${x.ref === this.forgeRef ? 'sel' : ''}" data-fref="${x.ref}">
         <span class="fi" style="color:${r.color};border-color:${r.color}44">${itemIcon(it)}</span>
         <div style="min-width:0;flex:1">
@@ -155,7 +175,8 @@ Object.assign(UI, {
       main.innerHTML = `<div class="fempty">从左侧选一件装备。</div>`;
       return;
     }
-    main.innerHTML = this.forgeTab === 'rune' ? this.forgeRuneView(item) : this.forgeReforgeView(item);
+    main.innerHTML = this.forgeTab === 'rune' ? this.forgeRuneView(item)
+      : (this.forgeTab === 'enhance' ? this.forgeEnhanceView(item) : this.forgeReforgeView(item));
   },
 
   forgeRuneView(item) {
@@ -230,6 +251,39 @@ Object.assign(UI, {
         <button class="btn" data-freforge="${i}" ${have < cost ? 'disabled' : ''}>洗练 · ${cost} 玄晶</button></div>`;
     }
     h += `<div class="hintline">持有玄晶 ${have} 枚。每次洗练后费用 +${Math.round(FORGE.reforgeStep * 100)}%。</div>`;
+    return h;
+  },
+
+  forgeEnhanceView(item) {
+    const r = RARITY[item.rarity];
+    const maxBase = RARITY[item.rarity].affixes || 0;
+    const extra = item.affixes.length - maxBase;
+    const cost = enhanceCost(item);
+    const have = Game.crystalCount();
+    let h = `<div class="fhead">
+      <span class="fi" style="color:${r.color};border-color:${r.color}44">${itemIcon(item)}</span>
+      <div style="min-width:0">
+        <div class="fname" style="color:${r.color}">${item.name}</div>
+        <div class="fsub">${r.name} · ${SLOT_NAME[item.slot] || item.kind} · 已强化 ${extra}/${FORGE.enhanceMax}</div>
+      </div></div>`;
+    h += `<div class="frune-label">当前词缀（蓝色 = 强化附加）</div>`;
+    if (item.implicit) {
+      const s = STATS[item.implicit.key];
+      h += `<div class="faff-row"><span class="fa" style="color:#c9b8ff">固有 · +${item.implicit.val}${s.pct ? '%' : ''} ${s.label}</span></div>`;
+    }
+    for (let i = 0; i < item.affixes.length; i++) {
+      const isExtra = i >= maxBase;
+      h += `<div class="faff-row">
+        <span class="fa" style="${isExtra ? 'color:#67a9ff' : ''}">${isExtra ? '【强化】' : ''}${affixText(item.affixes[i])}</span></div>`;
+    }
+    if (extra < FORGE.enhanceMax) {
+      h += `<div style="margin-top:12px">
+        <button class="btn primary" data-fenhance="1" ${have < cost ? 'disabled' : ''}>扩充词缀 · ${cost} 玄晶</button>
+      </div>`;
+    } else {
+      h += `<div class="hintline" style="color:#ffd166">该装备已达到强化上限（+${FORGE.enhanceMax} 条额外词缀）。</div>`;
+    }
+    h += `<div class="hintline">持有玄晶 ${have} 枚。每次强化后费用 +${Math.round(FORGE.enhanceStep * 100)}%。</div>`;
     return h;
   }
 });

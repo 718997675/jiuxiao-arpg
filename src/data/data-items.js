@@ -512,10 +512,29 @@ const RUNE_WORDS = [
   }
 ];
 
+/* ---------------- 玄晶分级（S3） ---------------- */
+const CRYSTAL_TIERS = [
+  { id: 1, name: '凡晶', color: '#b8b8b8', label: '凡' },
+  { id: 2, name: '灵晶', color: '#67a9ff', label: '灵' },
+  { id: 3, name: '玄晶', color: '#c084ff', label: '玄' },
+  { id: 4, name: '神晶', color: '#ffd166', label: '神' }
+];
+
+/* 词缀品质色（与玄晶等级对应） */
+const AFFIX_QUALITY_COLOR = {
+  1: '#a0a0a0',   // 普通
+  2: '#67a9ff',   // 优秀
+  3: '#c084ff',   // 精良
+  4: '#ffd166'    // 史诗
+};
+
 /* ---------------- 炼器台 ---------------- */
 const FORGE = {
   matName: '玄晶',
   reforgeCost: { common: 8, magic: 14, rare: 24, legendary: 40, set: 32 },
   reforgeStep: 0.35,          // 同一件装备每洗一次，成本 +35%
-  socketRuneReturn: true      // 卸下符文全额返还
+  socketRuneReturn: true,     // 卸下符文全额返还
+  enhanceMax: 3,              // 强化上限：最多扩充 3 条额外词缀
+  enhanceCostBase: { common: 12, magic: 20, rare: 35, legendary: 55, set: 45 },
+  enhanceStep: 0.45           // 每强化一次费用 +45%
 };

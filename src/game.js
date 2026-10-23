@@ -203,6 +203,7 @@ const Game = {
       }
       if (k === '7') this.usePotion('hp');
       if (k === '8') this.usePotion('mp');
+      if (k === '9') this.useTeleportStone();
       if (k === 'f') this.interact();
     });
     /* [FIX-BUG1] keyup 兜底：中文输入法激活时 keyup 的 e.key 可能返回
@@ -297,6 +298,7 @@ const Game = {
       cls, name, level: 1, xp: 0, xpNext: 120, gold: 120,
       difficulty: diff,
       potions: { hp: 4, mp: 3 },
+      teleportStones: 0,
       hp: 100, mp: 50,
       equipment: { helm: null, chest: eq.chest, shoulders: null, gloves: null, boots: null, belt: null, amulet: null, ring1: null, ring2: null, weapon: eq.weapon, offhand: null },
       inventory: [], maxInv: 40,
@@ -346,6 +348,14 @@ const Game = {
   },
 
   addCrystal(n) { return this.addMat('xuanjing', n); },
+
+  /* [S3] 玄晶分级：凡晶 / 灵晶 / 玄晶 / 神晶 */
+  crystalTierCount(tier) { return this.matCount('crystal' + tier); },
+  addCrystalTier(tier, n) { return this.addMat('crystal' + tier, n); },
+  totalCrystalValue() {
+    return this.crystalTierCount(1) * 1 + this.crystalTierCount(2) * 3 +
+           this.crystalTierCount(3) * 10 + this.crystalTierCount(4) * 30;
+  },
 
   /* 读档 / 导入后统一整形：旧物品补 sockets=0，非法符文清空 */
   normalizePlayerItems(s) {
@@ -492,7 +502,7 @@ const Game = {
   },
 
   spawnNPCs() {
-    const pos = { elder: [-7, 2], smith: [7, 7], herbalist: [-10, 14], monk: [9, 15] };
+    const pos = { elder: [-7, 2], smith: [7, 7], herbalist: [-10, 14], monk: [9, 15], alchemist: [2, 18] };
     for (const id of MAPS.village.npcs) {
       const a = buildNPC(id);
       const [x, z] = pos[id];
@@ -581,13 +591,46 @@ const Game = {
       ecfg = Object.assign({}, cfg, { [el]: true, elemBoost: el });
     }
 
+    /* [FOOT2] 在模型与缩放开全后重测真实碰撞半径。
+     * setFootR 在 builder 阶段就跑了，复杂 Boss（带翅膀/巨兵器）往往在 setFootR 之后
+     * 才把大体量部件挂上去，导致 a.footR 严重偏小（如 firegeneral a.footR≈0.69，但真实
+     * 顶点到原点达 4.04）。若按 a.footR*scale 算 radius，玩家会直接走进 Boss 身体（穿模）。
+     * 这里重新量「已组装完、且带 group.scale」的真实模型，取顶点到 group 原点的最大水平距。 */
+    const measureFootR = (group) => {
+      group.updateMatrixWorld(true);
+      const gPos = new THREE.Vector3().setFromMatrixPosition(group.matrixWorld);
+      const v = new THREE.Vector3();
+      let mx = 0;
+      group.traverse(o => {
+        if (o.isSprite || o.renderOrder >= 900) return;
+        if (!o.isMesh || !o.geometry) return;
+        const gt = o.geometry.type || '';
+        if (gt.indexOf('Ring') >= 0) return;            // 排除光环/精英环
+        const pos = o.geometry.attributes.position;
+        if (!pos) return;
+        for (let i = 0; i < pos.count; i += 2) {
+          v.fromBufferAttribute(pos, i).applyMatrix4(o.matrixWorld);
+          const d = Math.hypot(v.x - gPos.x, v.z - gPos.z);
+          if (d > mx) mx = d;
+        }
+      });
+      return Math.max(0.3, mx);
+    };
+
     const e = {
       id: 'e' + Math.random().toString(36).slice(2),
       kind: bossId || kind, cfg: ecfg, actor: a, boss: isBoss, elite: !!elite,
       level: lvl, hp, maxHp: hp,
       dmg: (cfg.atk || 10) * (1 + lvl * (isBoss ? 0.09 : 0.18)) * (elite ? 1.3 : 1) * D.mobDmg,
-      spd: (cfg.spd || 3) * D.mobSpd, range: cfg.range || 2.2,
-      radius: (isBoss ? 1.4 : 0.7) * (scale > 1.5 ? 1.5 : 1),
+      spd: (cfg.spd || 3) * D.mobSpd,
+      /* range 只表示「数据设定的攻击距离」（远程怪用来卡位）。
+       * 近战另算 reach：贴到「碰撞半径 + 余量」就该出手。
+       * 否则蜘蛛这种 radius 1.55 的大体积怪，被分离逻辑卡在 2.10 外，
+       * 而 AI 要求 d < range*0.85 = 2.04 才挥爪 —— 结果永远撞不进去也永远打不到。
+       * 系数 1.26 是反解出来的：d 的下限 = radius + 0.55，AI 阈值 = reach * 0.8。 */
+      range: cfg.range || 2.2,
+      reach: cfg.range || 2.2,                            // 占位，下方统一 patch
+      radius: a.footR || 0.75,                            // 占位，下方统一 patch
       pos: new THREE.Vector3(x, 0, z), dead: false,
       atkCd: RND(0.3, 1.4), windup: 0, anim: 0, hitFlash: 0,
       stun: 0, slow: 0, slowT: 0, poisonT: 0, poisonDmg: 0,
@@ -640,6 +683,16 @@ const Game = {
     }
     // 头顶血条（首领用顶部大血条，不重复显示）
     if (!isBoss) e.bar = makeHpBar(a.group, { elite: !!elite, gap: 0.22 });
+
+    /* [FOOT2] 此时 Boss 的专属武器/光环、精英环都已挂上，重新量真实水平包围，
+     * 取「顶点到 group 原点的最大水平距」，回填碰撞半径与触及距离。
+     * 这一步必须放在最后：早一步（builder 里的 setFootR 或 spawnEnemy 开头）量到的都是
+     * 没带武器的半成品模型，radius 会严重偏小，玩家直接走进 Boss 身体（穿模）。 */
+    const _fr = measureFootR(a.group);
+    const _br = Math.max(0.5, _fr + 0.2);                 // +0.2 冗余，避免贴边穿模
+    e.radius = _br;
+    e.reach = Math.max(cfg.range || 2.2, _br * 1.26 + 0.75);
+
     this.enemies.push(e);
     return e;
   },
@@ -1237,7 +1290,7 @@ const Game = {
     if (!s || this.dead || !this.running) return;
     const sk = SKILLS[id];
     if (!sk) return;
-    if (s.level < sk.unlock) { UI.log('尚未领悟「' + sk.name + '」'); SFX.ui(); return; }
+    if (s.level < sk.unlock && !this.skillFlags[id]) { UI.log('尚未领悟「' + sk.name + '」'); SFX.ui(); return; }
     if ((this.cooldowns[id] || 0) > 0.02) return;
     /* [S1] 技能消耗降低 */
     const cost = this.skillCost(sk);
@@ -1932,13 +1985,13 @@ const Game = {
               if (e.atkCd <= 0) this.enemyRangedAttack(e);
             }
           } else {
-            if (d > e.range * 0.85) this.moveEnemy(e, pp, spd, dt);
+            if (d > e.reach * 0.85) this.moveEnemy(e, pp, spd, dt);
             else {
               a.moving = false;
               if (e.windup > 0) {
                 e.windup -= dt;
                 if (e.windup <= 0) {
-                  if (DIST2D(e.pos, pp) < e.range + 1.4) {
+                  if (DIST2D(e.pos, pp) < e.reach + 1.4) {
                     this.damagePlayer(e.dmg * RND(0.9, 1.1), e);
                     if (e.cfg.poison) { this.playerPoison(e.dmg * 0.15); }
                   }
@@ -2055,7 +2108,7 @@ const Game = {
       a.moving = false;
       if (e.windup <= 0 && e.pendingMelee) {
         e.pendingMelee = false;
-        if (DIST2D(e.pos, pp) < e.range + 2.2) this.damagePlayer(e.dmg * RND(0.9, 1.2), e);
+        if (DIST2D(e.pos, pp) < e.reach + 2.2) this.damagePlayer(e.dmg * RND(0.9, 1.2), e);
       }
     } else if (e.charging > 0) {
       e.charging -= dt;
@@ -2068,20 +2121,20 @@ const Game = {
         this.shake = 0.5;
       }
       FX.burst(new THREE.Vector3(e.pos.x, 0.6, e.pos.z), 0xaa8866, 4, { speed: 3, size: 0.14, life: 0.4, gravity: 4 });
-    } else if (d > e.range * 0.8) {
+    } else if (d > e.reach * 0.8) {
       this.moveEnemy(e, pp, e.spd * (1 + e.phase * 0.12), dt);
     } else {
       a.moving = false;
     }
 
     // 普攻
-    if (e.atkCd <= 0 && d < e.range + 1.6 && e.windup <= 0 && e.charging <= 0) {
+    if (e.atkCd <= 0 && d < e.reach + 1.6 && e.windup <= 0 && e.charging <= 0) {
       e.atkCd = e.cfg.atkCd || 2;
       e.windup = 0.45;
       e.pendingMelee = true;
       a.atkAnim = 1; a.atkType = 'swing'; a.atkSpeed = 2.6;
       SFX.swing();
-      FX.slash(new THREE.Vector3(e.pos.x, 0, e.pos.z), Math.atan2(pp.x - e.pos.x, pp.z - e.pos.z) - Math.PI / 2 - 0.9, 0xff8844, e.range + 1.5, 1.8);
+      FX.slash(new THREE.Vector3(e.pos.x, 0, e.pos.z), Math.atan2(pp.x - e.pos.x, pp.z - e.pos.z) - Math.PI / 2 - 0.9, 0xff8844, e.reach + 1.5, 1.8);
     }
 
     // 技能
@@ -2692,7 +2745,8 @@ const Game = {
       UI.showDialog(npc.name, PICK(npc.lines), [
         { label: '看看货（购买）', action: () => UI.openShop(this.shopItems, '铁匠铺') },
         { label: '借用炼器台', action: () => UI.openForge() },
-        { label: '出售凡品（Shift+左键可单卖）', action: () => { this.sellJunk(); UI.showDialog(npc.name, '凡品已经收走了，银货两讫。', [{ label: '告辞', action: () => UI.closeAll() }]); } },
+        { label: '出售凡品', action: () => { this.sellJunk(); UI.showDialog(npc.name, '凡品已经收走了，银货两讫。', [{ label: '告辞', action: () => UI.closeAll() }]); } },
+        { label: '筛选出售…', action: () => UI.openSellFilter() },
         { label: '离开', action: () => UI.closeAll() }
       ]);
     } else if (id === 'herbalist') {
@@ -2704,6 +2758,13 @@ const Game = {
     } else if (id === 'monk') {
       UI.showDialog(npc.name, PICK(npc.lines), [
         { label: '请为我指路（传送）', action: () => UI.openTravel() },
+        { label: '购买传送石（200 金）', action: () => this.buyTeleportStone() },
+        { label: '离开', action: () => UI.closeAll() }
+      ]);
+    } else if (id === 'alchemist') {
+      UI.showDialog(npc.name, PICK(npc.lines), [
+        { label: '分解装备', action: () => UI.openDecompose() },
+        { label: '升级品质', action: () => UI.openUpgradeQuality() },
         { label: '离开', action: () => UI.closeAll() }
       ]);
     }
@@ -2781,6 +2842,15 @@ const Game = {
     this.gainXp(q.rewards.xp);
     const it = rollItem(q.rewards.ilvl, { cls: this.state.cls, rarity: q.rewards.rarity, magicFind: this.state.stats.magicFind });
     if (this.addItem(it)) UI.log('获得 ' + it.name, 'good');
+    // [S3] 任务奖励技能书：解锁指定技能（或下一级未解锁技能）
+    if (q.rewards.skill) {
+      const sk = SKILLS[q.rewards.skill];
+      if (sk && !this.skillFlags[q.rewards.skill]) {
+        this.skillFlags[q.rewards.skill] = true;
+        UI.log('获得技能书《' + sk.name + '》，已领悟！', 'lv');
+        SFX.levelup();
+      }
+    }
     this.state.quests.active = this.state.quests.active.filter(x => x !== a);
     this.state.quests.done.push(a.id);
     UI.toast('委托完成 · ' + q.name, 'lv');
@@ -2928,10 +2998,23 @@ const Game = {
     }
   },
 
+  /* [S3] 出售前自动卸下符文 */
+  _unsocketAll(item) {
+    if (!item || !item.runes) return;
+    for (let i = item.runes.length - 1; i >= 0; i--) {
+      const id = item.runes[i];
+      if (id) {
+        item.runes[i] = null;
+        if (FORGE.socketRuneReturn) this.addRune(id, 1);
+      }
+    }
+  },
+
   sellItem(idx) {
     const s = this.state;
     const item = s.inventory[idx];
     if (!item) return;
+    this._unsocketAll(item);
     s.gold += item.value;
     s.inventory.splice(idx, 1);
     SFX.coin();
@@ -2940,17 +3023,22 @@ const Game = {
     this.save();
   },
 
-  sellJunk() {
+  sellJunk(filterRarities) {
     const s = this.state;
     let gold = 0, n = 0;
+    const targets = filterRarities || ['common'];
     s.inventory = s.inventory.filter(it => {
-      if (it.rarity === 'common') { gold += it.value; n++; return false; }
+      if (targets.includes(it.rarity)) {
+        this._unsocketAll(it);
+        gold += it.value; n++; return false;
+      }
       return true;
     });
     s.gold += gold;
-    UI.log(n ? `售出 ${n} 件凡品，+${gold} 金` : '没有可出售的凡品。', n ? 'good' : '');
+    UI.log(n ? `售出 ${n} 件，+${gold} 金` : '没有可出售的物品。', n ? 'good' : '');
     UI.renderInventory(); UI.renderHUD();
     if (document.getElementById('shopPanel').classList.contains('open')) UI.openShop(this.shopItems, '铁匠铺');
+    this.save();
   },
 
   /* ---------------- 炼器台（S2） ---------------- */
@@ -3007,6 +3095,104 @@ const Game = {
     UI.renderHUD();
     this.save();
     return { ok: true, affix: a, cost };
+  },
+
+  enhanceItem(item) {
+    if (!item || !Array.isArray(item.affixes)) return { ok: false, msg: '无法强化该物品。' };
+    const maxBase = RARITY[item.rarity].affixes || 0;
+    const extra = item.affixes.length - maxBase;
+    if (extra >= FORGE.enhanceMax) return { ok: false, msg: '该装备已达到强化上限。' };
+    const cost = enhanceCost(item);
+    if (this.crystalCount() < cost) return { ok: false, msg: '玄晶不足，需要 ' + cost + ' 枚。' };
+    this.addCrystal(-cost);
+    const a = enhanceItem(item);
+    if (!a) return { ok: false, msg: '强化失败。' };
+    this.recalc();
+    SFX.cast();
+    UI.log('强化 ' + item.name + '：新增 ' + affixText(a), 'good');
+    UI.renderInventory();
+    UI.renderHUD();
+    this.save();
+    return { ok: true, affix: a, cost };
+  },
+
+  /* [S3] 分解装备 → 玄晶分级材料 */
+  previewDecompose(item) {
+    if (!item) return null;
+    const yields = {
+      common:   [3, 0, 0, 0],
+      magic:    [2, 1, 0, 0],
+      rare:     [0, 2, 1, 0],
+      legendary:[0, 0, 2, 1],
+      set:      [0, 3, 1, 0]
+    };
+    const base = yields[item.rarity] || [1, 0, 0, 0];
+    const mul = 1 + (item.ilvl || 1) * 0.06;
+    const out = base.map(n => Math.max(0, Math.round(n * mul)));
+    const txt = out.map((n, i) => n ? n + CRYSTAL_TIERS[i].name : '').filter(Boolean).join('、') || '无';
+    return { yields: out, text: txt };
+  },
+
+  decomposeItem(item) {
+    if (!item) return { ok: false, msg: '没有可分解的装备。' };
+    const yields = {
+      common:   [3, 0, 0, 0],
+      magic:    [2, 1, 0, 0],
+      rare:     [0, 2, 1, 0],
+      legendary:[0, 0, 2, 1],
+      set:      [0, 3, 1, 0]
+    };
+    const base = yields[item.rarity] || [1, 0, 0, 0];
+    const mul = 1 + (item.ilvl || 1) * 0.06;
+    const out = base.map(n => Math.max(0, Math.round(n * mul)));
+    for (let i = 0; i < 4; i++) this.addCrystalTier(i + 1, out[i]);
+    const txt = out.map((n, i) => n ? n + CRYSTAL_TIERS[i].name : '').filter(Boolean).join('、');
+    SFX.cast();
+    UI.log('分解 ' + item.name + ' 获得 ' + txt, 'good');
+    this.save();
+    return { ok: true, yields: out, text: txt };
+  },
+
+  /* [S3] 升级装备品质：common→magic→rare→legendary */
+  upgradeItemQuality(item) {
+    if (!item) return { ok: false, msg: '没有可升级的装备。' };
+    const chain = ['common', 'magic', 'rare', 'legendary'];
+    const idx = chain.indexOf(item.rarity);
+    if (idx < 0 || idx >= chain.length - 1) return { ok: false, msg: '该装备已是最高品质，无法继续升级。' };
+    const target = chain[idx + 1];
+    const costs = { common: [10, 0, 0, 0], magic: [0, 15, 0, 0], rare: [0, 0, 25, 0] };
+    const cost = costs[item.rarity] || [0, 0, 0, 0];
+    for (let i = 0; i < 4; i++) {
+      if (this.crystalTierCount(i + 1) < cost[i]) {
+        return { ok: false, msg: CRYSTAL_TIERS[i].name + '不足，需要 ' + cost[i] + ' 枚。' };
+      }
+    }
+    for (let i = 0; i < 4; i++) this.addCrystalTier(i + 1, -cost[i]);
+    // 升级稀有度，补齐词缀数量
+    const oldRarity = item.rarity;
+    item.rarity = target;
+    const wantAffixes = RARITY[target].affixes;
+    const used = new Set(item.affixes.map(a => a.key));
+    while (item.affixes.length < wantAffixes) {
+      item.affixes.push(makeAffix(item.ilvl || 1, used));
+    }
+    // 重新 roll 基底数值
+    if (item.baseArmor) {
+      const mul = RARITY[target].mul / RARITY[oldRarity].mul;
+      item.baseArmor = Math.round(item.baseArmor * mul);
+    }
+    if (item.baseDmg) {
+      const mul = RARITY[target].mul / RARITY[oldRarity].mul;
+      item.baseDmg[0] = Math.round(item.baseDmg[0] * mul);
+      item.baseDmg[1] = Math.round(item.baseDmg[1] * mul);
+    }
+    this.recalc();
+    SFX.levelup();
+    UI.log(item.name + ' 品质提升至 ' + RARITY[target].name + '！', 'good');
+    UI.renderInventory();
+    UI.renderHUD();
+    this.save();
+    return { ok: true, rarity: target, cost };
   },
 
   /* ---------------- 商店（v1.0.4） ----------------
@@ -3117,6 +3303,26 @@ const Game = {
       FX.text(new THREE.Vector3(this.playerGroup.position.x, 2.4, this.playerGroup.position.z), '+' + Math.round(s.stats.mpMax * 0.55) + ' 灵力', 'info');
       SFX.cast();
     }
+    UI.renderHUD();
+  },
+
+  buyTeleportStone() {
+    const price = 200;
+    if (this.state.gold < price) { UI.log('金币不足。', 'bad'); return; }
+    this.state.gold -= price;
+    this.state.teleportStones = (this.state.teleportStones || 0) + 1;
+    SFX.coin();
+    UI.log('购得传送石 ×1', 'good');
+    UI.renderHUD();
+    this.save();
+  },
+
+  useTeleportStone() {
+    const s = this.state;
+    if (this.dead) return;
+    if ((s.teleportStones || 0) <= 0) { UI.log('没有传送石。', 'bad'); return; }
+    s.teleportStones--;
+    UI.openTravel();
     UI.renderHUD();
   },
 

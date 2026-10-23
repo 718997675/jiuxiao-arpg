@@ -206,10 +206,26 @@ function buildHumanoid(cfg) {
   actor.parts.capeG = capeG;
 
   actor.mats.push.apply(actor.mats, [eyeMat]);
-  return actor;
+  return setFootR(actor);
 }
 
 /* 不同怪物造型 */
+/* 落地占位半径不再拍脑袋估算，而是由 builder 用 Box3 自动测出真实包围，
+ * 彻底避免「模型比碰撞体大一圈 → 玩家站进体内穿模」的问题。 */
+function setFootR(a) {
+  const g = a.group;
+  const saved = g.scale.clone();
+  g.scale.set(1, 1, 1);          // 去掉 scene-scale，测原始模型尺寸
+  g.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(g);
+  g.scale.copy(saved);
+  g.updateMatrixWorld(true);
+  const sz = new THREE.Vector3();
+  box.getSize(sz);
+  a.footR = Math.max(0.3, Math.hypot(sz.x, sz.z) * 0.5);
+  return a;
+}
+
 function buildMonster(kind, cfg) {
   let a;
   const s = cfg.scale || 1;
@@ -267,10 +283,20 @@ function buildMonster(kind, cfg) {
         const tip = mesh(sphGeo(0.06, 4), dark, foot[0], foot[1] + 0.02, foot[2], g);
       }
     }
-    a.parts.torso = g; a.parts.headG = head; a.parts.weaponHand = null;
+    /* 蜘蛛是整体建模（八条腿脚底就在 y≈0），没有独立躯干节点。
+     * 绝不能把根 group 当 torso：updateActorAnim 会无条件写
+     * P.torso.position.y/.z，等于直接改写世界坐标，
+     * 把 updateEnemies 同步过来的 group.position 抹成 (0, 0.92)，
+     * 结果就是「逻辑坐标已经走远、模型还钉在出生点」。
+     * 这里塞一层内层 group 承接呼吸/摆身，根 group 只归游戏逻辑管。 */
+    const bodyRoot = new THREE.Group();
+    while (g.children.length) bodyRoot.add(g.children[0]);
+    g.add(bodyRoot);
+    a.parts.torso = bodyRoot; a.parts.headG = head; a.parts.weaponHand = null;
+    a.torsoBaseY = 0;           // 内层 group 起始 y = 0，动画用基座 + 偏移
     a.group.scale.setScalar(s);
     a.parts.bodyMat = body;
-    return a;
+    return setFootR(a);
   }
   if (kind === 'beast') {
     const g = new THREE.Group();
@@ -309,7 +335,7 @@ function buildMonster(kind, cfg) {
     tail.rotation.x = 0.4;
     a.parts.weaponHand = null; a.parts.offHand = null;
     a.group.scale.setScalar(s);
-    return a;
+    return setFootR(a);
   }
   if (kind === 'bat' || kind === 'batking') {
     const g = new THREE.Group();
@@ -334,9 +360,14 @@ function buildMonster(kind, cfg) {
       mesh(boxGeo(0.95, 0.75, 0.04), wingMat, sx * 0.5, 0, 0, w);
       a.parts['wing' + (sx < 0 ? 'L' : 'R')] = w;
     }
-    a.parts.torso = g; a.parts.headG = head;
+    /* 同蜘蛛：整体建模、根 group 不能当 torso（否则飞行/位移全被抹掉） */
+    const bodyRoot = new THREE.Group();
+    while (g.children.length) bodyRoot.add(g.children[0]);
+    g.add(bodyRoot);
+    a.parts.torso = bodyRoot; a.parts.headG = head;
+    a.torsoBaseY = 0;
     a.group.scale.setScalar(s);
-    return a;
+    return setFootR(a);
   }
   if (kind === 'ghost') {
     const g = new THREE.Group();
@@ -359,7 +390,7 @@ function buildMonster(kind, cfg) {
     a.parts.offHand = new THREE.Group();
     a.parts.legL = a.parts.legR = null;
     a.group.scale.setScalar(s);
-    return a;
+    return setFootR(a);
   }
   if (kind === 'treant') {
     const g = new THREE.Group();
@@ -411,7 +442,7 @@ function buildMonster(kind, cfg) {
     armR.add(a.parts.weaponHand);
     a.parts.offHand = new THREE.Group();
     a.group.scale.setScalar(s);
-    return a;
+    return setFootR(a);
   }
   if (kind === 'golem') {
     const g = new THREE.Group();
@@ -448,7 +479,7 @@ function buildMonster(kind, cfg) {
     armR.add(a.parts.weaponHand);
     a.parts.headG = head;
     a.group.scale.setScalar(s);
-    return a;
+    return setFootR(a);
   }
 
   /* 默认人形（半兽人 / 骷髅 / 妖僧 / Boss） */
@@ -500,7 +531,7 @@ function buildMonster(kind, cfg) {
       }
     }
   }
-  return a;
+  return setFootR(a);
 }
 
 /* ---------------- 纸娃娃：穿上装备 ---------------- */
@@ -801,8 +832,15 @@ function updateActorAnim(a, dt) {
   if (P.armL) { P.armL.rotation.x = armLx; P.armL.rotation.z = armLz; }
   if (P.armR) P.armR.rotation.set(armRx, armRy, armRz);
 
-  P.torso.position.y = 0.92 + tPosY + (moving ? Math.abs(Math.sin(t * 11)) * 0.05 : Math.sin(t * 2.4) * 0.02);
-  P.torso.position.z = tPosZ;
+  /* 通用动画只能写「躯干相对偏移」。若 parts.torso 指向 actor 根 group
+   * （整体建模的怪：蜘蛛 / 血蝠等），写 position 就是改写世界坐标，
+   * 会把 updateEnemies 同步过来的 e.pos 抹掉 —— BOSS「模型和实际位置分家」的根因。
+   * 这里双保险：根节点一律不写 position，只写 rotation。 */
+  if (P.torso !== a.group) {
+    const baseY = a.torsoBaseY === undefined ? 0.92 : a.torsoBaseY;
+    P.torso.position.y = baseY + tPosY + (moving ? Math.abs(Math.sin(t * 11)) * 0.05 : Math.sin(t * 2.4) * 0.02);
+    P.torso.position.z = tPosZ;
+  }
   P.torso.rotation.set(torsoRx, torsoRy, torsoRz);
   if (P.weaponHand) P.weaponHand.rotation.set(handRx, 0, handRz);
 

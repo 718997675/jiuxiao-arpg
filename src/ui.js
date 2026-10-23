@@ -341,6 +341,17 @@ const UI = {
     return null;
   },
 
+  removeItemByRef(ref) {
+    if (!ref || !Game.state) return;
+    const [kind, val] = ref.split(':');
+    if (kind === 'inv') {
+      const idx = parseInt(val);
+      if (idx >= 0) Game.state.inventory.splice(idx, 1);
+    } else if (kind === 'eq') {
+      Game.state.equipment[val] = null;
+    }
+  },
+
   /**
    * 找出「这件装备装上后会替换掉的那一件」。
    *
@@ -389,7 +400,7 @@ const UI = {
     document.getElementById('mpText').textContent = `${cc.res[0]} ${Math.ceil(s.mp)} / ${Math.round(st.mpMax)}`;
     document.getElementById('xpFill').style.width = CLAMP(s.xp / s.xpNext * 100, 0, 100) + '%';
     document.getElementById('goldTxt').textContent = '金 ' + s.gold;
-    document.getElementById('potionTxt').textContent = `红药 ${s.potions.hp} · 蓝药 ${s.potions.mp}`;
+    document.getElementById('potionTxt').textContent = `红药 ${s.potions.hp} · 蓝药 ${s.potions.mp} · 传送石 ${s.teleportStones || 0}`;
     document.getElementById('zoneName').textContent = MAPS[s.mapId].name;
     document.getElementById('vignette').style.opacity = hpP < 35 ? (1 - hpP / 35) * 0.9 : 0;
     this.updateQuestTrack();
@@ -407,13 +418,15 @@ const UI = {
         <span class="cost">${Game.skillCost(sk)}</span><div class="cd"></div></div>`;
     }).join('') +
       `<div class="potion" data-potion="hp"><span class="k">7</span><div class="g">丹</div><div class="n">红药</div></div>
-       <div class="potion blue" data-potion="mp"><span class="k">8</span><div class="g">露</div><div class="n">蓝药</div></div>`;
+       <div class="potion blue" data-potion="mp"><span class="k">8</span><div class="g">露</div><div class="n">蓝药</div></div>
+       <div class="potion" data-tp="1" style="background:rgba(120,160,255,.22);border-color:rgba(120,160,255,.45)"><span class="k">9</span><div class="g">阵</div><div class="n">传送</div></div>`;
 
     bar.querySelectorAll('.skill').forEach(el => {
       el.addEventListener('click', () => Game.castSkill(el.dataset.skill));
     });
     bar.querySelectorAll('.potion').forEach(el => {
-      el.addEventListener('click', () => Game.usePotion(el.dataset.potion));
+      if (el.dataset.potion) el.addEventListener('click', () => Game.usePotion(el.dataset.potion));
+      if (el.dataset.tp) el.addEventListener('click', () => Game.useTeleportStone());
     });
     if (typeof Mobile !== 'undefined' && Mobile.on) Mobile.buildSkills();
   },
@@ -765,6 +778,155 @@ const UI = {
     }));
     this.closeAll(document.getElementById('travelPanel'));
     document.getElementById('travelPanel').classList.add('open');
+  },
+
+  /* ---------------- 炼金师（分解 / 升级） ---------------- */
+  alchemistTab: 'decompose',
+  alchemistRef: null,
+  _alchemistBound: false,
+
+  openDecompose() {
+    this.alchemistTab = 'decompose';
+    this.openAlchemist();
+  },
+  openUpgradeQuality() {
+    this.alchemistTab = 'upgrade';
+    this.openAlchemist();
+  },
+  openAlchemist() {
+    if (!Game.state) return;
+    const p = document.getElementById('alchemistPanel');
+    if (!p) return;
+    this.closeAll(p);
+    p.classList.add('open');
+    this._bindAlchemist();
+    this.renderAlchemist();
+  },
+  _bindAlchemist() {
+    if (this._alchemistBound) return;
+    this._alchemistBound = true;
+    const p = document.getElementById('alchemistPanel');
+    p.querySelectorAll('.ftab').forEach(b => b.addEventListener('click', () => {
+      if (this.alchemistTab === b.dataset.atab) return;
+      this.alchemistTab = b.dataset.atab;
+      this.alchemistRef = null;
+      SFX.ui();
+      this.renderAlchemist();
+    }));
+    document.getElementById('alchemistList').addEventListener('click', e => {
+      const row = e.target.closest('[data-aref]');
+      if (!row || row.dataset.aref === this.alchemistRef) return;
+      this.alchemistRef = row.dataset.aref;
+      SFX.ui();
+      this.renderAlchemist();
+    });
+    document.getElementById('alchemistMain').addEventListener('click', e => {
+      const item = this.itemFromRef(this.alchemistRef);
+      if (!item) return;
+      if (e.target.closest('[data-decompose]')) {
+        const r = Game.decomposeItem(item);
+        if (r.ok) {
+          this.removeItemByRef(this.alchemistRef);
+          this.alchemistRef = null;
+          this.renderAlchemist();
+        } else if (r.msg) UI.log(r.msg, 'bad');
+        return;
+      }
+      if (e.target.closest('[data-upgrade]')) {
+        const r = Game.upgradeItemQuality(item);
+        if (r.ok) this.renderAlchemist();
+        else if (r.msg) UI.log(r.msg, 'bad');
+      }
+    });
+  },
+  _alchemistItems() {
+    const s = Game.state;
+    if (!s) return [];
+    const out = [];
+    const order = ['weapon', 'helm', 'chest', 'shoulders', 'gloves', 'boots', 'belt', 'amulet', 'ring1', 'ring2', 'offhand'];
+    for (const slot of order) {
+      const it = s.equipment[slot];
+      if (it) out.push({ ref: 'eq:' + slot, item: it, where: '已装备' });
+    }
+    s.inventory.forEach((it, i) => { if (it) out.push({ ref: 'inv:' + i, item: it, where: '行囊' }); });
+    return out;
+  },
+  renderAlchemist() {
+    const p = document.getElementById('alchemistPanel');
+    if (!p || !Game.state) return;
+    const s = Game.state;
+    const matTxt = CRYSTAL_TIERS.map((t, i) => `${t.name} <b>${Game.crystalTierCount(i + 1)}</b>`).join('　');
+    document.getElementById('alchemistMat').innerHTML = matTxt;
+    p.querySelectorAll('.ftab').forEach(b => b.classList.toggle('on', b.dataset.atab === this.alchemistTab));
+
+    const all = this._alchemistItems();
+    const list = this.alchemistTab === 'decompose' ? all : all.filter(x => {
+      const r = x.item.rarity;
+      return r === 'common' || r === 'magic' || r === 'rare';
+    });
+    if (!list.some(x => x.ref === this.alchemistRef)) this.alchemistRef = list.length ? list[0].ref : null;
+    const listEl = document.getElementById('alchemistList');
+    listEl.innerHTML = list.length ? list.map(x => {
+      const it = x.item, r = RARITY[it.rarity];
+      return `<div class="fitem ${x.ref === this.alchemistRef ? 'sel' : ''}" data-aref="${x.ref}">
+        <span class="fi" style="color:${r.color};border-color:${r.color}44">${itemIcon(it)}</span>
+        <div style="min-width:0;flex:1">
+          <div class="fn" style="color:${r.color}">${it.name}</div>
+          <div class="fs">${r.name} · ilv${it.ilvl} · ${x.where}</div>
+        </div></div>`;
+    }).join('') : '<div class="fempty">没有符合条件的装备。</div>';
+
+    const item = this.itemFromRef(this.alchemistRef);
+    const main = document.getElementById('alchemistMain');
+    if (!item) {
+      main.innerHTML = '<div class="fempty">从左侧选一件装备。</div>';
+      return;
+    }
+    const r = RARITY[item.rarity];
+    let h = `<div class="fhead">
+      <span class="fi" style="color:${r.color};border-color:${r.color}44">${itemIcon(item)}</span>
+      <div style="min-width:0">
+        <div class="fname" style="color:${r.color}">${item.name}</div>
+        <div class="fsub">${r.name} · ilv${item.ilvl} · ${SLOT_NAME[item.slot] || item.kind}</div>
+      </div></div>`;
+    if (this.alchemistTab === 'decompose') {
+      const y = Game.previewDecompose(item);
+      h += `<div class="hintline">分解后可获得：${y ? y.text : '无'}</div>`;
+      h += `<div style="margin-top:10px"><button class="btn primary" data-decompose="1">确认分解</button></div>`;
+    } else {
+      const chain = ['common', 'magic', 'rare', 'legendary'];
+      const idx = chain.indexOf(item.rarity);
+      if (idx >= 0 && idx < chain.length - 1) {
+        const target = chain[idx + 1];
+        const costs = { common: [10, 0, 0, 0], magic: [0, 15, 0, 0], rare: [0, 0, 25, 0] };
+        const cost = costs[item.rarity];
+        const can = cost.every((n, i) => Game.crystalTierCount(i + 1) >= n);
+        const costTxt = cost.map((n, i) => n ? n + CRYSTAL_TIERS[i].name : '').filter(Boolean).join('、');
+        h += `<div class="hintline">升级至 <b style="color:${RARITY[target].color}">${RARITY[target].name}</b> 需要：${costTxt}</div>`;
+        h += `<div style="margin-top:10px"><button class="btn primary" data-upgrade="1" ${can ? '' : 'disabled'}>确认升级</button></div>`;
+      } else {
+        h += `<div class="hintline">该装备已是最高品质，无法继续升级。</div>`;
+      }
+    }
+    main.innerHTML = h;
+  },
+
+  /* [S3] 筛选出售 */
+  openSellFilter() {
+    const rarities = ['common', 'magic', 'rare'];
+    const names = { common: '凡品', magic: '法器', rare: '珍宝' };
+    const colors = { common: RARITY.common.color, magic: RARITY.magic.color, rare: RARITY.rare.color };
+    UI.showDialog('铁匠·石九', '要出手哪些货色？带符文的装备会先取下符文再卖。', [
+      ...rarities.map(r => ({
+        label: `出售全部 ${names[r]}`,
+        action: () => {
+          Game.sellJunk([r]);
+          UI.closeAll();
+        }
+      })),
+      { label: '出售凡品+法器', action: () => { Game.sellJunk(['common', 'magic']); UI.closeAll(); } },
+      { label: '取消', action: () => UI.closeAll() }
+    ]);
   },
 
   /* ---------------- 消息 ---------------- */

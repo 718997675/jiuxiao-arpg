@@ -875,13 +875,31 @@
     <div class="forge-tabs">
       <button class="ftab on" data-ftab="rune">符 文</button>
       <button class="ftab" data-ftab="reforge">洗 练</button>
+      <button class="ftab" data-ftab="enhance">强 化</button>
       <span class="forge-mat" id="forgeMat"></span>
     </div>
     <div class="forge-body">
       <div class="forge-list" id="forgeList"></div>
       <div class="forge-main" id="forgeMain"></div>
     </div>
-    <div class="hintline">符文镶嵌后即刻生效；洗练只替换选中的那一条词缀，稀有度、孔位与已镶符文不变。符文与玄晶不占背包格。</div>
+    <div class="hintline">符文镶嵌后即刻生效；洗练只替换选中的那一条词缀；强化可为装备扩充额外词缀（上限 3 条）。符文与玄晶不占背包格。</div>
+  </div>
+</div>
+
+<!-- 炼金师 -->
+<div class="panel" id="alchemistPanel">
+  <div class="ph"><h3>炼 金 师</h3><span class="x" onclick="UI.closeAll()">✕</span></div>
+  <div class="pb">
+    <div class="forge-tabs">
+      <button class="ftab on" data-atab="decompose">分 解</button>
+      <button class="ftab" data-atab="upgrade">升 级</button>
+      <span class="forge-mat" id="alchemistMat"></span>
+    </div>
+    <div class="forge-body">
+      <div class="forge-list" id="alchemistList"></div>
+      <div class="forge-main" id="alchemistMain"></div>
+    </div>
+    <div class="hintline">分解装备获得玄晶材料；消耗材料升级装备品质。</div>
   </div>
 </div>
 

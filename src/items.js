@@ -129,7 +129,7 @@ function reforgeCost(item) {
   return Math.round(base * (1 + (item.reforges || 0) * FORGE.reforgeStep));
 }
 
-/* 重 roll 指定词缀：稀有度 / 词缀数量不变，新词缀一定换 key */
+/* 重 roll 指定词缀：稀有度 / 词缀数量不变，新词缀一定换 key，同时重 roll 品质 */
 function reforgeAffix(item, index) {
   if (!item || !Array.isArray(item.affixes)) return null;
   if (index < 0 || index >= item.affixes.length) return null;
@@ -151,6 +151,8 @@ function normalizeItem(item) {
   if (!item || typeof item !== 'object') return null;
   if (!Array.isArray(item.affixes)) item.affixes = [];
   item.affixes = item.affixes.filter(a => a && typeof a.key === 'string' && STATS[a.key] && isFinite(a.val));
+  // 旧档词缀没有 q，补齐为 1
+  for (const a of item.affixes) { if (!a.q) a.q = 1; }
   let n = CLAMP(Math.round(Number(item.sockets) || 0), 0, 4);
   if (item.slot === 'ring' || item.slot === 'amulet') n = 0;
   item.sockets = n;
@@ -167,6 +169,7 @@ function normalizeItem(item) {
     }
   }
   if (!isFinite(item.reforges) || item.reforges < 0) item.reforges = 0;
+  if (!isFinite(item.enhances) || item.enhances < 0) item.enhances = 0;
   return item;
 }
 
@@ -186,9 +189,17 @@ function itemValue(item) {
   return Math.round((12 + item.ilvl * 8) * r * (1 + item.affixes.length * 0.15));
 }
 
-function affixValue(a, ilvl) {
-  const v = RND(a.min, a.max) * (1 + ilvl * 0.055);
+function affixValue(a, ilvl, q) {
+  const quality = q || 1;
+  const mul = quality === 4 ? 1.30 : quality === 3 ? 1.18 : quality === 2 ? 1.08 : 1.0;
+  const v = RND(a.min, a.max) * (1 + ilvl * 0.055) * mul;
   return Math.max(1, Math.round(v));
+}
+
+/* 词缀品质 roll：1-4，权重递减 */
+function rollAffixQuality() {
+  const r = Math.random();
+  return r < 0.58 ? 1 : (r < 0.85 ? 2 : (r < 0.96 ? 3 : 4));
 }
 
 function makeAffix(ilvl, used) {
@@ -199,12 +210,33 @@ function makeAffix(ilvl, used) {
   if (!cand.length) cand = pool;
   const a = PICK(cand);
   used.add(a.key);
-  return { key: a.key, val: affixValue(a, ilvl), pre: a.pre, suf: a.suf, tier: a.tier };
+  const q = rollAffixQuality();
+  return { key: a.key, val: affixValue(a, ilvl, q), pre: a.pre, suf: a.suf, tier: a.tier, q };
+}
+
+/* 强化：给装备直接扩充一条新词缀（上限 FORGE.enhanceMax） */
+function enhanceItem(item) {
+  if (!item || !Array.isArray(item.affixes)) return null;
+  const maxBase = RARITY[item.rarity].affixes || 0;
+  const extra = item.affixes.length - maxBase;
+  if (extra >= FORGE.enhanceMax) return null;
+  const used = new Set(item.affixes.map(a => a && a.key).filter(Boolean));
+  const a = makeAffix(item.ilvl || 1, used);
+  item.affixes.push(a);
+  item.enhances = (item.enhances || 0) + 1;
+  return a;
+}
+
+function enhanceCost(item) {
+  if (!item) return 0;
+  const base = FORGE.enhanceCostBase[item.rarity] || 15;
+  return Math.round(base * (1 + (item.enhances || 0) * FORGE.enhanceStep));
 }
 
 function affixText(a) {
   const s = STATS[a.key];
-  return '+' + a.val + (s.pct ? '%' : '') + ' ' + s.label;
+  const color = AFFIX_QUALITY_COLOR[a.q] || AFFIX_QUALITY_COLOR[1];
+  return `<span style="color:${color}">+${a.val}${s.pct ? '%' : ''} ${s.label}</span>`;
 }
 
 function baseTierFor(slot, ilvl) {
