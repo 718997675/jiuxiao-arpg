@@ -227,11 +227,13 @@ Object.assign(UI, {
       const it = x.item, r = RARITY[it.rarity];
       const maxBase = RARITY[it.rarity].affixes || 0;
       const extra = it.affixes.length - maxBase;
+      const fixedN = (it.fixed || []).length;
+      const fixedTxt = fixedN ? ' · ' + fixedN + ' 条固定' : '';
       const sub = this.forgeTab === 'rune'
         ? `孔 ${(it.runes || []).filter(Boolean).length}/${it.sockets}`
         : (this.forgeTab === 'enhance'
-          ? `${it.affixes.length} 条词缀${extra > 0 ? ' · 已强化 ' + extra : ''}`
-          : `${it.affixes.length} 条词缀${it.reforges ? ' · 洗 ' + it.reforges + ' 次' : ''}`);
+          ? `${it.affixes.length} 条可洗${fixedTxt}${extra > 0 ? ' · 已强化 ' + extra : ''}`
+          : `${it.affixes.length} 条可洗${fixedTxt}${it.reforges ? ' · 洗 ' + it.reforges + ' 次' : ''}`);
       return `<div class="fitem ${x.ref === this.forgeRef ? 'sel' : ''}" data-fref="${x.ref}">
         <span class="fi" style="color:${r.color};border-color:${r.color}44">${itemIcon(it)}</span>
         <div style="min-width:0;flex:1">
@@ -328,10 +330,16 @@ Object.assign(UI, {
         <div class="fname" style="color:${r.color}">${item.name}</div>
         <div class="fsub">${r.name} · ${SLOT_NAME[item.slot] || item.kind} · 已洗练 ${item.reforges || 0} 次</div>
       </div></div>`;
-    h += `<div class="frune-label">词 缀 · 洗练会替换这一条，稀有度 / 孔位 / 符文不变</div>`;
+    h += `<div class="frune-label">词 缀 · 固定词条锁定不动，洗练只作用于下方可洗练词条</div>`;
     if (item.implicit) {
       const s = STATS[item.implicit.key];
       h += `<div class="faff-row"><span class="fa" style="color:#c9b8ff">固有 · +${item.implicit.val}${s.pct ? '%' : ''} ${s.label}</span>
+        <span class="fsub">不可洗练</span></div>`;
+    }
+    /* 固定初始词条：品质自带，洗练 / 强化都碰不到 */
+    for (const a of (item.fixed || [])) {
+      h += `<div class="faff-row faff-fixed">
+        <span class="fa"><span class="faff-tag">固定</span>${affixText(a)}</span>
         <span class="fsub">不可洗练</span></div>`;
     }
     for (let i = 0; i < item.affixes.length; i++) {
@@ -421,10 +429,14 @@ Object.assign(UI, {
         <div class="fname" style="color:${r.color}">${item.name}</div>
         <div class="fsub">${r.name} · ${SLOT_NAME[item.slot] || item.kind} · 已强化 ${extra}/${FORGE.enhanceMax}</div>
       </div></div>`;
-    h += `<div class="frune-label">当前词缀（蓝色 = 强化附加）</div>`;
+    h += `<div class="frune-label">当前词缀（蓝色 = 强化附加，固定词条不参与强化）</div>`;
     if (item.implicit) {
       const s = STATS[item.implicit.key];
       h += `<div class="faff-row"><span class="fa" style="color:#c9b8ff">固有 · +${item.implicit.val}${s.pct ? '%' : ''} ${s.label}</span></div>`;
+    }
+    for (const a of (item.fixed || [])) {
+      h += `<div class="faff-row faff-fixed">
+        <span class="fa"><span class="faff-tag">固定</span>${affixText(a)}</span></div>`;
     }
     for (let i = 0; i < item.affixes.length; i++) {
       const isExtra = i >= maxBase;

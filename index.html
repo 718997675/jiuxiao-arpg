@@ -361,6 +361,10 @@
   .faff-row .btn{padding:4px 12px;font-size:11px;letter-spacing:1px;white-space:nowrap}
   .faff-row .btn:disabled{opacity:.34;cursor:default}
   .faff-row .btn:disabled:hover{border-color:var(--line);background:linear-gradient(180deg,rgba(60,48,28,.9),rgba(20,18,14,.95));color:#d8ccb0}
+  /* 固定初始词条：锁定不可洗，用暗金标签区分 */
+  .faff-fixed .fa{color:#b3a88f}
+  .faff-tag{display:inline-block;margin-right:6px;padding:0 5px;border:1px solid rgba(216,178,90,.42);
+    border-radius:2px;font-size:9.5px;line-height:15px;color:#d8b25a;letter-spacing:.5px;vertical-align:1px}
 
   /* ---------- 定向洗炼 ---------- */
   .ftarget-box{margin-top:10px;padding:10px 10px 4px;border:1px solid rgba(216,178,90,.28);border-radius:3px;
@@ -502,6 +506,11 @@
   /* 传世（Unique） */
   .tt-lore{font-size:10.5px;color:#9a8f78;font-style:italic;line-height:1.6;margin-top:4px}
   .tt-uaff{font-size:12px;color:#f0c878;line-height:1.6}
+  /* 固定初始词条：与可洗练词条视觉分开，右侧暗金小标签 */
+  .tt-faff{font-size:12px;color:#cdc2a6;line-height:1.6}
+  .tt-faff-tag{display:inline-block;margin-right:6px;padding:0 5px;border:1px solid rgba(216,178,90,.4);
+    border-radius:2px;font-size:9px;line-height:14px;color:#d8b25a;letter-spacing:.5px;vertical-align:1px}
+  .tt-aff-sep{height:1px;margin:5px 0 4px;background:linear-gradient(90deg,rgba(216,178,90,.30),rgba(216,178,90,0))}
   .tt-unq{margin-top:6px;border-top:1px dashed rgba(217,164,65,.3);padding-top:5px}
   .tt-trait{font-size:11px;line-height:1.7;color:#c8b088}
   .tt-trait b{color:#e8c878;font-weight:600;margin-right:5px}

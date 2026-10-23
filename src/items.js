@@ -208,9 +208,12 @@ function craftSetItem(item, setId) {
   item.setName = set.name;
   item.name = set.pieces[idx] || set.pieces[0];
   item.cls = set.cls || null;
+  /* 套装档位的固定词条数可能比原品质多，补到应有的条数 */
+  fillFixedAffixes(item);
   /* 词缀全保留（玩家投入的洗练/强化不白费），不足 3 条补足 */
   const used = new Set();
   (item.affixes || []).forEach(a => { if (a && a.key) used.add(a.key); });
+  for (const fa of (item.fixed || [])) if (fa && fa.key) used.add(fa.key);
   while ((item.affixes || []).length < 3) {
     const a = makeAffix(item.ilvl || 1, used);
     if (!a) break;
@@ -225,6 +228,8 @@ function reforgeAffix(item, index) {
   if (!item || !Array.isArray(item.affixes)) return null;
   if (index < 0 || index >= item.affixes.length) return null;
   const used = new Set();
+  /* 固定词条洗不动，但它们的 key 已被占用，新词条不能重复 */
+  for (const fa of (item.fixed || [])) if (fa && fa.key) used.add(fa.key);
   item.affixes.forEach((a, i) => {
     if (i === index) return;
     if (a && a.key) used.add(a.key);
@@ -286,6 +291,8 @@ function upgradeAffix(item, index) {
 function reforgeTargets(item, index) {
   if (!item || !Array.isArray(item.affixes) || index < 0 || index >= item.affixes.length) return [];
   const usedElsewhere = new Set();
+  /* 固定词条同样占 key：不能把目标洗成和固定词条重复的属性 */
+  for (const fa of (item.fixed || [])) if (fa && fa.key) usedElsewhere.add(fa.key);
   item.affixes.forEach((a, i) => { if (i !== index && a && a.key) usedElsewhere.add(a.key); });
   return AFFIXES.filter(a => !usedElsewhere.has(a.key));
 }
@@ -318,6 +325,13 @@ function normalizeItem(item) {
   item.affixes = item.affixes.filter(a => a && typeof a.key === 'string' && STATS[a.key] && isFinite(a.val));
   // 旧档词缀没有 q，补齐为 1
   for (const a of item.affixes) { if (!a.q) a.q = 1; }
+  /* 固定初始词条：校验 + 旧档按品质补齐。
+   * v1.1.6 之前的存档压根没有 fixed 字段，这里补上，
+   * 让「品质决定固定词条数」的规则对老装备同样成立。 */
+  if (!Array.isArray(item.fixed)) item.fixed = [];
+  item.fixed = item.fixed.filter(a => a && typeof a.key === 'string' && STATS[a.key] && isFinite(a.val));
+  for (const a of item.fixed) { if (!a.q) a.q = 1; a.fixed = true; }
+  fillFixedAffixes(item);
   let n = CLAMP(Math.round(Number(item.sockets) || 0), 0, FORGE.drillMax);
   if (item.slot === 'ring' || item.slot === 'amulet') n = 0;
   item.sockets = n;
@@ -351,6 +365,7 @@ function tierIndex(ilvl) { return CLAMP(Math.floor((ilvl - 1) / 8), 0, 4); }
 function itemPower(item) {
   let s = 0;
   if (item.implicit) s += item.implicit.val * (STATS[item.implicit.key].pct ? 1.6 : 0.6);
+  for (const a of (item.fixed || [])) s += a.val * (STATS[a.key].pct ? 1.6 : 0.5);
   for (const a of item.affixes) s += a.val * (STATS[a.key].pct ? 1.6 : 0.5);
   if (item.baseDmg) s += (item.baseDmg[0] + item.baseDmg[1]) * 1.4;
   if (item.baseArmor) s += item.baseArmor * 0.9;
@@ -359,7 +374,8 @@ function itemPower(item) {
 
 function itemValue(item) {
   const r = { common: 1, magic: 1.8, rare: 3, legendary: 6, set: 5, unique: 10 }[item.rarity];
-  return Math.round((12 + item.ilvl * 8) * r * (1 + item.affixes.length * 0.15));
+  const n = (item.affixes ? item.affixes.length : 0) + (item.fixed ? item.fixed.length : 0);
+  return Math.round((12 + item.ilvl * 8) * r * (1 + n * 0.15));
 }
 
 function affixValue(a, ilvl, q) {
@@ -389,6 +405,54 @@ function makeAffix(ilvl, used) {
   return { key: a.key, val: affixValue(a, ilvl, q), pre: a.pre, suf: a.suf, tier: a.tier, q };
 }
 
+/* ---------------- 固定初始词条（v1.1.6） ----------------
+ * 每件装备按品质自带若干条「固定词条」（条数见 RARITY[x].fixed）：
+ * 洗练 / 强化 / 改为指定词条都碰不到它们，是这件装备的底子。
+ * 与可洗练词条（item.affixes）分两个独立数组存放，只在属性汇总时合并。
+ * 传世（unique）不参与：它的固定词条走 uniqueStats，避免双重计算。 */
+function fixedAffixCount(item) {
+  if (!item) return 0;
+  if (item.rarity === 'unique') return 0;
+  const r = RARITY[item.rarity];
+  return (r && r.fixed) || 0;
+}
+
+function itemFixed(item) {
+  if (!item) return [];
+  if (!Array.isArray(item.fixed)) item.fixed = [];
+  return item.fixed;
+}
+
+/* 生成一条固定词条：走和随机词条同一套池子，但数值打 FORGE.fixedMul 折 */
+function makeFixedAffix(ilvl, used) {
+  const a = makeAffix(ilvl, used);
+  if (!a) return null;
+  const mul = (typeof FORGE !== 'undefined' && FORGE.fixedMul) || 0.6;
+  a.val = Math.max(1, Math.round(a.val * mul));
+  a.fixed = true;
+  return a;
+}
+
+/* 把固定词条补到品质应有的条数。
+ * 旧存档迁移与品质提升共用，返回补了几条。 */
+function fillFixedAffixes(item) {
+  if (!item) return 0;
+  const want = fixedAffixCount(item);
+  const list = itemFixed(item);
+  if (list.length >= want) return 0;
+  const used = new Set();
+  for (const a of (item.affixes || [])) if (a && a.key) used.add(a.key);
+  for (const a of list) if (a && a.key) used.add(a.key);
+  let added = 0;
+  while (list.length < want) {
+    const a = makeFixedAffix(item.ilvl || 1, used);
+    if (!a) break;
+    list.push(a);
+    added++;
+  }
+  return added;
+}
+
 /* 强化：给装备直接扩充一条新词缀（上限 FORGE.enhanceMax） */
 function enhanceItem(item) {
   if (!item || !Array.isArray(item.affixes)) return null;
@@ -396,6 +460,7 @@ function enhanceItem(item) {
   const extra = item.affixes.length - maxBase;
   if (extra >= FORGE.enhanceMax) return null;
   const used = new Set(item.affixes.map(a => a && a.key).filter(Boolean));
+  for (const fa of (item.fixed || [])) if (fa && fa.key) used.add(fa.key);
   const a = makeAffix(item.ilvl || 1, used);
   item.affixes.push(a);
   item.enhances = (item.enhances || 0) + 1;
@@ -542,11 +607,19 @@ function rollItem(ilvl, opts = {}) {
   item.sockets = rollSocketCount(slot, item.rarity);
   item.runes = item.sockets ? new Array(item.sockets).fill(null) : [];
 
-  /* ---- 词缀 ---- */
+  /* ---- 词缀 ----
+   * 先生成固定初始词条（条数由品质决定），再生成可洗练词条。
+   * 两者共用一个 used 集合，所以同一件装备不会出现重复 key。 */
   let count = RARITY[item.rarity].affixes;
   if (item.rarity === 'rare' && CHANCE(0.5)) count = 4;
   if (item.rarity === 'set') count = 3 + (CHANCE(0.4) ? 1 : 0);
   const used = new Set();
+  item.fixed = [];
+  const fixedCount = RARITY[item.rarity].fixed || 0;
+  for (let i = 0; i < fixedCount; i++) {
+    const fa = makeFixedAffix(ilvl, used);
+    if (fa) item.fixed.push(fa);
+  }
   for (let i = 0; i < count; i++) item.affixes.push(makeAffix(ilvl, used));
 
   /* ---- 命名 ---- */
@@ -585,6 +658,8 @@ function sumItemStats(item, out) {
   if (item.baseArmor) out.def += item.baseArmor;
   /* 基底固有属性：S1 新增，全槽通用 */
   if (item.implicit) out[item.implicit.key] = (out[item.implicit.key] || 0) + item.implicit.val;
+  /* 固定初始词条与可洗练词条分开存放，只在汇总时合并 */
+  for (const a of (item.fixed || [])) out[a.key] = (out[a.key] || 0) + a.val;
   for (const a of item.affixes) out[a.key] = (out[a.key] || 0) + a.val;
   /* S2 符文：单个符文的属性 */
   for (const rid of itemRunes(item)) {
@@ -830,6 +905,8 @@ function itemStatMap(item) {
   }
   if (item.baseArmor) m._armor = item.baseArmor;
   if (item.implicit) m[item.implicit.key] = (m[item.implicit.key] || 0) + item.implicit.val;
+  /* 固定词条同样参与评分，否则带固定词条的装备会被算低 */
+  for (const a of (item.fixed || [])) m[a.key] = (m[a.key] || 0) + a.val;
   for (const a of (item.affixes || [])) m[a.key] = (m[a.key] || 0) + a.val;
   /* 传世固定词条与特性也要参与评分，否则传世会被算得比同数值的玄品还低 */
   if (item.uniqueStats) for (const k in item.uniqueStats) m[k] = (m[k] || 0) + item.uniqueStats[k];
@@ -937,6 +1014,14 @@ function itemTooltip(item, opts = {}) {
       h += `<div class="tt-uaff">+${item.uniqueStats[k]}${s.pct ? '%' : ''} ${s.label}</div>`;
     }
   }
+  /* 固定初始词条：洗练 / 强化都改不动，单独一段并打「固定」标记 */
+  if (item.fixed && item.fixed.length) {
+    for (const a of item.fixed) {
+      h += `<div class="tt-faff"><span class="tt-faff-tag">固定</span>${affixText(a)}</div>`;
+    }
+    if (item.affixes && item.affixes.length) h += `<div class="tt-aff-sep"></div>`;
+  }
+  /* 可洗练词条 */
   for (const a of item.affixes) {
     h += `<div class="tt-aff">${affixText(a)}</div>`;
   }

@@ -3323,8 +3323,9 @@ const Game = {
     const label = (STATS[targetKey] || {}).label || targetKey;
     const cur = item.affixes[index];
     if (cur && cur.key === targetKey) return { ok: false, msg: '这条词缀已经是「' + label + '」了。', already: true };
-    /* 同装备不会出重复词条：其他位已占用同一 key 时永远洗不出来 */
-    const clash = item.affixes.some((a, i) => i !== index && a && a.key === targetKey);
+    /* 同装备不会出重复词条：其他位与固定词条已占用同一 key 时永远洗不出来 */
+    const clash = item.affixes.some((a, i) => i !== index && a && a.key === targetKey)
+      || (item.fixed || []).some(a => a && a.key === targetKey);
     if (clash) return { ok: false, msg: '其他词缀位已有「' + label + '」，同装备不重复，换个目标吧。' };
 
     const MAX_TRY = 500;   // 安全阀：费用逐次 +35%，正常会先被玄晶耗尽拦住
@@ -3449,14 +3450,16 @@ const Game = {
       }
     }
     for (let i = 0; i < 4; i++) this.addCrystalTier(i + 1, -cost[i]);
-    // 升级稀有度，补齐词缀数量
+    // 升级稀有度，补齐可洗练词条数量，并按新品质补齐固定词条
     const oldRarity = item.rarity;
     item.rarity = target;
     const wantAffixes = RARITY[target].affixes;
     const used = new Set(item.affixes.map(a => a.key));
+    for (const fa of (item.fixed || [])) if (fa && fa.key) used.add(fa.key);
     while (item.affixes.length < wantAffixes) {
       item.affixes.push(makeAffix(item.ilvl || 1, used));
     }
+    fillFixedAffixes(item);
     // 重新 roll 基底数值
     if (item.baseArmor) {
       const mul = RARITY[target].mul / RARITY[oldRarity].mul;

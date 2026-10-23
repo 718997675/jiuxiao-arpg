@@ -545,5 +545,9 @@ const FORGE = {
   drillCost: [14, 20, 28, 38, 50],  // 打出第 N+1 个孔的玄晶价（索引 = 当前孔数）
   /* 套装打造：把属性满意的装备打造成指定套装的对应件。
    * crystal 按「凡/灵/玄/神」四级索引；金币随 ilvl 上浮。 */
-  setCraft: { crystal: [0, 0, 10, 4], goldBase: 3000, goldPerIlvl: 250 }
+  setCraft: { crystal: [0, 0, 10, 4], goldBase: 3000, goldPerIlvl: 250 },
+  /* 固定初始词条：品质决定条数（见 RARITY[x].fixed），数值按此系数打折。
+   * 它们洗不动，等于装备的「底子」，所以数值压到可洗词条的 6 折，
+   * 免得高品质装备一掉出来就顶掉玩家辛苦洗出来的属性。 */
+  fixedMul: 0.6
 };

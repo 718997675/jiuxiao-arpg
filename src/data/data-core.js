@@ -16,15 +16,20 @@ function shuffle(a) { a = a.slice(); for (let i = a.length - 1; i > 0; i--) { co
 function fmt(n) { return n >= 10000 ? (n / 10000).toFixed(1) + '万' : Math.round(n).toString(); }
 function pct(n) { return Math.round(n) + '%'; }
 
-/* ---------------- 稀有度 ---------------- */
+/* ---------------- 稀有度 ----------------
+ * affixes = 可洗练词条数（洗练 / 强化 / 换词条都作用在这一组）
+ * fixed   = 固定初始词条数（品质越高越多，任何锻造操作都不会改动它）
+ * 两者相互独立，数值汇总时才合并。
+ */
 const RARITY = {
-  common: { key: 'common', name: '凡品', color: '#cfcfd6', mul: 1.0, affixes: 0, weight: 46 },
-  magic: { key: 'magic', name: '灵品', color: '#67a9ff', mul: 1.12, affixes: 2, weight: 30 },
-  rare: { key: 'rare', name: '玄品', color: '#ffc857', mul: 1.28, affixes: 3, weight: 15 },
-  legendary: { key: 'legendary', name: '神兵', color: '#ff7a3c', mul: 1.55, affixes: 4, weight: 6 },
-  set: { key: 'set', name: '套装', color: '#5ce08a', mul: 1.42, affixes: 3, weight: 3 },
-  /* 传世：固定名字 + 固定词条 + 特性 + 技能效果，可重复掉落 */
-  unique: { key: 'unique', name: '传世', color: '#d9a441', mul: 1.7, affixes: 0, weight: 2 }
+  common: { key: 'common', name: '凡品', color: '#cfcfd6', mul: 1.0, affixes: 0, fixed: 0, weight: 46 },
+  magic: { key: 'magic', name: '灵品', color: '#67a9ff', mul: 1.12, affixes: 2, fixed: 1, weight: 30 },
+  rare: { key: 'rare', name: '玄品', color: '#ffc857', mul: 1.28, affixes: 3, fixed: 2, weight: 15 },
+  legendary: { key: 'legendary', name: '神兵', color: '#ff7a3c', mul: 1.55, affixes: 4, fixed: 3, weight: 6 },
+  set: { key: 'set', name: '套装', color: '#5ce08a', mul: 1.42, affixes: 3, fixed: 2, weight: 3 },
+  /* 传世：固定名字 + 固定词条 + 特性 + 技能效果，可重复掉落
+   * 传世的「固定词条」走 uniqueStats，不再叠加 fixed，避免双重计算 */
+  unique: { key: 'unique', name: '传世', color: '#d9a441', mul: 1.7, affixes: 0, fixed: 0, weight: 2 }
 };
 
 /* ---------------- 属性定义 ----------------
