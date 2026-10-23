@@ -417,18 +417,21 @@ const FX = {
     if (style === 'talisman') {
       /* 符咒：一张竖长符纸 + 背后一层加色光晕。
        * 符纸始终朝向相机（billboard），旋转量只有绕视线的一点摆动，
-       * 这样无论从哪个角度看都能看清「这是一道符」，不会变成一条线。 */
+       * 这样无论从哪个角度看都能看清「这是一道符」，不会缩成一条线。
+       *
+       * 尺寸按角色身高反推：主角约 1.8 单位高，符纸取 0.64 高（约三分之一身）。
+       * 原先是 1.03 高，飞起来像举着一面幡，挡视野也挡怪物。 */
       const scl = opts.scale || 1;
       mat = new THREE.MeshBasicMaterial({
         map: talismanTexture(), transparent: true, opacity: 1,
         depthWrite: false, side: THREE.DoubleSide
       });
-      m = new THREE.Mesh(fxPlane(0.62 * scl, 1.03 * scl), mat);
+      m = new THREE.Mesh(fxPlane(0.40 * scl, 0.64 * scl), mat);
       haloMat = new THREE.MeshBasicMaterial({
         color: col, transparent: true, opacity: 0.42,
         blending: THREE.AdditiveBlending, depthWrite: false
       });
-      const glow = new THREE.Mesh(fxPlane(1.5 * scl, 2.0 * scl), haloMat);
+      const glow = new THREE.Mesh(fxPlane(0.72 * scl, 0.98 * scl), haloMat);
       glow.position.z = -0.01;
       m.add(glow);
     } else {

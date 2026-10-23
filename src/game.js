@@ -26,9 +26,25 @@ function segCircleT(a, b, cx, cz, r) {
   return (t >= 0 && t <= 1) ? t : -1;
 }
 
+/* ---------------- 同屏怪物上限（v1.0.5） ----------------
+ *
+ * 实测（dev/stress-mobs.js，1280×800）：
+ *   0 只 218 calls / 30 只 719 / 60 只 1194 / 100 只 2008 / 160 只 3209
+ * 每只怪约 17~19 个 draw call，而几何体与纹理数量全程不变（175 / 10）——
+ * 说明**不是显存泄漏，是 draw call 顶穿**。手机 GPU 上三千多个 call 再加阴影 pass，
+ * 足以让驱动重置上下文，表现就是「怪物一多就闪退」。
+ *
+ * 所以数量本身必须封顶：普通地图只刷 14~18 只，上限留足余量；触屏再压一档。
+ * Boss 不受限（一场只有一只），但它召唤的杂兵单独封顶。
+ */
+const MOB_CAP_PC = 36;
+const MOB_CAP_TOUCH = 28;
+const SUMMON_CAP = 8;
+/* 超出这个距离的怪只跑 AI、不参与渲染（draw call 是唯一瓶颈，AI 很便宜） */
+const MOB_CULL_DIST = 62;
+
 const BOSS_POS = {
-  treeking: [28, -26], batking: [-30, -22],
-  chief: [34, 26], golemking: [-36, 24], snakequeen: [0, -36],
+  treeking: [28, -26], batking: [-30, -22],  chief: [34, 26], golemking: [-36, 24], snakequeen: [0, -36],
   ghostlord: [30, 30], firegeneral: [-32, 28], icequeen: [0, -34],
   spidermother: [30, 30], ferryman: [-32, 30], swordlord: [0, -32],
   chaos: [0, -30]
@@ -491,9 +507,18 @@ const Game = {
   spawnEnemy(kind, x, z, elite, levelOverride, bossId) {
     const cfg = bossId ? BOSSES[bossId] : MONSTERS[kind];
     if (!cfg) return null;
+    const isBoss = !!bossId;
+    /* [v1.0.5] 同屏普通怪硬上限：超过就不再生成（调用方都已处理 null）。
+     * 不做这个检查的话，Boss 的 summon 会每几秒往场上塞 2~4 只且永不回收，
+     * 一场持久战下来能堆到一百多只，draw call 直接顶穿手机 GPU。 */
+    if (!isBoss) {
+      const cap = IS_TOUCH ? MOB_CAP_TOUCH : MOB_CAP_PC;
+      let alive = 0;
+      for (const e of this.enemies) if (!e.dead && !e.boss) alive++;
+      if (alive >= cap) return null;
+    }
     const mapLv = MAPS[this.state.mapId].level;
     const lvl = levelOverride || (mapLv + RNDI(-1, 2));
-    const isBoss = !!bossId;
     const scale = cfg.scale || 1;
     const a = buildMonster(cfg.model || 'humanoid', {
       scale: scale * (elite ? 1.12 : 1) * (isBoss ? 1 : 1.0),
@@ -607,6 +632,20 @@ const Game = {
   /* ======================================================= */
   animate() {
     requestAnimationFrame(() => this.animate());
+    /* [v1.0.5] 单帧异常兜底。
+     * 以前 update() 里抛一次异常，后面的 renderer.render 就不会执行：
+     * 画面定格在上一帧、HUD 不再变化，玩家看到的就是「卡死 / 闪退」，
+     * 而且每帧都在同一个地方抛，永远恢复不了。
+     * 现在把整帧包起来，异常限频上报，并且仍然尝试把上一帧的画面渲染出来。 */
+    try {
+      this.tickFrame();
+    } catch (err) {
+      this.onFrameError(err);
+      try { this.renderer.render(this.scene, this.camera); } catch (e) { /* 场景已损坏，下一帧再试 */ }
+    }
+  },
+
+  tickFrame() {
     const raw = Math.min(this.clock.getDelta(), 0.06);
     let dt = raw;
     if (this.hitstop > 0) { this.hitstop -= raw * 1000; dt = raw * 0.1; }
@@ -630,6 +669,17 @@ const Game = {
     }
     this.renderer.render(this.scene, this.camera);
     this.tickPerf(raw);
+  },
+
+  /* 限频上报：同一个错误每 5 秒最多提示一次，否则控制台会被刷爆 */
+  onFrameError(err) {
+    const now = Date.now();
+    this._errCount = (this._errCount || 0) + 1;
+    if (!this._errAt || now - this._errAt > 5000) {
+      this._errAt = now;
+      console.error('[帧异常 x' + this._errCount + ']', err);
+      try { UI.toast('运行异常已捕获，游戏继续', 'bad'); } catch (e) { /* UI 还没初始化 */ }
+    }
   },
 
   /* ---------------- 自适应画质 ---------------- *
@@ -1340,7 +1390,7 @@ const Game = {
           ? new THREE.Vector3(target.pos.x - pp.x, 0, target.pos.z - pp.z).normalize()
           : new THREE.Vector3(dir.x, 0, dir.z).normalize();
         FX.projectile({
-          pos: start, dir: tdir, speed: 17, color: 0xffd24a, radius: 0.3, hitRadius: 0.55,
+          pos: start, dir: tdir, speed: 17, color: 0xffd24a, radius: 0.3, hitRadius: 0.45,
           team: 'player', style: 'talisman', life: 2.0, trail: true, tag: 'proj',
           homing: target ? target.pos : null, homeTurn: 9,
           onHit: (e, proj) => {
@@ -1749,6 +1799,14 @@ const Game = {
       }
 
       const d = DIST2D(e.pos, pp);
+      /* [v1.0.5] 远处的怪只跑 AI、不参与渲染。
+       * 一只怪 17~19 个 draw call（模型 + 武器 + 血条 + 阴影），
+       * 隐掉二十只等于白捡三百多个 call，而 AI 本身几乎不花钱。 */
+      const culled = d > MOB_CULL_DIST;
+      if (culled !== !!e.culled) {
+        e.culled = culled;
+        a.group.visible = !culled;
+      }
       const spd = e.spd * (1 - e.slow) * (e.boss ? (1 + e.phase * 0.12) : 1);
 
       if (e.boss && !e.active) {
@@ -1998,6 +2056,15 @@ const Game = {
         break;
       }
       case 'summon': {
+        /* [v1.0.5] 召唤物按「身边已有多少」封顶。
+         * 全局 MOB_CAP 只保证不炸机，但 Boss 每 3 秒往身边塞 3~4 只，
+         * 十几秒就能把场地挤满，玩家除了跑没别的选择。 */
+        let near = 0;
+        for (const o of this.enemies) {
+          if (o.dead || o.boss) continue;
+          if (DIST2D(o.pos, e.pos) < 16) near++;
+        }
+        if (near >= SUMMON_CAP) break;
         const kind = PICK(MAPS[this.state.mapId].spawns || ['bat']);
         for (let i = 0; i < 2 + e.phase; i++) {
           const ang = Math.random() * 6.28, r = 4;
@@ -2459,10 +2526,13 @@ const Game = {
     const m = MAPS[this.state.mapId];
     if (m.safe || !m.spawns) return;
     this.mobTimer = (this.mobTimer || 0) + dt;
-    const alive = this.enemies.filter(e => !e.dead && !e.boss).length;
+    /* 先判时间再数怪：原来每帧都 filter 一遍，怪多的时候等于每帧白扔一个数组 */
+    if (this.mobTimer <= 14) return;
+    this.mobTimer = 0;      // 不论这次刷没刷成功都重新计时，避免满员后每帧都数一遍
+    let alive = 0;
+    for (const e of this.enemies) if (!e.dead && !e.boss) alive++;
     const cap = m.spawnCount || 14;
-    if (this.mobTimer > 14 && alive < cap * 0.7) {
-      this.mobTimer = 0;
+    if (alive < cap * 0.7) {
       const n = Math.min(3, cap - alive);
       for (let i = 0; i < n; i++) {
         const ang = Math.random() * 6.28, r = RND(22, m.size * 0.44);
