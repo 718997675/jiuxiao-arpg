@@ -3438,6 +3438,9 @@ const Game = {
   /* [S3] 升级装备品质：common→magic→rare→legendary */
   upgradeItemQuality(item) {
     if (!item) return { ok: false, msg: '没有可升级的装备。' };
+    /* 传世是最终装备，套装由打造产出，两者都不走品质升级链 */
+    if (item.rarity === 'unique') return { ok: false, msg: '传世是最终装备，已是装备链终点，无法再提升品质。' };
+    if (item.rarity === 'set') return { ok: false, msg: '套装由打造产出，不走品质升级。' };
     const chain = ['common', 'magic', 'rare', 'legendary'];
     const idx = chain.indexOf(item.rarity);
     if (idx < 0 || idx >= chain.length - 1) return { ok: false, msg: '该装备已是最高品质，无法继续升级。' };
@@ -3457,7 +3460,7 @@ const Game = {
     const used = new Set(item.affixes.map(a => a.key));
     for (const fa of (item.fixed || [])) if (fa && fa.key) used.add(fa.key);
     while (item.affixes.length < wantAffixes) {
-      item.affixes.push(makeAffix(item.ilvl || 1, used));
+      item.affixes.push(makeAffix(item.ilvl || 1, used, item.affixCls || item.cls, item.slot));
     }
     fillFixedAffixes(item);
     // 重新 roll 基底数值

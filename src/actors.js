@@ -543,7 +543,7 @@ function clearGroup(g) { while (g.children.length) g.remove(g.children[0]); }
 
 function rarityGlow(item) {
   if (!item) return null;
-  if (item.rarity === 'unique') return 0xd9a441;
+  if (item.rarity === 'unique') return 0xff3b3b;
   if (item.rarity === 'legendary') return 0xff7a3c;
   if (item.rarity === 'set') return 0x5ce08a;
   if (item.rarity === 'rare') return 0xffc857;

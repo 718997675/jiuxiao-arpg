@@ -281,6 +281,91 @@ const AFFIXES = [
   { key: 'cdrFlat', pre: ['顿悟的', '无碍的'], suf: ['· 顿悟', '· 无碍'], min: 1, max: 2, tier: 3 }
 ];
 
+/* ---------------- 词条的职业 / 部位适配（v1.1.7） ----------------
+ * 同一部位、不同职业的装备，词条池不同 —— 战士的胸甲不会洗出「灵力」，
+ * 法师的胸甲不会洗出「力量」，武器不出纯防御，首饰不出近战专精。
+ * 词条内容因此不通用，且贴合各职业定位。
+ *
+ * 用**排除法**而非白名单：新增词条默认对所有职业 / 部位开放，只有明确不合用的
+ * 才登记进来。白名单漏登记会让新词条永远不出现，排除法漏登记只是宽松一点。
+ *
+ * cls 为 null（通用装备）时不做职业过滤，保持万金油定位。
+ * slot 不在 AFFIX_SLOT_GROUP 里时不做部位过滤。
+ */
+const AFFIX_CLS_DENY = {
+  /* 战士：力量 / 近战 / 暴击 / 护甲 / 反伤。灵力、法术、召唤、持续伤害与冷却类一概不出 */
+  warrior: [
+    'int', 'mp', 'mpPct', 'mpReg', 'mpOnHit', 'mpOnKill',
+    'skillDmg', 'summonDmg', 'projDmg', 'aoeDmg', 'dotDmg',
+    'cdr', 'cdrFlat', 'costReduce', 'healBonus', 'shieldBonus',
+    'freezeChance', 'burnChance', 'slowChance'
+  ],
+  /* 法师：灵力 / 雷火范围 / 冷却 / 护盾。力量、近战、格挡、吸血一概不出 */
+  mage: [
+    'str', 'meleeDmg', 'thorns', 'block', 'knockback', 'armorPen',
+    'firstStrike', 'aspdOnCrit', 'overkillShield',
+    'lifesteal', 'hpOnHit', 'killHeal', 'summonDmg', 'dotDmg', 'healBonus'
+  ],
+  /* 道士：灵力 / 毒雾持续 / 召唤 / 自愈。力量、近战、格挡、纯爆发范围一概不出 */
+  taoist: [
+    'str', 'meleeDmg', 'thorns', 'block', 'knockback', 'armorPen',
+    'firstStrike', 'aspdOnCrit', 'overkillShield',
+    'aoeDmg', 'freezeChance', 'burnChance', 'shieldBonus'
+  ]
+};
+
+const AFFIX_SLOT_GROUP = {
+  weapon: 'weapon', offhand: 'weapon',
+  helm: 'armor', chest: 'armor', shoulders: 'armor',
+  gloves: 'armor', boots: 'armor', belt: 'armor',
+  amulet: 'jewel', ring: 'jewel'
+};
+
+const AFFIX_SLOT_DENY = {
+  /* 武器 / 副手：出伤害与命中，不出纯防御与回复 */
+  weapon: [
+    'def', 'armorPct', 'dmgReduce', 'block', 'dodge', 'thorns',
+    'hpPct', 'hpRegen', 'ccResist', 'shieldBonus', 'overkillShield',
+    'physRes', 'fireRes', 'iceRes', 'poisonRes', 'allRes'
+  ],
+  /* 六件防具：出防御与生存，不出武器专精（穿甲 / 暴伤 / 斩杀 / 吸血） */
+  armor: [
+    'armorPen', 'critDmg', 'executeDmg', 'firstStrike', 'aspdOnCrit',
+    'lifesteal', 'killHeal', 'minDmg'
+  ],
+  /* 项链 / 戒指：出稀有属性，不出大面积伤害与防御 */
+  jewel: [
+    'def', 'armorPct', 'dmgReduce', 'block', 'thorns', 'hpPct',
+    'meleeDmg', 'projDmg', 'aoeDmg', 'dotDmg', 'summonDmg',
+    'armorPen', 'shieldBonus', 'overkillShield'
+  ]
+};
+
+/* 过滤后少于这个数就放弃过滤：宁可宽松，也不让某个职业/部位的池子枯竭 */
+const AFFIX_POOL_MIN = 10;
+
+/* 通用装备（基底不绑职业，cls 为 null）用三职业的**排除并集**：
+ * 只出人人都能用的中性词条（生命 / 防御 / 抗性 / 暴击 / 通用增伤）。
+ * 否则通用胸甲可能掉出「力量」，法师穿着就是废词条。 */
+const AFFIX_UNIVERSAL_DENY = (function () {
+  const s = new Set();
+  for (const c in AFFIX_CLS_DENY) for (const k of AFFIX_CLS_DENY[c]) s.add(k);
+  return Array.from(s);
+})();
+
+function affixSlotGroup(slot) {
+  return AFFIX_SLOT_GROUP[slot] || null;
+}
+
+/* 取某职业某部位的可用词条池；cls 为 null 时按通用中性池 */
+function affixPool(cls, slot) {
+  const dc = cls ? (AFFIX_CLS_DENY[cls] || []) : AFFIX_UNIVERSAL_DENY;
+  const dg = AFFIX_SLOT_DENY[affixSlotGroup(slot)] || [];
+  if (!dc.length && !dg.length) return AFFIXES;
+  const out = AFFIXES.filter(a => dc.indexOf(a.key) < 0 && dg.indexOf(a.key) < 0);
+  return out.length >= AFFIX_POOL_MIN ? out : AFFIXES;
+}
+
 /* ---------------- 套装 ---------------- */
 const SETS = {
   qinglong: {

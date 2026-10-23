@@ -215,7 +215,7 @@ function craftSetItem(item, setId) {
   (item.affixes || []).forEach(a => { if (a && a.key) used.add(a.key); });
   for (const fa of (item.fixed || [])) if (fa && fa.key) used.add(fa.key);
   while ((item.affixes || []).length < 3) {
-    const a = makeAffix(item.ilvl || 1, used);
+    const a = makeAffix(item.ilvl || 1, used, item.affixCls || item.cls, item.slot);
     if (!a) break;
     item.affixes.push(a);
     used.add(a.key);
@@ -236,7 +236,7 @@ function reforgeAffix(item, index) {
   });
   const old = item.affixes[index];
   if (old && old.key) used.add(old.key);
-  const a = makeAffix(item.ilvl || 1, used);
+  const a = makeAffix(item.ilvl || 1, used, item.affixCls || item.cls, item.slot);
   item.affixes[index] = a;
   item.reforges = (item.reforges || 0) + 1;
   return a;
@@ -321,6 +321,8 @@ function estimateTargetedReforge(item, index, affixDef) {
 /* 旧档 / 导入档的物品整形：孔位、符文、词缀、固有属性都要能被信任 */
 function normalizeItem(item) {
   if (!item || typeof item !== 'object') return null;
+  /* v1.1.7：词条职业倾向，旧档没有就留空（走中性池） */
+  if (item.affixCls && typeof CLASSES !== 'undefined' && !CLASSES[item.affixCls]) item.affixCls = null;
   if (!Array.isArray(item.affixes)) item.affixes = [];
   item.affixes = item.affixes.filter(a => a && typeof a.key === 'string' && STATS[a.key] && isFinite(a.val));
   // 旧档词缀没有 q，补齐为 1
@@ -391,8 +393,11 @@ function rollAffixQuality() {
   return r < 0.58 ? 1 : (r < 0.85 ? 2 : (r < 0.96 ? 3 : 4));
 }
 
-function makeAffix(ilvl, used) {
-  let pool = AFFIXES.filter(a => !used.has(a.key));
+function makeAffix(ilvl, used, cls, slot) {
+  /* v1.1.7：先按职业 / 部位收窄词条池，再排除已占用的 key */
+  const base = (typeof affixPool === 'function' && (cls || slot)) ? affixPool(cls, slot) : AFFIXES;
+  let pool = base.filter(a => !used.has(a.key));
+  if (!pool.length) pool = base;   // 本池被占满时退回本池，避免 PICK 空数组
   const roll = Math.random();
   const tierWant = roll < 0.62 ? 1 : (roll < 0.9 ? 2 : 3);
   let cand = pool.filter(a => a.tier === tierWant);
@@ -424,8 +429,8 @@ function itemFixed(item) {
 }
 
 /* 生成一条固定词条：走和随机词条同一套池子，但数值打 FORGE.fixedMul 折 */
-function makeFixedAffix(ilvl, used) {
-  const a = makeAffix(ilvl, used);
+function makeFixedAffix(ilvl, used, cls, slot) {
+  const a = makeAffix(ilvl, used, cls, slot);
   if (!a) return null;
   const mul = (typeof FORGE !== 'undefined' && FORGE.fixedMul) || 0.6;
   a.val = Math.max(1, Math.round(a.val * mul));
@@ -445,7 +450,7 @@ function fillFixedAffixes(item) {
   for (const a of list) if (a && a.key) used.add(a.key);
   let added = 0;
   while (list.length < want) {
-    const a = makeFixedAffix(item.ilvl || 1, used);
+    const a = makeFixedAffix(item.ilvl || 1, used, item.affixCls || item.cls, item.slot);
     if (!a) break;
     list.push(a);
     added++;
@@ -461,7 +466,7 @@ function enhanceItem(item) {
   if (extra >= FORGE.enhanceMax) return null;
   const used = new Set(item.affixes.map(a => a && a.key).filter(Boolean));
   for (const fa of (item.fixed || [])) if (fa && fa.key) used.add(fa.key);
-  const a = makeAffix(item.ilvl || 1, used);
+  const a = makeAffix(item.ilvl || 1, used, item.affixCls || item.cls, item.slot);
   item.affixes.push(a);
   item.enhances = (item.enhances || 0) + 1;
   return a;
@@ -522,7 +527,11 @@ function rollItem(ilvl, opts = {}) {
 
   const isRing = slot === 'ring';
   const item = {
-    uid: ITEM_UID++, slot, ilvl, rarity, cls: null, affixes: [],
+    uid: ITEM_UID++, slot, ilvl, rarity, cls: null,
+    /* v1.1.7：记录生成时的职业倾向。防具基底本身通用（不限制穿戴），
+     * 但词条池要贴合掉落者的职业，所以单独存 affixCls。
+     * 武器 / 副手本来就有 item.cls，两者取其一即可。 */
+    affixCls: cls, affixes: [],
     implicit: null, sockets: 0, runes: [], reforges: 0,
     setId: null, setName: null, power: null, powerDesc: null, reqLv: Math.max(1, ilvl - 1)
   };
@@ -617,10 +626,10 @@ function rollItem(ilvl, opts = {}) {
   item.fixed = [];
   const fixedCount = RARITY[item.rarity].fixed || 0;
   for (let i = 0; i < fixedCount; i++) {
-    const fa = makeFixedAffix(ilvl, used);
+    const fa = makeFixedAffix(ilvl, used, cls, slot);
     if (fa) item.fixed.push(fa);
   }
-  for (let i = 0; i < count; i++) item.affixes.push(makeAffix(ilvl, used));
+  for (let i = 0; i < count; i++) item.affixes.push(makeAffix(ilvl, used, cls, slot));
 
   /* ---- 命名 ---- */
   if (!item.setId && !item.power && !item.uniqueId) {
