@@ -393,14 +393,15 @@ function rollAffixQuality() {
   return r < 0.58 ? 1 : (r < 0.85 ? 2 : (r < 0.96 ? 3 : 4));
 }
 
-function makeAffix(ilvl, used, cls, slot) {
+function makeAffix(ilvl, used, cls, slot, tierForce) {
   /* v1.1.7：先按职业 / 部位收窄词条池，再排除已占用的 key */
   const base = (typeof affixPool === 'function' && (cls || slot)) ? affixPool(cls, slot) : AFFIXES;
   let pool = base.filter(a => !used.has(a.key));
   if (!pool.length) pool = base;   // 本池被占满时退回本池，避免 PICK 空数组
   const roll = Math.random();
-  const tierWant = roll < 0.62 ? 1 : (roll < 0.9 ? 2 : 3);
+  const tierWant = tierForce || (roll < 0.62 ? 1 : (roll < 0.9 ? 2 : 3));
   let cand = pool.filter(a => a.tier === tierWant);
+  if (!cand.length && tierForce) cand = pool.filter(a => a.tier >= 2);
   if (!cand.length) cand = pool;
   const weighted = [];
   for (const c of cand) for (let i = 0; i < (c.weight || 1); i++) weighted.push(c);
@@ -415,11 +416,21 @@ function makeAffix(ilvl, used, cls, slot) {
  * 洗练 / 强化 / 改为指定词条都碰不到它们，是这件装备的底子。
  * 与可洗练词条（item.affixes）分两个独立数组存放，只在属性汇总时合并。
  * 传世（unique）不参与：它的固定词条走 uniqueStats，避免双重计算。 */
+/* 等级成长（v1.1.8）：同一品质下，装备等级越高词条越多。
+ * 低等级保持原样，高等级逐档递进 —— 打高级图能拿到词条更多的装备。 */
+function affixLevelBonus(ilvl) {
+  const l = Math.max(1, Math.round(ilvl || 1));
+  return {
+    fixed: l >= 30 ? 2 : (l >= 12 ? 1 : 0),
+    wash: l >= 32 ? 2 : (l >= 16 ? 1 : 0)
+  };
+}
+
 function fixedAffixCount(item) {
   if (!item) return 0;
-  if (item.rarity === 'unique') return 0;
   const r = RARITY[item.rarity];
-  return (r && r.fixed) || 0;
+  if (!r) return 0;
+  return (r.fixed || 0) + affixLevelBonus(item.ilvl).fixed;
 }
 
 function itemFixed(item) {
@@ -461,8 +472,9 @@ function fillFixedAffixes(item) {
 /* 强化：给装备直接扩充一条新词缀（上限 FORGE.enhanceMax） */
 function enhanceItem(item) {
   if (!item || !Array.isArray(item.affixes)) return null;
-  const maxBase = RARITY[item.rarity].affixes || 0;
-  const extra = item.affixes.length - maxBase;
+  const maxBase = (RARITY[item.rarity].affixes || 0) + affixLevelBonus(item.ilvl).wash;
+  /* 稀有词条是掉落时额外送的，不占强化名额 */
+  const extra = item.affixes.filter(a => a && !a.rare).length - maxBase;
   if (extra >= FORGE.enhanceMax) return null;
   const used = new Set(item.affixes.map(a => a && a.key).filter(Boolean));
   for (const fa of (item.fixed || [])) if (fa && fa.key) used.add(fa.key);
@@ -619,17 +631,25 @@ function rollItem(ilvl, opts = {}) {
   /* ---- 词缀 ----
    * 先生成固定初始词条（条数由品质决定），再生成可洗练词条。
    * 两者共用一个 used 集合，所以同一件装备不会出现重复 key。 */
-  let count = RARITY[item.rarity].affixes;
-  if (item.rarity === 'rare' && CHANCE(0.5)) count = 4;
-  if (item.rarity === 'set') count = 3 + (CHANCE(0.4) ? 1 : 0);
+  const lvBonus = affixLevelBonus(ilvl);
+  let count = (RARITY[item.rarity].affixes || 0) + lvBonus.wash;
+  if (item.rarity === 'rare' && CHANCE(0.5)) count += 1;
+  if (item.rarity === 'set' && CHANCE(0.4)) count += 1;
   const used = new Set();
   item.fixed = [];
-  const fixedCount = RARITY[item.rarity].fixed || 0;
+  const fixedCount = (RARITY[item.rarity].fixed || 0) + lvBonus.fixed;
   for (let i = 0; i < fixedCount; i++) {
     const fa = makeFixedAffix(ilvl, used, cls, slot);
     if (fa) item.fixed.push(fa);
   }
   for (let i = 0; i < count; i++) item.affixes.push(makeAffix(ilvl, used, cls, slot));
+  /* 稀有词条惊喜（v1.1.8）：任何品质都可能额外附带一条 tier 3 稀有词条。
+   * 不占常规名额、与品质无关，凡品也能爆 —— 「翻垃圾翻出宝」的钩子。 */
+  const rareP = (typeof FORGE !== 'undefined' && FORGE.rareAffixChance) || 0.12;
+  if (CHANCE(rareP)) {
+    const ra = makeAffix(ilvl, used, cls, slot, 3);
+    if (ra) { ra.rare = true; item.affixes.push(ra); }
+  }
 
   /* ---- 命名 ---- */
   if (!item.setId && !item.power && !item.uniqueId) {
@@ -1030,9 +1050,11 @@ function itemTooltip(item, opts = {}) {
     }
     if (item.affixes && item.affixes.length) h += `<div class="tt-aff-sep"></div>`;
   }
-  /* 可洗练词条 */
+  /* 可洗练词条。rare = 掉落时额外赠送的稀有词条，单独打「稀有」标记 */
   for (const a of item.affixes) {
-    h += `<div class="tt-aff">${affixText(a)}</div>`;
+    h += a.rare
+      ? `<div class="tt-aff tt-raff"><span class="tt-raff-tag">稀有</span>${affixText(a)}</div>`
+      : `<div class="tt-aff">${affixText(a)}</div>`;
   }
   /* S2 孔位与符文之语 */
   if (item.sockets) {

@@ -28,9 +28,10 @@ const RARITY = {
   legendary: { key: 'legendary', name: '神兵', color: '#ff7a3c', mul: 1.55, affixes: 4, fixed: 3, weight: 6 },
   set: { key: 'set', name: '套装', color: '#5ce08a', mul: 1.42, affixes: 3, fixed: 2, weight: 3 },
   /* 传世：**最终装备**，红色标识。固定名字 + 固定词条 + 特性 + 技能效果，可重复掉落。
-   * 传世的「固定词条」走 uniqueStats，不再叠加 fixed，避免双重计算。
-   * 定位上是装备链的终点：不再参与品质升级，也不可洗练（affixes = 0）。 */
-  unique: { key: 'unique', name: '传世', color: '#ff3b3b', mul: 1.7, affixes: 0, fixed: 0, weight: 2 }
+   * v1.1.8 起词条数量全品质最多（固定 4 / 可洗 4，叠加等级成长后 40 级可达 12 条），
+   * 与 uniqueStats 的固有属性并存：词条是通用属性，uniqueStats + 特性才是传世的灵魂。
+   * 定位上是装备链的终点：不在品质升级链内。 */
+  unique: { key: 'unique', name: '传世', color: '#ff3b3b', mul: 1.7, affixes: 4, fixed: 4, weight: 2 }
 };
 
 /* ---------------- 属性定义 ----------------

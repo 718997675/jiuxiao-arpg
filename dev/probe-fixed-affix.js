@@ -63,16 +63,20 @@ const clone = o => JSON.parse(JSON.stringify(o));
 
 /* ---------------- 1. 条数由品质决定 ---------------- */
 section('1. 固定词条条数由品质决定');
-const EXPECT = { common: 0, magic: 1, rare: 2, legendary: 3, set: 2, unique: 0 };
+/* v1.1.8 起固定条数 = 品质基础 + 等级成长，断言按 ilvl 动态计算 */
+const EXPECT = { common: 0, magic: 1, rare: 2, legendary: 3, set: 2, unique: 4 };
+const lvFixedBonus = ilvl => (ilvl >= 30 ? 2 : (ilvl >= 12 ? 1 : 0));
+const expectFixed = (rar, ilvl) => (EXPECT[rar] || 0) + lvFixedBonus(ilvl || 1);
 for (const rar of Object.keys(EXPECT)) {
   let bad = 0, sample = 0;
   for (let i = 0; i < 120; i++) {
-    const it = rollItem(20 + (i % 20), { rarity: rar, cls: 'warrior' });
+    const lv = 20 + (i % 20);
+    const it = rollItem(lv, { rarity: rar, cls: 'warrior' });
     if (it.rarity !== rar) continue;         // 传世池不足时会降级，跳过
     sample++;
-    if ((it.fixed || []).length !== EXPECT[rar]) bad++;
+    if ((it.fixed || []).length !== expectFixed(rar, lv)) bad++;
   }
-  ok(bad === 0 && sample > 0, `${rar} 固定 ${EXPECT[rar]} 条`,
+  ok(bad === 0 && sample > 0, `${rar} 固定条数（含等级成长）`,
     `样本 ${sample}，异常 ${bad}`);
 }
 ok(RARITY.rare.fixed > RARITY.magic.fixed && RARITY.legendary.fixed > RARITY.rare.fixed,
@@ -171,8 +175,8 @@ section('6. 固定词条真实生效');
 /* ---------------- 7. 旧档迁移 ---------------- */
 section('7. 旧存档（无 fixed 字段）自动补齐');
 {
-  for (const [rar, want] of Object.entries(EXPECT)) {
-    if (rar === 'unique') continue;
+  for (const rar of Object.keys(EXPECT)) {
+    const want = expectFixed(rar, 24);
     const it = rollItem(24, { rarity: rar, cls: 'warrior' });
     delete it.fixed;                       // 模拟 v1.1.5 及更早的存档
     normalizeItem(it);
@@ -196,7 +200,7 @@ section('7. 旧存档（无 fixed 字段）自动补齐');
   it.fixed = [{ key: 'not_a_stat', val: 5 }, { key: 'str', val: 'x' }];
   normalizeItem(it);
   ok(it.fixed.every(a => STATS[a.key] && isFinite(a.val)), '非法固定词条被清洗');
-  ok(it.fixed.length === EXPECT.rare, '清洗后重新补齐到应有条数', `实际 ${it.fixed.length}`);
+  ok(it.fixed.length === expectFixed('rare', it.ilvl), '清洗后重新补齐到应有条数', `实际 ${it.fixed.length}`);
 }
 
 /* ---------------- 8. 品质提升 ---------------- */
@@ -227,19 +231,21 @@ section('9. 存档 JSON 往返');
   ok(keysOf(round.fixed) === keysOf(it.fixed), 'key 顺序与数量一致');
 }
 
-/* ---------------- 10. 传世不叠加 ---------------- */
-section('10. 传世不叠加 fixed');
+/* ---------------- 10. 传世词条最多（v1.1.8 起参与 fixed） ---------------- */
+section('10. 传世词条数全品质最多');
 {
-  const fake = { rarity: 'unique', fixed: [] };
-  ok(fixedAffixCount(fake) === 0, 'fixedAffixCount(传世) = 0');
+  const fake = { rarity: 'unique', ilvl: 40, fixed: [] };
+  ok(fixedAffixCount(fake) === 6, 'fixedAffixCount(传世 40 级) = 4 + 2', `实际 ${fixedAffixCount(fake)}`);
+  ok(fixedAffixCount({ rarity: 'legendary', ilvl: 40, fixed: [] }) === 5,
+    '同等级神兵固定 5 条，传世更多');
   let hasFixed = 0, n = 0;
   for (let i = 0; i < 120; i++) {
     const it = rollItem(40, { rarity: 'unique' });
     if (it.rarity !== 'unique') continue;
     n++;
-    if ((it.fixed || []).length) hasFixed++;
+    if ((it.fixed || []).length === expectFixed('unique', it.ilvl)) hasFixed++;
   }
-  ok(n > 0 ? hasFixed === 0 : true, `真传世样本 ${n} 件，全部无 fixed`, `含 fixed ${hasFixed}`);
+  ok(n > 0 ? hasFixed === n : true, `真传世样本 ${n} 件，固定条数均符合预期`, `符合 ${hasFixed}`);
 
   /* 传世的固定属性必须仍然生效（走 uniqueStats） */
   let withStats = 0;

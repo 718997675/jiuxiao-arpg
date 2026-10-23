@@ -163,7 +163,8 @@ head('传世');
 {
   ok(RARITY.unique.color.toLowerCase() === '#ff3b3b', '传世颜色为红色', RARITY.unique.color);
   ok(RARITY.unique.name === '传世', '名称仍为「传世」');
-  ok(RARITY.unique.affixes === 0 && RARITY.unique.fixed === 0, '传世不带随机词条 / 固定词条');
+  ok(RARITY.unique.affixes >= RARITY.legendary.affixes && RARITY.unique.fixed >= RARITY.legendary.fixed,
+    '传世词条数全品质最多', `传世 ${RARITY.unique.fixed}+${RARITY.unique.affixes} / 神兵 ${RARITY.legendary.fixed}+${RARITY.legendary.affixes}`);
   /* 与其它品质颜色不冲突 */
   const colors = Object.keys(RARITY).map(k => RARITY[k].color.toLowerCase());
   ok(new Set(colors).size === colors.length, '六种品质颜色互不相同', colors.join(' '));

@@ -185,8 +185,10 @@ const bad = m => { results.push(0); console.log('  [FAIL] ' + m); };
 
   if (!r1.started) { bad('游戏未开局'); }
   else {
-    if (r1.upMono && r1.upSteps >= 5) ok('单条升级连续 ' + r1.upSteps + ' 次，数值严格单调上升（' + r1.upSeq.join('→') + '）');
-    else bad('数值出现下降或未升满：mono=' + r1.upMono + ' seq=' + JSON.stringify(r1.upSeq));
+    /* 不变量是「严格单调 + 升到上限」，而不是固定步数：
+     * 初始值本来就高时，升 3~4 次就封顶，用步数做门槛会假失败。 */
+    if (r1.upMono && r1.upAtCap) ok('单条升级 ' + r1.upSteps + ' 次，严格单调上升并升满（' + r1.upSeq.join('→') + '）');
+    else bad('数值出现下降或未升满：mono=' + r1.upMono + ' atCap=' + r1.upAtCap + ' seq=' + JSON.stringify(r1.upSeq));
     if (r1.upKeyKept && r1.upOtherIntact) ok('升级只动选中的那 1 条：词条 key 与其他词缀均不变');
     else bad('升级波及了别的词缀：keyKept=' + r1.upKeyKept + ' other=' + r1.upOtherIntact);
     if (!r1.upOverCap && r1.upAtCap) ok('数值升到本装备等级上限 ' + r1.upCap + ' 后不再越界');

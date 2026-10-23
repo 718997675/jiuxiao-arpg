@@ -3456,10 +3456,10 @@ const Game = {
     // 升级稀有度，补齐可洗练词条数量，并按新品质补齐固定词条
     const oldRarity = item.rarity;
     item.rarity = target;
-    const wantAffixes = RARITY[target].affixes;
+    const wantAffixes = (RARITY[target].affixes || 0) + affixLevelBonus(item.ilvl).wash;
     const used = new Set(item.affixes.map(a => a.key));
     for (const fa of (item.fixed || [])) if (fa && fa.key) used.add(fa.key);
-    while (item.affixes.length < wantAffixes) {
+    while (item.affixes.filter(a => a && !a.rare).length < wantAffixes) {
       item.affixes.push(makeAffix(item.ilvl || 1, used, item.affixCls || item.cls, item.slot));
     }
     fillFixedAffixes(item);
