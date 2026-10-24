@@ -403,6 +403,45 @@
   .tl-syn .sy-sum{margin-top:6px;padding-top:5px;border-top:1px solid rgba(143,208,255,.16);
     color:#8fd0ff;font-size:10.5px}
   @media (max-width:640px){ .tl-syn .sy-grid{grid-template-columns:1fr} }
+
+  /* ---------- 机制说明（helpPanel） ----------
+   * 左边竖排页签切分节，右边只显示当前这一节的内容（跟主菜单同一个交互习惯）。
+   * 内容由 UI.renderHelp() 按数据表实时生成：条数、名字、阶数全部读数据层，
+   * 以后加装备 / 加技能 / 加词缀，这一页自动跟着变，不需要手工同步。 */
+  #helpPanel{left:50%;top:50%;transform:translate(-50%,-50%);width:840px;max-height:88vh;z-index:70}
+  #helpPanel .pb{padding:10px 12px}
+  .hp-wrap{display:flex;gap:10px;height:min(560px,calc(88vh - 78px))}
+  .hp-nav{flex:none;width:124px;display:flex;flex-direction:column;gap:2px;overflow-y:auto;
+    padding-right:9px;border-right:1px solid rgba(216,178,90,.16)}
+  .hp-tab{font-family:inherit;font-size:11.5px;letter-spacing:1px;text-align:left;padding:6px 9px;
+    cursor:pointer;background:transparent;border:1px solid transparent;border-radius:3px;
+    color:#9a9488;transition:.12s;white-space:nowrap;flex:none}
+  .hp-tab:hover{color:#e8d8b0;background:rgba(216,178,90,.07)}
+  .hp-tab.on{color:#1a1510;font-weight:600;background:linear-gradient(180deg,#e0c070,#b89840);border-color:#ffd479}
+  .hp-tab .hp-tn{font-size:9px;opacity:.7;margin-right:5px}
+  .hp-body{flex:1;min-width:0;overflow-y:auto;display:flex;flex-direction:column;gap:8px;padding-right:2px}
+  .hp-sec{border:1px solid rgba(216,178,90,.2);background:rgba(0,0,0,.22);padding:9px 12px 10px}
+  .hp-sec>h4{font-size:12px;color:#e8c46a;letter-spacing:2px;margin-bottom:6px;font-weight:600;
+    display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+  .hp-sec>h4 .hp-n{font-size:9.5px;color:#7a7466;letter-spacing:0;font-weight:400}
+  .hp-row{display:flex;gap:9px;font-size:11.5px;line-height:1.8;color:#b8b0a0;padding:2px 0}
+  .hp-row>b{flex:none;min-width:78px;color:#d8cfbc;font-weight:600}
+  .hp-row>span{flex:1;min-width:0}
+  .hp-tags{display:flex;flex-wrap:wrap;gap:4px;margin-top:5px}
+  .hp-tag{font-size:10px;padding:1px 6px;border:1px solid rgba(216,178,90,.3);border-radius:3px;
+    color:#c8b890;background:rgba(216,178,90,.07);white-space:nowrap}
+  .hp-tag.mech{border-color:rgba(120,208,255,.42);color:#9fd4f0;background:rgba(120,208,255,.1)}
+  .hp-note{font-size:10px;color:#7a7466;line-height:1.7;margin-top:5px}
+  .hp-key{display:inline-block;min-width:15px;text-align:center;padding:0 4px;margin:0 1px;
+    border:1px solid rgba(216,178,90,.35);border-radius:3px;font-size:10px;color:#d8cfbc;
+    background:rgba(216,178,90,.08)}
+  body.touch #helpPanel{width:min(840px,98vw)}
+  /* 手机上竖排页签太占宽度，改成顶部横向可滑的一条 */
+  body.touch .hp-wrap{flex-direction:column;height:min(620px,calc(88vh - 78px))}
+  body.touch .hp-nav{width:auto;flex-direction:row;overflow-x:auto;overflow-y:hidden;
+    padding:0 0 7px;border-right:none;border-bottom:1px solid rgba(216,178,90,.16)}
+  body.touch .hp-tab{padding:5px 10px;font-size:11px}
+  body.touch .hp-row{font-size:11.5px}
   .tl-tip .tt-d{color:#b8b0a0}
   .tl-tip .tt-c{font-size:10px;color:#e0c070;margin-top:3px}
   .tl-tip .tt-c.no{color:#e05a5a}
@@ -1433,6 +1472,7 @@
       <button class="mtab" data-mtab="codex">异兽志<span>B</span></button>
       <button class="mtab" data-mtab="forge">炼器台<span>R</span></button>
       <button class="mtab" data-mtab="save">存 档<span>P</span></button>
+      <button class="mtab" data-mtab="help">说 明<span>H</span></button>
       <button class="mtab" data-mtab="set">设 置<span>O</span></button>
     </nav>
     <div class="menu-body" id="menuBody"></div>
@@ -1644,6 +1684,17 @@
     </div>
 
     <div class="hintline" id="saveHint">存档存在于本机浏览器（localStorage）。换设备或清理浏览器数据前，请先导出备份。</div>
+  </div>
+</div>
+
+<!-- 说明（机制总览：内容按数据表实时生成，改了数值这里会自动跟着变） -->
+<div class="panel" id="helpPanel">
+  <div class="ph"><h3>机 制 说 明</h3><span class="x" onclick="UI.closeAll()">✕</span></div>
+  <div class="pb">
+    <div class="hp-wrap">
+      <nav class="hp-nav" id="hpNav"></nav>
+      <div class="hp-body" id="helpBody"></div>
+    </div>
   </div>
 </div>
 

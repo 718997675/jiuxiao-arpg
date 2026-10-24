@@ -260,6 +260,7 @@ const UI = {
       else if (k === 'b') { this.openMenu('codex'); e.preventDefault(); }
       else if (k === 'r') { this.openMenu('forge'); e.preventDefault(); }
       else if (k === 'p') { this.openMenu('save'); e.preventDefault(); }
+      else if (k === 'h' || k === '?') { this.openMenu('help'); e.preventDefault(); }
       else if (k === 'o') { this.openSettings(); e.preventDefault(); }
       else if (k === 'tab') { this.toggleMenu(); e.preventDefault(); }
       else if (k === 'escape') {
@@ -312,6 +313,171 @@ const UI = {
     this.closeAll(p);
     p.classList.add('open');
     this.renderSettings();
+  },
+
+  /* ============================================================
+   * 机制说明（H）
+   *
+   * 原则：**能读数据的绝不写死**。
+   *   · 条数（槽位 / 词缀 / 套装 / 技能 / 变体 / 天赋 / 精英词缀 / 怪物）全部实时统计
+   *   · 名字类（基底八阶、品质、机制名、难度）直接从数据表取
+   *   · 只有「怎么用」这类叙述性文字是手写的
+   * 这样以后加装备、加技能、调数值，这一页会自动跟着变，
+   * 不会再出现「说明里写 64 条词缀、实际已经 80 条」这种对不上的情况。
+   * ============================================================ */
+  renderHelp() {
+    const el = document.getElementById('helpBody');
+    const nav = document.getElementById('hpNav');
+    if (!el || !nav) return;
+    const cnt = o => (o && typeof o === 'object') ? Object.keys(o).length : 0;
+    const len = a => Array.isArray(a) ? a.length : 0;
+    const K = k => `<span class="hp-key">${k}</span>`;
+    const row = (k, v) => `<div class="hp-row"><b>${k}</b><span>${v}</span></div>`;
+    const tags = (list, cls) => `<div class="hp-tags">${list.map(t => `<span class="hp-tag ${cls || ''}">${t}</span>`).join('')}</div>`;
+    const sec = (t, note, body) => `<div class="hp-sec"><h4>${t}${note ? `<span class="hp-n">${note}</span>` : ''}</h4>${body}</div>`;
+
+    /* ---------------- 数据快照 ---------------- */
+    const slotN = len(SLOT_ORDER);
+    const slotNames = [...new Set(SLOT_ORDER.map(s => SLOT_NAME[s] || s))];
+    const affN = len(AFFIXES);
+    const affTier = { 1: 0, 2: 0, 3: 0 };
+    AFFIXES.forEach(a => { affTier[a.tier] = (affTier[a.tier] || 0) + 1; });
+    const setIds = Object.keys(SETS);
+    const setUniN = setIds.filter(id => SETS[id].cls === null).length;
+    const skillIds = Object.keys(SKILLS);
+    const varN = skillIds.reduce((n, id) => n + len(SKILLS[id].variants), 0);
+    const mechN = (typeof specialVariantCount === 'function') ? specialVariantCount() : 0;
+    const mechList = (typeof SKILL_SPECIALS === 'object')
+      ? Object.keys(SKILL_SPECIALS).map(k => SKILL_SPECIALS[k].name) : [];
+    const talentN = cnt(TALENT_NODES);
+    const synN = (typeof TALENTS !== 'undefined' && TALENTS.synergy) ? len(TALENTS.synergy[0].nodes) : 0;
+    const eliteN = cnt(ELITE_AFFIXES);
+    const mobN = cnt(MONSTERS);
+    const runeWordN = len(RUNE_WORDS);
+    const tierN = len(BASE_TIER_NAME);
+    const rarList = Object.keys(RARITY).map(k => RARITY[k]);
+    const diffList = Object.keys(DIFFS).map(k => DIFFS[k]);
+    const barSlots = (typeof SKILL_BAR_SLOTS === 'number') ? SKILL_BAR_SLOTS : 8;
+    const barSets = (typeof SKILL_BAR_SETS === 'number') ? SKILL_BAR_SETS : 2;
+    const lvStep = (typeof SKILL_LV_STEP === 'number') ? Math.round(SKILL_LV_STEP * 100) : 8;
+    const lvMax = (typeof SKILL_LV_MAX === 'number') ? SKILL_LV_MAX : 10;
+
+    /* 每一节先按原样拼成 html，末尾再从 <h4> 里反解出「短名」给左侧页签用
+     * —— 这样新增一节只要写一次 sec(...)，不用再维护一份页签名列表。 */
+    const H = [];
+
+    /* ---------------- 1. 操作 ---------------- */
+    H.push(sec('一 · 怎么玩', '先看这一段', [
+      row('PC 移动', `${K('W')}${K('A')}${K('S')}${K('D')} 移动 · ${K('空格')} 翻滚 · 鼠标转向`),
+      row('PC 战斗', `左键普攻（按住连击）· ${K('1')}~${K(barSlots)} 技能条 · ${K('`')} 换快捷栏 · ${K('Z')}${K('X')} 喝药`),
+      row('PC 面板', `${K('I')} 行囊 · ${K('C')} 道途 · ${K('T')} 天赋 · ${K('K')} 术法 · ${K('L')} 山海志 · ${K('B')} 异兽志 · ${K('R')} 炼器台 · ${K('P')} 存档 · ${K('O')} 设置 · ${K('H')} 说明`),
+      row('手机', `左半屏拖动 = 虚拟摇杆 · 右侧技能宫格 = 技能条 · 拖动空白处转视角 · 双指捏合缩放镜头`),
+      row('目标', `打怪 → 掉装备 → 换更强的 → 下更深的地图。角色不会掉等级，死亡只掉金币（新手难度不掉）。`)
+    ]));
+
+    /* ---------------- 2. 属性 ---------------- */
+    H.push(sec('二 · 角色属性', '装备 / 天赋 / 药水最终都汇到这一张面板', [
+      row('主属性', `攻击力（决定所有伤害基数）、护甲（减物理伤）、生命上限、灵力上限、灵力回复`),
+      row('伤害乘区', `暴击率 × 暴击伤害 × 攻速 × 元素增伤 × 技能增伤 × 对精英/首领增伤 —— 各乘区独立相乘，堆单一乘区收益会衰减`),
+      row('防御', `护甲、闪避、格挡、伤害减免、各元素抗性（上限 75%）、濒死免疫（致死时留 1 血，60 秒冷却）`),
+      row('资源', `战士用怒气、法师道士用灵力；消耗降低 / 回复速度 / 击杀回蓝都会影响技能循环`),
+      row('看来源', `悬停任意属性值会列出「哪件装备 / 哪条天赋贡献了多少」，方便判断该换什么`)
+    ]));
+
+    /* ---------------- 3. 装备 ---------------- */
+    H.push(sec('三 · 装备', `${slotN} 个槽位`, [
+      row('槽位', `${slotN} 个：${slotNames.join(' / ')}`),
+      row('基底阶', `${tierN} 阶：${BASE_TIER_NAME.join(' → ')}。同名字的装备阶数越高，基础数值越高`),
+      row('物品等级', `每件装备有 ilvl，越高则词缀数值上限越高。怪物等级决定掉落 ilvl，首领额外 +2`),
+      row('双手 / 双持', `武器分单手与双手：双手占用副手格；副手只能是盾、副手武器或法器`),
+      row('升阶', `炼器台「升阶」页：把一件装备的基底提升一阶，保留品质 / 词缀 / 孔位 / 符文 / 强化等级，只换基底。需要同名装备 + 铜钱 + 玄晶`)
+    ]));
+
+    /* ---------------- 4. 品质与词缀 ---------------- */
+    H.push(sec('四 · 品质与词缀', `${affN} 条词缀`, [
+      row('品质', rarList.map(r => `<span style="color:${r.color}">${r.name}</span>（${r.affixes + r.fixed} 词条 · 权重 ${r.weight}）`).join(' · ')),
+      row('词缀池', `共 ${affN} 条：一阶 ${affTier[1]} 条 / 二阶 ${affTier[2]} 条 / 三阶 ${affTier[3]} 条。阶数越高数值越大，掉落权重越低`),
+      row('词缀族', `元素伤害（火/冰/雷/毒）、单项与全抗、+N 技能等级、光环（周围减速/持续伤害）、资源、生存、掉落、暴击、攻速、移速`),
+      row('洗练', `炼器台「品质」页可以重洗词条；同一条属性不会在一件装备上出现两次`)
+    ]));
+
+    /* ---------------- 5. 套装 / 符文 / 传世 ---------------- */
+    H.push(sec('五 · 套装与符文', `${setIds.length} 套 · ${runeWordN} 条符文之语 · 传世`, [
+      row('套装', `共 ${setIds.length} 套（${setUniN} 套通用、${setIds.length - setUniN} 套职业专属）。穿 2 / 3 / 4 / 5 件逐级激活更强效果，绿色边框`),
+      row('符文之语', `${runeWordN} 条。按顺序把符文镶进带孔装备，凑成指定组合才生效 —— 顺序错了不触发`),
+      row('传世', `红色边框，固定名字 + 固定词条 + 专属特性 + 技能效果，可重复掉落。是装备链的终点，不在品质升级链里`),
+      row('套装联动', `部分套装会激活天赋树里的隐藏「协同」星位，见第七节`)
+    ]));
+
+    /* ---------------- 6. 术法与变体 ---------------- */
+    H.push(sec('六 · 术法与变体', `${skillIds.length} 个技能 · ${varN} 个变体`, [
+      row('技能', `三职业各 ${Math.round(skillIds.length / 3)} 个，按等级领悟。技能点每级 1 点，技能等级上限 ${lvMax}，每级 +${lvStep}% 伤害`),
+      row('变体', `每个技能 3 个变体（Ⅰ / Ⅱ / Ⅲ），切换不花点数。Ⅰ / Ⅱ 多数是数值调整，Ⅲ 是机制改造`),
+      row('机制变体', `青色 ◆ 角标 = 改打法而不是改数字，共 ${mechN} 条`),
+      tags(mechList, 'mech'),
+      row('技能条', `${barSlots} 格 × ${barSets} 套，在术法面板详情卡底部点数字自己配；${K('`')} 键换栏（一套打首领、一套刷图）`),
+      row('三种状态', `图标灰 = 未领悟 · 环形遮罩 = 冷却中 · 暗红 = 灵力不足 · 右上角 Ⅰ/Ⅱ/Ⅲ = 当前变体`)
+    ]));
+
+    /* ---------------- 7. 天赋与协同 ---------------- */
+    H.push(sec('七 · 天赋与协同', `${talentN} 个节点`, [
+      row('天赋点', `每级 1 点，另加任务奖励 10 点，满级共 70 点`),
+      row('页签', `三职业系各 10 节点 + 通用「通达」+ 协同「星位」，共 5 页`),
+      row('节点层级', `小节点可投 5 级 · 中节点 1 级（需本系先投 5 点）· 大节点是质变（需本系 5 点且等级达标）`),
+      row('协同', `${synN} 枚隐藏星位，默认在星盘上不显形。把装备穿对（套装件数 / 符文之语 / 词条达标）后自动亮起，之后就能像普通节点一样投点`),
+      row('协同操作', `切到「协同」页签，画布下方会列出每一枚的激活条件与当前是否已显形`),
+      row('预设 / 洗点', `3 套预设一键切换；洗点费用递增（1k / 5k / 20k / 50k 铜钱）`)
+    ]));
+
+    /* ---------------- 8. 敌人 ---------------- */
+    H.push(sec('八 · 敌人', `${mobN} 种怪物 · ${eliteN} 条精英词缀`, [
+      row('普通怪', `按族群分布在不同地图，各有元素抗性与弱点。打对元素伤害会明显更快`),
+      row('精英', `带 ${eliteN} 条精英词缀（迅捷 / 护盾 / 召唤 / 分裂 / 荆棘…），名字会标出词缀，掉落更好`),
+      row('首领', `独立血条、多段技能、阶段切换。对首领增伤 / 首领减伤是独立乘区`),
+      row('行为', `近战包夹、远程风筝绕圈、自爆冲锋、治疗友军、召唤小怪、低血逃跑回血 —— 不同族群有不同套路`),
+      row('图鉴', `异兽志（${K('B')}）记录遇到过的怪物，含属性、技能、掉落与出没地图`)
+    ]));
+
+    /* ---------------- 9. 经济 ---------------- */
+    H.push(sec('九 · 经济与消耗', '', [
+      row('铜钱', `通用货币。来源：击杀、卖装备、任务。用途：修理、洗点、升阶、商店`),
+      row('玄晶', `高阶材料。来源：分解玄品以上装备、首领掉落。用途：升阶、品质锻造`),
+      row('匠材', `打造与强化用。来源：分解与采集`),
+      row('药水', `${K('Z')} 生命药 · ${K('X')} 灵力药。药水有冷却，不是无脑喝`),
+      row('死亡', `不掉等级、不掉装备。普通及以上难度损失部分金币，新手难度不掉`)
+    ]));
+
+    /* ---------------- 10. 难度 ---------------- */
+    H.push(sec('十 · 难度', '开局选择，中途不可改', diffList.map(d =>
+      row(`<span style="color:${d.color}">${d.name}</span>`, `${d.desc}${d.deathPenalty ? `（死亡损失 ${Math.round(d.deathPenalty * 100)}% 金币）` : '（死亡不掉金币）'}`)
+    ).join('') + `<div class="hp-note">难度影响怪物生命 / 伤害 / 速度、掉落与经验倍率、精英出现率、是否带元素伤害。</div>`));
+
+    /* 反解短名：'一 · 怎么玩' → '怎么玩'，作为左侧页签文字 */
+    const SECTIONS = H.map((html, i) => {
+      const m = html.match(/<h4>([^<]*)/);
+      const full = m ? m[1].trim() : ('第 ' + (i + 1) + ' 节');
+      const name = full.replace(/^[一二三四五六七八九十]+\s*·\s*/, '').trim();
+      return { name, html };
+    });
+
+    if (this.hpTab == null || this.hpTab >= SECTIONS.length) this.hpTab = 0;
+    nav.innerHTML = SECTIONS.map((s, i) =>
+      `<button class="hp-tab ${i === this.hpTab ? 'on' : ''}" data-hp="${i}"><span class="hp-tn">${i + 1}</span>${s.name}</button>`
+    ).join('');
+    nav.querySelectorAll('.hp-tab').forEach(bt => bt.addEventListener('click', () => {
+      const i = parseInt(bt.dataset.hp, 10);
+      if (i === this.hpTab) return;
+      this.hpTab = i;
+      this.renderHelp();
+      try { SFX.ui(); } catch (e) { }
+    }));
+
+    const FOOT = `<div class="hp-note" style="text-align:center;padding:2px 0 4px">
+      本页条数与名称读自当前版本的数据表，游戏更新后会自动同步。<br>
+      发现说明与实际不符，就是数据或文案漏了 —— 记下来反馈即可。
+    </div>`;
+    el.innerHTML = SECTIONS[this.hpTab].html + FOOT;
+    el.scrollTop = 0;
   },
 
   renderSettings() {
@@ -646,6 +812,7 @@ const UI = {
     { id: 'codex', name: '异 兽 志', key: 'B', panel: 'codexPanel', render: 'renderCodex' },
     { id: 'forge', name: '炼 器 台', key: 'R', panel: 'forgePanel', render: 'renderForge' },
     { id: 'save', name: '存 档', key: 'P', panel: 'savePanel', render: null },
+    { id: 'help', name: '说 明', key: 'H', panel: 'helpPanel', render: 'renderHelp' },
     { id: 'set', name: '设 置', key: 'O', panel: 'setPanel', render: 'renderSettings' }
   ],
   menuTab: 'bag',
