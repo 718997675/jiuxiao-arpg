@@ -366,6 +366,21 @@ const Game = {
            this.crystalTierCount(3) * 10 + this.crystalTierCount(4) * 30;
   },
 
+  /* ---------------- 匠材（v1.6.0） ----------------
+   * 与玄晶 / 符文同放 state.stash.mats，键 craft_<id>，不占行囊格。
+   * 掉落、锻造、UI、探针都走这三个方法，别各自拼键名。 */
+  craftMatCount(id) { return this.matCount(craftMatKey(id)); },
+  addCraftMat(id, n) {
+    if (!CRAFT_MATS[id]) return 0;
+    return this.addMat(craftMatKey(id), n);
+  },
+  /* 匠材总持有数（材料栏角标与徽章用） */
+  craftMatTotal() {
+    let n = 0;
+    for (const id of CRAFT_MAT_ORDER) n += this.craftMatCount(id);
+    return n;
+  },
+
   /* ======================================================= */
   /* 行囊扩容（v1.4.0）                                       */
   /* ======================================================= */
@@ -3404,6 +3419,17 @@ const Game = {
       beam.position.y = 2;
       g.add(beam);
       this.loot.push({ obj: g, pos: g.position.clone(), item: null, gold: 0, crystal: extra.crystal, box, t: 0 });
+    } else if (extra && extra.mat) {
+      /* v1.6.0 匠材：八面体 + 材料本色，与符文（菱形）/ 玄晶（四面体）区分开 */
+      const md = CRAFT_MATS[extra.mat.id] || { color: '#b9c2cc' };
+      const c = new THREE.Color(md.color);
+      const box = new THREE.Mesh(new THREE.OctahedronGeometry(0.26, 0), new THREE.MeshStandardMaterial({ color: c, emissive: c, emissiveIntensity: 0.9, metalness: 0.55, roughness: 0.35, flatShading: true }));
+      box.position.y = 0.6;
+      g.add(box);
+      const beam = new THREE.Mesh(cylGeo(0.1, 0.22, 4, 6), new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: 0.26, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }));
+      beam.position.y = 2;
+      g.add(beam);
+      this.loot.push({ obj: g, pos: g.position.clone(), item: null, gold: 0, mat: extra.mat, box, t: 0 });
     } else if (item) {
       const col = RARITY[item.rarity].color;
       const c = new THREE.Color(col);
@@ -3461,6 +3487,15 @@ const Game = {
             UI.log('获得 玄晶 ×' + l.crystal, 'good');
             disposeTree(l.obj);
             this.loot.splice(i, 1);
+          } else if (l.mat) {
+            const md = CRAFT_MATS[l.mat.id];
+            const n = Math.max(1, Math.round(l.mat.n || 1));
+            this.addCraftMat(l.mat.id, n);
+            SFX.loot('rare');
+            FX.text(new THREE.Vector3(l.pos.x, 1.4, l.pos.z), '+' + n + ' ' + (md ? md.name : '匠材'), 'info', { life: 1.0 });
+            UI.log('获得 ' + (md ? md.name : '匠材') + ' ×' + n, md && md.tier >= 3 ? 'good' : '');
+            disposeTree(l.obj);
+            this.loot.splice(i, 1);
           } else if (l.item) {
             if (this.state.inventory.length >= this.bagCap()) {
               if (!l.warned) { l.warned = true; UI.log('行囊已满，先清理背包。', 'bad'); }
@@ -3495,6 +3530,31 @@ const Game = {
   },
 
   /* ---------------- 击杀 ---------------- */
+  /* 这一只怪掉哪些匠材。返回 [{ id, n }]，同种已合并。
+   * 概率与数量都在这里，掉落逻辑只负责把它们变成光柱。 */
+  rollCraftMats(kind, dropMul, seeker) {
+    if (typeof CRAFT_MATS === 'undefined') return [];
+    const T1 = ['ore', 'hide', 'bone'];
+    const T2 = ['silk', 'ember', 'frost'];
+    const T3 = ['scale', 'meteor', 'soul'];
+    const mul = seeker ? 1.5 : 1;
+    const out = {};
+    const push = (id, n) => { out[id] = (out[id] || 0) + Math.max(1, Math.round(n * mul)); };
+    if (kind === 'boss') {
+      push(PICK(T3), RND(1, 2));
+      push(PICK(T2), RND(2, 4));
+      push(PICK(T1), RND(3, 6));
+      if (CHANCE(0.5)) push(PICK(T2.concat(T3)), RND(1, 2));
+    } else if (kind === 'elite') {
+      push(CHANCE(0.62) ? PICK(T2) : PICK(T1), RND(1, 3));
+      if (CHANCE(0.45)) push(PICK(T1), RND(1, 2));
+    } else {
+      if (!CHANCE(0.3 * (dropMul || 1))) return [];
+      push(PICK(T1), RND(1, 2));
+    }
+    return Object.keys(out).map(id => ({ id, n: out[id] }));
+  },
+
   onEnemyDeath(e) {
     if (e.dead) return;
     e.dead = true;
@@ -3557,6 +3617,12 @@ const Game = {
     if (CHANCE(crystalChance)) {
       const base = e.boss ? RND(8, 14) : (e.elite ? RND(2, 4) : 1);
       this.spawnLoot(p, null, 0, { crystal: Math.round(base * (seeker ? 1.5 : 1)) });
+    }
+
+    /* [v1.6.0] 匠材：锻造的原料。低阶遍地、高阶只出在精英与首领身上，
+     * 于是「想锻一把好刃」这件事天然被推去打硬仗，而不是刷小怪。 */
+    for (const cm of this.rollCraftMats(e.boss ? 'boss' : (e.elite ? 'elite' : 'normal'), D.drop, seeker)) {
+      this.spawnLoot(p, null, 0, { mat: cm });
     }
 
     // 击杀回复
@@ -4204,6 +4270,61 @@ const Game = {
     UI.renderHUD();
     this.save();
     return { ok: true, setName: r.setName, piece: r.piece, cost };
+  },
+
+  /* ---------------- 锻造（v1.6.0）：匠材 + 凡品/灵品胚 → 更高品质 ----------------
+   * 与「套装打造」（把属性好的装备改成套装件）不同，锻造是**入口**：
+   *   白装 / 蓝装这些必被淘汰的底子，掺上匠材重铸一次，
+   *   部位、职业、等级都不变，品质往上抬一档到两档。
+   * 于是行囊里的垃圾有了去处，也不必为了「刷出更好的词条」去反复刷同一只怪。
+   *
+   * 结算顺序：先算配方 → 校验 → 扣料 → rollItem → 原地替换。
+   * 任何一步失败都不动材料（扣料在全部校验之后）。
+   */
+  craftPreview(index) {
+    const s = this.state;
+    if (!s) return { ok: false, msg: '尚未开局。' };
+    const item = s.inventory && s.inventory[index];
+    if (!craftableItem(item)) return { ok: false, msg: '只有凡品或灵品的装备能作为胚。' };
+    const info = craftInfo(item);
+    if (!info) return { ok: false, msg: '这件装备没有可用的锻造配方。' };
+    const table = CRAFT_OUTCOME[item.rarity] || [];
+    return { ok: true, item, info, table, tier: info.tier };
+  },
+
+  craftItem(index) {
+    const s = this.state;
+    if (!s) return { ok: false, msg: '尚未开局。' };
+    const item = s.inventory && s.inventory[index];
+    if (!craftableItem(item)) return { ok: false, msg: '只有凡品或灵品的装备能作为胚。' };
+    const info = craftInfo(item);
+    if (!info) return { ok: false, msg: '这件装备没有可用的锻造配方。' };
+    if (!info.can) return { ok: false, msg: '锻造材料不足：还差 ' + info.lack.join('、') + '。' };
+
+    /* 全部校验通过才动材料：任何一环失败都不该扣东西 */
+    for (const m of info.mats) if (m.need > 0) this.addCraftMat(m.id, -m.need);
+    s.gold = Math.max(0, (s.gold || 0) - info.gold);
+
+    const cls = item.cls || item.affixCls || s.cls;
+    const rarity = craftOutcomeRarity(item.rarity);
+    const out = rollItem(item.ilvl, { slot: item.slot, cls, rarity, noRelic: true });
+    if (!out) {
+      /* 兜底退款：理论上走不到，但材料是玩家辛苦刷的，宁可退 */
+      for (const m of info.mats) if (m.need > 0) this.addCraftMat(m.id, m.need);
+      s.gold += info.gold;
+      return { ok: false, msg: '锻造失败，材料已退回。' };
+    }
+    const baseName = item.name;
+    out.craftedFrom = baseName;
+    s.inventory[index] = normalizeItem(out);
+
+    SFX.levelup();
+    UI.log('锻造 · ' + baseName + ' → ' + out.name + '（' + RARITY[out.rarity].name + '）', 'lv');
+    UI.toast('锻造成功 · ' + RARITY[out.rarity].name, 'lv');
+    UI.renderInventory();
+    UI.renderHUD();
+    this.save();
+    return { ok: true, item: s.inventory[index], rarity: out.rarity, from: baseName, cost: info };
   },
 
   /* ---------------- 定向洗炼（v1.2）：锁定单条词条，数值只升不降 ----------------

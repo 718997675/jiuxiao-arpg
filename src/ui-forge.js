@@ -12,23 +12,13 @@ Object.assign(UI, {
   forgeTarget: null,          // 定向洗炼 { index, key, pick }：pick=false 升级单条 / pick=true 换指定词条
   _forgeBound: false,
 
-  toggleForge() {
-    const p = document.getElementById('forgePanel');
-    if (!p) return;
-    if (p.classList.contains('open')) { this.closeAll(); return; }
-    this.openForge();
-  },
+  /* v1.6.0：炼器台成为主菜单的一页；openForge 仍可带 ref 直接定位到某件装备 */
+  toggleForge() { this.openMenu('forge'); },
 
   openForge(ref) {
     if (!Game.state) return;
     if (ref && this.itemFromRef(ref)) { this.forgeRef = ref; this.forgeSocket = -1; }
-    const p = document.getElementById('forgePanel');
-    if (!p) return;
-    this.closeAll(p);
-    p.classList.add('open');
-    this._bindForge();
-    if (!this.forgeRef || !this.itemFromRef(this.forgeRef)) this.forgeRef = this.firstForgeRef();
-    this.renderForge();
+    this.openMenu('forge');
   },
 
   _bindForge() {
@@ -59,6 +49,20 @@ Object.assign(UI, {
     document.getElementById('forgeMain').addEventListener('click', e => {
       const item = this.itemFromRef(this.forgeRef);
       if (!item) return;
+
+      /* ---- 锻造（v1.6.0）：匠材 + 凡品/灵品胚 → 更高品质 ---- */
+      if (e.target.closest('[data-fcraft]')) {
+        if (!this.forgeRef || this.forgeRef.indexOf('inv:') !== 0) {
+          UI.log('锻造只能在行囊里进行。', 'bad');
+          return;
+        }
+        const idx = parseInt(this.forgeRef.split(':')[1], 10);
+        const r = Game.craftItem(idx);
+        if (r.ok) SFX.levelup();
+        else if (r.msg) UI.log(r.msg, 'bad');
+        this.renderForge();
+        return;
+      }
 
       const sockEl = e.target.closest('[data-fsock]');
       if (sockEl) {
@@ -186,6 +190,14 @@ Object.assign(UI, {
     const s = Game.state;
     if (!s) return [];
     const want = tab || this.forgeTab;
+    /* 锻造只作用于行囊：成品要原地替换那一格，已装备的不能直接回炉 */
+    if (want === 'craft') {
+      const out = [];
+      s.inventory.forEach((it, i) => {
+        if (craftableItem(it)) out.push({ ref: 'inv:' + i, item: it, where: '第 ' + (i + 1) + ' 格' });
+      });
+      return out;
+    }
     const ok = it => {
       if (!it) return false;
       if (want === 'rune') return socketCount(it) > 0 || canDrill(it);
@@ -215,10 +227,23 @@ Object.assign(UI, {
   renderForge() {
     const p = document.getElementById('forgePanel');
     if (!p || !Game.state) return;
+    this._bindForge();          // 幂等：菜单每次挂载都可能换容器，绑定只在第一次生效
     const s = Game.state;
-    document.getElementById('forgeMat').innerHTML =
-      `玄晶 <b>${Game.crystalCount()}</b>　符文袋 <b>${this.runeBagCount()}</b>`;
+    document.getElementById('forgeMat').innerHTML = this.forgeTab === 'craft'
+      ? `匠材 <b>${Game.craftMatTotal()}</b>　铜钱 <b>${Math.round(s.gold || 0)}</b>`
+      : `玄晶 <b>${Game.crystalCount()}</b>　符文袋 <b>${this.runeBagCount()}</b>`;
     p.querySelectorAll('.ftab').forEach(b => b.classList.toggle('on', b.dataset.ftab === this.forgeTab));
+    /* 底部说明随页签走：锻造页挂着符文说明会让人以为跑错了地方 */
+    const hintEl = document.getElementById('forgeHint');
+    if (hintEl) {
+      const HINTS = {
+        rune: '符文镶嵌后即刻生效；打孔可消耗玄晶为装备开孔（上限 5 孔，戒指/项链除外）。符文与玄晶不占行囊格。',
+        reforge: '洗练只替换选中的那一条词缀；「定向」可锁定单条只升不降，或指定目标词条一键洗到为止。每次洗练费用 +35%。',
+        enhance: '强化为装备扩充额外词缀，上限 +3 条；固定词条不参与强化，强化出来的词缀可以继续洗练。',
+        craft: '锻造消耗匠材与铜钱，把凡品 / 灵品重铸成更高品质的同部位装备。匠材由妖兽、精英与首领掉落，不占行囊格。'
+      };
+      hintEl.textContent = HINTS[this.forgeTab] || HINTS.rune;
+    }
 
     const list = this.forgeItemList();
     if (!list.some(x => x.ref === this.forgeRef)) this.forgeRef = list.length ? list[0].ref : null;
@@ -229,11 +254,13 @@ Object.assign(UI, {
       const extra = it.affixes.length - maxBase;
       const fixedN = (it.fixed || []).length;
       const fixedTxt = fixedN ? ' · ' + fixedN + ' 条固定' : '';
-      const sub = this.forgeTab === 'rune'
-        ? `孔 ${(it.runes || []).filter(Boolean).length}/${it.sockets}`
-        : (this.forgeTab === 'enhance'
-          ? `${it.affixes.length} 条可洗${fixedTxt}${extra > 0 ? ' · 已强化 ' + extra : ''}`
-          : `${it.affixes.length} 条可洗${fixedTxt}${it.reforges ? ' · 洗 ' + it.reforges + ' 次' : ''}`);
+      const sub = this.forgeTab === 'craft'
+        ? `${r.name} · ${it.ilvl} 级 · ${craftTierOf(it.ilvl)} 档料`
+        : (this.forgeTab === 'rune'
+          ? `孔 ${(it.runes || []).filter(Boolean).length}/${it.sockets}`
+          : (this.forgeTab === 'enhance'
+            ? `${it.affixes.length} 条可洗${fixedTxt}${extra > 0 ? ' · 已强化 ' + extra : ''}`
+            : `${it.affixes.length} 条可洗${fixedTxt}${it.reforges ? ' · 洗 ' + it.reforges + ' 次' : ''}`));
       return `<div class="fitem ${x.ref === this.forgeRef ? 'sel' : ''}" data-fref="${x.ref}">
         <span class="fi" style="color:${r.color};border-color:${r.color}44">${itemIcon(it)}</span>
         <div style="min-width:0;flex:1">
@@ -242,7 +269,9 @@ Object.assign(UI, {
         </div></div>`;
     }).join('') : `<div class="fempty">${this.forgeTab === 'rune'
       ? '没有可打孔或镶嵌的装备。<br>精英与首领会掉更多带孔装备；任何装备（戒指/项链除外）都可消耗玄晶自行打孔。'
-      : '没有可洗练的装备。'}</div>`;
+      : (this.forgeTab === 'craft'
+        ? '行囊里没有可以回炉的装备。<br>凡品（白）与灵品（蓝）都能当胚，掺上匠材重铸一炉，品质会往上抬。'
+        : '没有可洗练的装备。')}</div>`;
 
     const item = this.itemFromRef(this.forgeRef);
     const main = document.getElementById('forgeMain');
@@ -251,7 +280,8 @@ Object.assign(UI, {
       return;
     }
     main.innerHTML = this.forgeTab === 'rune' ? this.forgeRuneView(item)
-      : (this.forgeTab === 'enhance' ? this.forgeEnhanceView(item) : this.forgeReforgeView(item));
+      : (this.forgeTab === 'enhance' ? this.forgeEnhanceView(item)
+        : (this.forgeTab === 'craft' ? this.forgeCraftView(item) : this.forgeReforgeView(item)));
   },
 
   forgeRuneView(item) {
@@ -414,6 +444,62 @@ Object.assign(UI, {
     }
 
     h += `<div class="hintline">持有玄晶 ${have} 枚。每次洗练后费用 +${Math.round(FORGE.reforgeStep * 100)}%。</div>`;
+    return h;
+  },
+
+  /* 锻造页（v1.6.0）：把行囊里的凡品 / 灵品掺上匠材重铸一炉。
+   * 左边列表只在行囊里找胚；右边把配方摊开，缺什么一眼能看到。 */
+  forgeCraftView(item) {
+    const r = RARITY[item.rarity];
+    const idx = this.forgeRef && this.forgeRef.indexOf('inv:') === 0
+      ? parseInt(this.forgeRef.split(':')[1], 10) : -1;
+    const pv = Game.craftPreview(idx);
+    let h = `<div class="fhead">
+      <span class="fi" style="color:${r.color};border-color:${r.color}44">${itemIcon(item)}</span>
+      <div style="min-width:0">
+        <div class="fname" style="color:${r.color}">${item.name}</div>
+        <div class="fsub">${r.name} · ${SLOT_NAME[item.slot] || item.kind} · ${item.ilvl} 级</div>
+      </div></div>`;
+    if (!pv.ok) {
+      h += `<div class="fempty" style="margin-top:12px">${pv.msg || '这件装备不能作为胚。'}</div>`;
+      return h;
+    }
+    const info = pv.info;
+
+    /* 一条「胚 → 成品」的箭头，让人立刻明白这一炉在做什么 */
+    const tableTxt = (CRAFT_OUTCOME[item.rarity] || [])
+      .map(([k, w]) => `<span style="color:${RARITY[k].color}">${RARITY[k].name} ${Math.round(w * 100)}%</span>`)
+      .join(' · ');
+    h += `<div class="craft-flow">
+      <span style="color:${r.color}">${item.name}</span>
+      <span class="cf-arw">▸</span>
+      <span class="cf-out">${tableTxt}</span>
+    </div>
+    <div class="hintline" style="margin-top:2px">等级与部位原样保留，只把品质往上抬。${info.weapon ? '兵刃另需玄鳞与陨星铁，甲可以省，刃不能省。' : ''}</div>`;
+
+    /* 匠材需求：不足的整格描红 */
+    h += `<div class="frune-label">所 需 匠 材 · ${info.tier} / ${CRAFT_RECIPES.length} 档</div>
+      <div class="cmat-grid">`;
+    for (const m of info.mats) {
+      const d = CRAFT_MATS[m.id] || {};
+      h += `<div class="cmat ${m.ok ? '' : 'lack'}" style="--mc:${m.color}">
+        <span class="cm-ico">${matIcon(d.icon || m.id, { size: 28, color: m.color })}</span>
+        <span class="cm-nm">${m.name}</span>
+        <span class="cm-num">${m.have}<u>/${m.need}</u></span>
+      </div>`;
+    }
+    /* 铜钱也当成一格：与材料同排，缺口不会只落在材料上 */
+    h += `<div class="cmat gold ${info.goldHave >= info.gold ? '' : 'lack'}">
+        <span class="cm-ico"><b class="cm-coin">钱</b></span>
+        <span class="cm-nm">铜钱</span>
+        <span class="cm-num">${info.goldHave}<u>/${info.gold}</u></span>
+      </div></div>`;
+
+    h += `<div style="display:flex;align-items:center;gap:10px;margin-top:12px;flex-wrap:wrap">
+      <button class="btn primary" data-fcraft="1" ${info.can ? '' : 'disabled'}>锻 造</button>
+      <span class="fsub">${info.can ? '材料齐备，可以开炉。' : '还差：' + info.lack.join('、')}</span>
+    </div>`;
+    h += `<div class="hintline">匠材来自妖兽、精英与首领：低阶遍地都是，高阶只出在硬仗里。凡品胚按全价用料，灵品胚打六折 —— 底子越好，匠人省力。</div>`;
     return h;
   },
 

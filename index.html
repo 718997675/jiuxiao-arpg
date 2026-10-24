@@ -505,25 +505,73 @@
   .itab.on{border-color:var(--gold);color:#1a1510;background:linear-gradient(180deg,#e0c070,#b89840);font-weight:600}
   .itab.on i{color:rgba(26,21,16,.55)}
 
-  /* 材料 / 丹药 / 任务物品列表 */
-  .matlist{display:flex;flex-direction:column;gap:4px;flex:1;min-height:0;overflow-y:auto;padding-right:2px}
-  .matrow{display:flex;align-items:center;gap:9px;padding:5px 8px;cursor:default;
-    background:linear-gradient(90deg,rgba(38,34,28,.6),rgba(0,0,0,.35));border:1px solid rgba(255,255,255,.08);
-    border-left:2px solid var(--mc,#8a8175);transition:.12s}
-  .matrow[data-use]{cursor:pointer}
-  .matrow[data-use]:hover{background:rgba(80,64,36,.28);border-color:var(--gold-d);border-left-color:var(--mc,#d8b25a)}
-  .matrow.off{opacity:.42}
-  .matrow .mg{width:26px;height:26px;flex:none;display:flex;align-items:center;justify-content:center;
-    font-family:"STKaiti","KaiTi",serif;font-size:15px;color:var(--mc,#c0b8a8);
-    background:rgba(0,0,0,.45);border:1px solid rgba(255,255,255,.13)}
-  .matrow .mn{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
-  .matrow .mn b{font-weight:500;font-size:12px;color:#e8dcc0;letter-spacing:.5px}
-  .matrow .mn i{font-style:normal;font-size:9.5px;color:#7a7466;letter-spacing:0;
-    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .matrow .mt{font-size:12.5px;color:#f0e0b8;font-variant-numeric:tabular-nums}
-  .matrow .mk{font-size:9px;color:#6a6458;border:1px solid rgba(255,255,255,.14);padding:0 3px}
+  /* ---------- 材料 / 丹药 / 凭证：图标格子 + 数量角标（v1.6.0） ----------
+   * 一行一条的列表换成网格：形状替代文字，一屏能看全九种匠材；
+   * 名称与来源退到悬停提示（#tooltip），格子里只剩图标和右下角的数量。 */
+  .matlist{display:block;flex:1;min-height:0;overflow-y:auto;padding-right:2px}
+  .mgrid{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:6px;align-content:start}
+  .mgcell{position:relative;aspect-ratio:1;display:flex;align-items:center;justify-content:center;
+    background:radial-gradient(circle at 50% 42%,rgba(48,42,32,.62),rgba(0,0,0,.72) 72%);
+    border:1px solid rgba(255,255,255,.1);
+    box-shadow:inset 0 -2px 0 0 var(--mc,#8a8175),inset 0 0 9px rgba(0,0,0,.7);
+    transition:.1s;cursor:default}
+  .mgcell:hover{border-color:var(--mc,#d8b25a);background:radial-gradient(circle at 50% 42%,rgba(72,60,36,.7),rgba(0,0,0,.7) 72%)}
+  .mgcell .mg-ico{display:flex;align-items:center;justify-content:center;width:100%;height:100%}
+  .mgcell .mg-ico svg{width:92%;height:92%;display:block}
+  /* 委托凭证同款，靠左上角的序号区分是哪一单 */
+  .mgcell .mg-idx{position:absolute;left:2px;top:0;font-size:8.5px;line-height:1.4;color:#c9a86a;
+    font-variant-numeric:tabular-nums;pointer-events:none;text-shadow:0 1px 2px #000}
+  /* 角标压在图标右下角：带一圈黑描边，浅色图标上也读得清 */
+  .mgcell .mg-qty{position:absolute;right:3px;bottom:-1px;font-size:10.5px;line-height:1.35;color:#f5ecd6;
+    font-variant-numeric:tabular-nums;pointer-events:none;
+    text-shadow:0 1px 0 #000,0 0 4px #000,1px 0 0 #000,-1px 0 0 #000}
+  .mgcell.off{opacity:.32}
+  .mgcell.off .mg-qty{color:#8a8474}
+  .mgcell[data-use]{cursor:pointer}
   .mat-empty{padding:26px 0;text-align:center;font-size:12px;color:#6a6458;line-height:2}
   .mat-empty span{font-size:10.5px;color:#4e4a42}
+
+  /* ---------- 锻造页（v1.6.0） ---------- */
+  .craft-flow{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:10px;font-size:12px;line-height:1.5}
+  .craft-flow .cf-arw{color:#d8b25a}
+  .cmat-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;margin-top:6px}
+  .cmat{display:flex;flex-direction:column;align-items:center;gap:2px;padding:7px 4px 5px;
+    border:1px solid rgba(255,255,255,.1);border-bottom:2px solid var(--mc,#8a8175);
+    background:linear-gradient(160deg,rgba(38,34,28,.7),rgba(0,0,0,.48))}
+  .cmat.lack{border-color:rgba(224,90,74,.45);border-bottom-color:#e05a4a;
+    background:linear-gradient(160deg,rgba(52,22,18,.68),rgba(0,0,0,.5))}
+  .cmat .cm-nm{font-size:10px;color:#d8d0bc;letter-spacing:.5px;white-space:nowrap}
+  .cmat .cm-num{font-size:10.5px;color:#9ecf8a;font-variant-numeric:tabular-nums}
+  .cmat .cm-num u{text-decoration:none;color:#6a6458}
+  .cmat.lack .cm-num{color:#e0907e}
+  .cmat .cm-coin{display:flex;align-items:center;justify-content:center;width:24px;height:24px;
+    border:1px solid #d8b25a;border-radius:50%;color:#ffd166;font-size:11px;line-height:1}
+
+  /* ---------- 主菜单（v1.6.0） ----------
+   * 八个入口收成一个外壳：左侧页签竖排，右侧只挂当前这一页。
+   * 子面板是「搬」进来的（.embed 卸掉浮层定位），所以各页样式不用重写。 */
+  #menuPanel{left:50%;top:50%;transform:translate(-50%,-50%);width:940px;height:88vh;max-height:88vh;
+    display:none;flex-direction:column;z-index:60}
+  #menuPanel.open{display:flex}
+  #menuPanel .pb{padding:0;flex:1;min-height:0;overflow:hidden}
+  .menu-wrap{display:flex;min-height:0}
+  .menu-tabs{width:96px;flex:none;display:flex;flex-direction:column;gap:3px;padding:8px 0 8px 8px;
+    border-right:1px solid rgba(216,178,90,.18);overflow-y:auto}
+  .mtab{font-family:inherit;font-size:12px;letter-spacing:3px;text-align:left;padding:9px 10px;cursor:pointer;
+    background:rgba(0,0,0,.22);border:1px solid transparent;border-right:none;color:#a8a090;transition:.12s;
+    position:relative;flex:none}
+  .mtab span{float:right;font-size:9px;color:#5e594e;letter-spacing:0;margin-left:4px}
+  .mtab:hover{color:#e8d8b0;background:rgba(216,178,90,.1);border-color:rgba(216,178,90,.28)}
+  .mtab.on{color:#1a1510;background:linear-gradient(90deg,#e0c070,#b89840);font-weight:600;border-color:var(--gold)}
+  .mtab.on span{color:rgba(26,21,16,.5)}
+  .menu-body{flex:1;min-width:0;display:flex;min-height:0;position:relative;overflow:hidden}
+  #menuBody .panel.embed{position:relative;left:auto;top:auto;transform:none;display:flex;flex-direction:column;
+    width:100%;max-height:none;height:100%;border:none;box-shadow:none;background:transparent;
+    pointer-events:auto;z-index:auto;animation:none}
+  #menuBody .panel.embed>.ph{display:none}
+  #menuBody .panel.embed>.pb{flex:1;min-height:0;overflow:auto;padding:12px 14px}
+  #menuBody #invPanel.embed>.pb{height:100%;overflow:hidden}
+  #menuBody #setPanel.embed>.pb,#menuBody #savePanel.embed>.pb{max-height:none}
 
   /* 左列下半：角色属性（常驻，超出左列高度自己滚）
    * 两列排布 —— 左列只有 300px，三列会把「暴击伤害 128%」挤断行 */
@@ -1088,6 +1136,23 @@
   body.touch .eslot[data-slot="relic"]{height:46px}
   body.touch .eslot[data-slot="relic"] .it-ico.it-relic{width:26px;height:26px}
   body.touch .igrid{grid-template-columns:repeat(10,minmax(0,1fr));gap:5px}
+  body.touch .mgrid{grid-template-columns:repeat(6,minmax(0,1fr));gap:6px}
+  body.touch .mgcell .mg-qty{font-size:10px;right:2px}
+  body.touch .cmat-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+  /* 主菜单：窄屏把左侧竖排页签翻成顶部横排，内容区整块滚动 */
+  body.touch #menuPanel{width:min(940px,98vw);height:92vh;max-height:92dvh}
+  body.touch .menu-wrap{flex-direction:column}
+  body.touch .menu-tabs{width:auto;flex-direction:row;gap:4px;padding:6px 6px 0;overflow-x:auto;overflow-y:hidden;
+    border-right:none;border-bottom:1px solid rgba(216,178,90,.18)}
+  body.touch .mtab{padding:7px 8px;font-size:11px;letter-spacing:1px;white-space:nowrap;
+    border:1px solid rgba(216,178,90,.18);border-bottom:none}
+  body.touch .mtab span{display:none}
+  body.touch .menu-body{flex:1;min-height:0;overflow:auto}
+  body.touch #menuBody .panel.embed{height:auto;min-height:100%}
+  body.touch #menuBody .panel.embed>.pb{overflow:visible;padding:10px 10px 14px}
+  body.touch #menuBody #invPanel.embed>.pb{height:auto;overflow:visible}
+  /* 天赋轮盘是 660 逻辑宽的画布，窄屏按容器宽等比缩（命中判定按 rect 换算，缩放不影响点击） */
+  body.touch #tlCanvas{width:100%!important;height:auto!important}
   body.touch .islot .ico{font-size:18px}
   body.touch .eslot .it-ico{width:28px;height:28px}
   body.touch .eslot[data-size="xl"] .it-ico{width:40px;height:40px}
@@ -1237,16 +1302,30 @@
   <div id="help"></div>
   <div id="fpsHud"></div>
   <div id="openBtns">
-    <button class="btn" onclick="UI.toggleInv()">背包 <span class="dim">I</span></button>
-    <button class="btn" onclick="UI.toggleTalent()">天赋 <span class="dim">T</span></button>
-    <button class="btn" onclick="UI.toggleSkill()">术法 <span class="dim">K</span></button>
-    <button class="btn" onclick="UI.toggleStat()">属性 <span class="dim">C</span></button>
-    <button class="btn" onclick="UI.toggleQuest()">任务 <span class="dim">L</span></button>
-    <button class="btn" onclick="UI.toggleForge()">炼器 <span class="dim">R</span></button>
-    <button class="btn" onclick="SaveUI.open()">存档 <span class="dim">P</span></button>
-    <button class="btn" onclick="UI.openSettings()">设置 <span class="dim">O</span></button>
+    <button class="btn" onclick="UI.openMenu('bag')">行囊 <span class="dim">I</span></button>
+    <button class="btn" onclick="UI.toggleMenu()">菜单 <span class="dim">Tab</span></button>
   </div>
 </div>
+
+<!-- 主菜单外壳（v1.6.0）：左页签 + 右侧内容区，子面板在切页时被搬进来/送回去 -->
+<div class="panel" id="menuPanel">
+  <div class="ph"><h3>山 海 录</h3><span class="x" onclick="UI.closeMenu()">✕</span></div>
+  <div class="pb menu-wrap">
+    <nav class="menu-tabs" id="menuTabs">
+      <button class="mtab on" data-mtab="bag">行 囊<span>I</span></button>
+      <button class="mtab" data-mtab="stat">道 途<span>C</span></button>
+      <button class="mtab" data-mtab="talent">天 赋<span>T</span></button>
+      <button class="mtab" data-mtab="skill">术 法<span>K</span></button>
+      <button class="mtab" data-mtab="quest">山海志<span>L</span></button>
+      <button class="mtab" data-mtab="forge">炼器台<span>R</span></button>
+      <button class="mtab" data-mtab="save">存 档<span>P</span></button>
+      <button class="mtab" data-mtab="set">设 置<span>O</span></button>
+    </nav>
+    <div class="menu-body" id="menuBody"></div>
+  </div>
+</div>
+<!-- 子面板的原籍：关掉菜单后它们回到这里，下次仍能被独立打开 -->
+<div id="panelHome" style="display:none"></div>
 
 <!-- 背包 -->
 <div class="panel" id="invPanel">
@@ -1381,13 +1460,14 @@
       <button class="ftab on" data-ftab="rune">符 文</button>
       <button class="ftab" data-ftab="reforge">洗 练</button>
       <button class="ftab" data-ftab="enhance">强 化</button>
+      <button class="ftab" data-ftab="craft">锻 造</button>
       <span class="forge-mat" id="forgeMat"></span>
     </div>
     <div class="forge-body">
       <div class="forge-list" id="forgeList"></div>
       <div class="forge-main" id="forgeMain"></div>
     </div>
-    <div class="hintline">符文镶嵌后即刻生效；洗练只替换选中的那一条词缀，「定向」可指定目标词条一键自动洗炼；强化可为装备扩充额外词缀（上限 3 条）；打孔可消耗玄晶为装备开孔（上限 5 孔，戒指/项链除外）。符文与玄晶不占背包格。</div>
+    <div class="hintline" id="forgeHint">符文镶嵌后即刻生效；洗练只替换选中的那一条词缀，「定向」可指定目标词条一键自动洗炼；强化可为装备扩充额外词缀（上限 3 条）；打孔可消耗玄晶为装备开孔（上限 5 孔，戒指/项链除外）。符文与玄晶不占背包格。</div>
   </div>
 </div>
 
@@ -1506,6 +1586,8 @@
 <script src="src/data/data-items.js"></script>
 <script src="src/data/data-relics.js"></script>
 <script src="src/data/data-relic-icons.js"></script>
+<script src="src/data/data-craft.js"></script>
+<script src="src/data/data-mat-icons.js"></script>
 <script src="src/data/data-uniques.js"></script>
 <script src="src/data/data-skills.js"></script>
 <script src="src/data/data-skill-icons.js"></script>

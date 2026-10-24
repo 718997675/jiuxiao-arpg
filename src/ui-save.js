@@ -135,6 +135,11 @@ const SaveUI = {
     try {
       if (typeof Game !== 'undefined' && Game.running && Game.state) Game.save();
     } catch (e) { }
+    /* v1.6.0：游戏内存档成了主菜单的一页；标题界面没有 state，仍旧独立弹窗 */
+    if (typeof UI !== 'undefined' && UI.openMenu && typeof Game !== 'undefined' && Game.state) {
+      UI.openMenu('save');
+      return;
+    }
     UI.closeAll(p);
     p.classList.add('open');
     this.pendingDelete = 0;
@@ -147,7 +152,12 @@ const SaveUI = {
     const p = this.$('savePanel');
     if (p) p.classList.remove('open');
     this.pendingDelete = 0;
-    try { UI.closeAll(); } catch (e) { }
+    try {
+      /* 在菜单里就只合上菜单；标题界面的独立弹窗才全员关闭 */
+      const mp = document.getElementById('menuPanel');
+      if (mp && mp.classList.contains('open')) UI.closeMenu();
+      else UI.closeAll();
+    } catch (e) { }
   },
 
   /* ---------------- 渲染 ---------------- */

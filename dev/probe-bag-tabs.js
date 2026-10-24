@@ -115,27 +115,33 @@ const bad = m => { results.push(0); console.log('  [FAIL] ' + m); };
     const pbBox = rb(document.querySelector('#invPanel .pb'));
     out.dollFillsHeight = Math.abs(statBox.bottom - (pbBox.bottom - 14)) <= 10;
 
-    /* 材料栏 */
+    /* 材料栏（v1.6.0：图标格子 + 数量角标，名称在 UI._matTips 里） */
     tabs.find(b => b.dataset.tab === 'mat').click();
-    out.matRows = [...document.querySelectorAll('#invMats .matrow')].map(r => ({
-      name: r.querySelector('.mn b').textContent, n: r.querySelector('.mt').textContent
-    }));
+    const matCells = () => [...document.querySelectorAll('#invMats .mgcell')].map(r => {
+      const c = (UI._matTips || [])[+r.dataset.mti] || {};
+      return { name: c.name || '', n: (r.querySelector('.mg-qty') || {}).textContent || '', off: r.classList.contains('off') };
+    });
+    out.matRows = matCells();
     out.matGridHidden = document.getElementById('invGrid').style.display === 'none';
     out.matStatsStill = document.getElementById('invStats').style.display !== 'none';
     out.matCap = document.getElementById('invCap').textContent;
 
     /* 丹药栏 */
     tabs.find(b => b.dataset.tab === 'pill').click();
-    out.pillRows = [...document.querySelectorAll('#invMats .matrow')].length;
-    out.pillTxt = document.getElementById('invMats').textContent.replace(/\s+/g, '');
-    const hpRow = [...document.querySelectorAll('#invMats .matrow')].find(r => /回春丹/.test(r.textContent));
+    out.pillCells = matCells();
+    out.pillRows = out.pillCells.length;
+    out.pillTxt = out.pillCells.map(c => c.name + '×' + c.n).join('');
+    const hpRow = [...document.querySelectorAll('#invMats .mgcell')].find(r => {
+      const c = (UI._matTips || [])[+r.dataset.mti] || {};
+      return /回春丹/.test(c.name || '');
+    });
     const hpBefore = s.potions.hp;
     hpRow.click();
     out.potionUsed = s.potions.hp === hpBefore - 1;
 
     /* 任务物品栏 */
     tabs.find(b => b.dataset.tab === 'quest').click();
-    out.questRows = [...document.querySelectorAll('#invMats .matrow')].map(r => r.querySelector('.mn b').textContent);
+    out.questRows = matCells().map(c => c.name);
     out.questNotInBag = s.inventory.length === invBefore;
     out.questCap = document.getElementById('invCap').textContent;
 
@@ -157,22 +163,24 @@ const bad = m => { results.push(0); console.log('  [FAIL] ' + m); };
     else bad('装备栏排序条缺失');
     if (t1.matGridHidden && t1.matStatsStill) ok('切到材料栏只换右侧内容，左列装备栏与属性常驻');
     else bad('材料栏布局异常：gridHidden=' + t1.matGridHidden + ' statsStill=' + t1.matStatsStill);
-    if (t1.matRows.length === 6) ok('材料栏列出玄晶四阶 + 手中的 2 种符文（共 6 行）');
-    else bad('材料行数异常：' + t1.matRows.length + ' → ' + JSON.stringify(t1.matRows));
+    /* v1.6.0：材料栏改成图标格子 —— 玄晶四阶 + 匠材九种（常驻）+ 手上的符文 */
+    if (t1.matRows.length >= 13 && t1.matRows.some(r => /玄晶/.test(r.name)) && t1.matRows.some(r => /玄铁锭/.test(r.name)))
+      ok('材料栏列出玄晶四阶 + 匠材九种 + 手中符文（共 ' + t1.matRows.length + ' 格）');
+    else bad('材料格数异常：' + t1.matRows.length + ' → ' + JSON.stringify(t1.matRows.map(r => r.name)));
     const c3 = t1.matRows.find(r => /玄晶/.test(r.name));
-    if (c3 && c3.n === '×2') ok('玄晶数量与存档一致（三阶 ×2）');
-    else bad('玄晶数量异常：' + JSON.stringify(c3));
-    if (t1.pillRows === 3) ok('丹药栏固定三行：回春丹 / 凝露 / 传送阵石');
-    else bad('丹药行数异常：' + t1.pillRows);
-    if (/回春丹.*×7/.test(t1.pillTxt) && /传送阵石.*×2/.test(t1.pillTxt)) ok('丹药数量与存档一致（回春丹 ×7 / 阵石 ×2）');
+    if (c3 && c3.n === '2') ok('玄晶数量以角标呈现且与存档一致（三阶 2）');
+    else bad('玄晶角标异常：' + JSON.stringify(c3));
+    if (t1.pillRows === 3) ok('丹药栏固定三格：回春丹 / 凝露 / 传送阵石');
+    else bad('丹药格数异常：' + t1.pillRows);
+    if (/回春丹×7/.test(t1.pillTxt) && /传送阵石×2/.test(t1.pillTxt)) ok('丹药角标与存档一致（回春丹 7 / 阵石 2）');
     else bad('丹药数量异常：' + t1.pillTxt);
-    if (t1.potionUsed) ok('点丹药行即服用（回春丹 -1）');
+    if (t1.potionUsed) ok('点丹药格即服用（回春丹 -1）');
     else bad('丹药未生效');
     if (t1.questRows.length === 2 && t1.questRows.every(n => /凭证$/.test(n))) ok('任务物品栏按已完成委托生成凭证（2 枚）');
     else bad('任务物品异常：' + JSON.stringify(t1.questRows));
     if (t1.questNotInBag) ok('任务物品不占行囊格位');
     else bad('任务物品挤占了行囊');
-    if (/任务物品\s*2/.test(t1.questCap)) ok('栏头按「枚」统计任务物品');
+    if (/任务物品\s*2/.test(t1.questCap)) ok('栏头按「种」统计任务物品');
     else bad('任务物品栏头异常：' + t1.questCap);
     if (t1.questEmpty) ok('无委托完成时给出空态文案');
     else bad('任务物品空态缺失');

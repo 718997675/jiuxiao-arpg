@@ -203,6 +203,12 @@ const UI = {
     // 物品悬停 / 点击（事件委托）
     document.addEventListener('mouseover', e => {
       if (IS_TOUCH) return;   // 触屏改为一指点开、按钮操作
+      /* 材料格：图标 + 角标之后格子里没有文字了，说明全靠这条提示 */
+      const mc = e.target.closest('[data-mti]');
+      if (mc && this._matTips) {
+        const c = this._matTips[parseInt(mc.dataset.mti, 10)];
+        if (c) { this.showMatTip(c, e); return; }
+      }
       const el = e.target.closest('[data-ref]');
       if (!el) return;
       const item = this.itemFromRef(el.dataset.ref);
@@ -220,13 +226,14 @@ const UI = {
     document.addEventListener('mousemove', e => { if (!IS_TOUCH && this.tooltipEl.style.display === 'block') this.moveTooltip(e); });
     document.addEventListener('mouseout', e => {
       if (IS_TOUCH) return;
-      const el = e.target.closest('[data-ref]');
+      const el = e.target.closest('[data-ref],[data-mti]');
       if (el) { this.tooltipEl.style.display = 'none'; this.hoverRef = null; }
     });
     document.addEventListener('click', e => {
       const el = e.target.closest('[data-ref]');
       if (!el) {
-        if (IS_TOUCH && this.tooltipEl.style.display === 'block') this.hideTooltip();
+        /* 材料格在触屏下是「点一下看提示」，这一下不能顺手把提示关掉 */
+        if (IS_TOUCH && this.tooltipEl.style.display === 'block' && !e.target.closest('[data-mti]')) this.hideTooltip();
         return;
       }
       const ref = el.dataset.ref;
@@ -241,18 +248,34 @@ const UI = {
       this.tooltipEl.style.display = 'none';
     });
 
-    // 快捷键
+    // 快捷键（v1.6.0：全部指向主菜单的对应页签）
     window.addEventListener('keydown', e => {
       if (document.activeElement && document.activeElement.id === 'nameInput') return;
       const k = e.key.toLowerCase();
-      if (k === 'i') { this.toggleInv(); e.preventDefault(); }
-      else if (k === 't') { this.toggleTalent(); e.preventDefault(); }
-      else if (k === 'k') { this.toggleSkill(); e.preventDefault(); }
-      else if (k === 'c') { this.toggleStat(); e.preventDefault(); }
-      else if (k === 'l') { this.toggleQuest(); e.preventDefault(); }
-      else if (k === 'r') { this.toggleForge(); e.preventDefault(); }
+      if (k === 'i') { this.openMenu('bag'); e.preventDefault(); }
+      else if (k === 't') { this.openMenu('talent'); e.preventDefault(); }
+      else if (k === 'k') { this.openMenu('skill'); e.preventDefault(); }
+      else if (k === 'c') { this.openMenu('stat'); e.preventDefault(); }
+      else if (k === 'l') { this.openMenu('quest'); e.preventDefault(); }
+      else if (k === 'r') { this.openMenu('forge'); e.preventDefault(); }
+      else if (k === 'p') { this.openMenu('save'); e.preventDefault(); }
       else if (k === 'o') { this.openSettings(); e.preventDefault(); }
-      else if (k === 'escape') { this.closeAll(); }
+      else if (k === 'tab') { this.toggleMenu(); e.preventDefault(); }
+      else if (k === 'escape') {
+        const mp = document.getElementById('menuPanel');
+        if (mp && mp.classList.contains('open')) this.closeMenu();
+        else this.closeAll();
+      }
+    });
+
+    /* 主菜单页签 */
+    const mTabs = document.getElementById('menuTabs');
+    if (mTabs) mTabs.addEventListener('click', e => {
+      const b = e.target.closest('[data-mtab]');
+      if (!b || b.dataset.mtab === this.menuTab) return;
+      this.menuTab = b.dataset.mtab;
+      this.menuMount(this.menuTab);
+      try { SFX.ui(); } catch (err) { }
     });
 
     /* 设置面板：按钮是动态生成的，用事件委托，避免每次重绘都重新挂监听 */
@@ -278,6 +301,11 @@ const UI = {
   ],
 
   openSettings() {
+    /* 游戏内就是主菜单的一页；标题界面（还没有存档）仍然用独立弹窗 */
+    if (typeof Game !== 'undefined' && Game.state && document.getElementById('menuPanel')) {
+      this.openMenu('set');
+      return;
+    }
     const p = document.getElementById('setPanel');
     if (!p) return;
     this.closeAll(p);
@@ -576,18 +604,104 @@ const UI = {
       `<i class="${ph >= 1 ? 'on' : ''}"></i><i class="${ph >= 2 ? 'on' : ''}"></i>`;
   },
 
+  /* ---------------- 主菜单（v1.6.0） ----------------
+   * 原来八个入口各自开一个浮层，右下角排一列，屏幕被切得零碎，
+   * 而且「行囊开着、天赋开不了」这种互斥要用户自己体会。
+   * 现在收成一个外壳：左侧一排页签，右侧只挂当前这一页 —— 这是 ARPG 的经典分层，
+   * 也真的省地方（HUD 上只留「行囊」与「菜单」两个按钮）。
+   *
+   * 实现上是**搬 DOM**：把原本独立的面板元素 appendChild 进 #menuBody 并加 .embed，
+   * 关菜单时再送回 #panelHome。这样各面板的 CSS、事件委托、探针选择器全部原样可用，
+   * 不必为「嵌入模式」重写一遍渲染。 */
+  MENU_TABS: [
+    { id: 'bag', name: '行 囊', key: 'I', panel: 'invPanel', render: 'renderInventory' },
+    { id: 'stat', name: '道 途', key: 'C', panel: 'statPanel', render: 'renderStats' },
+    { id: 'talent', name: '天 赋', key: 'T', panel: 'talentPanel', render: 'renderTalentPanel' },
+    { id: 'skill', name: '术 法', key: 'K', panel: 'skillPanel', render: 'renderSkillPanel' },
+    { id: 'quest', name: '山 海 志', key: 'L', panel: 'questPanel', render: 'renderQuests' },
+    { id: 'forge', name: '炼 器 台', key: 'R', panel: 'forgePanel', render: 'renderForge' },
+    { id: 'save', name: '存 档', key: 'P', panel: 'savePanel', render: null },
+    { id: 'set', name: '设 置', key: 'O', panel: 'setPanel', render: 'renderSettings' }
+  ],
+  menuTab: 'bag',
+
+  openMenu(tab) {
+    if (!Game.state) return;
+    const p = document.getElementById('menuPanel');
+    if (!p) return;
+    const id = tab || this.menuTab || 'bag';
+    this.menuTab = id;
+    /* 先合上其它浮层（对话框 / 商店 / 图鉴），菜单自己除外 */
+    this.closeAll(p);
+    p.classList.add('open');
+    this.menuMount(id);
+    try { SFX.ui(); } catch (e) { }
+  },
+
+  toggleMenu() {
+    const p = document.getElementById('menuPanel');
+    if (p && p.classList.contains('open')) this.closeMenu();
+    else this.openMenu(this.menuTab || 'bag');
+  },
+
+  closeMenu() {
+    const p = document.getElementById('menuPanel');
+    if (p) p.classList.remove('open');
+    this.menuUnmount();
+    if (this.tooltipEl) this.tooltipEl.style.display = 'none';
+  },
+
+  /* 页签 → 面板：切换时先归位上一个，再挂新的 */
+  menuMount(id) {
+    const def = this.MENU_TABS.find(t => t.id === id) || this.MENU_TABS[0];
+    const body = document.getElementById('menuBody');
+    const home = document.getElementById('panelHome');
+    const sub = document.getElementById(def.panel);
+    if (!body || !home || !sub) return;
+    this.menuUnmount();
+    body.appendChild(sub);
+    sub.classList.add('embed', 'open');
+    document.querySelectorAll('#menuTabs .mtab').forEach(b => b.classList.toggle('on', b.dataset.mtab === def.id));
+    /* 各页自己的首帧。存档面板的渲染函数叫 SaveUI.render，单独接一下。 */
+    if (def.render && typeof this[def.render] === 'function') {
+      try { this[def.render](); } catch (e) { console.warn('menu render', def.id, e); }
+    }
+    if (def.id === 'save' && typeof SaveUI !== 'undefined') {
+      try {
+        SaveUI.pendingDelete = 0;
+        SaveUI.hint('存档存在于本机浏览器（localStorage）。换设备或清理浏览器数据前，请先导出备份。');
+        SaveUI.render();
+      } catch (e) { }
+    }
+  },
+
+  /* 把菜单里的子面板全部送回原籍（不改它们的开合状态，由调用方决定） */
+  menuUnmount() {
+    const body = document.getElementById('menuBody');
+    const home = document.getElementById('panelHome');
+    if (!body || !home) return;
+    body.querySelectorAll('.panel').forEach(el => {
+      el.classList.remove('embed', 'open');
+      home.appendChild(el);
+    });
+  },
+
   /* ---------------- 背包 ---------------- */
   invJunkOpen: false,      // 一键分解确认条是否展开
   invJunkMagic: false,     // 一键分解是否连带法器
   invTab: 'equip',         // 行囊当前栏：equip / mat / pill / quest
   invUpOpen: false,        // 行囊扩容条是否展开（v1.4.0）
-  toggleInv() { const p = document.getElementById('invPanel'); this.closeAll(p); p.classList.toggle('open'); if (p.classList.contains('open')) this.renderInventory(); },
-  toggleStat() { const p = document.getElementById('statPanel'); this.closeAll(p); p.classList.toggle('open'); if (p.classList.contains('open')) this.renderStats(); },
-  toggleQuest() { const p = document.getElementById('questPanel'); this.closeAll(p); p.classList.toggle('open'); if (p.classList.contains('open')) this.renderQuests(); },
+  /* 旧入口全部重定向到菜单页签：快捷键、老按钮、探针都还能这么调 */
+  toggleInv() { this.openMenu('bag'); },
+  toggleStat() { this.openMenu('stat'); },
+  toggleQuest() { this.openMenu('quest'); },
   closeAll(except) {
     /* 关面板时把商店倒计时停掉，否则每秒还在跑一个 setInterval */
     if (this.shopTimer) { clearInterval(this.shopTimer); this.shopTimer = null; }
     document.querySelectorAll('.panel').forEach(p => { if (p !== except) p.classList.remove('open'); });
+    /* 菜单外壳若已被关掉，子面板必须归位，否则下次打开还嵌在上一次的容器里 */
+    const mp = document.getElementById('menuPanel');
+    if (mp && except !== mp && !mp.classList.contains('open')) this.menuUnmount();
     document.getElementById('dialog').style.display = 'none';
     this.tooltipEl.style.display = 'none';
   },
@@ -608,8 +722,9 @@ const UI = {
     if (tip) {
       const TIPS = {
         equip: '左键装备 · Shift+左键出售 · 格子大小随部位',
-        mat: '玄晶用于炼器与洗练 · 符文用于镶嵌',
-        pill: '点一行即服用 · 战斗中亦可',
+        mat: '匠材锻造 · 玄晶洗练 · 符文镶嵌 · ' +
+          (typeof Mobile !== 'undefined' && Mobile.on ? '点按看来源' : '悬停看来源'),
+        pill: '点一格即服用 · 战斗中亦可',
         quest: '委托完成即生成凭证 · 不占行囊格位'
       };
       tip.textContent = TIPS[tab] || TIPS.equip;
@@ -771,53 +886,98 @@ const UI = {
     }
   },
 
-  /* 材料 / 丹药 / 任务物品：三栏共用一套「图标 + 名称 + 数量」行 */
+  /* 材料 / 丹药 / 任务物品：三栏统一成「图标 + 数量角标」（v1.6.0）
+   * 以前一行一条（图标 + 名称 + 说明 + 数量），9 种匠材就把一屏吃满了；
+   * 换成格子之后，形状替代文字，一屏能看全，文字退到悬停提示。
+   * 提示内容存在 this._matTips 里，格子只带下标 —— 省掉一大堆属性转义。 */
   renderMatTab(tab) {
     const s = Game.state;
     const el = document.getElementById('invMats');
     if (!el) return;
     const RUNE_COLOR = { 1: '#a0a0a0', 2: '#67a9ff', 3: '#c084ff', 4: '#ffd166' };
-    let rows = [];
+    let cells = [];
     if (tab === 'mat') {
-      CRYSTAL_TIERS.forEach((t, i) => rows.push({
-        color: t.color, glyph: t.label, name: t.name + '（' + (i + 1) + ' 阶）',
-        sub: '分解装备获得，炼器与洗练的通货', n: Game.crystalTierCount(i + 1)
+      /* 玄晶四阶 */
+      CRYSTAL_TIERS.forEach((t, i) => cells.push({
+        icon: matIcon('crystal' + (i + 1), { size: 30, color: t.color, glow: i >= 2 }),
+        color: t.color, name: t.name + '（' + (i + 1) + ' 阶）',
+        sub: '炼器 / 洗练 / 扩容的通货', desc: '分解装备所得，凡 → 灵 → 玄 → 神 逐阶精纯。',
+        qty: Game.crystalTierCount(i + 1)
       }));
-      for (const id in RUNES) {
-        const n = Game.runeCount(id);
-        if (n > 0) rows.push({
-          color: RUNE_COLOR[RUNES[id].tier] || '#c9a86a', glyph: '符', name: RUNES[id].name + '符文',
-          sub: RUNES[id].tier + ' 阶 · ' + statLine(RUNES[id].stats), n
+      /* 匠材九种：没有的也占一格（灰显），玩家才知道该去刷什么 */
+      for (const id of CRAFT_MAT_ORDER) {
+        const d = CRAFT_MATS[id];
+        cells.push({
+          icon: matIcon(d.icon, { size: 30, color: d.color, glow: d.tier >= 3 }),
+          color: d.color, name: d.name,
+          sub: CRAFT_TIER_NAME[d.tier] + ' · 来自' + d.from,
+          desc: d.desc, qty: Game.craftMatCount(id)
         });
       }
-      document.getElementById('invCap').textContent = `材料 ${rows.length} 种`;
+      /* 符文：只列持有的，24 种全列会盖掉匠材 */
+      for (const id of RUNE_ICON_ORDER) {
+        const n = Game.runeCount(id);
+        if (!n) continue;
+        const rd = RUNES[id], tier = RUNE_TIERS[rd.tier];
+        const col = RUNE_COLOR[rd.tier] || '#c9a86a';
+        cells.push({
+          icon: iconSvg('rune_' + id, { size: 28, style: 'color:' + col }),
+          color: col, name: rd.name + '符文',
+          sub: tier.name + ' · ' + statLine(rd.stats), desc: '镶进装备孔位，可组成符文之语。',
+          qty: n
+        });
+      }
+      const kinds = cells.filter(c => c.qty > 0).length;
+      document.getElementById('invCap').textContent = `材料 ${kinds} / ${cells.length} 种`;
     } else if (tab === 'pill') {
       const p = s.potions || { hp: 0, mp: 0 };
-      rows.push({ color: '#e05a4a', glyph: '丹', name: '回春丹', sub: '立即回复生命', n: p.hp || 0, use: 'hp', key: 'Z' });
-      rows.push({ color: '#67a9ff', glyph: '露', name: '凝露', sub: '立即回复灵力', n: p.mp || 0, use: 'mp', key: 'X' });
-      rows.push({ color: '#9a9aff', glyph: '阵', name: '传送阵石', sub: '就地开启归途阵', n: s.teleportStones || 0, use: 'tp', key: '9' });
-      document.getElementById('invCap').textContent = `丹药 ${rows.reduce((a, r) => a + r.n, 0)} 枚`;
+      cells = [
+        {
+          icon: matIcon('potion_hp', { size: 30, color: '#e05a4a', glow: true }), color: '#e05a4a',
+          name: '回春丹', sub: '立即回复生命 · 快捷键 Z', desc: '点格子即服用，战斗中亦可。',
+          qty: p.hp || 0, use: 'hp'
+        },
+        {
+          icon: matIcon('potion_mp', { size: 30, color: '#67a9ff', glow: true }), color: '#67a9ff',
+          name: '凝露', sub: '立即回复灵力 · 快捷键 X', desc: '点格子即服用，战斗中亦可。',
+          qty: p.mp || 0, use: 'mp'
+        },
+        {
+          icon: matIcon('potion_tp', { size: 30, color: '#9a9aff', glow: true }), color: '#9a9aff',
+          name: '传送阵石', sub: '就地开启归途阵 · 快捷键 9', desc: '脱战状态下使用，立刻返回桃源村。',
+          qty: s.teleportStones || 0, use: 'tp'
+        }
+      ];
+      document.getElementById('invCap').textContent = `丹药 ${cells.reduce((a, c) => a + c.qty, 0)} 枚`;
     } else {
       /* 任务物品：已完成的委托留下一枚凭证，纯陈列，不占行囊、不可交易 */
       const done = (s.quests && s.quests.done) || [];
-      rows = done.map(id => {
+      const cnt = {};
+      done.forEach(id => { cnt[id] = (cnt[id] || 0) + 1; });
+      cells = Object.keys(cnt).map(id => {
         const q = QUESTS[id];
         if (!q) return null;
-        return { color: '#d8b25a', glyph: '凭', name: q.name + '·凭证', sub: q.brief ? q.brief.slice(0, 22) + '…' : '委托完结的凭证', n: 1, fixed: true };
+        return {
+          icon: matIcon('quest', { size: 30, color: '#d8b25a', glow: true }), color: '#d8b25a',
+          name: q.name + '·凭证', sub: '委托完结的凭证', desc: q.brief || '',
+          qty: cnt[id], idx: id.replace(/^q/, '')
+        };
       }).filter(Boolean);
-      document.getElementById('invCap').textContent = `任务物品 ${rows.length} 枚`;
-      if (!rows.length) {
+      document.getElementById('invCap').textContent = `任务物品 ${cells.length} 种`;
+      if (!cells.length) {
         el.innerHTML = '<div class="mat-empty">尚无任务物品<br><span>完成一份委托后，凭证会陈列在这里</span></div>';
         return;
       }
     }
-    el.innerHTML = rows.map(r => `
-      <div class="matrow${r.n ? '' : ' off'}" ${r.use ? `data-use="${r.use}"` : ''} style="--mc:${r.color}">
-        <span class="mg">${r.glyph}</span>
-        <span class="mn"><b>${r.name}</b><i>${r.sub}</i></span>
-        <span class="mt">×${r.n}</span>
-        ${r.use ? `<span class="mk">${r.key}</span>` : ''}
-      </div>`).join('');
+
+    this._matTips = cells;
+    el.innerHTML = '<div class="mgrid">' + cells.map((c, i) => `
+      <div class="mgcell${c.qty ? '' : ' off'}" data-mti="${i}" ${c.use ? `data-use="${c.use}"` : ''}
+        style="--mc:${c.color}">
+        <span class="mg-ico">${c.icon}</span>
+        ${c.idx ? `<span class="mg-idx">${c.idx}</span>` : ''}
+        <span class="mg-qty">${c.qty > 999 ? '999+' : c.qty}</span>
+      </div>`).join('') + '</div>';
 
     el.querySelectorAll('[data-use]').forEach(row => {
       row.addEventListener('click', () => {
@@ -826,13 +986,40 @@ const UI = {
         this.renderInventory();
       });
     });
+    /* 触屏没有悬停：点一下直接在格子上方弹提示 */
+    if (IS_TOUCH) {
+      el.querySelectorAll('[data-mti]').forEach(row => {
+        row.addEventListener('click', e => {
+          if (row.dataset.use) return;
+          const c = this._matTips[+row.dataset.mti];
+          if (c) this.showMatTip(c, e);
+        });
+      });
+    }
+  },
+
+  /* 材料 / 丹药 / 凭证的悬停提示。与装备提示共用 #tooltip 与定位逻辑。 */
+  showMatTip(c, e) {
+    if (!c) return;
+    this.tooltipEl.innerHTML = `<div class="tt" style="--rc:${c.color}">
+      <div class="tt-head"><div class="tt-ico" style="border-color:${c.color}44;background:radial-gradient(circle at 50% 35%,${c.color}22,rgba(0,0,0,.5))">${c.icon}</div>
+        <div class="tt-htx">
+          <div class="tt-name" style="color:${c.color}">${c.name}</div>
+          <div class="tt-sub">${c.sub || ''}</div>
+        </div></div>
+      <div class="tt-main" style="color:#b8b0a0">持有 <b style="color:#f0e0b8">${c.qty}</b></div>
+      ${c.desc ? `<div class="tt-lore" style="font-style:normal;color:#8a8474;font-size:10.5px;line-height:1.6">${c.desc}</div>` : ''}
+    </div>`;
+    this.tooltipEl.style.display = 'block';
+    if (e) this.moveTooltip(e);
   },
 
   renderTabBadges() {
     const s = Game.state;
     if (!s) return;
     const matN = CRYSTAL_TIERS.filter((t, i) => Game.crystalTierCount(i + 1) > 0).length +
-      Object.keys(RUNES).filter(id => Game.runeCount(id) > 0).length;
+      Object.keys(RUNES).filter(id => Game.runeCount(id) > 0).length +
+      CRAFT_MAT_ORDER.filter(id => Game.craftMatCount(id) > 0).length;
     const pillN = (s.potions ? (s.potions.hp || 0) + (s.potions.mp || 0) : 0) + (s.teleportStones || 0);
     const qN = ((s.quests && s.quests.done) || []).length;
     const set = (id, n) => {
@@ -937,22 +1124,12 @@ const UI = {
   _tlHit: [],          // 画布点击热区
   _tlRespecArm: false,
 
-  toggleTalent() {
-    if (!Game.state) return;
-    const p = document.getElementById('talentPanel');
-    if (!p) return;
-    this.closeAll(p);
-    p.classList.toggle('open');
-    if (p.classList.contains('open')) this.renderTalentPanel();
-  },
+  /* v1.6.0：统一走主菜单页签；openTalent 保留给剧情/提示类调用 */
+  toggleTalent() { this.openMenu('talent'); },
 
   openTalent() {
     if (!Game.state) return;
-    const p = document.getElementById('talentPanel');
-    if (!p) return;
-    this.closeAll(p);
-    p.classList.add('open');
-    this.renderTalentPanel();
+    this.openMenu('talent');
   },
 
   /* 天赋/技能/套装任何改动后刷新已开着的相关面板 */
@@ -990,8 +1167,10 @@ const UI = {
 
     document.getElementById('tlPts').textContent = Game.talentPoints();
     this.renderTalentPresets();
-    this.drawTalentCanvas();
+    /* 顺序要紧：先定画布位图尺寸（改 width/height 会清空画布），再画。
+     * v1.6.0 起天赋页被搬进菜单，首帧只渲染这一次，反着来就会是一片空白。 */
     this.bindTalentCanvas();
+    this.drawTalentCanvas();
   },
 
   renderTalentPresets() {
@@ -1039,19 +1218,25 @@ const UI = {
     }
   },
 
+  /* 高分屏适配：位图按 dpr 放大，逻辑坐标始终是 660×440。
+   * 幂等——尺寸没变就什么都不做（改 width 会清空画布，白画一次）。 */
+  sizeTalentCanvas(cv) {
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    const w = Math.round(660 * dpr), h = Math.round(440 * dpr);
+    cv.style.width = '660px'; cv.style.height = '440px';
+    if (cv.width === w && cv.height === h) return;
+    cv.width = w; cv.height = h;
+    const g = cv.getContext('2d');
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  },
+
   /* 画布只绑一次监听，重绘时复用 */
   bindTalentCanvas() {
     const cv = document.getElementById('tlCanvas');
-    if (!cv || cv._tlBound) return;
+    if (!cv) return;
+    this.sizeTalentCanvas(cv);
+    if (cv._tlBound) return;
     cv._tlBound = true;
-
-    /* 高分屏适配：物理像素放大，逻辑坐标仍是 660×440 */
-    const dpr = Math.min(2, window.devicePixelRatio || 1);
-    if (dpr > 1) {
-      cv.width = 660 * dpr; cv.height = 440 * dpr;
-      cv.style.width = '660px'; cv.style.height = '440px';
-      cv.getContext('2d').scale(dpr, dpr);
-    }
 
     const nodeAt = (mx, my) => {
       for (const h of this._tlHit) {
@@ -1105,6 +1290,14 @@ const UI = {
       tip.style.top = ty + 'px';
     });
     cv.addEventListener('mouseleave', () => { if (tip) tip.style.display = 'none'; });
+
+    /* 换屏 / 缩放会让 dpr 变，位图得跟着重设，否则会糊或被裁 */
+    window.addEventListener('resize', () => {
+      const p = document.getElementById('talentPanel');
+      if (!p || !p.classList.contains('open')) return;
+      this.sizeTalentCanvas(cv);
+      this.drawTalentCanvas();
+    });
   },
 
   talentTipHtml(id) {
@@ -1372,22 +1565,11 @@ const UI = {
   /* ---------------- 技能面板（S4 / v1.2.0） ----------------
    * 暗黑风：左侧按系分组的图标网格（一个图标一个技能），点图标选中；
    * 右侧详情卡展示名称/描述/消耗冷却/等级/变体，升级与变体都在详情卡上操作。 */
-  toggleSkill() {
-    if (!Game.state) return;
-    const p = document.getElementById('skillPanel');
-    if (!p) return;
-    this.closeAll(p);
-    p.classList.toggle('open');
-    if (p.classList.contains('open')) this.renderSkillPanel();
-  },
+  toggleSkill() { this.openMenu('skill'); },
 
   openSkill() {
     if (!Game.state) return;
-    const p = document.getElementById('skillPanel');
-    if (!p) return;
-    this.closeAll(p);
-    p.classList.add('open');
-    this.renderSkillPanel();
+    this.openMenu('skill');
   },
 
   onSkillChanged() {
