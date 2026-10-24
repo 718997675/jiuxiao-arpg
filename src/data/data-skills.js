@@ -421,3 +421,117 @@ function mergeSkillMods() {
   }
   return out;
 }
+
+/* ============================================================
+ * [C1] 机制型变体（v1.8.0）
+ *
+ * 原来 108 个变体全是数值修正（dmg / cd / cost / radius / count / dur），
+ * 换个变体只是数字变大变小，打法和手感完全一样 —— 构筑之间没有区别。
+ *
+ * 现在每个技能的变体 Ⅲ 换成「改机制」：数据里只写一个 special id，
+ * 真正的效果由 game.js 的 applySkillSpecial() 统一消费。
+ * 好处是新增机制只改这两处，不用碰 castSkill 里那 36 个 case。
+ * ============================================================ */
+
+/* 机制登记表：castSkill 只认这里出现过的 id。
+ * 数据里写错的 special 会被 variantSpecial() 静默丢弃（技能照常施放、只是没附加效果），
+ * 不会出现「变体选中了但技能变空放」这种难查的故障。 */
+const SKILL_SPECIALS = {
+  bleed:       { name: '流血',   desc: '命中敌人后 3 秒内每秒受 25% 技能伤害' },
+  burn:        { name: '灼烧',   desc: '命中敌人后 3 秒内每秒受 30% 火焰伤害' },
+  slow:        { name: '冰缓',   desc: '命中敌人减速 40%，持续 3 秒' },
+  freeze:      { name: '冻结',   desc: '命中敌人定身 1.2 秒（首领 0.4 秒）' },
+  stun:        { name: '麻痹',   desc: '命中敌人眩晕 0.8 秒（首领 0.3 秒）' },
+  explode:     { name: '爆裂',   desc: '落点 2.5m 内追加 60% 范围伤害' },
+  chain:       { name: '连锁',   desc: '向周围 3 名敌人连锁 60% 伤害' },
+  pull:        { name: '聚拢',   desc: '把 5m 内敌人拉向中心并短暂失衡' },
+  echo:        { name: '回响',   desc: '0.45 秒后在原地再打一次 60% 伤害' },
+  endBurst:    { name: '终爆',   desc: '1.5 秒后原地爆发 90% 伤害' },
+  auraField:   { name: '领域',   desc: '8 秒内每秒对范围内敌人造成 40% 伤害' },
+  slowField:   { name: '寒域',   desc: '6 秒内范围内敌人持续减速 35%' },
+  extraSummon: { name: '兽群',   desc: '额外召出一头灵狼助战' },
+  healBurst:   { name: '济世',   desc: '治疗同时对周围敌人造成 60% 治疗量伤害' },
+  cleanse:     { name: '净化',   desc: '清除所有负面状态并回复 10% 生命上限' },
+  shockwave:   { name: '震荡',   desc: '周围 4.5m 敌人受 60% 伤害并被击退' },
+  regenField:  { name: '回春',   desc: '6 秒内每秒回复 2% 生命上限' }
+};
+
+/* 36 个技能的变体 Ⅲ 覆盖项。
+ * 不写 mods 就沿用原变体的数值修正；写了 mods 就整体替换 ——
+ * 机制型变体一般要「削一点数值换一个机制」，所以大多数都给了负修正。 */
+const SKILL_SPECIAL_VARIANTS = {
+  /* ---------------- 战士 · 狂战 ---------------- */
+  whirl:        { name: '血旋',   special: 'bleed',      mods: { dmg: -10 }, desc: '命中附加流血：3 秒内每秒受 25% 伤害' },
+  thrust:       { name: '焚野',   special: 'burn',       mods: { dmg: -5 },  desc: '突进沿途点燃敌人：3 秒内每秒 30% 火焰伤害' },
+  bloodrage:    { name: '血偿',   special: 'regenField', mods: { dur: -2 },  desc: '增益期间每秒回复 2% 生命上限' },
+  execute:      { name: '斩魂',   special: 'explode',    mods: { dmg: -10 }, desc: '斩击落点 2.5m 爆裂，追加 60% 范围伤害' },
+  /* ---------------- 战士 · 守护 ---------------- */
+  warcry:       { name: '战吼',   special: 'shockwave',  mods: { dur: -2 },  desc: '咆哮震退 4.5m 内敌人并造成 60% 伤害' },
+  shieldwall:   { name: '铁壁回春', special: 'regenField', mods: { dur: -2 }, desc: '举盾期间每秒回复 2% 生命上限' },
+  riposte:      { name: '震甲',   special: 'shockwave',  mods: { dur: -1 },  desc: '架式展开时震退周围敌人并造成 60% 伤害' },
+  /* ---------------- 战士 · 破军 ---------------- */
+  quake:        { name: '裂地',   special: 'endBurst',   mods: { dmg: -10 }, desc: '1.5 秒后大地二次崩裂，90% 范围伤害' },
+  leap:         { name: '坠地',   special: 'pull',       mods: { dmg: -10 }, desc: '落地把 5m 内敌人拉向落点' },
+  avatar:       { name: '剑域',   special: 'auraField',  mods: { dmg: -20 }, desc: '剑神领域 8 秒，每秒对周围造成 40% 伤害' },
+  swordarray:   { name: '剑狱',   special: 'auraField',  mods: { dmg: -15 }, desc: '剑阵化为领域，8 秒内每秒 40% 伤害' },
+  skysfall:     { name: '天罚',   special: 'stun',       mods: { dmg: -10 }, desc: '三次震击附带麻痹 0.8 秒' },
+  /* ---------------- 法师 · 烈火 ---------------- */
+  fireball:     { name: '炎爆',   special: 'explode',    mods: { dmg: -5 },  desc: '命中后原地爆裂，2.5m 内追加 60% 伤害' },
+  meteor:       { name: '流星',   special: 'echo',       mods: { dmg: -15 }, desc: '0.45 秒后落点再砸一颗小陨石（60%）' },
+  firewall:     { name: '燃野',   special: 'burn',       mods: { dur: -1 },  desc: '被火墙灼烧的敌人额外点燃 3 秒' },
+  pyroclasm:    { name: '焚尽',   special: 'burn',       mods: { dmg: -10 }, desc: '引爆后敌人持续燃烧 3 秒（每秒 30%）' },
+  /* ---------------- 法师 · 寒冰 ---------------- */
+  frostnova:    { name: '冰封',   special: 'freeze',     mods: { dmg: -15 }, desc: '命中敌人定身 1.2 秒（首领 0.4 秒）' },
+  iceshard:     { name: '霜透',   special: 'slow',       mods: { dmg: -5 },  desc: '冰锥命中减速 40%，持续 3 秒' },
+  iceshield:    { name: '霜域',   special: 'slowField',  mods: { dmg: -10 }, desc: '护盾期间周身寒气，6 秒内附近敌人减速 35%' },
+  blizzard:     { name: '雪崩',   special: 'endBurst',   mods: { dmg: -10 }, desc: '暴雪结束时爆发一次 90% 冰霜伤害' },
+  /* ---------------- 法师 · 雷霆 ---------------- */
+  chain:        { name: '雷回',   special: 'echo',       mods: { dmg: -10 }, desc: '0.45 秒后雷弧再跳一轮（60%）' },
+  starfall:     { name: '星陨',   special: 'burn',       mods: { dmg: -10 }, desc: '每颗陨星点燃落点敌人 3 秒' },
+  thundercloud: { name: '雷暴',   special: 'stun',       mods: { dmg: -10 }, desc: '落雷附带麻痹 0.8 秒' },
+  judgement:    { name: '天罚连锁', special: 'chain',    mods: { dmg: -20 }, desc: '天罚同时向周围 3 名敌人连锁 60% 伤害' },
+  /* ---------------- 道士 · 符箓 ---------------- */
+  talisman:     { name: '引雷',   special: 'explode',    mods: { dmg: -10 }, desc: '目标周围 2.5m 感电爆裂，追加 60% 伤害' },
+  talismanarrow:{ name: '追魂',   special: 'echo',       mods: { dmg: -10 }, desc: '0.45 秒后追射一轮（60%）' },
+  swordrain:    { name: '剑冢',   special: 'endBurst',   mods: { dmg: -10 }, desc: '符剑落尽时巨剑砸落，90% 范围伤害' },
+  mastersigil:  { name: '符雷阵', special: 'chain',      mods: { dmg: -10 }, desc: '符阵落雷向周围 3 名敌人连锁 60%' },
+  /* ---------------- 道士 · 召唤 ---------------- */
+  summon:       { name: '兽群',   special: 'extraSummon', mods: { dmg: -10 }, desc: '额外召出一头灵狼（共两头）' },
+  whitetiger:   { name: '虎啸',   special: 'shockwave',  mods: { dmg: -10 }, desc: '白虎出场震退 4.5m 内敌人并造成 60% 伤害' },
+  azuredragon:  { name: '龙威',   special: 'shockwave',  mods: { dmg: -10 }, desc: '青龙出场震退 4.5m 内敌人并造成 60% 伤害' },
+  /* ---------------- 道士 · 丹道 ---------------- */
+  heal:         { name: '济世',   special: 'healBurst',  mods: { dmg: -15 }, desc: '治疗同时对周围敌人造成 60% 治疗量伤害' },
+  poison:       { name: '腐骨',   special: 'slowField',  mods: { dur: -1 },  desc: '毒雾内敌人持续减速 35%' },
+  taiji:        { name: '玄阵',   special: 'regenField', mods: { dur: -2 },  desc: '阵中每秒回复 2% 生命上限' },
+  antidote:     { name: '净化',   special: 'cleanse',    mods: { dur: -2 },  desc: '清除所有负面状态并回复 10% 生命上限' },
+  revive:       { name: '魂护',   special: 'regenField', mods: { dur: -4 },  desc: '还魂期间每秒回复 2% 生命上限' }
+};
+
+/* 把机制变体合并进 variants[2]。
+ * 合并发生在加载期一次，之后 UI / 施法 / 存档都直接读 SKILLS，
+ * 不需要到处判断「这条变体是不是机制型的」。 */
+(function mergeSpecialVariants() {
+  for (const id in SKILL_SPECIAL_VARIANTS) {
+    const sk = SKILLS[id];
+    if (!sk || !sk.variants || !sk.variants[2]) continue;
+    sk.variants[2] = Object.assign({}, sk.variants[2], SKILL_SPECIAL_VARIANTS[id]);
+  }
+})();
+
+/* 取某个变体的机制 id；没登记过的一律当「纯数值变体」返回 null */
+function variantSpecial(sk, v) {
+  if (!sk || !sk.variants || !sk.variants[v]) return null;
+  const sp = sk.variants[v].special;
+  return sp && SKILL_SPECIALS[sp] ? sp : null;
+}
+
+/* 机制型变体统计（回归脚本 / 面板提示共用） */
+function specialVariantCount() {
+  let n = 0;
+  for (const id in SKILLS) {
+    const sk = SKILLS[id];
+    if (!sk.variants) continue;
+    for (let i = 0; i < sk.variants.length; i++) if (variantSpecial(sk, i)) n++;
+  }
+  return n;
+}

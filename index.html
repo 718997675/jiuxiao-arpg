@@ -473,6 +473,11 @@
   .sk-vbtn:hover{border-color:rgba(216,178,90,.5);color:#e8d8b0}
   .sk-vbtn.on{color:#1a1510;background:linear-gradient(180deg,#e0c070,#b89840);font-weight:600}
   .sk-vbtn.locked{opacity:.4;cursor:default}
+  /* [C1] 机制型变体：改的是打法而不是数字，用青色描边和纯数值变体区分开 */
+  .sk-vbtn.mech{border-color:rgba(120,208,255,.45);color:#9fd4f0}
+  .sk-vbtn.mech::after{content:'◆';font-size:7px;margin-left:3px;vertical-align:top;opacity:.8}
+  .sk-vbtn.mech:hover{border-color:rgba(140,220,255,.8);color:#d0f0ff}
+  .sk-vbtn.mech.on{background:linear-gradient(180deg,#8ad8ff,#4a9ac8);border-color:#8ad8ff;color:#0d1a22}
   /* 技能条配置行：详情卡底部 1-5 */
   .sd-bar{display:flex;align-items:center;gap:8px;margin-top:10px;padding-top:9px;
     border-top:1px solid rgba(216,178,90,.16)}
@@ -494,6 +499,9 @@
   .sk-setbtn.on{background:linear-gradient(180deg,#e0c070,#b89840);color:#1a1510;border-color:#ffd479}
   .sd-vars{display:flex;gap:6px;margin-bottom:6px}
   .sd-vname{font-size:10px;color:#7a7466;line-height:1.65}
+  /* [C1] 当前变体的机制标签 */
+  .sd-mech{display:inline-block;margin-left:6px;padding:1px 6px;border-radius:3px;font-size:9.5px;
+    color:#9fd4f0;background:rgba(120,208,255,.12);border:1px solid rgba(120,208,255,.35);vertical-align:1px}
   .igrid{display:grid;grid-template-columns:repeat(8,1fr);gap:6px;
     flex:0 1 auto;min-height:0;overflow-y:auto;overflow-x:hidden;align-content:start;padding-right:2px}
   /* 行囊格子同样按部位分档（v1.2.3）：轨道保持等宽等距，格子里的小方块按档位缩放，

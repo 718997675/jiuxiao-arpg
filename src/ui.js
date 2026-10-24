@@ -1793,9 +1793,13 @@ const UI = {
     const dmgTxt = Math.round(s.stats.atk * sk.mult * spow);
     const desc = (sk.desc || '').replace(/\{dmg\}/g, '<b style="color:#ffe9a8">' + dmgTxt + '</b>');
     const castTxt = sk.cast === 'ground' ? '指定位置' : sk.cast === 'dir' ? '指定方向' : sk.cast === 'enemy' ? '自动索敌' : '自身';
-    const vars = (sk.variants || []).map((vr, i) =>
-      `<button class="sk-vbtn ${i === v ? 'on' : ''}" data-skv="${id}:${i}" title="${vr.desc}">${['Ⅰ', 'Ⅱ', 'Ⅲ'][i]}</button>`
-    ).join('');
+    /* [C1] 机制型变体在按钮上单独描边：玩家要能一眼看出「这个变体改的是打法，不是数字」 */
+    const vars = (sk.variants || []).map((vr, i) => {
+      const mech = variantSpecial(sk, i);
+      const tip = vr.desc + (mech ? ' · 机制：' + SKILL_SPECIALS[mech].name : '');
+      return `<button class="sk-vbtn ${i === v ? 'on' : ''} ${mech ? 'mech' : ''}" data-skv="${id}:${i}" title="${tip}">${['Ⅰ', 'Ⅱ', 'Ⅲ'][i]}</button>`;
+    }).join('');
+    const curSp = variantSpecial(sk, v);
     const pips = Array.from({ length: SKILL_LV_MAX }, (_, i) => `<span class="sk-pip ${i < lv ? 'on' : ''}"></span>`).join('');
     /* 技能条 5 格：点数字把当前技能放上去（已在条上会从原位移走） */
     const slotBtns = barSlots.map((bid, i) => {
@@ -1814,7 +1818,7 @@ const UI = {
         <span class="sk-lvt"><b>${lv}</b>/${SKILL_LV_MAX}</span>
         <button class="sk-lvb" data-sklv="${id}" ${locked || lv >= SKILL_LV_MAX || pts <= 0 ? 'disabled' : ''}>升级</button></div>
       <div class="sd-vars">${vars}</div>
-      <div class="sd-vname">${sk.variants[v].name}：${sk.variants[v].desc}</div>
+      <div class="sd-vname">${sk.variants[v].name}：${sk.variants[v].desc}${curSp ? `<span class="sd-mech">机制 · ${SKILL_SPECIALS[curSp].name}</span>` : ''}</div>
       <div class="sd-bar"><span class="sd-barlab">技能条</span>
         <span class="sd-barslots">${slotBtns}</span>
         <span class="sk-sets">${SKILL_BAR_SET_NAME.map((nm, i) =>

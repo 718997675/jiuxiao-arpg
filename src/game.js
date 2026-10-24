@@ -1091,6 +1091,7 @@ const Game = {
       pos: new THREE.Vector3(x, 0, z), dead: false,
       atkCd: RND(0.3, 1.4), windup: 0, anim: 0, hitFlash: 0,
       stun: 0, slow: 0, slowT: 0, poisonT: 0, poisonDmg: 0, venomT: 0,
+      dotT: 0, dotTick: 0, dotDmg: 0, dotElem: null, dotLabel: '',
       phase: 0, patternCd: 3, tag: kind, facing: new THREE.Vector3(0, 0, 1),
       spawnPos: new THREE.Vector3(x, 0, z), active: !isBoss, hitT: 0,
       /* [S5] 精英词缀与族群抗性 */
@@ -1905,6 +1906,9 @@ const Game = {
     const sextra = smod ? (smod.count || 0) : 0;
     /* v1.1.9：技能持续时长修正（青符 4 件：毒雾 +3 秒） */
     const sdur = smod ? (smod.dur || 0) : 0;
+    /* [C1] 当前变体是不是「机制型」：是的话主效果结算完还要追加机制。
+     * 只查一次，后面的 switch 里各 case 不用各自判断。 */
+    const vsp = variantSpecial(sk, this.skillVariant(id));
     /* [S1] 技能消耗降低；传世还能再减该技能的消耗 */
     const cost = Math.max(1, Math.round(this.skillCost(sk) * (1 - (smod && smod.cost ? smod.cost : 0) / 100)));
     if (s.mp < cost) { UI.log(s.cls === 'warrior' ? '怒气不足' : '灵力不足'); SFX.ui(); return; }
@@ -2620,8 +2624,229 @@ const Game = {
         break;
       }
     }
+    /* [C1] 机制型变体：主效果结算完再追加机制。
+     * 放在 switch 之后而不是塞进每个 case，是为了让 36 个技能共享同一套机制实现
+     * —— 新增一个机制只改 SKILL_SPECIALS + applySkillSpecial，不用碰 castSkill。 */
+    if (vsp) this.applySkillSpecial(sk, id, vsp, { pp, aim, dir, spow, srad, sdur });
     this._tag = null;      // [S1] 技能结算完毕，标记归零，避免污染普攻
     UI.renderHUD();
+  },
+
+  /* ============================================================
+   * [C1] 机制型变体结算
+   * ctx: { pp 玩家位置, aim 落点, dir 朝向, spow 伤害倍率, srad 范围倍率 }
+   * 统一约定：
+   *   · self 类技能以玩家为中心，其余以落点为圆心
+   *   · 半径取技能自身 radius（吃变体 / 装备的范围加成）
+   *   · 基准伤害 = 攻击力 × 技能倍率 × spow，走 rollDamage 吃暴击
+   * ============================================================ */
+  applySkillSpecial(sk, id, sp, ctx) {
+    const st = this.state.stats;
+    const pp = ctx.pp, aim = ctx.aim;
+    const spow = ctx.spow || 1, srad = ctx.srad || 1;
+    const center = (sk.cast === 'self' ? pp : aim).clone();
+    center.y = 0;
+    const rad = Math.max(1.2, (sk.radius || 3) * srad);
+    const base = st.atk * (sk.mult || 1) * spow;
+    const elem = (sk.elem && sk.elem !== 'none') ? sk.elem : undefined;
+    const COLOR = { bleed: 0xd03a3a, burn: 0xff7a30, slow: 0x8ad8ff, freeze: 0x9ae8ff, stun: 0xffe066,
+      explode: 0xffa040, chain: 0x9ad0ff, pull: 0xc8a060, echo: 0xb090ff, endBurst: 0xff6030,
+      auraField: 0xffd166, slowField: 0x8ad8ff, extraSummon: 0x9affd0, healBurst: 0x8affb0,
+      cleanse: 0xfff0b0, shockwave: 0xffb070, regenField: 0x8affb0 };
+    const col = COLOR[sp] || 0xffffff;
+    /* 范围内敌人（含体积补偿，跟 explodeAt 的判定保持一致） */
+    const inRange = r => this.enemies.filter(e => !e.dead && DIST2D(e.pos, center) < r + (e.radius || 0));
+    /* 单目标结算：统一走 damageEnemy，元素 / 抗性 / 词缀加成全都自动生效 */
+    const strike = (e, mul, opts) => {
+      const { dmg, crit } = this.rollDamage(base * mul);
+      this.damageEnemy(e, dmg, crit, Object.assign({ elem }, opts || {}));
+    };
+    /* 延迟执行的机制要防止「换图之后还在打空气」：用 mapGen 快照做闸门 */
+    const gen = this.mapGen;
+    const later = (ms, fn) => setTimeout(() => { if (this.mapGen === gen && !this.dead) fn(); }, ms);
+
+    switch (sp) {
+      case 'bleed':
+      case 'burn': {
+        const isBurn = sp === 'burn';
+        const dotDmg = base * (isBurn ? 0.30 : 0.25);
+        for (const e of inRange(rad)) this.applySkillDot(e, dotDmg, 3, isBurn ? 'fire' : undefined, isBurn ? '灼烧' : '流血');
+        FX.ring(center, rad, col, 0.35, 0.18);
+        break;
+      }
+      case 'slow': {
+        for (const e of inRange(rad)) {
+          e.slow = Math.max(e.slow || 0, e.boss ? 0.25 : 0.40);
+          e.slowT = Math.max(e.slowT || 0, 3);
+        }
+        FX.flashCircle(center, rad, col, 0.3);
+        break;
+      }
+      case 'freeze': {
+        for (const e of inRange(rad)) {
+          const t = e.boss ? 0.4 : 1.2;
+          e.stun = Math.max(e.stun || 0, t);
+          e.slow = 1; e.slowT = Math.max(e.slowT || 0, t);
+          FX.burst(new THREE.Vector3(e.pos.x, 1, e.pos.z), col, 8, { speed: 3, size: 0.1, life: 0.5, additive: true });
+        }
+        FX.flashCircle(center, rad, col, 0.35);
+        break;
+      }
+      case 'stun': {
+        for (const e of inRange(rad)) {
+          e.stun = Math.max(e.stun || 0, e.boss ? 0.3 : 0.8);
+          FX.burst(new THREE.Vector3(e.pos.x, 1.4, e.pos.z), col, 6, { speed: 4, size: 0.08, life: 0.35, additive: true });
+        }
+        break;
+      }
+      case 'explode': {
+        this.explodeAt(center, 2.5 * srad, base * 0.6, col, false, false, 'aoe');
+        break;
+      }
+      case 'chain': {
+        /* 从中心向外挑最近的 3 个目标，跳过已经在中心范围内的（避免同一只怪吃两次） */
+        const cand = this.enemies
+          .filter(e => !e.dead && DIST2D(e.pos, center) >= rad * 0.6)
+          .sort((a, b) => DIST2D(a.pos, center) - DIST2D(b.pos, center))
+          .slice(0, 3);
+        let from = center.clone();
+        for (const e of cand) {
+          strike(e, 0.6, { elem: elem || 'lightning' });
+          FX.beam(new THREE.Vector3(from.x, 1.2, from.z), new THREE.Vector3(e.pos.x, 1.2, e.pos.z), col, 0.16, 0.5);
+          from = e.pos.clone();
+        }
+        break;
+      }
+      case 'pull': {
+        /* 延迟 0.35 秒再拉，且以「施法后的玩家位置」为中心。
+         * 跃击这类突进技能的落点在施法瞬间还没走到，用落点当圆心会拉空 ——
+         * 玩家冲出去 10 码、敌人却留在原地，机制等于没做。 */
+        later(350, () => {
+          const pnow = this.playerGroup.position;
+          const ctr = new THREE.Vector3(pnow.x, 0, pnow.z);
+          for (const e of this.enemies) {
+            if (e.dead || e.boss) continue;         // 首领不吃位移，否则能被拉出战场
+            const d = DIST2D(e.pos, ctr);
+            if (d > 6 || d < 0.8) continue;
+            const k = Math.min(0.7, 3.2 / Math.max(0.5, d));   // 越远拉得越多
+            e.pos.x += (ctr.x - e.pos.x) * k;
+            e.pos.z += (ctr.z - e.pos.z) * k;
+            e.actor.group.position.set(e.pos.x, e.actor.group.position.y, e.pos.z);
+            e.stun = Math.max(e.stun || 0, 0.35);
+          }
+          FX.ring(ctr, 5, col, 0.4, 0.2);
+        });
+        break;
+      }
+      case 'echo': {
+        FX.ring(center, rad, col, 0.4, 0.22);
+        later(450, () => {
+          this.explodeAt(center, rad, base * 0.6, col, false, true, 'aoe');
+          FX.text(new THREE.Vector3(center.x, 2.2, center.z), '回响', 'info', { life: 0.7 });
+        });
+        break;
+      }
+      case 'endBurst': {
+        FX.flashCircle(center, rad, col, 0.3);
+        later(1500, () => {
+          this.explodeAt(center, rad, base * 0.9, col, true, false, 'aoe');
+          FX.text(new THREE.Vector3(center.x, 2.6, center.z), '终爆', 'crit', { life: 0.9 });
+        });
+        break;
+      }
+      case 'auraField': {
+        /* 8 秒 × 每秒一跳。用定时器链而不是新开 update 循环，
+         * 因为领域是「一次性施法产物」，跟玩家状态无关，停了就该消失。 */
+        FX.area(center, rad, col, 8, { opacity: 0.18 });
+        let n = 0;
+        const iv = setInterval(() => {
+          if (this.mapGen !== gen || this.dead) { clearInterval(iv); return; }
+          n++;
+          for (const e of inRange(rad)) strike(e, 0.4, { silent: true });
+          FX.ring(center, rad, col, 0.3, 0.15);
+          if (n >= 8) clearInterval(iv);
+        }, 1000);
+        break;
+      }
+      case 'slowField': {
+        FX.area(center, rad, col, 6, { opacity: 0.2 });
+        let n = 0;
+        const iv = setInterval(() => {
+          if (this.mapGen !== gen || this.dead) { clearInterval(iv); return; }
+          n++;
+          for (const e of inRange(rad)) {
+            e.slow = Math.max(e.slow || 0, e.boss ? 0.2 : 0.35);
+            e.slowT = Math.max(e.slowT || 0, 1.2);
+          }
+          if (n >= 6) clearInterval(iv);
+        }, 1000);
+        break;
+      }
+      case 'extraSummon': {
+        /* 灵狼的继承系数由 summonWolf 自己决定，这里只管多叫一头 */
+        if (typeof this.summonWolf === 'function') this.summonWolf();
+        FX.flashCircle(pp, 2.4, col, 0.5);
+        UI.log('兽群 · 额外灵狼', 'good');
+        break;
+      }
+      case 'healBurst': {
+        /* 治疗波：按「实际治疗量的 60%」转成伤害，而不是按攻击力 ——
+         * 丹道流堆的是生命与治疗加成，按攻击力算会让这条机制形同虚设。 */
+        const amount = st.hpMax * 0.06 * spow;
+        this.healPlayer(amount, true);
+        for (const e of inRange(rad)) {
+          const r = this.rollDamage(amount * 0.6);
+          this.damageEnemy(e, r.dmg, r.crit, { elem });
+        }
+        FX.ring(center, rad, col, 0.6, 0.25);
+        break;
+      }
+      case 'cleanse': {
+        this.playerSlowT = 0; this.playerSlow = 0;
+        this.poisonT = 0; this.poisonDps = 0;
+        /* 只清减益，增益（血怒 / 太极）要留着 —— 净化不是洗状态 */
+        this.buffs = this.buffs.filter(b => b.type !== 'debuff');
+        this.healPlayer(st.hpMax * 0.10);
+        FX.ring(pp, 3, col, 0.7, 0.3);
+        FX.text(new THREE.Vector3(pp.x, 2.8, pp.z), '净化', 'heal', { life: 0.9 });
+        UI.renderBuffs && UI.renderBuffs();
+        break;
+      }
+      case 'shockwave': {
+        for (const e of inRange(4.5)) {
+          strike(e, 0.6, { knock: e.boss ? 0.3 : 1.6 });
+        }
+        FX.ring(center, 4.5, col, 0.5, 0.25);
+        FX.burst(new THREE.Vector3(center.x, 1, center.z), col, 22, { speed: 8, size: 0.12, life: 0.5, additive: true });
+        this.shake = Math.max(this.shake || 0, 0.2);
+        break;
+      }
+      case 'regenField': {
+        let n = 0;
+        const iv = setInterval(() => {
+          if (this.mapGen !== gen || this.dead) { clearInterval(iv); return; }
+          n++;
+          this.healPlayer(st.hpMax * 0.02, true);
+          if (n >= 6) clearInterval(iv);
+        }, 1000);
+        FX.ring(pp, 2.4, col, 0.6, 0.25);
+        break;
+      }
+      default: break;
+    }
+  },
+
+  /* [C1] 通用持续伤害（流血 / 灼烧）：走独立通道，不覆盖中毒
+   * —— 中毒有它自己的 0.9 秒节拍和蚀骨印记，混用会让天师套增伤判定错乱。 */
+  applySkillDot(e, dmgPerTick, dur, elem, label) {
+    if (!e || e.dead) return;
+    e.dotT = Math.max(e.dotT || 0, dur);
+    e.dotDur = e.dotT;
+    e.dotDmg = Math.max(e.dotDmg || 0, dmgPerTick);
+    e.dotElem = elem || null;
+    e.dotLabel = label || '流血';
+    e.dotTick = 1;
+    FX.text(new THREE.Vector3(e.pos.x, 2.2, e.pos.z), label || '流血', 'info', { life: 0.7 });
   },
 
   addBuff(name, stats, color, opts = {}) {
@@ -3155,6 +3380,16 @@ const Game = {
         e.poisonT -= dt;
         e.poisonTick = (e.poisonTick || 0) - dt;
         if (e.poisonTick <= 0) { e.poisonTick = 0.9; this.damageEnemy(e, e.poisonDmg, false, { silent: true }); }
+      }
+      /* [C1] 技能变体留下的流血 / 灼烧：每秒一跳，与中毒分开结算 */
+      if (e.dotT > 0) {
+        e.dotT -= dt;
+        e.dotTick = (e.dotTick || 0) - dt;
+        if (e.dotTick <= 0) {
+          e.dotTick = 1;
+          this.damageEnemy(e, e.dotDmg, false, { silent: true, elem: e.dotElem || undefined, tag: 'dot' });
+        }
+        if (e.dotT <= 0) { e.dotT = 0; e.dotDmg = 0; e.dotElem = null; }
       }
 
       const d = DIST2D(e.pos, pp);
