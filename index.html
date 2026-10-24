@@ -92,12 +92,15 @@
     color:#1a1510;background:linear-gradient(180deg,#e8cf8a,#c8a24a);border-radius:2px;
     font-weight:600;pointer-events:none;z-index:2}
   .skill .cost{position:absolute;right:3px;bottom:1px;font-size:9px;color:#7fb0e8}
-  /* [M1] 快捷栏标识：技能条右端的小方章，点它 / 按反引号切第二套 */
-  .barset{width:26px;height:54px;display:flex;align-items:center;justify-content:center;
+  /* [M1] 快捷栏标识：技能条右端的小方章，点它 / 按 Shift 切第二套 */
+  /* [v1.8.3] 角标里放剑 / 盾图标 + 「1/2」，不读字也知道自己在第几套 */
+  .barset svg{width:16px;height:16px;display:block}
+  .barset{width:26px;height:54px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;
     border:1px solid rgba(216,178,90,.4);border-radius:4px;cursor:pointer;
     background:linear-gradient(180deg,rgba(46,40,30,.9),rgba(12,10,10,.9));
     font-family:"STKaiti","KaiTi",serif;font-size:15px;color:#d8b25a;
     text-shadow:0 2px 6px #000;transition:.12s;user-select:none}
+  .barset .bs-n{font-size:9px;line-height:1;letter-spacing:0;color:#b8a680;font-family:system-ui,sans-serif}
   .barset:hover{border-color:var(--gold);color:#ffe9a8;transform:translateY(-2px)}
   /* 技能条空位：虚线占位，点它打开术法面板（K）配置 */
   .skill.empty{border-style:dashed;border-color:#5a5040;background:rgba(12,11,9,.5);opacity:.9}
@@ -431,6 +434,17 @@
   .hp-tag{font-size:10px;padding:1px 6px;border:1px solid rgba(216,178,90,.3);border-radius:3px;
     color:#c8b890;background:rgba(216,178,90,.07);white-space:nowrap}
   .hp-tag.mech{border-color:rgba(120,208,255,.42);color:#9fd4f0;background:rgba(120,208,255,.1)}
+  .hp-tag.uni{border-color:rgba(255,90,80,.42);color:#ff9b8a;background:rgba(255,70,60,.1)}
+  /* 键位小牌（v1.8.3）：一个键 + 一句功能，各占一块，换行时不会把分隔符甩到行尾 */
+  .hp-tags.kcs{gap:5px;margin-top:2px}
+  .hp-tag.kc{display:inline-flex;align-items:center;gap:4px;padding:1px 7px 1px 3px;
+    border-color:rgba(216,178,90,.24);color:#bdb39a;background:rgba(216,178,90,.05)}
+  .hp-tag.kc .hp-key{margin:0}
+  /* 说明页里出现的剑 / 盾小图标：和键位牌同高，不把行撑开 */
+  .hp-tag.kc svg{width:15px;height:15px;display:block;flex:none}
+  /* 品质小牌：名字用品质色，后面跟一句词条数 */
+  .hp-tag.q{display:inline-flex;align-items:baseline;gap:5px;padding:1px 7px;font-size:10.5px}
+  .hp-tag.q i{font-style:normal;font-size:9.5px;color:#8a8474}
   .hp-note{font-size:10px;color:#7a7466;line-height:1.7;margin-top:5px}
   .hp-key{display:inline-block;min-width:15px;text-align:center;padding:0 4px;margin:0 1px;
     border:1px solid rgba(216,178,90,.35);border-radius:3px;font-size:10px;color:#d8cfbc;
@@ -490,6 +504,12 @@
     font-variant-numeric:tabular-nums;text-shadow:0 1px 3px #000;pointer-events:none}
   .sk-tile .sk-lk{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
     font-size:9.5px;color:#e0908a;background:rgba(0,0,0,.5);border-radius:2px;letter-spacing:0;pointer-events:none}
+  /* [UNIQUE-3] 传世秘技：跨职业授予的技能，青色「秘」角标与普通「N 级」区分开。
+     不能沿用 .sk-lk 的整格遮罩——那会把技能图标盖住，秘技只标角 */
+  .sk-tile .sk-lk.gr{inset:0 0 auto 0;height:auto;padding:0 0 1px;font-size:9px;line-height:1.3;
+    color:#7fe0d0;background:linear-gradient(rgba(6,26,26,.9),rgba(6,26,26,0));letter-spacing:1px}
+  .sk-tree.sk-tree-g{color:#7fe0d0}
+  .sk-tree.sk-tree-g .sk-tn{color:#4f7a76}
   /* 已在技能条第几格：左上角小金标 */
   .sk-tile .sk-onslot{position:absolute;left:2px;top:0;font-size:9px;font-weight:700;color:#1a1510;
     background:#ffd479;border-radius:2px;padding:0 3px;line-height:1.35;pointer-events:none;
@@ -508,6 +528,7 @@
     text-shadow:0 2px 8px rgba(0,0,0,.9)}
   .sd-name{font-size:14px;color:#f0e0c0;letter-spacing:1px}
   .sd-name .sk-lock{font-size:10px;color:#e0908a;letter-spacing:0;margin-left:6px}
+  .sd-name .sk-lock.gr{color:#7fe0d0}
   .sd-sub{font-size:10px;color:#8a8474;margin-top:3px;letter-spacing:1px}
   .sd-desc{font-size:11px;color:#a8a090;line-height:1.75;min-height:42px}
   .sd-meta{font-size:10px;color:#8a8474;margin:7px 0 10px;padding:6px 9px;background:rgba(0,0,0,.28);
@@ -556,6 +577,9 @@
     background:linear-gradient(180deg,#2a2620,#12100c);transition:.12s;padding:0}
   .sk-setbtn:hover{border-color:#ffd479;color:#ffe9a8}
   .sk-setbtn.on{background:linear-gradient(180deg,#e0c070,#b89840);color:#1a1510;border-color:#ffd479}
+  /* [v1.8.3] 两套快捷栏按钮也用剑 / 盾图标 */
+  .sk-setbtn svg{width:13px;height:13px;display:block}
+  .sk-setbtn.on svg{color:#1a1510}
   .sd-vars{display:flex;gap:6px;margin-bottom:6px}
   .sd-vname{font-size:10px;color:#7a7466;line-height:1.65}
   /* [C1] 当前变体的机制标签 */
@@ -1044,6 +1068,13 @@
   .tt-trait b{color:#e8c878;font-weight:600;margin-right:5px}
   .tt-skill{font-size:11px;line-height:1.7;color:#ffcf8a;margin-top:5px;border-top:1px dashed rgba(217,164,65,.3);padding-top:5px}
   .tt-skill b{color:#ffd166;font-weight:600;margin-right:5px}
+  /* [UNIQUE-1] 传世标签：提示框里直接写清「不入八阶」，与套装/八阶区分开 */
+  .tt-tierless{display:inline-block;font-size:9.5px;letter-spacing:1px;color:#ff9b8a;margin-top:4px;
+    border:1px solid rgba(255,120,100,.38);background:rgba(60,12,10,.5);border-radius:2px;padding:1px 5px}
+  /* [UNIQUE-3] 技能效果类型角标：秘技（授予）/ 强化（指定技能）/ 通玄（全技能）/ 精研（+等级） */
+  .tt-skill-tag{display:inline-block;font-style:normal;font-size:9px;letter-spacing:1px;padding:0 4px;
+    margin-right:5px;border-radius:2px;color:#0f0d0a;background:#ffd166;vertical-align:1px}
+  .tt-skill-tag:where(:not(:empty)){font-weight:700}
   .tt-req{font-size:10.5px;color:#8a8474;margin-top:6px;border-top:1px solid rgba(255,255,255,.07);padding-top:4px}
   .tt-val{font-size:10.5px;color:#c8a860}
   .tt-hint{font-size:10px;color:#7a7466;margin-top:3px}
@@ -1065,8 +1096,6 @@
 
   #openBtns{position:absolute;right:18px;bottom:22px;display:flex;flex-direction:column;gap:6px;align-items:flex-end}
   #openBtns .btn{padding:5px 12px;font-size:11px;letter-spacing:2px;background:rgba(10,10,14,.78)}
-  #help{position:absolute;left:18px;bottom:22px;font-size:10.5px;color:#6a6458;line-height:1.9;letter-spacing:.5px}
-  #help b{color:#a89878;font-weight:400}
 
   /* ---------- 帧数面板（设置里可开关） ---------- */
   #fpsHud{display:none;position:absolute;left:18px;top:100px;z-index:14;pointer-events:none;
@@ -1151,6 +1180,14 @@
     background:rgba(8,8,12,.96);border:1px solid rgba(216,178,90,.45);color:#ffd88a;font-size:10px;
     font-family:system-ui,sans-serif;display:flex;align-items:center;justify-content:center;padding:0 3px;
     letter-spacing:0}
+  /* 换栏按钮：金色描边，和「交/闪/丹/露」区分开 */
+  #mtouch .mbtn.set{color:#ffd479;border-color:rgba(216,178,90,.5);background:rgba(30,24,12,.72)}
+  /* [v1.8.3] 手机换栏按钮：图标（剑 / 盾）表示是哪一套，右下角小数字表示第几套。
+   * 只放图标玩家会以为是攻击键，只有数字又看不出「两套」——两个一起才说得清。 */
+  #mtouch .mbtn.set .mi{display:flex;align-items:center;justify-content:center}
+  #mtouch .mbtn.set svg{width:18px;height:18px;display:block}
+  #mtouch .mbtn.set .idx{position:absolute;right:1px;bottom:-1px;font-size:9px;line-height:1;
+    font-family:system-ui,sans-serif;color:#ffd88a;text-shadow:0 1px 2px #000;letter-spacing:0}
   #mtouch .mbtn.on{border-color:rgba(120,220,140,.75);box-shadow:0 0 18px rgba(110,220,140,.5);
     background:radial-gradient(circle at 36% 28%,rgba(40,90,50,.95),rgba(10,20,12,.92))}
 
@@ -1199,7 +1236,6 @@
 
   /* ---- HUD 缩放 ---- */
   body.touch #actionbar{display:none}
-  body.touch #help{display:none}
   body.touch #interact{display:none!important}
   body.touch #charplate{left:10px;top:8px;gap:7px;transform:scale(.8);transform-origin:top left}
   body.touch #topright{right:10px;top:8px;gap:5px}
@@ -1451,7 +1487,6 @@
   <div id="interact"></div>
   <div id="toasts"></div>
   <div id="log"></div>
-  <div id="help"></div>
   <div id="fpsHud"></div>
   <div id="openBtns">
     <button class="btn" onclick="UI.openMenu('bag')">行囊 <span class="dim">I</span></button>
@@ -1583,7 +1618,7 @@
     <div class="sk-top"><span id="skPtsTxt">可用技能点 <b>0</b></span><span class="dim">每级 +8% 伤害 · 最高 10 级</span></div>
     <div class="sk-list" id="skList"></div>
     <div class="sk-tip" id="skTip"></div>
-    <div class="hintline">点击图标选中术法 · Ⅰ / Ⅱ / Ⅲ 切换变体（改机制不加点数，青色 ◆ = 机制型）· 详情卡底部 1-8 = 技能条，点数字把当前术法放上去（已在条上的会换位）· 技能条 8 格 × 2 套，键 1-8 施放，反引号换栏</div>
+    <div class="hintline">点击图标选中术法 · Ⅰ / Ⅱ / Ⅲ 切换变体（改机制不加点数，青色 ◆ = 机制型）· 详情卡底部 1-8 = 技能条，点数字把当前术法放上去（已在条上的会换位）· 技能条 8 格 × 2 套，键 1-8 施放，Shift 换栏（备用 ` / V）</div>
   </div>
 </div>
 
@@ -1737,7 +1772,7 @@
     <button class="btn" onclick="UI.openSettings()">设 置</button>
   </div>
   <div class="tips" id="startTips">
-    <b>WASD</b> 移动 · <b>鼠标</b> 瞄准 · <b>左键</b> 普攻 · <b>1-6</b> 技能 · <b>空格</b> 翻滚 · <b>F</b> 交互 · <b>R</b> 炼器 · <b>I</b> 背包 · <b>C</b> 属性 · <b>L</b> 任务 · <b>P</b> 存档<br>
+    进入游戏后按 <b>H</b> 打开「说明」：全部键位、装备 / 传世 / 天赋 / 术法机制都在里面<br>
     拾取装备可穿戴，纸娃娃实时变化 · 符文镶入孔位可成符文之语 · 玄晶可洗练词缀 · 三个角色位，可导出备份
   </div>
 </div>

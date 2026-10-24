@@ -155,9 +155,8 @@ const Game = {
     this.mouseX = window.innerWidth / 2;
     this.mouseY = window.innerHeight / 2;
     try { this.buildTitleScene(); } catch (e) { showFatal('标题场景构建失败：' + (e.stack || e.message)); }
-    try {
-      UI.setHelp('<b>WASD</b> 移动 · <b>左键</b> 攻击 · <b>1-8</b> 技能（动作条翻页）· <b>空格</b> 翻滚 · <b>F</b> 交互 · <b>Z/X</b> 红蓝药 · <b>9</b> 传送<br><b>Q/E</b> 转视角 · <b>滚轮</b> 缩放 · <b>T</b> 天赋 · <b>K</b> 术法 · <b>R</b> 炼器 · <b>I</b> 背包 · <b>C</b> 属性 · <b>L</b> 任务 · <b>P</b> 存档 · <b>O</b> 设置');
-    } catch (e) { }
+    /* 键位说明不再贴在 HUD 左下角（挡视野、还和拾取提示抢位置），
+     * 全部收进「说明」页第一节，按 H 随时可查。 */
 
     window.addEventListener('resize', () => this.updateViewport());
     this.updateViewport();
@@ -203,8 +202,17 @@ const Game = {
         const id = bar[parseInt(k) - 1];
         if (id) this.castSkill(id);
       }
-      /* [M1] 两套快捷栏切换（反引号） */
-      if (k === SKILL_BAR_SET_KEY) { this.switchBarSet(); e.preventDefault(); }
+      /* [M1] 两套快捷栏切换：默认 Shift，另有反引号与 V 保底。
+       * Shift 同时是「背包出售」「天赋洗点」的修饰键 —— 面板开着时不换栏，
+       * 否则 Shift+左键卖一件东西会顺手把技能栏也翻了。
+       * e.code 兜底：中文输入法激活时反引号的 e.key 会变成 'Process'。 */
+      if (k === SKILL_BAR_SET_KEY || k === '`' || k === 'v' || e.code === 'Backquote') {
+        const panelOpen = !!(typeof UI !== 'undefined' && UI.menuIsOpen && UI.menuIsOpen());
+        if (!(k === SKILL_BAR_SET_KEY && panelOpen)) {
+          this.switchBarSet();
+          e.preventDefault();
+        }
+      }
       if (k === '9') this.useTeleportStone();
       if (k === 'z') this.usePotion('hp');
       if (k === 'x') this.usePotion('mp');
@@ -636,7 +644,41 @@ const Game = {
      * 注意不能写回 s.skills[id].lv：那是「已投技能点」的账本，
      * 写回去会让 skillPoints() 算错、洗点也洗不掉。 */
     const bonus = (this.state && this.state.stats) ? (this.state.stats.skillLv || 0) : 0;
-    return Math.min(20, base + bonus);
+    /* [UNIQUE-2] 传世的「技能等级 +N」：只抬指定技能，与全技能词缀分开算，
+     * 这样一件传世能把一个技能从 10 级顶到 12 级，而不影响别的技能。 */
+    const rank = (this.state && this.state.stats && this.state.stats.skillRank)
+      ? (this.state.stats.skillRank[id] || 0) : 0;
+    return Math.min(20, base + bonus + rank);
+  },
+
+  /* [UNIQUE-2] 技能是否已领悟。四条来源任一成立即可：
+   *   1. 等级到了
+   *   2. 任务奖励解锁（skillFlags）
+   *   3. 法器授予（relicGrants）
+   *   4. 传世授予（grantedSkills）
+   * 以前 UI 和施法各写一套 `s.level < sk.unlock`，加了传世之后两处必然对不上 ——
+   * 面板显示「未领悟」但技能能放，或者反过来。统一收口到这一个入口。 */
+  skillUnlocked(id) {
+    const sk = SKILLS[id];
+    const s = this.state;
+    if (!sk || !s) return false;
+    if (s.level >= sk.unlock) return true;
+    if (this.skillFlags && this.skillFlags[id]) return true;
+    if (typeof this.relicGrants === 'function' && this.relicGrants(id)) return true;
+    if (s.stats && s.stats.grantedSkills && s.stats.grantedSkills[id]) return true;
+    return false;
+  },
+
+  /* [UNIQUE-3] 技能条能放哪些技能：本职业技能（SKILL_ORDER）+ 传世授予的秘技。
+   * 传世可以跨职业授予（穿上九幽面纱，战士也能放蚀骨毒雾），
+   * 所以「读档清洗 / 放上技能条 / 技能条读取」三处必须共用这一个判定，
+   * 各写一套必然出现「面板里有、放不上条」或者「条上留着、放不出来」。 */
+  barSkillOk(id) {
+    const s = this.state;
+    if (!s || !SKILLS[id]) return false;
+    if ((SKILL_ORDER[s.cls] || []).indexOf(id) >= 0) return true;
+    const g = s.stats && s.stats.grantedSkills;
+    return !!(g && g[id]);
   },
 
   skillVariant(id) {
@@ -656,7 +698,7 @@ const Game = {
   levelUpSkill(id) {
     const s = this.state;
     if (!s || !SKILLS[id]) return { ok: false, msg: '技能不存在' };
-    if (s.level < SKILLS[id].unlock) return { ok: false, msg: '尚未领悟' };
+    if (!this.skillUnlocked(id)) return { ok: false, msg: '尚未领悟' };
     const sk = this.skillState();
     const cur = (sk[id] && sk[id].lv) || 1;
     if (cur >= SKILL_LV_MAX) return { ok: false, msg: '已满级' };
@@ -698,7 +740,7 @@ const Game = {
     const out = [];
     for (let i = 0; i < SKILL_BAR_SLOTS; i++) {
       const id = src[i];
-      if (!id || !SKILLS[id] || SKILLS[id].cls !== s.cls || !order.includes(id) || seen[id]) {
+      if (!id || !SKILLS[id] || !this.barSkillOk(id) || seen[id]) {
         out.push(null);
         continue;
       }
@@ -727,7 +769,7 @@ const Game = {
     if (!(want >= 0 && want < SKILL_BAR_SETS)) return { ok: false, msg: '快捷栏不存在' };
     s.barSet = want;
     if (typeof UI !== 'undefined' && UI.onSkillBarChanged) UI.onSkillBarChanged();
-    const msg = '快捷栏 · ' + (SKILL_BAR_SET_NAME[want] || (want + 1));
+    const msg = '快捷栏 · 第 ' + (want + 1) + ' 套';
     if (typeof UI !== 'undefined' && UI.toast) UI.toast(msg);
     return { ok: true, msg };
   },
@@ -739,8 +781,8 @@ const Game = {
     if (!(slot >= 0 && slot < SKILL_BAR_SLOTS)) return { ok: false, msg: '技能条位不存在' };
     if (!id) return this.unassignSkillBar(slot);
     const sk = SKILLS[id];
-    if (!sk || !(SKILL_ORDER[s.cls] || []).includes(id)) return { ok: false, msg: '本职业没有这个技能' };
-    if (s.level < sk.unlock) return { ok: false, msg: '尚未领悟「' + sk.name + '」（' + sk.unlock + ' 级）' };
+    if (!sk || !this.barSkillOk(id)) return { ok: false, msg: '本职业没有这个技能，也没有传世授予它' };
+    if (!this.skillUnlocked(id)) return { ok: false, msg: '尚未领悟「' + sk.name + '」（' + sk.unlock + ' 级）' };
     const bar = this.skillBar();
     const from = bar.indexOf(id);
     if (from >= 0 && from !== slot) bar[from] = null;   // 换位：原格腾空
@@ -770,9 +812,11 @@ const Game = {
     const cleanBar = arr => {
       if (!Array.isArray(arr)) return null;
       const seen = {};
+      /* 只做「存在 + 不重复」的清洗：跨职业秘技要在 recalc 之后才认得出来，
+       * 这里一刀切会把传世授予的技能洗掉。真正的合法性由 skillBar() 用
+       * barSkillOk() 判，非法格子会在下一次读取时置空。 */
       const out = arr.slice(0, SKILL_BAR_SLOTS).map(id => {
-        if (!id || !SKILLS[id] || SKILLS[id].cls !== s.cls) return null;
-        if (!(SKILL_ORDER[s.cls] || []).includes(id) || seen[id]) return null;
+        if (!id || !SKILLS[id] || seen[id]) return null;
         seen[id] = true;
         return id;
       });
@@ -1895,7 +1939,8 @@ const Game = {
     if (!s || this.dead || !this.running) return;
     const sk = SKILLS[id];
     if (!sk) return;
-    if (s.level < sk.unlock && !this.skillFlags[id] && !this.relicGrants(id)) { UI.log('尚未领悟「' + sk.name + '」'); SFX.ui(); return; }
+    /* [UNIQUE-2] 传世可以直接解锁技能：等级没到、也没做过任务，穿上就能放 */
+    if (!this.skillUnlocked(id)) { UI.log('尚未领悟「' + sk.name + '」'); SFX.ui(); return; }
     if ((this.cooldowns[id] || 0) > 0.02) return;
     /* [S4] 装备 / 套装 / 传世 / 天赋的 skillMods + 当前变体修正合并消费；
      * 技能等级每级 +8%（也放大治疗 / 护盾 / 召唤） */

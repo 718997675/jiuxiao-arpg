@@ -334,7 +334,14 @@ const UI = {
     const K = k => `<span class="hp-key">${k}</span>`;
     const row = (k, v) => `<div class="hp-row"><b>${k}</b><span>${v}</span></div>`;
     const tags = (list, cls) => `<div class="hp-tags">${list.map(t => `<span class="hp-tag ${cls || ''}">${t}</span>`).join('')}</div>`;
-    const sec = (t, note, body) => `<div class="hp-sec"><h4>${t}${note ? `<span class="hp-n">${note}</span>` : ''}</h4>${body}</div>`;
+    /* 键位小牌：一个键 + 一句功能，各占一块、自然换行。
+     * 以前写成「A · B · C」这种一行串，换行时会把分隔符甩在行尾（v1.8.3 反馈）。 */
+    const kc = (k, label) => `<span class="hp-tag kc">${K(k)}${label}</span>`;
+    const kcs = list => `<div class="hp-tags kcs">${list.map(([k, l]) => kc(k, l)).join('')}</div>`;
+    /* body 传的是数组，直接插值会被 Array.toString 拼成「行,行,行」——
+     * 那个逗号在 flex 布局里会孤零零落在行首（用户反馈的「每行换行的逗号」就是它）。
+     * 显式 join('')，数组与字符串两种入参都吃。 */
+    const sec = (t, note, body) => `<div class="hp-sec"><h4>${t}${note ? `<span class="hp-n">${note}</span>` : ''}</h4>${Array.isArray(body) ? body.join('') : body}</div>`;
 
     /* ---------------- 数据快照 ---------------- */
     const slotN = len(SLOT_ORDER);
@@ -367,12 +374,20 @@ const UI = {
     const H = [];
 
     /* ---------------- 1. 操作 ---------------- */
-    H.push(sec('一 · 怎么玩', '先看这一段', [
-      row('PC 移动', `${K('W')}${K('A')}${K('S')}${K('D')} 移动 · ${K('空格')} 翻滚 · 鼠标转向`),
-      row('PC 战斗', `左键普攻（按住连击）· ${K('1')}~${K(barSlots)} 技能条 · ${K('`')} 换快捷栏 · ${K('Z')}${K('X')} 喝药`),
-      row('PC 面板', `${K('I')} 行囊 · ${K('C')} 道途 · ${K('T')} 天赋 · ${K('K')} 术法 · ${K('L')} 山海志 · ${K('B')} 异兽志 · ${K('R')} 炼器台 · ${K('P')} 存档 · ${K('O')} 设置 · ${K('H')} 说明`),
-      row('手机', `左半屏拖动 = 虚拟摇杆 · 右侧技能宫格 = 技能条 · 拖动空白处转视角 · 双指捏合缩放镜头`),
-      row('目标', `打怪 → 掉装备 → 换更强的 → 下更深的地图。角色不会掉等级，死亡只掉金币（新手难度不掉）。`)
+    H.push(sec('一 · 怎么玩', '键位全在这里，游戏画面上不再贴提示', [
+      row('移动 / 视角', kcs([['WASD', '移动'], ['鼠标', '瞄准'], ['Q / E', '转视角'], ['滚轮', '缩放'], ['空格', '翻滚']])),
+      row('战斗', kcs([['左键', '普攻（按住连击）'], [`1-${barSlots}`, '技能条'], [SKILL_BAR_SET_LABEL, '切换快捷栏'], ['Z', '红药'], ['X', '蓝药'], ['9', '传送石']])),
+      row('交互', kcs([['F', '交互 / 拾取'], ['Tab', '开关菜单'], ['Esc', '关闭面板']])),
+      row('面板', kcs([['I', '行囊'], ['C', '道途'], ['T', '天赋'], ['K', '术法'], ['L', '山海志'], ['B', '异兽志'], ['R', '炼器台'], ['P', '存档'], ['O', '设置'], ['H', '说明']])),
+      row('手机', kcs([['左半屏', '拖动 = 摇杆'], ['右侧宫格', `技能条 4×2`], ['空白处', '拖动转视角'], ['双指', '捏合缩放']])),
+      row('目标', `打怪 → 掉装备 → 换更强的 → 下更深的地图。角色不会掉等级，死亡只掉金币（新手难度不掉）。`),
+      row('换栏', `技能条共 ${barSets} 套，按 ${K(SKILL_BAR_SET_LABEL)} 切一套（备用键 ${K('`')}${K('V')}）—— 一套打首领、一套刷图。动作条右端与术法面板底部都显示当前是哪一套，手机点技能宫格上方那枚小按钮`),
+      /* 剑 / 盾两枚图标各占一块小牌：以前把图标直接塞进句子中间，换行时会把
+       * 「输出栏 / 防守栏」拆到图标上下两行，读起来像是图标自己成了一段 */
+      `<div class="hp-tags kcs">
+        <span class="hp-tag kc">${barSetIcon(0, 14)}输出栏</span>
+        <span class="hp-tag kc">${barSetIcon(1, 14)}防守栏</span>
+      </div>`
     ]));
 
     /* ---------------- 2. 属性 ---------------- */
@@ -387,40 +402,71 @@ const UI = {
     /* ---------------- 3. 装备 ---------------- */
     H.push(sec('三 · 装备', `${slotN} 个槽位`, [
       row('槽位', `${slotN} 个：${slotNames.join(' / ')}`),
-      row('基底阶', `${tierN} 阶：${BASE_TIER_NAME.join(' → ')}。同名字的装备阶数越高，基础数值越高`),
+      row('基底阶', `${tierN} 阶：${BASE_TIER_NAME.join(' → ')}。同名字的装备阶数越高，基础数值越高。传世不在八阶体系内（见第六节）`),
       row('物品等级', `每件装备有 ilvl，越高则词缀数值上限越高。怪物等级决定掉落 ilvl，首领额外 +2`),
       row('双手 / 双持', `武器分单手与双手：双手占用副手格；副手只能是盾、副手武器或法器`),
       row('升阶', `炼器台「升阶」页：把一件装备的基底提升一阶，保留品质 / 词缀 / 孔位 / 符文 / 强化等级，只换基底。需要同名装备 + 铜钱 + 玄晶`)
     ]));
 
-    /* ---------------- 4. 品质与词缀 ---------------- */
+    /* ---------------- 4. 品质与词缀 ----------------
+     * 用户反馈：「品质说明是不是有问题，现在是八阶装备 + 套装 + 传世」。
+     * 原来把 6 个 RARITY 平铺成一行「品质」，其中套装 / 传世其实是**类型**而不是
+     * 品质档位（都不在升品链上），摆在「凡品→神兵」旁边会让人以为可以一路升上去。
+     * 现在先点明三条线，品质只列升品链上的四档，套装 / 传世各自单开一行并指路。 */
+    const qualityChain = rarList.filter(r => r.key !== 'set' && r.key !== 'unique');
+    /* 传世的数据快照提前到这里：第四节要引用件数，第六节也用同一份 */
+    const uniList = (typeof UNIQUE_ITEMS !== 'undefined') ? UNIQUE_ITEMS : [];
+    const uniN = len(uniList);
+    const traitN = cnt(typeof UNIQUE_TRAITS !== 'undefined' ? UNIQUE_TRAITS : {});
     H.push(sec('四 · 品质与词缀', `${affN} 条词缀`, [
-      row('品质', rarList.map(r => `<span style="color:${r.color}">${r.name}</span>（${r.affixes + r.fixed} 词条 · 权重 ${r.weight}）`).join(' · ')),
+      row('三条线', `别混在一起看：<b>基底阶</b>（${tierN} 阶，决定基础数值，见第三节）· <b>品质</b>（决定词条条数与边框颜色）· <b>类型</b>（普通 / 套装 / 传世）。一件装备同时有一个阶、一个品质、一个类型 —— 例：同是「${BASE_TIER_NAME[1]}」基底的长剑，可以是凡品（0 词条）也可以是玄品（${RARITY.rare.affixes + RARITY.rare.fixed} 词条）；阶管数值，品管词条`),
+      row('品质（可升品）', `<div class="hp-tags kcs">${qualityChain.map(r =>
+        `<span class="hp-tag q" style="color:${r.color};border-color:${r.color}55" title="掉落权重 ${r.weight}">${r.name}<i>${r.affixes + r.fixed} 词条</i></span>`).join('')}</div>`),
+      row('套装（类型）', `绿色边框，${setIds.length} 套。品质固定为「套装」（${RARITY.set.affixes + RARITY.set.fixed} 词条），靠穿够 2 / 3 / 4 / 5 件激活套装效果，不走升品链`),
+      row('传世（类型）', `红色边框，${uniN} 件。固定词条 + 独有特性 + 技能效果，既不在升品链也不在八阶链 —— 详见第六节`),
       row('词缀池', `共 ${affN} 条：一阶 ${affTier[1]} 条 / 二阶 ${affTier[2]} 条 / 三阶 ${affTier[3]} 条。阶数越高数值越大，掉落权重越低`),
       row('词缀族', `元素伤害（火/冰/雷/毒）、单项与全抗、+N 技能等级、光环（周围减速/持续伤害）、资源、生存、掉落、暴击、攻速、移速`),
       row('洗练', `炼器台「品质」页可以重洗词条；同一条属性不会在一件装备上出现两次`)
     ]));
 
     /* ---------------- 5. 套装 / 符文 / 传世 ---------------- */
-    H.push(sec('五 · 套装与符文', `${setIds.length} 套 · ${runeWordN} 条符文之语 · 传世`, [
+    H.push(sec('五 · 套装与符文', `${setIds.length} 套 · ${runeWordN} 条符文之语`, [
       row('套装', `共 ${setIds.length} 套（${setUniN} 套通用、${setIds.length - setUniN} 套职业专属）。穿 2 / 3 / 4 / 5 件逐级激活更强效果，绿色边框`),
       row('符文之语', `${runeWordN} 条。按顺序把符文镶进带孔装备，凑成指定组合才生效 —— 顺序错了不触发`),
-      row('传世', `红色边框，固定名字 + 固定词条 + 专属特性 + 技能效果，可重复掉落。是装备链的终点，不在品质升级链里`),
-      row('套装联动', `部分套装会激活天赋树里的隐藏「协同」星位，见第七节`)
+      row('套装联动', `部分套装会激活天赋树里的隐藏「协同」星位，见第八节`)
     ]));
 
-    /* ---------------- 6. 术法与变体 ---------------- */
-    H.push(sec('六 · 术法与变体', `${skillIds.length} 个技能 · ${varN} 个变体`, [
+    /* ---------------- 6. 传世（唯一装备） ---------------- */
+    /* uniList / uniN / traitN 在第四节已经取过，这里只补剩下的统计 */
+    const grantN = uniList.filter(u => u.skill && u.skill.grant).length;
+    const upN = uniList.filter(u => u.skill && !u.skill.grant).length;
+    const clsUniN = uniList.filter(u => u.cls).length;
+    H.push(sec('六 · 传世名器', `${uniN} 件 · ${traitN} 条独有特性`, [
+      row('是什么', `红色边框的「传世」装备，共 ${uniN} 件（${clsUniN} 件职业专属、${uniN - clsUniN} 件三职业通用）。每件都有固定名字、固定词条区间、独有特性和专属技能效果`),
+      row('不入八阶', `八阶（${BASE_TIER_NAME.join(' → ')}）讲的是「同一件东西被锻造到多好」；传世天生就是这个样子 —— <b>没有阶、不能升阶</b>，炼器台会直接拒绝并说明原因`),
+      row('特性唯一', `${traitN} 条特性，每一条只属于一件传世，<b>全表不重复</b>。想要某件更强，就给它新写一条特性，不会去借别人的`),
+      row('属性类特性', `直接进面板，看到多少就是多少：饮血、金刚、巨灵、疾风这类`),
+      row('触发类特性', `满足条件自动触发：霜噬减速、焚烬爆炸、雷罚连锁、回响不进冷却、血怒击杀加速`),
+      row('机制类特性', `独立实现的一次性机制：涅槃复活、收魂回血、狂战、裂魂暴击爆炸`),
+      row('技能效果', `每件都带一条，二选一：<b>授予新技能</b>（${grantN} 件，跨职业秘技，术法面板里单独一组「秘技」，脱下即失去）或<b>强化已有技能</b>（${upN} 件，指定技能 +伤害 / -冷却 / +范围，'通玄' 则是全部技能）`),
+      row('与套装区别', `套装靠「穿够几件」逐级激活，单件很弱；传世单件即完整，不占套装计数、也不会触发套装效果`),
+      row('怎么来', `怪物等级达到该件的 ilvl 后进入掉落池，首领与高难度掉率更高；同一件可以重复掉落，每次数值重新 roll`),
+      tags(uniList.map(u => `${u.name}${u.cls ? '（' + CLASSES[u.cls].name + '）' : ''}`), 'uni')
+    ]));
+
+    /* ---------------- 7. 术法与变体 ---------------- */
+    H.push(sec('七 · 术法与变体', `${skillIds.length} 个技能 · ${varN} 个变体`, [
       row('技能', `三职业各 ${Math.round(skillIds.length / 3)} 个，按等级领悟。技能点每级 1 点，技能等级上限 ${lvMax}，每级 +${lvStep}% 伤害`),
       row('变体', `每个技能 3 个变体（Ⅰ / Ⅱ / Ⅲ），切换不花点数。Ⅰ / Ⅱ 多数是数值调整，Ⅲ 是机制改造`),
       row('机制变体', `青色 ◆ 角标 = 改打法而不是改数字，共 ${mechN} 条`),
       tags(mechList, 'mech'),
-      row('技能条', `${barSlots} 格 × ${barSets} 套，在术法面板详情卡底部点数字自己配；${K('`')} 键换栏（一套打首领、一套刷图）`),
-      row('三种状态', `图标灰 = 未领悟 · 环形遮罩 = 冷却中 · 暗红 = 灵力不足 · 右上角 Ⅰ/Ⅱ/Ⅲ = 当前变体`)
+      row('技能条', `${barSlots} 格 × ${barSets} 套，在术法面板详情卡底部点数字自己配；按 ${K(SKILL_BAR_SET_LABEL)} 换栏（一套打首领、一套刷图）`),
+      row('秘技', `传世授予的技能（可跨职业）在面板里单独一组，青色「秘」角标；脱下装备即失去，不占技能点`),
+      row('四种状态', kcs([['图标灰', '未领悟'], ['环形遮罩', '冷却中'], ['暗红', '灵力不足'], ['Ⅰ/Ⅱ/Ⅲ', '当前变体']]))
     ]));
 
     /* ---------------- 7. 天赋与协同 ---------------- */
-    H.push(sec('七 · 天赋与协同', `${talentN} 个节点`, [
+    H.push(sec('八 · 天赋与协同', `${talentN} 个节点`, [
       row('天赋点', `每级 1 点，另加任务奖励 10 点，满级共 70 点`),
       row('页签', `三职业系各 10 节点 + 通用「通达」+ 协同「星位」，共 5 页`),
       row('节点层级', `小节点可投 5 级 · 中节点 1 级（需本系先投 5 点）· 大节点是质变（需本系 5 点且等级达标）`),
@@ -430,7 +476,7 @@ const UI = {
     ]));
 
     /* ---------------- 8. 敌人 ---------------- */
-    H.push(sec('八 · 敌人', `${mobN} 种怪物 · ${eliteN} 条精英词缀`, [
+    H.push(sec('九 · 敌人', `${mobN} 种怪物 · ${eliteN} 条精英词缀`, [
       row('普通怪', `按族群分布在不同地图，各有元素抗性与弱点。打对元素伤害会明显更快`),
       row('精英', `带 ${eliteN} 条精英词缀（迅捷 / 护盾 / 召唤 / 分裂 / 荆棘…），名字会标出词缀，掉落更好`),
       row('首领', `独立血条、多段技能、阶段切换。对首领增伤 / 首领减伤是独立乘区`),
@@ -439,7 +485,7 @@ const UI = {
     ]));
 
     /* ---------------- 9. 经济 ---------------- */
-    H.push(sec('九 · 经济与消耗', '', [
+    H.push(sec('十 · 经济与消耗', '', [
       row('铜钱', `通用货币。来源：击杀、卖装备、任务。用途：修理、洗点、升阶、商店`),
       row('玄晶', `高阶材料。来源：分解玄品以上装备、首领掉落。用途：升阶、品质锻造`),
       row('匠材', `打造与强化用。来源：分解与采集`),
@@ -448,7 +494,7 @@ const UI = {
     ]));
 
     /* ---------------- 10. 难度 ---------------- */
-    H.push(sec('十 · 难度', '开局选择，中途不可改', diffList.map(d =>
+    H.push(sec('十一 · 难度', '开局选择，中途不可改', diffList.map(d =>
       row(`<span style="color:${d.color}">${d.name}</span>`, `${d.desc}${d.deathPenalty ? `（死亡损失 ${Math.round(d.deathPenalty * 100)}% 金币）` : '（死亡不掉金币）'}`)
     ).join('') + `<div class="hp-note">难度影响怪物生命 / 伤害 / 速度、掉落与经验倍率、精英出现率、是否带元素伤害。</div>`));
 
@@ -690,7 +736,7 @@ const UI = {
         <span class="k">${i + 1}</span>${vBadge}<div class="g">${skillIconSvg(id, 26)}</div>
         <span class="cost">${Game.skillCost(sk)}</span><div class="cd"></div></div>`;
     }).join('') +
-      `<div class="barset" data-barset="1" title="切换快捷栏（${SKILL_BAR_SET_KEY}）· 共 ${SKILL_BAR_SETS} 套">${SKILL_BAR_SET_NAME[setIdx] || (setIdx + 1)}</div>` +
+      `<div class="barset" data-barset="1" title="切换快捷栏（${SKILL_BAR_SET_LABEL}，或 ${SKILL_BAR_SET_KEY_ALT}）· 共 ${SKILL_BAR_SETS} 套 · 当前第 ${setIdx + 1} 套">${barSetIcon(setIdx, 16)}<span class="bs-n">${setIdx + 1}/${SKILL_BAR_SETS}</span></div>` +
       `<div class="potion" data-potion="hp"><span class="k">Z</span><div class="g">丹</div><div class="n">红药</div></div>
        <div class="potion blue" data-potion="mp"><span class="k">X</span><div class="g">露</div><div class="n">蓝药</div></div>
        <div class="potion" data-tp="1" style="background:rgba(120,160,255,.22);border-color:rgba(120,160,255,.45)"><span class="k">9</span><div class="g">阵</div><div class="n">传送</div></div>`;
@@ -728,7 +774,7 @@ const UI = {
         vb.textContent = ['Ⅰ', 'Ⅱ', 'Ⅲ'][vv] || '';
         vb.style.display = vv > 0 ? '' : 'none';
       }
-      const locked = s.level < sk.unlock;
+      const locked = !Game.skillUnlocked(id);
       el.classList.toggle('locked', locked);
       const cd = Game.cooldowns[id] || 0;
       const cdEl = el.querySelector('.cd');
@@ -749,7 +795,8 @@ const UI = {
     const bs = document.querySelector('#actionbar .barset');
     if (bs) {
       const i = Game.barSet();
-      bs.textContent = SKILL_BAR_SET_NAME[i] || (i + 1);
+      bs.innerHTML = barSetIcon(i, 16) + `<span class="bs-n">${i + 1}/${SKILL_BAR_SETS}</span>`;
+      bs.title = `切换快捷栏（${SKILL_BAR_SET_LABEL}，或 ${SKILL_BAR_SET_KEY_ALT}）· 共 ${SKILL_BAR_SETS} 套 · 当前第 ${i + 1} 套`;
     }
   },
 
@@ -1954,7 +2001,13 @@ const UI = {
     const barSlots = Game.skillBar();          // 当前快捷栏 8 格配置
     const setIdx = Game.barSet();
     document.getElementById('skPtsTxt').innerHTML = `可用技能点 <b>${pts}</b>`;
-    if (!this.skSel || !order.includes(this.skSel)) this.skSel = order[0];
+    /* [UNIQUE-3] 传世授予的秘技：不在本职业技能树里，单独列一组。
+     * 它们是「装备给的技能」——脱下就没了，所以不占技能点、也不进 SKILL_ORDER。 */
+    const gmap = (s.stats && s.stats.grantedSkills) || {};
+    const grantedIds = Object.keys(gmap).filter(gid => SKILLS[gid] && order.indexOf(gid) < 0);
+    if (!this.skSel || (!order.includes(this.skSel) && grantedIds.indexOf(this.skSel) < 0)) {
+      this.skSel = order[0];
+    }
 
     /* 按系分组：SKILL_ORDER 是解锁顺序（动作条用），面板里要聚在一起 */
     const byTree = {};
@@ -1965,26 +2018,35 @@ const UI = {
 
     /* 左：图标网格 */
     let h = '<div class="sk-body"><div class="sk-left">';
+    /* 单个技能格子：技能树与「秘技」组共用同一份模板 */
+    const tile = (id, isGrant) => {
+      const sk = SKILLS[id];
+      const locked = !Game.skillUnlocked(id);
+      const lv = Game.skillLevel(id);
+      const onBar = barSlots.indexOf(id);     // 在技能条第几格（-1 = 不在）
+      return `<div class="sk-row sk-tile ${locked ? 'locked' : ''} ${id === this.skSel ? 'sel' : ''}" data-skpick="${id}">
+        <span class="sk-ico">${skillIconSvg(id, 26)}</span>
+        ${onBar >= 0 ? `<span class="sk-onslot">${onBar + 1}</span>` : ''}
+        ${isGrant ? `<span class="sk-lk gr">秘</span>`
+          : (locked ? `<span class="sk-lk">${sk.unlock} 级</span>` : `<span class="sk-badge">${lv}</span>`)}
+      </div>`;
+    };
     for (const t in byTree) {
       h += `<div class="sk-tree">${t}<span class="sk-tn">${byTree[t].length} 式</span></div><div class="sk-tiles">`;
-      for (const id of byTree[t]) {
-        const sk = SKILLS[id];
-        const locked = s.level < sk.unlock;
-        const lv = Game.skillLevel(id);
-        const onBar = barSlots.indexOf(id);     // 在技能条第几格（-1 = 不在）
-        h += `<div class="sk-row sk-tile ${locked ? 'locked' : ''} ${id === this.skSel ? 'sel' : ''}" data-skpick="${id}">
-          <span class="sk-ico">${skillIconSvg(id, 26)}</span>
-          ${onBar >= 0 ? `<span class="sk-onslot">${onBar + 1}</span>` : ''}
-          ${locked ? `<span class="sk-lk">${sk.unlock} 级</span>` : `<span class="sk-badge">${lv}</span>`}
-        </div>`;
-      }
+      for (const id of byTree[t]) h += tile(id, false);
+      h += '</div>';
+    }
+    if (grantedIds.length) {
+      h += `<div class="sk-tree sk-tree-g">秘技<span class="sk-tn">传世授予 ${grantedIds.length} 式</span></div><div class="sk-tiles">`;
+      for (const id of grantedIds) h += tile(id, true);
       h += '</div>';
     }
     h += '</div>';
 
     /* 右：详情卡 */
     const id = this.skSel, sk = SKILLS[id];
-    const locked = s.level < sk.unlock;
+    const isGrant = grantedIds.indexOf(id) >= 0;
+    const locked = !Game.skillUnlocked(id);
     const lv = Game.skillLevel(id);
     const v = Game.skillVariant(id);
     /* 预览伤害：攻击力 × 倍率 ×（变体 + 等级） */
@@ -2011,8 +2073,8 @@ const UI = {
     }).join('');
     h += `<div class="sk-right">
       <div class="sd-head"><span class="sd-ico">${skillIconSvg(id, 30)}</span>
-        <div><div class="sd-name">${sk.name}${locked ? `<span class="sk-lock">${sk.unlock} 级领悟</span>` : ''}</div>
-        <div class="sd-sub">${sk.tree} · ${locked ? '未领悟' : '等阶 ' + lv}</div></div></div>
+        <div><div class="sd-name">${sk.name}${isGrant ? '<span class="sk-lock gr">传世秘技</span>' : (locked ? `<span class="sk-lock">${sk.unlock} 级领悟</span>` : '')}</div>
+        <div class="sd-sub">${sk.tree} · ${isGrant ? '传世授予（脱下即失去）' : (locked ? '未领悟' : '等阶 ' + lv)}</div></div></div>
       <div class="sd-desc">${desc}</div>
       <div class="sd-meta">消耗 ${Game.skillCost(sk)} · 冷却 ${Game.skillCd(sk).toFixed(1)}s · ${castTxt}${sk.castRange ? ' · ' + sk.castRange + ' 码' : ''}</div>
       <div class="sd-lv"><div class="sk-pips">${pips}</div>
@@ -2023,8 +2085,8 @@ const UI = {
       <div class="sd-bar"><span class="sd-barlab">技能条</span>
         <span class="sd-barslots">${slotBtns}</span>
         <span class="sk-sets">${SKILL_BAR_SET_NAME.map((nm, i) =>
-          `<button class="sk-setbtn ${i === setIdx ? 'on' : ''}" data-skset="${i}" title="切到${nm}栏（${SKILL_BAR_SET_KEY}）">${nm}</button>`).join('')}</span>
-        <span class="sd-barhint">${locked ? '领悟后可放上技能条' : `点数字放上技能条（键 1-${SKILL_BAR_SLOTS} 施放 · ${SKILL_BAR_SET_KEY} 换栏）`}</span></div>
+          `<button class="sk-setbtn ${i === setIdx ? 'on' : ''}" data-skset="${i}" title="${nm}（${SKILL_BAR_SET_LABEL} / ${SKILL_BAR_SET_KEY_ALT} 切换）">${barSetIcon(i, 15)}</button>`).join('')}</span>
+        <span class="sd-barhint">${locked ? '领悟后可放上技能条' : `点数字放上技能条（键 1-${SKILL_BAR_SLOTS} 施放 · ${SKILL_BAR_SET_LABEL} 换栏）`}</span></div>
     </div></div>`;
 
     const list = document.getElementById('skList');
@@ -2064,7 +2126,7 @@ const UI = {
       list.querySelectorAll('[data-skpick]').forEach(el => {
         el.addEventListener('mouseenter', () => {
           const sk2 = SKILLS[el.dataset.skpick];
-          const lk = s.level < sk2.unlock;
+          const lk = !Game.skillUnlocked(sk2.id);
           tip.innerHTML = `<div class="tt-n"><span class="tt-ico">${skillIconSvg(sk2.id, 16)}</span>${sk2.name}</div>
             <div class="tt-r">${sk2.tree} · ${lk ? sk2.unlock + ' 级领悟' : '等阶 ' + Game.skillLevel(sk2.id)}</div>
             <div class="tt-d">${(sk2.desc || '').replace(/\{dmg\}/g, '<b style="color:#ffe9a8">' + Math.round(s.stats.atk * sk2.mult * (1 + SKILL_LV_STEP * (Game.skillLevel(sk2.id) - 1))) + '</b>')}</div>`;
@@ -2585,7 +2647,17 @@ const UI = {
     setTimeout(() => d.remove(), 7200);
   },
 
-  setHelp(html) { document.getElementById('help').innerHTML = html; },
+  /* 键位提示已收进「说明」页，这里保留接口但不再依赖 HUD 元素存在 */
+  setHelp(html) {
+    const el = document.getElementById('help');
+    if (el) el.innerHTML = html;
+  },
+
+  /* 菜单是否开着：换栏键（Shift）要据此避让 Shift+左键出售 / 洗点 */
+  menuIsOpen() {
+    const p = document.getElementById('menuPanel');
+    return !!(p && p.classList.contains('open'));
+  },
 
   showDeath(tip) {
     document.getElementById('deathTip').textContent = tip || '你的道，还未走完。';

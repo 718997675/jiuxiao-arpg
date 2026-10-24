@@ -53,12 +53,16 @@ const ok = (c, m, e) => { if (c) pass++; else { fail++; console.log('  ✗ ' + m
       tabs[i].click();
       await new Promise(r => setTimeout(r, 90));
       const bd = document.getElementById('helpBody');
+      /* 行与行之间不能有裸分隔符：sec() 的 body 传数组时若直接插值，
+       * 会被 Array.toString 拼成「行,行」，那个逗号在 flex 布局里会单独占一行。 */
+      const bare = (bd.innerText || '').split('\n').filter(l => /^\s*[,，、]\s*$/.test(l)).length;
       out.perTab.push({
         i,
         len: bd.textContent.trim().length,
         secs: bd.querySelectorAll('.hp-sec').length,
         rows: bd.querySelectorAll('.hp-row').length,
-        on: document.querySelectorAll('#hpNav .hp-tab.on').length
+        on: document.querySelectorAll('#hpNav .hp-tab.on').length,
+        bareSep: bare
       });
     }
     /* 全量文本：把每节都点一遍后再拼 */
@@ -74,6 +78,12 @@ const ok = (c, m, e) => { if (c) pass++; else { fail++; console.log('  ✗ ' + m
     out.hasTier = /凡兵/.test(txt) && /太初/.test(txt);
     out.hasMech = /流血/.test(txt) && /回响/.test(txt);
     out.hasDiff = /新手/.test(txt) && /普通/.test(txt);
+    /* [UNIQUE] 传世专节：件数 / 特性数 / 「不入八阶」都要写到 */
+    out.hasUni = /传世名器/.test(txt) && /不入八阶/.test(txt) && /特性唯一/.test(txt);
+    out.uniNum = {
+      item: txt.indexOf(String(UNIQUE_ITEMS.length) + ' 件') >= 0,
+      trait: txt.indexOf(String(Object.keys(UNIQUE_TRAITS).length) + ' 条独有特性') >= 0
+    };
     out.numOk = {
       aff: txt.indexOf(String(AFFIXES.length) + ' 条') >= 0,
       set: txt.indexOf(String(Object.keys(SETS).length) + ' 套') >= 0,
@@ -83,7 +93,8 @@ const ok = (c, m, e) => { if (c) pass++; else { fail++; console.log('  ✗ ' + m
     };
     out.data = {
       aff: AFFIXES.length, set: Object.keys(SETS).length, skill: Object.keys(SKILLS).length,
-      talent: Object.keys(TALENT_NODES).length, elite: Object.keys(ELITE_AFFIXES).length
+      talent: Object.keys(TALENT_NODES).length, elite: Object.keys(ELITE_AFFIXES).length,
+      uni: UNIQUE_ITEMS.length, trait: Object.keys(UNIQUE_TRAITS).length
     };
     const bd = document.getElementById('helpBody');
     out.overflowX = Math.round(bd.scrollWidth - bd.clientWidth);
@@ -101,10 +112,15 @@ const ok = (c, m, e) => { if (c) pass++; else { fail++; console.log('  ✗ ' + m
   ok(r.perTab.every(t => t.len > 60), '每一节都有内容', JSON.stringify(r.perTab.map(t => t.len)));
   ok(r.perTab.every(t => t.rows >= 2), '每一节至少 2 条说明行', JSON.stringify(r.perTab.map(t => t.rows)));
   ok(r.perTab.every(t => t.on === 1), '同时只有一个页签高亮');
+  ok(r.perTab.every(t => (t.bareSep || 0) === 0), '没有独占一行的裸分隔符',
+    JSON.stringify(r.perTab.map(t => t.bareSep)));
   ok(r.hasSlot, '槽位说明含头盔 / 命格');
   ok(r.hasTier, '基底八阶说明含凡兵 / 太初');
   ok(r.hasMech, '机制说明含流血 / 回响');
   ok(r.hasDiff, '难度说明含新手 / 普通');
+  ok(r.hasUni, '传世专节含「不入八阶 / 特性唯一」');
+  ok(r.uniNum.item, '传世件数与数据表一致', r.data.uni);
+  ok(r.uniNum.trait, '传世特性数与数据表一致', r.data.trait);
   ok(r.numOk.aff, '词缀条数与数据表一致', r.data.aff);
   ok(r.numOk.set, '套装套数与数据表一致', r.data.set);
   ok(r.numOk.skill, '技能个数与数据表一致', r.data.skill);

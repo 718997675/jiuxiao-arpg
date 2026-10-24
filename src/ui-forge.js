@@ -267,7 +267,8 @@ Object.assign(UI, {
       const sub = this.forgeTab === 'craft'
         ? `${r.name} · ${it.ilvl} 级 · ${craftTierOf(it.ilvl)} 档料`
         : (this.forgeTab === 'tier'
-          ? `${r.name} · ${itemTierName(it)} · ${it.ilvl} 级`
+          /* 传世：品质名已经写着「传世」，再拼一次阶名会变成「传世 · 传世」 */
+          ? `${r.name} · ${it.tierless ? '' : itemTierLabel(it) + ' · '}${it.ilvl} 级`
           : (this.forgeTab === 'rune'
             ? `孔 ${(it.runes || []).filter(Boolean).length}/${it.sockets}`
             : (this.forgeTab === 'enhance'
@@ -524,12 +525,21 @@ Object.assign(UI, {
     const pv = Game.tierUpPreview(item);
     const tierNow = itemBaseTier(item);
     const list = itemBaseList(item) || [];
+    /* [UNIQUE-1] 传世没有基底阶：这里不画八阶进度条，换成一句说明，
+     * 免得玩家看到「凡兵（第 1/8 阶）」这种明显不对的标签 */
+    const tierless = !!(item.tierless || item.rarity === 'unique');
+    const subTier = tierless ? '不入八阶' : `${itemTierLabel(item)}（第 ${tierNow + 1}/${list.length} 阶）`;
     let h = `<div class="fhead">
       <span class="fi" style="color:${r.color};border-color:${r.color}44">${itemIcon(item)}</span>
       <div style="min-width:0">
         <div class="fname" style="color:${r.color}">${item.name}</div>
-        <div class="fsub">${r.name} · ${SLOT_NAME[item.slot] || item.kind} · ${itemTierName(item)}（第 ${tierNow + 1}/${list.length} 阶）</div>
+        <div class="fsub">${r.name} · ${SLOT_NAME[item.slot] || item.kind} · ${subTier}</div>
       </div></div>`;
+
+    if (tierless) {
+      h += `<div class="fempty" style="margin-top:14px">${pv.msg}</div>`;
+      return h;
+    }
 
     /* 八阶进度条：走过的亮金，当前的一格描边，后面的暗 */
     h += `<div class="frune-label">基 底 阶 · ${BASE_TIER_NAME.slice(0, list.length).join(' → ')}</div>

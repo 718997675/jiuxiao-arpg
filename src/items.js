@@ -397,8 +397,16 @@ function normalizeItem(item) {
     if (typeof item.uniqueId !== 'string' || !UNIQUE_BY_ID.has(item.uniqueId)) item.uniqueId = null;
     if (!Array.isArray(item.traits)) item.traits = [];
     item.traits = item.traits.filter(t => typeof t === 'string' && UNIQUE_TRAITS[t]);
-    if (item.uniqueSkill && (typeof item.uniqueSkill !== 'object' || typeof item.uniqueSkill.id !== 'string')) item.uniqueSkill = null;
+    /* [UNIQUE-2] skill 允许「只有 grant 没有 id」（纯解锁型），旧档 / 脏数据也按这个放行 */
+    if (item.uniqueSkill && (typeof item.uniqueSkill !== 'object'
+      || (typeof item.uniqueSkill.id !== 'string' && typeof item.uniqueSkill.grant !== 'string'))) {
+      item.uniqueSkill = null;
+    }
     if (typeof item.lore !== 'string') item.lore = '';
+    /* [UNIQUE-1] 传世不进八阶体系；旧档里的传世也补上标记 */
+    item.tierless = true;
+  } else if (item.tierless) {
+    item.tierless = false;
   }
   if (!isFinite(item.reforges) || item.reforges < 0) item.reforges = 0;
   if (!isFinite(item.enhances) || item.enhances < 0) item.enhances = 0;
@@ -597,9 +605,21 @@ function itemTierName(item) {
   return BASE_TIER_NAME[itemBaseTier(item)] || BASE_TIER_NAME[0];
 }
 
+/* [UNIQUE-1] 阶名展示：传世没有阶，别硬算一个数字出来糊弄玩家 */
+function itemTierLabel(item) {
+  if (!item) return '';
+  if (item.tierless || item.rarity === 'unique') return '传世';
+  return itemTierName(item);
+}
+
 /* 能不能升：顶阶 / 法器 / 认不出部位都给出明确理由 */
 function upgradeTierInfo(item) {
   if (!item) return { ok: false, msg: '没有这件装备。' };
+  /* [UNIQUE-1] 传世不在八阶体系里，给它留一条独立说明，
+   * 否则玩家会以为「打到了好东西却升不了」是 bug */
+  if (item.tierless || item.rarity === 'unique') {
+    return { ok: false, msg: '传世装备不属于八阶基底体系，不参与升阶 —— 它的强度来自固定词条、独有特性与专属技能。' };
+  }
   const list = itemBaseList(item);
   if (!list || !list.length) return { ok: false, msg: '这件装备没有基底阶（法器不能升阶）。' };
   const tier = itemBaseTier(item);
@@ -781,6 +801,11 @@ function rollItem(ilvl, opts = {}) {
     item.rarity = 'unique';
     item.uniqueId = uniqueDef.id;
     item.name = uniqueDef.name;
+    /* [UNIQUE-1] 传世不属于八阶基底体系。
+     * 八阶是「同一件装备往上换一层皮」的成长线，而传世是固定名字、固定特性、
+     * 带专属技能的独立装备 —— 让它也显示「太初」会让两套体系混在一起。
+     * tierless 标记后：界面不显示阶名、炼器台不允许升阶、词缀数值照样吃 ilvl。 */
+    item.tierless = true;
     item.lore = uniqueDef.lore || '';
     item.traits = (uniqueDef.traits || []).slice();
     item.uniqueSkill = uniqueDef.skill ? Object.assign({}, uniqueDef.skill) : null;
@@ -928,6 +953,12 @@ function aggregate(equipped, talents) {
   const flags = {};
   const skillMods = {};
   const specials = {};
+  /* [UNIQUE-2] 传世的两类「技能级」效果：
+   *   grantedSkills —— 装备后直接领悟某个技能（本来等级没到也能放）
+   *   skillRank     —— 装备后某个技能等级 +N（升级已有技能的效果）
+   * 它们不进 skillMods：skillMods 改的是倍率，这两个改的是「有没有」和「几级」。 */
+  const grantedSkills = {};
+  const skillRank = {};
   for (const slot in equipped) {
     const it = equipped[slot];
     if (!it) continue;
@@ -943,11 +974,16 @@ function aggregate(equipped, talents) {
       if (t.flags) for (const f of t.flags) flags[f] = true;
       if (t.special) specials[t.special] = true;
     }
-    /* 传世技能效果：'*' 是所有技能的通用修正，具体技能进入 skillMods */
+    /* 传世技能效果：'*' 是所有技能的通用修正，具体技能进入 skillMods；
+     * grant / rank 是另一条通道（解锁技能 / 抬技能等级），见上面注释 */
     const us = it.uniqueSkill;
     if (us && us.id) {
       const m = skillMods[us.id] || (skillMods[us.id] = { dmg: 0, cd: 0, cost: 0, radius: 0, count: 0, dur: 0 });
       for (const k of ['dmg', 'cd', 'cost', 'radius', 'count', 'dur']) if (us[k]) m[k] += us[k];
+    }
+    if (us && us.grant && SKILLS[us.grant]) grantedSkills[us.grant] = true;
+    if (us && us.rank && us.id && us.id !== '*' && SKILLS[us.id]) {
+      skillRank[us.id] = (skillRank[us.id] || 0) + us.rank;
     }
   }
   const setBonuses = [];
@@ -976,7 +1012,7 @@ function aggregate(equipped, talents) {
   }
   /* [S3] 天赋（与套装同通道汇总，保证「套装 + 天赋」双重构筑） */
   if (talents) applyTalents(talents, st, flags, specials, skillMods);
-  return { stats: st, setCount, setBonuses, flags, skillMods, specials };
+  return { stats: st, setCount, setBonuses, flags, skillMods, specials, grantedSkills, skillRank };
 }
 
 /* [S1] 概率 / 倍率类属性的硬上限。
@@ -1051,7 +1087,8 @@ function computePlayerStats(p) {
     crit, critDmg, aspd, moveSpd, def, cdr,
     mpReg: 3 + st.mpReg,
     setBonuses: agg.setBonuses, setCount: agg.setCount, flags: agg.flags,
-    skillMods: agg.skillMods, specials: agg.specials, raw: st
+    skillMods: agg.skillMods, specials: agg.specials, raw: st,
+    grantedSkills: agg.grantedSkills, skillRank: agg.skillRank
   };
   /* 其余属性一律透传。
    * S1 新增的 40 个属性（dodge/block/dmgAll/armorPen/...) 全走这条路，
@@ -1329,6 +1366,10 @@ function itemTooltip(item, opts = {}) {
   h += `<div class="tt-head"><div class="tt-ico" style="border-color:${r.color}44;background:radial-gradient(circle at 50% 35%,${r.color}22,rgba(0,0,0,.5))">${itemIcon(item)}</div><div class="tt-htx">`;
   h += `<div class="tt-name" style="color:${r.color}">${item.name}</div>`;
   h += `<div class="tt-sub">${r.name} · ${SLOT_NAME[item.slot] || item.kind}${item.setName ? ' · ' + item.setName + '套装' : ''}</div>`;
+  /* [UNIQUE-1] 传世不在八阶体系里：明确写一行，免得玩家拿它去炼器台找不到「升阶」 */
+  if (item.rarity === 'unique' || item.tierless) {
+    h += `<div class="tt-tierless">传世名器 · 不入八阶 · 不可升阶</div>`;
+  }
   h += `</div></div>`;
   /* v1.3.0：兵器握持标签。双手会白纸黑字写清楚「占用副手位」，
    * 免得玩家装上以后发现副手灰掉以为出 bug。 */
@@ -1402,8 +1443,17 @@ function itemTooltip(item, opts = {}) {
     }
     h += `</div>`;
   }
-  if (item.uniqueSkill && item.uniqueSkill.desc) {
-    h += `<div class="tt-skill"><b>${item.uniqueSkill.name || '技能效果'}</b><span>${item.uniqueSkill.desc}</span></div>`;
+  if (item.uniqueSkill) {
+    const us = item.uniqueSkill;
+    /* [UNIQUE-3] 授予类写「秘技」，强化类写「强化」——一眼看出这条是加技能还是加数值 */
+    let tag = '强化';
+    if (us.grant) tag = '秘技';
+    else if (us.rank) tag = '精研';
+    else if (us.id === '*') tag = '通玄';
+    const tgt = us.grant && SKILLS[us.grant] ? `（${SKILLS[us.grant].name}）` : '';
+    if (us.desc || us.name) {
+      h += `<div class="tt-skill"><b><i class="tt-skill-tag">${tag}</i>${us.name || '技能效果'}${tgt}</b><span>${us.desc || ''}</span></div>`;
+    }
   }
   /* 法器（v1.3.0）：介绍 → 术法联动 → 附带术法 */
   if (item.relicId && RELICS[item.relicId]) {

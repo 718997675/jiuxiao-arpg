@@ -142,6 +142,7 @@ const Mobile = {
       <div id="mSkills"></div>
       <div id="mAtk" class="mbtn atk"><span class="mi">攻</span></div>
       <div id="mUtil">
+        <div class="mbtn sm set" id="mBarSet" title="切换快捷栏"><span class="mi"></span><i class="idx">1/2</i></div>
         <div class="mbtn sm" id="mUse"><span class="mi">交</span></div>
         <div class="mbtn sm" id="mDash"><span class="mi">闪</span></div>
         <div class="mbtn sm pot" data-potion="hp"><span class="mi">丹</span><i class="cnt">0</i></div>
@@ -181,6 +182,29 @@ const Mobile = {
         if (typeof UI !== 'undefined' && UI.openSkill) UI.openSkill();
       });
     });
+    /* [M1] 手机上也要能换栏：PC 是 Shift，触屏没有 Shift，给一枚小按钮。
+     * [v1.8.3] 图标（剑 = 输出栏 / 盾 = 防守栏）+ 右下角「1 / 2」套数。
+     * 只放图标会被当成攻击键，只放数字又看不出「有两套」，两个一起才说得清。 */
+    const setBtn = document.getElementById('mBarSet');
+    if (setBtn) {
+      const si = Game.barSet();
+      const mi = setBtn.querySelector('.mi');
+      if (mi) mi.innerHTML = barSetIcon(si, 18);
+      const idx = setBtn.querySelector('.idx');
+      if (idx) idx.textContent = (si + 1) + '/' + SKILL_BAR_SETS;
+      const label = '切换快捷栏（当前第 ' + (si + 1) + ' 套 · ' + (si === 0 ? '输出栏' : '防守栏') + '）';
+      setBtn.title = label;
+      setBtn.setAttribute('aria-label', label);
+      if (!setBtn._bound) {
+        setBtn._bound = true;
+        setBtn.addEventListener('pointerdown', ev => {
+          ev.preventDefault(); ev.stopPropagation();
+          SFX.init();
+          Game.switchBarSet();
+          this.buildSkills();
+        });
+      }
+    }
     this.layout();
   },
 

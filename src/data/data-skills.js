@@ -395,12 +395,25 @@ const SKILL_ORDER = {
 /* 技能条槽位数：8 格（V2 计划「技能栏 6 → 8」）。
  * 玩家在术法面板（K）里手动把已领悟技能放上去；PC 键 1-8，手机 4×2 宫格。 */
 const SKILL_BAR_SLOTS = 8;
-/* 快捷栏套数：2 套（甲 / 乙），反引号键切换。
+/* 快捷栏套数：2 套（甲 / 乙）。
  * 一套打 boss、一套刷图是 ARPG 的常规需求，8 格已经够宽，
- * 但「换 BD 要重排技能条」很烦，所以再给一套整栏。 */
+ * 但「换 BD 要重排技能条」很烦，所以再给一套整栏。
+ * 切换键：Shift（默认）/ 反引号 / V。
+ * 原来只绑了反引号——中文输入法与部分键盘布局下它根本不触发，
+ * 玩家等于没有换栏键；现在 Shift 是主键，反引号与 V 保底。见 game.js bindInput。 */
 const SKILL_BAR_SETS = 2;
-const SKILL_BAR_SET_KEY = '`';
-const SKILL_BAR_SET_NAME = ['甲', '乙'];
+const SKILL_BAR_SET_KEY = 'shift';          // 默认换栏键（与 e.key.toLowerCase() 比较）
+const SKILL_BAR_SET_LABEL = 'Shift';        // 界面上显示的名字
+const SKILL_BAR_SET_KEY_ALT = '` / V';      // 备用键（部分键盘 / 输入法下 Shift 手感差）
+/* 两套快捷栏的显示：图标（剑 / 盾）而不是「甲 / 乙」文字，
+ * 图标一眼能看出「这是两套可切的栏」，也不用读字。 */
+const SKILL_BAR_SET_ICON = ['bar_atk', 'bar_def'];
+const SKILL_BAR_SET_NAME = ['第一套', '第二套'];   // 仅提示 / 无障碍文本用
+/* 取某一套的图标 SVG；size 为边长像素 */
+function barSetIcon(i, size) {
+  const key = SKILL_BAR_SET_ICON[i] || SKILL_BAR_SET_ICON[0];
+  return (typeof skillIconSvg === 'function') ? skillIconSvg(key, size || 16) : '';
+}
 
 /* 技能等级：每级 +8% 伤害（也放大治疗 / 护盾 / 召唤伤害） */
 const SKILL_LV_STEP = 0.08;

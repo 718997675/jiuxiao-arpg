@@ -104,7 +104,15 @@ const SKILL_ICONS = {
   _heal: '<path d="M12 21v-8"/><path d="M12 13C12 9 9 6 5 6c0 4 3 7 7 7z"/><path d="M12 13c0-4 3-7 7-7 0 4-3 7-7 7z"/>',
   _swordrain: '<path d="M6.5 2.5L5 12"/><path d="M3 9.5h5.5"/><path d="M12 2.5V12"/><path d="M9 9.5h6"/><path d="M17.5 2.5L19 12"/><path d="M15.5 9.5H21"/>',
   _ultimate: '<path d="M12 2.5l2 5.2 5.5.5-4.2 3.6 1.2 5.4-4.5-2.8-4.5 2.8 1.2-5.4L4.5 8.2l5.5-.5z"/>',
-  _default: '<circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2" fill="currentColor" stroke="none"/>'
+  _default: '<circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2" fill="currentColor" stroke="none"/>',
+  /* 两套快捷栏的图标（v1.8.3）：不再用「甲 / 乙」文字，剑 = 输出栏，盾 = 防守栏。
+   * 这两枚要放在 13–16px 的角标里，1.7 的细描边在那个尺寸下会糊成一根线，
+   * 所以单独用实心剪影（fill）画，保持和其他图标的风格区分 —— 它们是「栏」不是「术法」。 */
+  bar_atk: '<path d="M12 2 14.7 8.6v7.6H9.3V8.6z" fill="currentColor" stroke="none"/>' +
+           '<path d="M7.4 17.2h9.2v2.1H7.4z" fill="currentColor" stroke="none"/>' +
+           '<path d="M11 19.6h2v2.6h-2z" fill="currentColor" stroke="none"/>',
+  bar_def: '<path d="M12 2.2 20.2 5.4v6.9c0 4.9-3.5 8.4-8.2 9.6-4.7-1.2-8.2-4.7-8.2-9.6V5.4z" fill="currentColor" stroke="none"/>' +
+           '<path d="M12 6.6v9.2" stroke="rgba(0,0,0,.42)" stroke-width="1.6"/>'
 };
 
 /* 生成技能图标的 SVG 字符串；size 为像素边长 */
