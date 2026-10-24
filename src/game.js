@@ -303,7 +303,7 @@ const Game = {
       potions: { hp: 4, mp: 3 },
       teleportStones: 0,
       hp: 100, mp: 50,
-      equipment: { helm: null, chest: eq.chest, shoulders: null, gloves: null, boots: null, belt: null, amulet: null, ring1: null, ring2: null, weapon: eq.weapon, offhand: null },
+      equipment: { helm: null, chest: eq.chest, shoulders: null, gloves: null, boots: null, belt: null, amulet: null, ring1: null, ring2: null, weapon: eq.weapon, offhand: null, relic: null },
       inventory: [], maxInv: 40,
       stash: { items: [], mats: {} },
       quests: { active: [], done: [], next: 'q1', announced: {} },
@@ -1648,12 +1648,12 @@ const Game = {
     if (!s || this.dead || !this.running) return;
     const sk = SKILLS[id];
     if (!sk) return;
-    if (s.level < sk.unlock && !this.skillFlags[id]) { UI.log('尚未领悟「' + sk.name + '」'); SFX.ui(); return; }
+    if (s.level < sk.unlock && !this.skillFlags[id] && !this.relicGrants(id)) { UI.log('尚未领悟「' + sk.name + '」'); SFX.ui(); return; }
     if ((this.cooldowns[id] || 0) > 0.02) return;
     /* [S4] 装备 / 套装 / 传世 / 天赋的 skillMods + 当前变体修正合并消费；
      * 技能等级每级 +8%（也放大治疗 / 护盾 / 召唤） */
     const smod = mergeSkillMods(this.skillMod(id), variantMods(sk, this.skillVariant(id)));
-    const lvMul = 1 + SKILL_LV_STEP * (this.skillLevel(id) - 1);
+    const lvMul = 1 + SKILL_LV_STEP * (Math.max(1, this.skillLevel(id)) - 1);
     const spow = (smod ? 1 + (smod.dmg || 0) / 100 : 1) * lvMul;
     const srad = smod ? 1 + (smod.radius || 0) / 100 : 1;
     const sextra = smod ? (smod.count || 0) : 0;
@@ -2413,8 +2413,27 @@ const Game = {
     }
   },
 
+  /* 读档 / 换装后的兜底修正（v1.3.0）：
+   * 老存档或异常数据里可能出现「双手兵器 + 副手同时存在」、
+   * 「副手塞了非双持的兵器」这类非法组合，这里统一纠正，
+   * 被顶掉的副手退回行囊（行囊满就留在手上，宁可状态怪也不吞装备）。 */
+  repairHands() {
+    const s = this.state;
+    if (!s || !s.equipment) return;
+    if (!Array.isArray(s.inventory)) s.inventory = [];
+    const eq = s.equipment;
+    const two = this.handOf(eq.weapon) === 'two';
+    if (two && eq.offhand) {
+      if (s.inventory.length < s.maxInv) { s.inventory.push(eq.offhand); eq.offhand = null; }
+    }
+    if (eq.offhand && !this.fitsSlot(eq.offhand, 'offhand')) {
+      if (s.inventory.length < s.maxInv) { s.inventory.push(eq.offhand); eq.offhand = null; }
+    }
+  },
+
   recalc() {
     const s = this.state;
+    this.repairHands();
     s.stats = computePlayerStats(s);
     const st = s.stats;
     /* [S4] 增益结算走 BUFF_MUL / BUFF_ADD 两张表（items.js），
@@ -3848,6 +3867,39 @@ const Game = {
     return true;
   },
 
+  /* ---------------- 兵器握持与槽位（v1.3.0） ----------------
+   * one 单手 / dual 双持 / two 双手。
+   * 双手武器占用副手位：装上时自动卸下副手，之后副手也拒绝穿戴。
+   * 双持武器可以进副手（主副各一把），副手装备（盾/珠/符）照旧进副手。 */
+  handOf(item) {
+    return (item && item.slot === 'weapon') ? (item.hand || 'one') : null;
+  },
+  twoHanded() {
+    return this.handOf(this.state && this.state.equipment.weapon) === 'two';
+  },
+  /* 法器附带术法（v1.3.0）：戴上就能放，卸下即失效 */
+  relicGrants(id) {
+    const eq = this.state && this.state.equipment;
+    const r = eq && eq.relic;
+    return !!(r && r.relicGrant === id);
+  },
+  /* 这件物品能否放进该槽 */
+  fitsSlot(item, slot) {
+    if (!item) return false;
+    if (slot === 'weapon') return item.slot === 'weapon';
+    if (slot === 'offhand') return item.slot === 'offhand' || (item.slot === 'weapon' && this.handOf(item) === 'dual');
+    if (slot === 'ring1' || slot === 'ring2') return item.slot === 'ring';
+    return item.slot === slot;
+  },
+  /* 点行囊里的装备时，默认落哪个槽 */
+  slotForItem(item) {
+    const s = this.state;
+    if (item.slot === 'ring') return s.equipment.ring1 ? (s.equipment.ring2 ? 'ring1' : 'ring2') : 'ring1';
+    /* 双持武器：主手已有兵器、副手空着 → 直接补到副手，省一次拖拽 */
+    if (item.slot === 'weapon' && s.equipment.weapon && !s.equipment.offhand && this.handOf(item) === 'dual') return 'offhand';
+    return item.slot;
+  },
+
   /* 背包排序（v1.0.4）
    * mode: score 评分 / rarity 品质 / slot 部位 / level 等级
    * 直接重排 state.inventory —— 物品的 data-ref 是下标，视图与数组必须同源。 */
@@ -3872,12 +3924,29 @@ const Game = {
     return s.inventory.length;
   },
 
-  equipFromInv(idx) {
+  equipFromInv(idx, toSlot) {
     const s = this.state;
     const item = s.inventory[idx];
     if (!item) return;
     if (!this.canEquip(item)) return;
-    const slot = item.slot === 'ring' ? (s.equipment.ring1 ? (s.equipment.ring2 ? 'ring1' : 'ring2') : 'ring1') : item.slot;
+    const slot = toSlot || this.slotForItem(item);
+    if (!this.fitsSlot(item, slot)) {
+      UI.log(item.slot === 'weapon' ? '此兵器无法放在该手。' : '此物不能装备在这个部位。', 'bad');
+      return;
+    }
+    /* 主手已是双手兵器：副手位被占死，任何副手都不许穿 */
+    if (slot === 'offhand' && this.twoHanded()) {
+      UI.log('主手为双手兵器，需先换下单手兵器才能使用副手。', 'bad');
+      return;
+    }
+    /* 换双手兵器：副手必须空出来，自动卸回行囊（行囊满则拒绝，避免吞装备） */
+    if (slot === 'weapon' && this.handOf(item) === 'two' && s.equipment.offhand) {
+      if (s.inventory.length >= s.maxInv) { UI.log('行囊已满，无法卸下副手。', 'bad'); return; }
+      const off = s.equipment.offhand;
+      s.equipment.offhand = null;
+      s.inventory.push(off);
+      UI.log(`双手兵器占用副手位，已卸下${off.name}。`, 'warn');
+    }
     const old = s.equipment[slot];
     s.equipment[slot] = item;
     s.inventory.splice(idx, 1);
@@ -3896,9 +3965,13 @@ const Game = {
     const s = this.state;
     const item = s.equipment[slot];
     if (!item) return;
-    if (s.inventory.length >= s.maxInv) { UI.log('行囊已满。', 'bad'); return; }
+    /* 副手那把双持兵器依附于主手：主手卸下时一并收回，避免「空手却握着副手刀」 */
+    const also = (slot === 'weapon' && s.equipment.offhand && s.equipment.offhand.slot === 'weapon') ? s.equipment.offhand : null;
+    const need = also ? 2 : 1;
+    if (s.inventory.length + need > s.maxInv) { UI.log('行囊已满。', 'bad'); return; }
     s.equipment[slot] = null;
     s.inventory.push(item);
+    if (also) { s.equipment.offhand = null; s.inventory.push(also); }
     this.recalc();
     this.applyDoll();
     UI.renderInventory();

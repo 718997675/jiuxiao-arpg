@@ -30,6 +30,7 @@ const load = f => vm.runInContext(
 load('data/data-core.js');
 load('data/data-items.js');
 load('data/data-uniques.js');   // items.js 顶部要建 UNIQUE_BY_ID 索引
+load('data/data-relics.js');   // RELICS / relicPool：rollItem 的法器分支要用
 load('items.js');
 
 const pick = n => vm.runInContext(n, ctx);

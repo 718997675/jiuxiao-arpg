@@ -138,6 +138,18 @@ const UI = {
       });
     }
 
+    /* 行囊四栏切换（v1.3.0）：装备 / 材料 / 丹药 / 任务物品 */
+    const tabs = document.getElementById('invTabs');
+    if (tabs) {
+      tabs.addEventListener('click', e => {
+        const b = e.target.closest('[data-tab]');
+        if (!b) return;
+        this.invTab = b.dataset.tab;
+        SFX.ui();
+        this.renderInventory();
+      });
+    }
+
     /* 一键分解（v1.1.4）：展开确认条 → 预估产出 → 确认/取消 */
     const dj = document.getElementById('invDecomposeBtn');
     if (dj) dj.addEventListener('click', () => {
@@ -550,6 +562,7 @@ const UI = {
   /* ---------------- 背包 ---------------- */
   invJunkOpen: false,      // 一键分解确认条是否展开
   invJunkMagic: false,     // 一键分解是否连带法器
+  invTab: 'equip',         // 行囊当前栏：equip / mat / pill / quest
   toggleInv() { const p = document.getElementById('invPanel'); this.closeAll(p); p.classList.toggle('open'); if (p.classList.contains('open')) this.renderInventory(); },
   toggleStat() { const p = document.getElementById('statPanel'); this.closeAll(p); p.classList.toggle('open'); if (p.classList.contains('open')) this.renderStats(); },
   toggleQuest() { const p = document.getElementById('questPanel'); this.closeAll(p); p.classList.toggle('open'); if (p.classList.contains('open')) this.renderQuests(); },
@@ -563,42 +576,107 @@ const UI = {
 
   renderInventory() {
     const s = Game.state;
+    if (!s) return;
+    this.renderDoll();
+    const tab = this.invTab || 'equip';
+    /* 排序 / 分解 / 图鉴 只对「装备」栏有意义，其余栏位收起 */
+    const sortbar = document.getElementById('invSort');
+    if (sortbar) sortbar.style.display = tab === 'equip' ? '' : 'none';
+    document.querySelectorAll('#invTabs .itab').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
+    const g = document.getElementById('invGrid');
+    const mp = document.getElementById('invMats');
+    const stats = document.getElementById('invStats');
+    const jb = document.getElementById('invJunkBar');
+    const line = document.getElementById('setLine');
+    if (g) g.style.display = tab === 'equip' ? '' : 'none';
+    if (mp) mp.style.display = tab === 'equip' ? 'none' : '';
+    if (stats) stats.style.display = tab === 'equip' ? '' : 'none';
+    if (line) line.style.display = tab === 'equip' ? '' : 'none';
+    if (jb && tab !== 'equip') { jb.style.display = 'none'; jb.innerHTML = ''; }
+    if (tab === 'equip') this.renderEquipGrid();
+    else this.renderMatTab(tab);
+    this.renderTabBadges();
+  },
+
+  /* 纸娃娃：按身体方向排（v1.3.0，参考暗黑 3）
+   * 头在中上、肩在左上 / 右上、胸甲占中两行、手腰一排、战靴在下，
+   * 最底一条长格放兵器。具体落位由 CSS 的 grid-template-areas 决定。 */
+  renderDoll() {
+    const s = Game.state;
     const eq = s.equipment;
-    const order = ['helm', 'shoulders', 'amulet', 'chest', 'gloves', 'belt', 'boots', 'ring1', 'ring2', 'weapon', 'offhand'];
+    /* 法器（relic）落在右上角，与护肩左右对称（v1.3.0） */
+    const order = ['helm', 'shoulders', 'chest', 'relic', 'gloves', 'amulet', 'ring1', 'belt', 'ring2', 'boots', 'weapon', 'offhand'];
     const grid = document.getElementById('dollGrid');
+    if (!grid) return;
     grid.innerHTML = order.map(slot => {
       const it = eq[slot];
       const r = it ? RARITY[it.rarity] : null;
       const sb = it && it.sockets ? `<span class="sockbadge">◆${(it.runes || []).filter(Boolean).length}/${it.sockets}</span>` : '';
-      return `<div class="eslot ${it ? 'filled' : 'empty'}" ${it ? `data-ref="eq:${slot}"` : ''} style="${it ? `border-color:${r.color}55;box-shadow:inset 0 0 12px ${r.color}22` : ''}">
+      /* 主手是双手兵器时，副手格画成「锁定」态，点上去也能看到原因 */
+      const locked = slot === 'offhand' && Game.twoHanded();
+      let inner;
+      if (it) {
+        inner = `<span class="ico">${itemIcon(it)}</span>`;
+        /* 兵器长格：名字 + 握持 + DPS，横向一条读完 */
+        if (slot === 'weapon' || slot === 'offhand') {
+          const dps = it.baseDmg ? ((it.baseDmg[0] + it.baseDmg[1]) / 2 / (it.speed || 1)).toFixed(1) : '—';
+          let sub;
+          if (slot === 'weapon') sub = `${WEAPON_HAND_NAME[it.hand || 'one']} · DPS ${dps}`;
+          else if (it.slot === 'weapon') sub = `副手双持 · DPS ${dps}`;
+          else sub = `副手 · ${(SLOTS[it.slot] || {}).name || ''}`;
+          inner += `<span class="wmeta"><b>${it.name}</b><i>${sub}</i></span>`;
+        }
+        /* 法器格：汉字字形 + 名号 + 附带术法（有则显示） */
+        if (slot === 'relic') {
+          const d = (it.relicId && RELICS[it.relicId]) || null;
+          const g = d && d.grant && SKILLS[d.grant] ? `附带 · ${SKILLS[d.grant].name}` : '法器';
+          inner += `<span class="rmeta"><b>${it.name}</b><i>${g}</i></span>`;
+        }
+      } else {
+        inner = `<span class="ico empty">${locked ? '锁' : ''}</span>`;
+      }
+      return `<div class="eslot ${it ? 'filled' : 'empty'}${locked ? ' locked' : ''}" data-slot="${slot}" data-size="${slotSize(slot)}" ${it ? `data-ref="eq:${slot}"` : ''}${locked ? ' title="主手为双手兵器，副手位已被占用"' : ''} style="${it ? `border-color:${r.color}55;box-shadow:inset 0 0 12px ${r.color}22` : ''}">
         <span class="lbl">${SLOT_NAME[slot]}</span>
         ${sb}
-        ${it ? `<span class="ico">${itemIcon(it)}</span>` : `<span class="ico empty"></span>`}
+        ${inner}
       </div>`;
     }).join('');
+  },
 
+  /* 纸娃娃下方：人物详细属性（与属性面板同源，两列 + 分组标题，超长自己滚） */
+  renderDollStats() {
+    const el = document.getElementById('invStats');
+    if (!el) return;
+    el.innerHTML = this.statGroups().map(([title, list]) =>
+      `<div class="st-grp">${title}</div>` +
+      list.map(r => `<div><span>${r[0]}</span><b>${r[1]}</b></div>`).join('')
+    ).join('');
+  },
+
+  /* 装备栏：格子 + 一键分解条 + 套装行 + 人物详细属性 */
+  renderEquipGrid() {
+    const s = Game.state;
     const inv = s.inventory;
     document.getElementById('invCap').textContent = `${inv.length} / ${s.maxInv}`;
     const ig = document.getElementById('invGrid');
+    /* 只渲染「用得到的格子」：至少两行，够装就停，省下的高度留给详细属性 */
+    const need = Math.max(16, Math.ceil((inv.length + 1) / 8) * 8);
     let html = '';
-    for (let i = 0; i < s.maxInv; i++) {
+    for (let i = 0; i < need; i++) {
       const it = inv[i];
       if (it) {
         const tag = (SLOTS[it.slot] || {}).name || it.kind || '';
         const sb = it.sockets ? `<span class="sockbadge">◆${(it.runes || []).filter(Boolean).length}/${it.sockets}</span>` : '';
-        html += `<div class="islot r-${it.rarity}" data-ref="inv:${i}">
-          <span class="ico">${itemIcon(it)}</span>${sb}<span class="slot-tag">${tag.slice(0, 1)}</span></div>`;
+        /* 格子大小随部位：战甲/武器占满整格，饰品格只有六成 */
+        const sz = it.slot ? slotSize(it.slot) : '';
+        const hand = it.slot === 'weapon' ? `<span class="hand-tag h-${it.hand || 'one'}">${WEAPON_HAND_NAME[it.hand || 'one']}</span>` : '';
+        html += `<div class="islot ${sz ? 'sz-' + sz : ''} r-${it.rarity}" ${it.slot ? `data-size="${sz}"` : ''} data-ref="inv:${i}">
+          <span class="ico">${itemIcon(it)}</span>${sb}${hand}<span class="slot-tag">${tag.slice(0, 1)}</span></div>`;
       } else {
         html += `<div class="islot"></div>`;
       }
     }
     ig.innerHTML = html;
-
-    const st = s.stats;
-    document.getElementById('statBox').innerHTML = `
-      <div>攻击 <b>${Math.round(st.atk)}</b></div><div>护甲 <b>${Math.round(st.def)}</b></div>
-      <div>生命 <b>${Math.round(st.hpMax)}</b></div><div>灵力 <b>${Math.round(st.mpMax)}</b></div>
-      <div>暴击 <b>${st.crit.toFixed(1)}%</b></div><div>爆伤 <b>${Math.round(st.critDmg)}%</b></div>`;
 
     /* 一键分解确认条：默认只分凡品，可勾选连带法器；预估产出实时更新 */
     const jb = document.getElementById('invJunkBar');
@@ -614,15 +692,94 @@ const UI = {
       } else { jb.style.display = 'none'; jb.innerHTML = ''; }
     }
 
+    const st = s.stats;
     const sets = Object.keys(st.setCount).filter(k => st.setCount[k] >= 2);
     const line = document.getElementById('setLine');
-    if (sets.length) {
-      line.innerHTML = sets.map(id => {
-        const set = SETS[id], n = st.setCount[id];
-        const active = set.bonuses.filter(b => n >= b.need).map(b => b.text).join('；');
-        return `<div style="color:${set.color}">【${set.name}】${n}/${set.pieces.length}　<span style="color:#9ad0a8">${active}</span></div>`;
-      }).join('');
-    } else line.innerHTML = '<span style="color:#6a6458">集齐套装可获得额外之力（绿色边框为套装部件）</span>';
+    if (line) {
+      if (sets.length) {
+        line.innerHTML = sets.map(id => {
+          const set = SETS[id], n = st.setCount[id];
+          const active = set.bonuses.filter(b => n >= b.need).map(b => b.text).join('；');
+          return `<div style="color:${set.color}">【${set.name}】${n}/${set.pieces.length}　<span style="color:#9ad0a8">${active}</span></div>`;
+        }).join('');
+      } else line.innerHTML = '<span style="color:#6a6458">集齐套装可获得额外之力（绿色边框为套装部件）</span>';
+    }
+    /* 人物详细属性：分组照搬属性面板，三列排布 */
+    this.renderDollStats();
+  },
+
+  /* 材料 / 丹药 / 任务物品：三栏共用一套「图标 + 名称 + 数量」行 */
+  renderMatTab(tab) {
+    const s = Game.state;
+    const el = document.getElementById('invMats');
+    if (!el) return;
+    const RUNE_COLOR = { 1: '#a0a0a0', 2: '#67a9ff', 3: '#c084ff', 4: '#ffd166' };
+    let rows = [];
+    if (tab === 'mat') {
+      CRYSTAL_TIERS.forEach((t, i) => rows.push({
+        color: t.color, glyph: t.label, name: t.name + '（' + (i + 1) + ' 阶）',
+        sub: '分解装备获得，炼器与洗练的通货', n: Game.crystalTierCount(i + 1)
+      }));
+      for (const id in RUNES) {
+        const n = Game.runeCount(id);
+        if (n > 0) rows.push({
+          color: RUNE_COLOR[RUNES[id].tier] || '#c9a86a', glyph: '符', name: RUNES[id].name + '符文',
+          sub: RUNES[id].tier + ' 阶 · ' + statLine(RUNES[id].stats), n
+        });
+      }
+      document.getElementById('invCap').textContent = `材料 ${rows.length} 种`;
+    } else if (tab === 'pill') {
+      const p = s.potions || { hp: 0, mp: 0 };
+      rows.push({ color: '#e05a4a', glyph: '丹', name: '回春丹', sub: '立即回复生命', n: p.hp || 0, use: 'hp', key: 'Z' });
+      rows.push({ color: '#67a9ff', glyph: '露', name: '凝露', sub: '立即回复灵力', n: p.mp || 0, use: 'mp', key: 'X' });
+      rows.push({ color: '#9a9aff', glyph: '阵', name: '传送阵石', sub: '就地开启归途阵', n: s.teleportStones || 0, use: 'tp', key: '9' });
+      document.getElementById('invCap').textContent = `丹药 ${rows.reduce((a, r) => a + r.n, 0)} 枚`;
+    } else {
+      /* 任务物品：已完成的委托留下一枚凭证，纯陈列，不占行囊、不可交易 */
+      const done = (s.quests && s.quests.done) || [];
+      rows = done.map(id => {
+        const q = QUESTS[id];
+        if (!q) return null;
+        return { color: '#d8b25a', glyph: '凭', name: q.name + '·凭证', sub: q.brief ? q.brief.slice(0, 22) + '…' : '委托完结的凭证', n: 1, fixed: true };
+      }).filter(Boolean);
+      document.getElementById('invCap').textContent = `任务物品 ${rows.length} 枚`;
+      if (!rows.length) {
+        el.innerHTML = '<div class="mat-empty">尚无任务物品<br><span>完成一份委托后，凭证会陈列在这里</span></div>';
+        return;
+      }
+    }
+    el.innerHTML = rows.map(r => `
+      <div class="matrow${r.n ? '' : ' off'}" ${r.use ? `data-use="${r.use}"` : ''} style="--mc:${r.color}">
+        <span class="mg">${r.glyph}</span>
+        <span class="mn"><b>${r.name}</b><i>${r.sub}</i></span>
+        <span class="mt">×${r.n}</span>
+        ${r.use ? `<span class="mk">${r.key}</span>` : ''}
+      </div>`).join('');
+
+    el.querySelectorAll('[data-use]').forEach(row => {
+      row.addEventListener('click', () => {
+        const k = row.dataset.use;
+        if (k === 'tp') Game.useTeleportStone(); else Game.usePotion(k);
+        this.renderInventory();
+      });
+    });
+  },
+
+  renderTabBadges() {
+    const s = Game.state;
+    if (!s) return;
+    const matN = CRYSTAL_TIERS.filter((t, i) => Game.crystalTierCount(i + 1) > 0).length +
+      Object.keys(RUNES).filter(id => Game.runeCount(id) > 0).length;
+    const pillN = (s.potions ? (s.potions.hp || 0) + (s.potions.mp || 0) : 0) + (s.teleportStones || 0);
+    const qN = ((s.quests && s.quests.done) || []).length;
+    const set = (id, n) => {
+      const b = document.querySelector(`#invTabs .itab[data-tab="${id}"] i`);
+      if (b) b.textContent = n;
+    };
+    set('equip', s.inventory.length);
+    set('mat', matN);
+    set('pill', pillN);
+    set('quest', qN);
   },
 
   /* ---------------- 套装图鉴（v1.1.4） ----------------
@@ -1306,7 +1463,9 @@ const UI = {
     }
   },
 
-  renderStats() {
+  /* 属性分组（v1.3.0 抽出）：属性面板与背包「详细属性」共用同一份口径，
+   * 免得两处各写一遍、加新词条时漏改一处。 */
+  statGroups() {
     const s = Game.state, st = s.stats, c = CLASSES[s.cls];
     const n = k => st[k] || 0;                 // 旧档/异常值兜底
     const P = k => Math.round(n(k)) + '%';
@@ -1382,7 +1541,12 @@ const UI = {
     if (n('dropRate')) util.push(['掉落数量', P('dropRate')]);
     if (n('pickupRadius')) util.push(['拾取范围', n('pickupRadius').toFixed(1)]);
     G.push(['机能', util]);
+    return G;
+  },
 
+  renderStats() {
+    const s = Game.state, st = s.stats;
+    const G = this.statGroups();
     document.getElementById('statList').innerHTML = G.map(([title, list]) =>
       `<div class="st-grp">${title}</div>` +
       list.map(r => `<div><span>${r[0]}</span><b>${r[1]}</b></div>`).join('')

@@ -36,7 +36,7 @@ const SaveManager = {
   migrated: false,
   _createdAt: {},
 
-  _DEFAULT_SLOTS: ['helm', 'chest', 'shoulders', 'gloves', 'boots', 'belt', 'amulet', 'ring1', 'ring2', 'weapon', 'offhand'],
+  _DEFAULT_SLOTS: ['helm', 'chest', 'shoulders', 'gloves', 'boots', 'belt', 'amulet', 'ring1', 'ring2', 'weapon', 'offhand', 'relic'],
 
   /* ---------------- 基础工具 ---------------- */
   slotKey(n) { return 'jiuxiao_save_v2_s' + n; },

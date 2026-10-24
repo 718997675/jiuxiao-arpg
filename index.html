@@ -166,21 +166,95 @@
   /* 背包 */
   #invPanel{left:50%;top:50%;transform:translate(-50%,-50%);width:760px;max-height:88vh}
   .inv-wrap{display:flex;gap:16px}
-  .doll{width:230px;flex:none}
+  .doll{width:296px;flex:none}
   .doll-title{font-size:11px;color:var(--dim);letter-spacing:2px;margin-bottom:6px;text-align:center}
-  .doll-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
-  .eslot{height:62px;background:linear-gradient(160deg,rgba(38,34,28,.7),rgba(0,0,0,.55));
+  /* 纸娃娃：按身体方向排（v1.3.0 参考暗黑 3）
+   *   头在中上 → 左右肩（左上护肩 / 右上副手）→ 胸甲占中两行 →
+   *   手腰一排 → 战靴在下 → 最底一条长格放兵器。
+   * 格子大小仍跟部位走（v1.2.3），兵器/战甲最大、饰品格最小。
+   * 落位用 grid-template-areas 写死，不依赖 DOM 顺序。 */
+  .doll-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:6px;
+    grid-template-areas:
+      ".       .       helm    helm    .       ."
+      "shoulders shoulders chest chest relic  relic"
+      "gloves  gloves  chest   chest amulet amulet"
+      "ring1   ring1   belt    belt  ring2  ring2"
+      ".       .       boots   boots .      ."
+      "weapon  weapon  weapon  offhand offhand offhand"}
+  .eslot{width:100%;height:48px;background:linear-gradient(160deg,rgba(38,34,28,.7),rgba(0,0,0,.55));
     border:1px solid rgba(255,255,255,.115);box-shadow:inset 0 0 6px rgba(0,0,0,.5);position:relative;cursor:pointer;
-    display:flex;align-items:center;justify-content:center;font-size:9px;color:#5a5448;transition:.12s}
+    display:flex;align-items:center;justify-content:center;font-size:9px;color:#5a5448;transition:.12s;
+    justify-self:center;align-self:center}
+  .eslot[data-slot="helm"]{grid-area:helm}
+  .eslot[data-slot="chest"]{grid-area:chest}
+  .eslot[data-slot="shoulders"]{grid-area:shoulders}
+  .eslot[data-slot="amulet"]{grid-area:amulet}
+  .eslot[data-slot="gloves"]{grid-area:gloves}
+  .eslot[data-slot="ring1"]{grid-area:ring1}
+  .eslot[data-slot="weapon"]{grid-area:weapon}
+  .eslot[data-slot="belt"]{grid-area:belt}
+  .eslot[data-slot="ring2"]{grid-area:ring2}
+  .eslot[data-slot="boots"]{grid-area:boots}
+  .eslot[data-slot="offhand"]{grid-area:offhand}
+  .eslot[data-slot="relic"]{grid-area:relic}
+  /* 双手兵器占着副手位：副手格画成虚线锁定态 */
+  .eslot.locked{border-style:dashed;border-color:rgba(255,154,108,.45)!important;background:rgba(40,24,18,.55);cursor:not-allowed}
+  .eslot.locked .ico.empty::before{content:'锁';font-size:11px;color:rgba(255,154,108,.65)}
+  .eslot.locked:hover{border-color:rgba(255,154,108,.7)!important;background:rgba(50,28,20,.6)}
+  /* 尺寸档：特大（战甲/兵器，撑满两行）— 大 — 中 — 小（贴身饰品） */
+  .eslot[data-size="xl"]{height:100%}
+  .eslot[data-size="lg"]{height:52px}
+  .eslot[data-size="md"]{height:42px}
+  .eslot[data-size="sm"]{height:34px;width:auto;aspect-ratio:1}
+  /* 兵器长格（v1.3.0）：横跨三列，图标 + 名字 + 握持/DPS 一行读完 */
+  .eslot[data-slot="weapon"],.eslot[data-slot="offhand"]{height:56px;flex-direction:row;
+    justify-content:flex-start;gap:7px;padding:0 7px}
+  .eslot[data-slot="weapon"] .ico,.eslot[data-slot="offhand"] .ico{width:auto;height:auto;flex:none}
+  .eslot[data-slot="weapon"] .it-ico,.eslot[data-slot="offhand"] .it-ico{width:28px;height:28px}
+  .eslot[data-slot="weapon"] .lbl,.eslot[data-slot="offhand"] .lbl{display:none}
+  /* 空位仍然要把「武器 / 副手」两个字露出来，否则只剩一个加号认不出是什么位 */
+  .eslot[data-slot="weapon"].empty .lbl,.eslot[data-slot="offhand"].empty .lbl{display:block;top:4px;left:8px;font-size:9px}
+  .eslot[data-slot="weapon"] .wmeta,.eslot[data-slot="offhand"] .wmeta{display:flex;flex-direction:column;gap:2px;min-width:0;text-align:left;line-height:1.35}
+  .eslot[data-slot="weapon"] .wmeta b,.eslot[data-slot="offhand"] .wmeta b{font-weight:500;font-size:11px;letter-spacing:.5px;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#e8dcc0}
+  .eslot[data-slot="weapon"] .wmeta i,.eslot[data-slot="offhand"] .wmeta i{font-style:normal;font-size:8.5px;color:#7a7466;letter-spacing:0;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  /* 法器格（v1.3.0）：右上角，竖排 —— 汉字字形在上，名号 + 附带术法在下 */
+  .eslot[data-slot="relic"]{height:60px;flex-direction:column;justify-content:center;gap:1px;padding:1px 4px}
+  .eslot[data-slot="relic"] .ico{width:auto;height:auto;flex:none;overflow:hidden}
+  .eslot[data-slot="relic"] .lbl{display:none}
+  .eslot[data-slot="relic"].empty .lbl{display:block;top:4px;left:4px;font-size:9px;text-align:left}
+  .eslot[data-slot="relic"] .rmeta{display:block;width:100%;min-width:0;text-align:center;line-height:1.3}
+  .eslot[data-slot="relic"] .rmeta b{display:block;font-weight:500;font-size:9.5px;letter-spacing:.3px;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#e8dcc0}
+  .eslot[data-slot="relic"] .rmeta i{display:block;font-style:normal;font-size:8px;color:#7a7466;letter-spacing:0;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .eslot:hover{border-color:var(--gold-d);background:rgba(60,48,28,.3)}
   .eslot .lbl{position:absolute;top:1px;left:3px;font-size:8.5px;color:#6a6458;letter-spacing:0}
   .eslot.filled{border-color:rgba(216,178,90,.4)}
-  .eslot .ico{display:flex;align-items:center;justify-content:center;width:38px;height:38px;line-height:1;margin-top:6px}
+  .eslot .ico{display:flex;align-items:center;justify-content:center;width:100%;height:100%;line-height:1}
   .eslot.empty{color:#4a453c}
   .eslot .ico.empty::before{content:'＋';font-size:16px;color:#3f3a32}
+  .eslot[data-size="sm"] .ico.empty::before{font-size:12px}
+  .eslot[data-size="xl"] .ico.empty::before{font-size:22px}
   /* 装备图标 */
   .it-ico{display:block;width:30px;height:30px;flex:none}
-  .eslot .it-ico{width:36px;height:36px}
+  /* 法器图标是专属器物图形 + 法阵外圈（v1.3.0），比普通装备大一号、亮一档 */
+  .it-ico.it-relic{width:34px;height:34px}
+  .eslot .it-ico.it-relic{width:30px;height:30px}
+  .islot .it-ico.it-relic{width:30px;height:30px}
+  .shoprow .it-ico.it-relic{width:26px;height:26px}
+  .eslot[data-slot="relic"] .it-ico.it-relic{width:30px;height:30px}
+  /* 缓慢呼吸的辉光，法器在纸娃娃上会「活」一点 */
+  @keyframes relicBreath{
+    0%,100%{filter:drop-shadow(0 0 2px currentColor) drop-shadow(0 0 5px currentColor)}
+    50%{filter:drop-shadow(0 0 4px currentColor) drop-shadow(0 0 11px currentColor)}
+  }
+  .eslot[data-slot="relic"] .it-ico.it-relic{animation:relicBreath 3.6s ease-in-out infinite}
+  .eslot .it-ico{width:34px;height:34px}
+  .eslot[data-size="xl"] .it-ico{width:52px;height:52px}
+  .eslot[data-size="md"] .it-ico{width:28px;height:28px}
+  .eslot[data-size="sm"] .it-ico{width:22px;height:22px}
   .islot .it-ico{width:30px;height:30px}
   .shoprow .it-ico{width:26px;height:26px}
   .inv-main{flex:1;min-width:0}
@@ -350,16 +424,65 @@
   .sd-vars{display:flex;gap:6px;margin-bottom:6px}
   .sd-vname{font-size:10px;color:#7a7466;line-height:1.65}
   .igrid{display:grid;grid-template-columns:repeat(8,1fr);gap:6px}
-  .islot{aspect-ratio:1;background:linear-gradient(160deg,rgba(38,34,28,.75),rgba(0,0,0,.55));
+  /* 行囊格子同样按部位分档（v1.2.3）：轨道保持等宽等距，格子里的小方块按档位缩放，
+   * 于是护甲/兵器占满、饰品只占六成 —— 索引映射不变，只改视觉体量。 */
+  .islot{width:100%;aspect-ratio:1;place-self:center;
+    background:linear-gradient(160deg,rgba(38,34,28,.75),rgba(0,0,0,.55));
     border:1px solid rgba(255,255,255,.115);box-shadow:inset 0 0 6px rgba(0,0,0,.55);position:relative;cursor:pointer;
     display:flex;align-items:center;justify-content:center;transition:.1s;overflow:hidden}
+  .islot[data-size="lg"]{width:92%}
+  .islot[data-size="md"]{width:82%}
+  .islot[data-size="sm"]{width:64%}
   .islot:hover{border-color:var(--gold);background:rgba(80,64,36,.25)}
   .islot .ico{display:flex;align-items:center;justify-content:center;width:100%;height:100%;line-height:1}
   .islot .qty{position:absolute;right:2px;bottom:0;font-size:10px;color:#e8e0c8}
   .islot .slot-tag{position:absolute;right:3px;bottom:1px;font-size:8px;line-height:1;color:rgba(255,255,255,.38);
     letter-spacing:0;pointer-events:none;text-shadow:0 1px 2px rgba(0,0,0,.8)}
-  .islot .slot-tag{position:absolute;right:3px;bottom:1px;font-size:8px;line-height:1;color:rgba(255,255,255,.38);
-    letter-spacing:0;pointer-events:none;text-shadow:0 1px 2px rgba(0,0,0,.8)}
+  .islot[data-size="sm"] .slot-tag{right:1px;bottom:0;font-size:7px}
+  /* 握持角标（v1.3.0）：只在兵器上出现，双手留一格明显的橙字 */
+  .islot .hand-tag{position:absolute;left:2px;bottom:0;font-size:7px;line-height:1.2;letter-spacing:0;
+    pointer-events:none;text-shadow:0 1px 2px rgba(0,0,0,.9);color:rgba(255,255,255,.4)}
+  .islot .hand-tag.h-dual{color:rgba(127,176,255,.75)}
+  .islot .hand-tag.h-two{color:rgba(255,154,108,.85)}
+
+  /* ---------- 行囊四栏（v1.3.0） ---------- */
+  .inv-tabs{display:flex;gap:4px;margin:6px 0 5px;border-bottom:1px solid rgba(216,178,90,.18);padding-bottom:5px}
+  .itab{font-family:inherit;font-size:11.5px;letter-spacing:1px;padding:4px 11px 5px;cursor:pointer;
+    background:rgba(0,0,0,.32);border:1px solid rgba(216,178,90,.18);border-bottom:none;color:#a8a090;transition:.12s;
+    border-radius:2px 2px 0 0}
+  .itab i{font-style:normal;font-size:9.5px;color:#6a6458;margin-left:2px}
+  .itab:hover{border-color:rgba(216,178,90,.5);color:#e8d8b0;background:rgba(216,178,90,.09)}
+  .itab.on{border-color:var(--gold);color:#1a1510;background:linear-gradient(180deg,#e0c070,#b89840);font-weight:600}
+  .itab.on i{color:rgba(26,21,16,.55)}
+
+  /* 材料 / 丹药 / 任务物品列表 */
+  .matlist{display:flex;flex-direction:column;gap:4px;max-height:290px;overflow-y:auto;padding-right:2px}
+  .matrow{display:flex;align-items:center;gap:9px;padding:5px 8px;cursor:default;
+    background:linear-gradient(90deg,rgba(38,34,28,.6),rgba(0,0,0,.35));border:1px solid rgba(255,255,255,.08);
+    border-left:2px solid var(--mc,#8a8175);transition:.12s}
+  .matrow[data-use]{cursor:pointer}
+  .matrow[data-use]:hover{background:rgba(80,64,36,.28);border-color:var(--gold-d);border-left-color:var(--mc,#d8b25a)}
+  .matrow.off{opacity:.42}
+  .matrow .mg{width:26px;height:26px;flex:none;display:flex;align-items:center;justify-content:center;
+    font-family:"STKaiti","KaiTi",serif;font-size:15px;color:var(--mc,#c0b8a8);
+    background:rgba(0,0,0,.45);border:1px solid rgba(255,255,255,.13)}
+  .matrow .mn{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
+  .matrow .mn b{font-weight:500;font-size:12px;color:#e8dcc0;letter-spacing:.5px}
+  .matrow .mn i{font-style:normal;font-size:9.5px;color:#7a7466;letter-spacing:0;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .matrow .mt{font-size:12.5px;color:#f0e0b8;font-variant-numeric:tabular-nums}
+  .matrow .mk{font-size:9px;color:#6a6458;border:1px solid rgba(255,255,255,.14);padding:0 3px}
+  .mat-empty{padding:26px 0;text-align:center;font-size:12px;color:#6a6458;line-height:2}
+  .mat-empty span{font-size:10.5px;color:#4e4a42}
+
+  /* 装备栏底部：人物详细属性（三列，超长自己滚） */
+  .inv-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:2px 16px;margin-top:9px;padding-top:7px;
+    border-top:1px solid rgba(255,255,255,.07);font-size:11px;color:#b8b0a0}
+  .inv-stats .st-grp{grid-column:1/-1;color:#c9a86a;font-size:10px;letter-spacing:3px;margin-top:5px;padding-bottom:2px;
+    border-bottom:1px solid rgba(201,168,106,.22)}
+  .inv-stats>div{display:flex;justify-content:space-between;gap:6px;padding:1px 0;white-space:nowrap;overflow:hidden}
+  .inv-stats b{color:#f0e0b8;font-weight:500}
+  #invPanel .pb{max-height:calc(88vh - 48px);overflow-y:auto;overflow-x:hidden}
   .islot.r-magic{border-color:rgba(103,169,255,.45);box-shadow:inset 0 0 10px rgba(103,169,255,.12)}
   .islot.r-rare{border-color:rgba(255,200,87,.5);box-shadow:inset 0 0 10px rgba(255,200,87,.13)}
   .islot.r-legendary{border-color:rgba(255,122,60,.65);box-shadow:inset 0 0 12px rgba(255,122,60,.2)}
@@ -368,9 +491,6 @@
   .sockbadge{position:absolute;left:2px;top:1px;font-size:8px;line-height:1.2;color:#b98cff;letter-spacing:0;
     pointer-events:none;text-shadow:0 1px 2px rgba(0,0,0,.9)}
   body.touch .sockbadge{font-size:7.5px;left:1px;top:0}
-  .statbox{display:grid;grid-template-columns:1fr 1fr;gap:2px 12px;margin-top:10px;font-size:11.5px;
-    color:#b8b0a0;border-top:1px solid rgba(255,255,255,.07);padding-top:8px}
-  .statbox b{color:#f0e0b8;font-weight:500;float:right}
   .hintline{font-size:10.5px;color:#7a7466;margin-top:8px;letter-spacing:.5px;line-height:1.6}
 
   /* 属性面板 */
@@ -612,6 +732,12 @@
   .tt-htx{min-width:0;flex:1}
   .tt-name{font-size:14px;letter-spacing:1px;font-weight:600;text-shadow:0 0 12px rgba(0,0,0,.8)}
   .tt-sub{font-size:10px;color:#8a8474;margin:2px 0 0;letter-spacing:1px}
+  /* 握持标签（v1.3.0） */
+  .tt-hand{display:flex;align-items:center;gap:6px;font-size:10px;color:#9a9182;margin:6px 0 2px;letter-spacing:.5px}
+  .tt-hand-tag{flex:none;font-size:9.5px;padding:1px 5px;border:1px solid;letter-spacing:1px}
+  .tt-hand.h-one .tt-hand-tag{color:#b8ad90;border-color:rgba(184,173,144,.4)}
+  .tt-hand.h-dual .tt-hand-tag{color:#7fb0ff;border-color:rgba(127,176,255,.5)}
+  .tt-hand.h-two .tt-hand-tag{color:#ff9a6c;border-color:rgba(255,154,108,.6)}
   .tt-main{font-size:12px;color:#e8dcc0;margin:2px 0}
   .tt-aff{font-size:12px;color:#9ad0ff;line-height:1.6}
   .tt-imp{font-size:12px;color:#c9b8ff;line-height:1.6;margin-top:3px;padding:1px 0 1px 5px;border-left:2px solid rgba(185,140,255,.5)}
@@ -635,6 +761,12 @@
   .tt-set-b.off{color:#5a6a60}
   /* 传世（Unique） */
   .tt-lore{font-size:10.5px;color:#9a8f78;font-style:italic;line-height:1.6;margin-top:4px}
+  /* 法器（v1.3.0）：一句介绍 + 附带术法 */
+  .tt-relic-intro{font-size:11px;color:#dcc890;font-style:italic;letter-spacing:.6px;line-height:1.65;
+    margin:5px 0 1px;text-align:center}
+  .tt-grant{margin-top:5px;padding:3px 0 3px 7px;font-size:10.5px;line-height:1.55;color:#8fd0a8;
+    border-left:2px solid rgba(143,208,168,.55);background:linear-gradient(90deg,rgba(143,208,168,.10),transparent)}
+  .tt-grant b{font-weight:600;color:#b6e6c6;letter-spacing:.5px}
   .tt-uaff{font-size:12px;color:#f0c878;line-height:1.6}
   .tt-raff{color:#ffd76a}
   .tt-raff-tag{display:inline-block;margin-right:6px;padding:0 5px;border:1px solid rgba(255,215,106,.55);
@@ -862,15 +994,36 @@
   body.touch #importText{height:64px;font-size:11px}
   body.touch .pb{padding:10px}
   body.touch .doll{width:200px}
-  body.touch .doll-grid{grid-template-columns:repeat(3,1fr);gap:5px}
-  body.touch .eslot{height:42px}
+  /* 触屏三列版落位：头中上 → 肩/胸/法器 → 手/腰 → 靴 → 兵器两条通栏 */
+  body.touch .doll-grid{grid-template-columns:repeat(3,1fr);gap:5px;
+    grid-template-areas:
+      ".       helm    ."
+      "shoulders chest relic"
+      "gloves  chest   amulet"
+      "ring1   belt    ring2"
+      ".       boots   ."
+      "weapon  weapon  weapon"
+      "offhand offhand offhand"}
+  /* 触屏下调小各档尺寸，但仍保留档位差（战甲/兵器撑满两行，饰品格最小） */
+  body.touch .eslot[data-size="lg"]{height:44px}
+  body.touch .eslot[data-size="md"]{height:36px}
+  body.touch .eslot[data-size="sm"]{height:28px}
+  /* 兵器 / 副手 / 法器是横条格，不跟着档位高度走（写在档位规则之后才盖得住） */
+  body.touch .eslot[data-slot="weapon"],body.touch .eslot[data-slot="offhand"],
+  body.touch .eslot[data-slot="relic"]{height:46px}
+  body.touch .eslot[data-slot="relic"] .it-ico.it-relic{width:26px;height:26px}
   body.touch .igrid{grid-template-columns:repeat(10,minmax(0,1fr));gap:5px}
   body.touch .islot .ico{font-size:18px}
-  body.touch .eslot .ico{width:28px;height:28px}
-  body.touch .eslot .it-ico{width:26px;height:26px}
-  body.touch .islot .it-ico{width:25px;height:25px}
+  body.touch .eslot .it-ico{width:28px;height:28px}
+  body.touch .eslot[data-size="xl"] .it-ico{width:40px;height:40px}
+  body.touch .eslot[data-size="md"] .it-ico{width:23px;height:23px}
+  body.touch .eslot[data-size="sm"] .it-ico{width:17px;height:17px}
+  body.touch .islot .it-ico{width:24px;height:24px}
+  body.touch .islot[data-size="lg"] .it-ico{width:22px;height:22px}
+  body.touch .islot[data-size="md"] .it-ico{width:19px;height:19px}
+  body.touch .islot[data-size="sm"] .it-ico{width:15px;height:15px}
   body.touch .islot .slot-tag{display:none}
-  body.touch .statbox{display:none}
+  body.touch .inv-stats{display:none}
   body.touch .hintline{font-size:9.5px}
   body.touch .qlist{max-height:52dvh}
   body.touch .shoplist{max-height:44dvh}
@@ -898,7 +1051,14 @@
   @media (orientation:portrait){
     body.touch .inv-wrap{flex-direction:column;gap:8px}
     body.touch .doll{width:100%}
-    body.touch .doll-grid{grid-template-columns:repeat(6,1fr)}
+    /* 竖屏纸娃娃仍旧三列；格子用 max-width 封顶，避免被拉成大扁块 */
+    body.touch .doll-grid{grid-template-columns:repeat(3,1fr)}
+    body.touch .eslot{max-width:78px}
+    body.touch .eslot[data-size="sm"]{max-width:58px}
+    body.touch .eslot[data-slot="ring1"],body.touch .eslot[data-slot="ring2"]{max-width:48px}
+    /* 兵器是横跨三列的长格，不吃上面的宽度上限；法器同样是横条格 */
+    body.touch .eslot[data-slot="weapon"],body.touch .eslot[data-slot="offhand"],
+    body.touch .eslot[data-slot="relic"]{max-width:none}
     body.touch .igrid{grid-template-columns:repeat(8,minmax(0,1fr))}
     body.touch #toasts{top:220px;max-width:76vw}
     body.touch #log{top:70px!important}
@@ -1022,7 +1182,6 @@
     <div class="doll">
       <div class="doll-title">纸 娃 娃</div>
       <div class="doll-grid" id="dollGrid"></div>
-      <div class="statbox" id="statBox"></div>
     </div>
     <div class="inv-main">
       <div class="inv-top"><span class="cap" id="invCap">0 / 40</span>
@@ -1036,10 +1195,18 @@
           <button class="sbtn" id="invCodexBtn">套装图鉴</button>
         </div>
       </div>
-      <div class="cap inv-tip" id="invTip">左键装备 · Shift+左键出售</div>
+      <div class="inv-tabs" id="invTabs">
+        <button class="itab on" data-tab="equip">装备 <i>0</i></button>
+        <button class="itab" data-tab="mat">材料 <i>0</i></button>
+        <button class="itab" data-tab="pill">丹药 <i>0</i></button>
+        <button class="itab" data-tab="quest">任务物品 <i>0</i></button>
+      </div>
+      <div class="cap inv-tip" id="invTip">左键装备 · Shift+左键出售 · 格子大小随部位</div>
       <div class="junkbar" id="invJunkBar" style="display:none"></div>
       <div class="igrid" id="invGrid"></div>
+      <div class="matlist" id="invMats" style="display:none"></div>
       <div class="hintline" id="setLine"></div>
+      <div class="inv-stats" id="invStats"></div>
     </div>
   </div>
 </div>
@@ -1257,6 +1424,8 @@
 <script src="src/data/data-core.js"></script>
 <script src="src/data/data-icons.js"></script>
 <script src="src/data/data-items.js"></script>
+<script src="src/data/data-relics.js"></script>
+<script src="src/data/data-relic-icons.js"></script>
 <script src="src/data/data-uniques.js"></script>
 <script src="src/data/data-skills.js"></script>
 <script src="src/data/data-skill-icons.js"></script>

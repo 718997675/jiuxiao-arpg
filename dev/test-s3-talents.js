@@ -26,6 +26,7 @@ const load = f => vm.runInContext(
 load('data/data-core.js');
 load('data/data-items.js');
 load('data/data-uniques.js');
+load('data/data-relics.js');   // RELICS / relicPool：rollItem 的法器分支要用
 load('items.js');
 load('data/data-skills.js');
 load('data/data-talents.js');

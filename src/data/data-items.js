@@ -14,9 +14,33 @@ const SLOTS = {
   amulet: { name: '项链', glyph: '链' },
   ring: { name: '戒指', glyph: '戒' },
   weapon: { name: '武器', glyph: '武' },
-  offhand: { name: '副手', glyph: '副' }
+  offhand: { name: '副手', glyph: '副' },
+  relic: { name: '法器', glyph: '法' }
 };
-const SLOT_ORDER = ['helm', 'chest', 'shoulders', 'gloves', 'boots', 'belt', 'amulet', 'ring1', 'ring2', 'weapon', 'offhand'];
+const SLOT_ORDER = ['helm', 'chest', 'shoulders', 'gloves', 'boots', 'belt', 'amulet', 'ring1', 'ring2', 'weapon', 'offhand', 'relic'];
+
+/* ---------------- 格子尺寸档（v1.2.3） ----------------
+ * 背包与纸娃娃的格子大小跟着部位走，让体量一眼能读出来：
+ *   xl 战甲 / 武器  —— 覆盖身与腿、长兵器，格子最大（纸娃娃里占两行）
+ *   lg 头盔 / 护肩 / 战靴
+ *   md 护手 / 腰带 / 副手
+ *   sm 项链 / 戒指 —— 贴身小件，格子最小
+ * 本作没有独立的「腿部」槽位，战甲的体量同时代表护甲与下装。
+ * 具体像素尺寸在 index.html 的 .eslot[data-size] / .islot[data-size] 里，
+ * 这里只定「哪个部位属于哪一档」，UI、探针、文档共用同一份。
+ */
+const SLOT_SIZE = {
+  chest: 'xl', weapon: 'xl',
+  helm: 'lg', shoulders: 'lg', boots: 'lg',
+  gloves: 'md', belt: 'md', offhand: 'md',
+  amulet: 'sm', ring: 'sm', ring1: 'sm', ring2: 'sm',
+  relic: 'lg'
+};
+/* 由小到大，探针按这个顺序断言「尺寸单调递增」 */
+const SLOT_SIZE_ORDER = ['sm', 'md', 'lg', 'xl'];
+const SLOT_SIZE_NAME = { sm: '小', md: '中', lg: '大', xl: '特大' };
+
+function slotSize(slot) { return SLOT_SIZE[slot] || 'md'; }
 
 /* ---------------- 装备基底 ----------------
  * V2 S1：76 → 210 件。
@@ -177,6 +201,44 @@ const WEAPON_BASES = {
     ]
   ]
 };
+
+/* ---------------- 兵器握持（v1.3.0） ----------------
+ * 三种握持：
+ *   one  单手 —— 副手可配盾 / 珠 / 符
+ *   dual 双持 —— 轻巧，主手副手可各持一把
+ *   two  双手 —— 沉重，占用副手位，装上后副手不能再穿戴
+ *
+ * 不手写 45 条，而是按「同档三个变体的单次均伤」排轻重派生：
+ *   最轻 → dual，居中 → one，最重 → two。
+ * 以后调武器数值时握持会自动跟着走，不会出现「重斧写着单手」这种错位。
+ */
+const WEAPON_HANDS = {};
+for (const wc in WEAPON_BASES) {
+  WEAPON_HANDS[wc] = WEAPON_BASES[wc].map(tier => {
+    const avg = tier.map(b => (b.dmg[0] + b.dmg[1]) / 2);
+    const order = tier.map((_, i) => i).sort((a, b) => avg[a] - avg[b]);
+    const h = new Array(tier.length);
+    h[order[0]] = 'dual';
+    h[order[1]] = 'one';
+    h[order[2]] = 'two';
+    return h;
+  });
+}
+const WEAPON_HAND_NAME = { one: '单手', dual: '双持', two: '双手' };
+/* 双手兵器的说明短句，提示框与图鉴共用 */
+const WEAPON_HAND_DESC = {
+  one: '副手可配盾 / 珠 / 符',
+  dual: '主副手各持一把',
+  two: '占用副手位，不可再戴副手'
+};
+function weaponHandAt(cls, tier, idx) {
+  const t = WEAPON_HANDS[cls] && WEAPON_HANDS[cls][tier];
+  return (t && t[idx]) || 'one';
+}
+/* 旧档武器没有 hand 字段时的兜底：按外形给一个最合理的 */
+function weaponHandFallback(shape) {
+  return ({ axe: 'two', glaive: 'two', staff: 'two', saber: 'dual' })[shape] || 'one';
+}
 
 const OFFHAND_BASES = {
   warrior: [

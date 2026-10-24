@@ -22,6 +22,7 @@ const load = f => vm.runInContext(
 load('data/data-core.js');
 load('data/data-items.js');
 load('data/data-uniques.js');   // items.js 顶部会建 UNIQUE_BY_ID 索引，必须先加载
+load('data/data-relics.js');    // RELICS / relicPool：rollItem 的 6% 法器分支要用
 load('items.js');
 
 const pick = name => vm.runInContext(name, ctx);
@@ -49,7 +50,8 @@ const t0 = Date.now();
 
 for (let i = 0; i < N; i++) {
   const ilvl = 1 + Math.floor(Math.random() * 40);
-  const it = rollItem(ilvl, { magicFind: Math.random() * 200 });
+  /* noRelic：法器是目录固定件、不吃词条，混进来会污染基底 / 词条覆盖率统计 */
+  const it = rollItem(ilvl, { magicFind: Math.random() * 200, noRelic: true });
   names.set(it.slot + '|' + it.baseName, (names.get(it.slot + '|' + it.baseName) || 0) + 1);
   if (it.implicit) {
     if (!STATS[it.implicit.key]) badImplicit++;

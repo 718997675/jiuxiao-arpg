@@ -21,6 +21,7 @@ const FILES = [
   'src/data/data-core.js',
   'src/data/data-items.js',
   'src/data/data-uniques.js',      // UNIQUE_ITEMS：src/items.js 依赖它
+  'src/data/data-relics.js',       // RELICS / relicPool：rollItem 的法器分支要用
   'src/data/data-skills.js',
   'src/data/data-monsters.js',
   'src/data/data-world.js',
@@ -102,7 +103,7 @@ function buildV1() {
   const eq0 = {
     helm: api.rollItem(9, { slot: 'helm', rarity: 'rare', cls }), chest: starter.chest, shoulders: null,
     gloves: null, boots: null, belt: null, amulet: null, ring1: null, ring2: null,
-    weapon: starter.weapon, offhand: null
+    weapon: starter.weapon, offhand: null, relic: null
   };
   const inv = [];
   const slots = ['helm', 'chest', 'boots', 'gloves', 'ring', 'amulet', 'weapon'];

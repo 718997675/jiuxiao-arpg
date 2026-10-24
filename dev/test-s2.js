@@ -24,6 +24,7 @@ load('data/data-core.js');
 load('data/data-icons.js');
 load('data/data-items.js');
 load('data/data-uniques.js');   // items.js 顶部会建 UNIQUE_BY_ID 索引，必须先加载
+load('data/data-relics.js');   // RELICS / relicPool：rollItem 的法器分支要用
 load('data/data-skills.js');    // 套装 skillMods 指向的技能要真实存在
 load('items.js');
 

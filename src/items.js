@@ -361,6 +361,11 @@ function normalizeItem(item) {
       if (item.rarity === 'set') item.rarity = 'rare';
     }
   }
+  /* v1.3.0：兵器握持。旧档武器没有 hand，按外形兜底；
+   * 非武器身上残留的 hand 一律清掉，避免出现「副手也能双持」的脏数据。 */
+  if (item.slot === 'weapon') {
+    if (item.hand !== 'one' && item.hand !== 'dual' && item.hand !== 'two') item.hand = weaponHandFallback(item.shape);
+  } else if (item.hand) item.hand = null;
   if (!Array.isArray(item.affixes)) item.affixes = [];
   item.affixes = item.affixes.filter(a => a && typeof a.key === 'string' && STATS[a.key] && isFinite(a.val));
   // 旧档词缀没有 q，补齐为 1
@@ -496,6 +501,7 @@ function makeFixedAffix(ilvl, used, cls, slot) {
  * 旧存档迁移与品质提升共用，返回补了几条。 */
 function fillFixedAffixes(item) {
   if (!item) return 0;
+  if (item.slot === 'relic') return 0;   // 法器属性由 RELICS 写死，不吃品质补全
   const want = fixedAffixCount(item);
   const list = itemFixed(item);
   if (list.length >= want) return 0;
@@ -550,6 +556,11 @@ function rollItem(ilvl, opts = {}) {
   ilvl = CLAMP(Math.round(ilvl), 1, 40);
   let slot = opts.slot || PICK(['helm', 'chest', 'shoulders', 'gloves', 'boots', 'belt', 'amulet', 'ring', 'weapon', 'offhand']);
   let cls = opts.cls || PICK(['warrior', 'mage', 'taoist']);
+  /* v1.3.0：法器另有 6% 的掉落入口。挂在部位池之外，原有掉率分布不动。
+   * 只在「完全随机」时溢出：指定了部位或品质的调用（任务奖励 / 定向刷装 / 统计）
+   * 一律按调用方要求出，不会被法器顶掉。 */
+  if (!opts.slot && !opts.rarity && !opts.noRelic && CHANCE(0.06)) slot = 'relic';
+  if (slot === 'relic') return makeRelic(PICK(relicPool(cls, ilvl)), cls);
   let rarity = opts.rarity;
   if (!rarity) {
     const mf = opts.magicFind || 0;
@@ -598,12 +609,15 @@ function rollItem(ilvl, opts = {}) {
   if (slot === 'weapon') {
     const list = WEAPON_BASES[cls];
     const tier = CLAMP(tierIndex(ilvl), 0, list.length - 1);
-    const base = PICK(list[tier]);
+    const bi = Math.floor(Math.random() * list[tier].length);
+    const base = list[tier][bi];
     const rm = RARITY[rarity].mul;
     const lo = base.dmg[0] * (1 + ilvl * 0.115) * rm;
     const hi = base.dmg[1] * (1 + ilvl * 0.115) * rm;
     item.baseName = base.name;
     item.shape = base.shape;
+    /* v1.3.0 握持：同档三变体按均伤排（最轻双持 / 居中单手 / 最重双手） */
+    item.hand = weaponHandAt(cls, tier, bi);
     item.baseDmg = [Math.round(lo), Math.round(hi)];
     item.speed = base.speed;
     item.cls = cls;
@@ -661,6 +675,8 @@ function rollItem(ilvl, opts = {}) {
     if (uniqueDef.shape) item.shape = uniqueDef.shape;
     if (uniqueDef.baseName) item.baseName = uniqueDef.baseName;
     if (uniqueDef.cls) item.cls = uniqueDef.cls;
+    /* 传世自带外形（剑 / 杖 / 符剑），握持按外形重算，别沿用随机基底那一件 */
+    if (slot === 'weapon') item.hand = uniqueDef.hand || weaponHandFallback(item.shape);
   }
 
   /* ---- 孔位（S2）：1-4 孔，戒指/项链不出孔 ---- */
@@ -990,10 +1006,52 @@ function itemIconKey(item) {
   return ITEM_ICONS[k] ? k : (ITEM_ICONS[item.slot] ? item.slot : 'chest');
 }
 
+/* ---------------- 法器（v1.3.0） ----------------
+ * 法器不是随机词条装备：它由目录固定生成，属性与术法修正都写在 RELICS 里。
+ * 不走品质词条逻辑（fixed / affixes 恒为空），所以永远不会被洗练或强化。
+ */
+function makeRelic(id, cls) {
+  const d = RELICS[id];
+  if (!d) return null;
+  const it = normalizeItem({
+    uid: ITEM_UID++, slot: 'relic', ilvl: d.ilvl, rarity: 'legendary',
+    cls: d.cls, name: d.name, baseName: d.name, relicId: id, glyph: d.glyph,
+    affixes: [], fixed: [], sockets: 0, runes: [], implicit: null,
+    /* 属性与术法修正复用既有通道：uniqueStats / uniqueSkill，
+     * 聚合、对比、提示框都不必为法器另写一套。 */
+    uniqueStats: d.stats ? Object.assign({}, d.stats) : null,
+    uniqueSkill: d.skill ? Object.assign({}, d.skill) : null,
+    relicGrant: d.grant || null, lore: d.lore || '', relicIntro: d.intro || '',
+    reqLv: Math.max(1, d.ilvl - 2), reforges: 0
+  });
+  it.fixed = []; it.affixes = [];
+  it.value = itemValue(it);   // 法器可卖出，也免得价值统计里出现 undefined
+  return it;
+}
+
+/* 把 { atk: 8 } 这类统计表压成一行文字，材料栏的符文说明用得上 */
+function statLine(st) {
+  const out = [];
+  for (const k in st) {
+    const s = STATS[k];
+    if (!s) continue;
+    out.push('+' + st[k] + (s.pct ? '%' : '') + ' ' + s.label);
+  }
+  return out.join(' · ');
+}
+
 /* 生成图标 HTML；尺寸交给 CSS（.it-ico） */
 function itemIcon(item, opts = {}) {
   if (!item) return '';
   const r = RARITY[item.rarity] || RARITY.common;
+  /* 法器用专属器物图标 + 法阵外圈（v1.3.0）：比普通装备多一层圆环与芒刺，
+   * 一眼就能从一堆刀甲里认出来 */
+  if (item.slot === 'relic') {
+    const shape = (typeof RELIC_ICONS !== 'undefined' && RELIC_ICONS[item.relicId]) || '';
+    const aura = (typeof RELIC_AURA !== 'undefined') ? RELIC_AURA : '';
+    return `<svg class="it-ico it-relic${opts.cls ? ' ' + opts.cls : ''}" viewBox="0 0 32 32" fill="currentColor"
+      style="color:${r.color};filter:drop-shadow(0 0 3px ${r.color}cc)" aria-hidden="true">${aura}${shape}</svg>`;
+  }
   const key = itemIconKey(item);
   const glow = item.rarity === 'legendary' || item.rarity === 'set' || item.rarity === 'unique';
   const style = `color:${r.color}${glow ? `;filter:drop-shadow(0 0 3px ${r.color}bb)` : ''}`;
@@ -1001,7 +1059,7 @@ function itemIcon(item, opts = {}) {
 }
 
 /* ---------------- 提示框 ---------------- */
-const SLOT_NAME = { helm: '头盔', chest: '战甲', shoulders: '护肩', gloves: '护手', boots: '战靴', belt: '腰带', amulet: '项链', ring: '戒指', ring1: '戒指', ring2: '戒指', weapon: '武器', offhand: '副手' };
+const SLOT_NAME = { helm: '头盔', chest: '战甲', shoulders: '护肩', gloves: '护手', boots: '战靴', belt: '腰带', amulet: '项链', ring: '戒指', ring1: '戒指', ring2: '戒指', weapon: '武器', offhand: '副手', relic: '法器' };
 
 /* ---------------- 装备评分 / 对比（v1.0.4） ----------------
  *
@@ -1128,6 +1186,12 @@ function itemTooltip(item, opts = {}) {
   h += `<div class="tt-name" style="color:${r.color}">${item.name}</div>`;
   h += `<div class="tt-sub">${r.name} · ${SLOT_NAME[item.slot] || item.kind}${item.setName ? ' · ' + item.setName + '套装' : ''}</div>`;
   h += `</div></div>`;
+  /* v1.3.0：兵器握持标签。双手会白纸黑字写清楚「占用副手位」，
+   * 免得玩家装上以后发现副手灰掉以为出 bug。 */
+  if (item.slot === 'weapon') {
+    const hand = item.hand || 'one';
+    h += `<div class="tt-hand h-${hand}"><span class="tt-hand-tag">${WEAPON_HAND_NAME[hand] || '单手'}</span>${WEAPON_HAND_DESC[hand] || ''}</div>`;
+  }
   if (item.lore) h += `<div class="tt-lore">${item.lore}</div>`;
   if (item.baseDmg) {
     const dps = ((item.baseDmg[0] + item.baseDmg[1]) / 2 / (item.speed || 1)).toFixed(1);
@@ -1196,6 +1260,25 @@ function itemTooltip(item, opts = {}) {
   }
   if (item.uniqueSkill && item.uniqueSkill.desc) {
     h += `<div class="tt-skill"><b>${item.uniqueSkill.name || '技能效果'}</b><span>${item.uniqueSkill.desc}</span></div>`;
+  }
+  /* 法器（v1.3.0）：介绍 → 术法联动 → 附带术法 */
+  if (item.relicId && RELICS[item.relicId]) {
+    const d = RELICS[item.relicId];
+    if (d.intro) h += `<div class="tt-relic-intro">「${d.intro}」</div>`;
+    if (d.skill && d.skill.id && SKILLS[d.skill.id]) {
+      const mods = [];
+      const LAB = { dmg: '伤害', cd: '冷却', cost: '消耗', radius: '范围', count: '数量', dur: '持续' };
+      for (const k in d.skill) {
+        if (k === 'id' || !d.skill[k]) continue;
+        const unit = (k === 'cd' || k === 'cost' || k === 'radius' || k === 'dmg') ? '%' : '';
+        const sign = (k === 'cd' || k === 'cost') ? '-' : '+';
+        mods.push(LAB[k] + ' ' + sign + Math.abs(d.skill[k]) + unit);
+      }
+      h += `<div class="tt-skill"><b>${SKILLS[d.skill.id].name}</b><span>${mods.join(' · ')}</span></div>`;
+    }
+    if (d.grant && SKILLS[d.grant]) {
+      h += `<div class="tt-grant">附带术法　<b>${SKILLS[d.grant].name}</b>　未领悟亦可施放</div>`;
+    }
   }
   if (item.setId) {
     const set = SETS[item.setId];
