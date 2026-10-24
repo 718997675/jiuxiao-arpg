@@ -59,6 +59,15 @@ const SaveManager = {
     return out;
   },
   _now() { return Date.now(); },
+  /* [v1.8.5] 根基加点整形：四项各是 0~999 的非负整数，缺项补 0。
+   * 手改存档把某一项写成字符串也能收敛回来，不会让面板算出 NaN。 */
+  _attrAlloc(v) {
+    const src = this._obj(v) || {};
+    const keys = (typeof ATTR_KEYS !== 'undefined') ? ATTR_KEYS : ['str', 'agi', 'vit', 'int'];
+    const out = {};
+    for (const k of keys) out[k] = this._int(src[k], 0, 999, 0);
+    return out;
+  },
   _int(v, min, max, def) {
     const n = Math.round(Number(v));
     if (!isFinite(n)) return (def === undefined ? min : def);
@@ -210,6 +219,8 @@ const SaveManager = {
     d.talents = this._obj(d.talents) || {};
     /* [M1] 任务奖励天赋点：旧档没有这个字段，缺省补 0，脏值夹到 0~40 */
     d.talentBonus = this._int(d.talentBonus, 0, 40, 0);
+    /* [v1.8.5] 根基加点：四项非负整数，缺省补零（旧档按等级自动得到可分配点数） */
+    d.attrAlloc = this._attrAlloc(d.attrAlloc);
     /* S4 技能：等级 / 变体 / 技能条 8 格 × 2 套配置 */
     d.skills = this._obj(d.skills) || {};
     d.skillbar = this._bar(d.skillbar);
@@ -276,6 +287,7 @@ const SaveManager = {
       codex: this._codex(s.codex),
       talents: this._obj(s.talents) || {},
       talentBonus: this._int(s.talentBonus, 0, 40, 0),
+      attrAlloc: this._attrAlloc(s.attrAlloc),
       /* S4：技能等级 / 变体 / 技能条 8 格 × 2 套（id 或 null） */
       skills: this._obj(s.skills) || {},
       skillbar: this._bar(s.skillbar),
@@ -302,6 +314,7 @@ const SaveManager = {
       codex: this._codex(doc.codex),
       talents: doc.talents || {},
       talentBonus: this._int(doc.talentBonus, 0, 40, 0),
+      attrAlloc: this._attrAlloc(doc.attrAlloc),
       skills: doc.skills || {},
       skillbar: this._bar(doc.skillbar),
       skillbar2: this._bar(doc.skillbar2),

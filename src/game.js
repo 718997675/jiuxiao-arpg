@@ -323,6 +323,8 @@ const Game = {
       talents: { spent: {}, presets: [null, null, null], respecCount: 0 },
       /* [M1] 任务奖励的天赋点（主线四段共 +10，满级 60 → 70） */
       talentBonus: 0,
+      /* [v1.8.5] 根基加点：四项手动分配的点数（职业基础 / 等级成长之外的那一份） */
+      attrAlloc: { str: 0, agi: 0, vit: 0, int: 0 },
       /* [S4] 技能：{ 技能id: { lv: 1-10, v: 0-2 变体 } } */
       skills: {},
       /* [S4] 技能条：8 格 × 2 套手动配置（技能 id 或 null），新档只放已领悟的 */
@@ -447,6 +449,79 @@ const Game = {
     for (const k in eq) if (eq[k]) eq[k] = normalizeItem(eq[k]);
     if (Array.isArray(s.inventory)) s.inventory = s.inventory.map(normalizeItem).filter(Boolean);
     s.stash.items = s.stash.items.map(normalizeItem).filter(Boolean);
+    /* [v1.8.5] 旧档没有加点字段：补一份全零，可分配点数按等级自动补算 */
+    if (!s.attrAlloc || typeof s.attrAlloc !== 'object') s.attrAlloc = { str: 0, agi: 0, vit: 0, int: 0 };
+    for (const k of ATTR_KEYS) s.attrAlloc[k] = Math.max(0, Math.round(Number(s.attrAlloc[k]) || 0));
+  },
+
+  /* ======================================================= */
+  /* [v1.8.5] 根基加点                                        */
+  /* ======================================================= */
+  attrState() {
+    const s = this.state;
+    const blank = { str: 0, agi: 0, vit: 0, int: 0 };
+    if (!s) return blank;
+    if (!s.attrAlloc || typeof s.attrAlloc !== 'object') s.attrAlloc = blank;
+    for (const k of ATTR_KEYS) {
+      const v = Math.round(Number(s.attrAlloc[k]) || 0);
+      s.attrAlloc[k] = v > 0 ? v : 0;
+    }
+    return s.attrAlloc;
+  },
+
+  /* 已花掉的点数 / 总共可用的点数（按等级补算：旧档升过的级一样有点可加） */
+  attrSpent() {
+    return attrSpentOf(this.attrState());
+  },
+  attrTotal() {
+    return attrTotalAt((this.state && this.state.level) || 1);
+  },
+  attrPoints() {
+    return attrLeft((this.state && this.state.level) || 1, this.attrState());
+  },
+
+  /* 加点后立刻重算：攻击 / 生命 / 护甲都是实时看根基的 */
+  allocAttr(key, n) {
+    if (ATTR_KEYS.indexOf(key) < 0) return false;
+    n = Math.max(1, Math.round(n || 1));
+    const left = this.attrPoints();
+    if (left <= 0) { UI.log('没有可分配的根基点了。', 'bad'); return false; }
+    const a = this.attrState();
+    a[key] = (a[key] || 0) + Math.min(n, left);
+    this.recalc();
+    SFX.ui();
+    this.save();
+    return true;
+  },
+
+  /* 洗点：退光全部加点，按境界收钱。装备只在穿戴时校验需求，
+   * 所以洗点不会把身上的东西扒下来（说明页里也写明这条）。
+   * 注意别叫 respecCost —— 天赋洗点已经占了这个名字（同名会被后面的键覆盖）。 */
+  attrRespecFee() {
+    return attrRespecCost(this.state ? this.state.level : 1);
+  },
+  resetAttrs() {
+    const s = this.state;
+    if (!s) return false;
+    const spent = this.attrSpent();
+    if (!spent) { UI.log('还没有加过点。', 'bad'); return false; }
+    const cost = this.attrRespecFee();
+    if (s.gold < cost) { UI.log(`洗点需 ${cost} 金，当前 ${s.gold}。`, 'bad'); return false; }
+    s.gold -= cost;
+    const a = this.attrState();
+    for (const k of ATTR_KEYS) a[k] = 0;
+    this.recalc();
+    UI.log(`已洗去 ${spent} 点根基（-${cost} 金）。`, 'good');
+    SFX.ui();
+    this.save();
+    return true;
+  },
+
+  /* 面板上「这一点加下去会变成什么」：给加点面板做预览用 */
+  attrGain(key) {
+    const c = CLASSES[this.state.cls];
+    const w = (c.weights || {})[key] || {};
+    return w;
   },
 
   /* ======================================================= */
@@ -4441,6 +4516,8 @@ const Game = {
         FX.burst(new THREE.Vector3(this.playerGroup.position.x + RND(-1, 1), RND(0, 2.5), this.playerGroup.position.z + RND(-1, 1)), 0xffd166, 1, { speed: 2, size: 0.12, life: 1.2, gravity: -4, additive: true });
       }
       UI.log('境界提升！生命与灵力已恢复。', 'good');
+      /* [v1.8.5] 根基点数每级同步发放，提示一句（不然玩家不知道有新点可加） */
+      UI.log(`根基点 +${ATTR_POINTS_PER_LEVEL}（按 C 打开道途分配）`, 'good');
       const un = SKILL_ORDER[s.cls].filter(id => SKILLS[id].unlock === s.level);
       un.forEach(id => {
         UI.toast('领悟 · ' + SKILLS[id].name, 'lv');
@@ -4712,10 +4789,30 @@ const Game = {
     return true;
   },
 
+  /* [v1.8.5] 穿戴需求：等级 + 根基属性。
+   * meetsReq 是「静默判断」（背包灰显用），canEquip 会写一行日志。 */
+  reqGap(item) {
+    const s = this.state;
+    if (!s || !item) return [];
+    return itemReqGap(item, s.stats, s.cls);
+  },
+  meetsReq(item) {
+    const s = this.state;
+    if (!s || !item) return false;
+    if (item.cls && item.cls !== s.cls) return false;
+    if ((item.reqLv || 1) > s.level) return false;
+    return this.reqGap(item).length === 0;
+  },
   canEquip(item) {
     const s = this.state;
     if (item.cls && item.cls !== s.cls) { UI.log('此物唯有' + CLASSES[item.cls].name + '可用。', 'bad'); return false; }
     if (item.reqLv > s.level) { UI.log('境界不足，需 ' + item.reqLv + ' 级。', 'bad'); return false; }
+    const gap = this.reqGap(item);
+    if (gap.length) {
+      const txt = gap.map(g => `${ATTR_NAME[g.key]} ${g.need}（现 ${Math.round(g.have)}）`).join(' · ');
+      UI.log('属性不足：' + txt + ' —— 按 C 打开道途加点。', 'bad');
+      return false;
+    }
     return true;
   },
 

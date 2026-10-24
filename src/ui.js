@@ -2,6 +2,30 @@
  * UI 层：HUD / 背包纸娃娃 / 提示框 / 任务 / 对话 / 商店 / 传送 / 小地图
  * ============================================================ */
 
+/* [v1.8.5] 根基 → 进阶属性的显示名与格式。
+ * 百分比类属性每点只有零点几，必须带 % 和小数，否则会显示成「+0」。 */
+const DERIV_NAME = {
+  atk: '攻击力', hpMax: '生命上限', mpMax: '灵力上限', def: '护甲',
+  crit: '暴击率', critDmg: '暴击伤害', aspd: '攻击速度', moveSpd: '移速',
+  cdr: '冷却缩减', mpReg: '回灵/秒', hpRegen: '回血/秒'
+};
+const DERIV_PCT = { crit: 1, critDmg: 1, aspd: 1, cdr: 1 };
+/* 攻击力按职业叫法：刀客「攻击力」、术士 / 符师「术法攻击」 */
+function dName(k) {
+  if (k === 'atk' && typeof Game !== 'undefined' && Game.state) {
+    const c = CLASSES[Game.state.cls];
+    if (c && c.atkName) return c.atkName;
+  }
+  return DERIV_NAME[k] || k;
+}
+function dFmt(k, v) {
+  if (!isFinite(v)) return '0';
+  if (DERIV_PCT[k]) return (Math.round(v * 100) / 100) + '%';
+  /* 移速每点只有 0.015：按两位小数会显示成「+0.02」，看着像随手写的数 */
+  const dp = Math.abs(v) < 0.1 ? 3 : 2;
+  return (Math.round(v * Math.pow(10, dp)) / Math.pow(10, dp)).toString();
+}
+
 const UI = {
   selectedCls: 'warrior',
   tooltipEl: null,
@@ -203,6 +227,9 @@ const UI = {
     // 物品悬停 / 点击（事件委托）
     document.addEventListener('mouseover', e => {
       if (IS_TOUCH) return;   // 触屏改为一指点开、按钮操作
+      /* [v1.8.5] 根基属性：悬停看「每点加什么 / 当前贡献多少」 */
+      const at = e.target.closest('[data-attr]');
+      if (at) { this.showAttrTip(at, e); return; }
       /* 材料格：图标 + 角标之后格子里没有文字了，说明全靠这条提示 */
       const mc = e.target.closest('[data-mti]');
       if (mc && this._matTips) {
@@ -226,12 +253,33 @@ const UI = {
     document.addEventListener('mousemove', e => { if (!IS_TOUCH && this.tooltipEl.style.display === 'block') this.moveTooltip(e); });
     document.addEventListener('mouseout', e => {
       if (IS_TOUCH) return;
-      const el = e.target.closest('[data-ref],[data-mti]');
+      const el = e.target.closest('[data-ref],[data-mti],[data-attr]');
       if (el) { this.tooltipEl.style.display = 'none'; this.hoverRef = null; }
     });
     document.addEventListener('click', e => {
+      /* 加点 / 洗点按钮（PC 与触屏同一条路） */
+      const ab = e.target.closest('[data-alloc]');
+      if (ab) {
+        e.preventDefault();
+        const n = parseInt(ab.dataset.n || '1', 10) || 1;
+        if (Game.allocAttr(ab.dataset.alloc, n)) this.refreshAfterAttr();
+        return;
+      }
+      const rs = e.target.closest('[data-respec]');
+      if (rs) {
+        e.preventDefault();
+        const cost = Game.attrRespecFee(), got = Game.state.gold;
+        this.showDialog('洗点', `洗去全部根基加点，退还所有点数，收 ${cost} 金（现有 ${got} 金）。\n洗点不会影响身上已穿的装备——穿戴需求只在穿戴那一刻校验。`, [
+          { label: '洗 点', primary: true, action: () => { Game.resetAttrs(); this.closeAll(); this.openMenu('stat'); } },
+          { label: '再想想', action: () => this.closeAll() }
+        ]);
+        return;
+      }
       const el = e.target.closest('[data-ref]');
       if (!el) {
+        /* 触屏：点根基看说明（PC 是悬停） */
+        const at = e.target.closest('[data-attr]');
+        if (at && IS_TOUCH) { e.preventDefault(); this.showAttrTip(at); return; }
         /* 材料格在触屏下是「点一下看提示」，这一下不能顺手把提示关掉 */
         if (IS_TOUCH && this.tooltipEl.style.display === 'block' && !e.target.closest('[data-mti]')) this.hideTooltip();
         return;
@@ -391,12 +439,29 @@ const UI = {
     ]));
 
     /* ---------------- 2. 属性 ---------------- */
-    H.push(sec('二 · 角色属性', '装备 / 天赋 / 药水最终都汇到这一张面板', [
-      row('主属性', `攻击力（决定所有伤害基数）、护甲（减物理伤）、生命上限、灵力上限、灵力回复`),
-      row('伤害乘区', `暴击率 × 暴击伤害 × 攻速 × 元素增伤 × 技能增伤 × 对精英/首领增伤 —— 各乘区独立相乘，堆单一乘区收益会衰减`),
-      row('防御', `护甲、闪避、格挡、伤害减免、各元素抗性（上限 75%）、濒死免疫（致死时留 1 血，60 秒冷却）`),
-      row('资源', `战士用怒气、法师道士用灵力；消耗降低 / 回复速度 / 击杀回蓝都会影响技能循环`),
-      row('看来源', `悬停任意属性值会列出「哪件装备 / 哪条天赋贡献了多少」，方便判断该换什么`)
+    /* 根基表：按职业把 weights 翻成一句话。攻击力用各职业自己的叫法
+     * （刀客「攻击力」/ 术法系「术法攻击」），所以这里不能直接用 dName。 */
+    const dn = (c, dk) => dk === 'atk' ? (c.atkName || '攻击力') : (DERIV_NAME[dk] || dk);
+    const attrLine = k => {
+      const c = CLASSES[k];
+      return ATTR_KEYS.map(ak => {
+        const w = c.weights[ak] || {};
+        const eff = Object.keys(w).map(dk => `${dn(c, dk)} +${dFmt(dk, w[dk])}`).join('、');
+        return `<b style="color:#e8d8b0">${ATTR_NAME[ak]}</b> ${eff || '无'}`;
+      }).join('　');
+    };
+    H.push(sec('二 · 角色属性', '装备 / 天赋 / 加点最终都汇到这一张面板', [
+      row('根基', `四项：${ATTR_KEYS.map(k => ATTR_NAME[k]).join(' / ')}。来源共四条线：职业基础 + 等级成长 + 装备词条 + <b>手动加点</b>；面板上的数值是四条线之和`),
+      row('加点', `每升 1 级得 <b>${ATTR_POINTS_PER_LEVEL} 点</b>（1 级另给 ${ATTR_START_POINTS} 点），按 ${K('C')} 打开「道途」点 +1 / +5。点下去立刻生效，不消耗金币`),
+      row('每点收益', `同一个字在不同职业身上不是一回事 —— 刀客的力量加攻击，术士的力量只撑甲，术士的灵力才是攻击。每点具体加什么：`),
+      row(CLASSES.warrior.title, attrLine('warrior')),
+      row(CLASSES.mage.title, attrLine('mage')),
+      row(CLASSES.taoist.title, attrLine('taoist')),
+      row('洗点', `随时可洗，价 ${attrRespecCost(1)} 金起（随境界上涨，约为境界 ×60）。<b>洗点不会让身上的装备脱落</b>：穿戴需求只在穿戴那一刻校验`),
+      row('伤害乘区', `攻击力（决定所有伤害基数）× 暴击率 × 暴击伤害 × 攻速 × 元素增伤 × 技能增伤 × 对精英/首领增伤 —— 各乘区独立相乘，堆单一乘区收益会衰减`),
+      row('防御', `护甲、闪避、格挡、伤害减免、各元素抗性（上限 75%）、濒死免疫（致死时留 1 血，60 秒冷却）。护甲主要来自体质与装备`),
+      row('资源', `刀客用怒气、术士与符师用灵力；消耗降低 / 回复速度 / 击杀回蓝都会影响技能循环。灵力上限与回灵来自灵力`),
+      row('看来源', `悬停（手机点一下）任意一项根基，会列出「每 1 点加什么 / 这一项当前带来多少 / 基础·装备·加点各占多少」`)
     ]));
 
     /* ---------------- 3. 装备 ---------------- */
@@ -404,6 +469,9 @@ const UI = {
       row('槽位', `${slotN} 个：${slotNames.join(' / ')}`),
       row('基底阶', `${tierN} 阶：${BASE_TIER_NAME.join(' → ')}。同名字的装备阶数越高，基础数值越高。传世不在八阶体系内（见第六节）`),
       row('物品等级', `每件装备有 ilvl，越高则词缀数值上限越高。怪物等级决定掉落 ilvl，首领额外 +2`),
+      row('穿戴需求', `两把锁：<b>境界等级</b> + <b>根基属性</b>（例：需 力量 85 / 体质 75）。需求按<b>你的职业</b>的成长曲线折算 —— 同一件胸甲，刀客看到「体质 55」、术士看到「体质 43」（各按自家成长曲线折算）；武器与饰品另外要主属性。品质越高越挑人：凡品几乎不设卡，神品更严，<b>传世还要额外一条敏捷</b>`),
+      row('穿不上', `行囊里不满足需求的格子会压暗、左上角盖一枚「需」章；悬停可看差在哪一项、当前差多少。补上加点或换掉就恢复常色`),
+      row('校验时机', `只在<b>穿戴那一刻</b>校验。已经穿在身上的装备，之后洗点或换装备导致属性下降也不会脱落 —— 免得洗一次点把全身扒光`),
       row('双手 / 双持', `武器分单手与双手：双手占用副手格；副手只能是盾、副手武器或法器`),
       row('升阶', `炼器台「升阶」页：把一件装备的基底提升一阶，保留品质 / 词缀 / 孔位 / 符文 / 强化等级，只换基底。需要同名装备 + 铜钱 + 玄晶`)
     ]));
@@ -1109,13 +1177,14 @@ const UI = {
   },
 
   /* 左列下半：角色属性（v1.5.0 常驻）。与属性面板同源，分组照搬，
-   * 两列排布；超出左列可用高度时由 CSS 的 overflow-y 接管滚动 */
+   * 两列排布；超出左列可用高度时由 CSS 的 overflow-y 接管滚动。
+   * [v1.8.5] 根基四项带 data-attr：悬停 / 点按能看「这一点到底加什么」。 */
   renderDollStats() {
     const el = document.getElementById('invStats');
     if (!el) return;
     el.innerHTML = this.statGroups().map(([title, list]) =>
       `<div class="st-grp">${title}</div>` +
-      list.map(r => `<div><span>${r[0]}</span><b>${r[1]}</b></div>`).join('')
+      list.map(r => `<div${r[2] ? ` data-attr="${r[2]}"` : ''}><span>${r[0]}</span><b>${r[1]}</b></div>`).join('')
     ).join('');
   },
 
@@ -1145,8 +1214,11 @@ const UI = {
         /* 格子大小随部位：战甲/武器占满整格，饰品格只有六成 */
         const sz = it.slot ? slotSize(it.slot) : '';
         const hand = it.slot === 'weapon' ? `<span class="hand-tag h-${it.hand || 'one'}">${WEAPON_HAND_NAME[it.hand || 'one']}</span>` : '';
-        html += `<div class="islot ${sz ? 'sz-' + sz : ''} r-${it.rarity}" ${it.slot ? `data-size="${sz}"` : ''} data-ref="inv:${i}">
-          <span class="ico">${itemIcon(it)}</span>${sb}${hand}<span class="slot-tag">${tag.slice(0, 1)}</span></div>`;
+        /* [v1.8.5] 穿戴需求不满足 → 格子压暗（悬停提示里写清差哪一项）。
+         * 用 meetsReq 做静默判断：不能因为背包里翻一下就刷屏日志。 */
+        const miss = !Game.meetsReq(it);
+        html += `<div class="islot ${sz ? 'sz-' + sz : ''} r-${it.rarity}${miss ? ' req-miss' : ''}" ${it.slot ? `data-size="${sz}"` : ''} data-ref="inv:${i}">
+          <span class="ico">${itemIcon(it)}</span>${sb}${hand}<span class="slot-tag">${tag.slice(0, 1)}</span>${miss ? '<span class="req-dot">需</span>' : ''}</div>`;
       } else {
         html += `<div class="islot"></div>`;
       }
@@ -2150,13 +2222,13 @@ const UI = {
     const P = k => Math.round(n(k)) + '%';
     const G = [];
 
-    /* 根基：永远显示 */
+    /* 根基：永远显示。第三项是根基 key —— 有 key 的行才带悬停说明（v1.8.5） */
     const base = [
       ['职业', c.name + ' · ' + c.title], ['境界', s.level + ' 级'],
-      ['攻击力', Math.round(st.atk)], ['护甲', Math.round(st.def)],
+      [c.atkName || '攻击力', Math.round(st.atk)], ['护甲', Math.round(st.def)],
       ['生命上限', Math.round(st.hpMax)], ['灵力上限', Math.round(st.mpMax)],
-      ['力量', Math.round(st.str)], ['敏捷', Math.round(st.agi)],
-      ['体质', Math.round(st.vit)], ['灵力', Math.round(st.int)]
+      ['力量', Math.round(st.str), 'str'], ['敏捷', Math.round(st.agi), 'agi'],
+      ['体质', Math.round(st.vit), 'vit'], ['灵力', Math.round(st.int), 'int']
     ];
     G.push(['根基', base]);
 
@@ -2223,12 +2295,99 @@ const UI = {
     return G;
   },
 
+  /* ---------------- 道途：根基加点（v1.8.5） ----------------
+   * 四项根基各一行：名称 / 当前值（含手动加点数）/ 每点收益 / 加 1、加 5。
+   * PC 悬停行、手机点行 → 同一份说明浮层（attrTipHTML）。 */
+  renderAttrAlloc() {
+    const box = document.getElementById('attrBox');
+    if (!box || !Game.state) return;
+    const s = Game.state, c = CLASSES[s.cls], st = s.stats;
+    const pts = Game.attrPoints();
+    const alloc = Game.attrState();
+    const gainTxt = k => {
+      const w = c.weights[k] || {};
+      const list = Object.keys(w).map(dk => `${dName(dk)} +${dFmt(dk, w[dk])}`);
+      return list.length ? list.join(' · ') : '无增益';
+    };
+    box.innerHTML = `
+      <div class="ah">
+        <b>根 基</b>
+        <i>可分配 <em class="${pts ? 'has' : ''}">${pts}</em> 点</i>
+        <span class="ah-hint">${IS_TOUCH ? '点属性看收益' : '悬停属性看收益'}</span>
+        <button class="respec" data-respec ${Game.attrSpent() ? '' : 'disabled'}>洗 点 ${Game.attrRespecFee()} 金</button>
+      </div>
+      <div class="alist">
+        ${ATTR_KEYS.map(k => {
+          const mine = alloc[k] || 0;
+          const main = c.mainStat === k;
+          return `<div class="arow${main ? ' main' : ''}" data-attr="${k}">
+            <span class="an">${ATTR_NAME[k]}${main ? '<i class="tag">主</i>' : ''}</span>
+            <span class="av">${Math.round(st[k])}${mine ? `<i>+${mine}</i>` : ''}</span>
+            <span class="ag">${gainTxt(k)}</span>
+            <span class="ab">
+              <button data-alloc="${k}" ${pts ? '' : 'disabled'}>+1</button>
+              <button data-alloc="${k}" data-n="5" ${pts >= 5 ? '' : 'disabled'}>+5</button>
+            </span>
+          </div>`;
+        }).join('')}
+      </div>`;
+  },
+
+  /* 根基说明浮层：来源 / 每点 / 当前贡献，三段讲清「加了会怎样」 */
+  attrTipHTML(key) {
+    const s = Game.state, c = CLASSES[s.cls], st = s.stats;
+    const w = c.weights[key] || {};
+    const lv = s.level, total = Number(st[key]) || 0;
+    const baseV = (c.base[key] || 0) + (c.growth[key] || 0) * (lv - 1);
+    const gearV = (st.raw && st.raw[key]) || 0;
+    const allocV = Game.attrState()[key] || 0;
+    const main = c.mainStat === key;
+    const lines = Object.keys(w).map(dk =>
+      `<div class="at-r"><span>${dName(dk)}</span><b>+${dFmt(dk, w[dk] * total)}</b></div>`).join('');
+    return `<div class="tt at-tip">
+      <div class="tt-n">${ATTR_NAME[key]} <em>${Math.round(total)}</em>
+        <i class="at-tag${main ? ' on' : ''}">${main ? '主属性' : '副属性'}</i></div>
+      <div class="at-sub">${c.title} · 每 1 点</div>
+      <div class="at-rows">${Object.keys(w).map(dk =>
+      `<div class="at-r"><span>${dName(dk)}</span><b>+${dFmt(dk, w[dk])}</b></div>`).join('')}
+      </div>
+      <div class="at-sub">当前这一项带来</div>
+      <div class="at-rows strong">${lines}</div>
+      <div class="at-src">基础 ${Math.round(baseV)} · 装备 ${Math.round(gearV)} · 加点 <b>${allocV}</b></div>
+      <div class="at-foot">剩余 ${Game.attrPoints()} 点可分配${IS_TOUCH ? '（道途面板里点 +1）' : '（道途面板 C）'}</div>
+    </div>`;
+  },
+
+  showAttrTip(el, e) {
+    if (!Game.state) return;
+    this.tooltipEl.innerHTML = this.attrTipHTML(el.dataset.attr);
+    this.tooltipEl.style.display = 'block';
+    if (e && e.clientX !== undefined && !IS_TOUCH) { this.moveTooltip(e); return; }
+    const r = el.getBoundingClientRect();
+    const tw = this.tooltipEl.offsetWidth, th = this.tooltipEl.offsetHeight;
+    const x = CLAMP(r.left + r.width / 2 - tw / 2, 8, window.innerWidth - tw - 8);
+    let y = r.bottom + 8;
+    if (y + th > window.innerHeight - 8) y = Math.max(8, r.top - th - 8);
+    this.tooltipEl.style.left = x + 'px';
+    this.tooltipEl.style.top = y + 'px';
+  },
+
+  /* 加点之后：属性面板、行囊左列、格子灰显、HUD 一次性刷新 */
+  refreshAfterAttr() {
+    try { this.renderStats(); } catch (e) { }
+    try { this.renderDollStats(); } catch (e) { }
+    try { this.renderInventory(); } catch (e) { }
+    try { this.renderHUD(); } catch (e) { }
+    this.tooltipEl.style.display = 'none';
+  },
+
   renderStats() {
     const s = Game.state, st = s.stats;
     const G = this.statGroups();
+    this.renderAttrAlloc();
     document.getElementById('statList').innerHTML = G.map(([title, list]) =>
       `<div class="st-grp">${title}</div>` +
-      list.map(r => `<div><span>${r[0]}</span><b>${r[1]}</b></div>`).join('')
+      list.map(r => `<div${r[2] ? ` data-attr="${r[2]}"` : ''}><span>${r[0]}</span><b>${r[1]}</b></div>`).join('')
     ).join('');
 
     const active = st.setBonuses;

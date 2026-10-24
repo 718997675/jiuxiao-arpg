@@ -1066,26 +1066,31 @@ function computePlayerStats(p) {
   for (const k in cdb) st[k] = (st[k] || 0) + cdb[k];
   const c = CLASSES[p.cls];
   const lv = p.level;
-  const str = c.base.str + c.growth.str * (lv - 1) + st.str;
-  const agi = c.base.agi + c.growth.agi * (lv - 1) + st.agi;
-  const vit = c.base.vit + c.growth.vit * (lv - 1) + st.vit;
-  const int = c.base.int + c.growth.int * (lv - 1) + st.int;
-  const main = { str, agi, vit, int }[c.mainStat];
+  /* [v1.8.5] 玩家自己分配的点数：四项根基的第四来源（职业基础 + 等级成长 + 装备词条 + 加点） */
+  const al = p.attrAlloc || {};
+  const str = c.base.str + c.growth.str * (lv - 1) + st.str + (al.str || 0);
+  const agi = c.base.agi + c.growth.agi * (lv - 1) + st.agi + (al.agi || 0);
+  const vit = c.base.vit + c.growth.vit * (lv - 1) + st.vit + (al.vit || 0);
+  const int = c.base.int + c.growth.int * (lv - 1) + st.int + (al.int || 0);
+  /* 根基 → 进阶：换算表在职业数据里，刀客的力量和术士的力量不是一回事 */
+  const d = deriveFromAttrs(p.cls, { str, agi, vit, int });
 
-  const atk = (c.baseAtk + st.atk + main * c.statMul) * (1 + st.atkPct / 100);
-  const hpMax = (c.baseHp + lv * 16 + vit * c.hpPerVit + st.hp) * (1 + st.hpPct / 100);
-  const mpMax = (c.baseMp + lv * 4 + int * c.mpPerInt + st.mp) * (1 + st.mpPct / 100);
-  const crit = CLAMP(5 + agi * 0.18 + st.crit, 0, 75);
-  const critDmg = 150 + st.critDmg;
-  const aspd = (1 + st.aspd / 100) * (1 + agi * 0.004);
-  const moveSpd = (7.2 + agi * 0.015) * (1 + st.moveSpd / 100) + st.moveSpdFlat;
-  const def = (st.def + vit * 0.6) * (1 + st.armorPct / 100);
-  const cdr = CLAMP(st.cdr, 0, 45);
+  const atk = (c.baseAtk + st.atk + d.atk) * (1 + st.atkPct / 100);
+  const hpMax = (c.baseHp + lv * 16 + d.hpMax + st.hp) * (1 + st.hpPct / 100);
+  const mpMax = (c.baseMp + lv * 4 + d.mpMax + st.mp) * (1 + st.mpPct / 100);
+  const crit = CLAMP(5 + d.crit + st.crit, 0, 75);
+  const critDmg = 150 + d.critDmg + st.critDmg;
+  const aspd = (1 + st.aspd / 100) * (1 + d.aspd / 100);
+  const moveSpd = (7.2 + d.moveSpd) * (1 + st.moveSpd / 100) + st.moveSpdFlat;
+  const def = (st.def + d.def) * (1 + st.armorPct / 100);
+  const cdr = CLAMP(st.cdr + d.cdr, 0, 45);
 
   const out = {
     str, agi, vit, int, atk, hpMax: Math.round(hpMax), mpMax: Math.round(mpMax),
     crit, critDmg, aspd, moveSpd, def, cdr,
-    mpReg: 3 + st.mpReg,
+    mpReg: 3 + st.mpReg + d.mpReg,
+    /* 面板 / 提示框要显示「根基贡献了多少」，存一份免得两处各算一遍 */
+    attrDerived: d,
     setBonuses: agg.setBonuses, setCount: agg.setCount, flags: agg.flags,
     skillMods: agg.skillMods, specials: agg.specials, raw: st,
     grantedSkills: agg.grantedSkills, skillRank: agg.skillRank
@@ -1101,8 +1106,101 @@ function computePlayerStats(p) {
   return out;
 }
 
+/* ---------------- 穿戴需求（v1.8.5） ----------------
+ * 以前只有「需求等级」，升到级就能穿，根基属性除了加伤害没有别的用处。
+ * 现在每件装备额外要「根基属性」，需求值按**穿戴者职业**的成长曲线推算：
+ *   需求 = 系数(部位) × 品质系数 × 该职业该属性在 reqLv 时的自然成长值
+ * 用穿戴者职业来算（而不是掉落者），因为防具是通用的：
+ * 同一件胸甲，刀客看到「体质 55」，术士看到「体质 43」—— 各自按自家成长曲线折算。
+ * 武器 / 饰品额外要主属性（刀客力量、术士灵力），护甲只看体质。
+ * 门槛只在**穿戴那一刻**校验：属性后来变化（洗点 / 换装备）不会把身上的东西扒下来。
+ */
+const REQ_SLOT_KIND = {
+  weapon: 'weapon', offhand: 'offhand',
+  helm: 'armor', chest: 'armor', shoulders: 'armor', gloves: 'armor',
+  boots: 'armor', belt: 'armor', cloak: 'armor',
+  amulet: 'acc', ring: 'acc', relic: 'acc', fate: 'acc'
+};
+const REQ_RULE = {
+  weapon: { main: 1.1, vit: 0 },
+  offhand: { main: 1.0, vit: 0.5 },
+  /* 护甲只看体质：若再叠一条主属性，法系要同时堆灵力和体质才能穿衣服，双重卡人 */
+  armor: { main: 0, vit: 1.0 },
+  acc: { main: 0.7, vit: 0.5 }
+};
+/* 品质越高越挑人：凡品几乎不设卡，神品 / 传世要你真往里投点 */
+const REQ_RARITY_MUL = { common: 0.86, magic: 0.93, rare: 1.0, legendary: 1.08, set: 1.02, unique: 1.18 };
+const REQ_MIN_LV = 4;      // 1-3 级的新手装备不设属性门槛，免得脱下来就穿不回去
+
+/* 返回 [{ key, need }]，按「主属性 → 体质 → 其它」排好序 */
+function reqAttrOf(item, cls) {
+  if (!item || typeof CLASSES === 'undefined') return [];
+  const c = CLASSES[cls] || CLASSES.warrior;
+  if (!c || !c.weights) return [];
+  const lv = Math.max(1, item.reqLv || item.ilvl || 1);
+  if (lv < REQ_MIN_LV) return [];
+  const kind = REQ_SLOT_KIND[item.slot] || 'armor';
+  const rule = REQ_RULE[kind];
+  const mul = (REQ_RARITY_MUL[item.rarity] || 1);
+  const expOf = k => (c.base[k] || 0) + (c.growth[k] || 0) * (lv - 1);
+  const round5 = v => Math.max(5, Math.round(v / 5) * 5);
+  const out = [];
+  const main = c.mainStat;
+  /* 主属性需求只有在该职业确实吃这门属性时才设（术士的力量需求会低到没有意义） */
+  const mainNeed = rule.main * mul * expOf(main);
+  if (mainNeed >= 8) out.push({ key: main, need: round5(mainNeed) });
+  if (rule.vit) {
+    const vitNeed = rule.vit * mul * expOf('vit');
+    if (vitNeed >= 8) out.push({ key: 'vit', need: round5(vitNeed) });
+  }
+  /* 传世：再加一条「敏捷」需求 —— 名器认人，光有主属性不够 */
+  if (item.rarity === 'unique') {
+    const agiNeed = 0.9 * expOf('agi');
+    if (agiNeed >= 8) out.push({ key: 'agi', need: round5(agiNeed) });
+  }
+  return out;
+}
+
+/* 当前属性是否满足这件装备的需求；stats 传面板算好的那一份 */
+function meetsItemReq(item, stats, cls) {
+  const reqs = reqAttrOf(item, cls);
+  if (!reqs.length) return true;
+  const st = stats || {};
+  for (const r of reqs) if ((Number(st[r.key]) || 0) < r.need) return false;
+  return true;
+}
+
+/* 差在哪：给提示框和穿戴失败提示用 */
+function itemReqGap(item, stats, cls) {
+  const st = stats || {};
+  return reqAttrOf(item, cls)
+    .filter(r => (Number(st[r.key]) || 0) < r.need)
+    .map(r => ({ key: r.key, need: r.need, have: Number(st[r.key]) || 0 }));
+}
+
+/* 提示框里那一段「需求」：等级 + 每项根基，够的标亮、差的标红并写出当前值 */
+function reqBlockHTML(item) {
+  const hasGame = (typeof Game !== 'undefined' && Game.state);
+  const cls = hasGame ? Game.state.cls : null;
+  const pst = hasGame ? (Game.state.stats || {}) : {};
+  const lv = hasGame ? (Game.state.level || 1) : 0;
+  const lvOk = !hasGame || item.reqLv <= lv;
+  const reqs = cls ? reqAttrOf(item, cls) : [];
+  let h = `<div class="tt-req"><i class="rq-h">需求</i>`;
+  h += `<span class="rq ${lvOk ? 'ok' : 'bad'}">境界 ${item.reqLv}${lvOk ? '' : '（现 ' + lv + '）'}</span>`;
+  for (const r of reqs) {
+    const have = Math.round(Number(pst[r.key]) || 0);
+    const ok = have >= r.need;
+    h += `<span class="rq ${ok ? 'ok' : 'bad'}">${ATTR_NAME[r.key]} ${r.need}${ok ? '' : '（现 ' + have + '）'}</span>`;
+  }
+  if (item.cls) h += `<span class="rq cls">${CLASSES[item.cls].name}专属</span>`;
+  h += `</div>`;
+  return h;
+}
+
 /* ---------------- 装备图标（程序化内联 SVG，viewBox 32x32） ----------------
- * 颜色一律用 currentColor，由外层按稀有度着色；深色镂空用 ICON_HOLE */
+ * 颜色一律用 currentColor，由外层按稀有度着色；深色镂空用 ICON_HOLE
+ */
 const ICON_HOLE = '#0b0d10';
 const ITEM_ICONS = {
   /* 武器 */
@@ -1485,7 +1583,9 @@ function itemTooltip(item, opts = {}) {
     }
     h += `</div>`;
   }
-  h += `<div class="tt-req">需求等级 ${item.reqLv}${item.cls ? ' · ' + CLASSES[item.cls].name : ''}</div>`;
+  /* [v1.8.5] 需求：等级 + 根基属性，逐条标「够 / 差多少」。
+   * 差的那条标红，玩家一眼知道该往哪项加点。 */
+  h += reqBlockHTML(item);
   h += `<div class="tt-val">售价 ${item.value} 金</div>`;
   /* 对比放在最后：先看词条，再看「换了之后强多少」，符合阅读顺序 */
   if (opts.compareTo) h += itemCompareHTML(item, opts.compareTo);

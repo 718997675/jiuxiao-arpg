@@ -196,6 +196,35 @@ const DEFAULT_DIFF = 'normal';
 /* 兼容旧档：没有 difficulty 字段一律按普通处理 */
 function getDiff(key) { return DIFFS[key] || DIFFS[DEFAULT_DIFF]; }
 
+/* ---------------- 根基属性（v1.8.5） ----------------
+ * 四项根基：力量 / 敏捷 / 体质 / 灵力。
+ * **跨职业同名不同效**：每职业自己一张 weights 表，1 点根基换成什么由这张表决定 ——
+ * 刀客的力量加攻击，术士的力量只撑甲；术士的灵力才是攻击。
+ * 键名对应 computePlayerStats 里的派生量：
+ *   atk 攻击力 / hpMax 生命上限 / mpMax 灵力上限 / def 护甲
+ *   crit 暴击率(%) / critDmg 暴击伤害(%) / aspd 攻速(%) / moveSpd 移速
+ *   cdr 冷却缩减(%) / mpReg 回灵/s / hpRegen 回血/s
+ */
+const ATTR_KEYS = ['str', 'agi', 'vit', 'int'];
+const ATTR_NAME = { str: '力量', agi: '敏捷', vit: '体质', int: '灵力' };
+/* 每级可分配点数（1 级另给 5 点，开局就能上手；旧档按等级补算，不缺不欠） */
+const ATTR_POINTS_PER_LEVEL = 3;
+const ATTR_START_POINTS = 5;
+/* 加点预算三件套：纯函数，node 测试与 Game 共用同一份口径 */
+function attrTotalAt(level) {
+  return ATTR_START_POINTS + Math.max(0, (Math.max(1, Math.round(level || 1)) - 1) * ATTR_POINTS_PER_LEVEL);
+}
+function attrSpentOf(alloc) {
+  let n = 0;
+  for (const k of ATTR_KEYS) n += Math.max(0, Math.round(Number((alloc || {})[k]) || 0));
+  return n;
+}
+function attrLeft(level, alloc) {
+  return Math.max(0, attrTotalAt(level) - attrSpentOf(alloc));
+}
+/* 洗点价：物价随境界走，前期也洗得起 */
+function attrRespecCost(level) { return Math.round(60 * Math.max(1, level || 1)); }
+
 /* ---------------- 职业 ---------------- */
 const CLASSES = {
   warrior: {
@@ -204,7 +233,14 @@ const CLASSES = {
     icon: '刀', desc: '近身缠斗，以血肉之躯开山裂石。攻击积攒怒气，愈战愈勇。',
     base: { str: 14, agi: 6, vit: 13, int: 3 },
     growth: { str: 2.4, agi: 0.9, vit: 2.2, int: 0.3 },
-    mainStat: 'str', statMul: 1.15, hpPerVit: 14, mpPerInt: 3,
+    mainStat: 'str', atkName: '攻击力',
+    /* 刀客：力量 = 攻击（近战），体质 = 血厚甲硬，灵力近乎无用 */
+    weights: {
+      str: { atk: 1.15, critDmg: 0.2 },
+      agi: { crit: 0.18, aspd: 0.4, moveSpd: 0.015 },
+      vit: { hpMax: 14, def: 0.8 },
+      int: { mpMax: 3 }
+    },
     baseAtk: 9, baseHp: 170, baseMp: 40,
     startWeapon: 'warrior0'
   },
@@ -214,7 +250,14 @@ const CLASSES = {
     icon: '法', desc: '引动五行雷火，以毁天灭地之术焚尽群敌。灵力为源，攻守皆远。',
     base: { str: 4, agi: 6, vit: 9, int: 15 },
     growth: { str: 0.4, agi: 0.9, vit: 1.6, int: 2.7 },
-    mainStat: 'int', statMul: 1.5, hpPerVit: 11, mpPerInt: 6,
+    mainStat: 'int', atkName: '术法攻击',
+    /* 术士：灵力 = 术法攻击 + 灵力上限 + 冷却，力量只撑甲（穿重甲用） */
+    weights: {
+      str: { def: 0.9, hpMax: 1.5 },
+      agi: { crit: 0.15, aspd: 0.35, moveSpd: 0.015 },
+      vit: { hpMax: 11, def: 0.4 },
+      int: { atk: 1.5, mpMax: 6, cdr: 0.06 }
+    },
     baseAtk: 7, baseHp: 135, baseMp: 90,
     startWeapon: 'mage0'
   },
@@ -224,8 +267,31 @@ const CLASSES = {
     icon: '道', desc: '驱符役兽，以毒雾与雷符消磨强敌，亦能自愈续命。持久战的王者。',
     base: { str: 6, agi: 9, vit: 12, int: 12 },
     growth: { str: 0.9, agi: 1.4, vit: 2.0, int: 2.2 },
-    mainStat: 'int', statMul: 1.3, hpPerVit: 12, mpPerInt: 5,
+    mainStat: 'int', atkName: '术法攻击',
+    /* 符师：灵力 = 术法攻击 + 回灵回血，四项都不废，典型吃加成的均衡职业 */
+    weights: {
+      str: { def: 0.6, hpMax: 2 },
+      agi: { crit: 0.16, aspd: 0.36, moveSpd: 0.02 },
+      vit: { hpMax: 12, def: 0.5 },
+      int: { atk: 1.3, mpMax: 5, mpReg: 0.06, hpRegen: 0.05 }
+    },
     baseAtk: 8, baseHp: 150, baseMp: 70,
     startWeapon: 'taoist0'
   }
 };
+
+/* 把四项根基按职业 weights 换算成派生属性。
+ * 返回的键与 weights 里写的一致；UI 也用同一个函数算「当前贡献」，
+ * 因此提示框里的数字和面板不会对不上。 */
+function deriveFromAttrs(cls, attrs) {
+  const out = { atk: 0, hpMax: 0, mpMax: 0, def: 0, crit: 0, critDmg: 0, aspd: 0, moveSpd: 0, cdr: 0, mpReg: 0, hpRegen: 0 };
+  const c = CLASSES[cls];
+  if (!c || !c.weights) return out;
+  for (const k of ATTR_KEYS) {
+    const v = Number(attrs[k]) || 0;
+    const w = c.weights[k];
+    if (!w) continue;
+    for (const dk in w) out[dk] = (out[dk] || 0) + w[dk] * v;
+  }
+  return out;
+}

@@ -607,6 +607,13 @@
     pointer-events:none;text-shadow:0 1px 2px rgba(0,0,0,.9);color:rgba(255,255,255,.4)}
   .islot .hand-tag.h-dual{color:rgba(127,176,255,.75)}
   .islot .hand-tag.h-two{color:rgba(255,154,108,.85)}
+  /* [v1.8.5] 穿戴需求不满足：整格压暗去色，右上角一枚「需」章。
+   * 只是想让你一眼分清「能穿 / 穿不上」，不隐藏——否则像装备没了。 */
+  .islot.req-miss{filter:grayscale(.85) brightness(.62);border-color:rgba(255,255,255,.08)}
+  .islot.req-miss:hover{filter:grayscale(.35) brightness(.9);border-color:rgba(232,86,74,.55)}
+  .islot .req-dot{position:absolute;left:2px;top:1px;font-size:8px;line-height:1.3;
+    padding:0 2px;color:#f0b0a8;background:rgba(90,24,20,.75);border:1px solid rgba(232,86,74,.5);
+    border-radius:2px;pointer-events:none;letter-spacing:0}
 
   /* ---------- 行囊四栏（v1.3.0） ---------- */
   .inv-tabs{display:flex;gap:4px;margin:6px 0 5px;border-bottom:1px solid rgba(216,178,90,.18);padding-bottom:5px}
@@ -781,7 +788,15 @@
 
   /* 属性面板 */
   #statPanel{left:50%;top:50%;transform:translate(-50%,-50%);width:420px}
-  .statlist{display:grid;grid-template-columns:1fr 1fr;gap:4px 18px;font-size:12px;color:#b8b0a0}
+  /* 挂进主菜单后宽度是整块菜单（~1000px），两列属性会被拉得很散：
+   * 「法师 · 术士」紧贴「境界」、数值甩到最右，读起来像一串。
+   * 统一限宽 + 居中，属性表才像一张表（v1.8.5）。 */
+  #menuBody #statPanel.embed>.pb>.attr-box,
+  #menuBody #statPanel.embed>.pb>.statlist{max-width:620px}
+  #menuBody #statPanel.embed>.pb>.attr-box{margin-left:auto;margin-right:auto}
+  #menuBody #statPanel.embed>.pb>.statlist{margin:0 auto}
+  #menuBody #statPanel.embed>.pb>.setshow{max-width:620px;margin:10px auto 0}
+  .statlist{display:grid;grid-template-columns:1fr 1fr;gap:4px 40px;font-size:12px;color:#b8b0a0}
   .statlist div{display:flex;justify-content:space-between;padding:2px 0;border-bottom:1px dashed rgba(255,255,255,.05)}
   .statlist b{color:#f0e0b8;font-weight:500}
   /* 属性面板分组标题：横跨两列，和条目区分开 */
@@ -790,6 +805,51 @@
     border-bottom:1px solid rgba(201,168,106,.28)}
   .statlist .st-grp:first-child{margin-top:0}
   .setshow{margin-top:12px;font-size:11.5px;line-height:1.8;color:#9ae0b0}
+
+  /* ---------- 根基加点（v1.8.5） ---------- */
+  .attr-box{margin-bottom:12px;padding:9px 11px 10px;border:1px solid rgba(216,178,90,.22);
+    background:linear-gradient(180deg,rgba(40,34,24,.5),rgba(14,13,10,.4))}
+  .attr-box .ah{display:flex;align-items:center;gap:8px;margin-bottom:7px;flex-wrap:wrap}
+  .attr-box .ah b{font-family:"STKaiti","KaiTi",serif;font-weight:500;font-size:12.5px;
+    letter-spacing:3px;color:#c9a86a}
+  .attr-box .ah i{font-style:normal;font-size:10.5px;color:#8a8474;letter-spacing:.5px}
+  .attr-box .ah i em{font-style:normal;color:#6a6458;font-weight:600;font-size:12px}
+  .attr-box .ah i em.has{color:#ffd479}
+  .attr-box .ah-hint{font-size:9.5px;color:#5e594e;letter-spacing:.3px}
+  .attr-box .respec{margin-left:auto;font-family:inherit;font-size:10.5px;padding:2px 8px;cursor:pointer;
+    color:#c8b88a;background:rgba(0,0,0,.35);border:1px solid rgba(216,178,90,.28);border-radius:2px}
+  .attr-box .respec:hover:not(:disabled){color:#1a1510;background:linear-gradient(180deg,#e0c070,#b89840);border-color:#e0c070}
+  .attr-box .respec:disabled{opacity:.35;cursor:default}
+  .alist{display:flex;flex-direction:column;gap:3px}
+  .arow{display:grid;grid-template-columns:64px 58px 1fr auto;align-items:center;gap:8px;
+    padding:3px 4px;font-size:11.5px;border-bottom:1px dashed rgba(255,255,255,.05);cursor:help}
+  .arow:hover{background:rgba(216,178,90,.06)}
+  .arow.main{background:rgba(216,178,90,.045)}
+  .arow .an{color:#b8b0a0;letter-spacing:1px}
+  .arow .an .tag{font-style:normal;margin-left:4px;font-size:9px;padding:0 3px;border-radius:2px;
+    color:#1a1510;background:#c9a86a;letter-spacing:0}
+  .arow .av{color:#f0e0b8;font-weight:600;text-align:right;font-variant-numeric:tabular-nums}
+  .arow .av i{font-style:normal;font-size:9.5px;color:#7ee0a0;margin-left:3px}
+  .arow .ag{color:#7a7466;font-size:10px;line-height:1.4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .arow .ab{display:flex;gap:3px}
+  .arow .ab button{font-family:inherit;font-size:10.5px;line-height:1;padding:3px 7px;cursor:pointer;
+    color:#c8b88a;background:rgba(0,0,0,.4);border:1px solid rgba(216,178,90,.3);border-radius:2px}
+  .arow .ab button:hover:not(:disabled){color:#1a1510;background:linear-gradient(180deg,#e0c070,#b89840);border-color:#e0c070}
+  .arow .ab button:disabled{opacity:.28;cursor:default}
+  /* 属性说明浮层 */
+  .at-tip .tt-n em{font-style:normal;color:#ffd479;font-size:15px;margin-left:2px}
+  .at-tip .at-tag{font-style:normal;font-size:9px;margin-left:6px;padding:0 4px;border-radius:2px;
+    color:#8a8474;border:1px solid rgba(255,255,255,.15);vertical-align:1px}
+  .at-tip .at-tag.on{color:#1a1510;background:#c9a86a;border-color:#c9a86a}
+  .at-tip .at-sub{font-size:9.5px;color:#6a6458;letter-spacing:2px;margin:7px 0 3px}
+  .at-tip .at-rows{display:flex;flex-direction:column;gap:1px}
+  .at-tip .at-r{display:flex;justify-content:space-between;gap:10px;font-size:11px;color:#a8a090}
+  .at-tip .at-r b{color:#e8d8b0;font-weight:500}
+  .at-tip .at-rows.strong .at-r b{color:#ffd479}
+  .at-tip .at-src{margin-top:7px;padding-top:5px;border-top:1px solid rgba(255,255,255,.07);
+    font-size:10px;color:#7a7466;letter-spacing:.3px}
+  .at-tip .at-src b{color:#9ad0a8;font-weight:500}
+  .at-tip .at-foot{margin-top:5px;font-size:9.5px;color:#5e594e}
 
   /* 任务 */
   #questPanel{left:50%;top:50%;transform:translate(-50%,-50%);width:520px;max-height:80vh;overflow:hidden}
@@ -1075,7 +1135,15 @@
   .tt-skill-tag{display:inline-block;font-style:normal;font-size:9px;letter-spacing:1px;padding:0 4px;
     margin-right:5px;border-radius:2px;color:#0f0d0a;background:#ffd166;vertical-align:1px}
   .tt-skill-tag:where(:not(:empty)){font-weight:700}
-  .tt-req{font-size:10.5px;color:#8a8474;margin-top:6px;border-top:1px solid rgba(255,255,255,.07);padding-top:4px}
+  .tt-req{font-size:10.5px;color:#8a8474;margin-top:6px;border-top:1px solid rgba(255,255,255,.07);
+    padding-top:5px;display:flex;flex-wrap:wrap;gap:3px 6px;align-items:baseline}
+  .tt-req .rq-h{font-style:normal;color:#5e594e;letter-spacing:2px;font-size:9.5px;flex:1 0 100%}
+  /* 需求逐条：够的灰、差的标红（括号里写当前值） */
+  .tt-req .rq{font-size:10px;padding:0 4px;border-radius:2px;border:1px solid rgba(255,255,255,.1);
+    color:#8a8474;background:rgba(0,0,0,.3)}
+  .tt-req .rq.ok{color:#9ad0a8;border-color:rgba(120,220,160,.28);background:rgba(30,70,45,.32)}
+  .tt-req .rq.bad{color:#ffb0a6;border-color:rgba(232,86,74,.5);background:rgba(80,20,16,.5)}
+  .tt-req .rq.cls{color:#c9a86a;border-color:rgba(216,178,90,.3);background:rgba(46,38,20,.5)}
   .tt-val{font-size:10.5px;color:#c8a860}
   .tt-hint{font-size:10px;color:#7a7466;margin-top:3px}
   /* 装备对比（v1.0.4） */
@@ -1347,6 +1415,12 @@
   body.touch .qlist{max-height:52dvh}
   body.touch .shoplist{max-height:44dvh}
   body.touch .statlist{grid-template-columns:1fr 1fr;gap:3px 14px;font-size:11.5px}
+  /* 触屏没有悬停：根基行整行可点（点一下出说明），按钮放大到指头能按 */
+  body.touch .arow{grid-template-columns:52px 52px 1fr auto;gap:6px;padding:5px 3px;cursor:pointer}
+  body.touch .arow .ag{font-size:9.5px}
+  body.touch .arow .ab button{padding:6px 8px;font-size:11px}
+  body.touch .attr-box{padding:8px 9px}
+  body.touch .attr-box .ah-hint{display:none}
   body.touch #dialog{bottom:10px;width:96vw;max-height:46dvh;overflow:auto}
   body.touch #dialog .dt{font-size:12.5px;line-height:1.85}
   body.touch #dialog .dc .btn{padding:8px 16px;font-size:12.5px}
@@ -1576,6 +1650,8 @@
 <div class="panel" id="statPanel">
   <div class="ph"><h3>道 途</h3><span class="x" onclick="UI.closeAll()">✕</span></div>
   <div class="pb">
+    <!-- 根基加点（v1.8.5）：四项属性各自加 1 / 加 5，悬停看每点收益 -->
+    <div class="attr-box" id="attrBox"></div>
     <div class="statlist" id="statList"></div>
     <div class="setshow" id="setShow"></div>
   </div>
