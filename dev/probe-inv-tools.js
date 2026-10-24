@@ -8,7 +8,14 @@ const puppeteer = require('puppeteer-core');
 
 const ROOT = path.resolve(__dirname, '..');
 const PORT = 8893;
-const EDGE = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
+/* 浏览器可执行文件自动探测：优先本机 Chrome / Edge，兼容 Windows 路径 */
+const EDGE_CANDIDATES = [
+  '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+  '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge',
+  'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
+  'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe'
+];
+const EDGE = EDGE_CANDIDATES.find(p => fs.existsSync(p)) || EDGE_CANDIDATES[0];
 
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'application/javascript; charset=utf-8', '.css': 'text/css' };
 
@@ -119,10 +126,10 @@ const bad = m => { results.push(0); console.log('  [FAIL] ' + m); };
   /* ---------- 套装图鉴 ---------- */
   const r2 = await page.evaluate(() => {
     const out = {};
-    /* 给 2 件青龙（1 装备 + 1 行囊）+ 1 件九幽（仓库） */
-    const ql1 = normalizeItem({ kind: 'helm', slot: 'helm', name: '青龙盔', rarity: 'set', ilvl: 20, setId: 'qinglong', setName: '青龙偃月', cls: 'warrior', sockets: 0, runes: [], affixes: [] });
-    const ql2 = normalizeItem({ kind: 'gloves', slot: 'gloves', name: '青龙护手', rarity: 'set', ilvl: 22, setId: 'qinglong', setName: '青龙偃月', cls: 'warrior', sockets: 0, runes: [], affixes: [] });
-    const jy = normalizeItem({ kind: 'amulet', slot: 'amulet', name: '九幽锁魂链', rarity: 'set', ilvl: 24, setId: 'jiuyou', setName: '九幽', sockets: 0, runes: [], affixes: [] });
+    /* 给 2 件龙骧（1 装备 + 1 行囊）+ 1 件星阙（仓库） */
+    const ql1 = normalizeItem({ kind: 'helm', slot: 'helm', name: '龙骧战盔', rarity: 'set', ilvl: 20, setId: 'longxiang', setName: '龙骧', cls: 'warrior', sockets: 0, runes: [], affixes: [] });
+    const ql2 = normalizeItem({ kind: 'gloves', slot: 'gloves', name: '龙骧护手', rarity: 'set', ilvl: 22, setId: 'longxiang', setName: '龙骧', cls: 'warrior', sockets: 0, runes: [], affixes: [] });
+    const jy = normalizeItem({ kind: 'helm', slot: 'helm', name: '星阙法冠', rarity: 'set', ilvl: 24, setId: 'xingque', setName: '星阙', cls: 'mage', sockets: 0, runes: [], affixes: [] });
     Game.state.equipment.helm = ql1;
     Game.state.inventory.push(ql2);
     if (!Game.state.stash) Game.state.stash = { items: [], mats: {} };
@@ -135,25 +142,25 @@ const bad = m => { results.push(0); console.log('  [FAIL] ' + m); };
     out.opened = panel.classList.contains('open');
     out.sumTxt = (document.getElementById('setCodexSum').textContent || '').trim();
     out.setCount = document.querySelectorAll('#setCodexList .cx-set').length;
-    const qlCard = [...document.querySelectorAll('#setCodexList .cx-set')].find(c => c.textContent.includes('青龙偃月'));
-    out.qlHasCount = /已集\s*2\s*\/\s*5/.test(qlCard.textContent.replace(/\s/g, ''));
+    const qlCard = [...document.querySelectorAll('#setCodexList .cx-set')].find(c => c.textContent.includes('龙骧'));
+    out.qlHasCount = /已集\s*2\s*\/\s*6/.test(qlCard.textContent.replace(/\s/g, ''));
     out.qlPiecesGot = qlCard.querySelectorAll('.cx-piece.got').length;
     out.qlPieceNames = [...qlCard.querySelectorAll('.cx-piece.got .cx-pname')].map(e => e.textContent);
-    out.qlBonusOn = qlCard.querySelectorAll('.cx-b.on').length;     // 2 件档激活，3/5 件未激活
+    out.qlBonusOn = qlCard.querySelectorAll('.cx-b.on').length;     // 2 件档激活，4/6 件未激活
     out.qlBonusTotal = qlCard.querySelectorAll('.cx-b').length;
-    const jyCard = [...document.querySelectorAll('#setCodexList .cx-set')].find(c => c.textContent.includes('九幽'));
+    const jyCard = [...document.querySelectorAll('#setCodexList .cx-set')].find(c => c.textContent.includes('星阙'));
     out.jyGot = jyCard.querySelectorAll('.cx-piece.got').length;    // 仓库里的也算
     return out;
   });
   if (r2.opened) ok('背包界面「套装图鉴」按钮打开图鉴面板');
   else bad('图鉴面板未打开');
-  if (/12\s*套/.test(r2.sumTxt) && /已收集\s*3\s*件/.test(r2.sumTxt.replace(/\s/g, ''))) ok('汇总正确：12 套 · 已收集 3 件');
+  if (/3\s*套/.test(r2.sumTxt) && /已收集\s*3\s*件/.test(r2.sumTxt.replace(/\s/g, ''))) ok('汇总正确：3 套 · 已收集 3 件');
   else bad('汇总异常：' + r2.sumTxt);
-  if (r2.setCount === 12) ok('渲染全部 12 套套装');
+  if (r2.setCount === 3) ok('渲染全部 3 套职业套装');
   else bad('套装卡片数异常：' + r2.setCount);
-  if (r2.qlHasCount && r2.qlPiecesGot === 2 && r2.qlPieceNames.join(',').includes('青龙盔') && r2.qlPieceNames.join(',').includes('青龙护手')) ok('青龙卡片显示已集 2/5，部件清单标注已获得（装备+行囊）');
-  else bad('青龙卡片异常：' + JSON.stringify(r2));
-  if (r2.qlBonusOn === 1 && r2.qlBonusTotal === 3) ok('套装加成档位激活状态正确（2 件档亮，3/5 件暗）');
+  if (r2.qlHasCount && r2.qlPiecesGot === 2 && r2.qlPieceNames.join(',').includes('龙骧战盔') && r2.qlPieceNames.join(',').includes('龙骧护手')) ok('龙骧卡片显示已集 2/6，部件清单标注已获得（装备+行囊）');
+  else bad('龙骧卡片异常：' + JSON.stringify(r2));
+  if (r2.qlBonusOn === 1 && r2.qlBonusTotal === 3) ok('套装加成档位激活状态正确（2 件档亮，4/6 件暗）');
   else bad('加成档位异常：on=' + r2.qlBonusOn + '/' + r2.qlBonusTotal);
   if (r2.jyGot === 1) ok('账号仓库里的套装件也计入图鉴');
   else bad('仓库件未计入：' + r2.jyGot);

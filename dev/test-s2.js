@@ -4,7 +4,7 @@
  *   node dev/test-s2.js
  *
  * 覆盖：
- *   1. 24 符文 / 12 符文之语 / 10 条图标 path / 12 套装的数据完整性
+ *   1. 24 符文 / 12 符文之语 / 10 条图标 path / 3 套职业套装的数据完整性
  *   2. 孔位滚动、符文镶嵌 / 取下、符文之语「孔数 + 顺序 + 填满」判定
  *   3. 符文与符文之语属性、flag 是否正确进入 computePlayerStats
  *   4. 洗练只换目标词缀、必换 key、费用递增
@@ -34,6 +34,7 @@ const RUNE_WORDS = pick('RUNE_WORDS');
 const RUNE_ICON_ORDER = pick('RUNE_ICON_ORDER');
 const ICON_PATHS = pick('ICON_PATHS');
 const SETS = pick('SETS');
+const CLASSES = pick('CLASSES');
 const FORGE = pick('FORGE');
 const rollItem = pick('rollItem');
 const ARMOR_BASES = pick('ARMOR_BASES');
@@ -105,9 +106,15 @@ console.log('\n一、数据完整性');
   for (const w of RUNE_WORDS) if (w.flag) {
     if (!flags.has(w.flag)) flags.add(w.flag);
   }
-  const KNOWN = new Set(['thunder', 'firetrail', 'groupheal', 'bossSlayer', 'explode', 'bloodRush', 'frostBurst', 'echo', 'seeker']);
+  const KNOWN = new Set(['thunder', 'firetrail', 'groupheal', 'bossSlayer', 'explode', 'bloodRush', 'frostBurst', 'echo', 'seeker', 'longDash', 'novaFreeze']);
   const badFlag = [...flags].filter(f => !KNOWN.has(f));
   ok(badFlag.length === 0, '出现了未接入战斗逻辑的 flag', badFlag.join(','));
+  /* v1.1.9：套装 special 也必须全部落地（game.js specials 钩子） */
+  const specials = new Set();
+  for (const s of Object.values(SETS)) for (const b of s.bonuses) if (b.special) specials.add(b.special);
+  const KNOWN_SP = new Set(['phoenix', 'soulharvest', 'berserk', 'critburst', 'chargeReset', 'wolfPrime']);
+  const badSp = [...specials].filter(f => !KNOWN_SP.has(f));
+  ok(badSp.length === 0, '出现了未接入战斗逻辑的套装 special', badSp.join(','));
 
   ok(RUNE_ICON_ORDER.every(id => ICON_PATHS['rune_' + id]), '有符文缺少图标 path');
   let badIcon = 0;
@@ -120,13 +127,19 @@ console.log('\n一、数据完整性');
   ok(badIcon === 0, '符文图标不符合 M11 规范', 'count=' + badIcon);
 
   const setIds = Object.keys(SETS);
-  ok(setIds.length === 12, '套装数量应为 12', 'got ' + setIds.length);
+  ok(setIds.length === 3, '套装数量应为 3（v1.1.9 起一职业一套）', 'got ' + setIds.length);
   const pieceNames = new Set();
+  /* 18 个技能 id（与 data-skills.js 一致），用于校验套装 skillMods 指向真实技能 */
+  const SKILL_IDS = new Set(['whirl', 'thrust', 'warcry', 'quake', 'bloodrage', 'avatar',
+    'fireball', 'frostnova', 'chain', 'meteor', 'iceshield', 'starfall',
+    'talisman', 'summon', 'heal', 'poison', 'taiji', 'swordrain']);
+  const SKILLMOD_KEYS = new Set(['dmg', 'cd', 'cost', 'radius', 'count', 'dur']);
   let badSet = 0;
   for (const id of setIds) {
     const s = SETS[id];
     if (s.pieces.length !== s.slots.length) badSet++;
     if (s.pieces.length < 4 || s.pieces.length > 6) badSet++;
+    if (!CLASSES[s.cls]) badSet++;
     for (const p of s.pieces) {
       if (pieceNames.has(p)) badSet++;
       pieceNames.add(p);
@@ -134,9 +147,13 @@ console.log('\n一、数据完整性');
     for (const b of s.bonuses) {
       if (b.need < 2 || b.need > s.pieces.length) badSet++;
       for (const k in (b.stats || {})) if (!STATS[k]) badSet++;
+      for (const sid2 in (b.skillMods || {})) {
+        if (!SKILL_IDS.has(sid2)) badSet++;
+        for (const k in b.skillMods[sid2]) if (!SKILLMOD_KEYS.has(k)) badSet++;
+      }
     }
   }
-  ok(badSet === 0, '套装 pieces/slots/词条不匹配或部件重名', 'count=' + badSet);
+  ok(badSet === 0, '套装 pieces/slots/词条/技能修正不匹配或部件重名', 'count=' + badSet);
   console.log(`  符文 ${ids.length} · 符文之语 ${RUNE_WORDS.length} · 图标 ${Object.keys(ICON_PATHS).length} · 套装 ${setIds.length}`);
 }
 
@@ -329,7 +346,7 @@ console.log('\n七、套装生成');
   }
   const allPieces = setIds.flatMap(id => SETS[id].pieces);
   ok(miss === 0, '有套装部件滚不出来', 'miss=' + miss);
-  ok(hitSets.size === 12, '12 套套装都应能被滚出', 'hit=' + hitSets.size);
+  ok(hitSets.size === 3, '3 套职业套装都应能被滚出', 'hit=' + hitSets.size);
   ok(hitPieces.size === allPieces.length, '每个套装部件都应能被滚出', hitPieces.size + '/' + allPieces.length);
   ok(wrongName === 0, '部件名与 set.pieces 错位', 'count=' + wrongName);
   ok(wrongRarity === 0, '套装稀有度 / 套装名未正确写入', 'count=' + wrongRarity);

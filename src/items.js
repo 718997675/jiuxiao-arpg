@@ -182,10 +182,11 @@ function setCraftCost(item) {
   };
 }
 
-/* 这件装备能打进哪些套装（按部位匹配） */
+/* 这件装备能打进哪些套装（按部位 + 职业匹配；v1.1.9 起套装按职业锁定） */
 function setCraftTargets(item) {
   if (!item || item.setId || item.rarity === 'unique') return [];
-  return Object.values(SETS).filter(s => s.slots.indexOf(item.slot) >= 0);
+  const cls = item.affixCls || item.cls;
+  return Object.values(SETS).filter(s => s.slots.indexOf(item.slot) >= 0 && (!s.cls || s.cls === cls));
 }
 
 /* 打造成指定套装。成功返回 { setId, setName, piece, pieceIndex }，失败返回 null */
@@ -195,6 +196,8 @@ function craftSetItem(item, setId) {
   if (!set) return null;
   const idx = set.slots.indexOf(item.slot);
   if (idx < 0) return null;                       // 该套装没有这个部位
+  /* v1.1.9：职业套装只能由对应职业打造，避免战士打出穿不上的法师套 */
+  if (set.cls && set.cls !== (item.affixCls || item.cls)) return null;
   /* 基底按套装系数重算（套装基底比原品质更厚） */
   const k = RARITY.set.mul / (RARITY[item.rarity] ? RARITY[item.rarity].mul : 1);
   if (Array.isArray(item.baseDmg)) {
@@ -214,11 +217,20 @@ function craftSetItem(item, setId) {
   const used = new Set();
   (item.affixes || []).forEach(a => { if (a && a.key) used.add(a.key); });
   for (const fa of (item.fixed || [])) if (fa && fa.key) used.add(fa.key);
+  /* v1.1.9：套装件保底一条职业标志词条。只洗出来不足 3 条时才补，
+   * 且第一条补齐优先给专属词条；原本就够 3 条的老装备一条不动。 */
+  const sigKeys = SET_SIG[set.cls] || [];
+  const hasSig = (item.affixes || []).some(a => sigKeys.indexOf(a.key) >= 0)
+    || (item.fixed || []).some(a => sigKeys.indexOf(a.key) >= 0);
+  const sigFree = sigKeys.filter(k => !used.has(k));
+  let filled = 0;
   while ((item.affixes || []).length < 3) {
-    const a = makeAffix(item.ilvl || 1, used, item.affixCls || item.cls, item.slot);
+    const a = makeAffix(item.ilvl || 1, used, item.affixCls || item.cls, item.slot,
+      null, (filled === 0 && !hasSig && sigFree.length) ? PICK(sigFree) : null);
     if (!a) break;
     item.affixes.push(a);
     used.add(a.key);
+    filled++;
   }
   return { setId: set.id, setName: set.name, piece: item.name, pieceIndex: idx, oldName };
 }
@@ -323,6 +335,14 @@ function normalizeItem(item) {
   if (!item || typeof item !== 'object') return null;
   /* v1.1.7：词条职业倾向，旧档没有就留空（走中性池） */
   if (item.affixCls && typeof CLASSES !== 'undefined' && !CLASSES[item.affixCls]) item.affixCls = null;
+  /* v1.1.9：套装目录收敛为 3 套职业套装。旧档里的其它套装件
+   * （青龙 / 朱雀 / 九幽 / 天罡 / 山海 …）已退出目录：卸掉套装标识、
+   * 稀有度降为玄品；装备本身的词条 / 孔位 / 符文全部保留，不销毁玩家资产。 */
+  if (item.setId && !SETS[item.setId]) {
+    item.setId = null;
+    item.setName = null;
+    if (item.rarity === 'set') item.rarity = 'rare';
+  }
   if (!Array.isArray(item.affixes)) item.affixes = [];
   item.affixes = item.affixes.filter(a => a && typeof a.key === 'string' && STATS[a.key] && isFinite(a.val));
   // 旧档词缀没有 q，补齐为 1
@@ -393,19 +413,24 @@ function rollAffixQuality() {
   return r < 0.58 ? 1 : (r < 0.85 ? 2 : (r < 0.96 ? 3 : 4));
 }
 
-function makeAffix(ilvl, used, cls, slot, tierForce) {
+function makeAffix(ilvl, used, cls, slot, tierForce, keyForce) {
   /* v1.1.7：先按职业 / 部位收窄词条池，再排除已占用的 key */
   const base = (typeof affixPool === 'function' && (cls || slot)) ? affixPool(cls, slot) : AFFIXES;
   let pool = base.filter(a => !used.has(a.key));
   if (!pool.length) pool = base;   // 本池被占满时退回本池，避免 PICK 空数组
-  const roll = Math.random();
-  const tierWant = tierForce || (roll < 0.62 ? 1 : (roll < 0.9 ? 2 : 3));
-  let cand = pool.filter(a => a.tier === tierWant);
-  if (!cand.length && tierForce) cand = pool.filter(a => a.tier >= 2);
-  if (!cand.length) cand = pool;
-  const weighted = [];
-  for (const c of cand) for (let i = 0; i < (c.weight || 1); i++) weighted.push(c);
-  const a = PICK(weighted);
+  /* v1.1.9：keyForce 指定词条（套装专属保底用）。指定词条不可用时
+   * 自动退化为常规随机，绝不影响词条产出数量。 */
+  let a = keyForce ? pool.find(x => x.key === keyForce) : null;
+  if (!a) {
+    const roll = Math.random();
+    const tierWant = tierForce || (roll < 0.62 ? 1 : (roll < 0.9 ? 2 : 3));
+    let cand = pool.filter(x => x.tier === tierWant);
+    if (!cand.length && tierForce) cand = pool.filter(x => x.tier >= 2);
+    if (!cand.length) cand = pool;
+    const weighted = [];
+    for (const c of cand) for (let i = 0; i < (c.weight || 1); i++) weighted.push(c);
+    a = PICK(weighted);
+  }
   used.add(a.key);
   const q = rollAffixQuality();
   return { key: a.key, val: affixValue(a, ilvl, q), pre: a.pre, suf: a.suf, tier: a.tier, q };
@@ -589,22 +614,18 @@ function rollItem(ilvl, opts = {}) {
   }
   if (isRing) { item.slot = 'ring'; }
 
-  /* ---- 套装 ---- */
+  /* ---- 套装（v1.1.9：3 套职业套装，部位精确匹配） ---- */
   if (rarity === 'set') {
-    const cands = Object.values(SETS).filter(s =>
-      (!s.cls || s.cls === cls) &&
-      s.slots.some(sl => sl === slot || (sl === 'ring' && slot === 'ring'))
-    );
+    const cands = Object.values(SETS).filter(s => s.slots.indexOf(slot) >= 0 && (!s.cls || s.cls === cls));
     if (cands.length) {
       const set = PICK(cands);
-      const idx = set.slots.findIndex(sl => sl === slot);
-      const pieceIndex = idx >= 0 ? idx : set.slots.findIndex(sl => sl === 'ring');
+      const idx = set.slots.indexOf(slot);
       item.setId = set.id;
       item.setName = set.name;
-      item.name = set.pieces[pieceIndex] || set.pieces[0];
+      item.name = set.pieces[idx];
       item.rarity = 'set';
       item.cls = set.cls || null;
-    } else rarity = item.rarity = 'rare';
+    } else rarity = item.rarity = 'rare';   // 套装只出 5 防具 + 套装武器，其余部位降玄品
   }
 
   /* ---- 唯一装备（传世） ----
@@ -637,12 +658,25 @@ function rollItem(ilvl, opts = {}) {
   if (item.rarity === 'set' && CHANCE(0.4)) count += 1;
   const used = new Set();
   item.fixed = [];
+  /* v1.1.9：套装件保底一条职业标志词条。先在池子里挑一个合法 key 并「预留」
+   * （加进 used，固定词条就抢不走它），第 1 条可洗词条定向生成，保底 100% 生效。 */
+  let sigKey = null;
+  if (item.setId) {
+    const pool = (typeof affixPool === 'function') ? affixPool(cls, slot) : AFFIXES;
+    const sig = (SET_SIG[cls] || []).filter(k => pool.some(a => a.key === k) && !used.has(k));
+    if (sig.length) { sigKey = PICK(sig); used.add(sigKey); }
+  }
   const fixedCount = (RARITY[item.rarity].fixed || 0) + lvBonus.fixed;
   for (let i = 0; i < fixedCount; i++) {
     const fa = makeFixedAffix(ilvl, used, cls, slot);
     if (fa) item.fixed.push(fa);
   }
-  for (let i = 0; i < count; i++) item.affixes.push(makeAffix(ilvl, used, cls, slot));
+  for (let i = 0; i < count; i++) {
+    let a;
+    if (i === 0 && sigKey) { used.delete(sigKey); a = makeAffix(ilvl, used, cls, slot, null, sigKey); }
+    else a = makeAffix(ilvl, used, cls, slot);
+    if (a) item.affixes.push(a);
+  }
   /* 稀有词条惊喜（v1.1.8）：任何品质都可能额外附带一条 tier 3 稀有词条。
    * 不占常规名额、与品质无关，凡品也能爆 —— 「翻垃圾翻出宝」的钩子。 */
   const rareP = (typeof FORGE !== 'undefined' && FORGE.rareAffixChance) || 0.12;
@@ -737,18 +771,28 @@ function aggregate(equipped) {
     /* 传世技能效果：'*' 是所有技能的通用修正，具体技能进入 skillMods */
     const us = it.uniqueSkill;
     if (us && us.id) {
-      const m = skillMods[us.id] || (skillMods[us.id] = { dmg: 0, cd: 0, cost: 0, radius: 0, count: 0 });
-      for (const k of ['dmg', 'cd', 'cost', 'radius', 'count']) if (us[k]) m[k] += us[k];
+      const m = skillMods[us.id] || (skillMods[us.id] = { dmg: 0, cd: 0, cost: 0, radius: 0, count: 0, dur: 0 });
+      for (const k of ['dmg', 'cd', 'cost', 'radius', 'count', 'dur']) if (us[k]) m[k] += us[k];
     }
   }
   const setBonuses = [];
   for (const sid in setCount) {
     const set = SETS[sid];
+    if (!set) continue;               // 旧档里已被移除的套装（v1.1.9 迁移见 normalizeItem）
     for (const b of set.bonuses) {
       if (setCount[sid] >= b.need) {
         setBonuses.push({ setId: sid, name: set.name, text: b.text, need: b.need });
         if (b.stats) for (const k in b.stats) st[k] = (st[k] || 0) + b.stats[k];
         if (b.flag) flags[b.flag] = true;
+        if (b.special) specials[b.special] = true;
+        /* v1.1.9：套装可以直接修正具体技能，与传世的 uniqueSkill
+         * 走同一条 skillMods 通道（dmg / radius / count / dur / cost / cd） */
+        if (b.skillMods) {
+          for (const skid in b.skillMods) {
+            const m = skillMods[skid] || (skillMods[skid] = { dmg: 0, cd: 0, cost: 0, radius: 0, count: 0, dur: 0 });
+            for (const k in b.skillMods[skid]) m[k] = (m[k] || 0) + b.skillMods[skid][k];
+          }
+        }
       }
     }
   }

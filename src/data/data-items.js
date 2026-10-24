@@ -366,130 +366,91 @@ function affixPool(cls, slot) {
   return out.length >= AFFIX_POOL_MIN ? out : AFFIXES;
 }
 
-/* ---------------- 套装 ---------------- */
+/* ---------------- 套装（v1.1.9：三系职业套装） ----------------
+ * 全库只保留 3 套，一套一职业、6 件（5 防具 + 套装武器），
+ * 2 / 4 / 6 件三档激活。三档效果全部围绕该职业的核心机制设计：
+ *
+ *   战士·龙骧 —— 突进与近战：
+ *     2 件 攻击力 / 近战伤害；4 件 烈焰突刺伤害与突进距离、旋风斩伤害；
+ *     6 件 突进命中 3 名敌人立刻刷新突进冷却（冲撞连招），剑神降世伤害 +50%。
+ *   法师·星阙 —— 法术与范围：
+ *     2 件 技能伤害 / 范围伤害；4 件 火球 / 冰霜新星 / 炎爆范围 +30%、消耗降低；
+ *     6 件 陨星天火陨星 +8，冰霜新星命中附带冻结。
+ *   道士·青符 —— 持续、召唤与续命：
+ *     2 件 召唤物伤害 / 持续伤害；4 件 蚀骨毒雾更大更久、回春咒治疗提升；
+ *     6 件 灵狼继承攻击力 60% → 90%（质变），万剑归宗符剑 +6。
+ *
+ * 每条效果都必须有真实生效点，四种载体：
+ *   stats      → sumItemStats / aggregate 汇总进面板
+ *   skillMods  → aggregate 合并进 state.stats.skillMods，castSkill 里按技能读
+ *                （dmg 伤害 / radius 范围 / count 数量 / dur 持续 / cost 消耗 / cd 冷却）
+ *   flag       → aggregate 合并进 state.stats.flags，game.js 有对应判定
+ *                （longDash 突进距离 / novaFreeze 新星冻结）
+ *   special    → aggregate 合并进 state.stats.specials，game.js 有对应钩子
+ *                （chargeReset 突进刷冷 / wolfPrime 灵狼质变）
+ * 新增载体或新 flag / special 时，必须同步在 game.js 落地，并在
+ * dev/probe-set-system.js 登记，不允许「写着有、战斗里没有」。
+ */
 const SETS = {
-  qinglong: {
-    id: 'qinglong', name: '青龙偃月', cls: 'warrior', color: '#5ce08a',
-    pieces: ['青龙盔', '青龙战甲', '青龙护肩', '青龙护手', '青龙战靴'],
-    slots: ['helm', 'chest', 'shoulders', 'gloves', 'boots'],
-    bonuses: [
-      { need: 2, text: '攻击力 +15%', stats: { atkPct: 15 } },
-      { need: 3, text: '攻速 +12%，生命偷取 +4%', stats: { aspd: 12, lifesteal: 4 } },
-      { need: 5, text: '旋风斩伤害 +120%，攻击附带雷霆', stats: { skillDmg: 20 }, flag: 'thunder' }
-    ]
-  },
-  zhuque: {
-    id: 'zhuque', name: '朱雀焚天', cls: 'mage', color: '#ff8a5c',
-    pieces: ['朱雀冠', '朱雀法袍', '朱雀云肩', '朱雀手衣', '朱雀云履'],
-    slots: ['helm', 'chest', 'shoulders', 'gloves', 'boots'],
-    bonuses: [
-      { need: 2, text: '技能伤害 +20%', stats: { skillDmg: 20 } },
-      { need: 3, text: '冷却缩减 +15%，灵力上限 +15%', stats: { cdr: 15 } },
-      { need: 5, text: '火球爆炸范围 +60%，并留下火海', stats: { atkPct: 10 }, flag: 'firetrail' }
-    ]
-  },
-  xuanwu: {
-    id: 'xuanwu', name: '玄武镇魂', cls: 'taoist', color: '#7ec8ff',
-    pieces: ['玄武巾', '玄武道袍', '玄武云肩', '玄武手衣', '玄武云履'],
-    slots: ['helm', 'chest', 'shoulders', 'gloves', 'boots'],
-    bonuses: [
-      { need: 2, text: '生命上限 +25%', stats: { hpPct: 25 } },
-      { need: 3, text: '召唤物伤害 +60%，护甲 +30', stats: { summonDmg: 60, def: 30 } },
-      { need: 5, text: '回春咒变为群体治疗并附加护盾', stats: { skillDmg: 15 }, flag: 'groupheal' }
-    ]
-  },
-  jiuyou: {
-    id: 'jiuyou', name: '九幽', cls: null, color: '#b98cff',
-    pieces: ['九幽锁魂链', '九幽噬魂戒', '九幽腰带', '九幽令'],
-    slots: ['amulet', 'ring', 'belt', 'offhand'],
-    bonuses: [
-      { need: 2, text: '移动速度 +10%', stats: { moveSpd: 10 } },
-      { need: 3, text: '暴击伤害 +30%，击杀回复 +15', stats: { critDmg: 30, killHeal: 15 } },
-      { need: 4, text: '全属性 +15，暴击率 +10%', stats: { str: 15, agi: 15, vit: 15, int: 15, crit: 10 } }
-    ]
-  },
-  tiangang: {
-    id: 'tiangang', name: '天罡', cls: null, color: '#ffd166',
-    pieces: ['天罡战盔', '天罡战甲', '天罡护肩', '天罡战靴', '天罡之刃'],
-    slots: ['helm', 'chest', 'shoulders', 'boots', 'weapon'],
-    bonuses: [
-      { need: 2, text: '攻击力 +20%，暴击率 +8%', stats: { atkPct: 20, crit: 8 } },
-      { need: 3, text: '技能伤害 +30%，冷却缩减 +12%', stats: { skillDmg: 30, cdr: 12 } },
-      { need: 5, text: '对首领伤害 +40%，全属性 +25', stats: { str: 25, agi: 25, vit: 25, int: 25 }, flag: 'bossSlayer' }
-    ]
-  },
-
-  /* ---------------- S2 新增 7 套：每职业 3 套（低/中/高）+ 通用 3 套 ---------------- */
-  chixiao: {
-    id: 'chixiao', name: '赤霄战魂', cls: 'warrior', color: '#ff6b4a',
-    pieces: ['赤霄战盔', '赤霄战甲', '赤霄护肩', '赤霄护手', '赤霄战靴'],
-    slots: ['helm', 'chest', 'shoulders', 'gloves', 'boots'],
-    bonuses: [
-      { need: 2, text: '攻击力 +18%', stats: { atkPct: 18 } },
-      { need: 3, text: '攻速 +15%，暴击伤害 +20%', stats: { aspd: 15, critDmg: 20 } },
-      { need: 5, text: '击杀后进入血怒：攻速与移速提升 4 秒', stats: { atkPct: 15 }, flag: 'bloodRush' }
-    ]
-  },
-  jiuli: {
-    id: 'jiuli', name: '九黎战铠', cls: 'warrior', color: '#c86a3a',
-    pieces: ['九黎战盔', '九黎战甲', '九黎护肩', '九黎护手', '九黎战靴', '九黎战刃'],
+  longxiang: {
+    id: 'longxiang', name: '龙骧', cls: 'warrior', color: '#ff7a4a',
+    pieces: ['龙骧战盔', '龙骧战铠', '龙骧护肩', '龙骧护手', '龙骧战靴', '龙骧战刃'],
     slots: ['helm', 'chest', 'shoulders', 'gloves', 'boots', 'weapon'],
     bonuses: [
-      { need: 2, text: '护甲穿透 +15%，攻击力 +10%', stats: { armorPen: 15, atkPct: 10 } },
-      { need: 3, text: '生命上限 +15%，护甲 +40', stats: { hpPct: 15, def: 40 } },
-      { need: 5, text: '对首领伤害 +40%，首领伤害 +20%', stats: { bossDmg: 20 }, flag: 'bossSlayer' }
+      { need: 2, text: '攻击力 +18%，近战伤害 +12%', stats: { atkPct: 18, meleeDmg: 12 } },
+      {
+        need: 4, text: '烈焰突刺伤害 +80%、突进距离 +30%，旋风斩伤害 +40%',
+        skillMods: { thrust: { dmg: 80 }, whirl: { dmg: 40 } }, flag: 'longDash'
+      },
+      {
+        need: 6, text: '突进命中 3 名敌人即刷新烈焰突刺冷却，剑神降世伤害 +50%',
+        skillMods: { avatar: { dmg: 50 } }, special: 'chargeReset'
+      }
     ]
   },
-  xuanbing: {
-    id: 'xuanbing', name: '玄冰', cls: 'mage', color: '#8ad8ff',
-    pieces: ['玄冰冠', '玄冰法袍', '玄冰云肩', '玄冰手衣', '玄冰云履'],
-    slots: ['helm', 'chest', 'shoulders', 'gloves', 'boots'],
-    bonuses: [
-      { need: 2, text: '冰霜抗性 +20%，技能伤害 +10%', stats: { iceRes: 20, skillDmg: 10 } },
-      { need: 3, text: '冷却缩减 +10%，冻结几率 +8%', stats: { cdr: 10, freezeChance: 8 } },
-      { need: 5, text: '受击时释放玄冰冰环，冻结周围敌人', stats: { skillDmg: 25 }, flag: 'frostBurst' }
-    ]
-  },
-  tianlei: {
-    id: 'tianlei', name: '天雷', cls: 'mage', color: '#b98cff',
-    pieces: ['天雷冠', '天雷法袍', '天雷云肩', '天雷手衣', '天雷云履', '天雷杖'],
+  xingque: {
+    id: 'xingque', name: '星阙', cls: 'mage', color: '#8f8bff',
+    pieces: ['星阙法冠', '星阙法袍', '星阙云肩', '星阙手衣', '星阙云履', '星阙神杖'],
     slots: ['helm', 'chest', 'shoulders', 'gloves', 'boots', 'weapon'],
     bonuses: [
-      { need: 2, text: '暴击率 +10%，技能伤害 +15%', stats: { crit: 10, skillDmg: 15 } },
-      { need: 3, text: '冷却缩减 +15%，伤害加成 +10%', stats: { cdr: 15, dmgAll: 10 } },
-      { need: 5, text: '普攻附带天雷，技能伤害 +20%', stats: { skillDmg: 20 }, flag: 'thunder' }
+      { need: 2, text: '技能伤害 +18%，范围伤害 +15%', stats: { skillDmg: 18, aoeDmg: 15 } },
+      {
+        need: 4, text: '火球术 / 冰霜新星 / 炎爆术范围 +30%，技能消耗 -12%',
+        skillMods: { fireball: { radius: 30 }, frostnova: { radius: 30 }, meteor: { radius: 30 } },
+        stats: { costReduce: 12 }
+      },
+      {
+        need: 6, text: '陨星天火陨星 +8 颗，冰霜新星命中的敌人被冻结 1.2 秒',
+        skillMods: { starfall: { count: 8 } }, flag: 'novaFreeze'
+      }
     ]
   },
-  qingmu: {
-    id: 'qingmu', name: '青木', cls: 'taoist', color: '#7ee0a0',
-    pieces: ['青木冠', '青木道袍', '青木云肩', '青木手衣', '青木云履'],
-    slots: ['helm', 'chest', 'shoulders', 'gloves', 'boots'],
-    bonuses: [
-      { need: 2, text: '生命上限 +15%，治疗效果 +20%', stats: { hpPct: 15, healBonus: 20 } },
-      { need: 3, text: '召唤物伤害 +40%，灵力上限 +10%', stats: { summonDmg: 40, mpPct: 10 } },
-      { need: 5, text: '回春咒变为群体治疗并附加护盾', stats: { healBonus: 20 }, flag: 'groupheal' }
-    ]
-  },
-  zifu: {
-    id: 'zifu', name: '紫府', cls: 'taoist', color: '#c8a0ff',
-    pieces: ['紫府冠', '紫府道袍', '紫府云肩', '紫府手衣', '紫府云履', '紫府符剑'],
+  qingfu: {
+    id: 'qingfu', name: '青符', cls: 'taoist', color: '#5ce0b0',
+    pieces: ['青符道冠', '青符道袍', '青符云肩', '青符手衣', '青符云履', '青符符剑'],
     slots: ['helm', 'chest', 'shoulders', 'gloves', 'boots', 'weapon'],
     bonuses: [
-      { need: 2, text: '召唤物伤害 +25%，技能伤害 +12%', stats: { summonDmg: 25, skillDmg: 12 } },
-      { need: 3, text: '持续伤害 +30%，灵力回复 +6/秒', stats: { dotDmg: 30, mpReg: 6 } },
-      { need: 5, text: '技能有 15% 概率不进入冷却', stats: { skillDmg: 20 }, flag: 'echo' }
-    ]
-  },
-  shanhai: {
-    id: 'shanhai', name: '山海', cls: null, color: '#6ad8c0',
-    pieces: ['山海盔', '山海战甲', '山海护肩', '山海战靴', '山海护符', '山海令'],
-    slots: ['helm', 'chest', 'shoulders', 'boots', 'amulet', 'offhand'],
-    bonuses: [
-      { need: 2, text: '奇遇机缘 +20%，金币获取 +20%', stats: { magicFind: 20, goldFind: 20 } },
-      { need: 3, text: '经验获取 +15%，掉落数量 +10%', stats: { expGain: 15, dropRate: 10 } },
-      { need: 5, text: '全元素抗性 +15%，玄晶掉落提升，拾取范围扩大', stats: { allRes: 15, hpPct: 10, pickupRadius: 2 }, flag: 'seeker' }
+      { need: 2, text: '召唤物伤害 +35%，持续伤害 +20%', stats: { summonDmg: 35, dotDmg: 20 } },
+      {
+        need: 4, text: '蚀骨毒雾范围 +30%、持续 +3 秒，回春咒治疗 +30%',
+        skillMods: { poison: { radius: 30, dur: 3 }, heal: { dmg: 30 } }
+      },
+      {
+        need: 6, text: '灵狼继承攻击力 60% → 90%，万剑归宗符剑 +6 道',
+        skillMods: { swordrain: { count: 6 } }, special: 'wolfPrime'
+      }
     ]
   }
+};
+
+/* 套装专属词条（v1.1.9）：套装件生成时保证至少滚出 1 条本职业标志词条，
+ * 让「词条贴合职业」对套装也成立（普通装备靠 affixPool 过滤已经够贴合，
+ * 套装作为职业终极目标，再加一层保底）。
+ * 取值必须在 affixPool(cls, slot) 里合法，生成时会自动按池子过滤。 */
+const SET_SIG = {
+  warrior: ['atkPct', 'meleeDmg', 'aspd', 'critDmg', 'knockback', 'str'],
+  mage: ['skillDmg', 'aoeDmg', 'projDmg', 'crit', 'cdr', 'int'],
+  taoist: ['summonDmg', 'dotDmg', 'skillDmg', 'mpReg', 'healBonus', 'int']
 };
 
 /* ---------------- 符文 ----------------

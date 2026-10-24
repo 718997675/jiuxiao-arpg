@@ -1353,6 +1353,8 @@ const Game = {
     const spow = smod ? 1 + (smod.dmg || 0) / 100 : 1;
     const srad = smod ? 1 + (smod.radius || 0) / 100 : 1;
     const sextra = smod ? (smod.count || 0) : 0;
+    /* v1.1.9：技能持续时长修正（青符 4 件：毒雾 +3 秒） */
+    const sdur = smod ? (smod.dur || 0) : 0;
     /* [S1] 技能消耗降低；传世还能再减该技能的消耗 */
     const cost = Math.max(1, Math.round(this.skillCost(sk) * (1 - (smod && smod.cost ? smod.cost : 0) / 100)));
     if (s.mp < cost) { UI.log(s.cls === 'warrior' ? '怒气不足' : '灵力不足'); SFX.ui(); return; }
@@ -1406,7 +1408,8 @@ const Game = {
       }
       case 'thrust': {
         this.actor.atkAnim = 1; this.actor.atkType = 'swing'; this.actor.atkSpeed = 2.9;
-        this.dashT = 0.22; this.invuln = 0.3; this.lastMoveDir = { x: dir.x, z: dir.z };
+        /* 龙骧 4 件：突进距离 +30%（冲刺时长等比延长） */
+        this.dashT = 0.22 * (st.flags.longDash ? 1.3 : 1); this.invuln = 0.3; this.lastMoveDir = { x: dir.x, z: dir.z };
         SFX.fire(); SFX.swing();
         this.shake = 0.3;
         const start = pp.clone();
@@ -1415,8 +1418,13 @@ const Game = {
           const p2 = this.playerGroup.position;
           const hits = this.enemies.filter(e => !e.dead && DIST2D(e.pos, p2) < 3.4 + e.radius);
           for (const e of hits) {
-            const { dmg, crit } = this.rollDamage(st.atk * 2.6);
+            const { dmg, crit } = this.rollDamage(st.atk * 2.6 * spow);
             this.damageEnemy(e, dmg, crit, { knock: 2.2 });
+          }
+          /* 龙骧 6 件：突进命中 3 名敌人立刻刷新突进冷却 —— 冲撞连招的核心 */
+          if (hits.length >= 3 && st.specials && st.specials.chargeReset) {
+            this.cooldowns.thrust = 0;
+            FX.text(new THREE.Vector3(p2.x, 2.6, p2.z), '冲撞重置', 'info', { life: 0.9 });
           }
           FX.flashCircle(p2, 3.4, 0xff7a30, 0.3);
           FX.burst(new THREE.Vector3(p2.x, 1, p2.z), 0xff7a30, 22, { speed: 8, size: 0.12, life: 0.5, additive: true });
@@ -1461,7 +1469,7 @@ const Game = {
         SFX.boss(); this.shake = 0.8; this.hitstop = 120;
         const hits = this.enemies.filter(e => !e.dead && DIST2D(e.pos, pp) < 9 + e.radius);
         for (const e of hits) {
-          const { dmg, crit } = this.rollDamage(st.atk * 6.5);
+          const { dmg, crit } = this.rollDamage(st.atk * 6.5 * spow);
           this.damageEnemy(e, dmg, crit, { knock: 3 });
         }
         this.addBuff(sk.name, Object.assign({}, sk.buff), 0xffd166, { type: 'buff', icon: sk.glyph, key: 'skill:avatar', refresh: true });
@@ -1496,6 +1504,8 @@ const Game = {
           const { dmg, crit } = this.rollDamage(st.atk * 2.2 * spow);
           this.damageEnemy(e, dmg, crit, {});
           e.slow = 0.45; e.slowT = 3.5;
+          /* 星阙 6 件：冰霜新星命中的敌人被冻结 1.2 秒 */
+          if (st.flags.novaFreeze) { e.slow = 1; e.slowT = Math.max(e.slowT, 1.2); }
         }
         FX.ring(cp, 6 * srad, 0x8ad8ff, 0.7, 0.3);
         FX.flashCircle(cp, 6 * srad, 0x8ad8ff, 0.45);
@@ -1576,7 +1586,8 @@ const Game = {
           const off = new THREE.Vector3(RND(-9, 9), 0, RND(-9, 9));
           const t = center.clone().add(off);
           this.explodeAt(t, 3.2, st.atk * 1.6, 0xff7a30, false, true);
-          if (n > 16) clearInterval(iv);
+          /* 星阙 6 件：陨星 +8 颗（count 修正） */
+          if (n > 16 + sextra) clearInterval(iv);
         }, 220);
         break;
       }
@@ -1635,7 +1646,10 @@ const Game = {
         this.actor.atkAnim = 1; this.actor.atkType = 'cast';
         SFX.cast();
         const c = aim.clone();
-        FX.area(c, 5, 0x2f9a3c, 6, { opacity: 0.3 });
+        /* 青符 4 件：蚀骨毒雾范围 +30%、持续 +3 秒 */
+        const prad = 5 * srad;
+        const pdur = 6 + sdur;
+        FX.area(c, prad, 0x2f9a3c, pdur, { opacity: 0.3 });
         let ticks = 0;
         const gen = this.mapGen;
         const iv = setInterval(() => {
@@ -1643,13 +1657,13 @@ const Game = {
           ticks++;
           for (const e of this.enemies) {
             if (e.dead) continue;
-            if (DIST2D(e.pos, c) < 5 + e.radius) {
+            if (DIST2D(e.pos, c) < prad + e.radius) {
               const { dmg } = this.rollDamage(st.atk * 0.75 * spow);
               this.damageEnemy(e, dmg, false, { silent: true, elem: 'poison' });
             }
           }
-          FX.burst(new THREE.Vector3(c.x + RND(-4, 4), 0.3, c.z + RND(-4, 4)), 0x7fbf5a, 4, { speed: 1.4, size: 0.16, life: 1.2, gravity: -0.5 });
-          if (ticks > 7) clearInterval(iv);
+          FX.burst(new THREE.Vector3(c.x + RND(-prad + 1, prad - 1), 0.3, c.z + RND(-prad + 1, prad - 1)), 0x7fbf5a, 4, { speed: 1.4, size: 0.16, life: 1.2, gravity: -0.5 });
+          if (ticks >= Math.ceil(pdur / 0.8)) clearInterval(iv);
         }, 800);
         break;
       }
@@ -2432,11 +2446,13 @@ const Game = {
     const a = buildMonster('beast', { scale: 0.9, color: 0x8affc0, cloth: 0x3a6a50 });
     a.group.position.copy(this.playerGroup.position);
     this.scene.add(a.group);
+    /* 青符 6 件：灵狼继承攻击力 60% → 90%，召唤流质变 */
+    const inherit = (st.specials && st.specials.wolfPrime) ? 0.9 : 0.6;
     this.allies.push({
       actor: a, pos: a.group.position.clone(), life: 25, atkCd: 0,
-      dmg: st.atk * 0.6 * (1 + st.summonDmg / 100)
+      dmg: st.atk * inherit * (1 + st.summonDmg / 100)
     });
-    UI.log('灵狼应召而来');
+    UI.log(inherit > 0.6 ? '灵狼应召而来（继承 90% 攻击力）' : '灵狼应召而来');
   },
 
   updateAllies(dt) {
