@@ -240,11 +240,43 @@ const bad = m => { results.push(0); console.log('  [FAIL] ' + m); };
   const bound = slotNames.filter(k => !new RegExp(`\\.eslot\\[data-slot="${k}"\\]\\{grid-area:`).test(css));
   if (!bound.length) ok('12 个槽位都绑定了 grid-area（不依赖 DOM 顺序落位）');
   else bad('槽位未绑定落位：' + bound.join(','));
-  /* 触屏三列版也要有自己的 areas，否则 6 列模板塞进 3 列会错位 */
-  const touchAreas = (css.match(/body\.touch \.doll-grid\{[^}]*grid-template-areas:([\s\S]*?)\}/) || [])[1] || '';
-  const touchLack = need.filter(k => !new RegExp(`\\b${k}\\b`).test(touchAreas));
-  if (!touchLack.length) ok('触屏三列版也单独声明了 areas（12 槽全覆盖）');
-  else bad('触屏布局缺槽位：' + touchLack.join(','));
+  /* 触屏沿用桌面那套 6 列落位。此前触屏单独写三列版，兵器被拆成上下两条通栏，
+   * 不像「左右手」；这里拦住任何又给触屏单独改列宽 / 落位的写法。 */
+  const touchBlock = (css.match(/body\.touch \.doll-grid\{[^}]*\}/) || [])[0] || '';
+  const touchRecols = /grid-template-columns/.test(touchBlock);
+  const touchReareas = /grid-template-areas/.test(touchBlock);
+  if (!touchRecols && !touchReareas) ok('触屏沿用桌面同一套 6 列落位（兵器与副手底部左右并排）');
+  else bad('触屏又单独改了纸娃娃列宽 / 落位：' + touchBlock.replace(/\s+/g, ' ').slice(0, 90));
+
+  /* ---------------- 触屏实测：兵器与副手一左一右 ---------------- */
+  const mp = await browser.newPage();
+  await mp.setViewport({ width: 390, height: 780, isMobile: true, hasTouch: true, deviceScaleFactor: 2 });
+  await mp.goto(`http://127.0.0.1:${PORT}/index.html?cls=warrior&diff=normal&name=%E8%A7%A6%E5%B1%8F`,
+    { waitUntil: 'networkidle2', timeout: 45000 });
+  await new Promise(r => setTimeout(r, 3000));
+  const mob = await mp.evaluate(() => {
+    Game.state.level = 40; Game.recalc();
+    UI.invTab = 'equip'; UI.toggleInv();
+    const g = s => {
+      const e = document.querySelector(`#dollGrid .eslot[data-slot="${s}"]`);
+      if (!e) return null;
+      const b = e.getBoundingClientRect();
+      return { l: Math.round(b.left), r: Math.round(b.right), t: Math.round(b.top), w: Math.round(b.width) };
+    };
+    const cols = getComputedStyle(document.getElementById('dollGrid')).gridTemplateColumns.split(/\s+/).length;
+    return { touch: document.body.classList.contains('touch'), cols, weapon: g('weapon'), offhand: g('offhand') };
+  });
+  await mp.close();
+
+  if (mob.touch && mob.cols === 6) ok('触屏纸娃娃按 6 列渲染（与桌面同构）');
+  else bad('触屏纸娃娃列数异常：' + JSON.stringify([mob.touch, mob.cols]));
+  const sameRow = mob.weapon && mob.offhand && Math.abs(mob.weapon.t - mob.offhand.t) <= 2;
+  const leftRight = mob.weapon && mob.offhand && mob.weapon.r <= mob.offhand.l + 2;
+  const balanced = mob.weapon && mob.offhand && Math.abs(mob.weapon.w - mob.offhand.w) <= 3;
+  if (sameRow && leftRight) ok('触屏兵器在左、副手在右，同一行并排（不再上下两条通栏）');
+  else bad('触屏兵器落位异常：' + JSON.stringify([mob.weapon, mob.offhand]));
+  if (balanced) ok('触屏兵器与副手等宽（各占三列，左右对称）');
+  else bad('触屏兵器/副手宽度不等：' + JSON.stringify([mob.weapon, mob.offhand]));
 
   /* ---------------- 收尾 ---------------- */
   const jsErrors = errors.filter(e => !/favicon|WebGL|Failed to load/i.test(e));

@@ -256,7 +256,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   else bad('容量文案异常：' + u0.capText);
   if (u0.btn.trim() === '扩 容' && u0.btnVisible) ok('容量旁有可点的「扩容」入口');
   else bad('扩容入口异常：' + JSON.stringify([u0.btn, u0.btnVisible]));
-  if (u0.cells === 16) ok('未扩容时按需只铺 16 格（两行），不白占高度');
+  if (u0.cells === 40) ok('未扩容时铺满 40 格（格子数 = 容量，右列不留白）');
   else bad('未扩容格子数异常：' + u0.cells);
   if (u0.barHidden) ok('扩容条默认收起');
   else bad('扩容条默认就展开了');

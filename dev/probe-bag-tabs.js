@@ -87,11 +87,33 @@ const bad = m => { results.push(0); console.log('  [FAIL] ' + m); };
     out.gridShown = document.getElementById('invGrid').style.display !== 'none';
     out.matsShown = document.getElementById('invMats').style.display !== 'none';
     out.sortShown = document.getElementById('invSort').style.display !== 'none';
-    /* 详细属性 */
+    /* 详细属性（v1.5.0：搬进左列装备栏下方，常驻） */
     out.statGroups = document.querySelectorAll('#invStats .st-grp').length;
     out.statRows = document.querySelectorAll('#invStats > div').length;
     out.statHasAtk = /攻击力/.test(document.getElementById('invStats').textContent);
     out.statShown = document.getElementById('invStats').style.display !== 'none';
+    /* 左列装备栏 = 标题 + 纸娃娃 + 属性 */
+    const dollEl = document.querySelector('#invPanel .doll');
+    out.dollTitle = (document.querySelector('#invPanel .doll-title') || {}).textContent || '';
+    out.statInDoll = !!(dollEl && dollEl.contains(document.getElementById('invStats')));
+    const rb = el => el.getBoundingClientRect();
+    const gridBox = rb(document.getElementById('dollGrid'));
+    const statBox = rb(document.getElementById('invStats'));
+    out.statBelowGrid = statBox.top >= gridBox.bottom - 2;
+    out.statOverflowCss = getComputedStyle(document.getElementById('invStats')).overflowY === 'auto';
+    /* 属性会随装备增长，验证真溢出时能滚：临时塞 60 行再还原 */
+    const stEl = document.getElementById('invStats');
+    const keepHtml = stEl.innerHTML;
+    stEl.innerHTML = Array.from({ length: 60 }, (_, i) => `<div><span>占位${i}</span><b>1</b></div>`).join('');
+    out.statCanScroll = stEl.scrollHeight > stEl.clientHeight + 4;
+    stEl.innerHTML = keepHtml;
+    /* 左列在右列左侧，且右列不含属性 */
+    const mainBox = rb(document.querySelector('#invPanel .inv-main'));
+    out.dollLeftOfMain = gridBox.right <= mainBox.left + 2;
+    out.statNotInMain = !document.querySelector('#invPanel .inv-main #invStats');
+    /* 两列都不该有「空半屏」：左列到底部、右列也到底部 */
+    const pbBox = rb(document.querySelector('#invPanel .pb'));
+    out.dollFillsHeight = Math.abs(statBox.bottom - (pbBox.bottom - 14)) <= 10;
 
     /* 材料栏 */
     tabs.find(b => b.dataset.tab === 'mat').click();
@@ -99,7 +121,7 @@ const bad = m => { results.push(0); console.log('  [FAIL] ' + m); };
       name: r.querySelector('.mn b').textContent, n: r.querySelector('.mt').textContent
     }));
     out.matGridHidden = document.getElementById('invGrid').style.display === 'none';
-    out.matStatsHidden = document.getElementById('invStats').style.display === 'none';
+    out.matStatsStill = document.getElementById('invStats').style.display !== 'none';
     out.matCap = document.getElementById('invCap').textContent;
 
     /* 丹药栏 */
@@ -133,8 +155,8 @@ const bad = m => { results.push(0); console.log('  [FAIL] ' + m); };
     else bad('默认栏位异常：' + t1.defaultOn);
     if (t1.sortShown) ok('装备栏显示排序 / 分解 / 图鉴条');
     else bad('装备栏排序条缺失');
-    if (t1.matGridHidden && t1.matStatsHidden) ok('切到材料栏只换右侧内容，装备格与详细属性收起');
-    else bad('材料栏布局异常：gridHidden=' + t1.matGridHidden + ' statsHidden=' + t1.matStatsHidden);
+    if (t1.matGridHidden && t1.matStatsStill) ok('切到材料栏只换右侧内容，左列装备栏与属性常驻');
+    else bad('材料栏布局异常：gridHidden=' + t1.matGridHidden + ' statsStill=' + t1.matStatsStill);
     if (t1.matRows.length === 6) ok('材料栏列出玄晶四阶 + 手中的 2 种符文（共 6 行）');
     else bad('材料行数异常：' + t1.matRows.length + ' → ' + JSON.stringify(t1.matRows));
     const c3 = t1.matRows.find(r => /玄晶/.test(r.name));
@@ -154,8 +176,16 @@ const bad = m => { results.push(0); console.log('  [FAIL] ' + m); };
     else bad('任务物品栏头异常：' + t1.questCap);
     if (t1.questEmpty) ok('无委托完成时给出空态文案');
     else bad('任务物品空态缺失');
-    if (t1.statGroups >= 3 && t1.statRows >= 15 && t1.statHasAtk) ok(`装备栏底部展示人物详细属性（${t1.statGroups} 组 / ${t1.statRows} 条，与属性面板同源）`);
+    if (t1.statGroups >= 3 && t1.statRows >= 15 && t1.statHasAtk) ok(`左列装备栏下方常驻人物属性（${t1.statGroups} 组 / ${t1.statRows} 条，与属性面板同源）`);
     else bad('详细属性异常：groups=' + t1.statGroups + ' rows=' + t1.statRows);
+    if (/装备栏/.test(t1.dollTitle.replace(/\s/g, ''))) ok('左列标题已改为「装备栏」');
+    else bad('左列标题异常：' + t1.dollTitle);
+    if (t1.statInDoll && t1.statBelowGrid && t1.dollFillsHeight) ok('属性区在纸娃娃下方，且垫到面板底部（不留空）');
+    else bad('属性落位异常：' + JSON.stringify([t1.statInDoll, t1.statBelowGrid, t1.dollFillsHeight]));
+    if (t1.statOverflowCss && t1.statCanScroll) ok('属性超出左列高度时自行滚动（溢出后可滚 60 行）');
+    else bad('属性区滚动异常：' + JSON.stringify([t1.statOverflowCss, t1.statCanScroll]));
+    if (t1.dollLeftOfMain && t1.statNotInMain) ok('左装备栏 / 右背包两列分治，属性只出现在左侧');
+    else bad('两列布局异常：' + JSON.stringify([t1.dollLeftOfMain, t1.statNotInMain]));
   }
 
   /* ---------------- 二、兵器握持 ---------------- */

@@ -603,18 +603,29 @@ const UI = {
     const upBtn = document.getElementById('invUpBtn');
     if (upBtn) upBtn.style.display = tab === 'equip' ? '' : 'none';
     document.querySelectorAll('#invTabs .itab').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
+    /* 提示行跟着栏位换口径：材料栏还写「左键装备」会让人误解 */
+    const tip = document.getElementById('invTip');
+    if (tip) {
+      const TIPS = {
+        equip: '左键装备 · Shift+左键出售 · 格子大小随部位',
+        mat: '玄晶用于炼器与洗练 · 符文用于镶嵌',
+        pill: '点一行即服用 · 战斗中亦可',
+        quest: '委托完成即生成凭证 · 不占行囊格位'
+      };
+      tip.textContent = TIPS[tab] || TIPS.equip;
+    }
     const g = document.getElementById('invGrid');
     const mp = document.getElementById('invMats');
-    const stats = document.getElementById('invStats');
     const jb = document.getElementById('invJunkBar');
     const line = document.getElementById('setLine');
     if (g) g.style.display = tab === 'equip' ? '' : 'none';
     if (mp) mp.style.display = tab === 'equip' ? 'none' : '';
-    if (stats) stats.style.display = tab === 'equip' ? '' : 'none';
     if (line) line.style.display = tab === 'equip' ? '' : 'none';
     if (jb && tab !== 'equip') { jb.style.display = 'none'; jb.innerHTML = ''; }
     const ub = document.getElementById('invUpBar');
     if (ub && tab !== 'equip') { ub.style.display = 'none'; ub.innerHTML = ''; }
+    /* 角色属性是左列常驻内容（v1.5.0）：切任何栏位都照旧显示，不跟着栏位收起 */
+    this.renderDollStats();
     if (tab === 'equip') this.renderEquipGrid();
     else this.renderMatTab(tab);
     this.renderTabBadges();
@@ -665,7 +676,8 @@ const UI = {
     }).join('');
   },
 
-  /* 纸娃娃下方：人物详细属性（与属性面板同源，两列 + 分组标题，超长自己滚） */
+  /* 左列下半：角色属性（v1.5.0 常驻）。与属性面板同源，分组照搬，
+   * 两列排布；超出左列可用高度时由 CSS 的 overflow-y 接管滚动 */
   renderDollStats() {
     const el = document.getElementById('invStats');
     if (!el) return;
@@ -675,14 +687,12 @@ const UI = {
     ).join('');
   },
 
-  /* 装备栏：格子 + 一键分解条 + 套装行 + 人物详细属性 */
+  /* 装备栏右侧：格子 + 一键分解条 + 套装行（属性在左列，不在这里） */
   renderEquipGrid() {
     const s = Game.state;
     const inv = s.inventory;
     const cap = Game.bagCap();
     document.getElementById('invCap').textContent = `${inv.length} / ${cap}`;
-    /* 扩容后直接把新容量整行铺出来，玩家一眼看到多出的空位；
-     * 未扩容时仍按「用得到就够」渲染，省下的高度留给详细属性。 */
     const up = document.getElementById('invUpBtn');
     if (up) {
       const full = !bagNextUpgrade(cap);
@@ -691,9 +701,9 @@ const UI = {
       up.title = full ? `行囊已扩至极限 ${cap} 格` : `扩容行囊（当前 ${cap} 格）`;
     }
     const ig = document.getElementById('invGrid');
-    const rowsByItems = Math.ceil((inv.length + 1) / 8) * 8;
-    const base = cap > BAG_BASE_CAP ? Math.ceil(cap / 8) * 8 : 16;
-    const need = Math.min(cap, Math.max(base, rowsByItems));
+    /* 格子数 = 容量：行囊一眼就能读出「还能装多少」，也把右列铺满。
+     * 之前只铺 16 格，右列下半截全空，看着像界面没做完（v1.5.0 改）。 */
+    const need = cap;
     let html = '';
     for (let i = 0; i < need; i++) {
       const it = inv[i];
@@ -727,20 +737,38 @@ const UI = {
 
     this.renderBagUpgradeBar();
 
+    /* 右列底部：行囊概览 + 套装卡（v1.5.0）
+     * 格子数按容量铺，40 格时代只有 5 行，填不满右列；剩下的高度由这张卡吃掉，
+     * 卡片自己带边框，看起来是「一块信息区」而不是面板没做完留的白。 */
     const st = s.stats;
     const sets = Object.keys(st.setCount).filter(k => st.setCount[k] >= 2);
     const line = document.getElementById('setLine');
     if (line) {
-      if (sets.length) {
-        line.innerHTML = sets.map(id => {
-          const set = SETS[id], n = st.setCount[id];
-          const active = set.bonuses.filter(b => n >= b.need).map(b => b.text).join('；');
-          return `<div style="color:${set.color}">【${set.name}】${n}/${set.pieces.length}　<span style="color:#9ad0a8">${active}</span></div>`;
-        }).join('');
-      } else line.innerHTML = '<span style="color:#6a6458">集齐套装可获得额外之力（绿色边框为套装部件）</span>';
+      const used = inv.length, pct = cap ? Math.min(100, Math.round(used / cap * 100)) : 0;
+      /* 品质分布：只列手里真有的品质，按稀有度从低到高排 */
+      const rk = Object.keys(RARITY);
+      const cnt = {};
+      inv.forEach(it => { cnt[it.rarity] = (cnt[it.rarity] || 0) + 1; });
+      const q = rk.filter(k => cnt[k]).map(k =>
+        `<span style="color:${RARITY[k].color}">${RARITY[k].name} ${cnt[k]}</span>`).join('');
+      const setBody = sets.length
+        ? sets.map(id => {
+            const set = SETS[id], n = st.setCount[id];
+            const active = set.bonuses.filter(b => n >= b.need).map(b => b.text).join('；');
+            return `<div class="ft-set"><span class="ft-nm" style="color:${set.color}">【${set.name}】${n}/${set.pieces.length}</span>
+              <div class="ft-on">${active || '再集一件可激活下一档'}</div></div>`;
+          }).join('')
+        : `<div class="ft-empty">集齐同套 2 件起生效，绿色边框的装备即为套装部件。</div>`;
+      line.innerHTML = `
+        <div class="ft-h"><b>行 囊 概 览</b><i>${used} / ${cap} 格</i></div>
+        <div class="ft-bar"><i style="width:${pct}%"></i></div>
+        <div class="ft-q">${q || '<span style="color:#5e594e">空无一物</span>'}</div>
+        <div class="ft-sec"><b style="font-family:'STKaiti','KaiTi',serif;font-weight:500;font-size:11.5px;letter-spacing:3px;color:#c9a86a">套 装 之 力</b>
+          <i style="font-style:normal;font-size:9.5px;color:#5e594e">${sets.length ? sets.length + ' 套生效中' : '尚未成势'}</i></div>
+        ${setBody}
+        <div class="ft-tips"><span>左键 穿戴 / 卸下</span><span>Shift+左键 出售</span>
+          <span>一键分解 凡品→玄晶</span><span>扩容永久生效</span></div>`;
     }
-    /* 人物详细属性：分组照搬属性面板，三列排布 */
-    this.renderDollStats();
   },
 
   /* 材料 / 丹药 / 任务物品：三栏共用一套「图标 + 名称 + 数量」行 */

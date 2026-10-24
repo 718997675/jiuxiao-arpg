@@ -163,11 +163,19 @@
   .ph .x:hover{color:#fff}
   .pb{padding:14px}
 
-  /* 背包 */
-  #invPanel{left:50%;top:50%;transform:translate(-50%,-50%);width:760px;max-height:88vh}
-  .inv-wrap{display:flex;gap:16px}
-  .doll{width:296px;flex:none}
+  /* 背包：左列装备栏（纸娃娃 + 角色属性，常驻且自己滚），右列行囊与其他栏位 */
+  #invPanel{left:50%;top:50%;transform:translate(-50%,-50%);width:892px;max-height:88vh;
+    display:flex;flex-direction:column}
+  /* 高度钉死，两列各自滚动；不钉死的话左列属性会把面板一路撑高 */
+  #invPanel .pb{height:calc(88vh - 44px);max-height:none;overflow:hidden}
+  .inv-wrap{display:flex;gap:14px;min-height:0}
+  .doll{width:300px;flex:none;display:flex;flex-direction:column;min-height:0}
   .doll-title{font-size:11px;color:var(--dim);letter-spacing:2px;margin-bottom:6px;text-align:center}
+  /* 左列分隔条：上面是装备位，下面是常驻属性 */
+  .doll-head{display:flex;align-items:baseline;justify-content:space-between;gap:8px;
+    margin:9px 0 3px;padding-top:7px;border-top:1px solid rgba(216,178,90,.16)}
+  .doll-head span{font-family:"STKaiti","KaiTi",serif;font-size:11.5px;letter-spacing:3px;color:#c9a86a}
+  .doll-head i{font-style:normal;font-size:9px;color:#5e594e;letter-spacing:.5px}
   /* 纸娃娃：按身体方向排（v1.3.0 参考暗黑 3）
    *   头在中上 → 左右肩（左上护肩 / 右上副手）→ 胸甲占中两行 →
    *   手腰一排 → 战靴在下 → 最底一条长格放兵器。
@@ -257,7 +265,7 @@
   .eslot[data-size="sm"] .it-ico{width:22px;height:22px}
   .islot .it-ico{width:30px;height:30px}
   .shoprow .it-ico{width:26px;height:26px}
-  .inv-main{flex:1;min-width:0}
+  .inv-main{flex:1;min-width:0;display:flex;flex-direction:column;min-height:0}
   .inv-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;gap:8px}
   .inv-top .cap{font-size:11px;color:var(--dim);letter-spacing:1px}
   /* 排序条（v1.0.4） */
@@ -464,7 +472,8 @@
   .sd-barhint{font-size:9.5px;color:#6a6458;letter-spacing:0;line-height:1.5}
   .sd-vars{display:flex;gap:6px;margin-bottom:6px}
   .sd-vname{font-size:10px;color:#7a7466;line-height:1.65}
-  .igrid{display:grid;grid-template-columns:repeat(8,1fr);gap:6px}
+  .igrid{display:grid;grid-template-columns:repeat(8,1fr);gap:6px;
+    flex:0 1 auto;min-height:0;overflow-y:auto;overflow-x:hidden;align-content:start;padding-right:2px}
   /* 行囊格子同样按部位分档（v1.2.3）：轨道保持等宽等距，格子里的小方块按档位缩放，
    * 于是护甲/兵器占满、饰品只占六成 —— 索引映射不变，只改视觉体量。 */
   .islot{width:100%;aspect-ratio:1;place-self:center;
@@ -497,7 +506,7 @@
   .itab.on i{color:rgba(26,21,16,.55)}
 
   /* 材料 / 丹药 / 任务物品列表 */
-  .matlist{display:flex;flex-direction:column;gap:4px;max-height:290px;overflow-y:auto;padding-right:2px}
+  .matlist{display:flex;flex-direction:column;gap:4px;flex:1;min-height:0;overflow-y:auto;padding-right:2px}
   .matrow{display:flex;align-items:center;gap:9px;padding:5px 8px;cursor:default;
     background:linear-gradient(90deg,rgba(38,34,28,.6),rgba(0,0,0,.35));border:1px solid rgba(255,255,255,.08);
     border-left:2px solid var(--mc,#8a8175);transition:.12s}
@@ -516,14 +525,39 @@
   .mat-empty{padding:26px 0;text-align:center;font-size:12px;color:#6a6458;line-height:2}
   .mat-empty span{font-size:10.5px;color:#4e4a42}
 
-  /* 装备栏底部：人物详细属性（三列，超长自己滚） */
-  .inv-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:2px 16px;margin-top:9px;padding-top:7px;
-    border-top:1px solid rgba(255,255,255,.07);font-size:11px;color:#b8b0a0}
+  /* 左列下半：角色属性（常驻，超出左列高度自己滚）
+   * 两列排布 —— 左列只有 300px，三列会把「暴击伤害 128%」挤断行 */
+  .inv-stats{display:grid;grid-template-columns:repeat(2,1fr);gap:1px 12px;font-size:11px;color:#b8b0a0;
+    flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;align-content:start;
+    /* min-content：不给行高上限，内容多了才溢出滚动；用 auto 会被压成一条条细线 */
+    grid-auto-rows:min-content;padding-right:4px}
   .inv-stats .st-grp{grid-column:1/-1;color:#c9a86a;font-size:10px;letter-spacing:3px;margin-top:5px;padding-bottom:2px;
     border-bottom:1px solid rgba(201,168,106,.22)}
   .inv-stats>div{display:flex;justify-content:space-between;gap:6px;padding:1px 0;white-space:nowrap;overflow:hidden}
   .inv-stats b{color:#f0e0b8;font-weight:500}
-  #invPanel .pb{max-height:calc(88vh - 48px);overflow-y:auto;overflow-x:hidden}
+  /* 套装卡压到右列最底部：格子满不了的高度由它吃掉，视觉上有收尾不会空一块 */
+  .inv-foot{flex:1 1 auto;min-height:58px;max-height:236px;overflow-y:auto;margin-top:8px;padding:9px 11px;
+    border:1px solid rgba(216,178,90,.16);border-top-color:rgba(216,178,90,.3);
+    background:linear-gradient(180deg,rgba(32,27,20,.55),rgba(14,13,10,.35));
+    font-size:10.5px;color:#8a8474;letter-spacing:.3px;line-height:1.6}
+  .inv-foot .ft-h{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin-bottom:5px}
+  .inv-foot .ft-h b{font-family:"STKaiti","KaiTi",serif;font-size:11.5px;font-weight:500;letter-spacing:3px;color:#c9a86a}
+  .inv-foot .ft-h i{font-style:normal;font-size:9.5px;color:#5e594e;letter-spacing:0}
+  .inv-foot .ft-set{margin-bottom:5px}
+  .inv-foot .ft-set .ft-nm{letter-spacing:1px}
+  .inv-foot .ft-set .ft-on{color:#9ad0a8}
+  .inv-foot .ft-empty{color:#6a6458;margin-bottom:6px}
+  /* 容量进度条 */
+  .inv-foot .ft-bar{height:4px;background:rgba(0,0,0,.5);border:1px solid rgba(255,255,255,.07);
+    margin:0 0 6px;overflow:hidden}
+  .inv-foot .ft-bar i{display:block;height:100%;background:linear-gradient(90deg,#8a6a2a,#e0c070)}
+  .inv-foot .ft-q{display:flex;flex-wrap:wrap;gap:2px 10px;margin-bottom:7px}
+  .inv-foot .ft-q span{font-variant-numeric:tabular-nums}
+  .inv-foot .ft-sec{display:flex;align-items:baseline;justify-content:space-between;gap:8px;
+    margin:7px 0 4px;padding-top:6px;border-top:1px dashed rgba(255,255,255,.07)}
+  .inv-foot .ft-tips{display:grid;grid-template-columns:1fr 1fr;gap:1px 14px;margin-top:7px;padding-top:6px;
+    border-top:1px dashed rgba(255,255,255,.07);font-size:10px;color:#5e594e}
+  .inv-foot .ft-tips span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .islot.r-magic{border-color:rgba(103,169,255,.45);box-shadow:inset 0 0 10px rgba(103,169,255,.12)}
   .islot.r-rare{border-color:rgba(255,200,87,.5);box-shadow:inset 0 0 10px rgba(255,200,87,.13)}
   .islot.r-legendary{border-color:rgba(255,122,60,.65);box-shadow:inset 0 0 12px rgba(255,122,60,.2)}
@@ -1002,7 +1036,10 @@
 
   /* ---- 触屏面板 ---- */
   body.touch .panel{max-height:84vh;max-height:84dvh;overflow:auto;-webkit-overflow-scrolling:touch;touch-action:auto}
-  body.touch #invPanel{width:min(760px,96vw);max-height:84vh;max-height:84dvh}
+  body.touch #invPanel{width:min(892px,96vw);max-height:84vh;max-height:84dvh}
+  /* 触屏不做「两列各自滚」：屏幕本来就矮，固定高度会把一边压成一条缝。
+   * 改成整面板滚动，装备栏与行囊都完整展开（.panel 已有 overflow:auto）。 */
+  body.touch #invPanel .pb{height:auto;max-height:none;overflow:visible}
   /* 手机上排序条压扁，别把格子挤成一行两个字 */
   body.touch .sortbar .sortlab{display:none}
   body.touch .sbtn{padding:4px 7px;font-size:10px;letter-spacing:0}
@@ -1034,17 +1071,14 @@
   body.touch .cmini{padding:8px 10px}
   body.touch #importText{height:64px;font-size:11px}
   body.touch .pb{padding:10px}
-  body.touch .doll{width:200px}
-  /* 触屏三列版落位：头中上 → 肩/胸/法器 → 手/腰 → 靴 → 兵器两条通栏 */
-  body.touch .doll-grid{grid-template-columns:repeat(3,1fr);gap:5px;
-    grid-template-areas:
-      ".       helm    ."
-      "shoulders chest relic"
-      "gloves  chest   amulet"
-      "ring1   belt    ring2"
-      ".       boots   ."
-      "weapon  weapon  weapon"
-      "offhand offhand offhand"}
+  /* 触屏沿用桌面那套 6 列落位：宽度等比缩小即可，武器与副手仍是底部一左一右各占三列。
+   * 早先用三列版把兵器拆成上下两条通栏，视觉上完全不像「左右手」，已废弃。 */
+  body.touch .doll{width:264px}
+  /* 触屏左列窄，属性改成单列，否则「暴击伤害 128%」被截断；整面板滚，不再单独限高 */
+  body.touch .inv-stats{grid-template-columns:1fr;font-size:10px;gap:0;flex:none;max-height:none;
+    overflow:visible}
+  body.touch .inv-stats>div{padding:0}
+  body.touch .doll-grid{gap:4px}
   /* 触屏下调小各档尺寸，但仍保留档位差（战甲/兵器撑满两行，饰品格最小） */
   body.touch .eslot[data-size="lg"]{height:44px}
   body.touch .eslot[data-size="md"]{height:36px}
@@ -1064,7 +1098,6 @@
   body.touch .islot[data-size="md"] .it-ico{width:19px;height:19px}
   body.touch .islot[data-size="sm"] .it-ico{width:15px;height:15px}
   body.touch .islot .slot-tag{display:none}
-  body.touch .inv-stats{display:none}
   body.touch .hintline{font-size:9.5px}
   body.touch .qlist{max-height:52dvh}
   body.touch .shoplist{max-height:44dvh}
@@ -1091,15 +1124,14 @@
 
   @media (orientation:portrait){
     body.touch .inv-wrap{flex-direction:column;gap:8px}
-    body.touch .doll{width:100%}
-    /* 竖屏纸娃娃仍旧三列；格子用 max-width 封顶，避免被拉成大扁块 */
-    body.touch .doll-grid{grid-template-columns:repeat(3,1fr)}
-    body.touch .eslot{max-width:78px}
-    body.touch .eslot[data-size="sm"]{max-width:58px}
-    body.touch .eslot[data-slot="ring1"],body.touch .eslot[data-slot="ring2"]{max-width:48px}
-    /* 兵器是横跨三列的长格，不吃上面的宽度上限；法器同样是横条格 */
-    body.touch .eslot[data-slot="weapon"],body.touch .eslot[data-slot="offhand"],
-    body.touch .eslot[data-slot="relic"]{max-width:none}
+    body.touch .doll{width:100%;flex:none}
+    /* 竖屏上下堆叠：装备栏在上、行囊在下，整面板一起滚 */
+    body.touch .inv-stats{flex:none;max-height:none;overflow:visible;grid-template-columns:repeat(2,1fr);gap:0 10px}
+    body.touch .inv-main{flex:none;min-height:0}
+    /* 竖屏纸娃娃同样是 6 列（与桌面一致），宽度铺满即可；
+     * 兵器与副手在底部一左一右各占三列，不再拆成上下两条通栏 */
+    body.touch .eslot{max-width:100%}
+    body.touch .eslot[data-slot="ring1"],body.touch .eslot[data-slot="ring2"]{max-width:52px}
     body.touch .igrid{grid-template-columns:repeat(8,minmax(0,1fr))}
     body.touch #toasts{top:220px;max-width:76vw}
     body.touch #log{top:70px!important}
@@ -1220,10 +1252,14 @@
 <div class="panel" id="invPanel">
   <div class="ph"><h3>行 囊</h3><span class="x" onclick="UI.closeAll()">✕</span></div>
   <div class="pb inv-wrap">
+    <!-- 左列：装备栏（纸娃娃 + 常驻角色属性） -->
     <div class="doll">
-      <div class="doll-title">纸 娃 娃</div>
+      <div class="doll-title">装 备 栏</div>
       <div class="doll-grid" id="dollGrid"></div>
+      <div class="doll-head"><span>角 色 属 性</span><i>滚轮查看全部</i></div>
+      <div class="inv-stats" id="invStats"></div>
     </div>
+    <!-- 右列：行囊 + 材料 / 丹药 / 任务物品 -->
     <div class="inv-main">
       <div class="inv-top"><span class="cap" id="invCap">0 / 40</span>
         <div class="sortbar" id="invSort">
@@ -1250,8 +1286,7 @@
       <div class="upbar" id="invUpBar" style="display:none"></div>
       <div class="igrid" id="invGrid"></div>
       <div class="matlist" id="invMats" style="display:none"></div>
-      <div class="hintline" id="setLine"></div>
-      <div class="inv-stats" id="invStats"></div>
+      <div class="inv-foot" id="setLine"></div>
     </div>
   </div>
 </div>
