@@ -183,6 +183,10 @@ const SaveManager = {
     if (!this._obj(d.stash.mats)) d.stash.mats = {};
     d.codex = this._obj(d.codex) || {};
     d.talents = this._obj(d.talents) || {};
+    /* S4 技能：等级 / 变体 / 技能条 5 格配置 */
+    d.skills = this._obj(d.skills) || {};
+    if (Array.isArray(d.skillbar)) d.skillbar = d.skillbar.slice(0, 5);
+    else d.skillbar = null;
     if (d.mount === undefined) d.mount = null;
     d.settings = this._obj(d.settings) || {};
 
@@ -243,6 +247,9 @@ const SaveManager = {
       shop: (s.shop && Array.isArray(s.shop.items)) ? s.shop : null,
       codex: this._obj(s.codex) || {},
       talents: this._obj(s.talents) || {},
+      /* S4：技能等级 / 变体 / 技能条 5 格（id 或 null） */
+      skills: this._obj(s.skills) || {},
+      skillbar: Array.isArray(s.skillbar) ? s.skillbar.slice(0, 5) : null,
       mount: s.mount === undefined ? null : s.mount,
       settings: this._obj(s.settings) || {}
     };
@@ -263,6 +270,8 @@ const SaveManager = {
       shop: (doc.shop && Array.isArray(doc.shop.items)) ? doc.shop : null,
       codex: doc.codex || {},
       talents: doc.talents || {},
+      skills: doc.skills || {},
+      skillbar: Array.isArray(doc.skillbar) ? doc.skillbar.slice(0, 5) : null,
       mount: doc.mount === undefined ? null : doc.mount,
       settings: doc.settings || {}
     };

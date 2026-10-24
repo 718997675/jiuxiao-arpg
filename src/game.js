@@ -195,13 +195,12 @@ const Game = {
       /* 输入框聚焦时不拦截游戏按键 */
       if (document.activeElement && document.activeElement.tagName === 'INPUT') return;
       /* repeat 的 keydown 不触发翻滚/技能/药水等动作，避免持续触发 */
-      if (e.repeat) return;
+    if (e.repeat) return;
       if (k === ' ') { this.tryDash(); e.preventDefault(); return; }
-      /* [S4] 技能栏两页 × 8 格：键 1-8 对应当前页（UI.skillPage） */
-      if (k >= '1' && k <= '8') {
-        const page = (typeof UI !== 'undefined' && UI.skillPage) || 0;
-        const idx = page * SKILL_BAR_SIZE + (parseInt(k) - 1);
-        const id = SKILL_ORDER[this.state ? this.state.cls : 'warrior'][idx];
+      /* [S4] 技能条 5 格手动配置：键 1-5 依次施放条上技能 */
+      if (k >= '1' && k <= '5') {
+        const bar = this.skillBar();
+        const id = bar[parseInt(k) - 1];
         if (id) this.castSkill(id);
       }
       if (k === '9') this.useTeleportStone();
@@ -236,7 +235,7 @@ const Game = {
     cv.addEventListener('mousedown', e => {
       if (IS_TOUCH) return;   // 触屏由虚拟按键接管
       if (e.button === 0) { this.mouseDown = true; SFX.init(); }
-      if (e.button === 2) { const id = SKILL_ORDER[this.state.cls][0]; this.castSkill(id); }
+      if (e.button === 2) { const bar = this.skillBar(); const id = bar[0] || (SKILL_ORDER[this.state.cls] || [])[0]; if (id) this.castSkill(id); }
     });
     window.addEventListener('mouseup', e => { if (e.button === 0) this.mouseDown = false; });
     cv.addEventListener('contextmenu', e => e.preventDefault());
@@ -314,6 +313,8 @@ const Game = {
       talents: { spent: {}, presets: [null, null, null], respecCount: 0 },
       /* [S4] 技能：{ 技能id: { lv: 1-10, v: 0-2 变体 } } */
       skills: {},
+      /* [S4] 技能条：5 格手动配置（技能 id 或 null），新档只放已领悟的 */
+      skillbar: (SKILL_ORDER[cls] || []).filter(id => SKILLS[id] && SKILLS[id].unlock <= 1).slice(0, SKILL_BAR_SLOTS),
       shop: null          // { at, items, rolls } —— 由 ensureShop/genShop 填充
     };
     return s;
@@ -422,6 +423,8 @@ const Game = {
     const sp = this.talentState().spent;
     if ((sp[id] || 0) >= n.max) return false;
     if (this.talentPoints() <= 0) return false;
+    /* 解锁等级：天赋与技能一样随等级逐步开放 */
+    if ((this.state.level || 1) < (e.unlock || 1)) return false;
     for (const r of (n.req || [])) if (!(sp[r] > 0)) return false;
     if (n.reqPts && this.talentTreePoints(e.tree) < n.reqPts) return false;
     return true;
@@ -490,9 +493,11 @@ const Game = {
     let used = 0;
     const out = {};
     for (const id in p) {
-      const want = p[id] || 0;
       const e = this.talentNodeOf(id);
       if (!e) continue;
+      /* 未解锁的节点不还原（低等级读高等级预设，不该凭空吃到深层天赋） */
+      if ((this.state.level || 1) < (e.unlock || 1)) continue;
+      const want = Math.min(p[id] || 0, e.node.max);      // 上限保护
       const take = Math.min(want, budget - used);
       if (take > 0) { out[id] = take; used += take; }
     }
@@ -558,6 +563,68 @@ const Game = {
     return true;
   },
 
+  /* ======================================================= */
+  /* [S4] 技能条：5 格手动配置                                  */
+  /* ======================================================= */
+  /* 取当前技能条（长度恒为 5，空位为 null）。
+   * fill = true 时用「已领悟且不在条上」的技能按顺序补空位——
+   * 只在新档 / 读档时调用；玩家手动腾出的空位不会被偷偷填回。 */
+  skillBar(fill) {
+    const s = this.state;
+    if (!s) return [];
+    const order = SKILL_ORDER[s.cls] || [];
+    const src = Array.isArray(s.skillbar) ? s.skillbar : [];
+    /* 清洗：逐格校验（保留空位位置——不能用 filter，否则位置会被挤掉） */
+    const seen = {};
+    const out = [];
+    for (let i = 0; i < SKILL_BAR_SLOTS; i++) {
+      const id = src[i];
+      if (!id || !SKILLS[id] || SKILLS[id].cls !== s.cls || !order.includes(id) || seen[id]) {
+        out.push(null);
+        continue;
+      }
+      seen[id] = true;
+      out.push(id);
+    }
+    if (fill) {
+      for (const id of order) {
+        if (out.indexOf(null) < 0) break;              // 满 5 格
+        if (out.includes(id)) continue;
+        if (s.level < SKILLS[id].unlock) continue;
+        out[out.indexOf(null)] = id;                   // 填第一个空位
+      }
+    }
+    s.skillbar = out;
+    return s.skillbar;
+  },
+
+  /* 把技能放到第 slot 格（0-4）。已在条上时从原位移走（换位）。 */
+  assignSkillBar(slot, id) {
+    const s = this.state;
+    if (!s) return { ok: false, msg: '尚未开局' };
+    if (!(slot >= 0 && slot < SKILL_BAR_SLOTS)) return { ok: false, msg: '技能条位不存在' };
+    if (!id) return this.unassignSkillBar(slot);
+    const sk = SKILLS[id];
+    if (!sk || !(SKILL_ORDER[s.cls] || []).includes(id)) return { ok: false, msg: '本职业没有这个技能' };
+    if (s.level < sk.unlock) return { ok: false, msg: '尚未领悟「' + sk.name + '」（' + sk.unlock + ' 级）' };
+    const bar = this.skillBar();
+    const from = bar.indexOf(id);
+    if (from >= 0 && from !== slot) bar[from] = null;   // 换位：原格腾空
+    bar[slot] = id;
+    if (typeof UI !== 'undefined' && UI.onSkillBarChanged) UI.onSkillBarChanged();
+    return { ok: true, msg: '「' + sk.name + '」已放到技能条 ' + (slot + 1) };
+  },
+
+  /* 腾空第 slot 格 */
+  unassignSkillBar(slot) {
+    const s = this.state;
+    if (!s) return { ok: false, msg: '尚未开局' };
+    if (!(slot >= 0 && slot < SKILL_BAR_SLOTS)) return { ok: false, msg: '技能条位不存在' };
+    this.skillBar()[slot] = null;
+    if (typeof UI !== 'undefined' && UI.onSkillBarChanged) UI.onSkillBarChanged();
+    return { ok: true, msg: '技能条 ' + (slot + 1) + ' 已腾空' };
+  },
+
   /* 读档 / 导入后补新字段（S3 天赋、S4 技能） */
   normalizeProgress(s) {
     if (!s) return;
@@ -565,6 +632,17 @@ const Game = {
     if (!s.talents.spent || typeof s.talents.spent !== 'object') s.talents.spent = {};
     if (!Array.isArray(s.talents.presets) || s.talents.presets.length !== 3) s.talents.presets = [null, null, null];
     if (!s.skills || typeof s.skills !== 'object') s.skills = {};
+    /* 技能条：逐格校验（非法 / 重复的格子置空，位置不动），截断到 5 格 */
+    if (Array.isArray(s.skillbar)) {
+      const seen = {};
+      s.skillbar = s.skillbar.slice(0, SKILL_BAR_SLOTS).map(id => {
+        if (!id || !SKILLS[id] || SKILLS[id].cls !== s.cls) return null;
+        if (!(SKILL_ORDER[s.cls] || []).includes(id) || seen[id]) return null;
+        seen[id] = true;
+        return id;
+      });
+      while (s.skillbar.length < SKILL_BAR_SLOTS) s.skillbar.push(null);
+    } else s.skillbar = null;
     /* 已退出数据表的技能 / 天赋节点清掉，防存档里留死 id */
     for (const id in s.skills) if (!SKILLS[id]) delete s.skills[id];
     if (typeof TALENT_NODES !== 'undefined') {
@@ -3449,9 +3527,19 @@ const Game = {
       const un = SKILL_ORDER[s.cls].filter(id => SKILLS[id].unlock === s.level);
       un.forEach(id => {
         UI.toast('领悟 · ' + SKILLS[id].name, 'lv');
-        UI.log('领悟新术：' + SKILLS[id].name, 'good');
+        UI.log('领悟新术：' + SKILLS[id].name + '（按 K 打开术法，可放到技能条）', 'good');
         setTimeout(() => SFX.levelup(), 300);
       });
+      /* 天赋按级解锁的提示：到点才看得到对应节点 */
+      if (typeof TALENT_NODES !== 'undefined') {
+        const tl = Object.keys(TALENT_NODES).filter(id => {
+          const e = TALENT_NODES[id];
+          return e.unlock === s.level && (!e.cls || e.cls === s.cls);
+        });
+        if (tl.length) {
+          UI.log('天赋解锁 ' + tl.length + ' 个新节点（按 T 查看）', 'good');
+        }
+      }
     }
   },
 
@@ -4340,7 +4428,11 @@ const Game = {
     this.state = flat;
     this.skillFlags = this.state.skillFlags || {};   // 技能领悟标记随档走
     this.normalizePlayerItems(this.state);
+    /* 技能条：旧档没有整条配置时才按「已领悟」补空位；
+     * 玩家存过的配置（含手动腾空的格）原样沿用 */
+    const barMissing = !Array.isArray(this.state.skillbar);
     this.normalizeProgress(this.state);
+    this.skillBar(barMissing);
     this.state.quests = this.state.quests || { active: [], done: [], next: 'q1', announced: {} };
     this.state.quests.announced = this.state.quests.announced || {};
     this.savedSlot = n;

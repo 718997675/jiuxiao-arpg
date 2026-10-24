@@ -88,10 +88,11 @@
     font-family:"STKaiti","KaiTi",serif;font-size:26px;color:#e8dcc0;text-shadow:0 2px 6px #000}
   .skill .k{position:absolute;left:2px;top:1px;font-size:9px;color:#a8a090;letter-spacing:0}
   .skill .cost{position:absolute;right:3px;bottom:1px;font-size:9px;color:#7fb0e8}
-  .pgbtn{width:30px;height:54px;background:linear-gradient(180deg,#241f18,#12100c);border:1px solid #4a4030;
-    position:relative;pointer-events:auto;cursor:pointer;display:flex;align-items:center;justify-content:center;
-    font-size:11px;color:#a8a090;font-variant-numeric:tabular-nums;transition:.12s;box-shadow:0 4px 14px rgba(0,0,0,.6)}
-  .pgbtn:hover{border-color:var(--gold);color:#e8d8b0}
+  /* 技能条空位：虚线占位，点它打开术法面板（K）配置 */
+  .skill.empty{border-style:dashed;border-color:#5a5040;background:rgba(12,11,9,.5);opacity:.9}
+  .skill.empty .g{font-size:19px;color:#6a6458}
+  .skill.empty:hover{border-color:var(--gold);opacity:1;transform:translateY(-2px)}
+  .skill.empty:hover .g{color:#a8a090}
   .skill .cd{position:absolute;inset:0;background:rgba(2,3,6,.78);display:flex;align-items:center;justify-content:center;
     font-size:15px;color:#fff;font-weight:600;display:none}
   .skill.locked{filter:grayscale(1) brightness(.62)}
@@ -291,6 +292,10 @@
     font-variant-numeric:tabular-nums;text-shadow:0 1px 3px #000;pointer-events:none}
   .sk-tile .sk-lk{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
     font-size:9.5px;color:#e0908a;background:rgba(0,0,0,.5);border-radius:2px;letter-spacing:0;pointer-events:none}
+  /* 已在技能条第几格：左上角小金标 */
+  .sk-tile .sk-onslot{position:absolute;left:2px;top:0;font-size:9px;font-weight:700;color:#1a1510;
+    background:#ffd479;border-radius:2px;padding:0 3px;line-height:1.35;pointer-events:none;
+    box-shadow:0 1px 3px rgba(0,0,0,.6)}
   .sk-tip{position:absolute;pointer-events:none;max-width:240px;padding:8px 10px;z-index:5;
     background:rgba(10,10,12,.96);border:1px solid var(--gold-d);box-shadow:0 8px 24px rgba(0,0,0,.7);
     font-size:11px;line-height:1.7;color:#c8c0a8}
@@ -325,6 +330,18 @@
   .sk-vbtn:hover{border-color:rgba(216,178,90,.5);color:#e8d8b0}
   .sk-vbtn.on{color:#1a1510;background:linear-gradient(180deg,#e0c070,#b89840);font-weight:600}
   .sk-vbtn.locked{opacity:.4;cursor:default}
+  /* 技能条配置行：详情卡底部 1-5 */
+  .sd-bar{display:flex;align-items:center;gap:8px;margin-top:10px;padding-top:9px;
+    border-top:1px solid rgba(216,178,90,.16)}
+  .sd-barlab{font-size:10px;color:#8a8474;letter-spacing:2px;flex:none}
+  .sd-barslots{display:flex;gap:4px}
+  .sk-bslot{font-family:inherit;width:22px;height:22px;font-size:11px;font-weight:600;cursor:pointer;
+    background:rgba(0,0,0,.35);border:1px solid rgba(216,178,90,.35);color:#a8a090;transition:.12s;
+    font-variant-numeric:tabular-nums}
+  .sk-bslot:hover:not(:disabled){border-color:#ffd479;color:#ffe9a8}
+  .sk-bslot.on{background:linear-gradient(180deg,#e0c070,#b89840);color:#1a1510;border-color:#ffd479}
+  .sk-bslot:disabled{opacity:.35;cursor:default}
+  .sd-barhint{font-size:9.5px;color:#6a6458;letter-spacing:0;line-height:1.5}
   .sd-vars{display:flex;gap:6px;margin-bottom:6px}
   .sd-vname{font-size:10px;color:#7a7466;line-height:1.65}
   .igrid{display:grid;grid-template-columns:repeat(8,1fr);gap:6px}
@@ -771,6 +788,10 @@
     text-align:center;font-size:8px;color:#c8a878;letter-spacing:0}
   #mtouch .mskill.ready{border-color:rgba(216,178,90,.6);
     box-shadow:0 0 12px rgba(216,178,90,.25),0 4px 12px rgba(0,0,0,.55)}
+  /* 技能条空位：虚线圆 + 加号，点开术法面板配置 */
+  #mtouch .mskill.empty{border-style:dashed;border-color:rgba(216,178,90,.24);
+    background:rgba(12,10,10,.55);box-shadow:none}
+  #mtouch .mskill.empty .g{font-size:18px;color:#6a6458;line-height:1}
 
   /* ---- HUD 缩放 ---- */
   body.touch #actionbar{display:none}
@@ -1052,7 +1073,7 @@
       <div class="tl-presets" id="tlPresets"></div>
       <button class="btn" id="tlRespec">重置天赋</button>
     </div>
-    <div class="hintline">左键加点 · Shift + 左键洗 1 级 · 节点外圈金弧 = 已投入等级 / 上限 · 大节点需本系已投入 5 点 · 每级获得 1 点<br>预设：左键读取 · Shift + 左键保存当前加点 · 重置天赋费用递增（1k / 5k / 20k / 50k 金）</div>
+    <div class="hintline">左键加点 · Shift + 左键洗 1 级 · 节点外圈金弧 = 已投入等级 / 上限 · 大节点需本系已投入 5 点 · 每级获得 1 点<br>天赋随等级解锁：第 2 层 4 级 · 第 3 层 8 级 · 第 4 层 12 级 · 中节点 18 级 · 大节点 26 级 · 通用系长链按序号<br>预设：左键读取 · Shift + 左键保存当前加点 · 重置天赋费用递增（1k / 5k / 20k / 50k 金）</div>
   </div>
 </div>
 
@@ -1063,7 +1084,7 @@
     <div class="sk-top"><span id="skPtsTxt">可用技能点 <b>0</b></span><span class="dim">每级 +8% 伤害 · 最高 10 级</span></div>
     <div class="sk-list" id="skList"></div>
     <div class="sk-tip" id="skTip"></div>
-    <div class="hintline">点击图标选中术法 · Ⅰ / Ⅱ / Ⅲ 切换变体（改机制不加点数）· 前 8 个术法上动作条，‹ › 翻页</div>
+    <div class="hintline">点击图标选中术法 · Ⅰ / Ⅱ / Ⅲ 切换变体（改机制不加点数）· 详情卡底部 1-5 = 技能条，点数字把当前术法放上去（已在条上的会换位）· 技能条 5 格，键 1-5 施放</div>
   </div>
 </div>
 

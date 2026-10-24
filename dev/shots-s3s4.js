@@ -4,9 +4,10 @@
  *   node dev/shots-s3s4.js
  *
  * 每个职业截 3 张：
- *   shots/s3-talent-<职业>.png   天赋面板（带一套示例加点）
- *   shots/s4-skills-<职业>.png   术法面板（12 技能分系 + 升级 + 变体）
- *   shots/s4-hud-<职业>.png      HUD + 动作条翻页
+ *   shots/s3-talent-<职业>.png   天赋面板（带一套示例加点，按级解锁）
+ *   shots/s4-skills-<职业>.png   术法面板（12 技能分系 + 升级 + 变体 + 技能条配置）
+ *   shots/s4-hud-<职业>.png      HUD + 5 格技能条（含空位）
+ * 另附 1 张动作条特写：shots/s4-bar.png
  * ============================================================ */
 const puppeteer = require('puppeteer-core');
 const path = require('path');
@@ -48,6 +49,10 @@ const CLASSES = ['warrior', 'mage', 'taoist'];
       const order = SKILL_ORDER[G.state.cls];
       for (let i = 0; i < 4; i++) for (let k = 0; k < 4; k++) G.levelUpSkill(order[i]);
       G.setSkillVariant(order[1], 1);
+      /* 技能条手动摆 4 个技能 + 留 1 个空位（看配置效果） */
+      G.state.skillbar = [order[0], null, order[4], order[6], order[9]];
+      G.skillBar();
+      UI.buildActionBar();
       G.recalc();
     });
 
@@ -62,6 +67,12 @@ const CLASSES = ['warrior', 'mage', 'taoist'];
     await p.evaluate(() => { UI.closeAll(); });
     await wait(400);
     await p.screenshot({ path: path.resolve(__dirname, '..', 'shots', 's4-hud-' + cls + '.png') });
+
+    /* 动作条特写：技能图标 + 空位占位 */
+    if (cls === CLASSES[0]) {
+      const barEl = await p.$('#actionbar');
+      if (barEl) await barEl.screenshot({ path: path.resolve(__dirname, '..', 'shots', 's4-bar.png') });
+    }
 
     await p.close();
     console.log(cls + ' 截图完成');

@@ -20,6 +20,7 @@ const FILES = [
   'src/core/store.js',
   'src/data/data-core.js',
   'src/data/data-items.js',
+  'src/data/data-uniques.js',      // UNIQUE_ITEMS：src/items.js 依赖它
   'src/data/data-skills.js',
   'src/data/data-monsters.js',
   'src/data/data-world.js',

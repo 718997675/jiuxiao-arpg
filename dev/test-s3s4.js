@@ -6,11 +6,12 @@
  * 覆盖：
  *   A. 天赋：点数账、前置/上限/系点门槛、加点洗点、依赖保护、
  *      属性透传、预设存取、预算截断、洗点费用递增、旧档迁移
+ *   A2. 天赋按级解锁：1/4/8/26 级边界、通用系递增、预设不还原未解锁节点
  *   B. 技能：12 技能全解锁、升级/满级/技能点、变体边界
  *   C. 施法：12 技能逐个 cast 不报错，冷却与消耗符合变体修正
  *   D. 伤害曲线：等级 1→10 恰好 1.72 倍；变体 +30%；天赋 +12%
  *   E. UI：天赋面板画布点击加点、技能面板升级/切变体、
- *      动作条 8 格 + 翻页 + 键 1-8 映射、Z/X 药水键
+ *      技能条 5 格手动配置（放置/换位/腾空/存档）、键 1-5、Z/X 药水键
  * ============================================================ */
 const puppeteer = require('puppeteer-core');
 const path = require('path');
@@ -126,6 +127,61 @@ const near = (a, b, tol, msg) => ok(Math.abs(a - b) <= tol, msg, a + ' ≈ ' + b
     '根节点 5 级应 +' + (A.statPer * 5) + ' ' + A.statKey + ' 并透传面板',
     A.statBase + '→' + A.statAfter);
   ok(A.talentPanelAlive, 'UI.onTalentChanged 钩子应存在');
+
+  /* ================= A2. 天赋随等级解锁 ================= */
+  console.log('\nA2. 天赋随等级解锁');
+  const A2 = await p.evaluate(() => {
+    const G = Game, R = {};
+    const FIRST = { warrior: 'rage', mage: 'frost', taoist: 'talisman' }[G.state.cls];
+    const S1 = FIRST + '_s1', S2 = FIRST + '_s2', S4 = FIRST + '_s4', L = FIRST + '_L';
+    R.unlock = {
+      s1: TALENT_NODES[S1].unlock, s2: TALENT_NODES[S2].unlock,
+      s4: TALENT_NODES[S4].unlock, L: TALENT_NODES[L].unlock
+    };
+    /* 通用系长链：第一个 1 级，最后一个 30 级 */
+    const uniIds = Object.keys(TALENT_NODES).filter(i => i.indexOf('uni_') === 0);
+    R.uniFirst = TALENT_NODES[uniIds[0]].unlock;
+    R.uniLast = TALENT_NODES[uniIds[uniIds.length - 1]].unlock;
+
+    /* 1 级：根节点可点，第 2 层锁 */
+    G.state.level = 1; G.talentState().spent = {}; G.recalc();
+    R.lv1root = G.canAllocTalent(S1);
+    R.lv1s2 = G.canAllocTalent(S2);
+    /* 4 级：s2 解锁（前置已点），s4（8 级）仍锁 */
+    G.state.level = 4; G.talentState().spent = {}; G.talentState().spent[S1] = 2; G.recalc();
+    R.lv4s2 = G.canAllocTalent(S2);
+    R.lv4s4 = G.canAllocTalent(S4);
+    /* 26 级大节点解锁，25 级锁 */
+    G.state.level = 26; G.talentState().spent = {}; G.talentState().spent[S1] = 5; G.recalc();
+    R.lv26L = G.canAllocTalent(L);
+    G.state.level = 25;
+    R.lv25L = G.canAllocTalent(L);
+    /* 预设不还原未解锁的深层节点 */
+    G.state.level = 5; G.talentState().spent = {};
+    G.talentState().presets[1] = {};
+    G.talentState().presets[1][S1] = 2;
+    G.talentState().presets[1][L] = 1;
+    G.loadTalentPreset(1);
+    R.presetDroppedL = !G.talentState().spent[L];
+    R.presetKeptS1 = G.talentState().spent[S1] || 0;
+    /* 还原现场 */
+    G.talentState().spent = {}; G.talentState().presets = [null, null, null];
+    G.state.level = 40; G.recalc();
+    return R;
+  });
+  ok(A2.unlock.s1 === 1 && A2.unlock.s2 === 4 && A2.unlock.s4 === 8 && A2.unlock.L === 26,
+    '职业系解锁等级应为 1 / 4 / 8 / 26', JSON.stringify(A2.unlock));
+  ok(A2.uniFirst === 1 && A2.uniLast === 30, '通用系长链按序号解锁（1 → 30）',
+    A2.uniFirst + '→' + A2.uniLast);
+  ok(A2.lv1root === true, '1 级应能点根节点');
+  ok(A2.lv1s2 === false, '1 级不应能点第 2 层（4 级解锁）');
+  ok(A2.lv4s2 === true, '4 级第 2 层应解锁');
+  ok(A2.lv4s4 === false, '4 级第 3 层仍锁（8 级解锁）');
+  ok(A2.lv26L === true, '26 级大节点应解锁');
+  ok(A2.lv25L === false, '25 级大节点仍锁');
+  ok(A2.presetDroppedL && A2.presetKeptS1 === 2, '预设不应还原未解锁节点，已解锁的正常还原',
+    'kept=' + A2.presetKeptS1 + ' droppedL=' + A2.presetDroppedL);
+
 
   /* ================= B. 预设 / 洗点 / 迁移 ================= */
   console.log('\nB. 预设 / 洗点 / 迁移');
@@ -497,59 +553,141 @@ const near = (a, b, tol, msg) => ok(Math.abs(a - b) <= tol, msg, a + ' ≈ ' + b
   ok(G4.after === G4.before + 1, '升级按钮应生效', G4.before + '→' + G4.after);
   ok(G4.vAfter !== G4.vBefore && G4.vAfter >= 0 && G4.vAfter <= 2, '变体按钮应切换', G4.vBefore + '→' + G4.vAfter);
 
-  /* 动作条：8 格 + 翻页 + 键位 */
+  /* 详情卡底部的技能条按钮（1-5） */
+  const G4b = await p.evaluate(() => {
+    const G = Game;
+    G.state.level = 40; G.recalc();
+    UI.openSkill();
+    const btns = document.querySelectorAll('#skList [data-skbar]');
+    const sel = UI.skSel;
+    const idx = btns.length ? 4 : -1;
+    if (btns.length) btns[idx].click();
+    const bar = G.skillBar();
+    const tiles = document.querySelectorAll('#skList .sk-tile .sk-onslot').length;
+    UI.closeAll();
+    return { n: btns.length, sel, placed: bar[4], onSlotBadges: tiles };
+  });
+  ok(G4b.n === 5, '详情卡应有 5 个技能条按钮', G4b.n);
+  ok(G4b.placed === G4b.sel, '点第 5 格应把当前选中技能放上技能条', G4b.placed + ' vs ' + G4b.sel);
+  ok(G4b.onSlotBadges >= 1, '已在条上的技能应有角标');
+
+  /* 动作条：技能条 5 格手动配置 */
   const G5 = await p.evaluate(() => {
     const G = Game;
     UI.closeAll();
+    G.state.level = 40; G.recalc();
+    G.state.skillbar = null;                 // 触发按「已领悟」自动填充
+    G.skillBar(true);
     UI.buildActionBar();
     const bar = document.getElementById('actionbar');
     const skills = bar.querySelectorAll('.skill');
-    const pg = bar.querySelector('[data-pg]');
-    const firstId = skills[0] && skills[0].dataset.skill;
-    const page1LastId = skills[skills.length - 1] && skills[skills.length - 1].dataset.skill;
-    /* 翻到第二页 */
-    if (pg) pg.click();
-    const skills2 = bar.querySelectorAll('.skill');
-    const p2first = skills2[0] && skills2[0].dataset.skill;
-    const p2count = skills2.length;
-    /* 翻回第一页 */
-    if (pg) bar.querySelector('[data-pg]').click();
-    return {
-      n: skills.length, hasPg: !!pg, firstId, page1LastId, p2first, p2count,
+    const slots = G.skillBar();
+    const R = {
+      n: skills.length,
+      len: slots.length,
+      ids: slots.slice(),
+      empty: bar.querySelectorAll('.skill.empty').length,
+      hasPg: !!bar.querySelector('[data-pg]'),
       order: SKILL_ORDER[G.state.cls]
     };
+    /* 空位点击应打开术法面板 */
+    G.state.skillbar = [null, null, null, null, null];
+    G.skillBar();
+    UI.buildActionBar();
+    R.emptyAll = document.querySelectorAll('#actionbar .skill.empty').length;
+    const em = document.querySelector('#actionbar .skill.empty');
+    R.hasEmpty = !!em;
+    if (em) em.click();
+    R.emptyOpensPanel = document.getElementById('skillPanel').classList.contains('open');
+    UI.closeAll();
+    return R;
   });
-  ok(G5.n === 8, '动作条第一页应 8 格', G5.n);
-  ok(G5.hasPg, '应有翻页按钮');
-  ok(G5.firstId === G5.order[0], '第一格应是第一个技能');
-  ok(G5.page1LastId === G5.order[7], '第 8 格应是第 8 个技能', G5.page1LastId);
-  ok(G5.p2first === G5.order[8], '第二页第一格应是第 9 个技能', G5.p2first);
-  ok(G5.p2count === 4, '第二页应 4 格', G5.p2count);
+  ok(G5.n === 5, '动作条应 5 格', G5.n);
+  ok(G5.len === 5, '技能条长度恒为 5', G5.len);
+  ok(G5.ids.join() === G5.order.slice(0, 5).join(), '新档 / 空条应按已领悟顺序自动填前 5 个', G5.ids.join());
+  ok(!G5.hasPg, '技能条不应再有翻页按钮');
+  ok(G5.hasEmpty && G5.emptyAll === 5, '5 格全空时应渲染 5 个空占位', G5.emptyAll);
+  ok(G5.emptyOpensPanel === true, '点空位应打开术法面板');
 
-  /* 键 1-8 映射当前页；第二页按 1 放第 9 个技能 */
+  /* 技能条配置：放上 / 换位 / 腾空 / 拒绝非法 */
+  const G5b = await p.evaluate(() => {
+    const G = Game, R = {};
+    const order = SKILL_ORDER[G.state.cls];
+    R.order7 = order[7];
+    G.state.level = 40; G.recalc();
+    G.state.skillbar = [order[0], order[1], null, null, null];
+    G.skillBar();
+    /* 替换：把第 8 个技能放到 1 格 */
+    R.assign = G.assignSkillBar(0, order[7]);
+    R.slot0 = G.skillBar()[0];
+    /* 换位：把第 8 个技能从 0 格移到 4 格，0 格应腾空 */
+    R.move = G.assignSkillBar(4, order[7]);
+    R.afterMove = G.skillBar().slice();
+    R.moveClearsOld = R.afterMove[0] === null;
+    R.moveLandsNew = R.afterMove[4] === order[7];
+    /* 腾空 */
+    R.unassign = G.unassignSkillBar(4);
+    R.slot4Empty = G.skillBar()[4] === null;
+    /* 未领悟拒绝 */
+    G.state.level = 1; G.recalc();
+    R.lockedReject = G.assignSkillBar(0, order[order.length - 1]);
+    G.state.level = 40; G.recalc();
+    /* 越界 / 非本职业 */
+    R.badSlot = G.assignSkillBar(9, order[0]);
+    const other = G.state.cls === 'warrior' ? 'mage' : 'warrior';
+    R.badCls = G.assignSkillBar(0, SKILL_ORDER[other][0]);
+    /* 存档进出：技能条原样带回 */
+    G.state.skillbar = [order[1], null, order[3], null, null];
+    G.skillBar();
+    try {
+      const doc = SaveManager.pack(G.state, 0);
+      const back = SaveManager.unpack(doc);
+      R.saveBar = (back.skillbar || []).join(',');
+      R.saveLen = (back.skillbar || []).length;
+    } catch (e) { R.saveErr = String(e && e.message || e); }
+    return R;
+  });
+  ok(G5b.assign && G5b.assign.ok, '应能把技能放到技能条', G5b.assign && G5b.assign.msg);
+  ok(G5b.slot0 === G5b.order7, '放到第 1 格后该格应是目标技能');
+  ok(G5b.moveClearsOld === true, '换位时原格应腾空');
+  ok(G5b.moveLandsNew === true, '换位后新格应有该技能');
+  ok(G5b.unassign && G5b.unassign.ok && G5b.slot4Empty === true, '应能腾空技能条格');
+  ok(G5b.lockedReject && G5b.lockedReject.ok === false && /尚未领悟/.test(G5b.lockedReject.msg),
+    '未领悟技能不可上条', G5b.lockedReject && G5b.lockedReject.msg);
+  ok(G5b.badSlot && G5b.badSlot.ok === false, '越界格应拒绝');
+  ok(G5b.badCls && G5b.badCls.ok === false, '非本职业技能应拒绝');
+  ok(!G5b.saveErr && G5b.saveLen === 5 && G5b.saveBar.split(',')[0] !== '', '技能条应随存档进出',
+    G5b.saveErr || G5b.saveBar);
+
+  /* 键 1-5 对应技能条；空位不施放；Z/X 喝药 */
   const G6 = await p.evaluate(() => {
     const G = Game;
     G.state.level = 40; G.recalc();
     G.state.mp = 100000; G.state.stats.mpMax = 100000;
+    const order = SKILL_ORDER[G.state.cls];
+    G.state.skillbar = [order[0], order[1], order[9], null, null];
+    G.skillBar();
     UI.buildActionBar();
     const key = k => window.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true }));
     G.cooldowns = {};
     key('1');
-    const cd1 = G.cooldowns[SKILL_ORDER[G.state.cls][0]] || 0;
+    const cd1 = G.cooldowns[order[0]] || 0;
     G.cooldowns = {};
-    UI.skillPage = 1; UI.buildActionBar();
-    key('1');
-    const cd9 = G.cooldowns[SKILL_ORDER[G.state.cls][8]] || 0;
+    key('3');
+    const cd3 = G.cooldowns[order[9]] || 0;    // 第 3 格是第 10 个技能
+    G.cooldowns = {};
+    key('4');                                  // 空位：不该施放
+    let anyCd = false;
+    for (const id in G.cooldowns) if (G.cooldowns[id] > 0) anyCd = true;
     /* 药水键 Z/X */
     G.state.potions.hp = 3; G.state.hp = 10; G.state.stats.hpMax = 100;
     const hp0 = G.state.hp;
     key('z');
-    const hpAfter = G.state.hp;
-    UI.skillPage = 0; UI.buildActionBar();
-    return { cd1, cd9, hp0, hpAfter };
+    return { cd1, cd3, emptyNoCast: !anyCd, hp0, hpAfter: G.state.hp };
   });
-  ok(G6.cd1 > 0, '键 1 应施放第一页第一个技能');
-  ok(G6.cd9 > 0, '翻页后键 1 应施放第 9 个技能');
+  ok(G6.cd1 > 0, '键 1 应施放技能条第 1 格');
+  ok(G6.cd3 > 0, '键 3 应施放技能条第 3 格（而不是第 3 个技能）');
+  ok(G6.emptyNoCast === true, '空位按键不应施放任何技能');
   ok(G6.hpAfter > G6.hp0, 'Z 键应喝红药', G6.hp0 + '→' + G6.hpAfter);
 
   /* T / K 开面板 */

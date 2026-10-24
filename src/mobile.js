@@ -117,7 +117,6 @@ const Mobile = {
         <div class="mbtn sm" id="mDash"><span class="mi">闪</span></div>
         <div class="mbtn sm pot" data-potion="hp"><span class="mi">丹</span><i class="cnt">0</i></div>
         <div class="mbtn sm pot blue" data-potion="mp"><span class="mi">露</span><i class="cnt">0</i></div>
-        <div class="mbtn sm" id="mPage" style="font-size:11px"><span class="mi">1/2</span></div>
       </div>`;
     document.body.appendChild(d);
     this.el = d;
@@ -127,17 +126,13 @@ const Mobile = {
     if (!this.on || !Game.state) return;
     const wrap = document.getElementById('mSkills');
     if (!wrap) return;
-    /* [S4] 每页 6 个（3×2 宫格），翻页键在 #mUtil 行尾 */
-    const all = SKILL_ORDER[Game.state.cls];
-    const pages = Math.ceil(all.length / 6);
-    const page = Math.min(Math.max(this.skillPage || 0, 0), pages - 1);
-    this.skillPage = page;
-    const shown = all.slice(page * 6, page * 6 + 6);
-    wrap.innerHTML = shown.map(id => {
-      const sk = SKILLS[id];
+    /* [S4] 技能条 5 格手动配置：宫格与 PC 动作条一致，空位是占位 */
+    const slots = Game.skillBar();
+    wrap.innerHTML = slots.map((id, i) => {
+      if (!id) return `<div class="mskill empty" data-slot="${i}"><span class="g">＋</span></div>`;
       return `<div class="mskill" data-skill="${id}"><span class="g">${skillIconSvg(id, 22)}</span><div class="cd"></div></div>`;
     }).join('');
-    wrap.querySelectorAll('.mskill').forEach(el => {
+    wrap.querySelectorAll('.mskill[data-skill]').forEach(el => {
       el.addEventListener('pointerdown', ev => {
         ev.preventDefault(); ev.stopPropagation();
         SFX.init();
@@ -146,16 +141,14 @@ const Mobile = {
         setTimeout(() => el.classList.remove('hit'), 130);
       });
     });
-    const pg = document.getElementById('mPage');
-    if (pg) {
-      pg.querySelector('.mi').textContent = (page + 1) + '/' + pages;
-      pg.onpointerdown = ev => {
+    /* 空位：打开术法面板去配置 */
+    wrap.querySelectorAll('.mskill.empty').forEach(el => {
+      el.addEventListener('pointerdown', ev => {
         ev.preventDefault(); ev.stopPropagation();
         SFX.init();
-        this.skillPage = (this.skillPage + 1) % pages;
-        this.buildSkills();
-      };
-    }
+        if (typeof UI !== 'undefined' && UI.openSkill) UI.openSkill();
+      });
+    });
     this.layout();
   },
 

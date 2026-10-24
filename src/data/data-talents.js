@@ -15,6 +15,8 @@
  *
  * 坐标 pos 为 0-100 的相对坐标，Canvas UI 按面板尺寸映射。
  * 前置：req 为节点 id 数组（全部点亮才可点）；reqPts 为本系已投入点数。
+ * 解锁：与技能一样随等级逐步开放——职业系按二叉树层数定级
+ *   （见下方 NODE_UNLOCK），通用系按链上序号（第 i 个节点需 i 级）。
  * ============================================================ */
 
 /* 每系内部结构（10 节点）：
@@ -24,6 +26,12 @@
  *      s6  s7
  * 边：s1→{s2,s3}，s2→s4，s3→s5，s4→s6，s5→s7，s6→m1，s7→m2
  */
+
+/* 解锁等级（v1.2.0）：天赋和技能一样，不到等级看不到也点不了。
+ * 职业系按层数：第 1 层 1 级 → 第 2 层 4 级 → 第 3 层 8 级 →
+ * 第 4 层 12 级 → 中节点 18 级 → 大节点 26 级。
+ * 通用系是长链，节点天然被前置和点数按顺序卡住，解锁等级 = 链上序号。 */
+const NODE_UNLOCK = { s1: 1, s2: 4, s3: 4, s4: 8, s5: 8, s6: 12, s7: 12, m1: 18, m2: 18, L: 26 };
 
 /* ---------------- 战士 ---------------- */
 const TALENTS_WARRIOR = [
@@ -232,6 +240,7 @@ const TALENTS_UNIVERSAL = (() => {
       id: 'uni_' + n.key,
       tier: n.tier || 1,
       max: n.max || 5,
+      unlock: i + 1,          // 第 i 个节点需 i 级（与链式前置节奏一致）
       pos: { x, y },
       req: prev ? [prev] : []
     }));
@@ -247,13 +256,16 @@ const TALENTS = {
   universal: [TALENTS_UNIVERSAL]
 };
 
-/* 全部节点扁平表（id → node + 所属 tree），供 UI / 校验 / 汇总共用 */
+/* 全部节点扁平表（id → node + 所属 tree + 解锁等级），供 UI / 校验 / 汇总共用 */
 const TALENT_NODES = (() => {
   const out = {};
   for (const cls in TALENTS) {
     for (const tree of TALENTS[cls]) {
       for (const n of tree.nodes) {
-        out[n.id] = { node: n, tree: tree.id, treeName: tree.name, color: tree.color, cls: cls === 'universal' ? null : cls };
+        /* 职业系节点按 id 后缀（s1 / m2 / L）查解锁表；通用系节点自带 unlock */
+        const slot = n.id.slice(n.id.indexOf('_') + 1);
+        const unlock = n.unlock != null ? n.unlock : (NODE_UNLOCK[slot] || 1);
+        out[n.id] = { node: n, tree: tree.id, treeName: tree.name, color: tree.color, cls: cls === 'universal' ? null : cls, unlock };
       }
     }
   }

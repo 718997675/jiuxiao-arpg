@@ -83,6 +83,44 @@ console.log('\n一、节点结构');
     badTree.map(s => s.id + ':' + s.tree).join(','));
 }
 
+/* ---------------- 1b. 解锁等级 ---------------- */
+console.log('\n一b、天赋随等级解锁');
+{
+  const bad = [];
+  for (const id in TALENT_NODES) {
+    const e = TALENT_NODES[id];
+    if (!(e.unlock >= 1 && e.unlock <= 40)) bad.push(id + ':unlock ' + e.unlock);
+  }
+  ok(bad.length === 0, '每个节点都要有 1-40 的解锁等级', bad.slice(0, 6).join(','));
+
+  /* 职业系：小节点 1/4/8/12，中节点 18，大节点 26 */
+  const want = { tier: { 1: [1, 4, 8, 12], 2: [18], 3: [26] } };
+  const wrong = [];
+  for (const id in TALENT_NODES) {
+    const e = TALENT_NODES[id];
+    if (e.cls === null) continue;
+    if (!want.tier[e.node.tier].includes(e.unlock)) wrong.push(id + ':tier' + e.node.tier + '@' + e.unlock);
+  }
+  ok(wrong.length === 0, '职业系解锁等级应与层级对应（1/4/8/12 · 18 · 26）', wrong.slice(0, 6).join(','));
+
+  /* 通用系长链：解锁等级随链上序号严格递增，最后一个是 30 */
+  const uni = TALENTS.universal[0].nodes;
+  ok(uni[0].unlock === 1, '通用系首个节点 1 级解锁', uni[0].unlock);
+  ok(uni[uni.length - 1].unlock === 30, '通用系末个节点 30 级解锁', uni[uni.length - 1].unlock);
+  let inc = true;
+  for (let i = 1; i < uni.length; i++) if (uni[i].unlock <= uni[i - 1].unlock) inc = false;
+  ok(inc, '通用系解锁等级应严格递增');
+
+  /* 大节点（26 级）不该比中节点（18 级）更早开 */
+  const early = [];
+  for (const id in TALENT_NODES) {
+    const e = TALENT_NODES[id];
+    if (e.cls === null) continue;
+    if (e.node.tier === 3 && e.unlock < 18) early.push(id);
+  }
+  ok(early.length === 0, '大节点不应早于中节点解锁', early.join(','));
+}
+
 /* ---------------- 2. 字段合法性 ---------------- */
 console.log('\n二、字段合法性');
 {

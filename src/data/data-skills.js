@@ -392,8 +392,8 @@ const SKILL_ORDER = {
   taoist: ['talisman', 'summon', 'heal', 'poison', 'talismanarrow', 'antidote', 'taiji', 'whitetiger', 'swordrain', 'mastersigil', 'azuredragon', 'revive']
 };
 
-/* 每技能动作条槽位数（PC 8 格 / 手机 6 格一页） */
-const SKILL_BAR_SIZE = 8;
+/* 技能条槽位数：5 格，玩家在术法面板（K）里手动把已领悟技能放上去 */
+const SKILL_BAR_SLOTS = 5;
 
 /* 技能等级：每级 +8% 伤害（也放大治疗 / 护盾 / 召唤伤害） */
 const SKILL_LV_STEP = 0.08;

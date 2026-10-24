@@ -6,7 +6,6 @@ const UI = {
   selectedCls: 'warrior',
   tooltipEl: null,
   hoverRef: null,
-  skillPage: 0,      // [S4] 动作条当前页（12 技能分两页）
   skSel: null,       // [S4] 术法面板当前选中的技能（详情卡展示）
 
   init() {
@@ -446,35 +445,32 @@ const UI = {
 
   buildActionBar() {
     const s = Game.state;
-    const order = SKILL_ORDER[s.cls];
     const bar = document.getElementById('actionbar');
-    /* [S4] 12 技能分两页：每页 8 格（键 1-8），右下角翻页键切页 */
-    const pages = Math.ceil(order.length / SKILL_BAR_SIZE);
-    const page = Math.min(Math.max(this.skillPage || 0, 0), pages - 1);
-    this.skillPage = page;
-    const shown = order.slice(page * SKILL_BAR_SIZE, page * SKILL_BAR_SIZE + SKILL_BAR_SIZE);
-    bar.innerHTML = shown.map((id, i) => {
+    /* [S4] 技能条 5 格手动配置：空位是虚线占位，点它打开术法面板（K） */
+    const slots = Game.skillBar();
+    let h = slots.map((id, i) => {
+      if (!id) {
+        return `<div class="skill empty" data-slot="${i}" title="技能条 ${i + 1}：空位——打开术法面板（K）把技能放上来">
+          <span class="k">${i + 1}</span><div class="g">＋</div></div>`;
+      }
       const sk = SKILLS[id];
       const castLabel = sk.cast === 'ground' ? '指定位置' : sk.cast === 'dir' ? '指定方向' : sk.cast === 'enemy' ? '自动索敌' : '自身';
       const rangeLabel = sk.castRange ? ` · ${sk.castRange} 码` : '';
       return `<div class="skill" data-skill="${id}" title="${sk.name} · ${castLabel}${rangeLabel}">
-        <span class="k">${page * SKILL_BAR_SIZE + i + 1}</span><div class="g">${skillIconSvg(id, 26)}</div>
+        <span class="k">${i + 1}</span><div class="g">${skillIconSvg(id, 26)}</div>
         <span class="cost">${Game.skillCost(sk)}</span><div class="cd"></div></div>`;
     }).join('') +
-      (pages > 1 ? `<div class="pgbtn" data-pg="1" title="翻页：第 ${page + 1} / ${pages} 页（键 1-8 对应当前页）">${page + 1}/${pages}</div>` : '') +
       `<div class="potion" data-potion="hp"><span class="k">Z</span><div class="g">丹</div><div class="n">红药</div></div>
        <div class="potion blue" data-potion="mp"><span class="k">X</span><div class="g">露</div><div class="n">蓝药</div></div>
        <div class="potion" data-tp="1" style="background:rgba(120,160,255,.22);border-color:rgba(120,160,255,.45)"><span class="k">9</span><div class="g">阵</div><div class="n">传送</div></div>`;
 
-    bar.querySelectorAll('.skill').forEach(el => {
+    bar.innerHTML = h;
+    bar.querySelectorAll('.skill[data-skill]').forEach(el => {
       el.addEventListener('click', () => Game.castSkill(el.dataset.skill));
     });
-    bar.querySelectorAll('[data-pg]').forEach(el => {
-      el.addEventListener('click', () => {
-        this.skillPage = (this.skillPage + 1) % pages;
-        this.buildActionBar();
-        this.updateSkillbar();
-      });
+    /* 空位：点开术法面板去配置 */
+    bar.querySelectorAll('.skill.empty').forEach(el => {
+      el.addEventListener('click', () => { SFX.ui(); this.openSkill(); });
     });
     bar.querySelectorAll('.potion').forEach(el => {
       if (el.dataset.potion) el.addEventListener('click', () => Game.usePotion(el.dataset.potion));
@@ -487,7 +483,10 @@ const UI = {
     if (!Game.state) return;
     const s = Game.state;
     document.querySelectorAll('#actionbar .skill, #mSkills .mskill').forEach(el => {
-      const id = el.dataset.skill, sk = SKILLS[id];
+      const id = el.dataset.skill;
+      if (!id) return;                     // 空占位格：没有技能可更新
+      const sk = SKILLS[id];
+      if (!sk) return;
       const locked = s.level < sk.unlock;
       el.classList.toggle('locked', locked);
       const cd = Game.cooldowns[id] || 0;
@@ -840,7 +839,8 @@ const UI = {
           const e2 = Game.talentNodeOf(id);
           const n = e2 && e2.node;
           const rank = (Game.talentState().spent[id] || 0);
-          if (n && rank >= n.max) this.toast('已点满');
+          if (e2 && Game.state.level < (e2.unlock || 1)) this.toast('需 ' + e2.unlock + ' 级解锁');
+          else if (n && rank >= n.max) this.toast('已点满');
           else if (n && n.reqPts && Game.talentTreePoints(e2.tree) < n.reqPts) this.toast('需要本系先投入 ' + n.reqPts + ' 点');
           else if (n && (n.req || []).some(r => !(Game.talentState().spent[r] > 0))) this.toast('前置节点未点亮');
           else this.toast('天赋点不足');
@@ -879,7 +879,8 @@ const UI = {
     else if (Game.canAllocTalent(id)) status = '可点（左键）· 当前 ' + rank + '/' + n.max;
     else {
       ok = false;
-      if (Game.talentPoints() <= 0) status = '天赋点不足（升级获得）';
+      if (Game.state.level < (e.unlock || 1)) status = '需 ' + e.unlock + ' 级解锁（当前 ' + Game.state.level + ' 级）';
+      else if (Game.talentPoints() <= 0) status = '天赋点不足（升级获得）';
       else if (n.reqPts && Game.talentTreePoints(e.tree) < n.reqPts) status = '需本系先投入 ' + n.reqPts + ' 点';
       else if ((n.req || []).some(r => !(sp[r] > 0))) {
         const miss = (n.req || []).filter(r => !(sp[r] > 0)).map(r => Game.talentNodeOf(r).node.name);
@@ -887,8 +888,9 @@ const UI = {
       } else status = '暂不可点';
     }
     const reqTxt = n.reqPts ? ` · 需本系 ${n.reqPts} 点` : '';
+    const lvTxt = ` · ${e.unlock || 1} 级解锁`;
     return `<div class="tt-n" style="color:${e.color}">${n.name}</div>
-      <div class="tt-r">${e.treeName} · ${tierTxt}${reqTxt}${n.max > 1 ? ' · 上限 ' + n.max + ' 级' : ''}</div>
+      <div class="tt-r">${e.treeName} · ${tierTxt}${lvTxt}${reqTxt}${n.max > 1 ? ' · 上限 ' + n.max + ' 级' : ''}</div>
       <div class="tt-d">${n.desc}</div>
       <div class="tt-c ${ok ? '' : 'no'}">${status}</div>`;
   },
@@ -1066,7 +1068,8 @@ const UI = {
       const rank = sp[n.id] || 0;
       const maxed = rank >= n.max;
       const can = Game.canAllocTalent(n.id);
-      const reqOk = !(n.req || []).some(r => !(sp[r] > 0)) && (!n.reqPts || treePts >= n.reqPts);
+      const lvOk = Game.state.level >= ((TALENT_NODES[n.id] || {}).unlock || 1);   // 等级解锁
+      const reqOk = !(n.req || []).some(r => !(sp[r] > 0)) && (!n.reqPts || treePts >= n.reqPts) && lvOk;
       const r = nodeR(n);
       /* 已投入等级：外圈金弧（0 级时画一圈暗轨） */
       g.lineWidth = 2.5;
@@ -1107,6 +1110,10 @@ const UI = {
           g.font = '8.5px ui-sans-serif, system-ui, sans-serif';
           g.fillStyle = rank > 0 ? '#d8b060' : '#6a6458';
           g.fillText(rank + '/' + n.max, lp.x, lp.y + 11);
+        } else if (!lvOk) {
+          g.font = '8.5px ui-sans-serif, system-ui, sans-serif';
+          g.fillStyle = '#e05a5a';
+          g.fillText('需 ' + (TALENT_NODES[n.id] || {}).unlock + ' 级', lp.x, lp.y + 11);
         } else if (n.tier === 3 && treePts < (n.reqPts || 5)) {
           g.font = '8.5px ui-sans-serif, system-ui, sans-serif';
           g.fillStyle = '#e05a5a';
@@ -1149,12 +1156,20 @@ const UI = {
     this.updateSkillbar();
   },
 
+  /* 技能条配置变化（放技能 / 腾空）：动作条与术法面板一起重画 */
+  onSkillBarChanged() {
+    this.buildActionBar();
+    const p = document.getElementById('skillPanel');
+    if (p && p.classList.contains('open')) this.renderSkillPanel();
+  },
+
   renderSkillPanel() {
     const p = document.getElementById('skillPanel');
     if (!p || !Game.state) return;
     const s = Game.state;
     const order = SKILL_ORDER[s.cls];
     const pts = Game.skillPoints();
+    const barSlots = Game.skillBar();          // 技能条 5 格当前配置
     document.getElementById('skPtsTxt').innerHTML = `可用技能点 <b>${pts}</b>`;
     if (!this.skSel || !order.includes(this.skSel)) this.skSel = order[0];
 
@@ -1173,8 +1188,10 @@ const UI = {
         const sk = SKILLS[id];
         const locked = s.level < sk.unlock;
         const lv = Game.skillLevel(id);
+        const onBar = barSlots.indexOf(id);     // 在技能条第几格（-1 = 不在）
         h += `<div class="sk-row sk-tile ${locked ? 'locked' : ''} ${id === this.skSel ? 'sel' : ''}" data-skpick="${id}">
           <span class="sk-ico">${skillIconSvg(id, 26)}</span>
+          ${onBar >= 0 ? `<span class="sk-onslot">${onBar + 1}</span>` : ''}
           ${locked ? `<span class="sk-lk">${sk.unlock} 级</span>` : `<span class="sk-badge">${lv}</span>`}
         </div>`;
       }
@@ -1198,6 +1215,13 @@ const UI = {
       `<button class="sk-vbtn ${i === v ? 'on' : ''}" data-skv="${id}:${i}" title="${vr.desc}">${['Ⅰ', 'Ⅱ', 'Ⅲ'][i]}</button>`
     ).join('');
     const pips = Array.from({ length: SKILL_LV_MAX }, (_, i) => `<span class="sk-pip ${i < lv ? 'on' : ''}"></span>`).join('');
+    /* 技能条 5 格：点数字把当前技能放上去（已在条上会从原位移走） */
+    const slotBtns = barSlots.map((bid, i) => {
+      const occ = bid ? SKILLS[bid] : null;
+      const on = bid === id;
+      return `<button class="sk-bslot ${on ? 'on' : ''}" data-skbar="${i}" ${locked ? 'disabled' : ''}
+        title="${occ ? (on ? '当前技能就在这一格' : '放到 ' + (i + 1) + '（替换「' + occ.name + '」）') : '空位 ' + (i + 1)}">${i + 1}</button>`;
+    }).join('');
     h += `<div class="sk-right">
       <div class="sd-head"><span class="sd-ico">${skillIconSvg(id, 30)}</span>
         <div><div class="sd-name">${sk.name}${locked ? `<span class="sk-lock">${sk.unlock} 级领悟</span>` : ''}</div>
@@ -1209,6 +1233,9 @@ const UI = {
         <button class="sk-lvb" data-sklv="${id}" ${locked || lv >= SKILL_LV_MAX || pts <= 0 ? 'disabled' : ''}>升级</button></div>
       <div class="sd-vars">${vars}</div>
       <div class="sd-vname">${sk.variants[v].name}：${sk.variants[v].desc}</div>
+      <div class="sd-bar"><span class="sd-barlab">技能条</span>
+        <span class="sd-barslots">${slotBtns}</span>
+        <span class="sd-barhint">${locked ? '领悟后可放上技能条' : '点数字放上技能条（键 1-5 施放）'}</span></div>
     </div></div>`;
 
     const list = document.getElementById('skList');
@@ -1229,6 +1256,12 @@ const UI = {
       Game.setSkillVariant(sid, parseInt(vi));
       SFX.ui();
       this.renderSkillPanel();
+    }));
+    /* 放技能上条：点详情卡里的 1-5 */
+    list.querySelectorAll('[data-skbar]').forEach(b => b.addEventListener('click', () => {
+      const r = Game.assignSkillBar(parseInt(b.dataset.skbar), this.skSel);
+      if (r.ok) SFX.ui();
+      else this.toast(r.msg, 'bad');
     }));
     /* 图标悬停浮层 */
     const tip = document.getElementById('skTip');
