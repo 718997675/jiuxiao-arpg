@@ -183,6 +183,23 @@ const UI = {
     const sc = document.getElementById('invCodexBtn');
     if (sc) sc.addEventListener('click', () => this.openSetCodex());
 
+    /* 行囊扩容（v1.4.0）：点容量旁的「扩容」展开内联条，确认后容量与格子随即刷新 */
+    const upBtn = document.getElementById('invUpBtn');
+    if (upBtn) upBtn.addEventListener('click', () => {
+      this.invUpOpen = !this.invUpOpen;
+      SFX.ui();
+      this.renderInventory();
+    });
+    const upBar = document.getElementById('invUpBar');
+    if (upBar) upBar.addEventListener('click', e => {
+      const go = e.target.closest('[data-upgo]');
+      if (!go) return;
+      const r = Game.upgradeBag();
+      if (!r.ok && r.msg) UI.log(r.msg, 'bad');
+      SFX.ui();
+      this.renderInventory();
+    });
+
     // 物品悬停 / 点击（事件委托）
     document.addEventListener('mouseover', e => {
       if (IS_TOUCH) return;   // 触屏改为一指点开、按钮操作
@@ -563,6 +580,7 @@ const UI = {
   invJunkOpen: false,      // 一键分解确认条是否展开
   invJunkMagic: false,     // 一键分解是否连带法器
   invTab: 'equip',         // 行囊当前栏：equip / mat / pill / quest
+  invUpOpen: false,        // 行囊扩容条是否展开（v1.4.0）
   toggleInv() { const p = document.getElementById('invPanel'); this.closeAll(p); p.classList.toggle('open'); if (p.classList.contains('open')) this.renderInventory(); },
   toggleStat() { const p = document.getElementById('statPanel'); this.closeAll(p); p.classList.toggle('open'); if (p.classList.contains('open')) this.renderStats(); },
   toggleQuest() { const p = document.getElementById('questPanel'); this.closeAll(p); p.classList.toggle('open'); if (p.classList.contains('open')) this.renderQuests(); },
@@ -582,6 +600,8 @@ const UI = {
     /* 排序 / 分解 / 图鉴 只对「装备」栏有意义，其余栏位收起 */
     const sortbar = document.getElementById('invSort');
     if (sortbar) sortbar.style.display = tab === 'equip' ? '' : 'none';
+    const upBtn = document.getElementById('invUpBtn');
+    if (upBtn) upBtn.style.display = tab === 'equip' ? '' : 'none';
     document.querySelectorAll('#invTabs .itab').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
     const g = document.getElementById('invGrid');
     const mp = document.getElementById('invMats');
@@ -593,6 +613,8 @@ const UI = {
     if (stats) stats.style.display = tab === 'equip' ? '' : 'none';
     if (line) line.style.display = tab === 'equip' ? '' : 'none';
     if (jb && tab !== 'equip') { jb.style.display = 'none'; jb.innerHTML = ''; }
+    const ub = document.getElementById('invUpBar');
+    if (ub && tab !== 'equip') { ub.style.display = 'none'; ub.innerHTML = ''; }
     if (tab === 'equip') this.renderEquipGrid();
     else this.renderMatTab(tab);
     this.renderTabBadges();
@@ -657,10 +679,21 @@ const UI = {
   renderEquipGrid() {
     const s = Game.state;
     const inv = s.inventory;
-    document.getElementById('invCap').textContent = `${inv.length} / ${s.maxInv}`;
+    const cap = Game.bagCap();
+    document.getElementById('invCap').textContent = `${inv.length} / ${cap}`;
+    /* 扩容后直接把新容量整行铺出来，玩家一眼看到多出的空位；
+     * 未扩容时仍按「用得到就够」渲染，省下的高度留给详细属性。 */
+    const up = document.getElementById('invUpBtn');
+    if (up) {
+      const full = !bagNextUpgrade(cap);
+      up.classList.toggle('full', full);
+      up.textContent = full ? '已 满' : '扩 容';
+      up.title = full ? `行囊已扩至极限 ${cap} 格` : `扩容行囊（当前 ${cap} 格）`;
+    }
     const ig = document.getElementById('invGrid');
-    /* 只渲染「用得到的格子」：至少两行，够装就停，省下的高度留给详细属性 */
-    const need = Math.max(16, Math.ceil((inv.length + 1) / 8) * 8);
+    const rowsByItems = Math.ceil((inv.length + 1) / 8) * 8;
+    const base = cap > BAG_BASE_CAP ? Math.ceil(cap / 8) * 8 : 16;
+    const need = Math.min(cap, Math.max(base, rowsByItems));
     let html = '';
     for (let i = 0; i < need; i++) {
       const it = inv[i];
@@ -691,6 +724,8 @@ const UI = {
           <button class="btn" data-junkcancel>取消</button>`;
       } else { jb.style.display = 'none'; jb.innerHTML = ''; }
     }
+
+    this.renderBagUpgradeBar();
 
     const st = s.stats;
     const sets = Object.keys(st.setCount).filter(k => st.setCount[k] >= 2);
@@ -1889,9 +1924,50 @@ const UI = {
     main.innerHTML = h;
   },
 
+  /* ---------------- 行囊扩容（v1.4.0） ----------------
+   * 做成行囊内的内联条（同一键分解条），点上方的「扩容」展开、再点收起。
+   * 容量、档位、消耗都从 Game.bagUpgradeInfo() 取，与 Game.upgradeBag() 同源。 */
+  renderBagUpgradeBar() {
+    const bar = document.getElementById('invUpBar');
+    if (!bar) return;
+    if (!this.invUpOpen) { bar.style.display = 'none'; bar.innerHTML = ''; return; }
+    const info = Game.bagUpgradeInfo();
+    const gold = Math.max(0, Math.round(Game.state.gold || 0));
+    const dots = [];
+    for (let i = 0; i < info.maxTier; i++) {
+      dots.push(`<span class="${i < info.tier ? 'done' : (i === info.tier && info.next ? 'now' : '')}"></span>`);
+    }
+    let h;
+    if (info.next) {
+      const costs = info.cost.map(c => `<span class="cst"><span class="nm" style="color:${c.color}">${c.name}</span>
+          <span class="hv ${c.have >= c.need ? '' : 'bad'}"><b>${c.have}</b><u>/${c.need}</u></span></span>`).join('');
+      h = `<div class="urow">
+          <span class="utitle">乾坤囊</span>
+          <span class="ucap"><b>${info.cap}</b><em>→</em><b class="nx">${info.next.cap}</b>格</span>
+          <span class="udots">${dots.join('')}</span>
+          <span class="utier">第 ${info.tier + 1}/${info.maxTier} 次</span>
+        </div>
+        <div class="urow">
+          <span class="ucosts">${costs}<span class="cst"><span class="nm" style="color:#e0c070">铜钱</span>
+            <span class="hv ${gold >= info.next.gold ? '' : 'bad'}"><b>${gold}</b><u>/${info.next.gold}</u></span></span></span>
+          <button class="ugo" data-upgo ${info.can ? '' : 'disabled'}>扩 容</button>
+        </div>
+        <div class="uhint">扩容永久生效、随存档保存；行囊格位不占负重。${info.can ? '' : '还差：' + info.lack.join('、') + '。'}</div>`;
+    } else {
+      h = `<div class="urow">
+          <span class="utitle">乾坤囊</span>
+          <span class="ucap"><b class="nx">${info.cap}</b>格</span>
+          <span class="udots">${dots.join('')}</span>
+          <span class="utier">已达上限 · 共 ${info.maxTier} 次</span>
+        </div>
+        <div class="uhint">行囊已扩至 ${info.cap} 格，再多就撑破了。</div>`;
+    }
+    bar.style.display = '';
+    bar.innerHTML = h;
+  },
+
   /* [S3] 筛选出售 */
-  openSellFilter() {
-    const rarities = ['common', 'magic', 'rare'];
+  openSellFilter() {    const rarities = ['common', 'magic', 'rare'];
     const names = { common: '凡品', magic: '法器', rare: '珍宝' };
     const colors = { common: RARITY.common.color, magic: RARITY.magic.color, rare: RARITY.rare.color };
     UI.showDialog('铁匠·石九', '要出手哪些货色？带符文的装备会先取下符文再卖。', [

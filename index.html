@@ -269,6 +269,47 @@
   .sbtn.on{border-color:var(--gold);color:#1a1510;background:linear-gradient(180deg,#e0c070,#b89840);font-weight:600}
   .inv-tip{display:block;margin-bottom:6px}
 
+  /* ---------- 行囊扩容（v1.4.0） ---------- */
+  /* 入口与提示文字同一行，右侧对齐；不塞进顶栏，否则排序条会被挤成两行 */
+  .inv-sub{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:7px}
+  .inv-sub .inv-tip{margin-bottom:0;flex:1;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+  .capup{font-family:inherit;font-size:10.5px;letter-spacing:2px;padding:3px 9px;cursor:pointer;
+    background:linear-gradient(180deg,rgba(216,178,90,.16),rgba(0,0,0,.35));
+    border:1px solid rgba(216,178,90,.45);color:#e8d8b0;transition:.12s;flex:none}
+  .capup:hover{background:linear-gradient(180deg,rgba(216,178,90,.32),rgba(60,44,20,.5));
+    border-color:var(--gold);color:#fff3cc;box-shadow:0 0 10px rgba(216,178,90,.25)}
+  .capup.full{border-color:rgba(140,130,110,.3);color:#7a7466;cursor:default;background:rgba(0,0,0,.3)}
+  /* 扩容条做成行囊内的内联条：扩容后格子就在下面变多，反馈即时 */
+  .upbar{display:flex;flex-direction:column;gap:7px;padding:9px 11px;margin-bottom:7px;
+    border:1px solid rgba(216,178,90,.34);border-radius:3px;
+    background:linear-gradient(180deg,rgba(46,36,20,.62),rgba(20,18,14,.55))}
+  .upbar .urow{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+  .upbar .utitle{font-family:"STKaiti","KaiTi",serif;font-size:13px;letter-spacing:3px;color:#f0dca8}
+  .upbar .ucap{display:flex;align-items:baseline;gap:3px;font-size:11px;color:#8a8171;letter-spacing:1px}
+  .upbar .ucap b{font-family:"STKaiti","KaiTi",serif;font-size:18px;font-weight:500;color:#a89c80;line-height:1;vertical-align:-2px}
+  .upbar .ucap em{font-style:normal;color:#6a6458;margin:0 2px}
+  .upbar .ucap .nx{color:#f2d68e;text-shadow:0 0 10px rgba(216,178,90,.5)}
+  .upbar .utier{margin-left:auto;font-size:10px;color:#7a7466;letter-spacing:1px}
+  .upbar .udots{display:flex;gap:5px}
+  .upbar .udots span{width:7px;height:7px;border-radius:50%;border:1px solid rgba(216,178,90,.35)}
+  .upbar .udots span.done{background:#7a6132;border-color:#7a6132}
+  .upbar .udots span.now{background:linear-gradient(180deg,#f0d68a,#c39b40);border-color:#f0d68a;
+    box-shadow:0 0 8px rgba(240,214,138,.7)}
+  .upbar .ucosts{display:flex;align-items:center;gap:11px;flex-wrap:wrap}
+  .upbar .cst{display:flex;align-items:baseline;gap:4px;font-size:11px}
+  .upbar .cst .nm{letter-spacing:.5px}
+  .upbar .cst .hv{font-variant-numeric:tabular-nums;color:#9ecf8a}
+  .upbar .cst .hv.bad{color:#d88274}
+  .upbar .cst .hv b{font-weight:600}
+  .upbar .cst .hv u{text-decoration:none;color:#6a6458}
+  .upbar .ugo{margin-left:auto;font-family:inherit;font-size:11px;letter-spacing:3px;padding:5px 13px;cursor:pointer;
+    background:linear-gradient(180deg,rgba(216,178,90,.22),rgba(40,32,18,.9));
+    border:1px solid rgba(216,178,90,.55);color:#f0dca8;transition:.12s;flex:none}
+  .upbar .ugo:hover:not(:disabled){border-color:#f0dca8;color:#fff3cc;box-shadow:0 0 12px rgba(216,178,90,.35)}
+  .upbar .ugo:disabled{opacity:.4;cursor:not-allowed}
+  .upbar .ugo.max{border-color:rgba(140,130,110,.28);color:#7a7466;background:rgba(0,0,0,.3)}
+  .upbar .uhint{font-size:10px;color:#7a7466;letter-spacing:.5px;line-height:1.5}
+
   /* ---------- 一键分解确认条 ---------- */
   .junkbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:7px 10px;margin-bottom:6px;
     border:1px solid rgba(216,178,90,.3);border-radius:3px;background:rgba(30,26,18,.5);font-size:11px;color:#b8ad90}
@@ -1201,8 +1242,12 @@
         <button class="itab" data-tab="pill">丹药 <i>0</i></button>
         <button class="itab" data-tab="quest">任务物品 <i>0</i></button>
       </div>
-      <div class="cap inv-tip" id="invTip">左键装备 · Shift+左键出售 · 格子大小随部位</div>
+      <div class="inv-sub">
+        <span class="cap inv-tip" id="invTip">左键装备 · Shift+左键出售 · 格子大小随部位</span>
+        <button class="capup" id="invUpBtn" title="扩容行囊">扩 容</button>
+      </div>
       <div class="junkbar" id="invJunkBar" style="display:none"></div>
+      <div class="upbar" id="invUpBar" style="display:none"></div>
       <div class="igrid" id="invGrid"></div>
       <div class="matlist" id="invMats" style="display:none"></div>
       <div class="hintline" id="setLine"></div>

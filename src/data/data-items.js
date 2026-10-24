@@ -741,6 +741,37 @@ const CRYSTAL_TIERS = [
   { id: 4, name: '神晶', color: '#ffd166', label: '神' }
 ];
 
+/* ---------------- 行囊扩容（v1.4.0） ----------------
+ * 基础 40 格，每次扩容 +8 格，共 8 档，上限 104 格。
+ * 消耗四阶玄晶 + 铜钱：前两档只用凡晶，上手不卡；越往后越吃高阶晶。
+ * crystal 数组下标对应 CRYSTAL_TIERS 的凡 / 灵 / 玄 / 神。 */
+const BAG_BASE_CAP = 40;
+const BAG_STEP = 8;
+const BAG_UPGRADES = [
+  { cap: 48,  crystal: [12, 0, 0, 0],    gold: 300 },
+  { cap: 56,  crystal: [24, 3, 0, 0],    gold: 800 },
+  { cap: 64,  crystal: [36, 8, 1, 0],    gold: 1600 },
+  { cap: 72,  crystal: [50, 14, 3, 0],   gold: 2800 },
+  { cap: 80,  crystal: [70, 22, 6, 1],   gold: 4500 },
+  { cap: 88,  crystal: [96, 32, 10, 2],  gold: 7000 },
+  { cap: 96,  crystal: [130, 46, 16, 3], gold: 10000 },
+  { cap: 104, crystal: [180, 64, 24, 5], gold: 14000 }
+];
+
+/* 已扩容次数（0 = 还是基础容量）。
+ * 用 ceil 而非 round：存档里手动改过的非整档容量也按「已进入下一档」算，不会白送。 */
+function bagTierOf(cap) {
+  const c = Math.max(BAG_BASE_CAP, Math.round(Number(cap) || BAG_BASE_CAP));
+  return Math.max(0, Math.min(BAG_UPGRADES.length, Math.ceil((c - BAG_BASE_CAP) / BAG_STEP)));
+}
+/* 下一档配置；已满返回 null */
+function bagNextUpgrade(cap) {
+  const t = bagTierOf(cap);
+  return t >= BAG_UPGRADES.length ? null : BAG_UPGRADES[t];
+}
+/* 容量上限：基础 + 总扩容格数 */
+function bagHardCap() { return BAG_BASE_CAP + BAG_STEP * BAG_UPGRADES.length; }
+
 /* 词缀品质色（与玄晶等级对应） */
 const AFFIX_QUALITY_COLOR = {
   1: '#a0a0a0',   // 普通

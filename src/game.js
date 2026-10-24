@@ -304,7 +304,7 @@ const Game = {
       teleportStones: 0,
       hp: 100, mp: 50,
       equipment: { helm: null, chest: eq.chest, shoulders: null, gloves: null, boots: null, belt: null, amulet: null, ring1: null, ring2: null, weapon: eq.weapon, offhand: null, relic: null },
-      inventory: [], maxInv: 40,
+      inventory: [], maxInv: BAG_BASE_CAP,
       stash: { items: [], mats: {} },
       quests: { active: [], done: [], next: 'q1', announced: {} },
       mapId: 'village', playerPos: { x: 0, z: 10 },
@@ -364,6 +364,48 @@ const Game = {
   totalCrystalValue() {
     return this.crystalTierCount(1) * 1 + this.crystalTierCount(2) * 3 +
            this.crystalTierCount(3) * 10 + this.crystalTierCount(4) * 30;
+  },
+
+  /* ======================================================= */
+  /* 行囊扩容（v1.4.0）                                       */
+  /* ======================================================= */
+  /* 当前容量。旧档没有 maxInv 时按基础 40 算。 */
+  bagCap() {
+    const s = this.state;
+    return Math.max(BAG_BASE_CAP, Math.round(Number(s && s.maxInv) || BAG_BASE_CAP));
+  },
+
+  /* 扩容面板要的全部读数：当前档位 / 下一档 / 缺什么 / 能不能扩。
+   * 面板与探针都读这里，别各算一份，否则消耗表和按钮状态会不一致。 */
+  bagUpgradeInfo() {
+    const cap = this.bagCap();
+    const tier = bagTierOf(cap);
+    const maxTier = BAG_UPGRADES.length;
+    const next = bagNextUpgrade(cap);
+    if (!next) return { cap, tier, maxTier, next: null, can: false, lack: [], cost: null };
+    const cost = next.crystal.map((n, i) => ({
+      tier: i + 1, name: CRYSTAL_TIERS[i].name, color: CRYSTAL_TIERS[i].color,
+      need: n || 0, have: this.crystalTierCount(i + 1)
+    })).filter(c => c.need > 0);
+    const lack = cost.filter(c => c.have < c.need).map(c => c.name);
+    if ((this.state.gold || 0) < next.gold) lack.push('铜钱');
+    return { cap, tier, maxTier, next, cost, can: lack.length === 0, lack };
+  },
+
+  /* 扩容一次。返回 { ok, msg?, cap?, tier? }；材料由 addMat 扣减（自带下界保护）。 */
+  upgradeBag() {
+    const s = this.state;
+    if (!s) return { ok: false, msg: '尚未开局。' };
+    const info = this.bagUpgradeInfo();
+    if (!info.next) return { ok: false, msg: `行囊已扩至极限（${info.cap} 格）。` };
+    if (!info.can) return { ok: false, msg: '扩容所需不足：还差 ' + info.lack.join('、') + '。' };
+    const n = info.next;
+    for (let i = 0; i < 4; i++) if (n.crystal[i]) this.addMat('crystal' + (i + 1), -n.crystal[i]);
+    s.gold = Math.max(0, (s.gold || 0) - n.gold);
+    s.maxInv = n.cap;
+    const msg = `行囊扩容至 ${n.cap} 格（第 ${info.tier + 1} / ${info.maxTier} 次）。`;
+    if (typeof UI !== 'undefined' && UI.log) UI.log(msg, 'good');
+    return { ok: true, msg, cap: n.cap, tier: info.tier + 1 };
   },
 
   /* 读档 / 导入后统一整形：旧物品补 sockets=0，非法符文清空 */
@@ -2424,10 +2466,10 @@ const Game = {
     const eq = s.equipment;
     const two = this.handOf(eq.weapon) === 'two';
     if (two && eq.offhand) {
-      if (s.inventory.length < s.maxInv) { s.inventory.push(eq.offhand); eq.offhand = null; }
+      if (s.inventory.length < this.bagCap()) { s.inventory.push(eq.offhand); eq.offhand = null; }
     }
     if (eq.offhand && !this.fitsSlot(eq.offhand, 'offhand')) {
-      if (s.inventory.length < s.maxInv) { s.inventory.push(eq.offhand); eq.offhand = null; }
+      if (s.inventory.length < this.bagCap()) { s.inventory.push(eq.offhand); eq.offhand = null; }
     }
   },
 
@@ -3420,7 +3462,7 @@ const Game = {
             disposeTree(l.obj);
             this.loot.splice(i, 1);
           } else if (l.item) {
-            if (this.state.inventory.length >= this.state.maxInv) {
+            if (this.state.inventory.length >= this.bagCap()) {
               if (!l.warned) { l.warned = true; UI.log('行囊已满，先清理背包。', 'bad'); }
             } else if (this.addItem(l.item)) {
               SFX.loot(l.item.rarity);
@@ -3851,7 +3893,7 @@ const Game = {
 
   /* ---------------- 物品操作 ---------------- */
   addItem(item) {
-    if (this.state.inventory.length >= this.state.maxInv) {
+    if (this.state.inventory.length >= this.bagCap()) {
       UI.log('行囊已满，物品散落在地。', 'bad');
       return false;
     }
@@ -3941,7 +3983,7 @@ const Game = {
     }
     /* 换双手兵器：副手必须空出来，自动卸回行囊（行囊满则拒绝，避免吞装备） */
     if (slot === 'weapon' && this.handOf(item) === 'two' && s.equipment.offhand) {
-      if (s.inventory.length >= s.maxInv) { UI.log('行囊已满，无法卸下副手。', 'bad'); return; }
+      if (s.inventory.length >= this.bagCap()) { UI.log('行囊已满，无法卸下副手。', 'bad'); return; }
       const off = s.equipment.offhand;
       s.equipment.offhand = null;
       s.inventory.push(off);
@@ -3968,7 +4010,7 @@ const Game = {
     /* 副手那把双持兵器依附于主手：主手卸下时一并收回，避免「空手却握着副手刀」 */
     const also = (slot === 'weapon' && s.equipment.offhand && s.equipment.offhand.slot === 'weapon') ? s.equipment.offhand : null;
     const need = also ? 2 : 1;
-    if (s.inventory.length + need > s.maxInv) { UI.log('行囊已满。', 'bad'); return; }
+    if (s.inventory.length + need > this.bagCap()) { UI.log('行囊已满。', 'bad'); return; }
     s.equipment[slot] = null;
     s.inventory.push(item);
     if (also) { s.equipment.offhand = null; s.inventory.push(also); }
