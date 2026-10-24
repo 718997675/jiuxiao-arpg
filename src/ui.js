@@ -269,7 +269,7 @@ const UI = {
       if (rs) {
         e.preventDefault();
         const cost = Game.attrRespecFee(), got = Game.state.gold;
-        this.showDialog('洗点', `洗去全部根基加点，退还所有点数，收 ${cost} 金（现有 ${got} 金）。\n洗点不会影响身上已穿的装备——穿戴需求只在穿戴那一刻校验。`, [
+        this.showDialog('洗点', `洗去全部根基加点，退还所有点数，收 ${cost} 金（现有 ${got} 金）。洗点不会影响身上已穿的装备——穿戴需求只在穿戴那一刻校验。`, [
           { label: '洗 点', primary: true, action: () => { Game.resetAttrs(); this.closeAll(); this.openMenu('stat'); } },
           { label: '再想想', action: () => this.closeAll() }
         ]);
