@@ -4,7 +4,7 @@
  *   node dev/test-s2.js
  *
  * 覆盖：
- *   1. 24 符文 / 12 符文之语 / 10 条图标 path / 3 套职业套装的数据完整性
+ *   1. 24 符文 / 12 符文之语 / 10 条图标 path / 9 套职业套装（3 职业 × 3 类型）的数据完整性
  *   2. 孔位滚动、符文镶嵌 / 取下、符文之语「孔数 + 顺序 + 填满」判定
  *   3. 符文与符文之语属性、flag 是否正确进入 computePlayerStats
  *   4. 洗练只换目标词缀、必换 key、费用递增
@@ -24,6 +24,7 @@ load('data/data-core.js');
 load('data/data-icons.js');
 load('data/data-items.js');
 load('data/data-uniques.js');   // items.js 顶部会建 UNIQUE_BY_ID 索引，必须先加载
+load('data/data-skills.js');    // 套装 skillMods 指向的技能要真实存在
 load('items.js');
 
 const pick = name => vm.runInContext(name, ctx);
@@ -34,6 +35,7 @@ const RUNE_WORDS = pick('RUNE_WORDS');
 const RUNE_ICON_ORDER = pick('RUNE_ICON_ORDER');
 const ICON_PATHS = pick('ICON_PATHS');
 const SETS = pick('SETS');
+const SKILLS = pick('SKILLS');
 const CLASSES = pick('CLASSES');
 const FORGE = pick('FORGE');
 const rollItem = pick('rollItem');
@@ -102,17 +104,26 @@ console.log('\n一、数据完整性');
   ok(badWord === 0, '符文之语存在非法数据', 'count=' + badWord);
 
   const flags = new Set();
-  for (const s of Object.values(SETS)) for (const b of s.bonuses) if (b.flag) flags.add(b.flag);
+  for (const s of Object.values(SETS)) for (const b of s.bonuses) {
+    if (b.flag) flags.add(b.flag);
+    if (Array.isArray(b.flags)) b.flags.forEach(f => flags.add(f));
+  }
   for (const w of RUNE_WORDS) if (w.flag) {
     if (!flags.has(w.flag)) flags.add(w.flag);
   }
-  const KNOWN = new Set(['thunder', 'firetrail', 'groupheal', 'bossSlayer', 'explode', 'bloodRush', 'frostBurst', 'echo', 'seeker', 'longDash', 'novaFreeze']);
+  const KNOWN = new Set(['thunder', 'firetrail', 'groupheal', 'bossSlayer', 'explode', 'bloodRush',
+    'frostBurst', 'echo', 'seeker', 'longDash', 'novaFreeze', 'deepfreeze', 'runeburn']);
   const badFlag = [...flags].filter(f => !KNOWN.has(f));
   ok(badFlag.length === 0, '出现了未接入战斗逻辑的 flag', badFlag.join(','));
-  /* v1.1.9：套装 special 也必须全部落地（game.js specials 钩子） */
+  /* 套装 special 也必须全部落地（game.js specials 钩子） */
   const specials = new Set();
-  for (const s of Object.values(SETS)) for (const b of s.bonuses) if (b.special) specials.add(b.special);
-  const KNOWN_SP = new Set(['phoenix', 'soulharvest', 'berserk', 'critburst', 'chargeReset', 'wolfPrime']);
+  for (const s of Object.values(SETS)) for (const b of s.bonuses) {
+    if (b.special) specials.add(b.special);
+    if (Array.isArray(b.specials)) b.specials.forEach(sp => specials.add(sp));
+  }
+  const KNOWN_SP = new Set(['phoenix', 'soulharvest', 'berserk', 'critburst', 'chargeReset',
+    'wolfPrime', 'wolfPack', 'wolfStrong', 'frenzyRefresh', 'avatarResetThrust', 'talismanPierce',
+    'riposteGuard', 'frenzyStack', 'overcharge', 'plagueburst']);
   const badSp = [...specials].filter(f => !KNOWN_SP.has(f));
   ok(badSp.length === 0, '出现了未接入战斗逻辑的套装 special', badSp.join(','));
 
@@ -127,18 +138,16 @@ console.log('\n一、数据完整性');
   ok(badIcon === 0, '符文图标不符合 M11 规范', 'count=' + badIcon);
 
   const setIds = Object.keys(SETS);
-  ok(setIds.length === 3, '套装数量应为 3（v1.1.9 起一职业一套）', 'got ' + setIds.length);
+  ok(setIds.length === 9, '套装数量应为 9（3 职业 × 3 类型）', 'got ' + setIds.length);
   const pieceNames = new Set();
-  /* 18 个技能 id（与 data-skills.js 一致），用于校验套装 skillMods 指向真实技能 */
-  const SKILL_IDS = new Set(['whirl', 'thrust', 'warcry', 'quake', 'bloodrage', 'avatar',
-    'fireball', 'frostnova', 'chain', 'meteor', 'iceshield', 'starfall',
-    'talisman', 'summon', 'heal', 'poison', 'taiji', 'swordrain']);
+  /* 技能 id 直接从 data-skills.js 取（36 个），套装 skillMods 必须指向真实技能 */
+  const SKILL_IDS = new Set(Object.keys(SKILLS));
   const SKILLMOD_KEYS = new Set(['dmg', 'cd', 'cost', 'radius', 'count', 'dur']);
   let badSet = 0;
   for (const id of setIds) {
     const s = SETS[id];
     if (s.pieces.length !== s.slots.length) badSet++;
-    if (s.pieces.length < 4 || s.pieces.length > 6) badSet++;
+    if (s.pieces.length < 2 || s.pieces.length > 5) badSet++;
     if (!CLASSES[s.cls]) badSet++;
     for (const p of s.pieces) {
       if (pieceNames.has(p)) badSet++;
@@ -346,7 +355,7 @@ console.log('\n七、套装生成');
   }
   const allPieces = setIds.flatMap(id => SETS[id].pieces);
   ok(miss === 0, '有套装部件滚不出来', 'miss=' + miss);
-  ok(hitSets.size === 3, '3 套职业套装都应能被滚出', 'hit=' + hitSets.size);
+  ok(hitSets.size === 9, '9 套职业套装都应能被滚出', 'hit=' + hitSets.size);
   ok(hitPieces.size === allPieces.length, '每个套装部件都应能被滚出', hitPieces.size + '/' + allPieces.length);
   ok(wrongName === 0, '部件名与 set.pieces 错位', 'count=' + wrongName);
   ok(wrongRarity === 0, '套装稀有度 / 套装名未正确写入', 'count=' + wrongRarity);

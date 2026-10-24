@@ -704,6 +704,183 @@ const near = (a, b, tol, msg) => ok(Math.abs(a - b) <= tol, msg, a + ' ≈ ' + b
   ok(G7.t, 'T 键应开天赋面板');
   ok(G7.k, 'K 键应开术法面板');
 
+  /* ---------- H. 套装体系（v1.2.2） ---------- */
+  console.log('\nH. 套装体系（3 类型 × 5/4/3 件）');
+  const H = await p.evaluate(async () => {
+    const G = Game;
+    const cls = G.state.cls;
+    const R = { sets: [], mech: {}, cls };
+    const savedEq = G.state.equipment;
+    const savedEnemies = G.enemies;
+    G.state.level = 40; G.running = true; G.dead = false;
+    const mk = (id, i) => normalizeItem({
+      kind: SETS[id].slots[i], slot: SETS[id].slots[i], name: SETS[id].pieces[i],
+      rarity: 'set', ilvl: 40, setId: id, setName: SETS[id].name, cls,
+      sockets: 0, runes: [], affixes: []
+    });
+    const equipSet = id => {
+      const eq = {};
+      SETS[id].slots.forEach((sl, i) => { eq[sl] = mk(id, i); });
+      G.state.equipment = eq;
+      G.recalc();
+      return eq;
+    };
+    let eid = 900000;
+    const dummy = (x, z) => ({
+      id: ++eid, dead: false, pos: new THREE.Vector3(x, 0, z), cfg: {}, level: 1,
+      hp: 1e9, maxHp: 1e9, radius: 0.5, actor: {}, boss: false,
+      slow: 0, slowT: 0, poisonT: 0, venomT: 0, stun: 0, hitFlash: 0
+    });
+
+    /* H1：三套满件 → 档位、属性、技能修正、机制全部落进 state.stats */
+    for (const id of Object.keys(SETS).filter(x => SETS[x].cls === cls)) {
+      const s = SETS[id];
+      equipSet(id);
+      const st = G.state.stats;
+      const last = s.bonuses[s.bonuses.length - 1];
+      const statsOk = Object.keys(last.stats || {}).every(k => (st[k] || 0) >= last.stats[k]);
+      const modsOk = Object.keys(last.skillMods || {}).every(sk => st.skillMods[sk]
+        && Object.keys(last.skillMods[sk]).every(k => (st.skillMods[sk][k] || 0) >= last.skillMods[sk][k]));
+      const carriers = []
+        .concat(last.flag ? [['flags', last.flag]] : [])
+        .concat(Array.isArray(last.flags) ? last.flags.map(f => ['flags', f]) : [])
+        .concat(last.special ? [['specials', last.special]] : [])
+        .concat(Array.isArray(last.specials) ? last.specials.map(sp => ['specials', sp]) : []);
+      const carriersOk = carriers.every(([bag, key]) => !!st[bag][key]);
+      R.sets.push({
+        id, size: s.pieces.length, n: st.setCount[id], tiers: s.bonuses.length,
+        bonuses: st.setBonuses.filter(b => b.setId === id).length,
+        statsOk, modsOk, carriersOk, carriers: carriers.map(c => c[1]).join(',')
+      });
+    }
+
+    const st = () => G.state.stats;
+    const dmgTo = (d, amt, crit) => {
+      const before = d.hp;
+      /* 不加 silent：暴击叠层 / 过载这类「有感命中」钩子会被 silent 跳过 */
+      G.damageEnemy(d, amt, !!crit);
+      return before - d.hp;
+    };
+
+    if (cls === 'warrior') {
+      /* 血怒 3 件：暴击叠「狂怒」，5 层后同一击伤害 +25% */
+      equipSet('xuenu');
+      G.frenzy = { n: 0, t: 4 };
+      const d = dummy(3, 0);
+      for (let i = 0; i < 5; i++) dmgTo(d, 100, true);
+      const stacks = G.frenzy.n;
+      const boosted = dmgTo(d, 1000, false);
+      G.frenzy = { n: 0, t: 4 };
+      const plain = dmgTo(d, 1000, false);
+      R.mech.frenzyStacks = stacks;
+      R.mech.frenzyRatio = boosted / plain;
+
+      /* 磐石 4 件：格挡立刻反击（把格挡率钉到 100% 稳定触发） */
+      equipSet('panshi');
+      st().block = 100; st().dodge = 0;
+      G.invuln = 0; G.dead = false; G.state.hp = st().hpMax;
+      G.riposteCd = 0;
+      const src = dummy(3, 0);
+      G.damagePlayer(50, src);
+      R.mech.riposteDmg = 1e9 - src.hp;
+      R.mech.riposteCd = G.riposteCd;
+      R.mech.panshiThorns = st().thorns;
+    }
+
+    if (cls === 'mage') {
+      /* 玄冰 3 件：减速目标吃 +25% */
+      equipSet('xuanbing');
+      const slowD = dummy(3, 0); slowD.slow = 0.5; slowD.slowT = 2;
+      const freeD = dummy(3, 3); freeD.slow = 0; freeD.slowT = 0;
+      R.mech.iceRatio = dmgTo(slowD, 1000, false) / dmgTo(freeD, 1000, false);
+
+      /* 雷殛 4 件：暴击向周围追加 60% 天雷（第二个靶子被打到） */
+      equipSet('leiji');
+      G.overchargeCd = 0;
+      const a = dummy(10, 10), b = dummy(11.4, 10);
+      G.enemies = [a, b];
+      const hitA = dmgTo(a, 1000, true);
+      R.mech.overchargeOnB = 1e9 - b.hp;
+      R.mech.overchargeCd = G.overchargeCd;
+      R.mech.overchargeMain = hitA;
+    }
+
+    if (cls === 'taoist') {
+      /* 天师 3 件：对中毒 / 蚀骨目标 +40% */
+      equipSet('tianshi');
+      const ven = dummy(3, 0); ven.venomT = 2;
+      const clean = dummy(3, 3);
+      R.mech.runeRatio = dmgTo(ven, 1000, false) / dmgTo(clean, 1000, false);
+
+      /* 青符 5 件：召灵兽一次 2 头（wolfPack）+ 灵狼继承 90%（wolfPrime） */
+      equipSet('qingfu');
+      G.allies = [];
+      G.cooldowns = {}; G.state.mp = 1e6; st().mpMax = 1e6;
+      G.castSkill('summon');
+      await new Promise(r => setTimeout(r, 60));
+      R.mech.wolves = G.allies.length;
+      const wolf = G.allies[0];
+      R.mech.wolfInherit = wolf ? wolf.dmg / (st().atk * (1 + st().summonDmg / 100)) : 0;
+      for (const al of G.allies) if (al.actor && al.actor.group) G.scene.remove(al.actor.group);
+      G.allies = [];
+
+      /* 丹鼎 4 件：毒雾每跳必定爆裂（把随机钉成 0，稳定验证钩子）
+       * 用真实怪物当靶子：间隔回调会跑在下一帧，假对象会被 AI / 阴影逻辑撞上 */
+      equipSet('danding');
+      const pd = G.spawnEnemy('boar', G.playerGroup.position.x, G.playerGroup.position.z + 2.5, false, 5);
+      pd.hp = pd.maxHp = 1e6; pd.dmg = 0;   // 靶子：打得久一点，别被毒死
+      let booms = 0;
+      const rawExplode = G.explodeAt;
+      G.explodeAt = function (...args) { booms++; return rawExplode.apply(this, args); };
+      const rawRandom = Math.random;
+      Math.random = () => 0;
+      G.cooldowns = {}; G.state.mp = 1e6;
+      G.aimPoint.copy(pd.pos); G.aimDir.set(0, 0, 1);
+      G.castSkill('poison');
+      await new Promise(r => setTimeout(r, 950));
+      Math.random = rawRandom;
+      G.explodeAt = rawExplode;
+      G.mapGen = (G.mapGen || 0) + 1;
+      R.mech.plagueBooms = booms;
+      R.mech.venomMarked = pd.venomT;
+      G.enemies = G.enemies.filter(x => x !== pd);
+    }
+
+    G.enemies = savedEnemies;
+    G.state.equipment = savedEq;
+    G.recalc();
+    return R;
+  });
+
+  ok(H.sets.length === 3, '每个职业 3 套都能满件穿上', 'n=' + H.sets.length);
+  for (const s of H.sets) {
+    ok(s.n === s.size, `【${s.id}】满件后 setCount = ${s.size}`, s.n);
+    ok(s.bonuses === s.tiers, `【${s.id}】${s.tiers} 档加成全部激活`, s.bonuses);
+    ok(s.statsOk, `【${s.id}】末档 stats 进入面板`);
+    ok(s.modsOk, `【${s.id}】末档 skillMods 进入面板`);
+    ok(s.carriersOk, `【${s.id}】flag / special 进入面板（${s.carriers}）`);
+  }
+
+  if (H.cls === 'warrior') {
+    ok(H.mech.frenzyStacks === 5, '血怒：5 次暴击叠满 5 层狂怒', H.mech.frenzyStacks);
+    near(H.mech.frenzyRatio, 1.25, 0.06, '血怒：满层伤害 +25%');
+    ok(H.mech.riposteDmg > 0, '磐石：格挡后反击造成伤害', Math.round(H.mech.riposteDmg));
+    ok(H.mech.riposteCd > 0, '磐石：反击有内置冷却', H.mech.riposteCd);
+    ok(H.mech.panshiThorns >= 80, '磐石：荆棘 +80 落地', H.mech.panshiThorns);
+  }
+  if (H.cls === 'mage') {
+    near(H.mech.iceRatio, 1.25, 0.06, '玄冰：减速目标吃 +25% 伤害');
+    ok(H.mech.overchargeOnB > 0, '雷殛：暴击后追加天雷波及周围', Math.round(H.mech.overchargeOnB));
+    ok(H.mech.overchargeCd > 0, '雷殛：过载有内置冷却', H.mech.overchargeCd);
+  }
+  if (H.cls === 'taoist') {
+    near(H.mech.runeRatio, 1.4, 0.07, '天师：中毒 / 蚀骨目标吃 +40% 伤害');
+    ok(H.mech.wolves === 2, '青符：召灵兽一次 2 头', H.mech.wolves);
+    ok(H.mech.wolfInherit >= 0.85, '青符：灵狼继承攻击力 ≥ 85%', H.mech.wolfInherit);
+    ok(H.mech.plagueBooms > 0, '丹鼎：毒雾跳伤触发了爆裂', H.mech.plagueBooms);
+    ok(H.mech.venomMarked > 0, '丹鼎：毒雾给目标留下蚀骨印记', H.mech.venomMarked);
+  }
+
   /* 截图存档 */
   await p.evaluate(() => { UI.openTalent(); });
   await wait(400);

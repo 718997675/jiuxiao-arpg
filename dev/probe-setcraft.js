@@ -70,7 +70,7 @@ const bad = m => { results.push(0); console.log('  [FAIL] ' + m); };
       ],
       enhances: 1, reforges: 2
     });
-    /* 一条没有该部位的套装 target 检查用：项链（v1.1.9 起三套都不出项链） */
+    /* 一条没有该部位的套装 target 检查用：项链（龙骧是 5 件防具套，不含项链） */
     const amulet = normalizeItem({ kind: 'amulet', slot: 'amulet', name: '旧项链', rarity: 'rare', ilvl: 20, sockets: 0, runes: [], affixes: [{ key: 'int', val: 5, pre: '', suf: '', tier: 1, q: 1 }] });
     const setItem = normalizeItem({ kind: 'helm', slot: 'helm', name: '已有套装', rarity: 'set', ilvl: 20, setId: 'longxiang', setName: '龙骧', cls: 'warrior', sockets: 1, runes: [], affixes: [] });
     const uniq = normalizeItem({ kind: 'weapon', slot: 'weapon', name: '传世测试', rarity: 'unique', ilvl: 30, uniqueId: null, sockets: 0, runes: [], affixes: [] });
@@ -107,28 +107,28 @@ const bad = m => { results.push(0); console.log('  [FAIL] ' + m); };
     const rUniq = Game.craftSetItem(uniq, 'qingfu');
     out.uniqRejected = !rUniq.ok;
 
-    /* 4) 套装没有这个部位 → 拒绝（v1.1.9 三套都没有 amulet） */
+    /* 4) 套装没有这个部位 → 拒绝（龙骧 5 件套不含 amulet） */
     const rSlot = Game.craftSetItem(amulet, 'longxiang');
     out.slotRejected = !rSlot.ok;
 
-    /* 5) 跨职业打造 → 拒绝（战士武器打不进法师的星阙） */
+    /* 5) 跨职业打造 → 拒绝（战士武器打不进法师的雷殛） */
     const spear = normalizeItem({ kind: 'weapon', slot: 'weapon', name: '旧长枪', rarity: 'rare', ilvl: 20, cls: 'warrior', baseDmg: [10, 14], sockets: 0, runes: [], affixes: [{ key: 'str', val: 5, pre: '', suf: '', tier: 1, q: 1 }] });
     Game.state.inventory.push(spear);
-    const rCls = Game.craftSetItem(spear, 'xingque');
+    const rCls = Game.craftSetItem(spear, 'leiji');
     out.clsRejected = !rCls.ok;
 
-    /* 6) 本职业武器 → 应成功（龙骧战刃） */
-    const rSpear = Game.craftSetItem(spear, 'longxiang');
-    out.weaponOk = rSpear.ok && spear.setId === 'longxiang' && spear.name === '龙骧战刃';
+    /* 6) 本职业武器 → 应成功（战士武器进磐石 4 件套） */
+    const rSpear = Game.craftSetItem(spear, 'panshi');
+    out.weaponOk = rSpear.ok && spear.setId === 'panshi' && spear.name === '磐石战刃';
 
     /* 7) 材料不足 → 拒绝 */
     Game.addCrystalTier(4, -1000);
     const spear2 = normalizeItem({ kind: 'weapon', slot: 'weapon', name: '旧长枪·贰', rarity: 'rare', ilvl: 20, cls: 'warrior', baseDmg: [10, 14], sockets: 0, runes: [], affixes: [{ key: 'str', val: 5, pre: '', suf: '', tier: 1, q: 1 }] });
     Game.state.inventory.push(spear2);
-    const rPoor = Game.craftSetItem(spear2, 'longxiang');
+    const rPoor = Game.craftSetItem(spear2, 'panshi');
     out.poorRejected = !rPoor.ok && /神晶/.test(rPoor.msg || '');
 
-    /* 8) 套装加成生效：穿满 4 件龙骧（胸/手/靴/肩）→ 2 件与 4 件档都亮 */
+    /* 8) 套装加成生效：穿 4 件龙骧（胸/手/靴/肩）→ 2 件与 3 件档都亮 */
     const gloves = normalizeItem({ kind: 'gloves', slot: 'gloves', name: '龙骧护手', rarity: 'set', ilvl: 22, setId: 'longxiang', setName: '龙骧', cls: 'warrior', sockets: 0, runes: [], affixes: [] });
     const boots = normalizeItem({ kind: 'boots', slot: 'boots', name: '龙骧战靴', rarity: 'set', ilvl: 22, setId: 'longxiang', setName: '龙骧', cls: 'warrior', sockets: 0, runes: [], affixes: [] });
     const shoulders = normalizeItem({ kind: 'shoulders', slot: 'shoulders', name: '龙骧护肩', rarity: 'set', ilvl: 22, setId: 'longxiang', setName: '龙骧', cls: 'warrior', sockets: 0, runes: [], affixes: [] });
@@ -139,7 +139,7 @@ const bad = m => { results.push(0); console.log('  [FAIL] ' + m); };
     Game.state.equipment.shoulders = shoulders;
     Game.recalc();
     out.setBonusActive = ((Game.state.stats && Game.state.stats.setBonuses) || []).some(b => b.setId === 'longxiang' && b.need === 2);
-    out.setBonus4 = ((Game.state.stats && Game.state.stats.setBonuses) || []).some(b => b.setId === 'longxiang' && b.need === 4);
+    out.setBonus4 = ((Game.state.stats && Game.state.stats.setBonuses) || []).some(b => b.setId === 'longxiang' && b.need === 3);
     out.longDashFlag = !!(Game.state.stats && Game.state.stats.flags && Game.state.stats.flags.longDash);
     out.thrustMod = Game.state.stats && Game.state.stats.skillMods && Game.state.stats.skillMods.thrust ? Game.state.stats.skillMods.thrust.dmg : 0;
 
@@ -178,16 +178,16 @@ const bad = m => { results.push(0); console.log('  [FAIL] ' + m); };
     else bad('传世装备可打造成套装（BUG）');
     if (r1.slotRejected) ok('套装没有该部位时被拒绝（龙骧×项链）');
     else bad('部位不匹配却打造成功（BUG）');
-    if (r1.clsRejected) ok('跨职业打造被拒绝（战士武器×星阙）');
+    if (r1.clsRejected) ok('跨职业打造被拒绝（战士武器×雷殛）');
     else bad('跨职业打造未被拦截（BUG）');
-    if (r1.weaponOk) ok('本职业武器可打进龙骧（龙骧战刃）');
-    else bad('龙骧战刃打造失败');
+    if (r1.weaponOk) ok('本职业武器可打进磐石（磐石战刃）');
+    else bad('磐石战刃打造失败');
     if (r1.poorRejected) ok('材料不足时被拒绝并提示神晶');
     else bad('材料不足未拦截');
     if (r1.setBonusActive) ok('2 件龙骧套装加成在 recalc 后生效');
     else bad('套装加成未生效');
-    if (r1.setBonus4 && r1.longDashFlag && r1.thrustMod === 80) ok('4 件档机制同步生效：longDash 突进距离 + 烈焰突刺 +80% 修正');
-    else bad('4 件档机制未生效：b4=' + r1.setBonus4 + ' longDash=' + r1.longDashFlag + ' thrustMod=' + r1.thrustMod);
+    if (r1.setBonus4 && r1.longDashFlag && r1.thrustMod === 80) ok('3 件档机制同步生效：longDash 突进距离 + 烈焰突刺 +80% 修正');
+    else bad('3 件档机制未生效：b3=' + r1.setBonus4 + ' longDash=' + r1.longDashFlag + ' thrustMod=' + r1.thrustMod);
     if (r1.loadedSetId === 'longxiang' && r1.loadedName === '龙骧战铠' && JSON.stringify(r1.loadedRunes) === JSON.stringify(['el', null, null])) ok('存档往返后套装/名字/符文保留');
     else bad('读档后数据丢失：' + r1.loadedSetId + '/' + r1.loadedName);
     if (r1.importedSetId === 'longxiang' && r1.importedArmor > 100) ok('导出→导入后套装与重算后的基底保留');

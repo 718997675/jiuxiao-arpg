@@ -217,9 +217,15 @@ function craftSetItem(item, setId) {
   const used = new Set();
   (item.affixes || []).forEach(a => { if (a && a.key) used.add(a.key); });
   for (const fa of (item.fixed || [])) if (fa && fa.key) used.add(fa.key);
-  /* v1.1.9：套装件保底一条职业标志词条。只洗出来不足 3 条时才补，
-   * 且第一条补齐优先给专属词条；原本就够 3 条的老装备一条不动。 */
-  const sigKeys = SET_SIG[set.cls] || [];
+  /* v1.1.9：套装件保底一条职业标志词条（v1.2.2：优先用本套的 sig 取向）。
+   * 只洗出来不足 3 条时才补，且第一条补齐优先给专属词条；原本就够 3 条的老装备一条不动。
+   * 注意：标志词条必须按「部位词条池」过滤——武器不出防御词条、
+   * 首饰不出近战/持续词条，本套 sig 在该部位全被禁时回落到职业取向。 */
+  const sigPool = (typeof affixPool === 'function') ? affixPool(item.affixCls || item.cls, item.slot) : AFFIXES;
+  const legalSig = ks => ks.filter(k => sigPool.some(a => a.key === k));
+  const sigKeys = legalSig(set.sig || []).length
+    ? legalSig(set.sig || []).concat(legalSig(SET_SIG[set.cls] || []))
+    : legalSig(SET_SIG[set.cls] || []);
   const hasSig = (item.affixes || []).some(a => sigKeys.indexOf(a.key) >= 0)
     || (item.fixed || []).some(a => sigKeys.indexOf(a.key) >= 0);
   const sigFree = sigKeys.filter(k => !used.has(k));
@@ -335,13 +341,25 @@ function normalizeItem(item) {
   if (!item || typeof item !== 'object') return null;
   /* v1.1.7：词条职业倾向，旧档没有就留空（走中性池） */
   if (item.affixCls && typeof CLASSES !== 'undefined' && !CLASSES[item.affixCls]) item.affixCls = null;
-  /* v1.1.9：套装目录收敛为 3 套职业套装。旧档里的其它套装件
+  /* v1.1.9：套装目录收敛为职业套装。旧档里的其它套装件
    * （青龙 / 朱雀 / 九幽 / 天罡 / 山海 …）已退出目录：卸掉套装标识、
    * 稀有度降为玄品；装备本身的词条 / 孔位 / 符文全部保留，不销毁玩家资产。 */
   if (item.setId && !SETS[item.setId]) {
     item.setId = null;
     item.setName = null;
     if (item.rarity === 'set') item.rarity = 'rare';
+  }
+  /* v1.2.2：套装的部位构成变了（6 件 → 3/4/5 件，且不再含套装武器）。
+   * 旧档里「套装部位已不在该套目录内」的部件同样剥掉套装标识，避免
+   * 出现「穿一件武器也计入 5 件套」的错乱。 */
+  if (item.setId) {
+    const set = SETS[item.setId];
+    const slot = item.slot === 'ring' ? 'ring' : item.slot;
+    if (set.slots.indexOf(slot) < 0) {
+      item.setId = null;
+      item.setName = null;
+      if (item.rarity === 'set') item.rarity = 'rare';
+    }
   }
   if (!Array.isArray(item.affixes)) item.affixes = [];
   item.affixes = item.affixes.filter(a => a && typeof a.key === 'string' && STATS[a.key] && isFinite(a.val));
@@ -614,7 +632,7 @@ function rollItem(ilvl, opts = {}) {
   }
   if (isRing) { item.slot = 'ring'; }
 
-  /* ---- 套装（v1.1.9：3 套职业套装，部位精确匹配） ---- */
+  /* ---- 套装（v1.2.2：9 套职业套装，部位精确匹配） ---- */
   if (rarity === 'set') {
     const cands = Object.values(SETS).filter(s => s.slots.indexOf(slot) >= 0 && (!s.cls || s.cls === cls));
     if (cands.length) {
@@ -625,7 +643,7 @@ function rollItem(ilvl, opts = {}) {
       item.name = set.pieces[idx];
       item.rarity = 'set';
       item.cls = set.cls || null;
-    } else rarity = item.rarity = 'rare';   // 套装只出 5 防具 + 套装武器，其余部位降玄品
+    } else rarity = item.rarity = 'rare';   // 该部位没有任何本职业套装时降级为玄品（例如戒指）
   }
 
   /* ---- 唯一装备（传世） ----
@@ -658,12 +676,15 @@ function rollItem(ilvl, opts = {}) {
   if (item.rarity === 'set' && CHANCE(0.4)) count += 1;
   const used = new Set();
   item.fixed = [];
-  /* v1.1.9：套装件保底一条职业标志词条。先在池子里挑一个合法 key 并「预留」
-   * （加进 used，固定词条就抢不走它），第 1 条可洗词条定向生成，保底 100% 生效。 */
+  /* v1.1.9：套装件保底一条职业标志词条。v1.2.2 起优先用本套 sig，
+   * 让「龙骧偏攻击、磐石偏防御」在词条层面也成立。
+   * 先在池子里挑一个合法 key 并「预留」（加进 used，固定词条就抢不走它），
+   * 第 1 条可洗词条定向生成，保底 100% 生效。 */
   let sigKey = null;
   if (item.setId) {
     const pool = (typeof affixPool === 'function') ? affixPool(cls, slot) : AFFIXES;
-    const sig = (SET_SIG[cls] || []).filter(k => pool.some(a => a.key === k) && !used.has(k));
+    const sigList = SETS[item.setId].sig || SET_SIG[cls] || [];
+    const sig = sigList.filter(k => pool.some(a => a.key === k) && !used.has(k));
     if (sig.length) { sigKey = PICK(sig); used.add(sigKey); }
   }
   const fixedCount = (RARITY[item.rarity].fixed || 0) + lvBonus.fixed;
@@ -809,6 +830,9 @@ function aggregate(equipped, talents) {
         if (b.stats) for (const k in b.stats) st[k] = (st[k] || 0) + b.stats[k];
         if (b.flag) flags[b.flag] = true;
         if (b.special) specials[b.special] = true;
+        /* v1.2.2：一个档位一次登记多个 special（青符 5 件：灵狼质变 + 双狼同开） */
+        if (Array.isArray(b.specials)) for (const sp of b.specials) specials[sp] = true;
+        if (Array.isArray(b.flags)) for (const f of b.flags) flags[f] = true;
         /* v1.1.9：套装可以直接修正具体技能，与传世的 uniqueSkill
          * 走同一条 skillMods 通道（dmg / radius / count / dur / cost / cd） */
         if (b.skillMods) {
@@ -1175,8 +1199,9 @@ function itemTooltip(item, opts = {}) {
   }
   if (item.setId) {
     const set = SETS[item.setId];
-    const have = (Game.state ? (Game.state.setCount[item.setId] || 0) : 0);
-    h += `<div class="tt-set"><div class="tt-set-t" style="color:${set.color}">${set.name}（${have}/${set.pieces.length}）</div>`;
+    const raw = (Game.state ? (Game.state.setCount[item.setId] || 0) : 0);
+    const have = Math.min(raw, set.pieces.length);
+    h += `<div class="tt-set"><div class="tt-set-t" style="color:${set.color}">${set.name}${set.tag ? '·' + set.tag : ''}（${have}/${set.pieces.length}）</div>`;
     for (const b of set.bonuses) {
       const on = have >= b.need;
       h += `<div class="tt-set-b ${on ? 'on' : 'off'}">(${b.need}) ${b.text}</div>`;

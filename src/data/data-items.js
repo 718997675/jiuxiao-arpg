@@ -366,86 +366,199 @@ function affixPool(cls, slot) {
   return out.length >= AFFIX_POOL_MIN ? out : AFFIXES;
 }
 
-/* ---------------- 套装（v1.1.9：三系职业套装） ----------------
- * 全库只保留 3 套，一套一职业、6 件（5 防具 + 套装武器），
- * 2 / 4 / 6 件三档激活。三档效果全部围绕该职业的核心机制设计：
+/* ---------------- 套装（v1.2.2：3 类型 × 3 职业 = 9 套） ----------------
+ * 一、为什么这样分件数
+ *   每个职业的可用部位一共 9 格：盔 / 甲 / 肩 / 手 / 靴 / 腰 / 链 / 武 / 副。
+ *   同一职业的 3 套故意「错开部位」，于是存在两条成型路线：
+ *     · 5 件主套 + 4 件兵装套 = 9 格全满，两套核心档位同时点亮（毕业线）
+ *     · 3 件随身套 + 主套 4 件 + 兵装套 2 件 = 9 格，三套低档叠加（过渡线）
+ *   两条线强度接近但取向不同，这就是「混搭 BD」的空间。
  *
- *   战士·龙骧 —— 突进与近战：
- *     2 件 攻击力 / 近战伤害；4 件 烈焰突刺伤害与突进距离、旋风斩伤害；
- *     6 件 突进命中 3 名敌人立刻刷新突进冷却（冲撞连招），剑神降世伤害 +50%。
- *   法师·星阙 —— 法术与范围：
- *     2 件 技能伤害 / 范围伤害；4 件 火球 / 冰霜新星 / 炎爆范围 +30%、消耗降低；
- *     6 件 陨星天火陨星 +8，冰霜新星命中附带冻结。
- *   道士·青符 —— 持续、召唤与续命：
- *     2 件 召唤物伤害 / 持续伤害；4 件 蚀骨毒雾更大更久、回春咒治疗提升；
- *     6 件 灵狼继承攻击力 60% → 90%（质变），万剑归宗符剑 +6。
+ * 二、3 个类型（每职业各一套，且一套一个专属机制）
+ *   战士  龙骧 5 件 · 突进冲撞（烈焰突刺 + 跃击 + 剑神降世）
+ *         磐石 4 件 · 守护反击（盾墙 + 反击 + 荆棘，格挡反打）
+ *         血怒 3 件 · 暴击斩杀（血怒 + 斩杀 + 旋风，暴击叠层）
+ *   法师  星阙 5 件 · 烈焰范围（火球 + 炎爆 + 火墙 + 陨星）
+ *         雷殛 4 件 · 雷霆连锁（雷弧链 + 雷罚 + 雷云，暴击追加天雷）
+ *         玄冰 3 件 · 冰控增伤（新星 + 暴雪 + 冰锥，控住才打得痛）
+ *   道士  青符 5 件 · 召唤兽群（灵狼 + 白虎 + 青龙 + 万剑）
+ *         丹鼎 4 件 · 毒煞持续（毒雾 + 天师符，毒跳爆裂）
+ *         天师 3 件 · 符箓爆发（五雷符 + 符箭 + 万剑，打中毒/燃烧目标）
  *
- * 每条效果都必须有真实生效点，四种载体：
+ * 三、每条效果都必须有真实生效点，五种载体：
  *   stats      → sumItemStats / aggregate 汇总进面板
  *   skillMods  → aggregate 合并进 state.stats.skillMods，castSkill 里按技能读
  *                （dmg 伤害 / radius 范围 / count 数量 / dur 持续 / cost 消耗 / cd 冷却）
  *   flag       → aggregate 合并进 state.stats.flags，game.js 有对应判定
- *                （longDash 突进距离 / novaFreeze 新星冻结）
  *   special    → aggregate 合并进 state.stats.specials，game.js 有对应钩子
- *                （chargeReset 突进刷冷 / wolfPrime 灵狼质变）
+ *   specials   → 一次性登记多个 special（灵狼质变 + 双狼同开这类组合）
  * 新增载体或新 flag / special 时，必须同步在 game.js 落地，并在
- * dev/probe-set-system.js 登记，不允许「写着有、战斗里没有」。
+ * dev/probe-set-system.js 登记，不允许「写着有空、战斗里没有」。
+ *
+ * 每个套装还带 sig（标志词条偏好），套装件生成时至少滚出 1 条，
+ * 让「词条贴合职业」对套装同样成立；没写 sig 的套装回落到 SET_SIG[职业]。
  */
 const SETS = {
+  /* ======================= 战士 ======================= */
   longxiang: {
-    id: 'longxiang', name: '龙骧', cls: 'warrior', color: '#ff7a4a',
-    pieces: ['龙骧战盔', '龙骧战铠', '龙骧护肩', '龙骧护手', '龙骧战靴', '龙骧战刃'],
-    slots: ['helm', 'chest', 'shoulders', 'gloves', 'boots', 'weapon'],
+    id: 'longxiang', name: '龙骧', cls: 'warrior', tag: '突进', color: '#ff7a4a',
+    pieces: ['龙骧战盔', '龙骧战铠', '龙骧护肩', '龙骧护手', '龙骧战靴'],
+    slots: ['helm', 'chest', 'shoulders', 'gloves', 'boots'],
+    sig: ['atkPct', 'meleeDmg', 'moveSpd', 'critDmg', 'knockback', 'str'],
     bonuses: [
       { need: 2, text: '攻击力 +18%，近战伤害 +12%', stats: { atkPct: 18, meleeDmg: 12 } },
       {
-        need: 4, text: '烈焰突刺伤害 +80%、突进距离 +30%，旋风斩伤害 +40%',
-        skillMods: { thrust: { dmg: 80 }, whirl: { dmg: 40 } }, flag: 'longDash'
+        need: 3, text: '烈焰突刺伤害 +80%、跃击伤害 +30%，突进距离 +30%',
+        skillMods: { thrust: { dmg: 80 }, leap: { dmg: 30 } }, flag: 'longDash'
       },
       {
-        need: 6, text: '突进命中 3 名敌人即刷新烈焰突刺冷却，剑神降世伤害 +50%',
+        need: 5, text: '突进命中 3 名敌人立刻刷新烈焰突刺；剑神降世伤害 +50%',
         skillMods: { avatar: { dmg: 50 } }, special: 'chargeReset'
       }
     ]
   },
-  xingque: {
-    id: 'xingque', name: '星阙', cls: 'mage', color: '#8f8bff',
-    pieces: ['星阙法冠', '星阙法袍', '星阙云肩', '星阙手衣', '星阙云履', '星阙神杖'],
-    slots: ['helm', 'chest', 'shoulders', 'gloves', 'boots', 'weapon'],
+  panshi: {
+    id: 'panshi', name: '磐石', cls: 'warrior', tag: '守护', color: '#c8b48a',
+    pieces: ['磐石战刃', '磐石重盾', '磐石腰封', '磐石护符'],
+    slots: ['weapon', 'offhand', 'belt', 'amulet'],
+    sig: ['def', 'block', 'dmgReduce', 'allRes', 'hpPct', 'thorns', 'vit', 'str'],
     bonuses: [
-      { need: 2, text: '技能伤害 +18%，范围伤害 +15%', stats: { skillDmg: 18, aoeDmg: 15 } },
+      { need: 2, text: '护甲 +25%，格挡率 +10%，伤害减免 +6%', stats: { armorPct: 25, block: 10, dmgReduce: 6 } },
       {
-        need: 4, text: '火球术 / 冰霜新星 / 炎爆术范围 +30%，技能消耗 -12%',
-        skillMods: { fireball: { radius: 30 }, frostnova: { radius: 30 }, meteor: { radius: 30 } },
-        stats: { costReduce: 12 }
-      },
-      {
-        need: 6, text: '陨星天火陨星 +8 颗，冰霜新星命中的敌人被冻结 1.2 秒',
-        skillMods: { starfall: { count: 8 } }, flag: 'novaFreeze'
+        need: 4, text: '荆棘 +80；格挡时立刻反击（150% 护甲伤害并击退，盾墙期间翻倍）',
+        stats: { thorns: 80 }, special: 'riposteGuard'
       }
     ]
   },
+  xuenu: {
+    id: 'xuenu', name: '血怒', cls: 'warrior', tag: '暴击', color: '#e0424a',
+    pieces: ['血怒护手', '血怒束带', '血怒坠'],
+    slots: ['gloves', 'belt', 'amulet'],
+    sig: ['crit', 'critDmg', 'aspd', 'lifesteal', 'atkPct'],
+    bonuses: [
+      { need: 2, text: '暴击率 +8%，暴击伤害 +40%', stats: { crit: 8, critDmg: 40 } },
+      {
+        need: 3, text: '暴击叠「狂怒」：每层伤害 +5%、攻速 +4%，最多 5 层，4 秒未暴击掉 1 层；斩杀对残血目标 +40%',
+        stats: { executeDmg: 40 }, special: 'frenzyStack'
+      }
+    ]
+  },
+
+  /* ======================= 法师 ======================= */
+  xingque: {
+    id: 'xingque', name: '星阙', cls: 'mage', tag: '烈焰', color: '#8f8bff',
+    pieces: ['星阙法冠', '星阙法袍', '星阙云肩', '星阙手衣', '星阙云履'],
+    slots: ['helm', 'chest', 'shoulders', 'gloves', 'boots'],
+    sig: ['skillDmg', 'aoeDmg', 'int', 'costReduce', 'cdr', 'fireRes'],
+    bonuses: [
+      { need: 2, text: '技能伤害 +18%，范围伤害 +15%', stats: { skillDmg: 18, aoeDmg: 15 } },
+      {
+        need: 3, text: '火球术 / 炎爆术 / 火墙范围 +30%，技能消耗 -12%',
+        skillMods: { fireball: { radius: 30 }, meteor: { radius: 30 }, firewall: { radius: 30 } },
+        stats: { costReduce: 12 }
+      },
+      {
+        need: 5, text: '陨星天火陨星 +8 颗；火球术命中后留下 3.5 秒火海',
+        skillMods: { starfall: { count: 8 } }, flag: 'firetrail'
+      }
+    ]
+  },
+  leiji: {
+    id: 'leiji', name: '雷殛', cls: 'mage', tag: '雷霆', color: '#67a9ff',
+    pieces: ['雷殛法杖', '雷殛灵珠', '雷殛腰链', '雷殛颈环'],
+    slots: ['weapon', 'offhand', 'belt', 'amulet'],
+    sig: ['projDmg', 'crit', 'skillDmg', 'cdr', 'mpReg', 'agi'],
+    bonuses: [
+      { need: 2, text: '投射物伤害 +20%，暴击率 +6%', stats: { projDmg: 20, crit: 6 } },
+      {
+        need: 4, text: '雷弧链 +2 跳且伤害 +25%，雷罚 +40%；技能暴击时向周围追加一道 60% 伤害的天雷（0.4 秒冷却）',
+        skillMods: { chain: { count: 2, dmg: 25 }, judgement: { dmg: 40 } }, special: 'overcharge'
+      }
+    ]
+  },
+  xuanbing: {
+    id: 'xuanbing', name: '玄冰', cls: 'mage', tag: '冰控', color: '#8ad8ff',
+    pieces: ['玄冰护手', '玄冰腰佩', '玄冰霜坠'],
+    slots: ['gloves', 'belt', 'amulet'],
+    sig: ['freezeChance', 'slowChance', 'skillDmg', 'iceRes', 'cdr', 'int'],
+    bonuses: [
+      { need: 2, text: '冻结几率 +8%，技能伤害 +12%', stats: { freezeChance: 8, skillDmg: 12 } },
+      {
+        need: 3, text: '被减速或冻结的敌人受到伤害 +25%；暴雪 +2 秒、冰霜新星范围 +25%',
+        skillMods: { blizzard: { dur: 2 }, frostnova: { radius: 25 } }, flag: 'deepfreeze'
+      }
+    ]
+  },
+
+  /* ======================= 道士 ======================= */
   qingfu: {
-    id: 'qingfu', name: '青符', cls: 'taoist', color: '#5ce0b0',
-    pieces: ['青符道冠', '青符道袍', '青符云肩', '青符手衣', '青符云履', '青符符剑'],
-    slots: ['helm', 'chest', 'shoulders', 'gloves', 'boots', 'weapon'],
+    id: 'qingfu', name: '青符', cls: 'taoist', tag: '召唤', color: '#5ce0b0',
+    pieces: ['青符道冠', '青符道袍', '青符云肩', '青符手衣', '青符云履'],
+    slots: ['helm', 'chest', 'shoulders', 'gloves', 'boots'],
+    sig: ['summonDmg', 'dotDmg', 'hpPct', 'int', 'mpReg', 'vit'],
     bonuses: [
       { need: 2, text: '召唤物伤害 +35%，持续伤害 +20%', stats: { summonDmg: 35, dotDmg: 20 } },
       {
-        need: 4, text: '蚀骨毒雾范围 +30%、持续 +3 秒，回春咒治疗 +30%',
+        need: 3, text: '蚀骨毒雾范围 +30%、持续 +3 秒，回春咒治疗 +30%',
         skillMods: { poison: { radius: 30, dur: 3 }, heal: { dmg: 30 } }
       },
       {
-        need: 6, text: '灵狼继承攻击力 60% → 90%，万剑归宗符剑 +6 道',
-        skillMods: { swordrain: { count: 6 } }, special: 'wolfPrime'
+        need: 5, text: '灵狼继承攻击力 60% → 90%，召灵兽一次召 2 头；万剑归宗符剑 +6 道',
+        skillMods: { swordrain: { count: 6 } }, specials: ['wolfPrime', 'wolfPack']
+      }
+    ]
+  },
+  danding: {
+    id: 'danding', name: '丹鼎', cls: 'taoist', tag: '毒煞', color: '#7fbf5a',
+    pieces: ['丹鼎法剑', '丹鼎药囊', '丹鼎药带', '丹鼎丹坠'],
+    slots: ['weapon', 'offhand', 'belt', 'amulet'],
+    sig: ['dotDmg', 'poisonRes', 'skillDmg', 'healBonus', 'hpPct', 'vit', 'int'],
+    bonuses: [
+      { need: 2, text: '持续伤害 +30%，毒素抗性 +25%', stats: { dotDmg: 30, poisonRes: 25 } },
+      {
+        need: 4, text: '毒雾每跳有 25% 概率爆裂（80% 攻击力，3 码）；毒雾范围 +25%、持续 +2 秒，天师符 +25%',
+        skillMods: { poison: { radius: 25, dur: 2 }, mastersigil: { dmg: 25 } }, special: 'plagueburst'
+      }
+    ]
+  },
+  tianshi: {
+    id: 'tianshi', name: '天师', cls: 'taoist', tag: '符箓', color: '#ffd24a',
+    pieces: ['天师护手', '天师法带', '天师符坠'],
+    slots: ['gloves', 'belt', 'amulet'],
+    sig: ['skillDmg', 'projDmg', 'critDmg', 'crit', 'mpReg', 'int'],
+    bonuses: [
+      { need: 2, text: '技能伤害 +20%，暴击伤害 +30%', stats: { skillDmg: 20, critDmg: 30 } },
+      {
+        need: 3, text: '五雷符 +40%、符箭 +2 张；符箓命中后穿透至下一个目标，对中毒或燃烧的目标伤害 +40%',
+        skillMods: { talisman: { dmg: 40 }, talismanarrow: { count: 2 } },
+        special: 'talismanPierce', flag: 'runeburn'
       }
     ]
   }
 };
 
-/* 套装专属词条（v1.1.9）：套装件生成时保证至少滚出 1 条本职业标志词条，
- * 让「词条贴合职业」对套装也成立（普通装备靠 affixPool 过滤已经够贴合，
- * 套装作为职业终极目标，再加一层保底）。
+/* 套装类型说明（UI 图鉴 / 文档共用，避免两处各写一份） */
+const SET_TYPES = {
+  warrior: [
+    { tag: '突进', ids: ['longxiang'], desc: '烈焰突刺 + 跃击 + 剑神降世，靠冲撞刷新冷却打连环突进' },
+    { tag: '守护', ids: ['panshi'], desc: '盾墙 + 反击 + 荆棘，格挡即反打，站着换血' },
+    { tag: '暴击', ids: ['xuenu'], desc: '血怒 + 斩杀 + 旋风斩，暴击叠「狂怒」越打越快' }
+  ],
+  mage: [
+    { tag: '烈焰', ids: ['xingque'], desc: '火球 + 炎爆 + 火墙 + 陨星，铺一片火海' },
+    { tag: '雷霆', ids: ['leiji'], desc: '雷弧链 + 雷罚 + 雷云，暴击追加天雷连锁清场' },
+    { tag: '冰控', ids: ['xuanbing'], desc: '新星 + 暴雪 + 冰锥，控住再打，控住才痛' }
+  ],
+  taoist: [
+    { tag: '召唤', ids: ['qingfu'], desc: '灵狼 + 白虎 + 青龙 + 万剑归宗，兽群压场' },
+    { tag: '毒煞', ids: ['danding'], desc: '毒雾 + 天师符，毒跳爆裂滚雪球' },
+    { tag: '符箓', ids: ['tianshi'], desc: '五雷符 + 符箭 + 万剑，专打中毒 / 燃烧目标' }
+  ]
+};
+
+/* 套装专属词条（v1.1.9，v1.2.2 加入逐套偏好）：
+ * 套装件生成时保证至少滚出 1 条标志词条。优先用 set.sig（每套一个取向，
+ * 例如龙骧偏攻击/移速、磐石偏防御/格挡），没写 sig 就回落到本表按职业。
  * 取值必须在 affixPool(cls, slot) 里合法，生成时会自动按池子过滤。 */
 const SET_SIG = {
   warrior: ['atkPct', 'meleeDmg', 'aspd', 'critDmg', 'knockback', 'str'],

@@ -738,6 +738,8 @@ const Game = {
     FX.clear();
 
     this.buffs = []; this.shield = 0; this.shieldT = 0; this.regen = 0; this.poisonT = 0; this.playerSlow = 0; this.playerSlowT = 0; this.reviveT = 0;
+    /* [S4] 套装运行时状态：狂怒层数 / 格挡反击与过载天雷的内置冷却 */
+    this.frenzy = { n: 0, t: 4 }; this.riposteCd = 0; this.overchargeCd = 0;
     this.cooldowns = {};
 
     const m = MAPS[mapId];
@@ -924,7 +926,7 @@ const Game = {
       radius: a.footR || 0.75,                            // 占位，下方统一 patch
       pos: new THREE.Vector3(x, 0, z), dead: false,
       atkCd: RND(0.3, 1.4), windup: 0, anim: 0, hitFlash: 0,
-      stun: 0, slow: 0, slowT: 0, poisonT: 0, poisonDmg: 0,
+      stun: 0, slow: 0, slowT: 0, poisonT: 0, poisonDmg: 0, venomT: 0,
       phase: 0, patternCd: 3, tag: kind, facing: new THREE.Vector3(0, 0, 1),
       spawnPos: new THREE.Vector3(x, 0, z), active: !isBoss, hitT: 0
     };
@@ -1378,6 +1380,14 @@ const Game = {
     if (st.hpRegen) this.state.hp = Math.min(st.hpMax, this.state.hp + st.hpRegen * dt);
     /* [S1] 暴击后攻速加成计时 */
     if (this.aspdCritT > 0) this.aspdCritT = Math.max(0, this.aspdCritT - dt);
+    /* [S4] 血怒套·狂怒：4 秒内没有新的暴击就掉 1 层 */
+    if (this.frenzy && this.frenzy.n > 0) {
+      this.frenzy.t -= dt;
+      if (this.frenzy.t <= 0) { this.frenzy.n--; this.frenzy.t = 4; }
+    }
+    /* [S4] 套装内置冷却：磐石格挡反击 / 雷殛过载天雷 */
+    this.riposteCd = Math.max(0, (this.riposteCd || 0) - dt);
+    this.overchargeCd = Math.max(0, (this.overchargeCd || 0) - dt);
     /* [S4] 还魂持续时间衰减 */
     if (this.reviveT > 0) this.reviveT = Math.max(0, this.reviveT - dt);
 
@@ -1503,8 +1513,10 @@ const Game = {
     const s = this.state, st = s.stats;
     const wp = s.equipment.weapon;
     const wpSpeed = wp && wp.speed ? wp.speed : 1;
-    /* [S1] 暴击后攻速：暴击命中后 2.5 秒内攻速加成 */
-    const aspdK = this.aspdCritT > 0 ? 1 + (st.aspdOnCrit || 0) / 100 : 1;
+    /* [S1] 暴击后攻速：暴击命中后 2.5 秒内攻速加成
+     * [S4] 血怒套·狂怒：每层 +4% 攻速（层数由 crit 累积，最多 5 层） */
+    const aspdK = (this.aspdCritT > 0 ? 1 + (st.aspdOnCrit || 0) / 100 : 1)
+      * (1 + 0.04 * ((this.frenzy && this.frenzy.n) || 0));
     const cdBase = 0.72 / (st.aspd * wpSpeed * aspdK);
     this.atkCd = cdBase;
     this.attacking = 0.32;
@@ -1713,7 +1725,7 @@ const Game = {
             const { dmg, crit } = this.rollDamage(st.atk * 2.6 * spow);
             this.damageEnemy(e, dmg, crit, { knock: 2.2 });
           }
-          /* 龙骧 6 件：突进命中 3 名敌人立刻刷新突进冷却 —— 冲撞连招的核心 */
+          /* 龙骧 5 件：突进命中 3 名敌人立刻刷新突进冷却 —— 冲撞连招的核心 */
           if (hits.length >= 3 && st.specials && st.specials.chargeReset) {
             this.cooldowns.thrust = 0;
             FX.text(new THREE.Vector3(p2.x, 2.6, p2.z), '冲撞重置', 'info', { life: 0.9 });
@@ -1914,7 +1926,7 @@ const Game = {
             const { dmg, crit } = this.rollDamage(st.atk * 2.2 * spow);
             this.damageEnemy(e, dmg, crit, {});
             e.slow = 0.45; e.slowT = 3.5 + sdur;
-            /* 星阙 6 件 / 寒冰系大节点：冰霜新星命中的敌人被冻结 */
+            /* 寒冰系大节点 / 星阙旧档：冰霜新星命中的敌人被冻结 */
             if (st.flags.novaFreeze) { e.slow = 1; e.slowT = Math.max(e.slowT, 1.2); }
           }
           FX.ring(c2, 6 * srad, 0x8ad8ff, 0.7, 0.3);
@@ -2000,7 +2012,7 @@ const Game = {
           const off = new THREE.Vector3(RND(-9, 9), 0, RND(-9, 9));
           const t = center.clone().add(off);
           this.explodeAt(t, 3.2, st.atk * 1.6, 0xff7a30, false, true);
-          /* 星阙 6 件：陨星 +8 颗（count 修正） */
+          /* 星阙 5 件：陨星 +8 颗（count 修正） */
           if (n > 16 + sextra) clearInterval(iv);
         }, 220);
         break;
@@ -2320,6 +2332,12 @@ const Game = {
             if (DIST2D(e.pos, c) < prad + e.radius) {
               const { dmg } = this.rollDamage(st.atk * 0.75 * spow);
               this.damageEnemy(e, dmg, false, { silent: true, elem: 'poison' });
+              /* [S4] 蚀骨印记：天师套「打中毒目标增伤」靠它判定 */
+              e.venomT = Math.max(e.venomT || 0, 2.5);
+              /* [S4] 丹鼎套·毒爆：每跳 25% 概率在目标脚下爆裂 */
+              if (st.specials && st.specials.plagueburst && CHANCE(0.25)) {
+                this.explodeAt(e.pos.clone(), 3, st.atk * 0.8 * spow, 0x7fbf5a, false, true, 'dot');
+              }
             }
           }
           FX.burst(new THREE.Vector3(c.x + RND(-prad + 1, prad - 1), 0.3, c.z + RND(-prad + 1, prad - 1)), 0x7fbf5a, 4, { speed: 1.4, size: 0.16, life: 1.2, gravity: -0.5 });
@@ -2454,6 +2472,12 @@ const Game = {
     if (st.flags.bossSlayer && e.boss) final *= 1.4;
     /* [S3] 狂战系·浴血：生命低于 50% 时造成的伤害 +25% */
     if (st.flags.lowHpFury && s.hp < st.hpMax * 0.5) final *= 1.25;
+    /* [S4] 血怒套·狂怒层数：每层 +5% 伤害 */
+    if (this.frenzy && this.frenzy.n) final *= 1 + 0.05 * this.frenzy.n;
+    /* [S4] 玄冰套：被减速 / 冻结的目标受到伤害 +25% */
+    if (st.flags.deepfreeze && ((e.slow || 0) > 0 || (e.slowT || 0) > 0)) final *= 1.25;
+    /* [S4] 天师套：对中毒 / 燃烧 / 蚀骨的目标伤害 +40% */
+    if (st.flags.runeburn && ((e.poisonT || 0) > 0 || (e.venomT || 0) > 0)) final *= 1.4;
 
     /* [S1] 按目标状态增伤：精英 / 首领 / 残血处决 / 满血先手 */
     if (st.eliteDmg && (e.elite || e.boss)) final *= 1 + st.eliteDmg / 100;
@@ -2469,6 +2493,22 @@ const Game = {
       this._critbursting = true;
       this.explodeAt(e.pos.clone(), 2.4, final * 0.35, 0xffb040, false, true);
       this._critbursting = false;
+    }
+    /* [S4] 血怒套·狂怒：暴击叠层（最多 5 层，4 秒未暴击掉 1 层） */
+    if (crit && !opts.silent && st.specials && st.specials.frenzyStack) {
+      const prev = (this.frenzy && this.frenzy.n) || 0;
+      const n = Math.min(5, prev + 1);
+      this.frenzy = { n, t: 4 };
+      if (n === 5 && prev < 5) {
+        FX.text(new THREE.Vector3(this.playerGroup.position.x, 2.9, this.playerGroup.position.z), '狂怒 MAX', 'info', { life: 0.9 });
+      }
+    }
+    /* [S4] 雷殛套·过载：技能暴击时向周围追加一道 60% 伤害的天雷（0.4 秒内置冷却） */
+    if (crit && !opts.silent && st.specials && st.specials.overcharge && (this.overchargeCd || 0) <= 0) {
+      this.overchargeCd = 0.4;
+      const oz = e.pos.clone();
+      FX.beam(new THREE.Vector3(oz.x, 7, oz.z), new THREE.Vector3(oz.x, 0.8, oz.z), 0x9ad8ff, 0.2);
+      this.explodeAt(oz, 3.2, final * 0.6, 0x9ad8ff, false, true);
     }
     e.hitFlash = 1;
     e.actor.flash = opts.silent ? 0.08 : 0.22;
@@ -2601,6 +2641,16 @@ const Game = {
     if (st.block && CHANCE(st.block / 100)) {
       dmg *= 0.5;
       FX.text(new THREE.Vector3(this.playerGroup.position.x, 2.5, this.playerGroup.position.z), '格挡', 'info');
+      /* [S4] 磐石套·格挡反击：挡下的瞬间反打（盾墙期间翻倍） */
+      if (st.specials && st.specials.riposteGuard && source && !source.dead && (this.riposteCd || 0) <= 0) {
+        this.riposteCd = 0.5;
+        const wall = this.buffs.some(b => b.key === 'skill:shieldwall');
+        const counter = (st.def * 1.5 + st.atk * 0.8) * (wall ? 2 : 1);
+        const pp = this.playerGroup.position;
+        FX.beam(new THREE.Vector3(pp.x, 1.2, pp.z), new THREE.Vector3(source.pos.x, 1.2, source.pos.z), 0xffe0a0, 0.16);
+        FX.text(new THREE.Vector3(pp.x, 2.7, pp.z), wall ? '反击 ×2' : '反击', 'info', { life: 0.7 });
+        this.damageEnemy(source, counter, false, { knock: 2.2, tag: 'melee' });
+      }
     }
 
     dmg *= (1 - CLAMP(st.allRes, 0, 60) / 200);
@@ -2727,6 +2777,8 @@ const Game = {
 
       if (e.stun > 0) { e.stun -= dt; a.moving = false; updateActorAnim(a, dt); continue; }
       if (e.slowT > 0) { e.slowT -= dt; if (e.slowT <= 0) e.slow = 0; }
+      /* [S4] 蚀骨印记（毒雾留下的增伤窗口） */
+      if (e.venomT > 0) e.venomT = Math.max(0, e.venomT - dt);
       if (e.poisonT > 0) {
         e.poisonT -= dt;
         e.poisonTick = (e.poisonTick || 0) - dt;
@@ -3132,7 +3184,7 @@ const Game = {
   summonWolf() {
     const st = this.state.stats;
     const mod = this._summonMods('summon');
-    /* [S3] 召唤系：中节点灵狼继承 75%；青符 6 件 90% */
+    /* [S3] 召唤系：中节点灵狼继承 75%；青符 5 件 90% */
     const inherit = (st.specials && st.specials.wolfPrime) ? 0.9
       : ((st.specials && st.specials.wolfStrong) ? 0.75 : 0.6);
     const dmg = st.atk * inherit * (1 + st.summonDmg / 100) * mod.dmgMul;

@@ -653,40 +653,60 @@ const UI = {
     }
 
     let totalOwned = 0, totalPieces = 0;
-    const sets = Object.values(SETS);
+    const all = Object.values(SETS);
+    /* v1.2.2：按职业分组展示（3 职业 × 3 类型），方便对着 BD 找套装 */
+    const groups = [];
+    const CLS_ORDER = ['warrior', 'mage', 'taoist'];
+    const seen = {};
+    for (const cls of CLS_ORDER) {
+      const list = all.filter(x => x.cls === cls);
+      if (list.length) { groups.push({ cls, list }); list.forEach(x => { seen[x.id] = 1; }); }
+    }
+    const rest = all.filter(x => !seen[x.id]);
+    if (rest.length) groups.push({ cls: null, list: rest });
+
     let h = '';
-    for (const set of sets) {
-      const mine = owned[set.id] || [];
-      totalOwned += mine.length;
-      totalPieces += set.pieces.length;
-      const clsTxt = set.cls ? '限 ' + CLASSES[set.cls].name : '全职业';
-      h += `<div class="cx-set" style="border-color:${set.color}33">
-        <div class="cx-head">
-          <span class="cx-name" style="color:${set.color}">${set.name}</span>
-          <span class="cx-sub">${clsTxt} · 已集 <b style="color:${set.color}">${mine.length}</b> / ${set.pieces.length}</span>
-        </div>
-        <div class="cx-pieces">`;
-      for (let i = 0; i < set.slots.length; i++) {
-        const sl = set.slots[i];
-        const got = mine.find(it => it.name === set.pieces[i]) || null;
-        const r = got ? RARITY[got.rarity] : null;
-        h += `<div class="cx-piece ${got ? 'got' : ''}" ${got ? `style="border-color:${r.color}55"` : ''}
-          title="${got ? got.name + ' · ilv' + got.ilvl + ' · ' + r.name : '未获得'}">
-          <span class="cx-pslot">${SLOT_NAME[sl] || sl}</span>
-          <span class="cx-pname" style="${got ? 'color:' + r.color : ''}">${got ? got.name : set.pieces[i]}</span>
-          ${got ? `<span class="cx-pilv">ilv${got.ilvl}</span>` : ''}
-        </div>`;
+    for (const g of groups) {
+      if (g.cls) {
+        const cc = typeof CLASSES[g.cls].color === 'number'
+          ? '#' + CLASSES[g.cls].color.toString(16).padStart(6, '0') : (CLASSES[g.cls].color || '#d8b25a');
+        h += `<div class="cx-group">
+          <span class="cx-gname" style="color:${cc}">${CLASSES[g.cls].name}</span>
+          <span class="cx-gdesc">${(SET_TYPES[g.cls] || []).map(t => t.tag).join(' · ')}</span></div>`;
       }
-      h += `</div><div class="cx-bonus">`;
-      for (const b of set.bonuses) {
-        const on = mine.length >= b.need;
-        h += `<div class="cx-b ${on ? 'on' : ''}"><span class="cx-bn">${b.need}件</span>${b.text}</div>`;
+      for (const set of g.list) {
+        totalPieces += set.pieces.length;
+        const mine = owned[set.id] || [];
+        totalOwned += mine.length;
+        const clsTxt = set.cls ? '限 ' + CLASSES[set.cls].name : '全职业';
+        h += `<div class="cx-set" style="border-color:${set.color}33">
+          <div class="cx-head">
+            <span class="cx-name" style="color:${set.color}">${set.name}${set.tag ? `<em class="cx-tag">${set.tag}</em>` : ''}</span>
+            <span class="cx-sub">${clsTxt} · ${set.pieces.length} 件套 · 已集 <b style="color:${set.color}">${Math.min(mine.length, set.pieces.length)}</b> / ${set.pieces.length}</span>
+          </div>
+          <div class="cx-pieces">`;
+        for (let i = 0; i < set.slots.length; i++) {
+          const sl = set.slots[i];
+          const got = mine.find(it => it.name === set.pieces[i]) || null;
+          const r = got ? RARITY[got.rarity] : null;
+          h += `<div class="cx-piece ${got ? 'got' : ''}" ${got ? `style="border-color:${r.color}55"` : ''}
+            title="${got ? got.name + ' · ilv' + got.ilvl + ' · ' + r.name : '未获得'}">
+            <span class="cx-pslot">${SLOT_NAME[sl] || sl}</span>
+            <span class="cx-pname" style="${got ? 'color:' + r.color : ''}">${got ? got.name : set.pieces[i]}</span>
+            ${got ? `<span class="cx-pilv">ilv${got.ilvl}</span>` : ''}
+          </div>`;
+        }
+        h += `</div><div class="cx-bonus">`;
+        for (const b of set.bonuses) {
+          const on = mine.length >= b.need;
+          h += `<div class="cx-b ${on ? 'on' : ''}"><span class="cx-bn">${b.need}件</span>${b.text}</div>`;
+        }
+        h += `</div></div>`;
       }
-      h += `</div></div>`;
     }
     document.getElementById('setCodexList').innerHTML = h;
     document.getElementById('setCodexSum').innerHTML =
-      `共 <b>${sets.length}</b> 套 · <b>${totalPieces}</b> 件部件 · 已收集 <b style="color:#ffd166">${totalOwned}</b> 件`;
+      `共 <b>${all.length}</b> 套 · <b>${totalPieces}</b> 件部件 · 已收集 <b style="color:#ffd166">${totalOwned}</b> 件`;
   },
 
   /* ---------------- 天赋面板（S3 / v1.2.0） ----------------
