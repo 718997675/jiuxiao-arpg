@@ -1275,10 +1275,40 @@ const UI = {
 
     document.getElementById('tlPts').textContent = Game.talentPoints();
     this.renderTalentPresets();
+    this.renderSynergyNote();
     /* 顺序要紧：先定画布位图尺寸（改 width/height 会清空画布），再画。
      * v1.6.0 起天赋页被搬进菜单，首帧只渲染这一次，反着来就会是一片空白。 */
     this.bindTalentCanvas();
     this.drawTalentCanvas();
+  },
+
+  /* [B4+] 协同页签的详细说明。
+   * 隐藏星位是这个系统里最容易被玩家漏掉的一环：画布上只画一个「？+未显形」，
+   * 玩家既不知道一共有几枚、也不知道差什么条件。所以在画布下面直接摊开一张清单：
+   * 一共几枚、每枚要什么装备、现在显形了几枚。 */
+  renderSynergyNote() {
+    const el = document.getElementById('tlSyn');
+    if (!el) return;
+    if (this.tlTree !== 'synergy') { el.classList.remove('on'); el.innerHTML = ''; return; }
+    const tree = (typeof TALENTS !== 'undefined' && TALENTS.synergy) ? TALENTS.synergy[0] : null;
+    const list = (tree && tree.nodes) ? tree.nodes : [];
+    if (!list.length) { el.classList.remove('on'); el.innerHTML = ''; return; }
+    const condOf = n => (typeof synergyCondText === 'function') ? synergyCondText(n) : (n.condText || '');
+    const opened = list.filter(n => { try { return Game.synergyUnlocked(n.id); } catch (e) { return false; } });
+    const rows = list.map(n => {
+      const ok = opened.indexOf(n) >= 0;
+      return `<div class="sy-row">
+        <span class="sy-dot" style="background:${ok ? '#8fd0ff' : '#3c444e'}"></span>
+        <span class="sy-nm ${ok ? 'sy-ok' : 'sy-no'}">${n.name}</span>
+        <span class="sy-cd" title="${condOf(n)}">${ok ? '已显形' : '未显形'} · ${condOf(n)}</span>
+      </div>`;
+    }).join('');
+    el.innerHTML = `<h4>协 同 · 星盘上的 ${list.length} 枚隐藏星位</h4>
+      <div class="sy-desc">这一环默认不显形。把装备穿对（套装件数 / 符文之语 / 词条达标），对应星位才会亮起；
+        亮起之后就能像普通节点一样投点，效果与普通天赋一样常驻。卸下装备后星位会重新封印，已投的点数会退回。</div>
+      <div class="sy-grid">${rows}</div>
+      <div class="sy-sum">已显形 ${opened.length} / ${list.length}${opened.length ? ' · 可投点：' + opened.map(n => n.name).join('、') : ' · 换一套装备再来看看'}</div>`;
+    el.classList.add('on');
   },
 
   renderTalentPresets() {
@@ -1514,13 +1544,17 @@ const UI = {
       g.fillStyle = '#8a8474';
       g.fillText('已投 ' + treePts + ' · 可用 ' + pts + ' 点', CX, CY + 10);
     } else if (syn) {
+      /* [FIX-SYN-TITLE] 协同环的半径是 148，环顶节点就在 y≈48 的位置，
+       * 标题原来画在 y=28/45 —— 正好压在顶部那枚未显形的灰色封印上。
+       * 协同环中心是一大片空地（半径 148 内没有任何节点），标题挪进圆心最稳。 */
       const open = Game.synergyOpen().length;
-      g.font = '600 16px "STKaiti","KaiTi",serif';
+      g.font = '600 17px "STKaiti","KaiTi",serif';
       g.fillStyle = tree.color;
-      g.fillText(tree.name, CX, 28);
+      g.fillText(tree.name, CX, CY - 18);
       g.font = '10px ui-sans-serif, system-ui, sans-serif';
       g.fillStyle = '#8a8474';
-      g.fillText('已显形 ' + open + '/' + tree.nodes.length + ' · 已投 ' + treePts + ' 点 · 可用 ' + pts + ' 点', CX, 45);
+      g.fillText('已显形 ' + open + ' / ' + tree.nodes.length, CX, CY + 4);
+      g.fillText('已投 ' + treePts + ' 点 · 可用 ' + pts + ' 点', CX, CY + 22);
     } else {
       g.font = '600 16px "STKaiti","KaiTi",serif';
       g.fillStyle = tree.color;
@@ -1801,7 +1835,7 @@ const UI = {
     }).join('');
     const curSp = variantSpecial(sk, v);
     const pips = Array.from({ length: SKILL_LV_MAX }, (_, i) => `<span class="sk-pip ${i < lv ? 'on' : ''}"></span>`).join('');
-    /* 技能条 5 格：点数字把当前技能放上去（已在条上会从原位移走） */
+    /* 技能条 8 格（两套甲乙栏）：点数字把当前技能放上去（已在条上会从原位移走） */
     const slotBtns = barSlots.map((bid, i) => {
       const occ = bid ? SKILLS[bid] : null;
       const on = bid === id;

@@ -4,13 +4,42 @@
  * 走原来的键鼠逻辑，互不影响。
  * ============================================================ */
 
+/* [FIX-MOBILE-LANDSCAPE] 移动端判定曾经在 iPhone 横屏下失败，整页退回 PC 布局。
+ * 原因是三重条件全都要满足，其中两个在真机上会骗人：
+ *   · `matchMedia('(pointer: coarse)')` —— iOS 横屏、微信内置浏览器、
+ *     以及开了「请求桌面网站」的 Safari 都可能把它报成 fine；
+ *   · `innerWidth/innerHeight` —— 转屏瞬间是过渡值，拿它算短边不可靠。
+ * 现在改成：手机 UA + 有触摸点 → 直接认定移动端，不再看 pointer 媒体查询；
+ * 其余设备退回原来的「触摸 + 粗指针 + 短边」三重判定。
+ * 另外支持 `?mobile=1` / `?mobile=0` 手动强制，方便出问题时自救。 */
+const _ua = (() => { try { return navigator.userAgent || ''; } catch (e) { return ''; } })();
+const _touchCap = (() => {
+  try {
+    return ('ontouchstart' in window) || (navigator.maxTouchPoints || 0) > 0 || ('onmsgesturechange' in window);
+  } catch (e) { return false; }
+})();
+/* 手机（不是平板 / 桌面）UA：这些设备一定有触屏，直接按移动端处理 */
+const _uaPhone = /iPhone|iPod|Android.*Mobile|Windows Phone|BlackBerry|IEMobile|Opera Mini|HarmonyOS.*Mobile/i.test(_ua)
+  || (() => { try { return !!(navigator.userAgentData && navigator.userAgentData.mobile); } catch (e) { return false; } })();
+/* iPad / 安卓平板：屏幕短边 > 1024 的按 PC，否则也走移动端 */
+const _uaTablet = /iPad|Android(?!.*Mobile)/i.test(_ua);
+
 const IS_TOUCH = (() => {
   try {
-    const touch = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
+    const q = location.search || '';
+    if (/[?&]mobile=1/.test(q)) return true;
+    if (/[?&]mobile=0/.test(q)) return false;
+    if (!_touchCap) return false;
+    if (_uaPhone) return true;
+    /* 短边取 screen 而不是 innerWidth：转屏时 innerWidth/innerHeight 会互换，
+     * screen 的短边才是设备物理短边 */
+    const sw = screen.width || 9999, sh = screen.height || 9999;
+    const shortSide = Math.min(sw, sh);
+    if (_uaTablet) return shortSide <= 1024;
     const coarse = window.matchMedia('(pointer: coarse)').matches
-      || window.matchMedia('(hover: none)').matches;
-    const small = Math.min(window.innerWidth, window.innerHeight) <= 1024;
-    return touch && coarse && small;
+      || window.matchMedia('(hover: none)').matches
+      || window.matchMedia('(any-pointer: coarse)').matches;
+    return coarse && shortSide <= 1024;
   } catch (e) { return false; }
 })();
 
@@ -126,7 +155,7 @@ const Mobile = {
     if (!this.on || !Game.state) return;
     const wrap = document.getElementById('mSkills');
     if (!wrap) return;
-    /* [S4] 技能条 5 格手动配置：宫格与 PC 动作条一致，空位是占位 */
+    /* [S4] 技能条 8 格手动配置：宫格与 PC 动作条一致，空位是占位 */
     const slots = Game.skillBar();
     wrap.innerHTML = slots.map((id, i) => {
       if (!id) return `<div class="mskill empty" data-slot="${i}"><span class="g">＋</span></div>`;

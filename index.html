@@ -387,6 +387,22 @@
     font-size:11px;line-height:1.7;color:#c8c0a8}
   .tl-tip .tt-n{font-size:12.5px;color:#f0dca8;letter-spacing:1px;margin-bottom:2px}
   .tl-tip .tt-r{font-size:10px;color:#8a8474;margin-bottom:3px}
+  /* [B4+] 协同页签的详细说明：8 枚隐藏星位 + 每枚的激活条件 + 当前显形进度 */
+  .tl-syn{display:none;margin-top:8px;padding:9px 12px;border:1px solid rgba(143,208,255,.28);
+    background:linear-gradient(180deg,rgba(143,208,255,.08),rgba(143,208,255,.02));font-size:11px;line-height:1.7;color:#a8c0d0}
+  .tl-syn.on{display:block}
+  .tl-syn h4{font-size:11.5px;color:#8fd0ff;letter-spacing:2px;font-weight:600;margin-bottom:4px}
+  .tl-syn .sy-desc{color:#8a98a6;font-size:10.5px;line-height:1.7;margin-bottom:6px}
+  .tl-syn .sy-grid{display:grid;grid-template-columns:1fr 1fr;gap:2px 14px}
+  .tl-syn .sy-row{display:flex;align-items:baseline;gap:6px;padding:1px 0;min-width:0}
+  .tl-syn .sy-dot{flex:none;width:5px;height:5px;border-radius:50%;position:relative;top:-2px}
+  .tl-syn .sy-nm{flex:none;min-width:38px}
+  .tl-syn .sy-ok{color:#8fd0ff}
+  .tl-syn .sy-no{color:#6a7480}
+  .tl-syn .sy-cd{color:#78848f;font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .tl-syn .sy-sum{margin-top:6px;padding-top:5px;border-top:1px solid rgba(143,208,255,.16);
+    color:#8fd0ff;font-size:10.5px}
+  @media (max-width:640px){ .tl-syn .sy-grid{grid-template-columns:1fr} }
   .tl-tip .tt-d{color:#b8b0a0}
   .tl-tip .tt-c{font-size:10px;color:#e0c070;margin-top:3px}
   .tl-tip .tt-c.no{color:#e05a5a}
@@ -478,23 +494,27 @@
   .sk-vbtn.mech::after{content:'◆';font-size:7px;margin-left:3px;vertical-align:top;opacity:.8}
   .sk-vbtn.mech:hover{border-color:rgba(140,220,255,.8);color:#d0f0ff}
   .sk-vbtn.mech.on{background:linear-gradient(180deg,#8ad8ff,#4a9ac8);border-color:#8ad8ff;color:#0d1a22}
-  /* 技能条配置行：详情卡底部 1-5 */
+  /* 技能条配置行：详情卡底部 1-8 + 甲乙换栏
+   * [FIX-SKBAR-OVERFLOW] 5 格改 8 格之后这一行放不下了：8×22 + 间距 + 换栏 + 提示
+   * 一共 260px 上下，而详情卡可用宽度只有 300 出头，直接顶出面板。
+   * 现在格子缩到 20px、间距 3px，并且允许整行换行 —— 提示文字独占第二行，
+   * 无论几格都不会再溢出。 */
   .sd-bar{display:flex;align-items:center;gap:8px;margin-top:10px;padding-top:9px;
-    border-top:1px solid rgba(216,178,90,.16)}
+    border-top:1px solid rgba(216,178,90,.16);flex-wrap:wrap;row-gap:6px}
   .sd-barlab{font-size:10px;color:#8a8474;letter-spacing:2px;flex:none}
-  .sd-barslots{display:flex;gap:4px}
-  .sk-bslot{font-family:inherit;width:22px;height:22px;font-size:11px;font-weight:600;cursor:pointer;
+  .sd-barslots{display:flex;gap:3px;flex:none}
+  .sk-bslot{font-family:inherit;width:20px;height:20px;font-size:10.5px;font-weight:600;cursor:pointer;
     background:rgba(0,0,0,.35);border:1px solid rgba(216,178,90,.35);color:#a8a090;transition:.12s;
-    font-variant-numeric:tabular-nums}
+    font-variant-numeric:tabular-nums;padding:0}
   .sk-bslot:hover:not(:disabled){border-color:#ffd479;color:#ffe9a8}
   .sk-bslot.on{background:linear-gradient(180deg,#e0c070,#b89840);color:#1a1510;border-color:#ffd479}
   .sk-bslot:disabled{opacity:.35;cursor:default}
-  .sd-barhint{font-size:9.5px;color:#6a6458;letter-spacing:0;line-height:1.5}
+  .sd-barhint{font-size:9.5px;color:#6a6458;letter-spacing:0;line-height:1.5;flex:1 1 100%}
   /* [M1] 两套快捷栏切换（甲 / 乙）：技能条格子右侧的两个小章 */
-  .sk-sets{display:inline-flex;gap:3px;margin:0 4px;vertical-align:middle}
-  .sk-setbtn{font-family:"STKaiti","KaiTi",serif;width:22px;height:22px;font-size:12px;
+  .sk-sets{display:inline-flex;gap:3px;margin:0 2px;vertical-align:middle;flex:none}
+  .sk-setbtn{font-family:"STKaiti","KaiTi",serif;width:20px;height:20px;font-size:11.5px;
     cursor:pointer;border:1px solid rgba(216,178,90,.35);border-radius:3px;color:#a89878;
-    background:linear-gradient(180deg,#2a2620,#12100c);transition:.12s}
+    background:linear-gradient(180deg,#2a2620,#12100c);transition:.12s;padding:0}
   .sk-setbtn:hover{border-color:#ffd479;color:#ffe9a8}
   .sk-setbtn.on{background:linear-gradient(180deg,#e0c070,#b89840);color:#1a1510;border-color:#ffd479}
   .sd-vars{display:flex;gap:6px;margin-bottom:6px}
@@ -1507,6 +1527,7 @@
       <canvas id="tlCanvas" width="660" height="440"></canvas>
       <div class="tl-tip" id="tlTip" style="display:none"></div>
     </div>
+    <div class="tl-syn" id="tlSyn"></div>
     <div class="tl-foot">
       <div class="tl-presets" id="tlPresets"></div>
       <button class="btn" id="tlRespec">重置天赋</button>
@@ -1522,7 +1543,7 @@
     <div class="sk-top"><span id="skPtsTxt">可用技能点 <b>0</b></span><span class="dim">每级 +8% 伤害 · 最高 10 级</span></div>
     <div class="sk-list" id="skList"></div>
     <div class="sk-tip" id="skTip"></div>
-    <div class="hintline">点击图标选中术法 · Ⅰ / Ⅱ / Ⅲ 切换变体（改机制不加点数）· 详情卡底部 1-5 = 技能条，点数字把当前术法放上去（已在条上的会换位）· 技能条 5 格，键 1-5 施放</div>
+    <div class="hintline">点击图标选中术法 · Ⅰ / Ⅱ / Ⅲ 切换变体（改机制不加点数，青色 ◆ = 机制型）· 详情卡底部 1-8 = 技能条，点数字把当前术法放上去（已在条上的会换位）· 技能条 8 格 × 2 套，键 1-8 施放，反引号换栏</div>
   </div>
 </div>
 
