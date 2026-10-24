@@ -6,6 +6,8 @@ const UI = {
   selectedCls: 'warrior',
   tooltipEl: null,
   hoverRef: null,
+  skillPage: 0,      // [S4] 动作条当前页（12 技能分两页）
+  skSel: null,       // [S4] 术法面板当前选中的技能（详情卡展示）
 
   init() {
     this.tooltipEl = document.getElementById('tooltip');
@@ -216,6 +218,8 @@ const UI = {
       if (document.activeElement && document.activeElement.id === 'nameInput') return;
       const k = e.key.toLowerCase();
       if (k === 'i') { this.toggleInv(); e.preventDefault(); }
+      else if (k === 't') { this.toggleTalent(); e.preventDefault(); }
+      else if (k === 'k') { this.toggleSkill(); e.preventDefault(); }
       else if (k === 'c') { this.toggleStat(); e.preventDefault(); }
       else if (k === 'l') { this.toggleQuest(); e.preventDefault(); }
       else if (k === 'r') { this.toggleForge(); e.preventDefault(); }
@@ -444,20 +448,33 @@ const UI = {
     const s = Game.state;
     const order = SKILL_ORDER[s.cls];
     const bar = document.getElementById('actionbar');
-    bar.innerHTML = order.map((id, i) => {
+    /* [S4] 12 技能分两页：每页 8 格（键 1-8），右下角翻页键切页 */
+    const pages = Math.ceil(order.length / SKILL_BAR_SIZE);
+    const page = Math.min(Math.max(this.skillPage || 0, 0), pages - 1);
+    this.skillPage = page;
+    const shown = order.slice(page * SKILL_BAR_SIZE, page * SKILL_BAR_SIZE + SKILL_BAR_SIZE);
+    bar.innerHTML = shown.map((id, i) => {
       const sk = SKILLS[id];
       const castLabel = sk.cast === 'ground' ? '指定位置' : sk.cast === 'dir' ? '指定方向' : sk.cast === 'enemy' ? '自动索敌' : '自身';
       const rangeLabel = sk.castRange ? ` · ${sk.castRange} 码` : '';
       return `<div class="skill" data-skill="${id}" title="${sk.name} · ${castLabel}${rangeLabel}">
-        <span class="k">${i + 1}</span><div class="g">${sk.glyph}</div>
+        <span class="k">${page * SKILL_BAR_SIZE + i + 1}</span><div class="g">${skillIconSvg(id, 26)}</div>
         <span class="cost">${Game.skillCost(sk)}</span><div class="cd"></div></div>`;
     }).join('') +
-      `<div class="potion" data-potion="hp"><span class="k">7</span><div class="g">丹</div><div class="n">红药</div></div>
-       <div class="potion blue" data-potion="mp"><span class="k">8</span><div class="g">露</div><div class="n">蓝药</div></div>
+      (pages > 1 ? `<div class="pgbtn" data-pg="1" title="翻页：第 ${page + 1} / ${pages} 页（键 1-8 对应当前页）">${page + 1}/${pages}</div>` : '') +
+      `<div class="potion" data-potion="hp"><span class="k">Z</span><div class="g">丹</div><div class="n">红药</div></div>
+       <div class="potion blue" data-potion="mp"><span class="k">X</span><div class="g">露</div><div class="n">蓝药</div></div>
        <div class="potion" data-tp="1" style="background:rgba(120,160,255,.22);border-color:rgba(120,160,255,.45)"><span class="k">9</span><div class="g">阵</div><div class="n">传送</div></div>`;
 
     bar.querySelectorAll('.skill').forEach(el => {
       el.addEventListener('click', () => Game.castSkill(el.dataset.skill));
+    });
+    bar.querySelectorAll('[data-pg]').forEach(el => {
+      el.addEventListener('click', () => {
+        this.skillPage = (this.skillPage + 1) % pages;
+        this.buildActionBar();
+        this.updateSkillbar();
+      });
     });
     bar.querySelectorAll('.potion').forEach(el => {
       if (el.dataset.potion) el.addEventListener('click', () => Game.usePotion(el.dataset.potion));
@@ -671,6 +688,569 @@ const UI = {
     document.getElementById('setCodexList').innerHTML = h;
     document.getElementById('setCodexSum').innerHTML =
       `共 <b>${sets.length}</b> 套 · <b>${totalPieces}</b> 件部件 · 已收集 <b style="color:#ffd166">${totalOwned}</b> 件`;
+  },
+
+  /* ---------------- 天赋面板（S3 / v1.2.0） ----------------
+   * 每职业 3 系 + 通用共 4 页签；Canvas 画轮盘：放射状环 + 节点圆 + 已点等级金弧。
+   * 左键加点 / Shift+左键洗 1 级；悬停出浮层；预设左键读取、Shift+左键保存；
+   * 重置二次确认（3 秒内再点一次）。 */
+  tlTree: null,        // 当前查看的系 id
+  _tlHit: [],          // 画布点击热区
+  _tlRespecArm: false,
+
+  toggleTalent() {
+    if (!Game.state) return;
+    const p = document.getElementById('talentPanel');
+    if (!p) return;
+    this.closeAll(p);
+    p.classList.toggle('open');
+    if (p.classList.contains('open')) this.renderTalentPanel();
+  },
+
+  openTalent() {
+    if (!Game.state) return;
+    const p = document.getElementById('talentPanel');
+    if (!p) return;
+    this.closeAll(p);
+    p.classList.add('open');
+    this.renderTalentPanel();
+  },
+
+  /* 天赋/技能/套装任何改动后刷新已开着的相关面板 */
+  onTalentChanged() {
+    const tp = document.getElementById('talentPanel');
+    if (tp && tp.classList.contains('open')) this.renderTalentPanel();
+    const sp = document.getElementById('statPanel');
+    if (sp && sp.classList.contains('open')) this.renderStats();
+    const ip = document.getElementById('invPanel');
+    if (ip && ip.classList.contains('open')) this.renderInventory();
+    if (typeof Mobile !== 'undefined' && Mobile.on) Mobile.syncHud();
+  },
+
+  renderTalentPanel() {
+    const p = document.getElementById('talentPanel');
+    if (!p || !Game.state) return;
+    const cls = Game.state.cls;
+    const trees = talentTrees(cls);
+    if (!this.tlTree || !trees.some(t => t.id === this.tlTree)) this.tlTree = trees[0].id;
+
+    /* 页签：系名 + 本系已投入点数 */
+    const sp = Game.talentState().spent;
+    const tabs = document.getElementById('tlTrees');
+    tabs.innerHTML = trees.map(t => {
+      let n = 0;
+      for (const id in sp) { const e = Game.talentNodeOf(id); if (e && e.tree === t.id) n += sp[id] || 0; }
+      return `<button class="tl-tab ${t.id === this.tlTree ? 'on' : ''}" data-tree="${t.id}"
+        style="${t.id === this.tlTree ? 'border-color:' + t.color + ';color:#1a1510;background:linear-gradient(180deg,' + t.color + 'cc,' + t.color + '88)' : 'color:' + t.color + ';border-color:' + t.color + '55'}">
+        ${t.name}<span class="tl-tp">${n}</span></button>`;
+    }).join('');
+    tabs.querySelectorAll('.tl-tab').forEach(b => b.addEventListener('click', () => {
+      this.tlTree = b.dataset.tree;
+      this.renderTalentPanel();
+    }));
+
+    document.getElementById('tlPts').textContent = Game.talentPoints();
+    this.renderTalentPresets();
+    this.drawTalentCanvas();
+    this.bindTalentCanvas();
+  },
+
+  renderTalentPresets() {
+    const t = Game.talentState();
+    const el = document.getElementById('tlPresets');
+    if (!el) return;
+    el.innerHTML = t.presets.map((pr, i) => {
+      const n = pr ? Object.keys(pr).reduce((a, id) => a + (pr[id] || 0), 0) : 0;
+      return `<button class="tl-pst ${pr ? 'filled' : ''}" data-pst="${i}"
+        title="${pr ? '左键读取 · Shift+左键保存覆盖' : 'Shift+左键保存当前加点'}">预设 ${i + 1}${pr ? ' · ' + n + ' 点' : ''}</button>`;
+    }).join('');
+    el.querySelectorAll('.tl-pst').forEach(b => b.addEventListener('click', e => {
+      const i = parseInt(b.dataset.pst);
+      if (e.shiftKey) {
+        if (Game.saveTalentPreset(i)) { this.toast('已保存到预设 ' + (i + 1)); this.renderTalentPanel(); }
+      } else {
+        const r = Game.loadTalentPreset(i);
+        this.toast(r.msg);
+      }
+    }));
+    const rs = document.getElementById('tlRespec');
+    if (rs) {
+      this._tlRespecArm = false;
+      rs.textContent = '重置天赋';
+      rs.classList.remove('primary');
+      rs.onclick = () => {
+        const spent = Game._spentTotal();
+        if (!this._tlRespecArm) {
+          if (!spent) { this.toast('尚未投入任何天赋点'); return; }
+          this._tlRespecArm = true;
+          rs.textContent = '确认扣除 ' + Game.respecCost() + ' 金？';
+          rs.classList.add('primary');
+          clearTimeout(this._tlRespecTimer);
+          this._tlRespecTimer = setTimeout(() => {
+            this._tlRespecArm = false; rs.textContent = '重置天赋'; rs.classList.remove('primary');
+          }, 3000);
+          return;
+        }
+        this._tlRespecArm = false;
+        clearTimeout(this._tlRespecTimer);
+        const r = Game.respecTalents();
+        this.toast(r.msg, r.ok ? '' : 'bad');
+        this.renderTalentPanel();
+      };
+    }
+  },
+
+  /* 画布只绑一次监听，重绘时复用 */
+  bindTalentCanvas() {
+    const cv = document.getElementById('tlCanvas');
+    if (!cv || cv._tlBound) return;
+    cv._tlBound = true;
+
+    /* 高分屏适配：物理像素放大，逻辑坐标仍是 660×440 */
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    if (dpr > 1) {
+      cv.width = 660 * dpr; cv.height = 440 * dpr;
+      cv.style.width = '660px'; cv.style.height = '440px';
+      cv.getContext('2d').scale(dpr, dpr);
+    }
+
+    const nodeAt = (mx, my) => {
+      for (const h of this._tlHit) {
+        if ((mx - h.x) * (mx - h.x) + (my - h.y) * (my - h.y) <= h.r * h.r) return h.id;
+      }
+      return null;
+    };
+    const localPos = e => {
+      const r = cv.getBoundingClientRect();
+      return { x: (e.clientX - r.left) * (660 / r.width), y: (e.clientY - r.top) * (440 / r.height) };
+    };
+
+    cv.addEventListener('click', e => {
+      if (!Game.state) return;
+      const { x, y } = localPos(e);
+      const id = nodeAt(x, y);
+      if (!id) return;
+      if (e.shiftKey) {
+        if (!Game.refundTalent(id)) {
+          const sp = Game.talentState().spent;
+          this.toast(sp[id] ? '后置节点还点着，先洗它们' : '该节点未加点');
+        }
+      } else {
+        if (!Game.allocTalent(id)) {
+          const e2 = Game.talentNodeOf(id);
+          const n = e2 && e2.node;
+          const rank = (Game.talentState().spent[id] || 0);
+          if (n && rank >= n.max) this.toast('已点满');
+          else if (n && n.reqPts && Game.talentTreePoints(e2.tree) < n.reqPts) this.toast('需要本系先投入 ' + n.reqPts + ' 点');
+          else if (n && (n.req || []).some(r => !(Game.talentState().spent[r] > 0))) this.toast('前置节点未点亮');
+          else this.toast('天赋点不足');
+        }
+      }
+    });
+
+    const tip = document.getElementById('tlTip');
+    cv.addEventListener('mousemove', e => {
+      if (!Game.state || !tip) return;
+      const { x, y } = localPos(e);
+      const id = nodeAt(x, y);
+      if (!id) { tip.style.display = 'none'; return; }
+      tip.innerHTML = this.talentTipHtml(id);
+      tip.style.display = 'block';
+      const main = cv.parentElement.getBoundingClientRect();
+      const scale = main.width / 660;
+      let tx = x * scale + 16, ty = y * scale - 10;
+      tx = Math.max(4, Math.min(tx, main.width - tip.offsetWidth - 6));
+      ty = Math.max(4, Math.min(ty, main.height - tip.offsetHeight - 6));
+      tip.style.left = tx + 'px';
+      tip.style.top = ty + 'px';
+    });
+    cv.addEventListener('mouseleave', () => { if (tip) tip.style.display = 'none'; });
+  },
+
+  talentTipHtml(id) {
+    const e = Game.talentNodeOf(id);
+    if (!e) return '';
+    const n = e.node;
+    const sp = Game.talentState().spent;
+    const rank = sp[id] || 0;
+    const tierTxt = n.tier === 3 ? '大节点 · 通玄' : n.tier === 2 ? '中节点 · 机变' : '小节点 · 常驻';
+    let status, ok = true;
+    if (rank >= n.max) status = '已点满 ' + rank + '/' + n.max;
+    else if (Game.canAllocTalent(id)) status = '可点（左键）· 当前 ' + rank + '/' + n.max;
+    else {
+      ok = false;
+      if (Game.talentPoints() <= 0) status = '天赋点不足（升级获得）';
+      else if (n.reqPts && Game.talentTreePoints(e.tree) < n.reqPts) status = '需本系先投入 ' + n.reqPts + ' 点';
+      else if ((n.req || []).some(r => !(sp[r] > 0))) {
+        const miss = (n.req || []).filter(r => !(sp[r] > 0)).map(r => Game.talentNodeOf(r).node.name);
+        status = '前置未点亮：' + miss.join('、');
+      } else status = '暂不可点';
+    }
+    const reqTxt = n.reqPts ? ` · 需本系 ${n.reqPts} 点` : '';
+    return `<div class="tt-n" style="color:${e.color}">${n.name}</div>
+      <div class="tt-r">${e.treeName} · ${tierTxt}${reqTxt}${n.max > 1 ? ' · 上限 ' + n.max + ' 级' : ''}</div>
+      <div class="tt-d">${n.desc}</div>
+      <div class="tt-c ${ok ? '' : 'no'}">${status}</div>`;
+  },
+
+  /* ---------------- 天赋轮盘（S3 / v1.2.0） ----------------
+   * 职业系（10 节点）：根节点居轮心的放射状轮盘——沿 req 链的深度 = 环半径，
+   *   左右两支按角度张开，大节点压底（6 点钟）。节点外圈金弧 = 已投入等级/上限。
+   * 通用系（30 节点长链）：单环轮盘，Req 沿环面成弧，中节点带系点门槛（虚线）。
+   * 左键加点 / Shift+左键洗 1 级；悬停出浮层。 */
+  drawTalentCanvas() {
+    const cv = document.getElementById('tlCanvas');
+    if (!cv || !Game.state) return;
+    const g = cv.getContext('2d');
+    const W = 660, H = 440;
+    const trees = talentTrees(Game.state.cls);
+    const tree = trees.find(t => t.id === this.tlTree) || trees[0];
+    const sp = Game.talentState().spent;
+    const pts = Game.talentPoints();
+    const treePts = Game.talentTreePoints(tree.id);
+    g.clearRect(0, 0, W, H);
+    this._tlHit = [];
+
+    const CX = 330;
+    const uni = tree.nodes.length > 12;          // 通用系：单环长链
+    const CY = uni ? 215 : 196;
+    const OUTER = uni ? 182 : 198;               // 外圈装饰环
+    /* 极坐标：deg 从正上方起、顺时针为正 */
+    const pol = (R, deg) => {
+      const a = deg * Math.PI / 180;
+      return { x: CX + R * Math.sin(a), y: CY - R * Math.cos(a) };
+    };
+    const byId = {};
+    tree.nodes.forEach(n => { byId[n.id] = n; });
+
+    /* ---------- 星盘底纹 ---------- */
+    const bg = g.createRadialGradient(CX, CY, 8, CX, CY, OUTER);
+    bg.addColorStop(0, 'rgba(216,178,90,.08)');
+    bg.addColorStop(.55, 'rgba(216,178,90,.03)');
+    bg.addColorStop(1, 'rgba(0,0,0,0)');
+    g.fillStyle = bg;
+    g.beginPath(); g.arc(CX, CY, OUTER, 0, Math.PI * 2); g.fill();
+    /* 外圈装饰环 + 刻度 */
+    g.strokeStyle = 'rgba(216,178,90,.18)'; g.lineWidth = 1;
+    g.beginPath(); g.arc(CX, CY, OUTER, 0, Math.PI * 2); g.stroke();
+    g.strokeStyle = 'rgba(216,178,90,.28)'; g.lineWidth = 1.4;
+    for (let i = 0; i < 12; i++) {
+      const a = i * 30 * Math.PI / 180;
+      const r1 = OUTER - (i % 3 === 0 ? 9 : 5), r2 = OUTER - 2;
+      g.beginPath();
+      g.moveTo(CX + Math.sin(a) * r1, CY - Math.cos(a) * r1);
+      g.lineTo(CX + Math.sin(a) * r2, CY - Math.cos(a) * r2);
+      g.stroke();
+    }
+
+    /* ---------- 标题 / 轮心 ---------- */
+    g.textAlign = 'center'; g.textBaseline = 'middle';
+    if (uni) {
+      g.setLineDash([3, 5]);
+      g.strokeStyle = 'rgba(216,178,90,.22)'; g.lineWidth = 1;
+      g.beginPath(); g.arc(CX, CY, 52, 0, Math.PI * 2); g.stroke();
+      g.setLineDash([]);
+      g.font = '600 17px "STKaiti","KaiTi",serif';
+      g.fillStyle = tree.color;
+      g.fillText(tree.name, CX, CY - 11);
+      g.font = '10px ui-sans-serif, system-ui, sans-serif';
+      g.fillStyle = '#8a8474';
+      g.fillText('已投 ' + treePts + ' · 可用 ' + pts + ' 点', CX, CY + 10);
+    } else {
+      g.font = '600 16px "STKaiti","KaiTi",serif';
+      g.fillStyle = tree.color;
+      g.fillText(tree.name, CX, 28);
+      g.font = '10px ui-sans-serif, system-ui, sans-serif';
+      g.fillStyle = '#8a8474';
+      g.fillText('本系已投 ' + treePts + ' 点 · 可用 ' + pts + ' 点', CX, 45);
+    }
+
+    /* ---------- 节点坐标 ---------- */
+    const POS = {};   // id → {x, y, deg, R}
+    if (!uni) {
+      /* 深度 = 沿 req[0] 链上层数；大节点固定最外环底部 */
+      const depthOf = id => {
+        let d = 0, c = byId[id];
+        while (c && c.req && c.req.length) { c = byId[c.req[0]]; d++; }
+        return d;
+      };
+      let maxD = 0;
+      for (const n of tree.nodes) if (n.tier < 3) maxD = Math.max(maxD, depthOf(n.id));
+      const d1 = tree.nodes.filter(n => depthOf(n.id) === 1);
+      const side = {};
+      d1.forEach((n, i) => { side[n.id] = d1.length === 1 ? 0 : (i === 0 ? -1 : 1); });
+      const sideOf = id => {
+        if (side[id]) return side[id];
+        const n = byId[id];
+        return n.req && n.req.length ? sideOf(n.req[0]) : 0;
+      };
+      const RAD = [0, 60, 96, 130, 164, 168];
+      const ANG = [0, 48, 72, 94, 112];
+      for (const n of tree.nodes) {
+        const d = n.tier === 3 ? maxD + 1 : depthOf(n.id);
+        const deg = n.tier === 3 ? 180 : sideOf(n.id) * ANG[Math.min(d, 4)];
+        const R = RAD[Math.min(d, 5)];
+        const p = pol(R, deg);
+        POS[n.id] = { x: p.x, y: p.y, deg, R };
+      }
+    } else {
+      const R = 165, step = 360 / tree.nodes.length;
+      tree.nodes.forEach((n, i) => {
+        const p = pol(R, i * step);
+        POS[n.id] = { x: p.x, y: p.y, deg: i * step, R };
+      });
+    }
+    const nodeR = n => uni ? (n.tier === 2 ? 14 : 11) : (n.tier === 3 ? 20 : n.tier === 2 ? 17 : 15);
+
+    /* ---------- 连线 ---------- */
+    const curve = (a, b, bow) => {
+      const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+      g.beginPath();
+      g.moveTo(a.x, a.y);
+      g.quadraticCurveTo(mx + (CX - mx) * bow, my + (CY - my) * bow, b.x, b.y);
+      g.stroke();
+    };
+    if (!uni) {
+      g.lineWidth = 2;
+      for (const n of tree.nodes) {
+        for (const r of (n.req || [])) {
+          const a = POS[r], b = POS[n.id];
+          if (!a || !b) continue;
+          g.strokeStyle = sp[r] > 0 ? tree.color + 'b0' : 'rgba(255,255,255,.10)';
+          curve(a, b, 0.16);
+        }
+      }
+      /* 大节点没有显式前置（reqPts 门槛）：中节点 → 大节点 虚线，表示「投入 5 点解锁」 */
+      g.save();
+      g.setLineDash([4, 5]);
+      g.lineWidth = 1.4;
+      for (const n of tree.nodes) {
+        if (n.tier !== 3) continue;
+        for (const m of tree.nodes) {
+          if (m.tier !== 2) continue;
+          g.strokeStyle = treePts >= (n.reqPts || 5) ? tree.color + '55' : 'rgba(255,255,255,.08)';
+          curve(POS[m.id], POS[n.id], 0.1);
+        }
+      }
+      g.restore();
+    } else {
+      /* 长链：Req 沿环面成弧；系点门槛未达成时该弧改虚线 */
+      const R = 165;
+      for (const n of tree.nodes) {
+        for (const r of (n.req || [])) {
+          const a = POS[r], b = POS[n.id];
+          if (!a || !b) continue;
+          const lit = sp[r] > 0;
+          const gate = n.reqPts && treePts < n.reqPts;
+          g.lineWidth = 2;
+          g.strokeStyle = lit ? (gate ? 'rgba(255,255,255,.16)' : tree.color + 'b0') : 'rgba(255,255,255,.10)';
+          if (Math.abs(b.deg - a.deg) < 30) {
+            const hwA = Math.asin((nodeR(byId[r]) + 2) / R) * 180 / Math.PI;
+            const hwB = Math.asin((nodeR(n) + 2) / R) * 180 / Math.PI;
+            g.save();
+            if (gate) g.setLineDash([3, 4]);
+            g.beginPath();
+            g.arc(CX, CY, R, (a.deg + hwA - 90) * Math.PI / 180, (b.deg - hwB - 90) * Math.PI / 180);
+            g.stroke();
+            g.restore();
+          } else {
+            curve(a, b, 0.2);
+          }
+        }
+      }
+    }
+
+    /* ---------- 节点 ---------- */
+    for (const n of tree.nodes) {
+      const P = POS[n.id];
+      const rank = sp[n.id] || 0;
+      const maxed = rank >= n.max;
+      const can = Game.canAllocTalent(n.id);
+      const reqOk = !(n.req || []).some(r => !(sp[r] > 0)) && (!n.reqPts || treePts >= n.reqPts);
+      const r = nodeR(n);
+      /* 已投入等级：外圈金弧（0 级时画一圈暗轨） */
+      g.lineWidth = 2.5;
+      g.beginPath(); g.arc(P.x, P.y, r + 4.5, 0, Math.PI * 2);
+      if (rank > 0) {
+        g.strokeStyle = 'rgba(255,255,255,.08)'; g.stroke();
+        g.beginPath();
+        g.arc(P.x, P.y, r + 4.5, -Math.PI / 2, -Math.PI / 2 + (rank / n.max) * Math.PI * 2);
+        g.strokeStyle = maxed ? '#ffd479' : tree.color;
+        g.stroke();
+      } else {
+        g.strokeStyle = n.max > 1 ? 'rgba(255,255,255,.08)' : 'rgba(255,255,255,.04)';
+        g.stroke();
+      }
+      /* 底圆 */
+      g.beginPath(); g.arc(P.x, P.y, r, 0, Math.PI * 2);
+      if (maxed) { g.fillStyle = 'rgba(48,40,24,.95)'; g.fill(); g.lineWidth = 2.5; g.strokeStyle = tree.color; }
+      else if (rank > 0) { g.fillStyle = 'rgba(26,22,15,.95)'; g.fill(); g.lineWidth = 2.5; g.strokeStyle = tree.color + 'aa'; }
+      else if (reqOk && pts > 0) { g.fillStyle = 'rgba(30,27,20,.95)'; g.fill(); g.lineWidth = 2; g.strokeStyle = 'rgba(216,178,90,.55)'; }
+      else { g.fillStyle = 'rgba(14,13,11,.95)'; g.fill(); g.lineWidth = 1.5; g.strokeStyle = 'rgba(255,255,255,.13)'; }
+      g.stroke();
+      /* 可加点：外圈微光 */
+      if (can) {
+        g.beginPath(); g.arc(P.x, P.y, r + 8.5, 0, Math.PI * 2);
+        g.strokeStyle = 'rgba(255,212,121,.35)'; g.lineWidth = 1; g.stroke();
+      }
+      /* 中心字形 */
+      g.font = (uni ? '600 10px' : n.tier === 3 ? '600 17px' : n.tier === 2 ? '600 15px' : '600 13px') + ' "STKaiti","KaiTi",serif';
+      g.fillStyle = rank > 0 ? (maxed ? '#ffe9a8' : '#f0e6cc') : (reqOk && pts > 0 ? '#a8a090' : '#5a5448');
+      g.fillText(n.name.slice(0, 1), P.x, P.y + 0.5);
+      /* 名称 / 等级标签：沿半径向外 */
+      if (!uni) {
+        const lp = pol(P.R + r + (n.max > 1 ? 21 : 12), P.deg);
+        g.font = '10px ui-sans-serif, system-ui, sans-serif';
+        g.fillStyle = rank > 0 ? '#c8b8a0' : reqOk && pts > 0 ? '#8a8474' : '#5a5448';
+        g.fillText(n.name, lp.x, lp.y);
+        if (n.max > 1) {
+          g.font = '8.5px ui-sans-serif, system-ui, sans-serif';
+          g.fillStyle = rank > 0 ? '#d8b060' : '#6a6458';
+          g.fillText(rank + '/' + n.max, lp.x, lp.y + 11);
+        } else if (n.tier === 3 && treePts < (n.reqPts || 5)) {
+          g.font = '8.5px ui-sans-serif, system-ui, sans-serif';
+          g.fillStyle = '#e05a5a';
+          g.fillText('需本系 ' + (n.reqPts || 5) + ' 点', lp.x, lp.y + 11);
+        }
+      } else if (n.tier === 2) {
+        const lp = pol(P.R + r + 12, P.deg);
+        g.font = '10px ui-sans-serif, system-ui, sans-serif';
+        g.fillStyle = rank > 0 ? '#c8b8a0' : '#7a7466';
+        g.fillText(n.name, lp.x, lp.y);
+      }
+      this._tlHit.push({ id: n.id, x: P.x, y: P.y, r: r + 6 });
+    }
+  },
+
+  /* ---------------- 技能面板（S4 / v1.2.0） ----------------
+   * 暗黑风：左侧按系分组的图标网格（一个图标一个技能），点图标选中；
+   * 右侧详情卡展示名称/描述/消耗冷却/等级/变体，升级与变体都在详情卡上操作。 */
+  toggleSkill() {
+    if (!Game.state) return;
+    const p = document.getElementById('skillPanel');
+    if (!p) return;
+    this.closeAll(p);
+    p.classList.toggle('open');
+    if (p.classList.contains('open')) this.renderSkillPanel();
+  },
+
+  openSkill() {
+    if (!Game.state) return;
+    const p = document.getElementById('skillPanel');
+    if (!p) return;
+    this.closeAll(p);
+    p.classList.add('open');
+    this.renderSkillPanel();
+  },
+
+  onSkillChanged() {
+    const p = document.getElementById('skillPanel');
+    if (p && p.classList.contains('open')) this.renderSkillPanel();
+    this.updateSkillbar();
+  },
+
+  renderSkillPanel() {
+    const p = document.getElementById('skillPanel');
+    if (!p || !Game.state) return;
+    const s = Game.state;
+    const order = SKILL_ORDER[s.cls];
+    const pts = Game.skillPoints();
+    document.getElementById('skPtsTxt').innerHTML = `可用技能点 <b>${pts}</b>`;
+    if (!this.skSel || !order.includes(this.skSel)) this.skSel = order[0];
+
+    /* 按系分组：SKILL_ORDER 是解锁顺序（动作条用），面板里要聚在一起 */
+    const byTree = {};
+    for (const id of order) {
+      const t = SKILLS[id].tree;
+      (byTree[t] = byTree[t] || []).push(id);
+    }
+
+    /* 左：图标网格 */
+    let h = '<div class="sk-body"><div class="sk-left">';
+    for (const t in byTree) {
+      h += `<div class="sk-tree">${t}<span class="sk-tn">${byTree[t].length} 式</span></div><div class="sk-tiles">`;
+      for (const id of byTree[t]) {
+        const sk = SKILLS[id];
+        const locked = s.level < sk.unlock;
+        const lv = Game.skillLevel(id);
+        h += `<div class="sk-row sk-tile ${locked ? 'locked' : ''} ${id === this.skSel ? 'sel' : ''}" data-skpick="${id}">
+          <span class="sk-ico">${skillIconSvg(id, 26)}</span>
+          ${locked ? `<span class="sk-lk">${sk.unlock} 级</span>` : `<span class="sk-badge">${lv}</span>`}
+        </div>`;
+      }
+      h += '</div>';
+    }
+    h += '</div>';
+
+    /* 右：详情卡 */
+    const id = this.skSel, sk = SKILLS[id];
+    const locked = s.level < sk.unlock;
+    const lv = Game.skillLevel(id);
+    const v = Game.skillVariant(id);
+    /* 预览伤害：攻击力 × 倍率 ×（变体 + 等级） */
+    const smod = mergeSkillMods(Game.skillMod(id), variantMods(sk, v));
+    const lvMul = 1 + SKILL_LV_STEP * (lv - 1);
+    const spow = (smod ? 1 + (smod.dmg || 0) / 100 : 1) * lvMul;
+    const dmgTxt = Math.round(s.stats.atk * sk.mult * spow);
+    const desc = (sk.desc || '').replace(/\{dmg\}/g, '<b style="color:#ffe9a8">' + dmgTxt + '</b>');
+    const castTxt = sk.cast === 'ground' ? '指定位置' : sk.cast === 'dir' ? '指定方向' : sk.cast === 'enemy' ? '自动索敌' : '自身';
+    const vars = (sk.variants || []).map((vr, i) =>
+      `<button class="sk-vbtn ${i === v ? 'on' : ''}" data-skv="${id}:${i}" title="${vr.desc}">${['Ⅰ', 'Ⅱ', 'Ⅲ'][i]}</button>`
+    ).join('');
+    const pips = Array.from({ length: SKILL_LV_MAX }, (_, i) => `<span class="sk-pip ${i < lv ? 'on' : ''}"></span>`).join('');
+    h += `<div class="sk-right">
+      <div class="sd-head"><span class="sd-ico">${skillIconSvg(id, 30)}</span>
+        <div><div class="sd-name">${sk.name}${locked ? `<span class="sk-lock">${sk.unlock} 级领悟</span>` : ''}</div>
+        <div class="sd-sub">${sk.tree} · ${locked ? '未领悟' : '等阶 ' + lv}</div></div></div>
+      <div class="sd-desc">${desc}</div>
+      <div class="sd-meta">消耗 ${Game.skillCost(sk)} · 冷却 ${Game.skillCd(sk).toFixed(1)}s · ${castTxt}${sk.castRange ? ' · ' + sk.castRange + ' 码' : ''}</div>
+      <div class="sd-lv"><div class="sk-pips">${pips}</div>
+        <span class="sk-lvt"><b>${lv}</b>/${SKILL_LV_MAX}</span>
+        <button class="sk-lvb" data-sklv="${id}" ${locked || lv >= SKILL_LV_MAX || pts <= 0 ? 'disabled' : ''}>升级</button></div>
+      <div class="sd-vars">${vars}</div>
+      <div class="sd-vname">${sk.variants[v].name}：${sk.variants[v].desc}</div>
+    </div></div>`;
+
+    const list = document.getElementById('skList');
+    list.innerHTML = h;
+    /* 点图标选中 */
+    list.querySelectorAll('[data-skpick]').forEach(el => el.addEventListener('click', () => {
+      this.skSel = el.dataset.skpick;
+      SFX.ui();
+      this.renderSkillPanel();
+    }));
+    list.querySelectorAll('[data-sklv]').forEach(b => b.addEventListener('click', () => {
+      const r = Game.levelUpSkill(b.dataset.sklv);
+      if (r.ok) { SFX.ui(); this.renderSkillPanel(); }
+      else this.toast(r.msg);
+    }));
+    list.querySelectorAll('[data-skv]').forEach(b => b.addEventListener('click', () => {
+      const [sid, vi] = b.dataset.skv.split(':');
+      Game.setSkillVariant(sid, parseInt(vi));
+      SFX.ui();
+      this.renderSkillPanel();
+    }));
+    /* 图标悬停浮层 */
+    const tip = document.getElementById('skTip');
+    if (tip) {
+      const body = list.closest('.pb');
+      list.querySelectorAll('[data-skpick]').forEach(el => {
+        el.addEventListener('mouseenter', () => {
+          const sk2 = SKILLS[el.dataset.skpick];
+          const lk = s.level < sk2.unlock;
+          tip.innerHTML = `<div class="tt-n"><span class="tt-ico">${skillIconSvg(sk2.id, 16)}</span>${sk2.name}</div>
+            <div class="tt-r">${sk2.tree} · ${lk ? sk2.unlock + ' 级领悟' : '等阶 ' + Game.skillLevel(sk2.id)}</div>
+            <div class="tt-d">${(sk2.desc || '').replace(/\{dmg\}/g, '<b style="color:#ffe9a8">' + Math.round(s.stats.atk * sk2.mult * (1 + SKILL_LV_STEP * (Game.skillLevel(sk2.id) - 1))) + '</b>')}</div>`;
+          tip.style.display = 'block';
+          const tr = el.getBoundingClientRect(), br = body.getBoundingClientRect();
+          let tx = tr.right - br.left + 10;
+          if (tx + tip.offsetWidth > br.width - 6) tx = tr.left - br.left - tip.offsetWidth - 10;
+          tip.style.left = Math.max(4, tx) + 'px';
+          tip.style.top = Math.max(4, tr.top - br.top - 6) + 'px';
+        });
+        el.addEventListener('mouseleave', () => { tip.style.display = 'none'; });
+      });
+    }
   },
 
   renderStats() {

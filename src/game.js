@@ -156,7 +156,7 @@ const Game = {
     this.mouseY = window.innerHeight / 2;
     try { this.buildTitleScene(); } catch (e) { showFatal('标题场景构建失败：' + (e.stack || e.message)); }
     try {
-      UI.setHelp('<b>WASD</b> 移动 · <b>左键</b> 攻击 · <b>1-6</b> 技能 · <b>空格</b> 翻滚 · <b>F</b> 交互<br><b>Q/E</b> 转视角 · <b>滚轮</b> 缩放 · <b>R</b> 炼器 · <b>I</b> 背包 · <b>C</b> 属性 · <b>L</b> 任务 · <b>P</b> 存档 · <b>O</b> 设置');
+      UI.setHelp('<b>WASD</b> 移动 · <b>左键</b> 攻击 · <b>1-8</b> 技能（动作条翻页）· <b>空格</b> 翻滚 · <b>F</b> 交互 · <b>Z/X</b> 红蓝药 · <b>9</b> 传送<br><b>Q/E</b> 转视角 · <b>滚轮</b> 缩放 · <b>T</b> 天赋 · <b>K</b> 术法 · <b>R</b> 炼器 · <b>I</b> 背包 · <b>C</b> 属性 · <b>L</b> 任务 · <b>P</b> 存档 · <b>O</b> 设置');
     } catch (e) { }
 
     window.addEventListener('resize', () => this.updateViewport());
@@ -197,13 +197,16 @@ const Game = {
       /* repeat 的 keydown 不触发翻滚/技能/药水等动作，避免持续触发 */
       if (e.repeat) return;
       if (k === ' ') { this.tryDash(); e.preventDefault(); return; }
-      if (k >= '1' && k <= '6') {
-        const id = SKILL_ORDER[this.state ? this.state.cls : 'warrior'][parseInt(k) - 1];
+      /* [S4] 技能栏两页 × 8 格：键 1-8 对应当前页（UI.skillPage） */
+      if (k >= '1' && k <= '8') {
+        const page = (typeof UI !== 'undefined' && UI.skillPage) || 0;
+        const idx = page * SKILL_BAR_SIZE + (parseInt(k) - 1);
+        const id = SKILL_ORDER[this.state ? this.state.cls : 'warrior'][idx];
         if (id) this.castSkill(id);
       }
-      if (k === '7') this.usePotion('hp');
-      if (k === '8') this.usePotion('mp');
       if (k === '9') this.useTeleportStone();
+      if (k === 'z') this.usePotion('hp');
+      if (k === 'x') this.usePotion('mp');
       if (k === 'f') this.interact();
     });
     /* [FIX-BUG1] keyup 兜底：中文输入法激活时 keyup 的 e.key 可能返回
@@ -220,7 +223,8 @@ const Game = {
         'KeyQ': 'q', 'KeyE': 'e', 'KeyF': 'f',
         'Digit1': '1', 'Digit2': '2', 'Digit3': '3',
         'Digit4': '4', 'Digit5': '5', 'Digit6': '6',
-        'Digit7': '7', 'Digit8': '8'
+        'Digit7': '7', 'Digit8': '8', 'Digit9': '9',
+        'KeyZ': 'z', 'KeyX': 'x', 'KeyT': 't', 'KeyK': 'k'
       };
       const mapped = codeMap[e.code];
       if (mapped) this.keys[mapped] = false;
@@ -306,6 +310,10 @@ const Game = {
       quests: { active: [], done: [], next: 'q1', announced: {} },
       mapId: 'village', playerPos: { x: 0, z: 10 },
       bossKilled: {}, playTime: 0,
+      /* [S3] 天赋：spent = { 节点id: 级数 }；presets 三套预设（存 spent 快照） */
+      talents: { spent: {}, presets: [null, null, null], respecCount: 0 },
+      /* [S4] 技能：{ 技能id: { lv: 1-10, v: 0-2 变体 } } */
+      skills: {},
       shop: null          // { at, items, rolls } —— 由 ensureShop/genShop 填充
     };
     return s;
@@ -367,6 +375,207 @@ const Game = {
     for (const k in eq) if (eq[k]) eq[k] = normalizeItem(eq[k]);
     if (Array.isArray(s.inventory)) s.inventory = s.inventory.map(normalizeItem).filter(Boolean);
     s.stash.items = s.stash.items.map(normalizeItem).filter(Boolean);
+  },
+
+  /* ======================================================= */
+  /* [S3] 天赋系统：点数 / 加点 / 洗点 / 预设                  */
+  /* ======================================================= */
+  talentState() {
+    const s = this.state;
+    if (!s) return { spent: {}, presets: [null, null, null], respecCount: 0 };
+    if (!s.talents || typeof s.talents !== 'object') s.talents = { spent: {}, presets: [null, null, null], respecCount: 0 };
+    if (!s.talents.spent || typeof s.talents.spent !== 'object') s.talents.spent = {};
+    if (!Array.isArray(s.talents.presets) || s.talents.presets.length !== 3) s.talents.presets = [null, null, null];
+    return s.talents;
+  },
+
+  /* 可用天赋点：每级 1 点（任务奖励点后续版本再加） */
+  talentPoints() {
+    const s = this.state;
+    const sp = this.talentState().spent;
+    let spent = 0;
+    for (const id in sp) spent += sp[id] || 0;
+    return Math.max(0, (s ? s.level : 1) - spent);
+  },
+
+  /* 某一系已投入的点数（大节点 reqPts 用） */
+  talentTreePoints(treeId) {
+    const sp = this.talentState().spent;
+    let n = 0;
+    if (typeof TALENT_NODES === 'undefined') return 0;
+    for (const id in sp) {
+      const e = TALENT_NODES[id];
+      if (e && e.tree === treeId) n += sp[id] || 0;
+    }
+    return n;
+  },
+
+  talentNodeOf(id) {
+    return (typeof TALENT_NODES !== 'undefined') ? TALENT_NODES[id] : null;
+  },
+
+  canAllocTalent(id) {
+    if (!this.state) return false;
+    const e = this.talentNodeOf(id);
+    if (!e) return false;
+    const n = e.node;
+    const sp = this.talentState().spent;
+    if ((sp[id] || 0) >= n.max) return false;
+    if (this.talentPoints() <= 0) return false;
+    for (const r of (n.req || [])) if (!(sp[r] > 0)) return false;
+    if (n.reqPts && this.talentTreePoints(e.tree) < n.reqPts) return false;
+    return true;
+  },
+
+  allocTalent(id) {
+    if (!this.canAllocTalent(id)) return false;
+    const sp = this.talentState().spent;
+    sp[id] = (sp[id] || 0) + 1;
+    this.recalc();
+    if (typeof UI !== 'undefined' && UI.onTalentChanged) UI.onTalentChanged();
+    return true;
+  },
+
+  /* 反加点：已被其它已点节点依赖时拒绝（避免出现「前置没了后置还在」） */
+  refundTalent(id) {
+    const sp = this.talentState().spent;
+    if (!(sp[id] > 0)) return false;
+    if (typeof TALENT_NODES !== 'undefined') {
+      for (const oid in sp) {
+        if (!sp[oid]) continue;
+        const oe = TALENT_NODES[oid];
+        if (oe && (oe.node.req || []).indexOf(id) >= 0) return false;
+      }
+    }
+    sp[id]--;
+    if (sp[id] <= 0) delete sp[id];
+    this.recalc();
+    if (typeof UI !== 'undefined' && UI.onTalentChanged) UI.onTalentChanged();
+    return true;
+  },
+
+  /* 洗点费用递增：1k / 5k / 20k / 50k，之后每次 50k */
+  respecCost() {
+    const c = Math.min(3, this.talentState().respecCount || 0);
+    return [1000, 5000, 20000, 50000][c];
+  },
+
+  respecTalents() {
+    const s = this.state;
+    if (!s) return { ok: false, msg: '尚未开局' };
+    const cost = this.respecCost();
+    if (s.gold < cost) return { ok: false, msg: '金币不足（需 ' + cost + '）' };
+    s.gold -= cost;
+    this.talentState().spent = {};
+    this.talentState().respecCount = (this.talentState().respecCount || 0) + 1;
+    this.recalc();
+    if (typeof UI !== 'undefined' && UI.onTalentChanged) UI.onTalentChanged();
+    return { ok: true, msg: '已重置天赋，扣除 ' + cost + ' 金币' };
+  },
+
+  saveTalentPreset(i) {
+    if (i < 0 || i > 2) return false;
+    const t = this.talentState();
+    t.presets[i] = JSON.parse(JSON.stringify(t.spent));
+    return true;
+  },
+
+  loadTalentPreset(i) {
+    if (i < 0 || i > 2) return { ok: false, msg: '预设位不存在' };
+    const t = this.talentState();
+    const p = t.presets[i];
+    if (!p) return { ok: false, msg: '该预设为空' };
+    /* 预设里的点数可能超过当前等级上限：超出的部分截断（按节点表顺序） */
+    const budget = this.talentPoints() + this._spentTotal();
+    let used = 0;
+    const out = {};
+    for (const id in p) {
+      const want = p[id] || 0;
+      const e = this.talentNodeOf(id);
+      if (!e) continue;
+      const take = Math.min(want, budget - used);
+      if (take > 0) { out[id] = take; used += take; }
+    }
+    t.spent = out;
+    this.recalc();
+    if (typeof UI !== 'undefined' && UI.onTalentChanged) UI.onTalentChanged();
+    return { ok: true, msg: '已切换到预设 ' + (i + 1) };
+  },
+
+  _spentTotal() {
+    const sp = this.talentState().spent;
+    let n = 0;
+    for (const id in sp) n += sp[id] || 0;
+    return n;
+  },
+
+  /* ======================================================= */
+  /* [S4] 技能系统：等级 / 变体 / 技能点                       */
+  /* ======================================================= */
+  skillState() {
+    const s = this.state;
+    if (!s) return {};
+    if (!s.skills || typeof s.skills !== 'object') s.skills = {};
+    return s.skills;
+  },
+
+  skillLevel(id) {
+    const sk = this.skillState()[id];
+    return (sk && sk.lv) || 1;
+  },
+
+  skillVariant(id) {
+    const sk = this.skillState()[id];
+    return (sk && sk.v) || 0;
+  },
+
+  /* 可用技能点：每级 1 点，每升 1 级技能花 1 点（1→10 共 9 点） */
+  skillPoints() {
+    const s = this.state;
+    let spent = 0;
+    const sk = this.skillState();
+    for (const id in sk) spent += Math.max(0, (sk[id].lv || 1) - 1);
+    return Math.max(0, (s ? s.level : 1) - spent);
+  },
+
+  levelUpSkill(id) {
+    const s = this.state;
+    if (!s || !SKILLS[id]) return { ok: false, msg: '技能不存在' };
+    if (s.level < SKILLS[id].unlock) return { ok: false, msg: '尚未领悟' };
+    const sk = this.skillState();
+    const cur = (sk[id] && sk[id].lv) || 1;
+    if (cur >= 10) return { ok: false, msg: '已满级' };
+    if (this.skillPoints() <= 0) return { ok: false, msg: '技能点不足' };
+    sk[id] = { lv: cur + 1, v: (sk[id] && sk[id].v) || 0 };
+    this.recalc();
+    return { ok: true, msg: SKILLS[id].name + ' 升至 ' + (cur + 1) + ' 级' };
+  },
+
+  setSkillVariant(id, v) {
+    if (!SKILLS[id] || v < 0 || v > 2) return false;
+    const sk = this.skillState();
+    sk[id] = { lv: (sk[id] && sk[id].lv) || 1, v };
+    return true;
+  },
+
+  /* 读档 / 导入后补新字段（S3 天赋、S4 技能） */
+  normalizeProgress(s) {
+    if (!s) return;
+    if (!s.talents || typeof s.talents !== 'object') s.talents = { spent: {}, presets: [null, null, null], respecCount: 0 };
+    if (!s.talents.spent || typeof s.talents.spent !== 'object') s.talents.spent = {};
+    if (!Array.isArray(s.talents.presets) || s.talents.presets.length !== 3) s.talents.presets = [null, null, null];
+    if (!s.skills || typeof s.skills !== 'object') s.skills = {};
+    /* 已退出数据表的技能 / 天赋节点清掉，防存档里留死 id */
+    for (const id in s.skills) if (!SKILLS[id]) delete s.skills[id];
+    if (typeof TALENT_NODES !== 'undefined') {
+      for (const id in s.talents.spent) if (!TALENT_NODES[id]) delete s.talents.spent[id];
+      s.talents.presets = s.talents.presets.map(p => {
+        if (!p) return null;
+        const out = {};
+        for (const id in p) if (TALENT_NODES[id]) out[id] = p[id];
+        return out;
+      });
+    }
   },
 
   startNew(cls, name, slot, difficulty) {
@@ -450,7 +659,7 @@ const Game = {
     this.boss = null; UI.updateBoss(null);
     FX.clear();
 
-    this.buffs = []; this.shield = 0; this.shieldT = 0; this.regen = 0; this.poisonT = 0; this.playerSlow = 0; this.playerSlowT = 0;
+    this.buffs = []; this.shield = 0; this.shieldT = 0; this.regen = 0; this.poisonT = 0; this.playerSlow = 0; this.playerSlowT = 0; this.reviveT = 0;
     this.cooldowns = {};
 
     const m = MAPS[mapId];
@@ -1091,6 +1300,8 @@ const Game = {
     if (st.hpRegen) this.state.hp = Math.min(st.hpMax, this.state.hp + st.hpRegen * dt);
     /* [S1] 暴击后攻速加成计时 */
     if (this.aspdCritT > 0) this.aspdCritT = Math.max(0, this.aspdCritT - dt);
+    /* [S4] 还魂持续时间衰减 */
+    if (this.reviveT > 0) this.reviveT = Math.max(0, this.reviveT - dt);
 
     // 减速
     if (this.playerSlowT > 0) {
@@ -1349,8 +1560,11 @@ const Game = {
     if (!sk) return;
     if (s.level < sk.unlock && !this.skillFlags[id]) { UI.log('尚未领悟「' + sk.name + '」'); SFX.ui(); return; }
     if ((this.cooldowns[id] || 0) > 0.02) return;
-    const smod = this.skillMod(id);
-    const spow = smod ? 1 + (smod.dmg || 0) / 100 : 1;
+    /* [S4] 装备 / 套装 / 传世 / 天赋的 skillMods + 当前变体修正合并消费；
+     * 技能等级每级 +8%（也放大治疗 / 护盾 / 召唤） */
+    const smod = mergeSkillMods(this.skillMod(id), variantMods(sk, this.skillVariant(id)));
+    const lvMul = 1 + SKILL_LV_STEP * (this.skillLevel(id) - 1);
+    const spow = (smod ? 1 + (smod.dmg || 0) / 100 : 1) * lvMul;
     const srad = smod ? 1 + (smod.radius || 0) / 100 : 1;
     const sextra = smod ? (smod.count || 0) : 0;
     /* v1.1.9：技能持续时长修正（青符 4 件：毒雾 +3 秒） */
@@ -1433,18 +1647,121 @@ const Game = {
         }, 200);
         break;
       }
-      case 'warcry': case 'bloodrage': case 'taiji': {
+      case 'warcry': case 'bloodrage': case 'taiji': case 'shieldwall': case 'riposte': case 'antidote': {
         this.actor.atkAnim = 1; this.actor.atkType = 'cast';
         const buff = Object.assign({}, sk.buff);
         /* 传世技能效果：增益类技能按 spow 放大（持续时间不变） */
         if (spow !== 1) for (const k in buff) {
           if (typeof buff[k] === 'number' && k !== 'dur') buff[k] = Math.round(buff[k] * spow);
         }
-        this.addBuff(sk.name, buff, id === 'taiji' ? 0x88ffd0 : (id === 'warcry' ? 0xff8a4a : 0xff4a4a), { type: 'buff', icon: sk.glyph, key: 'skill:' + id, refresh: true });
-        FX.ring(pp, 5, id === 'taiji' ? 0x88ffd0 : 0xff8a4a, 0.7, 0.25);
-        FX.burst(new THREE.Vector3(pp.x, 1.2, pp.z), id === 'taiji' ? 0x88ffd0 : 0xff8a4a, 26, { speed: 3, size: 0.12, life: 0.8, gravity: -2, additive: true });
+        /* [S4] 变体可以延长增益持续时间 */
+        if (sdur) buff.dur = (buff.dur || 8) + sdur;
+        const bc = id === 'taiji' || id === 'antidote' ? 0x88ffd0
+          : (id === 'riposte' ? 0xd8b25a : (id === 'shieldwall' ? 0x8ab0ff : (id === 'warcry' ? 0xff8a4a : 0xff4a4a)));
+        this.addBuff(sk.name, buff, bc, { type: 'buff', icon: sk.glyph, key: 'skill:' + id, refresh: true });
+        FX.ring(pp, 5, bc, 0.7, 0.25);
+        FX.burst(new THREE.Vector3(pp.x, 1.2, pp.z), bc, 26, { speed: 3, size: 0.12, life: 0.8, gravity: -2, additive: true });
         SFX.cast();
         UI.toast(sk.name);
+        /* [S4] 解毒：立即清除自身中毒与减速 */
+        if (id === 'antidote') {
+          this.playerSlowT = 0; this.playerSlow = 0; this.poisonT = 0;
+          FX.text(new THREE.Vector3(pp.x, 2.6, pp.z), '毒解', 'info', { life: 0.8 });
+        }
+        break;
+      }
+      /* [S4] 还魂：持续内受到致命伤以 35% 生命存活 */
+      case 'revive': {
+        this.actor.atkAnim = 1; this.actor.atkType = 'cast';
+        SFX.cast(); SFX.heal();
+        this.reviveT = 25 + sdur;
+        FX.ring(pp, 2.6, 0xffd166, 0.8, 0.3);
+        FX.burst(new THREE.Vector3(pp.x, 1.4, pp.z), 0xffd166, 22, { speed: 3, size: 0.12, life: 1, gravity: -2, additive: true });
+        UI.toast('还魂 · ' + this.reviveT + ' 秒');
+        break;
+      }
+      /* [S4] 斩杀：单体重伤，低血目标伤害翻倍 */
+      case 'execute': {
+        this.actor.atkAnim = 1; this.actor.atkType = 'swing'; this.actor.atkSpeed = 2.2;
+        SFX.swing(); SFX.hit();
+        const cp = aim.clone();
+        const target = this.nearestEnemy(cp, 3.6) || this.nearestEnemy(pp, 3.6);
+        this.shake = 0.3; this.hitstop = 80;
+        if (target) {
+          const lowHp = target.hp < target.maxHp * 0.3;
+          const { dmg, crit } = this.rollDamage(st.atk * 5.0 * (lowHp ? 2 : 1) * spow);
+          this.damageEnemy(target, dmg, crit, { knock: 1.4 });
+          FX.flashCircle(target.pos, 2.2, lowHp ? 0xff3b3b : 0xffaa50, 0.3);
+          FX.burst(new THREE.Vector3(target.pos.x, 1.2, target.pos.z), lowHp ? 0xff3b3b : 0xffaa50, 20, { speed: 6, size: 0.12, life: 0.5, additive: true });
+          if (lowHp) FX.text(new THREE.Vector3(target.pos.x, 2.4, target.pos.z), '处决', 'lv', { life: 0.8 });
+        } else {
+          FX.flashCircle(cp, 2.2, 0xffaa50, 0.25);
+        }
+        break;
+      }
+      /* [S4] 跃击：跳向指定方向，落地震击 */
+      case 'leap': {
+        this.actor.atkAnim = 1; this.actor.atkType = 'thrust'; this.actor.atkSpeed = 2.6;
+        const dist = Math.min(10, DIST2D(aim, pp));
+        this.dashT = 0.2 + (dist / 10) * 0.16; this.invuln = 0.3; this.lastMoveDir = { x: dir.x, z: dir.z };
+        SFX.fire(); SFX.swing();
+        this.shake = 0.3;
+        setTimeout(() => {
+          if (this.dead) return;
+          const p2 = this.playerGroup.position;
+          const hits = this.enemies.filter(e => !e.dead && DIST2D(e.pos, p2) < 4.5 * srad + e.radius);
+          for (const e of hits) {
+            const { dmg, crit } = this.rollDamage(st.atk * 2.2 * spow);
+            this.damageEnemy(e, dmg, crit, { knock: 2.4 });
+          }
+          FX.flashCircle(p2, 4.5 * srad, 0xffb060, 0.35);
+          FX.ring(p2, 4.5 * srad, 0xffb060, 0.5, 0.25);
+          FX.burst(new THREE.Vector3(p2.x, 0.8, p2.z), 0xffb060, 24, { speed: 7, size: 0.13, life: 0.5, additive: true });
+          SFX.explode();
+        }, 200);
+        break;
+      }
+      /* [S4] 剑阵：持续内周身剑鸣，周期伤害 */
+      case 'swordarray': {
+        this.actor.atkAnim = 1; this.actor.atkType = 'cast';
+        SFX.cast(); SFX.thunder();
+        const dur = 8 + sdur;
+        const rad = 3.6 * srad;
+        let pulses = 0;
+        const gen = this.mapGen;
+        const iv = setInterval(() => {
+          if (this.mapGen !== gen || this.dead) { clearInterval(iv); return; }
+          pulses++;
+          const pp2 = this.playerGroup.position;
+          FX.ring(new THREE.Vector3(pp2.x, 0.2, pp2.z), rad, 0xd8ffe0, 0.4, 0.18);
+          for (const e of this.enemies) {
+            if (e.dead) continue;
+            if (DIST2D(e.pos, pp2) < rad + e.radius) {
+              const { dmg, crit } = this.rollDamage(st.atk * 0.9 * spow);
+              this.damageEnemy(e, dmg, crit, { tag: 'aoe', silent: true });
+            }
+          }
+          if (pulses >= Math.ceil(dur / 0.6)) clearInterval(iv);
+        }, 600);
+        UI.toast('剑阵 · ' + dur + ' 秒');
+        break;
+      }
+      /* [S4] 天崩：三次延迟震击 */
+      case 'skysfall': {
+        this.actor.atkAnim = 1; this.actor.atkType = 'slam';
+        SFX.explode();
+        const cp = aim.clone();
+        const gen = this.mapGen;
+        for (let i = 0; i < 3; i++) {
+          setTimeout(() => {
+            if (this.dead || this.mapGen !== gen) return;
+            const t = new THREE.Vector3(cp.x + RND(-2, 2), 0, cp.z + RND(-2, 2));
+            this.explodeAt(t, 5 * srad, st.atk * 2.4 * spow, 0xffaa60, true);
+            SFX.explode();
+          }, 300 + i * 450);
+        }
+        FX.telegraph(cp, 6 * srad, 1.4, () => {}, 0xffaa60);
+        this.shake = 0.6;
         break;
       }
       case 'quake': {
@@ -1467,6 +1784,11 @@ const Game = {
       case 'avatar': {
         this.actor.atkAnim = 1; this.actor.atkType = 'slam';
         SFX.boss(); this.shake = 0.8; this.hitstop = 120;
+        /* [S3] 破军系大节点·剑神：释放时立刻刷新烈焰突刺冷却 */
+        if (st.specials && st.specials.avatarResetThrust) {
+          this.cooldowns.thrust = 0;
+          FX.text(new THREE.Vector3(pp.x, 2.8, pp.z), '突刺已续', 'info', { life: 0.9 });
+        }
         const hits = this.enemies.filter(e => !e.dead && DIST2D(e.pos, pp) < 9 + e.radius);
         for (const e of hits) {
           const { dmg, crit } = this.rollDamage(st.atk * 6.5 * spow);
@@ -1484,34 +1806,48 @@ const Game = {
         this.actor.atkAnim = 1; this.actor.atkType = 'cast';
         SFX.fire();
         const radius = 2.4 * (st.flags.firetrail ? 1.6 : 1) * srad;
-        const p = FX.projectile({
-          pos: new THREE.Vector3(pp.x + dir.x * 0.8, 1.4, pp.z + dir.z * 0.8),
-          dir, speed: 21, color: 0xff7a30, radius: 0.32, hitRadius: 0.62, team: 'player',
-          dmg: st.atk * 1.9 * spow, life: 1.6, elem: 'fire', trail: true,
-          onHit: (e, proj) => {
-            this.explodeAt(proj.pos.clone(), radius, st.atk * 1.9 * spow, 0xff7a30);
-            if (st.flags.firetrail) this.createFirePatch(proj.pos.clone(), radius);
-          }
-        });
+        /* [S4] 连环变体：1 + sextra 连发，扇形展开 */
+        const n = 1 + Math.max(0, sextra);
+        const up = new THREE.Vector3(0, 1, 0);
+        for (let i = 0; i < n; i++) {
+          const a = (i - (n - 1) / 2) * 0.16;
+          const d2 = dir.clone().applyAxisAngle(up, a);
+          FX.projectile({
+            pos: new THREE.Vector3(pp.x + d2.x * 0.8, 1.4, pp.z + d2.z * 0.8),
+            dir: d2, speed: 21, color: 0xff7a30, radius: 0.32, hitRadius: 0.62, team: 'player',
+            dmg: st.atk * 1.9 * spow, life: 1.6, elem: 'fire', trail: true,
+            onHit: (e, proj) => {
+              this.explodeAt(proj.pos.clone(), radius, st.atk * 1.9 * spow, 0xff7a30);
+              if (st.flags.firetrail) this.createFirePatch(proj.pos.clone(), radius);
+            }
+          });
+        }
         break;
       }
       case 'frostnova': {
         this.actor.atkAnim = 1; this.actor.atkType = 'cast';
         SFX.ice();
         const cp = aim.clone();
-        const hits = this.enemies.filter(e => !e.dead && DIST2D(e.pos, cp) < 6 * srad + e.radius);
-        for (const e of hits) {
-          const { dmg, crit } = this.rollDamage(st.atk * 2.2 * spow);
-          this.damageEnemy(e, dmg, crit, {});
-          e.slow = 0.45; e.slowT = 3.5;
-          /* 星阙 6 件：冰霜新星命中的敌人被冻结 1.2 秒 */
-          if (st.flags.novaFreeze) { e.slow = 1; e.slowT = Math.max(e.slowT, 1.2); }
-        }
-        FX.ring(cp, 6 * srad, 0x8ad8ff, 0.7, 0.3);
-        FX.flashCircle(cp, 6 * srad, 0x8ad8ff, 0.45);
-        for (let i = 0; i < 30; i++) {
-          const ang = Math.random() * 7, r = RND(1, 6);
-          FX.burst(new THREE.Vector3(cp.x + Math.cos(ang) * r, RND(0.1, 1), cp.z + Math.sin(ang) * r), 0xaae8ff, 2, { speed: 2, size: 0.12, life: 0.8, gravity: -1, additive: true });
+        /* [S4] 双重变体：1 + sextra 片新星，副新星在主轴附近随机偏移 */
+        const n = 1 + Math.max(0, sextra);
+        const novaAt = c2 => {
+          const hits = this.enemies.filter(e => !e.dead && DIST2D(e.pos, c2) < 6 * srad + e.radius);
+          for (const e of hits) {
+            const { dmg, crit } = this.rollDamage(st.atk * 2.2 * spow);
+            this.damageEnemy(e, dmg, crit, {});
+            e.slow = 0.45; e.slowT = 3.5 + sdur;
+            /* 星阙 6 件 / 寒冰系大节点：冰霜新星命中的敌人被冻结 */
+            if (st.flags.novaFreeze) { e.slow = 1; e.slowT = Math.max(e.slowT, 1.2); }
+          }
+          FX.ring(c2, 6 * srad, 0x8ad8ff, 0.7, 0.3);
+          FX.flashCircle(c2, 6 * srad, 0x8ad8ff, 0.45);
+          for (let i = 0; i < 30; i++) {
+            const ang = Math.random() * 7, r = RND(1, 6);
+            FX.burst(new THREE.Vector3(c2.x + Math.cos(ang) * r, RND(0.1, 1), c2.z + Math.sin(ang) * r), 0xaae8ff, 2, { speed: 2, size: 0.12, life: 0.8, gravity: -1, additive: true });
+          }
+        };
+        for (let i = 0; i < n; i++) {
+          novaAt(i === 0 ? cp : new THREE.Vector3(cp.x + RND(-2.6, 2.6), 0, cp.z + RND(-2.6, 2.6)));
         }
         this.shake = 0.3;
         break;
@@ -1591,36 +1927,264 @@ const Game = {
         }, 220);
         break;
       }
+      /* [S4] 冰锥：三枚扇形冰锥，命中减速 */
+      case 'iceshard': {
+        this.actor.atkAnim = 1; this.actor.atkType = 'cast';
+        SFX.ice();
+        const n = 3 + Math.max(0, sextra);
+        const up = new THREE.Vector3(0, 1, 0);
+        for (let i = 0; i < n; i++) {
+          const a = (i - (n - 1) / 2) * 0.14;
+          const d2 = dir.clone().applyAxisAngle(up, a);
+          FX.projectile({
+            pos: new THREE.Vector3(pp.x + d2.x * 0.8, 1.4, pp.z + d2.z * 0.8),
+            dir: d2, speed: 26, color: 0x9ae0ff, radius: 0.26, hitRadius: 0.5, team: 'player',
+            dmg: st.atk * 1.2 * spow, life: 1.2, elem: 'ice', trail: true, tag: 'proj',
+            onHit: (e, proj) => {
+              this.damageEnemy(e, proj.dmg, false, { tag: 'proj', elem: 'ice' });
+              e.slow = Math.max(e.slow || 0, 0.4); e.slowT = Math.max(e.slowT || 0, 2);
+              FX.flashCircle(proj.pos, 1.6, 0x9ae0ff, 0.25);
+              FX.burst(new THREE.Vector3(proj.pos.x, 1, proj.pos.z), 0x9ae0ff, 8, { speed: 3, size: 0.1, life: 0.4, additive: true });
+            }
+          });
+        }
+        break;
+      }
+      /* [S4] 暴雪：区域持续冰伤 + 减速 */
+      case 'blizzard': {
+        this.actor.atkAnim = 1; this.actor.atkType = 'cast';
+        SFX.ice();
+        const c = aim.clone();
+        const rad = 6 * srad;
+        const dur = 5 + sdur;
+        FX.area(c, rad, 0x9ad8ff, dur, { opacity: 0.26 });
+        let ticks = 0;
+        const gen = this.mapGen;
+        const iv = setInterval(() => {
+          if (this.mapGen !== gen) { clearInterval(iv); return; }
+          ticks++;
+          for (const e of this.enemies) {
+            if (e.dead) continue;
+            if (DIST2D(e.pos, c) < rad + e.radius) {
+              const { dmg } = this.rollDamage(st.atk * 0.6 * spow);
+              this.damageEnemy(e, dmg, false, { silent: true, elem: 'ice' });
+              e.slow = Math.max(e.slow || 0, 0.45); e.slowT = Math.max(e.slowT || 0, 1.5);
+            }
+          }
+          FX.burst(new THREE.Vector3(c.x + RND(-rad + 1, rad - 1), 2.2, c.z + RND(-rad + 1, rad - 1)), 0xcfe8ff, 3, { speed: 1.2, size: 0.14, life: 1.4, gravity: -0.4 });
+          if (ticks >= Math.ceil(dur / 0.7)) clearInterval(iv);
+        }, 700);
+        break;
+      }
+      /* [S4] 火墙：沿施法方向的持续火带 */
+      case 'firewall': {
+        this.actor.atkAnim = 1; this.actor.atkType = 'cast';
+        SFX.fire();
+        const dur = 4 + sdur;
+        const rad = 3 * srad;
+        const segs = [];
+        for (let i = 0; i < 4; i++) {
+          const c = new THREE.Vector3(aim.x + dir.x * i * 2.6, 0, aim.z + dir.z * i * 2.6);
+          segs.push(c);
+          FX.area(c, rad, 0xff5522, dur, { opacity: 0.22 });
+        }
+        let ticks = 0;
+        const gen = this.mapGen;
+        const iv = setInterval(() => {
+          if (this.mapGen !== gen) { clearInterval(iv); return; }
+          ticks++;
+          for (const c of segs) {
+            for (const e of this.enemies) {
+              if (e.dead) continue;
+              if (DIST2D(e.pos, c) < rad + e.radius) {
+                const { dmg } = this.rollDamage(st.atk * 0.55 * spow);
+                this.damageEnemy(e, dmg, false, { silent: true, elem: 'fire' });
+              }
+            }
+          }
+          if (ticks >= Math.ceil(dur / 0.5)) clearInterval(iv);
+        }, 500);
+        break;
+      }
+      /* [S4] 焚天：以自身为中心的烈焰新星 */
+      case 'pyroclasm': {
+        this.actor.atkAnim = 1; this.actor.atkType = 'cast';
+        SFX.fire(); SFX.explode();
+        const rad = 7 * srad;
+        const hits = this.enemies.filter(e => !e.dead && DIST2D(e.pos, pp) < rad + e.radius);
+        for (const e of hits) {
+          const { dmg, crit } = this.rollDamage(st.atk * 3.6 * spow);
+          this.damageEnemy(e, dmg, crit, { knock: 1.2, elem: 'fire' });
+        }
+        FX.ring(pp, rad, 0xff7a30, 0.9, 0.4);
+        FX.flashCircle(pp, rad, 0xff9040, 0.5);
+        for (let i = 0; i < 36; i++) {
+          const ang = (i / 36) * 6.2832, r = RND(1, rad);
+          FX.burst(new THREE.Vector3(pp.x + Math.cos(ang) * r, RND(0.2, 1.6), pp.z + Math.sin(ang) * r), 0xff9040, 2, { speed: 5, size: 0.13, life: 0.7, gravity: -2, additive: true });
+        }
+        this.shake = 0.55; this.hitstop = 90;
+        break;
+      }
+      /* [S4] 雷云：区域持续随机落雷 */
+      case 'thundercloud': {
+        this.actor.atkAnim = 1; this.actor.atkType = 'cast';
+        SFX.thunder();
+        const c = aim.clone();
+        const rad = 7 * srad;
+        const dur = 6 + sdur;
+        FX.area(c, rad, 0x8a7aff, dur, { opacity: 0.2 });
+        let ticks = 0;
+        const gen = this.mapGen;
+        const iv = setInterval(() => {
+          if (this.mapGen !== gen) { clearInterval(iv); return; }
+          ticks++;
+          const inZone = this.enemies.filter(e => !e.dead && DIST2D(e.pos, c) < rad + e.radius);
+          for (let i = 0; i < Math.min(3, inZone.length); i++) {
+            const e = inZone[Math.floor(Math.random() * inZone.length)];
+            FX.beam(new THREE.Vector3(e.pos.x, 7, e.pos.z), new THREE.Vector3(e.pos.x, 1, e.pos.z), 0xa9c8ff, 0.18);
+            const { dmg, crit } = this.rollDamage(st.atk * 1.1 * spow);
+            this.damageEnemy(e, dmg, crit, { elem: 'lightning', silent: true });
+          }
+          if (ticks >= Math.ceil(dur / 1)) clearInterval(iv);
+        }, 1000);
+        break;
+      }
+      /* [S4] 雷罚：单体天罚巨雷，对首领 +30% */
+      case 'judgement': {
+        this.actor.atkAnim = 1; this.actor.atkType = 'cast';
+        SFX.thunder(); SFX.boss();
+        const target = this.nearestEnemy(aim, 16) || this.nearestEnemy(pp, 16);
+        if (target) {
+          const bossMul = target.boss ? 1.3 : 1;
+          FX.telegraph(target.pos, 3.2 * srad, 0.7, () => {
+            FX.beam(new THREE.Vector3(target.pos.x, 10, target.pos.z), new THREE.Vector3(target.pos.x, 1, target.pos.z), 0xd8e8ff, 0.3);
+            const { dmg, crit } = this.rollDamage(st.atk * 8.5 * spow * bossMul);
+            this.damageEnemy(target, dmg, crit, { elem: 'lightning', knock: 1 });
+            FX.flashCircle(target.pos, 3.4, 0xd8e8ff, 0.4);
+            this.shake = 0.6; this.hitstop = 110;
+          }, 0xd8e8ff);
+        }
+        break;
+      }
       /* 道士 */
       case 'talisman': {
         this.actor.atkAnim = 1; this.actor.atkType = 'cast';
         SFX.cast();
-        const target = this.nearestEnemy(aim, 16) || this.nearestEnemy(pp, 16);
+        /* [S4] 双符变体：1 + sextra 张，分别追踪不同目标 */
+        const tgts = [];
+        const primary = this.nearestEnemy(aim, 16) || this.nearestEnemy(pp, 16);
+        if (primary) tgts.push(primary);
+        const usedIds = new Set(tgts.map(t => t.id));
+        for (let i = 0; i < Math.max(0, sextra); i++) {
+          let best = null, bd = 16;
+          for (const e of this.enemies) {
+            if (e.dead || usedIds.has(e.id)) continue;
+            const d = DIST2D(e.pos, pp);
+            if (d < bd) { bd = d; best = e; }
+          }
+          if (!best) break;
+          tgts.push(best); usedIds.add(best.id);
+        }
         /* v1.0.4：从「瞬间一道雷光」改成「一道符飞过去」。
          * 原实现是一条 beam，同一帧生成又消失，画面上只闪一下，
          * 玩家根本看不出技能放没放出去，也没有飞行时间带来的节奏感。
          * 现在是一枚会拐弯追踪的符咒，命中瞬间才落雷。 */
-        const start = new THREE.Vector3(pp.x, 1.5, pp.z);
-        const tdir = target
-          ? new THREE.Vector3(target.pos.x - pp.x, 0, target.pos.z - pp.z).normalize()
-          : new THREE.Vector3(dir.x, 0, dir.z).normalize();
-        FX.projectile({
-          pos: start, dir: tdir, speed: 17, color: 0xffd24a, radius: 0.3, hitRadius: 0.45,
-          team: 'player', style: 'talisman', life: 2.0, trail: true, tag: 'proj',
-          homing: target ? target.pos : null, homeTurn: 9,
-          onHit: (e, proj) => {
-            const { dmg, crit } = this.rollDamage(st.atk * 1.7 * spow);
-            this.damageEnemy(e, dmg, crit, { tag: 'proj' });
-            // 符纸炸开 → 天雷落地
-            FX.beam(new THREE.Vector3(e.pos.x, 4.2, e.pos.z), new THREE.Vector3(e.pos.x, 0.9, e.pos.z), 0x9affd0, 0.16);
-            FX.flashCircle(e.pos, 1.9, 0x9affd0, 0.26);
-            FX.burst(new THREE.Vector3(e.pos.x, 1.2, e.pos.z), 0x9affd0, 12, { speed: 4, size: 0.1, life: 0.4, additive: true });
-            SFX.thunder();
-            this.shake = Math.max(this.shake, 0.12);
-          }
-        });
+        for (const target of tgts) {
+          const start = new THREE.Vector3(pp.x + RND(-0.3, 0.3), 1.5, pp.z + RND(-0.3, 0.3));
+          const tdir = target
+            ? new THREE.Vector3(target.pos.x - pp.x, 0, target.pos.z - pp.z).normalize()
+            : new THREE.Vector3(dir.x, 0, dir.z).normalize();
+          FX.projectile({
+            pos: start, dir: tdir, speed: 17, color: 0xffd24a, radius: 0.3, hitRadius: 0.45,
+            team: 'player', style: 'talisman', life: 2.0, trail: true, tag: 'proj',
+            homing: target ? target.pos : null, homeTurn: 9,
+            onHit: (e, proj) => {
+              const { dmg, crit } = this.rollDamage(st.atk * 1.7 * spow);
+              this.damageEnemy(e, dmg, crit, { tag: 'proj' });
+              // 符纸炸开 → 天雷落地
+              FX.beam(new THREE.Vector3(e.pos.x, 4.2, e.pos.z), new THREE.Vector3(e.pos.x, 0.9, e.pos.z), 0x9affd0, 0.16);
+              FX.flashCircle(e.pos, 1.9, 0x9affd0, 0.26);
+              FX.burst(new THREE.Vector3(e.pos.x, 1.2, e.pos.z), 0x9affd0, 12, { speed: 4, size: 0.1, life: 0.4, additive: true });
+              SFX.thunder();
+              this.shake = Math.max(this.shake, 0.12);
+              /* [S3] 符箓系大节点·天师：五雷符穿透，命中后飞向附近下一个目标 */
+              if (st.specials && st.specials.talismanPierce) {
+                let next = null, bd = 14;
+                for (const o of this.enemies) {
+                  if (o.dead || o === e) continue;
+                  if (proj.hitSet && proj.hitSet.has(o.id)) continue;
+                  const d = DIST2D(o.pos, e.pos);
+                  if (d < bd) { bd = d; next = o; }
+                }
+                if (next) {
+                  proj.pierce = true;
+                  proj.homing = next.pos;
+                  FX.text(new THREE.Vector3(e.pos.x, 2.2, e.pos.z), '穿透', 'info', { life: 0.6 });
+                }
+              }
+            }
+          });
+        }
         // 出手瞬间手边亮一下，抬手动作才有落点
-        FX.flashCircle(new THREE.Vector3(pp.x + tdir.x * 0.9, 0.08, pp.z + tdir.z * 0.9), 1.1, 0xffd24a, 0.18);
+        FX.flashCircle(new THREE.Vector3(pp.x + dir.x * 0.9, 0.08, pp.z + dir.z * 0.9), 1.1, 0xffd24a, 0.18);
+        break;
+      }
+      /* [S4] 符箭：三张追踪符 */
+      case 'talismanarrow': {
+        this.actor.atkAnim = 1; this.actor.atkType = 'cast';
+        SFX.cast();
+        const n = 3 + Math.max(0, sextra);
+        const usedIds2 = new Set();
+        for (let i = 0; i < n; i++) {
+          let target = null, bd = 16;
+          for (const e of this.enemies) {
+            if (e.dead || usedIds2.has(e.id)) continue;
+            const d = DIST2D(e.pos, pp);
+            if (d < bd) { bd = d; target = e; }
+          }
+          if (target) usedIds2.add(target.id);
+          const start = new THREE.Vector3(pp.x + RND(-0.4, 0.4), 1.4, pp.z + RND(-0.4, 0.4));
+          const tdir = target
+            ? new THREE.Vector3(target.pos.x - pp.x, 0, target.pos.z - pp.z).normalize()
+            : dir.clone();
+          FX.projectile({
+            pos: start, dir: tdir, speed: 19, color: 0xd8f0a0, radius: 0.24, hitRadius: 0.45,
+            team: 'player', style: 'talisman', life: 2.0, trail: true, tag: 'proj',
+            homing: target ? target.pos : null, homeTurn: 7,
+            onHit: (e, proj) => {
+              const { dmg, crit } = this.rollDamage(st.atk * 1.0 * spow);
+              this.damageEnemy(e, dmg, crit, { tag: 'proj' });
+              FX.burst(new THREE.Vector3(e.pos.x, 1.1, e.pos.z), 0xd8f0a0, 8, { speed: 3, size: 0.1, life: 0.4, additive: true });
+            }
+          });
+        }
+        break;
+      }
+      /* [S4] 天师符：区域符阵持续落雷 */
+      case 'mastersigil': {
+        this.actor.atkAnim = 1; this.actor.atkType = 'cast';
+        SFX.cast();
+        const c = aim.clone();
+        const rad = 6 * srad;
+        const dur = 6 + sdur;
+        FX.area(c, rad, 0xffd24a, dur, { opacity: 0.22 });
+        let ticks = 0;
+        const gen = this.mapGen;
+        const iv = setInterval(() => {
+          if (this.mapGen !== gen) { clearInterval(iv); return; }
+          ticks++;
+          let hit = 0;
+          for (const e of this.enemies) {
+            if (e.dead || hit >= 3) continue;
+            if (DIST2D(e.pos, c) < rad + e.radius) {
+              hit++;
+              FX.beam(new THREE.Vector3(e.pos.x, 6, e.pos.z), new THREE.Vector3(e.pos.x, 1, e.pos.z), 0xffd24a, 0.16);
+              const { dmg } = this.rollDamage(st.atk * 1.0 * spow);
+              this.damageEnemy(e, dmg, false, { silent: true, elem: 'lightning' });
+            }
+          }
+          if (ticks >= Math.ceil(dur / 0.9)) clearInterval(iv);
+        }, 900);
         break;
       }
       case 'summon': {
@@ -1630,13 +2194,31 @@ const Game = {
         FX.flashCircle(pp, 2.4, 0x9affd0, 0.5);
         break;
       }
+      /* [S4] 白虎：高攻速近战召唤 */
+      case 'whitetiger': {
+        this.actor.atkAnim = 1; this.actor.atkType = 'cast';
+        SFX.heal(); SFX.boss();
+        this.summonBeast({ skill: 'whitetiger', scale: 1.25, color: 0xffe0b0, cloth: 0xc8a060, inherit: 0.7, life: 20, atkRate: 0.75, name: '白虎' });
+        FX.flashCircle(pp, 3, 0xffe0b0, 0.5);
+        break;
+      }
+      /* [S4] 青龙：范围攻击召唤 */
+      case 'azuredragon': {
+        this.actor.atkAnim = 1; this.actor.atkType = 'cast';
+        SFX.heal(); SFX.boss();
+        this.summonBeast({ skill: 'azuredragon', scale: 1.6, color: 0x6ac8ff, cloth: 0x2a5a8a, inherit: 0.8, life: 18, atkRate: 1.3, aoe: true, name: '青龙' });
+        FX.flashCircle(pp, 3.6, 0x6ac8ff, 0.55);
+        break;
+      }
       case 'heal': {
         this.actor.atkAnim = 1; this.actor.atkType = 'cast';
         SFX.heal();
         const amount = st.hpMax * 0.28 * spow;
+        /* [S4] 久春变体：持续回复时长 +sdur 秒 */
+        const hotDur = (4000 + sdur * 1000) / 1000;
         this.healPlayer(amount);
         this.regen = (this.regen || 0) + st.hpMax * 0.03 * spow;
-        setTimeout(() => { this.regen = Math.max(0, (this.regen || 0) - st.hpMax * 0.03 * spow); }, 4000);
+        setTimeout(() => { this.regen = Math.max(0, (this.regen || 0) - st.hpMax * 0.03 * spow); }, hotDur * 1000);
         FX.ring(pp, 2.2, 0x8affb0, 0.6);
         for (let i = 0; i < 14; i++) FX.burst(new THREE.Vector3(pp.x + RND(-1, 1), RND(0.3, 2.2), pp.z + RND(-1, 1)), 0x8affb0, 2, { speed: 1.5, size: 0.1, life: 0.9, gravity: -3, additive: true });
         if (st.flags.groupheal) this.shield = Math.max(this.shield, st.hpMax * 0.2 * (1 + (st.shieldBonus || 0) / 100));   // [S1]
@@ -1720,6 +2302,8 @@ const Game = {
   /* 玩家身上的减益 / 护盾，统一给 buffbar 渲染 */
   statusBuffs() {
     const out = [];
+    /* [S4] 还魂激活中 */
+    if (this.reviveT > 0) out.push({ name: '还魂', dur: this.reviveT, color: '#ffd166', type: 'buff', icon: '魂', desc: '受到致命伤时以 35% 生命存活' });
     if (this.playerSlowT > 0) out.push({ name: '迟滞', dur: this.playerSlowT, color: '#6ab8ff', type: 'debuff', icon: '缓', desc: '移动速度降低 ' + Math.round((this.playerSlow || 0) * 100) + '%' });
     if (this.poisonT > 0) out.push({ name: '中毒', dur: this.poisonT, color: '#7fbf5a', type: 'debuff', icon: '毒', desc: '每 0.9 秒受到 ' + Math.round(this.poisonDps || 0) + ' 点毒素伤害' });
     if (this.shield > 0 && this.shieldT > 0) out.push({ name: '玄冰护盾', dur: this.shieldT, color: '#9ae0ff', type: 'buff', icon: '盾', desc: '吸收 ' + Math.round(this.shield) + ' 点伤害' });
@@ -1737,17 +2321,18 @@ const Game = {
     const s = this.state;
     s.stats = computePlayerStats(s);
     const st = s.stats;
+    /* [S4] 增益结算走 BUFF_MUL / BUFF_ADD 两张表（items.js），
+     * 新增增益属性只需要往表里加 key，不用再改这里。 */
     for (const b of this.buffs) {
       const bs = b.stats;
-      if (bs.atkPct) st.atk *= 1 + bs.atkPct / 100;
-      if (bs.aspd) st.aspd *= 1 + bs.aspd / 100;
-      if (bs.crit) st.crit += bs.crit;
-      if (bs.critDmg) st.critDmg += bs.critDmg;
-      if (bs.moveSpd) st.moveSpd *= 1 + bs.moveSpd / 100;
-      if (bs.def) st.def *= 1 + bs.def / 100;
-      if (bs.allRes) st.allRes += bs.allRes;
-      if (bs.lifesteal) st.lifesteal += bs.lifesteal;
-      if (bs.mpReg) st.mpReg += bs.mpReg;
+      if (!bs) continue;
+      for (const k in bs) {
+        if (k === 'dur') continue;
+        const v = bs[k];
+        if (typeof v !== 'number') continue;
+        if (BUFF_MUL[k]) st[BUFF_MUL[k]] *= 1 + v / 100;
+        else if (BUFF_ADD.indexOf(k) >= 0) st[k] = (st[k] || 0) + v;
+      }
     }
     s.setCount = st.setCount;
     if (s.hp > st.hpMax) s.hp = st.hpMax;
@@ -1789,6 +2374,8 @@ const Game = {
 
     if (e.cfg.all) final *= 0.85;
     if (st.flags.bossSlayer && e.boss) final *= 1.4;
+    /* [S3] 狂战系·浴血：生命低于 50% 时造成的伤害 +25% */
+    if (st.flags.lowHpFury && s.hp < st.hpMax * 0.5) final *= 1.25;
 
     /* [S1] 按目标状态增伤：精英 / 首领 / 残血处决 / 满血先手 */
     if (st.eliteDmg && (e.elite || e.boss)) final *= 1 + st.eliteDmg / 100;
@@ -1956,6 +2543,20 @@ const Game = {
     }
     if (dmg <= 0) return;
     s.hp -= dmg;
+    /* [S4] 还魂：持续内受到致命伤，以 35% 生命原地存活 */
+    if (s.hp <= 0 && (this.reviveT || 0) > 0) {
+      this.reviveT = 0;
+      this.invuln = Math.max(this.invuln || 0, 1.5);
+      s.hp = Math.max(1, Math.round(st.hpMax * 0.35));
+      const pp = this.playerGroup.position;
+      FX.ring(new THREE.Vector3(pp.x, 0.2, pp.z), 6, 0xffd166, 0.8, 0.35);
+      FX.text(new THREE.Vector3(pp.x, 2.8, pp.z), '还魂', 'info', { life: 1.1 });
+      FX.burst(new THREE.Vector3(pp.x, 1.2, pp.z), 0xffd166, 30, { speed: 4, size: 0.13, life: 1, gravity: -2, additive: true });
+      UI.log('还魂重生！', 'good');
+      SFX.levelup();
+      this.shake = Math.max(this.shake, 0.4);
+      return;
+    }
     /* 传世特性·涅槃：致命伤时以 35% 生命复活（60 秒内置冷却） */
     if (s.hp <= 0 && st.specials && st.specials.phoenix && (s.phoenixCd || 0) <= 0) {
       s.phoenixCd = 60;
@@ -2441,18 +3042,51 @@ const Game = {
   },
 
   /* ---------------- 召唤物 ---------------- */
+  /* [S4] 变体 / 天赋对召唤的修正：skillMods[技能id] 的 dmg → 伤害，dur → 存活 */
+  _summonMods(skillId) {
+    const sm = this.skillMod(skillId);
+    return {
+      dmgMul: 1 + (sm ? (sm.dmg || 0) : 0) / 100,
+      lifeAdd: sm ? (sm.dur || 0) : 0
+    };
+  },
+
   summonWolf() {
     const st = this.state.stats;
-    const a = buildMonster('beast', { scale: 0.9, color: 0x8affc0, cloth: 0x3a6a50 });
+    const mod = this._summonMods('summon');
+    /* [S3] 召唤系：中节点灵狼继承 75%；青符 6 件 90% */
+    const inherit = (st.specials && st.specials.wolfPrime) ? 0.9
+      : ((st.specials && st.specials.wolfStrong) ? 0.75 : 0.6);
+    const dmg = st.atk * inherit * (1 + st.summonDmg / 100) * mod.dmgMul;
+    const life = 25 + mod.lifeAdd;
+    /* [S3] 召唤系大节点·万兽：一次召出 2 头 */
+    const count = (st.specials && st.specials.wolfPack) ? 2 : 1;
+    for (let i = 0; i < count; i++) {
+      const a = buildMonster('beast', { scale: 0.9, color: 0x8affc0, cloth: 0x3a6a50 });
+      const off = count > 1 ? (i === 0 ? -1.4 : 1.4) : 0;
+      a.group.position.set(this.playerGroup.position.x + off, 0, this.playerGroup.position.z + 0.8);
+      this.scene.add(a.group);
+      this.allies.push({
+        actor: a, pos: a.group.position.clone(), life, atkCd: 0, dmg, atkRate: 1.1
+      });
+    }
+    UI.log(inherit > 0.6 ? '灵狼应召而来（继承 ' + Math.round(inherit * 100) + '% 攻击力' + (count > 1 ? ' ×2' : '') + '）' : '灵狼应召而来');
+  },
+
+  /* [S4] 白虎 / 青龙：同框架不同参数（攻速 / 群攻） */
+  summonBeast(o) {
+    const st = this.state.stats;
+    const mod = this._summonMods(o.skill);
+    const a = buildMonster('beast', { scale: o.scale, color: o.color, cloth: o.cloth });
     a.group.position.copy(this.playerGroup.position);
     this.scene.add(a.group);
-    /* 青符 6 件：灵狼继承攻击力 60% → 90%，召唤流质变 */
-    const inherit = (st.specials && st.specials.wolfPrime) ? 0.9 : 0.6;
     this.allies.push({
-      actor: a, pos: a.group.position.clone(), life: 25, atkCd: 0,
-      dmg: st.atk * inherit * (1 + st.summonDmg / 100)
+      actor: a, pos: a.group.position.clone(),
+      life: (o.life || 20) + mod.lifeAdd, atkCd: 0,
+      dmg: st.atk * o.inherit * (1 + st.summonDmg / 100) * mod.dmgMul,
+      atkRate: o.atkRate || 1.1, aoe: !!o.aoe
     });
-    UI.log(inherit > 0.6 ? '灵狼应召而来（继承 90% 攻击力）' : '灵狼应召而来');
+    UI.log(o.name + '应召而来');
   },
 
   updateAllies(dt) {
@@ -2479,11 +3113,22 @@ const Game = {
         } else {
           al.actor.moving = false;
           if (al.atkCd <= 0) {
-            al.atkCd = 1.1;
+            /* [S4] 各召唤物攻速不同（白虎快 / 青龙慢） */
+            al.atkCd = al.atkRate || 1.1;
             al.actor.atkAnim = 1; al.actor.atkType = 'swing';
             const dmg = al.dmg * RND(0.9, 1.1);
             this.damageEnemy(target, dmg, false, {});
             FX.spark(new THREE.Vector3(target.pos.x, 1.2, target.pos.z), 0x8affc0, 6);
+            /* [S4] 青龙：范围攻击，命中目标周围 2.8m 内所有敌人 */
+            if (al.aoe) {
+              for (const e of this.enemies) {
+                if (e.dead || e === target) continue;
+                if (DIST2D(e.pos, target.pos) < 2.8 + e.radius) {
+                  this.damageEnemy(e, dmg * 0.8, false, { silent: true, tag: 'aoe' });
+                }
+              }
+              FX.ring(target.pos, 2.8, 0x6ac8ff, 0.4, 0.2);
+            }
           }
         }
       } else {
@@ -2731,6 +3376,14 @@ const Game = {
       const cur = this.buffs.find(b => b.name === '血怒');
       if (cur) { cur.dur = 4; }
       else this.addBuff('血怒', { aspd: 25, moveSpd: 20, dur: 4 }, '#ff6b4a');
+    }
+    /* [S3] 狂战系大节点·狂怒：血怒期间每次击杀刷新其持续时间 */
+    if (sto.specials && sto.specials.frenzyRefresh) {
+      const cur = this.buffs.find(b => b.key === 'skill:bloodrage');
+      if (cur) {
+        cur.dur = 10;
+        FX.text(new THREE.Vector3(p.x, 2.6, p.z), '狂怒', 'info', { life: 0.7 });
+      }
     }
     /* 传世特性：收魂（击杀回血）/ 狂战（击杀后短时攻速） */
     if (sto.specials) {
@@ -3687,6 +4340,7 @@ const Game = {
     this.state = flat;
     this.skillFlags = this.state.skillFlags || {};   // 技能领悟标记随档走
     this.normalizePlayerItems(this.state);
+    this.normalizeProgress(this.state);
     this.state.quests = this.state.quests || { active: [], done: [], next: 'q1', announced: {} };
     this.state.quests.announced = this.state.quests.announced || {};
     this.savedSlot = n;

@@ -117,6 +117,7 @@ const Mobile = {
         <div class="mbtn sm" id="mDash"><span class="mi">闪</span></div>
         <div class="mbtn sm pot" data-potion="hp"><span class="mi">丹</span><i class="cnt">0</i></div>
         <div class="mbtn sm pot blue" data-potion="mp"><span class="mi">露</span><i class="cnt">0</i></div>
+        <div class="mbtn sm" id="mPage" style="font-size:11px"><span class="mi">1/2</span></div>
       </div>`;
     document.body.appendChild(d);
     this.el = d;
@@ -126,9 +127,15 @@ const Mobile = {
     if (!this.on || !Game.state) return;
     const wrap = document.getElementById('mSkills');
     if (!wrap) return;
-    wrap.innerHTML = SKILL_ORDER[Game.state.cls].map(id => {
+    /* [S4] 每页 6 个（3×2 宫格），翻页键在 #mUtil 行尾 */
+    const all = SKILL_ORDER[Game.state.cls];
+    const pages = Math.ceil(all.length / 6);
+    const page = Math.min(Math.max(this.skillPage || 0, 0), pages - 1);
+    this.skillPage = page;
+    const shown = all.slice(page * 6, page * 6 + 6);
+    wrap.innerHTML = shown.map(id => {
       const sk = SKILLS[id];
-      return `<div class="mskill" data-skill="${id}"><span class="g">${sk.glyph}</span><div class="cd"></div></div>`;
+      return `<div class="mskill" data-skill="${id}"><span class="g">${skillIconSvg(id, 22)}</span><div class="cd"></div></div>`;
     }).join('');
     wrap.querySelectorAll('.mskill').forEach(el => {
       el.addEventListener('pointerdown', ev => {
@@ -139,6 +146,16 @@ const Mobile = {
         setTimeout(() => el.classList.remove('hit'), 130);
       });
     });
+    const pg = document.getElementById('mPage');
+    if (pg) {
+      pg.querySelector('.mi').textContent = (page + 1) + '/' + pages;
+      pg.onpointerdown = ev => {
+        ev.preventDefault(); ev.stopPropagation();
+        SFX.init();
+        this.skillPage = (this.skillPage + 1) % pages;
+        this.buildSkills();
+      };
+    }
     this.layout();
   },
 

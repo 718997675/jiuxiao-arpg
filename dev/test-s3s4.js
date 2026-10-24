@@ -1,0 +1,585 @@
+/* ============================================================
+ * S3 天赋 + S4 技能 浏览器端验证（驱动真实 Game 对象）
+ *
+ *   node dev/test-s3s4.js [warrior|mage|taoist]
+ *
+ * 覆盖：
+ *   A. 天赋：点数账、前置/上限/系点门槛、加点洗点、依赖保护、
+ *      属性透传、预设存取、预算截断、洗点费用递增、旧档迁移
+ *   B. 技能：12 技能全解锁、升级/满级/技能点、变体边界
+ *   C. 施法：12 技能逐个 cast 不报错，冷却与消耗符合变体修正
+ *   D. 伤害曲线：等级 1→10 恰好 1.72 倍；变体 +30%；天赋 +12%
+ *   E. UI：天赋面板画布点击加点、技能面板升级/切变体、
+ *      动作条 8 格 + 翻页 + 键 1-8 映射、Z/X 药水键
+ * ============================================================ */
+const puppeteer = require('puppeteer-core');
+const path = require('path');
+const wait = ms => new Promise(r => setTimeout(r, ms));
+
+const CLS = process.argv[2] || 'warrior';
+if (!['warrior', 'mage', 'taoist'].includes(CLS)) {
+  console.log('用法：node dev/test-s3s4.js [warrior|mage|taoist]');
+  process.exit(1);
+}
+
+let pass = 0, fail = 0;
+const ok = (cond, msg, extra) => {
+  if (cond) pass++;
+  else { fail++; console.log('  ✗ ' + msg + (extra !== undefined ? '  →  ' + extra : '')); }
+};
+const near = (a, b, tol, msg) => ok(Math.abs(a - b) <= tol, msg, a + ' ≈ ' + b);
+
+(async () => {
+  const b = await puppeteer.launch({
+    executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+    headless: 'new',
+    args: ['--no-sandbox', '--enable-webgl', '--use-gl=angle']
+  });
+  const p = await b.newPage();
+  const errs = [];
+  p.on('pageerror', e => errs.push('pageerror: ' + String(e).slice(0, 200)));
+  p.on('console', m => { if (m.type() === 'error') errs.push(m.text().slice(0, 160)); });
+
+  await p.setViewport({ width: 1440, height: 900, deviceScaleFactor: 1 });
+  await p.goto('file://' + path.resolve(__dirname, '..', 'index.html') + '?cls=' + CLS, { waitUntil: 'load' });
+  await wait(2200);
+
+  /* 注意：Game / UI 是脚本级 const（全局词法绑定），只能用裸名访问，不能走 window.Game */
+  const boot = await p.evaluate(() => ({
+    game: typeof Game,
+    state: !!(typeof Game !== 'undefined' && Game.state),
+    running: !!(typeof Game !== 'undefined' && Game.running),
+    url: location.href
+  }));
+  if (!(boot.game === 'object' && boot.state && boot.running)) {
+    console.log('游戏未能启动：', JSON.stringify(boot));
+    if (errs.length) console.log(errs.join('\n'));
+    await b.close();
+    process.exit(1);
+  }
+
+  /* ================= A. 天赋逻辑 ================= */
+  console.log('\nA. 天赋逻辑（' + CLS + '）');
+  const A = await p.evaluate(() => {
+    const G = Game, R = {};
+    const FIRST = { warrior: 'rage', mage: 'frost', taoist: 'talisman' }[G.state.cls];
+    const ROOT = FIRST + '_s1', S2 = FIRST + '_s2', S4 = FIRST + '_s4', S6 = FIRST + '_s6';
+    const M1 = FIRST + '_m1', L = FIRST + '_L';
+    const OTHER = { warrior: 'guard', mage: 'flame', taoist: 'summon' }[G.state.cls];
+    /* 根节点属性各职业不同：战士力量 / 法师、道士智力——期望值从数据里取，不写死 */
+    const rootNode = TALENTS[G.state.cls].find(t => t.id === FIRST).nodes.find(n => n.id === ROOT);
+    const STAT_KEY = Object.keys(rootNode.stats)[0];
+    const STAT_PER = rootNode.stats[STAT_KEY];
+    /* 大节点终极效果也因职业而异：战士 special / 法师 flag / 道士 special */
+    const L_SP = { warrior: 'frenzyRefresh', mage: null, taoist: 'talismanPierce' }[G.state.cls];
+    const L_FLAG = { warrior: null, mage: 'novaFreeze', taoist: null }[G.state.cls];
+
+    G.state.level = 30; G.state.gold = 300000; G.recalc();
+    R.points0 = G.talentPoints();
+    R.statBase = G.state.stats[STAT_KEY];
+    R.rootCan = G.canAllocTalent(ROOT);
+    R.childLocked = !G.canAllocTalent(S2);
+    G.allocTalent(ROOT);
+    R.pointsAfter1 = G.talentPoints();
+    R.childCan = G.canAllocTalent(S2);
+    for (let i = 0; i < 6; i++) G.allocTalent(ROOT);
+    R.rank = G.talentState().spent[ROOT];
+    R.maxLocked = !G.canAllocTalent(ROOT);
+    R.treePts = G.talentTreePoints(FIRST);
+    R.largeCan = G.canAllocTalent(L);
+    R.otherTreeLocked = !G.canAllocTalent(OTHER + '_L');
+    G.allocTalent(L);
+    R.largeSpecial = L_SP ? !!G.state.stats.specials[L_SP] : !!G.state.stats.flags[L_FLAG];
+    R.m1Locked = !G.canAllocTalent(M1);
+    G.allocTalent(S2); G.allocTalent(S4); G.allocTalent(S6);
+    R.m1Can = G.canAllocTalent(M1);
+    G.allocTalent(M1);
+    R.refundBlocked = !G.refundTalent(S6);
+    G.refundTalent(M1);
+    R.refundOk = G.refundTalent(S6);
+    R.spentTotal = G._spentTotal();
+    R.pointsNow = G.talentPoints();
+    R.statAfter = G.state.stats[STAT_KEY];
+    R.statKey = STAT_KEY; R.statPer = STAT_PER;
+    /* 加点后面板即时刷新（onTalentChanged 钩子） */
+    R.talentPanelAlive = typeof UI.onTalentChanged === 'function';
+    return R;
+  });
+  ok(A.points0 === 30, '30 级应有 30 天赋点', A.points0);
+  ok(A.rootCan === true, '根节点应可点');
+  ok(A.childLocked === true, '前置未满足时子节点应锁');
+  ok(A.pointsAfter1 === 29, '点 1 级后剩 29 点', A.pointsAfter1);
+  ok(A.childCan === true, '前置满足后子节点可点');
+  ok(A.rank === 5, '小节点上限 5 级', A.rank);
+  ok(A.maxLocked === true, '满级后不可再点');
+  ok(A.treePts === 5, '本系已投入 5 点', A.treePts);
+  ok(A.largeCan === true, '系点够 5 时大节点可点');
+  ok(A.otherTreeLocked === true, '0 点的系不该开大节点');
+  ok(A.largeSpecial === true, '大节点终极效果（special/flag）应进入面板');
+  ok(A.m1Locked === true, '中节点前置未满足应锁');
+  ok(A.m1Can === true, '中节点前置链通后可点');
+  ok(A.refundBlocked === true, '后置节点还点着时前置不可洗');
+  ok(A.refundOk === true, '洗掉后置后可洗前置');
+  ok(A.spentTotal === 8, '最终投入 8 点（5+1+1+1）', A.spentTotal);
+  ok(A.pointsNow === 22, '剩余 22 点', A.pointsNow);
+  ok(A.statAfter === A.statBase + A.statPer * 5,
+    '根节点 5 级应 +' + (A.statPer * 5) + ' ' + A.statKey + ' 并透传面板',
+    A.statBase + '→' + A.statAfter);
+  ok(A.talentPanelAlive, 'UI.onTalentChanged 钩子应存在');
+
+  /* ================= B. 预设 / 洗点 / 迁移 ================= */
+  console.log('\nB. 预设 / 洗点 / 迁移');
+  const B = await p.evaluate(() => {
+    const G = Game, R = {};
+    R.firstCost = G.respecCost();
+    G.respecTalents();
+    R.spentAfterRespec = G._spentTotal();
+    const FIRST = { warrior: 'rage', mage: 'frost', taoist: 'talisman' }[G.state.cls];
+    G.allocTalent(FIRST + '_s1'); G.allocTalent(FIRST + '_s2');
+    G.saveTalentPreset(0);
+    G.refundTalent(FIRST + '_s2');
+    G.loadTalentPreset(0);
+    R.restored = G.talentState().spent[FIRST + '_s2'] || 0;
+    /* 低等级读预设：超出预算截断 */
+    G.state.level = 3;
+    const r = G.loadTalentPreset(0);
+    R.truncated = G._spentTotal();
+    R.loadMsg = r.msg;
+    G.state.level = 40; G.recalc();
+    /* 洗点费用递增（含刚才那次共 6 次） */
+    G.state.gold = 300000;
+    const costs = [R.firstCost];
+    for (let i = 0; i < 5; i++) { costs.push(G.respecCost()); G.respecTalents(); }
+    R.costs = costs;
+    R.respecCount = G.talentState().respecCount;
+    R.poorRespec = (() => { G.state.gold = 0; return G.respecTalents(); })();
+    /* 旧档迁移 */
+    const fake = {
+      talents: { spent: { rage_dead_999: 3, rage_s1: 2 }, presets: [null, null, null] },
+      skills: { whirl: { lv: 3, v: 1 }, dead_skill_x: { lv: 5 } }
+    };
+    G.normalizeProgress(fake);
+    R.deadTalentGone = !fake.talents.spent.rage_dead_999;
+    R.liveTalentKept = fake.talents.spent.rage_s1;
+    R.deadSkillGone = !fake.skills.dead_skill_x;
+    R.liveSkillKept = fake.skills.whirl && fake.skills.whirl.lv;
+    G.normalizeProgress({});          // 空对象不应炸
+    G.normalizeProgress(null);
+    R.migrateSafe = true;
+    return R;
+  });
+  ok(B.spentAfterRespec === 0, '洗点后清空');
+  ok(B.restored === 1, '预设应还原加点');
+  ok(B.truncated <= 3, '低等级读预设应按预算截断', B.truncated);
+  ok(JSON.stringify(B.costs) === JSON.stringify([1000, 5000, 20000, 50000, 50000, 50000]),
+    '洗点费用递增 1k/5k/20k/50k/50k/50k', B.costs.join(','));
+  ok(B.respecCount === 6, '洗点计数', B.respecCount);
+  ok(B.poorRespec && B.poorRespec.ok === false, '金币不足应拒绝洗点');
+  ok(B.deadTalentGone && B.liveTalentKept === 2, '旧档死天赋 id 应清掉，活的保留');
+  ok(B.deadSkillGone && B.liveSkillKept === 3, '旧档死技能 id 应清掉，活的保留');
+  ok(B.migrateSafe, '空对象迁移不应抛错');
+
+  /* ================= C. 技能升级 / 变体 ================= */
+  console.log('\nC. 技能升级 / 变体');
+  const C = await p.evaluate(() => {
+    const G = Game, R = {};
+    G.state.level = 40; G.recalc();
+    const order = SKILL_ORDER[G.state.cls];
+    R.orderLen = order.length;
+    R.allUnlocked = order.every(id => G.state.level >= SKILLS[id].unlock);
+    R.skillPts = G.skillPoints();
+    R.lockedRejected = (() => { G.state.level = 1; G.recalc(); const r = G.levelUpSkill(order[order.length - 1]); G.state.level = 40; G.recalc(); return r; })();
+    const first = order[0];
+    G.levelUpSkill(first);
+    R.lvAfterOne = G.skillLevel(first);
+    for (let i = 0; i < 9; i++) G.levelUpSkill(first);
+    R.lvMax = G.skillLevel(first);
+    R.overMax = G.levelUpSkill(first);
+    R.ptsSpentOnFirst = 9;
+    R.skillPtsNow = G.skillPoints();
+    R.v0 = G.setSkillVariant(first, 0);
+    R.v2 = G.setSkillVariant(first, 2);
+    R.vBad = G.setSkillVariant(first, 3);
+    G.setSkillVariant(first, 0);
+    return R;
+  });
+  ok(C.orderLen === 12, CLS + ' 应有 12 个技能', C.orderLen);
+  ok(C.allUnlocked === true, '40 级全部技能应解锁');
+  ok(C.skillPts === 40, '40 级应有 40 技能点', C.skillPts);
+  ok(C.lockedRejected && C.lockedRejected.ok === false && /尚未领悟/.test(C.lockedRejected.msg),
+    '未领悟技能不可升级', C.lockedRejected && C.lockedRejected.msg);
+  ok(C.lvAfterOne === 2, '升 1 级后为 2 级', C.lvAfterOne);
+  ok(C.lvMax === 10, '技能上限 10 级', C.lvMax);
+  ok(C.overMax && C.overMax.ok === false, '满级后不可再升');
+  ok(C.skillPtsNow === 31, '升级花掉 9 点，剩 31', C.skillPtsNow);
+  ok(C.v0 && C.v2 && !C.vBad, '变体只能取 0/1/2');
+
+  /* ================= D. 全技能施放 ================= */
+  console.log('\nD. 全技能施放（消耗 / 冷却 / 不报错）');
+  const D = await p.evaluate(() => {
+    const G = Game, R = { list: [], bad: [] };
+    G.state.level = 40; G.recalc();
+    /* 旋风斩命中回 8 灵力（设计如此），期望消耗要扣掉它 */
+    const MP_REFUND = { whirl: 8 };
+    for (const id of SKILL_ORDER[G.state.cls]) {
+      const sk = SKILLS[id];
+      const v = G.skillVariant(id);
+      const smod = mergeSkillMods(G.skillMod(id), variantMods(sk, v));
+      const wantCd = Math.max(0.5, G.skillCd(sk) * (1 - ((smod && smod.cd) || 0) / 100));
+      const wantCost = Math.max(1, Math.round(G.skillCost(sk) * (1 - ((smod && smod.cost) || 0) / 100)));
+      G.cooldowns[id] = 0;
+      G.state.mp = G.state.stats.mpMax;      // 每次施放前回满，避免前面的施放干扰计量
+      const mp0 = G.state.mp;
+      let err = null;
+      try { G.castSkill(id); } catch (e) { err = String((e && e.message) || e); }
+      const cd = G.cooldowns[id] || 0;
+      const spent = mp0 - G.state.mp + (MP_REFUND[id] || 0);
+      R.list.push({ id, err, cd: +cd.toFixed(2), spent: +spent.toFixed(1), wantCd: +wantCd.toFixed(2), wantCost });
+      if (err) R.bad.push(id + ': ' + err);
+    }
+    return R;
+  });
+  ok(D.bad.length === 0, '全部技能施放不应抛错', D.bad.join(' | '));
+  let cdBad = [], costBad = [];
+  for (const c of D.list) {
+    if (Math.abs(c.cd - c.wantCd) > 0.06) cdBad.push(c.id + ' ' + c.cd + '≠' + c.wantCd);
+    if (Math.abs(c.spent - c.wantCost) > 1.5) costBad.push(c.id + ' ' + c.spent + '≠' + c.wantCost);
+  }
+  ok(cdBad.length === 0, '冷却应符合 skillCd', cdBad.join(','));
+  ok(costBad.length === 0, '消耗应符合 skillCost', costBad.join(','));
+
+  /* ================= E. 变体对消耗/冷却的影响 ================= */
+  console.log('\nE. 变体修正（消耗 / 冷却）');
+  const E = await p.evaluate(() => {
+    const G = Game, R = {};
+    const id = SKILL_ORDER[G.state.cls][0];
+    const sk = SKILLS[id];
+    const v0 = sk.variants[0].mods, v1 = sk.variants[1].mods;
+    const cast = (v) => {
+      G.setSkillVariant(id, v);
+      G.cooldowns[id] = 0;
+      G.state.mp = G.state.stats.mpMax;
+      const mp0 = G.state.mp;
+      G.castSkill(id);
+      return { cd: G.cooldowns[id], cost: mp0 - G.state.mp + (id === 'whirl' ? 8 : 0) };
+    };
+    const base = cast(0);
+    R.baseCd = base.cd; R.baseCost = base.cost;
+    const one = cast(1);
+    R.v1Cd = one.cd; R.v1Cost = one.cost;
+    R.wantCd0 = Math.max(0.5, G.skillCd(sk) * (1 - (v0.cd || 0) / 100));
+    R.wantCd1 = Math.max(0.5, G.skillCd(sk) * (1 - (v1.cd || 0) / 100));
+    R.wantCost0 = Math.max(1, Math.round(G.skillCost(sk) * (1 - (v0.cost || 0) / 100)));
+    R.wantCost1 = Math.max(1, Math.round(G.skillCost(sk) * (1 - (v1.cost || 0) / 100)));
+    G.setSkillVariant(id, 0);
+    return R;
+  });
+  near(E.baseCd, E.wantCd0, 0.06, '基准冷却 = 基础冷却 × 变体0修正', E.baseCd + ' vs ' + E.wantCd0);
+  near(E.baseCost, E.wantCost0, 0.51, '基准消耗 = 基础消耗 × 变体0修正', E.baseCost + ' vs ' + E.wantCost0);
+  near(E.v1Cd, E.wantCd1, 0.06, '变体1冷却修正生效', E.v1Cd + ' vs ' + E.wantCd1);
+  near(E.v1Cost, E.wantCost1, 0.51, '变体1消耗修正生效', E.v1Cost + ' vs ' + E.wantCost1);
+
+  /* ================= F. 伤害曲线 ================= */
+  console.log('\nF. 伤害曲线（等级 / 变体 / 天赋）');
+  if (process.env.DBG) await p.evaluate(() => { window.DBG = true; });
+  /* 预清场 + 静置：D/E 段会留下召唤物（会索敌普攻测试怪）、在飞投射物、
+   * 陨石/裁决的 telegraph（帧计时走 FX.zones）、火海/暴雪/星雨的 setInterval tick、
+   * 以及剑雨的 rAF 落地动画。全部撤掉后等 700ms 让 rAF 放完，再生成测试怪计量 */
+  await p.evaluate(() => {
+    const G = Game;
+    FX.clear();
+    G.mapGen = (G.mapGen || 0) + 1;
+    for (const al of G.allies) { if (al.actor && al.actor.group) G.scene.remove(al.actor.group); }
+    G.allies.length = 0;
+  });
+  await wait(700);
+  const F0 = await p.evaluate(() => {
+    const G = Game, R = {};
+    /* 确定性：Math.random 恒不暴击；rollDamage 换成无随机版
+     * （RND 是 data-core 的 const 词法绑定，window.RND 覆盖不到它，
+     *  所以直接替换 Game 对象上的方法） */
+    Math.random = () => 0.99;
+    G.rollDamage = base => {
+      const st = G.state.stats;
+      const lo = 0.9 + Math.min(0.2, (st.minDmg || 0) / 100);
+      return { dmg: base * (lo + 1.12) / 2 * (1 + (st.dmgAll || 0) / 100), crit: false };
+    };
+    /* 命中计数：每次施放前归零，_dmg 取本次施放的总伤害 */
+    window._hits = 0; window._total = 0; window._log = [];
+    if (window.DBG) {
+      const origExp = G.explodeAt.bind(G);
+      G.explodeAt = (pos, radius, baseDmg, color, big, silent, tag) => {
+        if (window._log) window._log.push({ explode: +(baseDmg / G.state.stats.atk).toFixed(3), r: radius });
+        return origExp(pos, radius, baseDmg, color, big, silent, tag);
+      };
+    }
+    const origDmg = G.damageEnemy.bind(G);
+    G.damageEnemy = (e, dmg, crit, opts) => {
+      window._hits++; window._total += dmg;
+      if (window._log) window._log.push({ tag: (opts && opts.tag) || G._tag || 'melee', dmg: +dmg.toFixed(1) });
+      return origDmg(e, dmg, crit, opts);
+    };
+    const id = SKILL_ORDER[G.state.cls][0];
+    const pp = G.playerGroup.position;
+    const e = G.spawnEnemy('ghost', pp.x + 2, pp.z, false, 1);
+    if (!e) return { spawnFail: true };
+    window._te = e;
+    window._cast = (lv, v) => {
+      G.state.skills[id] = { lv, v: v || 0 };
+      G.recalc();
+      const st = G.state.stats;
+      st.crit = 0;
+      /* 测试怪会自己飘：每次施放前把它钉回玩家身边，否则异步技能结算时
+       * 命中次数不稳定（火球可能只蹭到 1 下），比值就不可比 */
+      e.hp = 1e6; e.maxHp = 1e6; e.dead = false;
+      const pp2 = G.playerGroup.position;
+      e.pos.set(pp2.x + 2, 0, pp2.z);
+      e.spawnPos.copy(e.pos);
+      /* 朝向测试怪：dir 类技能（火球）沿 aimDir 飞行，enemy 类自动索敌 */
+      G.aimDir.set(e.pos.x - pp2.x, 0, e.pos.z - pp2.z).normalize();
+      G.aimPoint.set(e.pos.x, 0, e.pos.z);
+      G.cooldowns[id] = 0;
+      window._hits = 0; window._total = 0; window._log = [];
+      G.castSkill(id);
+    };
+    window._dmg = () => window._total;
+    window._hitlog = () => window._log;
+    R.id = id;
+    R.type = SKILLS[id].type;
+    R.async = ['proj', 'bolt'].includes(SKILLS[id].type);   // 投射物伤害延迟结算
+    R.atk = G.state.stats.atk;
+    R.v0mods = SKILLS[id].variants[0].mods;
+    R.v1mods = SKILLS[id].variants[1].mods;
+    R.talent = {
+      warrior: { id: 'rage_m1', skill: 'whirl', dmg: 12 },
+      mage: { id: 'flame_m1', skill: 'fireball', dmg: 20 },
+      taoist: { id: 'talisman_m1', skill: 'talisman', dmg: 20 }
+    }[G.state.cls];
+    R.snap = (() => { const s = G.state.stats; return { atk: s.atk, skillDmg: s.skillDmg, aoeDmg: s.aoeDmg, dmgAll: s.dmgAll, projDmg: s.projDmg, lvMul: 1 + SKILL_LV_STEP * (G.skillLevel(id) - 1), spent: JSON.stringify(G.state.talents.spent), zones: (G.zones || []).length, projs: (FX && FX.projectiles || []).length, buffs: (G.state.buffs || []).map(b => b.name) }; })();
+    return R;
+  });
+  if (F0.spawnFail) {
+    ok(false, '测试怪生成失败（同屏上限？）');
+  } else {
+    if (process.env.DBG) console.log('    [dbg] F0 快照：', JSON.stringify(F0.snap));
+    const measure = async (lv, v) => {
+      await p.evaluate(([l, vv]) => window._cast(l, vv), [lv, v]);
+      if (F0.async) await wait(900);   // 投射物飞行 + 命中
+      const r = await p.evaluate(() => ({ d: window._dmg(), h: window._hits, alive: Game.enemies.filter(x => !x.dead).length }));
+      if (process.env.DBG) console.log('    [dbg] lv' + lv + ' v' + v + ' → hits=' + r.h + ' dmg=' + r.d.toFixed(1) + ' alive=' + r.alive + ' log=' + JSON.stringify(await p.evaluate(() => window._hitlog())));
+      return r;
+    };
+    const m1 = await measure(1, 0);
+    const m10 = await measure(10, 0);
+    const v1mods = F0.v1mods;
+    const v0mods = F0.v0mods;
+    const mV = v1mods.dmg ? await measure(1, 1) : m1;
+    const d1 = m1.d, d10 = m10.d, dV = mV.d;
+    ok(d1 > 0, '技能应能造成伤害', d1.toFixed(1));
+    ok(m1.h > 0, '技能应命中测试怪', m1.h);
+    near(d10 / d1, 1.72, 0.02, '技能 10 级伤害应为 1 级的 1.72 倍', (d10 / d1).toFixed(3));
+    if (v1mods.dmg) {
+      /* 每击伤害按 dmg 修正走；总比值再乘以命中数之比。
+       * 数量修正只有在「扇形齐发」技能上才体现为单敌多段命中——
+       * 火球连环 3 发都砸同一只；五雷符是逐目标召唤，单敌时仍只有 1 道 */
+      const perHit = (1 + v1mods.dmg / 100) / (1 + (v0mods.dmg || 0) / 100);
+      const FAN = { warrior: false, mage: true, taoist: false }[CLS];
+      const wantHits1 = FAN ? 1 + (v0mods.count || 0) : 1;
+      ok(m1.h === wantHits1, '基准变体命中数应符合技能形态', m1.h + ' vs ' + wantHits1);
+      near(dV / d1, perHit * (mV.h / m1.h), 0.03, '变体每击伤害修正应生效',
+        (dV / d1).toFixed(3) + ' vs ' + (perHit * (mV.h / m1.h)).toFixed(3));
+    }
+    /* 天赋：给该技能加伤的中节点（注意变体 0 本身可能带伤害修正，比值要连它一起算） */
+    if (F0.talent.skill === F0.id) {
+      await p.evaluate(tid => {
+        Game.state.talents.spent = {};
+        Game.state.talents.spent[tid] = 1;
+      }, F0.talent.id);
+      const mT = await measure(1, 0);
+      const dT = mT.d;
+      const base = 1 + (F0.v0mods.dmg || 0) / 100;
+      near(dT / d1, (base + F0.talent.dmg / 100) / base, 0.02,
+        '天赋技能修正应进入伤害', (dT / d1).toFixed(3));
+      await p.evaluate(() => { Game.state.talents.spent = {}; Game.recalc(); });
+    } else {
+      const mod = await p.evaluate(tid => {
+        Game.state.talents.spent = {};
+        Game.state.talents.spent[tid] = 1;
+        Game.recalc();
+        const m = Game.state.stats.skillMods['fireball'] || Game.state.stats.skillMods['talisman'];
+        Game.state.talents.spent = {}; Game.recalc();
+        return m && m.dmg;
+      }, F0.talent.id);
+      ok(mod === F0.talent.dmg, '天赋 skillMods 汇总值正确', mod);
+    }
+    await p.evaluate(() => { window._te.dead = true; });
+  }
+
+  /* ================= G. UI 面板 ================= */
+  console.log('\nG. UI 面板');
+  /* 天赋面板：画布点击加点 */
+  const G1 = await p.evaluate(() => {
+    UI.closeAll();
+    UI.openTalent();
+    const tabs = document.querySelectorAll('#tlTrees .tl-tab');
+    const hits = UI._tlHit || [];
+    return {
+      open: document.getElementById('talentPanel').classList.contains('open'),
+      tabs: tabs.length,
+      hits: hits.length,
+      tab0: tabs[0] && tabs[0].textContent.trim(),
+      pts: document.getElementById('tlPts').textContent
+    };
+  });
+  ok(G1.open, '天赋面板应能打开');
+  ok(G1.tabs === 4, '应有 4 个系页签', G1.tabs);
+  ok(G1.hits === 10 || G1.hits === 30, '画布应生成节点热区（10 或 30）', G1.hits);
+  const FIRST_TREE = { warrior: '狂战', mage: '寒冰', taoist: '符箓' }[CLS];
+  ok((G1.tab0 || '').indexOf(FIRST_TREE) === 0, '首个页签应是本职业第一系', G1.tab0);
+
+  const G2 = await p.evaluate(() => {
+    const G = Game;
+    G.state.level = 20; G.recalc();
+    UI.openTalent();
+    const before = G._spentTotal();
+    const cv = document.getElementById('tlCanvas');
+    const h = UI._tlHit[0];
+    const r = cv.getBoundingClientRect();
+    const sx = r.width / 660, sy = r.height / 440;
+    cv.dispatchEvent(new MouseEvent('click', {
+      clientX: r.left + h.x * sx, clientY: r.top + h.y * sy, bubbles: true
+    }));
+    const after = G._spentTotal();
+    /* Shift + 点击洗掉 */
+    cv.dispatchEvent(new MouseEvent('click', {
+      clientX: r.left + h.x * sx, clientY: r.top + h.y * sy, bubbles: true, shiftKey: true
+    }));
+    const afterRefund = G._spentTotal();
+    return { before, after, afterRefund };
+  });
+  ok(G2.after === G2.before + 1, '画布点击应加点', G2.before + '→' + G2.after);
+  ok(G2.afterRefund === G2.before, 'Shift+点击应洗点', G2.afterRefund);
+
+  /* 预设按钮 */
+  const G3 = await p.evaluate(() => {
+    const G = Game;
+    G.state.level = 20; G.recalc();
+    UI.openTalent();
+    const btns = document.querySelectorAll('#tlPresets .tl-pst');
+    return { count: btns.length, respec: !!document.getElementById('tlRespec') };
+  });
+  ok(G3.count === 3, '应有 3 个预设位', G3.count);
+  ok(G3.respec, '应有重置按钮');
+
+  /* 技能面板：升级 + 切变体 */
+  const G4 = await p.evaluate(() => {
+    const G = Game;
+    G.state.level = 40; G.recalc();
+    UI.openSkill();
+    const rows = document.querySelectorAll('#skList .sk-row');
+    const trees = document.querySelectorAll('#skList .sk-tree');
+    const lvBtn = document.querySelector('#skList [data-sklv]');
+    const before = lvBtn ? G.skillLevel(lvBtn.dataset.sklv) : -1;
+    if (lvBtn) lvBtn.click();
+    const after = lvBtn ? G.skillLevel(lvBtn.dataset.sklv) : -1;
+    const vBtn = document.querySelectorAll('#skList [data-skv]')[1];   // 第二个变体（Ⅰ→Ⅱ 必有变化）
+    let vBefore = -1, vAfter = -1;
+    if (vBtn) {
+      const sid = vBtn.dataset.skv.split(':')[0];
+      vBefore = G.skillVariant(sid);
+      vBtn.click();
+      vAfter = G.skillVariant(sid);
+    }
+    return { rows: rows.length, trees: trees.length, before, after, vBefore, vAfter };
+  });
+  ok(G4.rows === 12, '技能面板应列 12 个技能', G4.rows);
+  ok(G4.trees === 3, '应按 3 个系分组', G4.trees);
+  ok(G4.after === G4.before + 1, '升级按钮应生效', G4.before + '→' + G4.after);
+  ok(G4.vAfter !== G4.vBefore && G4.vAfter >= 0 && G4.vAfter <= 2, '变体按钮应切换', G4.vBefore + '→' + G4.vAfter);
+
+  /* 动作条：8 格 + 翻页 + 键位 */
+  const G5 = await p.evaluate(() => {
+    const G = Game;
+    UI.closeAll();
+    UI.buildActionBar();
+    const bar = document.getElementById('actionbar');
+    const skills = bar.querySelectorAll('.skill');
+    const pg = bar.querySelector('[data-pg]');
+    const firstId = skills[0] && skills[0].dataset.skill;
+    const page1LastId = skills[skills.length - 1] && skills[skills.length - 1].dataset.skill;
+    /* 翻到第二页 */
+    if (pg) pg.click();
+    const skills2 = bar.querySelectorAll('.skill');
+    const p2first = skills2[0] && skills2[0].dataset.skill;
+    const p2count = skills2.length;
+    /* 翻回第一页 */
+    if (pg) bar.querySelector('[data-pg]').click();
+    return {
+      n: skills.length, hasPg: !!pg, firstId, page1LastId, p2first, p2count,
+      order: SKILL_ORDER[G.state.cls]
+    };
+  });
+  ok(G5.n === 8, '动作条第一页应 8 格', G5.n);
+  ok(G5.hasPg, '应有翻页按钮');
+  ok(G5.firstId === G5.order[0], '第一格应是第一个技能');
+  ok(G5.page1LastId === G5.order[7], '第 8 格应是第 8 个技能', G5.page1LastId);
+  ok(G5.p2first === G5.order[8], '第二页第一格应是第 9 个技能', G5.p2first);
+  ok(G5.p2count === 4, '第二页应 4 格', G5.p2count);
+
+  /* 键 1-8 映射当前页；第二页按 1 放第 9 个技能 */
+  const G6 = await p.evaluate(() => {
+    const G = Game;
+    G.state.level = 40; G.recalc();
+    G.state.mp = 100000; G.state.stats.mpMax = 100000;
+    UI.buildActionBar();
+    const key = k => window.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true }));
+    G.cooldowns = {};
+    key('1');
+    const cd1 = G.cooldowns[SKILL_ORDER[G.state.cls][0]] || 0;
+    G.cooldowns = {};
+    UI.skillPage = 1; UI.buildActionBar();
+    key('1');
+    const cd9 = G.cooldowns[SKILL_ORDER[G.state.cls][8]] || 0;
+    /* 药水键 Z/X */
+    G.state.potions.hp = 3; G.state.hp = 10; G.state.stats.hpMax = 100;
+    const hp0 = G.state.hp;
+    key('z');
+    const hpAfter = G.state.hp;
+    UI.skillPage = 0; UI.buildActionBar();
+    return { cd1, cd9, hp0, hpAfter };
+  });
+  ok(G6.cd1 > 0, '键 1 应施放第一页第一个技能');
+  ok(G6.cd9 > 0, '翻页后键 1 应施放第 9 个技能');
+  ok(G6.hpAfter > G6.hp0, 'Z 键应喝红药', G6.hp0 + '→' + G6.hpAfter);
+
+  /* T / K 开面板 */
+  const G7 = await p.evaluate(() => {
+    UI.closeAll();
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 't', bubbles: true }));
+    const t = document.getElementById('talentPanel').classList.contains('open');
+    UI.closeAll();
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', bubbles: true }));
+    const k = document.getElementById('skillPanel').classList.contains('open');
+    UI.closeAll();
+    return { t, k };
+  });
+  ok(G7.t, 'T 键应开天赋面板');
+  ok(G7.k, 'K 键应开术法面板');
+
+  /* 截图存档 */
+  await p.evaluate(() => { UI.openTalent(); });
+  await wait(400);
+  await p.screenshot({ path: path.resolve(__dirname, '..', 'shots', 's3-talent-' + CLS + '.png') });
+  await p.evaluate(() => { UI.openSkill(); });
+  await wait(400);
+  await p.screenshot({ path: path.resolve(__dirname, '..', 'shots', 's4-skills-' + CLS + '.png') });
+  await p.evaluate(() => { UI.closeAll(); });
+
+  await b.close();
+
+  console.log('\n====================================================');
+  console.log(`结果（${CLS}）：${pass} 通过 / ${fail} 失败`);
+  if (errs.length) console.log('页面错误 ' + errs.length + ' 条：\n' + errs.slice(0, 6).join('\n'));
+  console.log('====================================================');
+  process.exit(fail ? 1 : 0);
+})().catch(e => { console.error('测试崩溃：', e); process.exit(1); });

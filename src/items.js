@@ -747,7 +747,31 @@ function sumItemStats(item, out) {
   if (item.power === 'magicfind') out.magicFind += 30;
 }
 
-function aggregate(equipped) {
+/* [S3] 天赋加成汇总：传入 state.talents（{ spent, presets }）或直接传 spent map。
+ * 载体与套装 / 传世完全同构：stats / skillMods / flag / special。
+ * TALENT_NODES 未加载（node 探针只读 items.js）时安全跳过。 */
+function applyTalents(talentsState, st, flags, specials, skillMods) {
+  if (!talentsState || typeof TALENT_NODES === 'undefined') return;
+  const spent = talentsState.spent || talentsState;
+  for (const id in spent) {
+    const rank = spent[id];
+    if (!rank) continue;
+    const entry = TALENT_NODES[id];
+    if (!entry) continue;               // 已退出目录的节点（旧档）直接忽略
+    const n = entry.node;
+    if (n.stats) for (const k in n.stats) st[k] = (st[k] || 0) + n.stats[k] * rank;
+    if (n.skillMods) {
+      for (const skid in n.skillMods) {
+        const m = skillMods[skid] || (skillMods[skid] = { dmg: 0, cd: 0, cost: 0, radius: 0, count: 0, dur: 0 });
+        for (const k in n.skillMods[skid]) m[k] = (m[k] || 0) + n.skillMods[skid][k] * rank;
+      }
+    }
+    if (n.flag) flags[n.flag] = true;
+    if (n.special) specials[n.special] = true;
+  }
+}
+
+function aggregate(equipped, talents) {
   const st = emptyStats();
   const setCount = {};
   const flags = {};
@@ -796,6 +820,8 @@ function aggregate(equipped) {
       }
     }
   }
+  /* [S3] 天赋（与套装同通道汇总，保证「套装 + 天赋」双重构筑） */
+  if (talents) applyTalents(talents, st, flags, specials, skillMods);
   return { stats: st, setCount, setBonuses, flags, skillMods, specials };
 }
 
@@ -814,9 +840,20 @@ const STAT_CAPS = {
   costReduce: 50, cdr: 45
 };
 
-/* 计算玩家最终属性 */
+/* [S4] 增益（buff）结算表：recalc 按这两张表把 buff.stats 应用到最终属性。
+ * BUFF_MUL 是乘区（buff 值 = 百分比）；BUFF_ADD 是加值（buff 值 = 点数）。 */
+const BUFF_MUL = { atkPct: 'atk', aspd: 'aspd', moveSpd: 'moveSpd', def: 'def', armorPct: 'def' };
+const BUFF_ADD = ['crit', 'critDmg', 'allRes', 'fireRes', 'iceRes', 'poisonRes', 'physRes',
+  'lifesteal', 'mpReg', 'mpOnHit', 'hpOnHit', 'killHeal', 'hpRegen',
+  'dmgReduce', 'block', 'dodge', 'ccResist', 'thorns',
+  'healBonus', 'shieldBonus', 'overkillShield',
+  'dmgAll', 'meleeDmg', 'projDmg', 'aoeDmg', 'dotDmg', 'skillDmg', 'summonDmg',
+  'eliteDmg', 'bossDmg', 'executeDmg', 'firstStrike', 'armorPen', 'minDmg',
+  'stunChance', 'slowChance', 'freezeChance', 'burnChance', 'moveSpdFlat'];
+
+/* 计算玩家最终属性。p.talents 为 { 节点id: 级数 }（S3 天赋投入）。 */
 function computePlayerStats(p) {
-  const agg = aggregate(p.equipment);
+  const agg = aggregate(p.equipment, p.talents);
   const st = agg.stats;
   const c = CLASSES[p.cls];
   const lv = p.level;

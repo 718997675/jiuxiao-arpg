@@ -88,6 +88,10 @@
     font-family:"STKaiti","KaiTi",serif;font-size:26px;color:#e8dcc0;text-shadow:0 2px 6px #000}
   .skill .k{position:absolute;left:2px;top:1px;font-size:9px;color:#a8a090;letter-spacing:0}
   .skill .cost{position:absolute;right:3px;bottom:1px;font-size:9px;color:#7fb0e8}
+  .pgbtn{width:30px;height:54px;background:linear-gradient(180deg,#241f18,#12100c);border:1px solid #4a4030;
+    position:relative;pointer-events:auto;cursor:pointer;display:flex;align-items:center;justify-content:center;
+    font-size:11px;color:#a8a090;font-variant-numeric:tabular-nums;transition:.12s;box-shadow:0 4px 14px rgba(0,0,0,.6)}
+  .pgbtn:hover{border-color:var(--gold);color:#e8d8b0}
   .skill .cd{position:absolute;inset:0;background:rgba(2,3,6,.78);display:flex;align-items:center;justify-content:center;
     font-size:15px;color:#fff;font-weight:600;display:none}
   .skill.locked{filter:grayscale(1) brightness(.62)}
@@ -219,6 +223,110 @@
   .cx-b .cx-bn{font-size:9.5px;color:#4a453c;border:1px solid rgba(255,255,255,.12);padding:0 4px;border-radius:2px}
   .cx-b.on{color:#9ad0a8;border-color:rgba(120,200,140,.35)}
   .cx-b.on .cx-bn{color:#9ad0a8;border-color:rgba(120,200,140,.4)}
+
+  /* ---------- 天赋面板（S3） ---------- */
+  #talentPanel{left:50%;top:50%;transform:translate(-50%,-50%);width:760px;max-height:90vh;z-index:66}
+  .tl-top{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap}
+  .tl-trees{display:flex;gap:6px;flex-wrap:wrap}
+  .tl-tab{font-family:inherit;font-size:11.5px;letter-spacing:1px;padding:4px 12px;cursor:pointer;
+    background:rgba(0,0,0,.3);border:1px solid rgba(255,255,255,.12);color:#a8a090;transition:.12s}
+  .tl-tab:hover{border-color:rgba(216,178,90,.5);color:#e8d8b0}
+  .tl-tab.on{color:#1a1510;font-weight:600}
+  .tl-tab .tl-tp{font-size:9.5px;opacity:.85;margin-left:4px;font-variant-numeric:tabular-nums}
+  .tl-pts{font-size:11.5px;color:#a8a090;letter-spacing:1px;white-space:nowrap}
+  .tl-pts b{color:#ffd479;font-size:14px;font-weight:600;font-variant-numeric:tabular-nums}
+  .tl-main{position:relative;border:1px solid rgba(216,178,90,.22);background:
+    radial-gradient(ellipse at 50% 40%,rgba(48,40,26,.5),rgba(10,10,12,.6) 75%)}
+  #tlCanvas{display:block;cursor:pointer}
+  .tl-tip{position:absolute;pointer-events:none;max-width:250px;padding:8px 10px;z-index:5;
+    background:rgba(10,10,12,.96);border:1px solid var(--gold-d);box-shadow:0 8px 24px rgba(0,0,0,.7);
+    font-size:11px;line-height:1.7;color:#c8c0a8}
+  .tl-tip .tt-n{font-size:12.5px;color:#f0dca8;letter-spacing:1px;margin-bottom:2px}
+  .tl-tip .tt-r{font-size:10px;color:#8a8474;margin-bottom:3px}
+  .tl-tip .tt-d{color:#b8b0a0}
+  .tl-tip .tt-c{font-size:10px;color:#e0c070;margin-top:3px}
+  .tl-tip .tt-c.no{color:#e05a5a}
+  .tl-foot{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:8px;flex-wrap:wrap}
+  .tl-presets{display:flex;gap:6px;flex-wrap:wrap}
+  .tl-pst{font-family:inherit;font-size:10.5px;letter-spacing:1px;padding:4px 10px;cursor:pointer;
+    background:rgba(0,0,0,.3);border:1px solid rgba(255,255,255,.12);color:#a8a090;transition:.12s}
+  .tl-pst:hover{border-color:rgba(216,178,90,.5);color:#e8d8b0}
+  .tl-pst.filled{border-color:rgba(216,178,90,.45);color:#d8ccb0}
+  #tlRespec{font-size:11px;padding:5px 16px;letter-spacing:2px}
+
+  /* 技能 SVG 图标：颜色继承容器，尺寸由使用处控制 */
+  .skicon{display:block;flex:none}
+  .skill .g svg{width:27px;height:27px}
+  .mskill .g svg{width:24px;height:24px}
+  .sk-tile .sk-ico svg{width:26px;height:26px}
+  .sd-ico svg{width:30px;height:30px}
+  .sk-tip .tt-ico svg{width:16px;height:16px}
+  /* ---------- 术法面板（S4 · 暗黑风图标网格） ---------- */
+  #skillPanel{left:50%;top:50%;transform:translate(-50%,-50%);width:760px;max-height:88vh;z-index:66}
+  #skillPanel .pb{position:relative}
+  .sk-top{display:flex;justify-content:space-between;align-items:baseline;gap:10px;font-size:11.5px;
+    color:#a8a090;letter-spacing:1px;margin-bottom:8px}
+  .sk-top b{color:#ffd479;font-size:14px;font-weight:600;font-variant-numeric:tabular-nums}
+  .sk-top .dim{font-size:10.5px;color:#7a7466}
+  .sk-list{max-height:66vh;overflow-y:auto;padding-right:4px}
+  .sk-body{display:flex;gap:14px;align-items:flex-start}
+  .sk-left{flex:1;min-width:0}
+  .sk-right{width:252px;flex:none;border:1px solid rgba(216,178,90,.22);padding:12px;
+    background:linear-gradient(180deg,rgba(30,26,18,.55),rgba(14,13,11,.6))}
+  .sk-tree{display:flex;align-items:baseline;gap:8px;font-size:11px;letter-spacing:3px;color:#c9a86a;
+    border-bottom:1px solid rgba(201,168,106,.25);padding-bottom:3px;margin:2px 0 7px}
+  .sk-tree:first-child{margin-top:0}
+  .sk-tree .sk-tn{font-size:9.5px;letter-spacing:0;color:#6a6458}
+  .sk-tiles{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px}
+  .sk-tile{position:relative;width:50px;height:50px;flex:none;display:flex;align-items:center;justify-content:center;
+    border:1px solid rgba(216,178,90,.3);border-radius:3px;cursor:pointer;transition:.12s;
+    background:radial-gradient(ellipse at 50% 30%,rgba(64,54,34,.55),rgba(12,11,9,.72) 80%)}
+  .sk-tile:hover{border-color:rgba(255,212,121,.75);transform:translateY(-1px)}
+  .sk-tile.sel{border-color:#ffd479;box-shadow:0 0 12px rgba(255,212,121,.28),inset 0 0 14px rgba(255,212,121,.12)}
+  .sk-tile.locked{opacity:.5;filter:grayscale(.7)}
+  .sk-tile .sk-ico{font-family:"STKaiti","KaiTi",serif;font-size:24px;color:#e8d8b0;
+    text-shadow:0 2px 8px rgba(0,0,0,.9);pointer-events:none}
+  .sk-tile.sel .sk-ico{color:#ffe9a8}
+  .sk-tile .sk-badge{position:absolute;right:3px;bottom:0;font-size:9.5px;font-weight:600;color:#ffd479;
+    font-variant-numeric:tabular-nums;text-shadow:0 1px 3px #000;pointer-events:none}
+  .sk-tile .sk-lk{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+    font-size:9.5px;color:#e0908a;background:rgba(0,0,0,.5);border-radius:2px;letter-spacing:0;pointer-events:none}
+  .sk-tip{position:absolute;pointer-events:none;max-width:240px;padding:8px 10px;z-index:5;
+    background:rgba(10,10,12,.96);border:1px solid var(--gold-d);box-shadow:0 8px 24px rgba(0,0,0,.7);
+    font-size:11px;line-height:1.7;color:#c8c0a8}
+  .sk-tip .tt-n{font-size:12.5px;color:#f0dca8;letter-spacing:1px;margin-bottom:2px;display:flex;align-items:center;gap:5px}
+  .sk-tip .tt-n .tt-ico{display:flex;color:#e8d8b0}
+  .sk-tip .tt-r{font-size:10px;color:#8a8474;margin-bottom:3px}
+  .sk-tip .tt-d{color:#b8b0a0}
+  .sd-head{display:flex;gap:10px;align-items:center;margin-bottom:9px}
+  .sd-ico{width:54px;height:54px;flex:none;display:flex;align-items:center;justify-content:center;
+    font-family:"STKaiti","KaiTi",serif;font-size:28px;color:#ffe9a8;border:1px solid rgba(255,212,121,.45);
+    border-radius:3px;background:radial-gradient(ellipse at 50% 30%,rgba(64,54,34,.6),rgba(12,11,9,.78) 80%);
+    text-shadow:0 2px 8px rgba(0,0,0,.9)}
+  .sd-name{font-size:14px;color:#f0e0c0;letter-spacing:1px}
+  .sd-name .sk-lock{font-size:10px;color:#e0908a;letter-spacing:0;margin-left:6px}
+  .sd-sub{font-size:10px;color:#8a8474;margin-top:3px;letter-spacing:1px}
+  .sd-desc{font-size:11px;color:#a8a090;line-height:1.75;min-height:42px}
+  .sd-meta{font-size:10px;color:#8a8474;margin:7px 0 10px;padding:6px 9px;background:rgba(0,0,0,.28);
+    border-left:2px solid rgba(216,178,90,.4);line-height:1.7}
+  .sd-lv{display:flex;align-items:center;gap:9px;margin-bottom:10px}
+  .sk-pips{display:flex;gap:3px;flex:1}
+  .sk-pip{width:8px;height:8px;border:1px solid rgba(216,178,90,.4);transform:rotate(45deg)}
+  .sk-pip.on{background:#ffd479;box-shadow:0 0 5px rgba(255,212,121,.55)}
+  .sk-lvt{font-size:10.5px;color:#a8a090;font-variant-numeric:tabular-nums;white-space:nowrap}
+  .sk-lvt b{color:#ffd479}
+  .sk-lvb{font-family:inherit;font-size:11px;letter-spacing:1px;padding:3px 10px;cursor:pointer;
+    background:linear-gradient(180deg,rgba(216,178,90,.22),rgba(216,178,90,.08));
+    border:1px solid rgba(216,178,90,.45);color:#e8d8b0;transition:.12s;white-space:nowrap}
+  .sk-lvb:hover:not(:disabled){background:linear-gradient(180deg,#e0c070,#b89840);color:#1a1510}
+  .sk-lvb:disabled{opacity:.35;cursor:default}
+  .sk-vbtn{font-family:inherit;font-size:10.5px;letter-spacing:1px;padding:3px 9px;cursor:pointer;
+    background:rgba(0,0,0,.3);border:1px solid rgba(255,255,255,.12);color:#a8a090;transition:.12s}
+  .sk-vbtn:hover{border-color:rgba(216,178,90,.5);color:#e8d8b0}
+  .sk-vbtn.on{color:#1a1510;background:linear-gradient(180deg,#e0c070,#b89840);font-weight:600}
+  .sk-vbtn.locked{opacity:.4;cursor:default}
+  .sd-vars{display:flex;gap:6px;margin-bottom:6px}
+  .sd-vname{font-size:10px;color:#7a7466;line-height:1.65}
   .igrid{display:grid;grid-template-columns:repeat(8,1fr);gap:6px}
   .islot{aspect-ratio:1;background:linear-gradient(160deg,rgba(38,34,28,.75),rgba(0,0,0,.55));
     border:1px solid rgba(255,255,255,.115);box-shadow:inset 0 0 6px rgba(0,0,0,.55);position:relative;cursor:pointer;
@@ -871,6 +979,8 @@
   <div id="fpsHud"></div>
   <div id="openBtns">
     <button class="btn" onclick="UI.toggleInv()">背包 <span class="dim">I</span></button>
+    <button class="btn" onclick="UI.toggleTalent()">天赋 <span class="dim">T</span></button>
+    <button class="btn" onclick="UI.toggleSkill()">术法 <span class="dim">K</span></button>
     <button class="btn" onclick="UI.toggleStat()">属性 <span class="dim">C</span></button>
     <button class="btn" onclick="UI.toggleQuest()">任务 <span class="dim">L</span></button>
     <button class="btn" onclick="UI.toggleForge()">炼器 <span class="dim">R</span></button>
@@ -923,6 +1033,37 @@
   <div class="pb">
     <div class="hintline" id="setCodexSum" style="margin-top:0"></div>
     <div class="codex-list" id="setCodexList"></div>
+  </div>
+</div>
+
+<!-- 天赋（S3） -->
+<div class="panel" id="talentPanel">
+  <div class="ph"><h3>天 赋</h3><span class="x" onclick="UI.closeAll()">✕</span></div>
+  <div class="pb">
+    <div class="tl-top">
+      <div class="tl-trees" id="tlTrees"></div>
+      <div class="tl-pts">可用 <b id="tlPts">0</b> 点</div>
+    </div>
+    <div class="tl-main">
+      <canvas id="tlCanvas" width="660" height="440"></canvas>
+      <div class="tl-tip" id="tlTip" style="display:none"></div>
+    </div>
+    <div class="tl-foot">
+      <div class="tl-presets" id="tlPresets"></div>
+      <button class="btn" id="tlRespec">重置天赋</button>
+    </div>
+    <div class="hintline">左键加点 · Shift + 左键洗 1 级 · 节点外圈金弧 = 已投入等级 / 上限 · 大节点需本系已投入 5 点 · 每级获得 1 点<br>预设：左键读取 · Shift + 左键保存当前加点 · 重置天赋费用递增（1k / 5k / 20k / 50k 金）</div>
+  </div>
+</div>
+
+<!-- 技能（S4） -->
+<div class="panel" id="skillPanel">
+  <div class="ph"><h3>术 法</h3><span class="x" onclick="UI.closeAll()">✕</span></div>
+  <div class="pb">
+    <div class="sk-top"><span id="skPtsTxt">可用技能点 <b>0</b></span><span class="dim">每级 +8% 伤害 · 最高 10 级</span></div>
+    <div class="sk-list" id="skList"></div>
+    <div class="sk-tip" id="skTip"></div>
+    <div class="hintline">点击图标选中术法 · Ⅰ / Ⅱ / Ⅲ 切换变体（改机制不加点数）· 前 8 个术法上动作条，‹ › 翻页</div>
   </div>
 </div>
 
@@ -1092,6 +1233,8 @@
 <script src="src/data/data-items.js"></script>
 <script src="src/data/data-uniques.js"></script>
 <script src="src/data/data-skills.js"></script>
+<script src="src/data/data-skill-icons.js"></script>
+<script src="src/data/data-talents.js"></script>
 <script src="src/data/data-monsters.js"></script>
 <script src="src/data/data-world.js"></script>
 <!-- 逻辑层 -->
