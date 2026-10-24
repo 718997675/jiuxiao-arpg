@@ -25,7 +25,9 @@ const RARITY = {
   common: { key: 'common', name: '凡品', color: '#cfcfd6', mul: 1.0, affixes: 0, fixed: 0, weight: 46 },
   magic: { key: 'magic', name: '灵品', color: '#67a9ff', mul: 1.12, affixes: 2, fixed: 1, weight: 30 },
   rare: { key: 'rare', name: '玄品', color: '#ffc857', mul: 1.28, affixes: 3, fixed: 2, weight: 15 },
-  legendary: { key: 'legendary', name: '神兵', color: '#ff7a3c', mul: 1.55, affixes: 4, fixed: 3, weight: 6 },
+  /* 品质最高档叫「神品」而不是「神兵」：八阶基底里已经有一个「神兵」阶，
+   * 同名会让「升品」和「升阶」混成一件事（用户 2026-10-25 拍板改名）。 */
+  legendary: { key: 'legendary', name: '神品', color: '#ff7a3c', mul: 1.55, affixes: 4, fixed: 3, weight: 6 },
   set: { key: 'set', name: '套装', color: '#5ce08a', mul: 1.42, affixes: 3, fixed: 2, weight: 3 },
   /* 传世：**最终装备**，红色标识。固定名字 + 固定词条 + 特性 + 技能效果，可重复掉落。
    * v1.1.8 起词条数量全品质最多（固定 4 / 可洗 4，叠加等级成长后 40 级可达 12 条），

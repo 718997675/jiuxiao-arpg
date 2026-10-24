@@ -4332,7 +4332,7 @@ const Game = {
       let opts = { cls: CHANCE(0.78) ? this.state.cls : PICK(['warrior', 'mage', 'taoist']), magicFind: this.state.stats.magicFind };
       if (e.boss) {
         const r = Math.random();
-        /* 首领必掉，且有 8% 直接掉传世；传世池不够时 rollItem 会自动退化为神兵 */
+        /* 首领必掉，且有 8% 直接掉传世；传世池不够时 rollItem 会自动退化为神品 */
         opts.rarity = r < 0.08 ? 'unique' : (r < 0.24 ? 'set' : (r < 0.48 ? 'legendary' : 'rare'));
       } else if (e.elite) {
         opts.rarity = CHANCE(0.05) ? 'unique' : (CHANCE(0.35) ? 'rare' : 'magic');

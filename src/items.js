@@ -706,7 +706,7 @@ function rollItem(ilvl, opts = {}) {
   }
 
   /* ---- 唯一装备：先定目录条目，再由它决定部位与职业 ----
-   * 掉不出对应部位的传世就退化成神兵，保证不会生成空壳物品。 */
+   * 掉不出对应部位的传世就退化成神品，保证不会生成空壳物品。 */
   let uniqueDef = null;
   if (rarity === 'unique') {
     const pool = uniquePool(ilvl, cls, opts.slot);
@@ -1303,7 +1303,7 @@ function itemScore(item) {
     else if (k === '_armor') sc += m[k] * 1.1;
     else sc += m[k] * (SCORE_W[k] || 1.2);
   }
-  /* 稀有度只做很小的修正：同词缀下神兵略优于凡品，但不能盖过属性差 */
+  /* 稀有度只做很小的修正：同词缀下神品略优于凡品，但不能盖过属性差 */
   const r = RARITY[item.rarity];
   if (r) sc += (r.mul - 1) * 18;
   return Math.round(sc);
@@ -1433,7 +1433,7 @@ function itemTooltip(item, opts = {}) {
       }
     }
   }
-  if (item.powerDesc) h += `<div class="tt-power">神兵特效：${item.powerDesc}</div>`;
+  if (item.powerDesc) h += `<div class="tt-power">阶位特效：${item.powerDesc}</div>`;
   /* 传世特性 / 技能效果：都来自 data-uniques.js，提示框文字与实战判定同源 */
   if (item.traits && item.traits.length) {
     h += `<div class="tt-unq">`;
