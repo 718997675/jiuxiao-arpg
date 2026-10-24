@@ -1,6 +1,7 @@
 /* ============================================================
  * 数据层 · 天赋树（S3 / v1.2.0）
  * 120 个节点 = 三职业各 3 系 × 10（7 小 + 2 中 + 1 大）+ 通用 30
+ * [M1/B4] 另有 8 个「协同节点」：默认封着，装备满足条件才显形（见 SYNERGY_NODES）
  *
  * 节点类型：
  *   tier 1 小节点：加属性，可点 5 级（stats 为每级数值）
@@ -248,12 +249,94 @@ const TALENTS_UNIVERSAL = (() => {
   return { id: 'universal', name: '通达', color: '#c8b8a0', desc: '放之万法而皆通：全职业皆可修的根基。', nodes };
 })();
 
-/* 汇总表：TALENTS[cls] = 三系数组；TALENTS.universal = 通用系 */
+/* ---------------- [M1/B4] 协同节点（装备激活的隐藏天赋） ----------------
+ * 计划原文：「装备 flag（套装 5 件、符文之语）可激活天赋树的隐藏节点」。
+ *
+ * 与普通节点同构（stats / skillMods / flag / special），只多一个 cond：
+ *   { set: 'longxiang', need: 5 }   当前装备该套装满 N 件
+ *   { runeWord: 'thunder' }         身上任一件装备成形该符文之语
+ *   { flag: 'lootRush' }            套装档位给的 flag
+ *   { special: 'deadeye' }          套装档位给的 special
+ *   { stat: 'deathWard', need: 20 } 面板属性达到阈值（通用写法，兜底）
+ *
+ * 未满足时节点是「封」的：轮盘上只画一枚虚线封印，不显示名称与效果，
+ * 也点不动；条件满足后自动显形，按正常节点消耗天赋点（max 1）。
+ * 因为要跨职业，效果只允许用「全局词条属性」，不许碰职业技能。 */
+const SYNERGY_NODES = [
+  {
+    id: 'syn_longxiang', name: '龙魂', tier: 2, max: 1,
+    cond: { set: 'longxiang', need: 5 },
+    condText: '龙骧套装 5 件',
+    desc: '龙骧 5 件显形：造成的伤害 +12%，移动速度 +6%',
+    stats: { dmgAll: 12, moveSpd: 6 }
+  },
+  {
+    id: 'syn_xingque', name: '星轨', tier: 2, max: 1,
+    cond: { set: 'xingque', need: 5 },
+    condText: '星阙套装 5 件',
+    desc: '星阙 5 件显形：技能伤害 +16%，范围伤害 +12%',
+    stats: { skillDmg: 16, aoeDmg: 12 }
+  },
+  {
+    id: 'syn_qingfu', name: '兽契', tier: 2, max: 1,
+    cond: { set: 'qingfu', need: 5 },
+    condText: '青符套装 5 件',
+    desc: '青符 5 件显形：召唤物伤害 +20%，每秒回灵 +3',
+    stats: { summonDmg: 20, mpReg: 3 }
+  },
+  {
+    id: 'syn_thunder', name: '雷引', tier: 2, max: 1,
+    cond: { runeWord: 'thunder' },
+    condText: '符文之语「雷霆之语」',
+    desc: '雷霆之语成形：雷属性伤害 +25%，攻击速度 +6%',
+    stats: { lightningDmg: 25, aspd: 6 }
+  },
+  {
+    id: 'syn_inferno', name: '炎心', tier: 2, max: 1,
+    cond: { runeWord: 'inferno' },
+    condText: '符文之语「炎狱之语」',
+    desc: '炎狱之语成形：火属性伤害 +25%，燃烧几率 +6%',
+    stats: { fireDmg: 25, burnChance: 6 }
+  },
+  {
+    id: 'syn_caravan', name: '行商', tier: 2, max: 1,
+    cond: { flag: 'lootRush' },
+    condText: '行脚套装 3 件（拾取奔袭）',
+    desc: '行脚 3 件显形：拾取范围 +1.5，金币 +20%，机缘 +12%',
+    stats: { pickupRadius: 1.5, goldFind: 20, magicFind: 12 }
+  },
+  {
+    id: 'syn_hermit', name: '不坏', tier: 2, max: 1,
+    cond: { stat: 'deathWard', need: 20 },
+    condText: '濒死免疫 ≥ 20%（隐修 4 件 / 续命词条）',
+    desc: '濒死免疫 ≥ 20% 显形：伤害减免 +8%，生命上限 +8%',
+    stats: { dmgReduce: 8, hpPct: 8 }
+  },
+  {
+    id: 'syn_wanderer', name: '鹰眼', tier: 2, max: 1,
+    cond: { special: 'deadeye' },
+    condText: '游侠套装 4 件（必暴之眼）',
+    desc: '游侠 4 件显形：投射物伤害 +18%，暴击伤害 +20%',
+    stats: { projDmg: 18, critDmg: 20 }
+  }
+];
+
+/* 协同系：单独一页签，8 个节点排成一环（坐标在 UI 里按环算，pos 只占位） */
+const TALENTS_SYNERGY = {
+  id: 'synergy', name: '协同', color: '#8fd0ff',
+  desc: '装备与天赋的接口：穿对了，星盘上才会亮起这一环。',
+  nodes: SYNERGY_NODES.map((n, i) => Object.assign({}, n, {
+    pos: { x: 50, y: 50 }, unlock: 1, hidden: true, ring: i
+  }))
+};
+
+/* 汇总表：TALENTS[cls] = 三系数组；TALENTS.universal = 通用系；TALENTS.synergy = 协同 */
 const TALENTS = {
   warrior: TALENTS_WARRIOR,
   mage: TALENTS_MAGE,
   taoist: TALENTS_TAOIST,
-  universal: [TALENTS_UNIVERSAL]
+  universal: [TALENTS_UNIVERSAL],
+  synergy: [TALENTS_SYNERGY]
 };
 
 /* 全部节点扁平表（id → node + 所属 tree + 解锁等级），供 UI / 校验 / 汇总共用 */
@@ -265,14 +348,32 @@ const TALENT_NODES = (() => {
         /* 职业系节点按 id 后缀（s1 / m2 / L）查解锁表；通用系节点自带 unlock */
         const slot = n.id.slice(n.id.indexOf('_') + 1);
         const unlock = n.unlock != null ? n.unlock : (NODE_UNLOCK[slot] || 1);
-        out[n.id] = { node: n, tree: tree.id, treeName: tree.name, color: tree.color, cls: cls === 'universal' ? null : cls, unlock };
+        out[n.id] = {
+          node: n, tree: tree.id, treeName: tree.name, color: tree.color,
+          cls: (cls === 'universal' || cls === 'synergy') ? null : cls,
+          unlock, hidden: !!n.hidden
+        };
       }
     }
   }
   return out;
 })();
 
-/* 某个职业可用的全部系（含通用） */
+/* 某个职业可用的全部系（含通用 / 协同） */
 function talentTrees(cls) {
-  return (TALENTS[cls] || []).concat(TALENTS.universal);
+  return (TALENTS[cls] || []).concat(TALENTS.universal, TALENTS.synergy);
 }
+
+/* 协同节点的条件文案（UI 提示 / 回归断言共用，别在两处各写一份） */
+function synergyCondText(node) {
+  if (!node) return '';
+  if (node.condText) return node.condText;
+  const c = node.cond || {};
+  if (c.set) return (typeof SETS !== 'undefined' && SETS[c.set] ? SETS[c.set].name : c.set) + ' 套装 ' + (c.need || 1) + ' 件';
+  if (c.runeWord) return '符文之语「' + ((typeof RUNE_WORDS !== 'undefined' && RUNE_WORDS.find(w => w.id === c.runeWord) || {}).name || c.runeWord) + '」';
+  if (c.flag) return '装备 flag：' + c.flag;
+  if (c.special) return '装备特性：' + c.special;
+  if (c.stat) return (c.stat) + ' ≥ ' + (c.need || 1);
+  return '';
+}
+

@@ -52,8 +52,9 @@ const ok = (cond, msg, extra) => {
 console.log('\n一、节点结构');
 {
   const all = Object.values(TALENT_NODES);
-  ok(all.length === 120, '节点总数应为 120', 'got ' + all.length);
-  ok(new Set(Object.keys(TALENT_NODES)).size === 120, '节点 id 有重复');
+  /* [B4] 120 常规 + 8 协同（协同是隐藏节点，不参与职业/通用结构断言） */
+  ok(all.length === 128, '节点总数应为 128（120 + 8 协同）', 'got ' + all.length);
+  ok(new Set(Object.keys(TALENT_NODES)).size === 128, '节点 id 有重复');
 
   for (const cls of ['warrior', 'mage', 'taoist']) {
     const trees = TALENTS[cls];
@@ -71,10 +72,11 @@ console.log('\n一、节点结构');
   ok(TALENTS.universal[0].nodes.length === 30, '通用系应有 30 节点',
     'got ' + TALENTS.universal[0].nodes.length);
 
-  /* 每职业 4 页签（3 系 + 通用） */
+  /* 每职业 5 页签（3 系 + 通用 + 协同） */
   for (const cls of ['warrior', 'mage', 'taoist']) {
-    ok(talentTrees(cls).length === 4, cls + ' 应有 4 个可查看的系');
+    ok(talentTrees(cls).length === 5, cls + ' 应有 5 个可查看的系');
     ok(talentTrees(cls).some(t => t.id === 'universal'), cls + ' 应含通用系');
+    ok(talentTrees(cls).some(t => t.id === 'synergy'), cls + ' 应含协同系');
   }
 
   /* 技能树与天赋树同名（技能面板按 tree 分组） */
@@ -141,7 +143,8 @@ console.log('\n二、字段合法性');
   }
   ok(bad.length === 0, '节点字段存在非法项', bad.slice(0, 8).join(' | '));
 
-  /* 同一系内 pos 不重叠（Canvas 渲染要能分开） */
+  /* 同一系内 pos 不重叠（Canvas 渲染要能分开）
+   * 协同系的坐标由 UI 按环算（pos 只是占位），不参与这条检查 */
   for (const cls of ['warrior', 'mage', 'taoist', 'universal']) {
     for (const t of TALENTS[cls]) {
       const seen = new Set(); let dup = 0;

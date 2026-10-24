@@ -128,8 +128,11 @@ function makeHpBar(host, opts = {}) {
   fill.renderOrder = 21;
   g.add(fill);
 
-  // 精英：底槽换成暗金边
-  if (opts.elite) bgMat.color.setHex(0x2a1c08);
+  // 精英：底槽换成暗金边，填充条转金色（[S5] 一眼分出精英与普通怪）
+  if (opts.elite) {
+    bgMat.color.setHex(0x2a1c08);
+    fillMat.color.setHex(0xd8b25a);
+  }
 
   host.add(g);
   return { group: g, fill, bg, w: HPBAR_W, s };

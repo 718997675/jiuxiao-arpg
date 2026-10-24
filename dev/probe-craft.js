@@ -298,7 +298,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   });
   d4.menuOpen ? ok('锻造入口在菜单里打开') : bad('菜单未打开');
   d4.forgeInside ? ok('炼器台被挂进菜单内容区') : bad('炼器台未嵌入菜单');
-  d4.tabs.indexOf('craft') >= 0 && d4.tabs.length === 4 ? ok('炼器台四个页签含锻造') : bad('页签异常 ' + d4.tabs.join(','));
+  d4.tabs.indexOf('craft') >= 0 && d4.tabs.indexOf('tier') >= 0 && d4.tabs.length === 5 ? ok('炼器台五个页签含锻造与升阶') : bad('页签异常 ' + d4.tabs.join(','));
   d4.listN === 2 && d4.listOnlyBase ? ok('锻造列表只列行囊里的白 / 蓝装') : bad('列表混入不可锻造物品 (' + d4.listN + ')');
   d4.cmatN >= 3 ? ok('需求格含匠材与铜钱 (' + d4.cmatN + ')') : bad('需求格数量 ' + d4.cmatN);
   d4.hasBtn && d4.btnDisabled === true ? ok('材料不足时锻造键置灰') : bad('按钮状态不对');

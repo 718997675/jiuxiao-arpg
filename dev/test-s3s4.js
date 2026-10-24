@@ -488,7 +488,7 @@ const near = (a, b, tol, msg) => ok(Math.abs(a - b) <= tol, msg, a + ' ≈ ' + b
     };
   });
   ok(G1.open, '天赋面板应能打开');
-  ok(G1.tabs === 4, '应有 4 个系页签', G1.tabs);
+  ok(G1.tabs === 5, '应有 5 个系页签（3 系 + 通用 + 协同）', G1.tabs);
   ok(G1.hits === 10 || G1.hits === 30, '画布应生成节点热区（10 或 30）', G1.hits);
   const FIRST_TREE = { warrior: '狂战', mage: '寒冰', taoist: '符箓' }[CLS];
   ok((G1.tab0 || '').indexOf(FIRST_TREE) === 0, '首个页签应是本职业第一系', G1.tab0);
@@ -567,7 +567,7 @@ const near = (a, b, tol, msg) => ok(Math.abs(a - b) <= tol, msg, a + ' ≈ ' + b
     UI.closeAll();
     return { n: btns.length, sel, placed: bar[4], onSlotBadges: tiles };
   });
-  ok(G4b.n === 5, '详情卡应有 5 个技能条按钮', G4b.n);
+  ok(G4b.n === 8, '详情卡应有 8 个技能条按钮', G4b.n);
   ok(G4b.placed === G4b.sel, '点第 5 格应把当前选中技能放上技能条', G4b.placed + ' vs ' + G4b.sel);
   ok(G4b.onSlotBadges >= 1, '已在条上的技能应有角标');
 
@@ -602,11 +602,11 @@ const near = (a, b, tol, msg) => ok(Math.abs(a - b) <= tol, msg, a + ' ≈ ' + b
     UI.closeAll();
     return R;
   });
-  ok(G5.n === 5, '动作条应 5 格', G5.n);
-  ok(G5.len === 5, '技能条长度恒为 5', G5.len);
-  ok(G5.ids.join() === G5.order.slice(0, 5).join(), '新档 / 空条应按已领悟顺序自动填前 5 个', G5.ids.join());
+  ok(G5.n === 8, '动作条应 8 格', G5.n);
+  ok(G5.len === 8, '技能条长度恒为 8', G5.len);
+  ok(G5.ids.join() === G5.order.slice(0, 8).join(), '新档 / 空条应按已领悟顺序自动填前 8 个', G5.ids.join());
   ok(!G5.hasPg, '技能条不应再有翻页按钮');
-  ok(G5.hasEmpty && G5.emptyAll === 5, '5 格全空时应渲染 5 个空占位', G5.emptyAll);
+  ok(G5.hasEmpty && G5.emptyAll === 8, '8 格全空时应渲染 8 个空占位', G5.emptyAll);
   ok(G5.emptyOpensPanel === true, '点空位应打开术法面板');
 
   /* 技能条配置：放上 / 换位 / 腾空 / 拒绝非法 */
@@ -656,7 +656,7 @@ const near = (a, b, tol, msg) => ok(Math.abs(a - b) <= tol, msg, a + ' ≈ ' + b
     '未领悟技能不可上条', G5b.lockedReject && G5b.lockedReject.msg);
   ok(G5b.badSlot && G5b.badSlot.ok === false, '越界格应拒绝');
   ok(G5b.badCls && G5b.badCls.ok === false, '非本职业技能应拒绝');
-  ok(!G5b.saveErr && G5b.saveLen === 5 && G5b.saveBar.split(',')[0] !== '', '技能条应随存档进出',
+  ok(!G5b.saveErr && G5b.saveLen === 8 && G5b.saveBar.split(',')[0] !== '', '技能条应随存档进出',
     G5b.saveErr || G5b.saveBar);
 
   /* 键 1-5 对应技能条；空位不施放；Z/X 喝药 */

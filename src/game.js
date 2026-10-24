@@ -197,12 +197,14 @@ const Game = {
       /* repeat 的 keydown 不触发翻滚/技能/药水等动作，避免持续触发 */
     if (e.repeat) return;
       if (k === ' ') { this.tryDash(); e.preventDefault(); return; }
-      /* [S4] 技能条 5 格手动配置：键 1-5 依次施放条上技能 */
-      if (k >= '1' && k <= '5') {
+      /* [S4][M1] 技能条 8 格手动配置：键 1-8 依次施放当前快捷栏上的技能 */
+      if (k >= '1' && k <= String(SKILL_BAR_SLOTS)) {
         const bar = this.skillBar();
         const id = bar[parseInt(k) - 1];
         if (id) this.castSkill(id);
       }
+      /* [M1] 两套快捷栏切换（反引号） */
+      if (k === SKILL_BAR_SET_KEY) { this.switchBarSet(); e.preventDefault(); }
       if (k === '9') this.useTeleportStone();
       if (k === 'z') this.usePotion('hp');
       if (k === 'x') this.usePotion('mp');
@@ -303,7 +305,7 @@ const Game = {
       potions: { hp: 4, mp: 3 },
       teleportStones: 0,
       hp: 100, mp: 50,
-      equipment: { helm: null, chest: eq.chest, shoulders: null, gloves: null, boots: null, belt: null, amulet: null, ring1: null, ring2: null, weapon: eq.weapon, offhand: null, relic: null },
+      equipment: { helm: null, chest: eq.chest, shoulders: null, cloak: null, gloves: null, boots: null, belt: null, amulet: null, ring1: null, ring2: null, weapon: eq.weapon, offhand: null, relic: null, fate: null },
       inventory: [], maxInv: BAG_BASE_CAP,
       stash: { items: [], mats: {} },
       quests: { active: [], done: [], next: 'q1', announced: {} },
@@ -311,10 +313,14 @@ const Game = {
       bossKilled: {}, playTime: 0,
       /* [S3] 天赋：spent = { 节点id: 级数 }；presets 三套预设（存 spent 快照） */
       talents: { spent: {}, presets: [null, null, null], respecCount: 0 },
+      /* [M1] 任务奖励的天赋点（主线四段共 +10，满级 60 → 70） */
+      talentBonus: 0,
       /* [S4] 技能：{ 技能id: { lv: 1-10, v: 0-2 变体 } } */
       skills: {},
-      /* [S4] 技能条：5 格手动配置（技能 id 或 null），新档只放已领悟的 */
+      /* [S4] 技能条：8 格 × 2 套手动配置（技能 id 或 null），新档只放已领悟的 */
       skillbar: (SKILL_ORDER[cls] || []).filter(id => SKILLS[id] && SKILLS[id].unlock <= 1).slice(0, SKILL_BAR_SLOTS),
+      skillbar2: [],
+      barSet: 0,
       shop: null          // { at, items, rolls } —— 由 ensureShop/genShop 填充
     };
     return s;
@@ -447,13 +453,13 @@ const Game = {
     return s.talents;
   },
 
-  /* 可用天赋点：每级 1 点（任务奖励点后续版本再加） */
+  /* 可用天赋点：每级 1 点 + 任务奖励点（[M1] 满级 60 + 主线 10 = 70） */
   talentPoints() {
     const s = this.state;
     const sp = this.talentState().spent;
     let spent = 0;
     for (const id in sp) spent += sp[id] || 0;
-    return Math.max(0, (s ? s.level : 1) - spent);
+    return Math.max(0, (s ? s.level : 1) + (s ? (s.talentBonus || 0) : 0) - spent);
   },
 
   /* 某一系已投入的点数（大节点 reqPts 用） */
@@ -472,11 +478,50 @@ const Game = {
     return (typeof TALENT_NODES !== 'undefined') ? TALENT_NODES[id] : null;
   },
 
+  /* [M1/B4] 协同节点是否已「显形」。
+   * 条件只认「当前装备算出来的东西」：套装件数 / 符文之语 / 套装 flag / special / 面板属性。
+   * 全部走 state.stats（recalc 后已汇总），所以换装备会立刻反映到轮盘上。 */
+  synergyUnlocked(id) {
+    const e = this.talentNodeOf(id);
+    if (!e) return false;
+    const c = e.node && e.node.cond;
+    if (!c) return true;                     // 非协同节点恒为真
+    const st = (this.state && this.state.stats) || {};
+    if (c.set) return ((st.setCount || {})[c.set] || 0) >= (c.need || 1);
+    if (c.runeWord) {
+      const eq = (this.state && this.state.equipment) || {};
+      for (const k in eq) {
+        const it = eq[k];
+        if (!it || typeof runeWordOf !== 'function') continue;
+        const rw = runeWordOf(it);
+        if (rw && rw.id === c.runeWord) return true;
+      }
+      return false;
+    }
+    if (c.flag) return !!(st.flags && st.flags[c.flag]);
+    if (c.special) return !!(st.specials && st.specials[c.special]);
+    if (c.stat) return (Number(st[c.stat]) || 0) >= (c.need || 1);
+    return true;
+  },
+
+  /* 已显形的协同节点 id 列表（UI 画轮盘、回归断言共用） */
+  synergyOpen() {
+    const out = [];
+    if (typeof TALENT_NODES === 'undefined') return out;
+    for (const id in TALENT_NODES) {
+      if (!TALENT_NODES[id].hidden) continue;
+      if (this.synergyUnlocked(id)) out.push(id);
+    }
+    return out;
+  },
+
   canAllocTalent(id) {
     if (!this.state) return false;
     const e = this.talentNodeOf(id);
     if (!e) return false;
     const n = e.node;
+    /* 协同节点：没显形就点不动（隐藏节点不给「盲点」的机会） */
+    if (n.cond && !this.synergyUnlocked(id)) return false;
     const sp = this.talentState().spent;
     if ((sp[id] || 0) >= n.max) return false;
     if (this.talentPoints() <= 0) return false;
@@ -554,6 +599,8 @@ const Game = {
       if (!e) continue;
       /* 未解锁的节点不还原（低等级读高等级预设，不该凭空吃到深层天赋） */
       if ((this.state.level || 1) < (e.unlock || 1)) continue;
+      /* 协同节点：预设里存着、但现在装备不满足条件 → 不还原（否则等于白嫖隐藏节点） */
+      if (e.node.cond && !this.synergyUnlocked(id)) continue;
       const want = Math.min(p[id] || 0, e.node.max);      // 上限保护
       const take = Math.min(want, budget - used);
       if (take > 0) { out[id] = take; used += take; }
@@ -583,7 +630,13 @@ const Game = {
 
   skillLevel(id) {
     const sk = this.skillState()[id];
-    return (sk && sk.lv) || 1;
+    const base = (sk && sk.lv) || 1;
+    /* [M1] 词缀「+N 技能等级」：装备加成叠在已投等级之上。
+     * 上限 20 —— 自己点满 10 级，装备最多再抬 10 级，防止无限堆叠。
+     * 注意不能写回 s.skills[id].lv：那是「已投技能点」的账本，
+     * 写回去会让 skillPoints() 算错、洗点也洗不掉。 */
+    const bonus = (this.state && this.state.stats) ? (this.state.stats.skillLv || 0) : 0;
+    return Math.min(20, base + bonus);
   },
 
   skillVariant(id) {
@@ -606,7 +659,7 @@ const Game = {
     if (s.level < SKILLS[id].unlock) return { ok: false, msg: '尚未领悟' };
     const sk = this.skillState();
     const cur = (sk[id] && sk[id].lv) || 1;
-    if (cur >= 10) return { ok: false, msg: '已满级' };
+    if (cur >= SKILL_LV_MAX) return { ok: false, msg: '已满级' };
     if (this.skillPoints() <= 0) return { ok: false, msg: '技能点不足' };
     sk[id] = { lv: cur + 1, v: (sk[id] && sk[id].v) || 0 };
     this.recalc();
@@ -621,16 +674,25 @@ const Game = {
   },
 
   /* ======================================================= */
-  /* [S4] 技能条：5 格手动配置                                  */
+  /* [S4] 技能条：8 格 × 2 套手动配置                            */
   /* ======================================================= */
-  /* 取当前技能条（长度恒为 5，空位为 null）。
+  /* 当前生效的那一套（0 / 1） */
+  barSet() {
+    const s = this.state;
+    if (!s) return 0;
+    const n = Math.round(Number(s.barSet));
+    return (isFinite(n) && n >= 0 && n < SKILL_BAR_SETS) ? n : 0;
+  },
+  /* 取当前技能条（长度恒为 SKILL_BAR_SLOTS，空位为 null）。
    * fill = true 时用「已领悟且不在条上」的技能按顺序补空位——
    * 只在新档 / 读档时调用；玩家手动腾出的空位不会被偷偷填回。 */
   skillBar(fill) {
     const s = this.state;
     if (!s) return [];
+    const set = this.barSet();
+    const key = set === 1 ? 'skillbar2' : 'skillbar';
     const order = SKILL_ORDER[s.cls] || [];
-    const src = Array.isArray(s.skillbar) ? s.skillbar : [];
+    const src = Array.isArray(s[key]) ? s[key] : [];
     /* 清洗：逐格校验（保留空位位置——不能用 filter，否则位置会被挤掉） */
     const seen = {};
     const out = [];
@@ -645,17 +707,32 @@ const Game = {
     }
     if (fill) {
       for (const id of order) {
-        if (out.indexOf(null) < 0) break;              // 满 5 格
+        if (out.indexOf(null) < 0) break;              // 满格
         if (out.includes(id)) continue;
         if (s.level < SKILLS[id].unlock) continue;
         out[out.indexOf(null)] = id;                   // 填第一个空位
       }
     }
-    s.skillbar = out;
-    return s.skillbar;
+    s[key] = out;
+    return s[key];
   },
 
-  /* 把技能放到第 slot 格（0-4）。已在条上时从原位移走（换位）。 */
+  /* 切换快捷栏（0 / 1）。两套各自独立，互不覆盖。 */
+  switchBarSet(n) {
+    const s = this.state;
+    if (!s) return { ok: false, msg: '尚未开局' };
+    const want = (n === undefined || n === null)
+      ? (this.barSet() + 1) % SKILL_BAR_SETS
+      : Math.round(Number(n));
+    if (!(want >= 0 && want < SKILL_BAR_SETS)) return { ok: false, msg: '快捷栏不存在' };
+    s.barSet = want;
+    if (typeof UI !== 'undefined' && UI.onSkillBarChanged) UI.onSkillBarChanged();
+    const msg = '快捷栏 · ' + (SKILL_BAR_SET_NAME[want] || (want + 1));
+    if (typeof UI !== 'undefined' && UI.toast) UI.toast(msg);
+    return { ok: true, msg };
+  },
+
+  /* 把技能放到第 slot 格（0-7）。已在条上时从原位移走（换位）。 */
   assignSkillBar(slot, id) {
     const s = this.state;
     if (!s) return { ok: false, msg: '尚未开局' };
@@ -689,19 +766,34 @@ const Game = {
     if (!s.talents.spent || typeof s.talents.spent !== 'object') s.talents.spent = {};
     if (!Array.isArray(s.talents.presets) || s.talents.presets.length !== 3) s.talents.presets = [null, null, null];
     if (!s.skills || typeof s.skills !== 'object') s.skills = {};
-    /* 技能条：逐格校验（非法 / 重复的格子置空，位置不动），截断到 5 格 */
-    if (Array.isArray(s.skillbar)) {
+    /* 技能条：两套各自逐格校验（非法 / 重复的格子置空，位置不动），补满到 8 格 */
+    const cleanBar = arr => {
+      if (!Array.isArray(arr)) return null;
       const seen = {};
-      s.skillbar = s.skillbar.slice(0, SKILL_BAR_SLOTS).map(id => {
+      const out = arr.slice(0, SKILL_BAR_SLOTS).map(id => {
         if (!id || !SKILLS[id] || SKILLS[id].cls !== s.cls) return null;
         if (!(SKILL_ORDER[s.cls] || []).includes(id) || seen[id]) return null;
         seen[id] = true;
         return id;
       });
-      while (s.skillbar.length < SKILL_BAR_SLOTS) s.skillbar.push(null);
-    } else s.skillbar = null;
+      while (out.length < SKILL_BAR_SLOTS) out.push(null);
+      return out;
+    };
+    s.skillbar = cleanBar(s.skillbar);
+    s.skillbar2 = cleanBar(s.skillbar2);
+    /* 旧档只有一套栏（skillbar），第二套留空由玩家自己配 */
+    if (!s.skillbar2) s.skillbar2 = new Array(SKILL_BAR_SLOTS).fill(null);
+    s.barSet = (s.barSet === 1) ? 1 : 0;
     /* 已退出数据表的技能 / 天赋节点清掉，防存档里留死 id */
     for (const id in s.skills) if (!SKILLS[id]) delete s.skills[id];
+    /* 技能等级 / 变体整形：脏值不许把面板算崩 */
+    for (const id in s.skills) {
+      const e = s.skills[id];
+      if (!e || typeof e !== 'object') { delete s.skills[id]; continue; }
+      e.lv = CLAMP(Math.round(Number(e.lv) || 1), 1, SKILL_LV_MAX);
+      e.v = CLAMP(Math.round(Number(e.v) || 0), 0, 2);
+      if (e.bk !== undefined) delete e.bk;   // 已废弃字段（技能书方案取消）
+    }
     if (typeof TALENT_NODES !== 'undefined') {
       for (const id in s.talents.spent) if (!TALENT_NODES[id]) delete s.talents.spent[id];
       s.talents.presets = s.talents.presets.map(p => {
@@ -941,6 +1033,21 @@ const Game = {
       ecfg = Object.assign({}, cfg, { [el]: true, elemBoost: el });
     }
 
+    /* [S5] 精英词缀：按难度抽 1~3 条。
+     * 词缀在生成时一次性落到 e 上（dmg/spd/atkCd/resist），
+     * 战斗里只做读取，不在每帧重新判断，省得 40 只怪同屏时反复开关分支。 */
+    const affixes = elite ? rollEliteAffixes(eliteAffixCount(D.key)) : [];
+    const aff = {};
+    for (const id of affixes) aff[id] = ELITE_AFFIXES[id] || {};
+    /* [S5] 族群抗性：正数减伤、负数增伤；元素免疫在此覆盖对应一项 */
+    const fam = MON_FAMILIES[cfg.family] || MON_FAMILIES.humanoid;
+    const resist = Object.assign({}, fam.resist);
+    let wardElem = null;
+    if (aff.warded) {
+      wardElem = PICK(ELITE_WARD_ELEMS);
+      resist[wardElem] = Math.max(resist[wardElem] || 0, aff.warded.cut);
+    }
+
     /* [FOOT2] 在模型与缩放开全后重测真实碰撞半径。
      * setFootR 在 builder 阶段就跑了，复杂 Boss（带翅膀/巨兵器）往往在 setFootR 之后
      * 才把大体量部件挂上去，导致 a.footR 严重偏小（如 firegeneral a.footR≈0.69，但真实
@@ -985,8 +1092,18 @@ const Game = {
       atkCd: RND(0.3, 1.4), windup: 0, anim: 0, hitFlash: 0,
       stun: 0, slow: 0, slowT: 0, poisonT: 0, poisonDmg: 0, venomT: 0,
       phase: 0, patternCd: 3, tag: kind, facing: new THREE.Vector3(0, 0, 1),
-      spawnPos: new THREE.Vector3(x, 0, z), active: !isBoss, hitT: 0
+      spawnPos: new THREE.Vector3(x, 0, z), active: !isBoss, hitT: 0,
+      /* [S5] 精英词缀与族群抗性 */
+      affixes, aff, resist, wardElem,
+      family: cfg.family || 'humanoid',
+      name: elite ? eliteDisplayName(cfg.name, affixes) : cfg.name,
+      shield: 0, shieldCd: 0, summonStep: 0, splitChild: false
     };
+    /* [S5] 迅捷：移速与攻速在生成时一次性乘进去 */
+    if (aff.swift) {
+      e.spd *= 1 + aff.swift.spd / 100;
+      e.atkCdBase = (cfg.atkCd || 1.8) / (1 + aff.swift.aspd / 100);
+    }
     if (elite) {
       const ring = new THREE.Mesh(ringGeo(0.9, 1.15, 20), new THREE.MeshBasicMaterial({ color: 0xffaa33, transparent: true, opacity: 0.55, side: THREE.DoubleSide }));
       ring.rotation.x = -Math.PI / 2; ring.position.y = 0.05;
@@ -1033,6 +1150,21 @@ const Game = {
     }
     // 头顶血条（首领用顶部大血条，不重复显示）
     if (!isBoss) e.bar = makeHpBar(a.group, { elite: !!elite, gap: 0.22 });
+    /* [S5] 精英名字牌：没有它，40 只怪同屏时「哪只是冰霜、哪只是荆棘」全靠猜。
+     * 做法与 Boss 牌一致——容器缩放取倒数，位置按世界单位算，避免被 group.scale 二次放大。 */
+    if (elite && !isBoss) {
+      const gs = a.group.scale.x || 1;
+      const topWorld = modelTopY(a.group);
+      const lg = new THREE.Group();
+      lg.scale.setScalar(1 / gs);
+      lg.position.y = (topWorld + 0.34) / gs;
+      lg.renderOrder = 998;
+      const first = ELITE_AFFIXES[affixes[0]] || { color: '#ffd166' };
+      const lb = makeLabelSprite(e.name, first.color, 34, 3.4, 0.85);
+      lg.add(lb);
+      a.group.add(lg);
+      e.label = lb; e.labelG = lg;
+    }
 
     /* [FOOT2] 此时 Boss 的专属武器/光环、精英环都已挂上，重新量真实水平包围，
      * 取「顶点到 group 原点的最大水平距」，回填碰撞半径与触及距离。
@@ -1406,8 +1538,11 @@ const Game = {
     this.invuln = Math.max(0, this.invuln - dt);
     this.frostBurstCd = Math.max(0, (this.frostBurstCd || 0) - dt);
     if (this.state) this.state.phoenixCd = Math.max(0, (this.state.phoenixCd || 0) - dt);
+    if (this.state) this.state.deathWardCd = Math.max(0, (this.state.deathWardCd || 0) - dt);
+    this.lootRushT = Math.max(0, (this.lootRushT || 0) - dt);
     this.updateBuffs(dt);
     this.updatePlayer(dt);
+    this.updateAuras(dt);
     this.updateEnemies(dt);
     this.updateAllies(dt);
     this.updateProjectiles(dt);
@@ -1417,6 +1552,56 @@ const Game = {
     this.updateInteract();
     this.autoSave(raw);
     if (this.state.hp <= 0) this.die();
+  },
+
+  /* [M1/C5] 光环结算：装备词缀给的「以自身为中心」常驻范围效果。
+   * 每帧刷减速（0.25 秒续期，走出范围自然失效），灼烧每 0.8 秒跳一次。
+   * 视觉上给一圈地面光环，半径随 auraRange 变——否则玩家完全看不出
+   * 自己的光环有多大、怪是不是已经在圈里。 */
+  updateAuras(dt) {
+    const st = this.state && this.state.stats;
+    if (!st) return;
+    const slow = st.auraSlow || 0;
+    const burn = st.auraBurn || 0;
+    const R = 4.2 + (st.auraRange || 0);
+    const on = (slow > 0 || burn > 0);
+    if (!on) {
+      if (this.auraRing) this.auraRing.visible = false;
+      return;
+    }
+    /* 地面光环：单位半径，靠 scale 适配实际范围 */
+    if (!this.auraRing && this.playerGroup) {
+      const mat = new THREE.MeshBasicMaterial({
+        color: burn > 0 ? 0xff8a4a : 0x8fd0ff, transparent: true, opacity: 0.2,
+        side: THREE.DoubleSide, depthWrite: false
+      });
+      const m = new THREE.Mesh(ringGeo(0.93, 1, 44), mat);
+      m.rotation.x = -Math.PI / 2;
+      m.position.y = 0.05;
+      this.auraRing = m;
+      this.playerGroup.add(m);
+    }
+    if (this.auraRing) {
+      this.auraRing.visible = true;
+      this.auraRing.scale.set(R, R, 1);
+      this.auraRing.material.opacity = 0.14 + Math.sin(this.time * 2.2) * 0.05;
+    }
+    const pp = this.playerGroup.position;
+    for (const e of this.enemies) {
+      if (e.dead) continue;
+      if (DIST2D(e.pos, pp) > R + e.radius) continue;
+      if (slow > 0) {
+        e.slow = Math.max(e.slow || 0, Math.min(0.7, slow / 100));
+        e.slowT = Math.max(e.slowT || 0, 0.3);
+      }
+      if (burn > 0) {
+        e.auraBurnT = (e.auraBurnT || 0) - dt;
+        if (e.auraBurnT <= 0) {
+          e.auraBurnT = 0.8;
+          this.damageEnemy(e, burn * 0.8, false, { elem: 'fire', silent: true });
+        }
+      }
+    }
   },
 
   updateBuffs(dt) {
@@ -1503,7 +1688,9 @@ const Game = {
       const analog = Math.min(1, ml);   // 摇杆推杆幅度 → 速度
       mx /= ml; mz /= ml; moving = true;
       this.movingNow = true;
-      const spd = st.moveSpd * analog * (this.dashT > 0 ? 4.6 : 1) * (1 - (this.playerSlow || 0));
+      /* [M1] 行脚套·疾行：击杀后 3 秒移速 +30% */
+      const rush = this.lootRushT > 0 ? 1.3 : 1;
+      const spd = st.moveSpd * analog * (this.dashT > 0 ? 4.6 : 1) * (1 - (this.playerSlow || 0)) * rush;
       pg.position.x += mx * spd * dt;
       pg.position.z += mz * spd * dt;
       this.lastMoveDir = { x: mx, z: mz };
@@ -1573,7 +1760,9 @@ const Game = {
     /* [S1] 暴击后攻速：暴击命中后 2.5 秒内攻速加成
      * [S4] 血怒套·狂怒：每层 +4% 攻速（层数由 crit 累积，最多 5 层） */
     const aspdK = (this.aspdCritT > 0 ? 1 + (st.aspdOnCrit || 0) / 100 : 1)
-      * (1 + 0.04 * ((this.frenzy && this.frenzy.n) || 0));
+      * (1 + 0.04 * ((this.frenzy && this.frenzy.n) || 0))
+      /* [M1] 行脚套·疾行：击杀后 3 秒攻速 +15% */
+      * (this.lootRushT > 0 ? 1.15 : 1);
     const cdBase = 0.72 / (st.aspd * wpSpeed * aspdK);
     this.atkCd = cdBase;
     this.attacking = 0.32;
@@ -2544,10 +2733,30 @@ const Game = {
     const effArmor = Math.max(0, armor * (1 - Math.min(0.8, (st.armorPen || 0) / 100)));
     final *= 100 / (100 + effArmor);
 
+    /* [S5] 族群抗性：按本次伤害的元素结算（opts.elem 缺省按物理）。
+     * 正数减伤、负数增伤；元素免疫（85%）也走这一条，不另开分支。
+     * 上限 +85 / 下限 -60：既能逼玩家换武器，又不至于让某个流派完全打不动。 */
+    const elem = opts.elem || 'phys';
+    const res = e.resist ? (e.resist[elem] || 0) : 0;
+    if (res) final *= 1 - CLAMP(res, -60, 85) / 100;
+
+    /* [M1] 元素伤害词缀：按本次伤害的元素取对应加成键。
+     * 放在抗性之后、暴击之外，保证「堆火伤打亡灵」和「堆错元素打石魔」
+     * 的体感差别立刻能看出来。 */
+    const ELEM_DMG = { fire: 'fireDmg', ice: 'iceDmg', lightning: 'lightningDmg', poison: 'poisonDmg' };
+    const edk = ELEM_DMG[elem];
+    if (edk && st[edk]) final *= 1 + st[edk] / 100;
+
+    /* [M1] 游侠套·锐意：攻击满血目标必定暴击 */
+    if (st.specials && st.specials.deadeye && !crit && e.hp >= e.maxHp * 0.999) {
+      crit = true;
+      final *= st.critDmg / 100;
+    }
+
     if (e.cfg.all) final *= 0.85;
     if (st.flags.bossSlayer && e.boss) final *= 1.4;
     /* [S3] 狂战系·浴血：生命低于 50% 时造成的伤害 +25% */
-    if (st.flags.lowHpFury && s.hp < st.hpMax * 0.5) final *= 1.25;
+    if (st.flags.lowHpFury && this.state.hp < st.hpMax * 0.5) final *= 1.25;
     /* [S4] 血怒套·狂怒层数：每层 +5% 伤害 */
     if (this.frenzy && this.frenzy.n) final *= 1 + 0.05 * this.frenzy.n;
     /* [S4] 玄冰套：被减速 / 冻结的目标受到伤害 +25% */
@@ -2561,6 +2770,14 @@ const Game = {
     if (st.executeDmg && e.maxHp && e.hp / e.maxHp < 0.3) final *= 1 + st.executeDmg / 100;
     if (st.firstStrike && e.maxHp && e.hp >= e.maxHp - 1) final *= 1 + st.firstStrike / 100;
 
+    /* [S5] 精英护盾：先吃伤害再扣血。护盾不吃「溢出转护盾」那套，
+     * 否则玩家打死护盾怪会白拿一层盾。 */
+    if (e.shield > 0) {
+      const ab = Math.min(e.shield, final);
+      e.shield -= ab; final -= ab;
+      FX.text(new THREE.Vector3(e.pos.x, 2.4, e.pos.z), '吸收 ' + Math.round(ab), 'info', { life: 0.5 });
+      if (final <= 0) return;
+    }
     e.hp -= final;
     if (e.hp < 0) e.overkill = -e.hp;      // [S1] 记下溢出量，击杀时可能转成护盾
     if (crit && st.aspdOnCrit) this.aspdCritT = 2.5;   // [S1] 暴击后攻速
@@ -2626,7 +2843,42 @@ const Game = {
       const d = Math.hypot(dx, dz) || 1;
       e.pos.x += dx / d * kb * 0.5; e.pos.z += dz / d * kb * 0.5;
     }
-    if (e.hp <= 0) this.onEnemyDeath(e);
+    if (e.hp <= 0) { this.onEnemyDeath(e); return; }
+
+    /* [S5] 召唤：生命每降 25% 召 2 只同族。
+     * 用「理论档位 vs 已触发档位」比对，一次大伤害跨两档也不会漏召。 */
+    if (e.aff && e.aff.summoner && !e.boss) {
+      const step = Math.floor((1 - e.hp / e.maxHp) / e.aff.summoner.step);
+      if (step > e.summonStep) {
+        e.summonStep = step;
+        this.summonMinions(e, e.aff.summoner.count);
+      }
+    }
+    /* [S5] 荆棘：近战打它会被反弹。只在「有感」的命中上触发，
+     * 否则持续伤害（毒/火）每跳都弹一次，玩家会被莫名其妙磨死。 */
+    if (e.aff && e.aff.thorns && tag === 'melee' && !opts.silent && !this.dead) {
+      this.damagePlayer(final * e.aff.thorns.pct / 100, e);
+    }
+  },
+
+  /* [S5] 召唤同族小怪：只召普通怪，数量与位置都做了夹取，
+   * 避免「召唤词缀 + 40 只同屏」把手机端 draw call 顶穿。 */
+  summonMinions(e, n) {
+    const kind = e.tag;
+    if (!kind || !MONSTERS[kind]) return;
+    const alive = this.enemies.filter(x => !x.dead && !x.boss).length;
+    if (alive >= (this.mobCap || (IS_TOUCH ? MOB_CAP_TOUCH : MOB_CAP_PC))) return;
+    FX.ring(e.pos, 3.2, 0x7fd44a, 0.6, 0.28);
+    FX.text(new THREE.Vector3(e.pos.x, 2.4, e.pos.z), '召唤', 'info', { life: 0.8 });
+    for (let i = 0; i < n; i++) {
+      const ang = Math.random() * Math.PI * 2;
+      const m = this.spawnEnemy(kind, e.pos.x + Math.cos(ang) * 1.8, e.pos.z + Math.sin(ang) * 1.8, false, e.level);
+      if (m) {
+        m.hp = m.maxHp = Math.max(1, Math.round(e.maxHp * 0.16));
+        m.summoned = true;
+        m.aggro = true;
+      }
+    }
   },
 
   procThunder(target) {
@@ -2773,6 +3025,22 @@ const Game = {
       UI.log('涅槃重生！', 'good');
       SFX.levelup();
     }
+    /* [M1] 濒死免疫（词缀 / 隐修套）：致命伤时保留 1 点生命并回复 N%，
+     * 独立 60 秒冷却。与「还魂」（技能）和「涅槃」（传世）互不覆盖：
+     * 三者任意一个触发都会 return，所以同一次致命伤只会吃到一个。 */
+    if (s.hp <= 0 && (st.deathWard || 0) > 0 && (s.deathWardCd || 0) <= 0) {
+      s.deathWardCd = 60;
+      this.invuln = Math.max(this.invuln || 0, 1.5);
+      s.hp = Math.max(1, Math.round(st.hpMax * CLAMP(st.deathWard, 1, 90) / 100));
+      const pp = this.playerGroup.position;
+      FX.ring(new THREE.Vector3(pp.x, 0.2, pp.z), 5.5, 0xc08aff, 0.8, 0.35);
+      FX.text(new THREE.Vector3(pp.x, 2.8, pp.z), '濒死免疫', 'info', { life: 1.1 });
+      FX.burst(new THREE.Vector3(pp.x, 1.2, pp.z), 0xc08aff, 26, { speed: 3.6, size: 0.12, life: 0.9, gravity: -2, additive: true });
+      UI.log('濒死免疫触发，回魂 ' + Math.round(st.deathWard) + '%', 'good');
+      SFX.levelup();
+      this.shake = Math.max(this.shake, 0.35);
+      return;
+    }
     this.shake = Math.max(this.shake, Math.min(0.5, 0.12 + dmg / 180));
     this.hitstop = 40;
     FX.text(new THREE.Vector3(this.playerGroup.position.x, 2.2, this.playerGroup.position.z), '-' + Math.round(dmg), 'player');
@@ -2791,6 +3059,34 @@ const Game = {
         e.slowT = Math.max(e.slowT || 0, e.boss ? 1 : 1.4);
         FX.burst(new THREE.Vector3(e.pos.x, 1, e.pos.z), 0x8ad8ff, 5, { speed: 2, size: 0.09, life: 0.5, additive: true });
       }
+    }
+    /* [S5] 精英命中附带效果。
+     * 放在「伤害已经结算完」之后：控制/回血/追加伤害都不该改变本次这一击的数值，
+     * 否则玩家会觉得「同一只怪伤害忽高忽低」。
+     * _eliteProc 是防递归闸门：闪电的追加伤害还会走回这里，不挡会连锁到死。 */
+    if (source && source.aff && !this._eliteProc && !this.dead) {
+      this._eliteProc = true;
+      const A = source.aff;
+      if (A.frost) {
+        this.playerSlow = Math.max(this.playerSlow || 0, A.frost.slow / 100);
+        this.playerSlowT = Math.max(this.playerSlowT || 0, A.frost.slowDur);
+        FX.text(new THREE.Vector3(this.playerGroup.position.x, 2.7, this.playerGroup.position.z), '冰缓', 'info', { life: 0.7 });
+      }
+      if (A.venom) this.playerPoison(source.dmg * (A.venom.dpsPct || 12) / 100);
+      if (A.vampiric) {
+        const heal = dmg * A.vampiric.leech / 100;
+        if (heal > 1 && !source.dead) {
+          source.hp = Math.min(source.maxHp, source.hp + heal);
+          FX.text(new THREE.Vector3(source.pos.x, 2.2, source.pos.z), '+' + Math.round(heal), 'heal', { life: 0.6 });
+        }
+      }
+      if (A.lightning && CHANCE(A.lightning.proc)) {
+        const pp2 = this.playerGroup.position;
+        FX.beam(new THREE.Vector3(pp2.x, 8, pp2.z), new THREE.Vector3(pp2.x, 0.6, pp2.z), 0xb98cff, 0.2);
+        this.shake = Math.max(this.shake, 0.3);
+        this.damagePlayer(source.dmg * A.lightning.mult, source);
+      }
+      this._eliteProc = false;
     }
     if (s.hp <= 0) this.die();
   },
@@ -2926,7 +3222,7 @@ const Game = {
                   }
                 }
               } else if (e.atkCd <= 0) {
-                e.atkCd = e.cfg.atkCd || 1.8;
+                e.atkCd = e.atkCdBase || e.cfg.atkCd || 1.8;
                 e.windup = 0.34;
                 a.atkAnim = 1; a.atkType = 'swing'; a.atkSpeed = 2.8;
                 SFX.swing();
@@ -2959,6 +3255,25 @@ const Game = {
       this.collideWorld(e.pos, e.radius * 0.7);
 
       e.atkCd = Math.max(0, e.atkCd - dt);
+      /* [S5] 精英词缀的每帧维护：护盾回充 + 狂暴触发。
+       * 只对有词缀的怪跑，普通怪连这个 if 都不会进。 */
+      if (e.aff) {
+        if (e.aff.shield) {
+          e.shieldCd = Math.max(0, (e.shieldCd || 0) - dt);
+          if (e.shieldCd <= 0 && (e.shield || 0) <= 0) {
+            e.shield = e.maxHp * e.aff.shield.pct / 100;
+            e.shieldCd = e.aff.shield.cd;
+            FX.ring(e.pos, 1.7, 0x8fd0ff, 0.5, 0.2);
+          }
+        }
+        if (e.aff.berserk && !e.berserkOn && e.hp / e.maxHp < e.aff.berserk.hpLine) {
+          e.berserkOn = true;
+          e.dmg *= e.aff.berserk.dmgMul;
+          e.atkCdBase = (e.atkCdBase || e.cfg.atkCd || 1.8) * e.aff.berserk.cdMul;
+          FX.ring(e.pos, 2.6, 0xff4a3a, 0.6, 0.26);
+          FX.text(new THREE.Vector3(e.pos.x, 2.4, e.pos.z), '狂暴', 'info', { life: 0.9 });
+        }
+      }
       a.group.position.x = e.pos.x;
       a.group.position.z = e.pos.z;
       if (!a.fly) a.group.position.y = 0;
@@ -2976,6 +3291,24 @@ const Game = {
       }
       return true;
     });
+    /* [S5] 分裂幼体在帧末统一生成（见 onEnemyDeath 里的说明） */
+    this.flushSplit();
+  },
+
+  /* [S5] 把「分裂」队列落地。幼体不带词缀（splitChild 标记），
+   * 否则一只分裂怪能滚成雪球，几秒就铺满整张图。 */
+  flushSplit() {
+    const q = this._splitQ;
+    if (!q || !q.length) return;
+    this._splitQ = [];
+    for (const s of q) {
+      const m = this.spawnEnemy(s.kind, s.x, s.z, false, s.level);
+      if (!m) continue;
+      m.splitChild = true;
+      m.hp = m.maxHp = s.hp;
+      m.aggro = true;
+      m.dmg *= 0.7;
+    }
   },
 
   moveEnemy(e, target, spd, dt) {
@@ -3555,6 +3888,95 @@ const Game = {
     return Object.keys(out).map(id => ({ id, n: out[id] }));
   },
 
+  /* ======================================================= */
+  /* [S5] 异兽志（怪物图鉴）                                    */
+  /* ======================================================= */
+  /* 存档结构：state.codex = { mon: { <kind>: {kills, at} }, regions: { <id>: true } }
+   * S0 的 schema 里早就预留了 codex 字段，这里只往里填，不动结构。 */
+  codex() {
+    const s = this.state;
+    if (!s) return { mon: {}, regions: {} };
+    if (!s.codex || typeof s.codex !== 'object') s.codex = { mon: {}, regions: {} };
+    if (!s.codex.mon || typeof s.codex.mon !== 'object') s.codex.mon = {};
+    if (!s.codex.regions || typeof s.codex.regions !== 'object') s.codex.regions = {};
+    return s.codex;
+  },
+
+  codexEntry(kind) {
+    return this.codex().mon[kind] || null;
+  },
+
+  /* [M1] 图鉴「掉落」行。
+   * 直接从 spawnLoot 的真实规则算，不另写一份说明文案——
+   * 否则以后调了掉率，图鉴就成了骗人的东西。
+   * 图鉴只收普通怪，所以这里走「普通怪档」。 */
+  codexDrops(kind, lv) {
+    if (!kind || typeof MONSTERS === 'undefined' || !MONSTERS[kind]) return '';
+    const D = (this.diff ? this.diff() : null) || { rune: 1, drop: 1 };
+    const runePct = Math.round(2.5 * (D.rune || 1) * 10) / 10;
+    const crysPct = Math.round(10 * (D.rune || 1) * 10) / 10;
+    const mats = (typeof CRAFT_MATS !== 'undefined')
+      ? ['ore', 'hide', 'bone'].map(id => CRAFT_MATS[id] && CRAFT_MATS[id].name).filter(Boolean).join('/')
+      : '匠材';
+    return `装备 Lv.${lv} · 符文 ${runePct}% · 玄晶 ${crysPct}% · 匠材 ${mats}`;
+  },
+
+  /* 击杀解锁：首次收录打日志并检查区域全录，之后只累加击杀数 */
+  unlockCodex(kind) {
+    if (!kind || !MONSTERS[kind]) return null;
+    const c = this.codex();
+    const first = !c.mon[kind];
+    if (first) c.mon[kind] = { kills: 0, at: Date.now() };
+    const e = c.mon[kind];
+    e.kills = (e.kills || 0) + 1;
+    if (first) {
+      UI.log('异兽志 · 收录《' + MONSTERS[kind].name + '》', 'good');
+      const region = this.codexRegionOf(kind);
+      if (region) this.checkCodexRegion(region);
+    }
+    return e;
+  },
+
+  /* 一只怪归哪个区：按 MAPS 的声明顺序取第一个刷它的图。
+   * 这样 golem / ghostfire 这类跨区怪只归一个区，不会让两个区都集不齐。 */
+  codexRegionOf(kind) {
+    for (const id in MAPS) {
+      const m = MAPS[id];
+      if (m.spawns && m.spawns.indexOf(kind) >= 0) return id;
+    }
+    return null;
+  },
+
+  codexRegionKinds(regionId) {
+    const m = MAPS[regionId];
+    if (!m || !m.spawns) return [];
+    return m.spawns.filter(k => this.codexRegionOf(k) === regionId);
+  },
+
+  checkCodexRegion(regionId) {
+    const c = this.codex();
+    if (c.regions[regionId]) return false;
+    const kinds = this.codexRegionKinds(regionId);
+    if (!kinds.length || kinds.some(k => !c.mon[k])) return false;
+    c.regions[regionId] = true;
+    const def = CODEX_REGIONS.find(r => r.id === regionId);
+    this.recalc();
+    UI.toast('异兽志 · ' + (def ? def.name : regionId) + ' 全录', 'lv');
+    if (def) UI.log('【' + def.name + '】异兽尽录：' + def.bonusDesc, 'good');
+    return true;
+  },
+
+  /* 区域全录的永久加成（computePlayerStats 会合并进面板属性） */
+  codexBonus() {
+    const c = this.codex();
+    const out = {};
+    for (const def of CODEX_REGIONS) {
+      if (!c.regions[def.id]) continue;
+      for (const k in def.bonus) out[k] = (out[k] || 0) + def.bonus[k];
+    }
+    return out;
+  },
+
   onEnemyDeath(e) {
     if (e.dead) return;
     e.dead = true;
@@ -3568,6 +3990,42 @@ const Game = {
     FX.blood(new THREE.Vector3(p.x, 1, p.z), 0x992222, e.boss ? 40 : 16);
     this.hitstop = e.boss ? 140 : 30;
     this.shake = Math.max(this.shake, e.boss ? 0.7 : 0.14);
+
+    /* [S5] 图鉴收录：只收普通怪（Boss 走 bossKilled，另算） */
+    if (!e.boss) this.unlockCodex(e.kind);
+
+    /* [M1] 行脚套·疾行：击杀后 3 秒移速 / 攻速加成。
+     * 只对「非召唤物、非分裂幼体」计，否则一波小怪会把窗口无限续上。 */
+    const pst = this.state && this.state.stats;
+    if (pst && pst.specials && pst.specials.lootRush && !e.summoned && !e.splitChild) {
+      this.lootRushT = 3;
+    }
+
+    /* [S5] 亡语：死亡时原地爆炸，4 米内对玩家造成伤害 */
+    if (e.aff && e.aff.deathwish && !e.boss) {
+      const dw = e.aff.deathwish;
+      FX.ring(p, dw.radius, 0xc08aff, 0.7, 0.3);
+      FX.flashCircle(p, dw.radius, 0xc08aff, 0.28);
+      if (DIST2D(this.playerGroup.position, p) < dw.radius) {
+        this.damagePlayer(e.dmg * dw.mult, e);
+      }
+    }
+    /* [S5] 分裂：死亡时裂成 2 只 40% 血的幼体。
+     * 不直接 spawnEnemy —— onEnemyDeath 可能在 updateEnemies 的 for..of 里被调用
+     * （毒伤跳死），边遍历边 push 会把新怪也塞进本轮循环。先入队，帧末统一处理。 */
+    if (e.aff && e.aff.split && !e.splitChild) {
+      const sp = e.aff.split;
+      if (!this._splitQ) this._splitQ = [];
+      for (let i = 0; i < sp.count; i++) {
+        const ang = Math.random() * Math.PI * 2;
+        this._splitQ.push({
+          kind: e.tag, level: e.level,
+          x: p.x + Math.cos(ang) * 1.4, z: p.z + Math.sin(ang) * 1.4,
+          hp: Math.max(1, Math.round(e.maxHp * sp.hpPct))
+        });
+      }
+      FX.text(new THREE.Vector3(p.x, 2.2, p.z), '分裂', 'info', { life: 0.8 });
+    }
 
     // 经验（[DIFF] 难度越高给得越多，作为硬核的正反馈）
     const D = this.diff();
@@ -3906,6 +4364,12 @@ const Game = {
         SFX.levelup();
       }
     }
+    /* [M1] 任务奖励天赋点：主线四段共 +10，满级天赋点 60 → 70 */
+    if (q.rewards.talent) {
+      this.state.talentBonus = (this.state.talentBonus || 0) + q.rewards.talent;
+      UI.log('获得天赋点 +' + q.rewards.talent, 'lv');
+      SFX.levelup();
+    }
     this.state.quests.active = this.state.quests.active.filter(x => x !== a);
     this.state.quests.done.push(a.id);
     UI.toast('委托完成 · ' + q.name, 'lv');
@@ -4204,6 +4668,58 @@ const Game = {
     UI.renderHUD();
     this.save();
     return { ok: true, affix: a, cost };
+  },
+
+  /* ---------------- [M1/B5] 装备升阶：+1 基底阶，消耗一件同名装备 ----------------
+   * 与「品质」升级（锻造）分开：锻造改的是词条条数，升阶改的是「这件装备是什么料」。
+   * 材料必须是**同名基底**（baseName 相同、同部位），所以要么留着同名散件，
+   * 要么专门去刷同一档的同名底子——这正是计划里「消耗同名装备」的意思。 */
+  tierUpMaterial(item) {
+    const inv = (this.state && this.state.inventory) || [];
+    for (let i = 0; i < inv.length; i++) {
+      const it = inv[i];
+      if (!it || it === item) continue;
+      if (it.slot !== item.slot) continue;
+      if (it.baseName && item.baseName && it.baseName === item.baseName) return { index: i, item: it };
+    }
+    return null;
+  },
+
+  tierUpPreview(item) {
+    const info = upgradeTierInfo(item);
+    if (!info.ok) return { ok: false, msg: info.msg };
+    const cost = upgradeTierCost(item);
+    const mat = this.tierUpMaterial(item);
+    return {
+      ok: true, info, cost, mat,
+      gold: this.state.gold || 0, crystal: this.crystalCount(),
+      can: !!mat && (this.state.gold || 0) >= cost.gold && this.crystalCount() >= cost.crystal
+    };
+  },
+
+  upgradeItemTier(item) {
+    if (!item) return { ok: false, msg: '没有这件装备。' };
+    const info = upgradeTierInfo(item);
+    if (!info.ok) return { ok: false, msg: info.msg };
+    const cost = upgradeTierCost(item);
+    const mat = this.tierUpMaterial(item);
+    if (!mat) return { ok: false, msg: '需要一件同名装备「' + (item.baseName || item.name) + '」作引。' };
+    if ((this.state.gold || 0) < cost.gold) return { ok: false, msg: '金币不足，需要 ' + cost.gold + '。' };
+    if (this.crystalCount() < cost.crystal) return { ok: false, msg: '玄晶不足，需要 ' + cost.crystal + ' 枚。' };
+    /* 校验全过才动东西 */
+    this.state.gold -= cost.gold;
+    this.addCrystal(-cost.crystal);
+    this.state.inventory.splice(mat.index, 1);
+    const r = upgradeItemBaseTier(item);
+    if (!r) return { ok: false, msg: '升阶失败。' };
+    this.recalc();
+    SFX.levelup();
+    UI.log('升阶 ' + r.oldName + ' → ' + r.newName + '（' + r.from + ' → ' + r.to + '）', 'lv');
+    UI.toast(r.to + ' · ' + (item.setId ? item.name : r.newName), 'lv');
+    UI.renderInventory();
+    UI.renderHUD();
+    this.save();
+    return { ok: true, from: r.from, to: r.to, name: r.newName, cost };
   },
 
   enhanceItem(item) {

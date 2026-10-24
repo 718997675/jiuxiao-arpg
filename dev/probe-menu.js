@@ -70,14 +70,14 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     o.hudTxt = Array.from(document.querySelectorAll('#openBtns .btn')).map(b => b.textContent.trim().split(' ')[0]);
     o.homeExists = !!document.getElementById('panelHome');
     o.menuClosed = !document.getElementById('menuPanel').classList.contains('open');
-    o.panelsOutside = ['invPanel', 'statPanel', 'talentPanel', 'skillPanel', 'questPanel', 'forgePanel', 'savePanel', 'setPanel']
+    o.panelsOutside = ['invPanel', 'statPanel', 'talentPanel', 'skillPanel', 'questPanel', 'codexPanel', 'forgePanel', 'savePanel', 'setPanel']
       .every(id => document.getElementById(id).parentElement.id !== 'menuBody');
     return o;
   });
   if (!d1.started) bad('开局失败');
   else {
-    d1.tabs.length === 8 && d1.sameOrder ? ok('八个页签与 MENU_TABS 一一对应') : bad('页签不一致 ' + d1.tabs.join(','));
-    d1.tabNames.join('') === '行囊道途天赋术法山海志炼器台存档设置' ? ok('页签文案正确') : bad('页签文案 ' + d1.tabNames.join(''));
+    d1.tabs.length === 9 && d1.sameOrder ? ok('九个页签与 MENU_TABS 一一对应') : bad('页签不一致 ' + d1.tabs.join(','));
+    d1.tabNames.join('') === '行囊道途天赋术法山海志异兽志炼器台存档设置' ? ok('页签文案正确') : bad('页签文案 ' + d1.tabNames.join(''));
     d1.hudBtns === 2 ? ok('HUD 入口收敛为 2 个按钮（' + d1.hudTxt.join(' / ') + '）') : bad('HUD 还有 ' + d1.hudBtns + ' 个按钮');
     d1.menuClosed && d1.homeExists && d1.panelsOutside ? ok('未开菜单时所有子面板都在原籍') : bad('子面板位置异常');
   }
@@ -92,6 +92,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       talent: () => document.querySelectorAll('#tlTrees .tl-tab').length,
       skill: () => document.querySelectorAll('#skList .skcell, #skList > *').length,
       quest: () => document.querySelectorAll('#questList .qcard, #questList > *').length,
+      codex: () => document.querySelectorAll('#codexGrid .cx').length,
       forge: () => document.querySelectorAll('#forgeList .fitem, #forgeMain .fempty').length,
       save: () => document.querySelectorAll('#slotList .scard').length,
       set: () => document.querySelectorAll('#setBody .setrow').length
@@ -152,7 +153,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   Object.keys(d2.inBody).every(k => d2.inBody[k]) ? ok('任一时刻 #menuBody 只挂一页') : bad('有多页叠加');
   d2.badEmbed.length === 0 ? ok('切页后无 .embed 残留') : bad('残留 embed: ' + d2.badEmbed.join(','));
   d2.closed && d2.embedLeft === 0 && d2.bodyN === 0 ? ok('关闭菜单后子面板全部归位') : bad('关闭后仍残留');
-  d2.homeN === 8 ? ok('原籍收纳 8 个面板') : bad('原籍数量 ' + d2.homeN);
+  d2.homeN === 9 ? ok('原籍收纳 9 个面板') : bad('原籍数量 ' + d2.homeN);
   d2.reopen ? ok('toggleInv 仍能重新打开行囊页') : bad('toggleInv 失效');
   d2.tlAlpha > 500 ? ok('天赋画布首帧就有内容（非空白，' + d2.tlAlpha + ' 采样点）')
     : bad('天赋画布空白（采样点 ' + d2.tlAlpha + '）');

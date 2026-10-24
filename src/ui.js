@@ -257,6 +257,7 @@ const UI = {
       else if (k === 'k') { this.openMenu('skill'); e.preventDefault(); }
       else if (k === 'c') { this.openMenu('stat'); e.preventDefault(); }
       else if (k === 'l') { this.openMenu('quest'); e.preventDefault(); }
+      else if (k === 'b') { this.openMenu('codex'); e.preventDefault(); }
       else if (k === 'r') { this.openMenu('forge'); e.preventDefault(); }
       else if (k === 'p') { this.openMenu('save'); e.preventDefault(); }
       else if (k === 'o') { this.openSettings(); e.preventDefault(); }
@@ -503,8 +504,9 @@ const UI = {
   buildActionBar() {
     const s = Game.state;
     const bar = document.getElementById('actionbar');
-    /* [S4] 技能条 5 格手动配置：空位是虚线占位，点它打开术法面板（K） */
+    /* [S4][M1] 技能条 8 格 × 2 套手动配置：空位是虚线占位，点它打开术法面板（K） */
     const slots = Game.skillBar();
+    const setIdx = Game.barSet();
     let h = slots.map((id, i) => {
       if (!id) {
         return `<div class="skill empty" data-slot="${i}" title="技能条 ${i + 1}：空位——打开术法面板（K）把技能放上来">
@@ -513,10 +515,16 @@ const UI = {
       const sk = SKILLS[id];
       const castLabel = sk.cast === 'ground' ? '指定位置' : sk.cast === 'dir' ? '指定方向' : sk.cast === 'enemy' ? '自动索敌' : '自身';
       const rangeLabel = sk.castRange ? ` · ${sk.castRange} 码` : '';
-      return `<div class="skill" data-skill="${id}" title="${sk.name} · ${castLabel}${rangeLabel}">
-        <span class="k">${i + 1}</span><div class="g">${skillIconSvg(id, 26)}</div>
+      /* [M1] 变体角标：三个改造共用一张图标，靠右上角 Ⅰ/Ⅱ/Ⅲ 区分，
+       * 不然在技能条上看不出当前装的是哪一版。v=0 时角标隐藏。 */
+      const vv = Game.skillVariant(id);
+      const vName = (sk.variants && sk.variants[vv]) ? sk.variants[vv].name : '';
+      const vBadge = `<span class="vb" style="${vv > 0 ? '' : 'display:none'}">${['Ⅰ', 'Ⅱ', 'Ⅲ'][vv] || ''}</span>`;
+      return `<div class="skill" data-skill="${id}" title="${sk.name}${vName ? ' · ' + vName : ''} · ${castLabel}${rangeLabel}">
+        <span class="k">${i + 1}</span>${vBadge}<div class="g">${skillIconSvg(id, 26)}</div>
         <span class="cost">${Game.skillCost(sk)}</span><div class="cd"></div></div>`;
     }).join('') +
+      `<div class="barset" data-barset="1" title="切换快捷栏（${SKILL_BAR_SET_KEY}）· 共 ${SKILL_BAR_SETS} 套">${SKILL_BAR_SET_NAME[setIdx] || (setIdx + 1)}</div>` +
       `<div class="potion" data-potion="hp"><span class="k">Z</span><div class="g">丹</div><div class="n">红药</div></div>
        <div class="potion blue" data-potion="mp"><span class="k">X</span><div class="g">露</div><div class="n">蓝药</div></div>
        <div class="potion" data-tp="1" style="background:rgba(120,160,255,.22);border-color:rgba(120,160,255,.45)"><span class="k">9</span><div class="g">阵</div><div class="n">传送</div></div>`;
@@ -528,6 +536,9 @@ const UI = {
     /* 空位：点开术法面板去配置 */
     bar.querySelectorAll('.skill.empty').forEach(el => {
       el.addEventListener('click', () => { SFX.ui(); this.openSkill(); });
+    });
+    bar.querySelectorAll('.barset').forEach(el => {
+      el.addEventListener('click', () => { SFX.ui(); Game.switchBarSet(); });
     });
     bar.querySelectorAll('.potion').forEach(el => {
       if (el.dataset.potion) el.addEventListener('click', () => Game.usePotion(el.dataset.potion));
@@ -544,6 +555,13 @@ const UI = {
       if (!id) return;                     // 空占位格：没有技能可更新
       const sk = SKILLS[id];
       if (!sk) return;
+      /* [M1] 变体角标随切换实时更新（技能条不整体重建） */
+      const vb = el.querySelector('.vb');
+      if (vb) {
+        const vv = Game.skillVariant(id);
+        vb.textContent = ['Ⅰ', 'Ⅱ', 'Ⅲ'][vv] || '';
+        vb.style.display = vv > 0 ? '' : 'none';
+      }
       const locked = s.level < sk.unlock;
       el.classList.toggle('locked', locked);
       const cd = Game.cooldowns[id] || 0;
@@ -561,6 +579,12 @@ const UI = {
       el.classList.toggle('ready', !locked && cd <= 0.05 && !noMp);
       el.style.filter = !locked && noMp ? 'saturate(.4) brightness(.75)' : '';
     });
+    /* [M1] 快捷栏标识跟着切 */
+    const bs = document.querySelector('#actionbar .barset');
+    if (bs) {
+      const i = Game.barSet();
+      bs.textContent = SKILL_BAR_SET_NAME[i] || (i + 1);
+    }
   },
 
   /* 技能栏上方：增益 / 减益 / 护盾，按剩余时间倒序，减益置后 */
@@ -619,6 +643,7 @@ const UI = {
     { id: 'talent', name: '天 赋', key: 'T', panel: 'talentPanel', render: 'renderTalentPanel' },
     { id: 'skill', name: '术 法', key: 'K', panel: 'skillPanel', render: 'renderSkillPanel' },
     { id: 'quest', name: '山 海 志', key: 'L', panel: 'questPanel', render: 'renderQuests' },
+    { id: 'codex', name: '异 兽 志', key: 'B', panel: 'codexPanel', render: 'renderCodex' },
     { id: 'forge', name: '炼 器 台', key: 'R', panel: 'forgePanel', render: 'renderForge' },
     { id: 'save', name: '存 档', key: 'P', panel: 'savePanel', render: null },
     { id: 'set', name: '设 置', key: 'O', panel: 'setPanel', render: 'renderSettings' }
@@ -686,6 +711,84 @@ const UI = {
     });
   },
 
+  /* ============================================================
+   * 异兽志（S5 怪物图鉴）
+   * 按区域分页；击杀解锁；集齐一区给永久属性（走 Game.codexBonus）。
+   * 未收录的条目只露「？」——留白比剧透更有收集欲。
+   * ============================================================ */
+  codexRegion: 'forest',
+
+  renderCodex() {
+    if (!Game.state) return;
+    const grid = document.getElementById('codexGrid');
+    const cap = document.getElementById('codexCap');
+    const regs = document.getElementById('codexRegions');
+    const foot = document.getElementById('codexFoot');
+    if (!grid) return;
+    const c = Game.codex();
+    const all = Object.keys(MONSTERS);
+    const got = all.filter(k => c.mon[k]).length;
+    if (cap) cap.textContent = '已录 ' + got + ' / ' + all.length;
+
+    /* 区域页签：只绑一次事件，重绘只换内容 */
+    if (regs) {
+      if (!regs._bound) {
+        regs._bound = true;
+        regs.addEventListener('click', e => {
+          const b = e.target.closest('[data-creg]');
+          if (!b || b.dataset.creg === this.codexRegion) return;
+          this.codexRegion = b.dataset.creg;
+          this.renderCodex();
+          try { SFX.ui(); } catch (err) { }
+        });
+      }
+      regs.innerHTML = CODEX_REGIONS.map(r => {
+        const kinds = Game.codexRegionKinds(r.id);
+        const n = kinds.filter(k => c.mon[k]).length;
+        return `<button class="creg ${this.codexRegion === r.id ? 'on' : ''}" data-creg="${r.id}">`
+          + `${r.name}<i>${n}/${kinds.length}</i></button>`;
+      }).join('');
+    }
+
+    const region = CODEX_REGIONS.find(r => r.id === this.codexRegion) || CODEX_REGIONS[0];
+    const kinds = Game.codexRegionKinds(region.id);
+    const RES_NAME = { phys: '物理', fire: '火', ice: '冰', lightning: '雷', poison: '毒' };
+    grid.innerHTML = kinds.map(k => {
+      const m = MONSTERS[k];
+      const e = c.mon[k];
+      const fam = MON_FAMILIES[m.family] || MON_FAMILIES.humanoid;
+      if (!e) {
+        return `<div class="cx lock" style="--c:${fam.color}">
+          <div class="cx-glyph">？</div>
+          <div class="cx-main">
+            <div class="cx-n">未录之兽<span class="lv">Lv.${region.level}+</span></div>
+            <div class="cx-l">击败后收录。</div>
+          </div></div>`;
+      }
+      const rs = Object.keys(fam.resist).filter(kk => fam.resist[kk]).map(kk => {
+        const v = fam.resist[kk];
+        return `<i class="${v > 0 ? 'up' : 'dn'}">${RES_NAME[kk]}${v > 0 ? '抗' : '弱'} ${Math.abs(v)}%</i>`;
+      }).join('');
+      return `<div class="cx" style="--c:${fam.color}">
+        <div class="cx-glyph">${m.name.slice(0, 1)}</div>
+        <div class="cx-main">
+          <div class="cx-n">${m.name}<span class="fam">${fam.name}</span><span class="lv">击杀 ${e.kills}</span></div>
+          <div class="cx-r">${rs}</div>
+          <div class="cx-l">${m.lore || ''}</div>
+          <div class="cx-d">掉落 ${Game.codexDrops(k, region.level)}</div>
+        </div></div>`;
+    }).join('');
+
+    if (foot) {
+      const n = kinds.filter(k => c.mon[k]).length;
+      const done = !!c.regions[region.id];
+      foot.innerHTML = `${region.name} · ${n}/${kinds.length} 收录　`
+        + (done
+          ? `<span style="color:#7fd44a">全录达成：${region.bonusDesc}</span>`
+          : `<span style="color:#8a8474">集齐全录：${region.bonusDesc}</span>`);
+    }
+  },
+
   /* ---------------- 背包 ---------------- */
   invJunkOpen: false,      // 一键分解确认条是否展开
   invJunkMagic: false,     // 一键分解是否连带法器
@@ -748,12 +851,12 @@ const UI = {
 
   /* 纸娃娃：按身体方向排（v1.3.0，参考暗黑 3）
    * 头在中上、肩在左上 / 右上、胸甲占中两行、手腰一排、战靴在下，
-   * 最底一条长格放兵器。具体落位由 CSS 的 grid-template-areas 决定。 */
+   * 最底一条长格放兵器。具体落位由 CSS 的 grid-template-areas 决定。
+   * [M1] 14 格：披风在左上、法器在右上，命格在右下与护手对称。 */
   renderDoll() {
     const s = Game.state;
     const eq = s.equipment;
-    /* 法器（relic）落在右上角，与护肩左右对称（v1.3.0） */
-    const order = ['helm', 'shoulders', 'chest', 'relic', 'gloves', 'amulet', 'ring1', 'belt', 'ring2', 'boots', 'weapon', 'offhand'];
+    const order = ['helm', 'cloak', 'chest', 'relic', 'shoulders', 'amulet', 'ring1', 'belt', 'ring2', 'gloves', 'boots', 'fate', 'weapon', 'offhand'];
     const grid = document.getElementById('dollGrid');
     if (!grid) return;
     grid.innerHTML = order.map(slot => {
@@ -1080,6 +1183,11 @@ const UI = {
         h += `<div class="cx-group">
           <span class="cx-gname" style="color:${cc}">${CLASSES[g.cls].name}</span>
           <span class="cx-gdesc">${(SET_TYPES[g.cls] || []).map(t => t.tag).join(' · ')}</span></div>`;
+      } else {
+        /* [M1] 通用套分组：不锁职业，任何角色都能凑 */
+        h += `<div class="cx-group">
+          <span class="cx-gname" style="color:#c8b88a">通用</span>
+          <span class="cx-gdesc">${(SET_TYPES.universal || []).map(t => t.tag).join(' · ')}</span></div>`;
       }
       for (const set of g.list) {
         totalPieces += set.pieces.length;
@@ -1264,7 +1372,8 @@ const UI = {
           const e2 = Game.talentNodeOf(id);
           const n = e2 && e2.node;
           const rank = (Game.talentState().spent[id] || 0);
-          if (e2 && Game.state.level < (e2.unlock || 1)) this.toast('需 ' + e2.unlock + ' 级解锁');
+          if (n && n.cond && !Game.synergyUnlocked(id)) this.toast('未显形：需 ' + ((typeof synergyCondText === 'function') ? synergyCondText(n) : '装备条件'));
+          else if (e2 && Game.state.level < (e2.unlock || 1)) this.toast('需 ' + e2.unlock + ' 级解锁');
           else if (n && rank >= n.max) this.toast('已点满');
           else if (n && n.reqPts && Game.talentTreePoints(e2.tree) < n.reqPts) this.toast('需要本系先投入 ' + n.reqPts + ' 点');
           else if (n && (n.req || []).some(r => !(Game.talentState().spent[r] > 0))) this.toast('前置节点未点亮');
@@ -1304,6 +1413,14 @@ const UI = {
     const e = Game.talentNodeOf(id);
     if (!e) return '';
     const n = e.node;
+    /* [B4] 未显形的协同节点：只说条件，不剧透效果 */
+    if (n.cond && !Game.synergyUnlocked(id)) {
+      const need = (typeof synergyCondText === 'function') ? synergyCondText(n) : '';
+      return `<div class="tt-n" style="color:#8fd0ff">未显形的星位</div>
+      <div class="tt-r">协同 · 需装备条件</div>
+      <div class="tt-d">穿上「${need}」后，这一枚才会在星盘上亮起。</div>
+      <div class="tt-c no">尚未显形</div>`;
+    }
     const sp = Game.talentState().spent;
     const rank = sp[id] || 0;
     const tierTxt = n.tier === 3 ? '大节点 · 通玄' : n.tier === 2 ? '中节点 · 机变' : '小节点 · 常驻';
@@ -1322,8 +1439,12 @@ const UI = {
     }
     const reqTxt = n.reqPts ? ` · 需本系 ${n.reqPts} 点` : '';
     const lvTxt = ` · ${e.unlock || 1} 级解锁`;
+    /* 已显形的协同节点：把「因为什么显形」写在卡面，构筑一眼可读 */
+    const condTxt = (n.cond && Game.synergyUnlocked(id))
+      ? ` · 协同：${(typeof synergyCondText === 'function') ? synergyCondText(n) : ''}`
+      : '';
     return `<div class="tt-n" style="color:${e.color}">${n.name}</div>
-      <div class="tt-r">${e.treeName} · ${tierTxt}${lvTxt}${reqTxt}${n.max > 1 ? ' · 上限 ' + n.max + ' 级' : ''}</div>
+      <div class="tt-r">${e.treeName} · ${tierTxt}${lvTxt}${reqTxt}${condTxt}${n.max > 1 ? ' · 上限 ' + n.max + ' 级' : ''}</div>
       <div class="tt-d">${n.desc}</div>
       <div class="tt-c ${ok ? '' : 'no'}">${status}</div>`;
   },
@@ -1348,6 +1469,7 @@ const UI = {
 
     const CX = 330;
     const uni = tree.nodes.length > 12;          // 通用系：单环长链
+    const syn = tree.id === 'synergy';           // [B4] 协同系：外环八枚封印
     const CY = uni ? 215 : 196;
     const OUTER = uni ? 182 : 198;               // 外圈装饰环
     /* 极坐标：deg 从正上方起、顺时针为正 */
@@ -1391,6 +1513,14 @@ const UI = {
       g.font = '10px ui-sans-serif, system-ui, sans-serif';
       g.fillStyle = '#8a8474';
       g.fillText('已投 ' + treePts + ' · 可用 ' + pts + ' 点', CX, CY + 10);
+    } else if (syn) {
+      const open = Game.synergyOpen().length;
+      g.font = '600 16px "STKaiti","KaiTi",serif';
+      g.fillStyle = tree.color;
+      g.fillText(tree.name, CX, 28);
+      g.font = '10px ui-sans-serif, system-ui, sans-serif';
+      g.fillStyle = '#8a8474';
+      g.fillText('已显形 ' + open + '/' + tree.nodes.length + ' · 已投 ' + treePts + ' 点 · 可用 ' + pts + ' 点', CX, 45);
     } else {
       g.font = '600 16px "STKaiti","KaiTi",serif';
       g.fillStyle = tree.color;
@@ -1402,7 +1532,16 @@ const UI = {
 
     /* ---------- 节点坐标 ---------- */
     const POS = {};   // id → {x, y, deg, R}
-    if (!uni) {
+    if (syn) {
+      /* 协同系：八枚节点等分一圈，封印与已显形都占位（位置固定，显形时不会跳） */
+      const R = 148, step = 360 / tree.nodes.length;
+      tree.nodes.forEach((n, i) => {
+        /* 偏半格起排：正上方留给标题，节点不会压到「协同」两个字 */
+        const deg = step / 2 + i * step;
+        const p = pol(R, deg);
+        POS[n.id] = { x: p.x, y: p.y, deg, R };
+      });
+    } else if (!uni) {
       /* 深度 = 沿 req[0] 链上层数；大节点固定最外环底部 */
       const depthOf = id => {
         let d = 0, c = byId[id];
@@ -1504,6 +1643,26 @@ const UI = {
       const lvOk = Game.state.level >= ((TALENT_NODES[n.id] || {}).unlock || 1);   // 等级解锁
       const reqOk = !(n.req || []).some(r => !(sp[r] > 0)) && (!n.reqPts || treePts >= n.reqPts) && lvOk;
       const r = nodeR(n);
+      /* [B4] 协同节点未显形：只画一枚虚线封印，不露名称与效果 */
+      if (n.cond && !Game.synergyUnlocked(n.id)) {
+        g.save();
+        g.setLineDash([3, 4]);
+        g.lineWidth = 1.4;
+        g.beginPath(); g.arc(P.x, P.y, r, 0, Math.PI * 2);
+        g.fillStyle = 'rgba(10,12,16,.9)'; g.fill();
+        g.strokeStyle = 'rgba(143,208,255,.28)'; g.stroke();
+        g.setLineDash([]);
+        g.font = '600 13px "STKaiti","KaiTi",serif';
+        g.fillStyle = 'rgba(143,208,255,.4)';
+        g.fillText('？', P.x, P.y + 0.5);
+        g.font = '9px ui-sans-serif, system-ui, sans-serif';
+        g.fillStyle = 'rgba(143,208,255,.34)';
+        const lp0 = pol(P.R + r + 13, P.deg);
+        g.fillText('未显形', lp0.x, lp0.y);
+        g.restore();
+        this._tlHit.push({ id: n.id, x: P.x, y: P.y, r: r + 6, sealed: true });
+        continue;
+      }
       /* 已投入等级：外圈金弧（0 级时画一圈暗轨） */
       g.lineWidth = 2.5;
       g.beginPath(); g.arc(P.x, P.y, r + 4.5, 0, Math.PI * 2);
@@ -1591,7 +1750,8 @@ const UI = {
     const s = Game.state;
     const order = SKILL_ORDER[s.cls];
     const pts = Game.skillPoints();
-    const barSlots = Game.skillBar();          // 技能条 5 格当前配置
+    const barSlots = Game.skillBar();          // 当前快捷栏 8 格配置
+    const setIdx = Game.barSet();
     document.getElementById('skPtsTxt').innerHTML = `可用技能点 <b>${pts}</b>`;
     if (!this.skSel || !order.includes(this.skSel)) this.skSel = order[0];
 
@@ -1657,7 +1817,9 @@ const UI = {
       <div class="sd-vname">${sk.variants[v].name}：${sk.variants[v].desc}</div>
       <div class="sd-bar"><span class="sd-barlab">技能条</span>
         <span class="sd-barslots">${slotBtns}</span>
-        <span class="sd-barhint">${locked ? '领悟后可放上技能条' : '点数字放上技能条（键 1-5 施放）'}</span></div>
+        <span class="sk-sets">${SKILL_BAR_SET_NAME.map((nm, i) =>
+          `<button class="sk-setbtn ${i === setIdx ? 'on' : ''}" data-skset="${i}" title="切到${nm}栏（${SKILL_BAR_SET_KEY}）">${nm}</button>`).join('')}</span>
+        <span class="sd-barhint">${locked ? '领悟后可放上技能条' : `点数字放上技能条（键 1-${SKILL_BAR_SLOTS} 施放 · ${SKILL_BAR_SET_KEY} 换栏）`}</span></div>
     </div></div>`;
 
     const list = document.getElementById('skList');
@@ -1679,11 +1841,16 @@ const UI = {
       SFX.ui();
       this.renderSkillPanel();
     }));
-    /* 放技能上条：点详情卡里的 1-5 */
+    /* 放技能上条：点详情卡里的 1-8 */
     list.querySelectorAll('[data-skbar]').forEach(b => b.addEventListener('click', () => {
       const r = Game.assignSkillBar(parseInt(b.dataset.skbar), this.skSel);
       if (r.ok) SFX.ui();
       else this.toast(r.msg, 'bad');
+    }));
+    /* [M1] 切快捷栏（甲 / 乙） */
+    list.querySelectorAll('[data-skset]').forEach(b => b.addEventListener('click', () => {
+      Game.switchBarSet(parseInt(b.dataset.skset));
+      SFX.ui();
     }));
     /* 图标悬停浮层 */
     const tip = document.getElementById('skTip');
@@ -2042,7 +2209,7 @@ const UI = {
     const s = Game.state;
     if (!s) return [];
     const out = [];
-    const order = ['weapon', 'helm', 'chest', 'shoulders', 'gloves', 'boots', 'belt', 'amulet', 'ring1', 'ring2', 'offhand'];
+    const order = ['weapon', 'helm', 'chest', 'shoulders', 'cloak', 'gloves', 'boots', 'belt', 'amulet', 'ring1', 'ring2', 'offhand', 'fate'];
     for (const slot of order) {
       const it = s.equipment[slot];
       if (it) out.push({ ref: 'eq:' + slot, item: it, where: '已装备' });

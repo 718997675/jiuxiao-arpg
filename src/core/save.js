@@ -36,7 +36,7 @@ const SaveManager = {
   migrated: false,
   _createdAt: {},
 
-  _DEFAULT_SLOTS: ['helm', 'chest', 'shoulders', 'gloves', 'boots', 'belt', 'amulet', 'ring1', 'ring2', 'weapon', 'offhand', 'relic'],
+  _DEFAULT_SLOTS: ['helm', 'chest', 'shoulders', 'cloak', 'gloves', 'boots', 'belt', 'amulet', 'ring1', 'ring2', 'weapon', 'offhand', 'relic', 'fate'],
 
   /* ---------------- 基础工具 ---------------- */
   slotKey(n) { return 'jiuxiao_save_v2_s' + n; },
@@ -50,6 +50,14 @@ const SaveManager = {
     } catch (e) { }
     return this._DEFAULT_SLOTS;
   },
+  /* 技能条整形：截到 SKILL_BAR_SLOTS 格、非字符串置 null、补满长度。
+   * 两套快捷栏共用；数据层没加载时退回 8 格常量。 */
+  _bar(arr) {
+    const n = (typeof SKILL_BAR_SLOTS === "number") ? SKILL_BAR_SLOTS : 8;
+    const out = Array.isArray(arr) ? arr.slice(0, n).map(v => (typeof v === 'string' && v) ? v : null) : [];
+    while (out.length < n) out.push(null);
+    return out;
+  },
   _now() { return Date.now(); },
   _int(v, min, max, def) {
     const n = Math.round(Number(v));
@@ -62,6 +70,23 @@ const SaveManager = {
     return n;
   },
   _obj(v) { return (v && typeof v === 'object' && !Array.isArray(v)) ? v : null; },
+  /* [S5] 异兽志归一化：{ mon: { kind: {kills, at} }, regions: { id: true } }
+   * 旧档里 codex 只是个空对象，手改存档可能塞进字符串/数组，
+   * 一律收敛成合法结构——图鉴面板会直接取 kills，结构不对就整页崩。 */
+  _codex(v) {
+    const src = this._obj(v) || {};
+    const mon = {};
+    const rawMon = this._obj(src.mon) || {};
+    for (const k in rawMon) {
+      const e = this._obj(rawMon[k]);
+      if (!e) continue;
+      mon[k] = { kills: this._int(e.kills, 0, 999999, 0), at: this._num(e.at, 0) };
+    }
+    const regions = {};
+    const rawReg = this._obj(src.regions) || {};
+    for (const k in rawReg) if (rawReg[k]) regions[k] = true;
+    return { mon, regions };
+  },
   /* 难度白名单校验：认不出的值（含旧档缺失）统一回落默认档，绝不让脏值进存档 */
   _difficulty(v) {
     const def = (typeof DEFAULT_DIFF !== 'undefined') ? DEFAULT_DIFF : 'normal';
@@ -181,12 +206,15 @@ const SaveManager = {
     d.stash = this._obj(d.stash) || { items: [], mats: {} };
     if (!Array.isArray(d.stash.items)) d.stash.items = [];
     if (!this._obj(d.stash.mats)) d.stash.mats = {};
-    d.codex = this._obj(d.codex) || {};
+    d.codex = this._codex(d.codex);
     d.talents = this._obj(d.talents) || {};
-    /* S4 技能：等级 / 变体 / 技能条 5 格配置 */
+    /* [M1] 任务奖励天赋点：旧档没有这个字段，缺省补 0，脏值夹到 0~40 */
+    d.talentBonus = this._int(d.talentBonus, 0, 40, 0);
+    /* S4 技能：等级 / 变体 / 技能条 8 格 × 2 套配置 */
     d.skills = this._obj(d.skills) || {};
-    if (Array.isArray(d.skillbar)) d.skillbar = d.skillbar.slice(0, 5);
-    else d.skillbar = null;
+    d.skillbar = this._bar(d.skillbar);
+    d.skillbar2 = this._bar(d.skillbar2);
+    d.barSet = (d.barSet === 1) ? 1 : 0;
     if (d.mount === undefined) d.mount = null;
     d.settings = this._obj(d.settings) || {};
 
@@ -245,11 +273,14 @@ const SaveManager = {
        * 存下来的意义是「刷新页面不重置 5 分钟计时、也不能白嫖一次换货」，
        * 结构不对（被手改过）时直接丢成 null，下次进货会重新生成。 */
       shop: (s.shop && Array.isArray(s.shop.items)) ? s.shop : null,
-      codex: this._obj(s.codex) || {},
+      codex: this._codex(s.codex),
       talents: this._obj(s.talents) || {},
-      /* S4：技能等级 / 变体 / 技能条 5 格（id 或 null） */
+      talentBonus: this._int(s.talentBonus, 0, 40, 0),
+      /* S4：技能等级 / 变体 / 技能条 8 格 × 2 套（id 或 null） */
       skills: this._obj(s.skills) || {},
-      skillbar: Array.isArray(s.skillbar) ? s.skillbar.slice(0, 5) : null,
+      skillbar: this._bar(s.skillbar),
+      skillbar2: this._bar(s.skillbar2),
+      barSet: (s.barSet === 1) ? 1 : 0,
       mount: s.mount === undefined ? null : s.mount,
       settings: this._obj(s.settings) || {}
     };
@@ -268,10 +299,13 @@ const SaveManager = {
       quests: w.quests, mapId: w.mapId, playerPos: w.playerPos,
       stash: doc.stash || { items: [], mats: {} },
       shop: (doc.shop && Array.isArray(doc.shop.items)) ? doc.shop : null,
-      codex: doc.codex || {},
+      codex: this._codex(doc.codex),
       talents: doc.talents || {},
+      talentBonus: this._int(doc.talentBonus, 0, 40, 0),
       skills: doc.skills || {},
-      skillbar: Array.isArray(doc.skillbar) ? doc.skillbar.slice(0, 5) : null,
+      skillbar: this._bar(doc.skillbar),
+      skillbar2: this._bar(doc.skillbar2),
+      barSet: (doc.barSet === 1) ? 1 : 0,
       mount: doc.mount === undefined ? null : doc.mount,
       settings: doc.settings || {}
     };
@@ -472,7 +506,7 @@ const SaveManager = {
       cls, name, level: 1, xp: 0, xpNext: 120, gold: 120,
       difficulty: (typeof DEFAULT_DIFF !== 'undefined') ? DEFAULT_DIFF : 'normal',
       potions: { hp: 4, mp: 3 }, teleportStones: 0, hp: 100, mp: 50,
-      equipment: { helm: null, chest: eq.chest, shoulders: null, gloves: null, boots: null, belt: null, amulet: null, ring1: null, ring2: null, weapon: eq.weapon, offhand: null },
+      equipment: { helm: null, chest: eq.chest, shoulders: null, cloak: null, gloves: null, boots: null, belt: null, amulet: null, ring1: null, ring2: null, weapon: eq.weapon, offhand: null, relic: null, fate: null },
       inventory: [], maxInv: 40,
       quests: { active: [], done: [], next: 'q1', announced: {} },
       mapId: 'village', playerPos: { x: 0, z: 10 },
@@ -661,7 +695,11 @@ function saveStateFingerprint(s) {
     const af = Array.isArray(it.affixes) ? it.affixes.length : 0;
     return [it.slot || '', it.rarity || '', nm, it.ilvl || 0, af, it.setId || '', it.baseDmg ? it.baseDmg.join('/') : '', it.baseArmor || ''].join('~');
   };
-  const eqSig = Object.keys(eq).sort().map(k => k + '=' + itemSig(eq[k])).join('|');
+  /* 槽位顺序固定走 equipSlots()：旧档只有 12 格、新档 14 格，
+   * 若按 Object.keys(eq) 取，迁移前后的指纹必然对不上（会误报「存档丢装备」）。 */
+  const slots = (typeof SaveManager !== 'undefined' && SaveManager.equipSlots)
+    ? SaveManager.equipSlots() : Object.keys(eq);
+  const eqSig = slots.map(k => k + '=' + itemSig(eq[k])).join('|');
   const invSig = inv.map(itemSig).join('|');
   const q = s.quests || {};
   return {

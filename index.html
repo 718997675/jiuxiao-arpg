@@ -87,7 +87,18 @@
   .skill .g{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
     font-family:"STKaiti","KaiTi",serif;font-size:26px;color:#e8dcc0;text-shadow:0 2px 6px #000}
   .skill .k{position:absolute;left:2px;top:1px;font-size:9px;color:#a8a090;letter-spacing:0}
+  /* [M1] 技能变体角标：三个改造共用一张图标，靠右上角 Ⅰ/Ⅱ/Ⅲ 区分 */
+  .skill .vb{position:absolute;right:1px;top:1px;font-size:9px;line-height:1;padding:0 2px;
+    color:#1a1510;background:linear-gradient(180deg,#e8cf8a,#c8a24a);border-radius:2px;
+    font-weight:600;pointer-events:none;z-index:2}
   .skill .cost{position:absolute;right:3px;bottom:1px;font-size:9px;color:#7fb0e8}
+  /* [M1] 快捷栏标识：技能条右端的小方章，点它 / 按反引号切第二套 */
+  .barset{width:26px;height:54px;display:flex;align-items:center;justify-content:center;
+    border:1px solid rgba(216,178,90,.4);border-radius:4px;cursor:pointer;
+    background:linear-gradient(180deg,rgba(46,40,30,.9),rgba(12,10,10,.9));
+    font-family:"STKaiti","KaiTi",serif;font-size:15px;color:#d8b25a;
+    text-shadow:0 2px 6px #000;transition:.12s;user-select:none}
+  .barset:hover{border-color:var(--gold);color:#ffe9a8;transform:translateY(-2px)}
   /* 技能条空位：虚线占位，点它打开术法面板（K）配置 */
   .skill.empty{border-style:dashed;border-color:#5a5040;background:rgba(12,11,9,.5);opacity:.9}
   .skill.empty .g{font-size:19px;color:#6a6458}
@@ -164,8 +175,10 @@
   .pb{padding:14px}
 
   /* 背包：左列装备栏（纸娃娃 + 角色属性，常驻且自己滚），右列行囊与其他栏位 */
-  #invPanel{left:50%;top:50%;transform:translate(-50%,-50%);width:892px;max-height:88vh;
-    display:flex;flex-direction:column}
+  /* display 只能写在 .open 上：ID 选择器特异性高于 .panel{display:none}，
+   * 写在 #invPanel 上会让背包面板无视关闭状态、开局就盖在屏幕正中。 */
+  #invPanel{left:50%;top:50%;transform:translate(-50%,-50%);width:892px;max-height:88vh}
+  #invPanel.open{display:flex;flex-direction:column}
   /* 高度钉死，两列各自滚动；不钉死的话左列属性会把面板一路撑高 */
   #invPanel .pb{height:calc(88vh - 44px);max-height:none;overflow:hidden}
   .inv-wrap{display:flex;gap:14px;min-height:0}
@@ -184,10 +197,10 @@
   .doll-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:6px;
     grid-template-areas:
       ".       .       helm    helm    .       ."
-      "shoulders shoulders chest chest relic  relic"
-      "gloves  gloves  chest   chest amulet amulet"
-      "ring1   ring1   belt    belt  ring2  ring2"
-      ".       .       boots   boots .      ."
+      "cloak   cloak   chest   chest   relic   relic"
+      "shoulders shoulders chest chest amulet amulet"
+      "ring1   ring1   belt    belt    ring2   ring2"
+      "gloves  gloves  boots   boots   fate    fate"
       "weapon  weapon  weapon  offhand offhand offhand"}
   .eslot{width:100%;height:48px;background:linear-gradient(160deg,rgba(38,34,28,.7),rgba(0,0,0,.55));
     border:1px solid rgba(255,255,255,.115);box-shadow:inset 0 0 6px rgba(0,0,0,.5);position:relative;cursor:pointer;
@@ -205,6 +218,8 @@
   .eslot[data-slot="boots"]{grid-area:boots}
   .eslot[data-slot="offhand"]{grid-area:offhand}
   .eslot[data-slot="relic"]{grid-area:relic}
+  .eslot[data-slot="cloak"]{grid-area:cloak}
+  .eslot[data-slot="fate"]{grid-area:fate}
   /* 双手兵器占着副手位：副手格画成虚线锁定态 */
   .eslot.locked{border-style:dashed;border-color:rgba(255,154,108,.45)!important;background:rgba(40,24,18,.55);cursor:not-allowed}
   .eslot.locked .ico.empty::before{content:'锁';font-size:11px;color:rgba(255,154,108,.65)}
@@ -470,6 +485,13 @@
   .sk-bslot.on{background:linear-gradient(180deg,#e0c070,#b89840);color:#1a1510;border-color:#ffd479}
   .sk-bslot:disabled{opacity:.35;cursor:default}
   .sd-barhint{font-size:9.5px;color:#6a6458;letter-spacing:0;line-height:1.5}
+  /* [M1] 两套快捷栏切换（甲 / 乙）：技能条格子右侧的两个小章 */
+  .sk-sets{display:inline-flex;gap:3px;margin:0 4px;vertical-align:middle}
+  .sk-setbtn{font-family:"STKaiti","KaiTi",serif;width:22px;height:22px;font-size:12px;
+    cursor:pointer;border:1px solid rgba(216,178,90,.35);border-radius:3px;color:#a89878;
+    background:linear-gradient(180deg,#2a2620,#12100c);transition:.12s}
+  .sk-setbtn:hover{border-color:#ffd479;color:#ffe9a8}
+  .sk-setbtn.on{background:linear-gradient(180deg,#e0c070,#b89840);color:#1a1510;border-color:#ffd479}
   .sd-vars{display:flex;gap:6px;margin-bottom:6px}
   .sd-vname{font-size:10px;color:#7a7466;line-height:1.65}
   .igrid{display:grid;grid-template-columns:repeat(8,1fr);gap:6px;
@@ -547,6 +569,22 @@
   .cmat .cm-coin{display:flex;align-items:center;justify-content:center;width:24px;height:24px;
     border:1px solid #d8b25a;border-radius:50%;color:#ffd166;font-size:11px;line-height:1}
 
+  /* ---------- 升阶页（M1/B5） ---------- */
+  .tier-track{display:flex;align-items:center;gap:4px;flex-wrap:wrap;margin-top:6px}
+  .tier-dot{font-size:10px;letter-spacing:1px;padding:2px 7px;border:1px solid rgba(255,255,255,.1);
+    color:#5f5a50;background:rgba(0,0,0,.35)}
+  .tier-dot.past{color:#c8b8a0;border-color:rgba(216,178,90,.35);background:rgba(80,62,30,.3)}
+  .tier-dot.now{color:#1a1510;border-color:var(--gold);background:linear-gradient(180deg,#e8c877,#c8a44a);font-weight:600}
+  .tier-flow{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:12px;font-size:13px}
+  .tier-flow .tf-a{color:#9a9284}
+  .tier-flow .tf-b{color:#ffe9a8}
+  .tier-cmp{margin-top:10px;border-top:1px solid rgba(255,255,255,.07)}
+  .tier-cmp .tc-row{display:flex;justify-content:space-between;gap:10px;padding:6px 2px;
+    font-size:11.5px;color:#b8b0a0;border-bottom:1px dashed rgba(255,255,255,.06)}
+  .tier-cmp .tc-row>span:first-child{color:#8a8474;flex:none}
+  .tier-cmp .tc-row i{font-style:normal;color:#6a6458;margin:0 5px}
+  .tier-cmp .tc-row b{font-weight:500}
+
   /* ---------- 主菜单（v1.6.0） ----------
    * 八个入口收成一个外壳：左侧页签竖排，右侧只挂当前这一页。
    * 子面板是「搬」进来的（.embed 卸掉浮层定位），所以各页样式不用重写。 */
@@ -564,6 +602,40 @@
   .mtab:hover{color:#e8d8b0;background:rgba(216,178,90,.1);border-color:rgba(216,178,90,.28)}
   .mtab.on{color:#1a1510;background:linear-gradient(90deg,#e0c070,#b89840);font-weight:600;border-color:var(--gold)}
   .mtab.on span{color:rgba(26,21,16,.5)}
+  /* ---- 异兽志（S5 怪物图鉴） ---- */
+  #codexPanel{left:50%;top:50%;transform:translate(-50%,-50%);width:880px;height:84vh;max-height:84vh}
+  .codex-wrap{display:flex;flex-direction:column;min-height:0;height:100%}
+  .codex-top{display:flex;align-items:center;gap:10px;padding:8px 12px;flex:none;
+    border-bottom:1px solid rgba(216,178,90,.14)}
+  .codex-top .cap{font-size:12px;color:var(--gold);letter-spacing:1px}
+  .codex-regions{display:flex;gap:5px;margin-left:auto;flex-wrap:wrap}
+  .creg{font-family:inherit;font-size:11px;letter-spacing:1px;padding:4px 9px;cursor:pointer;color:#a89878;
+    background:rgba(0,0,0,.22);border:1px solid rgba(216,178,90,.2)}
+  .creg:hover{color:#e8d8b0;border-color:rgba(216,178,90,.45)}
+  .creg.on{color:#1a1510;background:linear-gradient(90deg,#e0c070,#b89840);border-color:var(--gold);font-weight:600}
+  .creg i{font-style:normal;font-size:9px;opacity:.7;margin-left:3px}
+  .codex-grid{flex:1;min-height:0;overflow:auto;padding:10px 12px;align-content:start;
+    display:grid;grid-template-columns:repeat(auto-fill,minmax(256px,1fr));gap:8px}
+  .cx{display:flex;gap:8px;padding:8px;background:rgba(255,255,255,.022);
+    border:1px solid rgba(216,178,90,.14);border-left:2px solid var(--c,#666)}
+  .cx.lock{opacity:.4}
+  .cx-glyph{width:38px;height:38px;flex:0 0 38px;display:flex;align-items:center;justify-content:center;
+    font-family:"STKaiti","KaiTi",serif;font-size:19px;color:var(--c,#ccc);
+    border:1px solid var(--c,#444);background:rgba(0,0,0,.35)}
+  .cx-main{flex:1;min-width:0}
+  .cx-n{font-size:13px;color:#f0e0b8;letter-spacing:1px;display:flex;align-items:center;gap:6px}
+  .cx-n .fam{font-size:10px;padding:0 4px;border:1px solid var(--c,#666);color:var(--c,#aaa);letter-spacing:0}
+  .cx-n .lv{font-size:10px;color:#7a7466;letter-spacing:0;margin-left:auto;white-space:nowrap}
+  .cx-r{display:flex;gap:4px;margin-top:4px;flex-wrap:wrap}
+  .cx-r i{font-style:normal;font-size:10px;padding:0 3px;border:1px solid rgba(255,255,255,.1);color:#9a9488}
+  .cx-r i.up{color:#7fd44a;border-color:rgba(127,212,74,.4)}
+  .cx-r i.dn{color:#ff7a6a;border-color:rgba(255,122,106,.4)}
+  .cx-l{font-size:10px;color:#8a8474;margin-top:4px;line-height:1.5}
+  .cx-d{font-size:10px;color:#7a7466;margin-top:3px;line-height:1.5;
+    border-top:1px dashed rgba(216,178,90,.14);padding-top:3px}
+  .codex-foot{padding:6px 12px;flex:none;border-top:1px solid rgba(216,178,90,.14);font-size:11px;color:#8a8474}
+  body.touch #codexPanel{width:min(880px,98vw);height:92vh;max-height:92dvh}
+  body.touch .codex-grid{grid-template-columns:1fr}
   .menu-body{flex:1;min-width:0;display:flex;min-height:0;position:relative;overflow:hidden}
   #menuBody .panel.embed{position:relative;left:auto;top:auto;transform:none;display:flex;flex-direction:column;
     width:100%;max-height:none;height:100%;border:none;box-shadow:none;background:transparent;
@@ -1052,6 +1124,11 @@
   #mtouch .mskill.empty{border-style:dashed;border-color:rgba(216,178,90,.24);
     background:rgba(12,10,10,.55);box-shadow:none}
   #mtouch .mskill.empty .g{font-size:18px;color:#6a6458;line-height:1}
+  /* [M1] 变体角标：Ⅰ/Ⅱ/Ⅲ，与 PC 技能条一致 */
+  #mtouch .mskill .vb{position:absolute;right:-1px;top:-1px;min-width:13px;height:13px;
+    padding:0 2px;border-radius:7px;background:rgba(216,178,90,.92);color:#1a1509;
+    font-size:9px;font-weight:700;line-height:13px;text-align:center;
+    font-family:system-ui,sans-serif;box-shadow:0 1px 4px rgba(0,0,0,.6)}
 
   /* ---- HUD 缩放 ---- */
   body.touch #actionbar{display:none}
@@ -1226,6 +1303,14 @@
     body.touch .setseg{gap:4px}
     body.touch .setseg .sbtn{flex:1;min-width:0;padding:7px 2px;letter-spacing:0}
     body.touch #setPanel .pb{padding:6px 12px 12px}
+    /* 异兽志：5 个区域页签在 390px 宽下必然折成两行，标题也被挤掉。
+     * 页签改成单行横滑（跟着手指走），卡片改单列，整页铺满视口。 */
+    body.touch #codexPanel{width:100%;height:100%;max-height:100%;left:0;top:0;transform:none;border:none}
+    body.touch .codex-top{flex-wrap:wrap;gap:6px;padding:7px 10px}
+    body.touch .codex-regions{margin-left:0;width:100%;flex-wrap:nowrap;overflow-x:auto;overflow-y:hidden;
+      padding-bottom:2px;-webkit-overflow-scrolling:touch}
+    body.touch .creg{flex:none;font-size:10px;padding:3px 7px;letter-spacing:0}
+    body.touch .codex-grid{grid-template-columns:1fr;padding:8px 10px;gap:6px}
   }
 
   /* 横屏手机：高度吃紧，整体收紧一档 */
@@ -1317,6 +1402,7 @@
       <button class="mtab" data-mtab="talent">天 赋<span>T</span></button>
       <button class="mtab" data-mtab="skill">术 法<span>K</span></button>
       <button class="mtab" data-mtab="quest">山海志<span>L</span></button>
+      <button class="mtab" data-mtab="codex">异兽志<span>B</span></button>
       <button class="mtab" data-mtab="forge">炼器台<span>R</span></button>
       <button class="mtab" data-mtab="save">存 档<span>P</span></button>
       <button class="mtab" data-mtab="set">设 置<span>O</span></button>
@@ -1326,6 +1412,19 @@
 </div>
 <!-- 子面板的原籍：关掉菜单后它们回到这里，下次仍能被独立打开 -->
 <div id="panelHome" style="display:none"></div>
+
+<!-- 异兽志（S5 怪物图鉴） -->
+<div class="panel" id="codexPanel">
+  <div class="ph"><h3>异 兽 志</h3><span class="x" onclick="UI.closeAll()">✕</span></div>
+  <div class="pb codex-wrap">
+    <div class="codex-top">
+      <span class="cap" id="codexCap">已录 0 / 0</span>
+      <div class="codex-regions" id="codexRegions"></div>
+    </div>
+    <div class="codex-grid" id="codexGrid"></div>
+    <div class="codex-foot" id="codexFoot"></div>
+  </div>
+</div>
 
 <!-- 背包 -->
 <div class="panel" id="invPanel">
@@ -1461,6 +1560,7 @@
       <button class="ftab" data-ftab="reforge">洗 练</button>
       <button class="ftab" data-ftab="enhance">强 化</button>
       <button class="ftab" data-ftab="craft">锻 造</button>
+      <button class="ftab" data-ftab="tier">升 阶</button>
       <span class="forge-mat" id="forgeMat"></span>
     </div>
     <div class="forge-body">
@@ -1593,6 +1693,7 @@
 <script src="src/data/data-skill-icons.js"></script>
 <script src="src/data/data-talents.js"></script>
 <script src="src/data/data-monsters.js"></script>
+<script src="src/data/data-elites.js"></script>
 <script src="src/data/data-world.js"></script>
 <!-- 逻辑层 -->
 <script src="src/weapons.js"></script>

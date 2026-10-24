@@ -36,6 +36,7 @@ const RUNE_WORDS = pick('RUNE_WORDS');
 const RUNE_ICON_ORDER = pick('RUNE_ICON_ORDER');
 const ICON_PATHS = pick('ICON_PATHS');
 const SETS = pick('SETS');
+const SET_TYPES = pick('SET_TYPES');
 const SKILLS = pick('SKILLS');
 const CLASSES = pick('CLASSES');
 const FORGE = pick('FORGE');
@@ -124,7 +125,9 @@ console.log('\n一、数据完整性');
   }
   const KNOWN_SP = new Set(['phoenix', 'soulharvest', 'berserk', 'critburst', 'chargeReset',
     'wolfPrime', 'wolfPack', 'wolfStrong', 'frenzyRefresh', 'avatarResetThrust', 'talismanPierce',
-    'riposteGuard', 'frenzyStack', 'overcharge', 'plagueburst']);
+    'riposteGuard', 'frenzyStack', 'overcharge', 'plagueburst',
+    /* [M1] 通用套装新增的两条真机制 */
+    'lootRush', 'deadeye']);
   const badSp = [...specials].filter(f => !KNOWN_SP.has(f));
   ok(badSp.length === 0, '出现了未接入战斗逻辑的套装 special', badSp.join(','));
 
@@ -139,7 +142,12 @@ console.log('\n一、数据完整性');
   ok(badIcon === 0, '符文图标不符合 M11 规范', 'count=' + badIcon);
 
   const setIds = Object.keys(SETS);
-  ok(setIds.length === 9, '套装数量应为 9（3 职业 × 3 类型）', 'got ' + setIds.length);
+  /* [M1] 3 职业 × 3 类型 + 3 套通用（cls === null） */
+  ok(setIds.length === 12, '套装数量应为 12（9 职业套 + 3 通用套）', 'got ' + setIds.length);
+  const universal = setIds.filter(id => SETS[id].cls === null);
+  ok(universal.length === 3, '通用套装应有 3 套', universal.join(','));
+  ok(universal.every(id => (SET_TYPES.universal || []).some(t => t.ids.includes(id))),
+    '通用套装应登记在 SET_TYPES.universal', JSON.stringify(SET_TYPES.universal || null));
   const pieceNames = new Set();
   /* 技能 id 直接从 data-skills.js 取（36 个），套装 skillMods 必须指向真实技能 */
   const SKILL_IDS = new Set(Object.keys(SKILLS));
@@ -149,7 +157,8 @@ console.log('\n一、数据完整性');
     const s = SETS[id];
     if (s.pieces.length !== s.slots.length) badSet++;
     if (s.pieces.length < 2 || s.pieces.length > 5) badSet++;
-    if (!CLASSES[s.cls]) badSet++;
+    /* cls === null 是通用套，不校验职业 */
+    if (s.cls !== null && !CLASSES[s.cls]) badSet++;
     for (const p of s.pieces) {
       if (pieceNames.has(p)) badSet++;
       pieceNames.add(p);
@@ -356,7 +365,7 @@ console.log('\n七、套装生成');
   }
   const allPieces = setIds.flatMap(id => SETS[id].pieces);
   ok(miss === 0, '有套装部件滚不出来', 'miss=' + miss);
-  ok(hitSets.size === 9, '9 套职业套装都应能被滚出', 'hit=' + hitSets.size);
+  ok(hitSets.size === setIds.length, setIds.length + ' 套套装（含通用）都应能被滚出', 'hit=' + hitSets.size);
   ok(hitPieces.size === allPieces.length, '每个套装部件都应能被滚出', hitPieces.size + '/' + allPieces.length);
   ok(wrongName === 0, '部件名与 set.pieces 错位', 'count=' + wrongName);
   ok(wrongRarity === 0, '套装稀有度 / 套装名未正确写入', 'count=' + wrongRarity);

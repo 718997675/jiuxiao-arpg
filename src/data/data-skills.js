@@ -392,8 +392,15 @@ const SKILL_ORDER = {
   taoist: ['talisman', 'summon', 'heal', 'poison', 'talismanarrow', 'antidote', 'taiji', 'whitetiger', 'swordrain', 'mastersigil', 'azuredragon', 'revive']
 };
 
-/* 技能条槽位数：5 格，玩家在术法面板（K）里手动把已领悟技能放上去 */
-const SKILL_BAR_SLOTS = 5;
+/* 技能条槽位数：8 格（V2 计划「技能栏 6 → 8」）。
+ * 玩家在术法面板（K）里手动把已领悟技能放上去；PC 键 1-8，手机 4×2 宫格。 */
+const SKILL_BAR_SLOTS = 8;
+/* 快捷栏套数：2 套（甲 / 乙），反引号键切换。
+ * 一套打 boss、一套刷图是 ARPG 的常规需求，8 格已经够宽，
+ * 但「换 BD 要重排技能条」很烦，所以再给一套整栏。 */
+const SKILL_BAR_SETS = 2;
+const SKILL_BAR_SET_KEY = '`';
+const SKILL_BAR_SET_NAME = ['甲', '乙'];
 
 /* 技能等级：每级 +8% 伤害（也放大治疗 / 护盾 / 召唤伤害） */
 const SKILL_LV_STEP = 0.08;

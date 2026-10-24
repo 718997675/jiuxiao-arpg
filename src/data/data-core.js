@@ -92,6 +92,28 @@ const STATS = {
   skillDmg: { label: '技能伤害', pct: true },
   summonDmg: { label: '召唤物伤害', pct: true },
 
+  /* ---- [M1] 元素伤害加成（词缀族：火/冰/雷/毒） ----
+   * 与「抗性」相反：这是玩家打出去的加成，按本次伤害的 elem 取用，
+   * 结算见 game.js damageEnemy。 */
+  fireDmg: { label: '火焰伤害', pct: true },
+  iceDmg: { label: '冰霜伤害', pct: true },
+  lightningDmg: { label: '雷电伤害', pct: true },
+  poisonDmg: { label: '毒性伤害', pct: true },
+
+  /* ---- [M1] 全技能等级（词缀 +N 技能等级）----
+   * 不占技能点，直接叠在已投等级之上，见 game.js skillLevel()。 */
+  skillLv: { label: '全技能等级', pct: false },
+  /* ---- [M1] 濒死免疫：致命伤时保留 1 点生命并回复 N% 生命（60 秒冷却）---- */
+  deathWard: { label: '濒死免疫回复', pct: true },
+
+  /* ---- [M1/C5] 光环：以自身为中心常驻的范围效果 ----
+   * auraSlow  身边敌人移速 -N%
+   * auraBurn  身边敌人每秒受 N 点火焰伤害（吃火伤加成）
+   * auraRange 光环半径 +N（基础 4.2） */
+  auraSlow: { label: '光环减速', pct: true },
+  auraBurn: { label: '光环灼烧', pct: false },
+  auraRange: { label: '光环范围', pct: false },
+
   /* ---- 命中附加 ---- */
   stunChance: { label: '眩晕几率', pct: true },
   slowChance: { label: '减速几率', pct: true },

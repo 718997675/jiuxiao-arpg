@@ -17,35 +17,35 @@ const MAPS = {
     id: 'forest', name: '幽篁林', safe: false, level: 4,
     ground: 'bamboo', sky: 0x7fae8f, fog: 0x93b89c, fogNear: 30, fogFar: 95,
     size: 90, ambient: 0xa8d0b0, sun: 0xd8f0c0, sunI: 0.95, props: 'bamboo',
-    spawns: ['halfork', 'bat', 'skelarch'], spawnCount: 14, bosses: ['treeking', 'batking'],
+    spawns: ['halfork', 'bat', 'skelarch', 'wolf', 'hornet', 'fox', 'lantern', 'bamboo', 'shigandang'], spawnCount: 14, bosses: ['treeking', 'batking'],
     portal: { x: 0, z: 34 }, unlock: 1
   },
   swamp: {
     id: 'swamp', name: '血月沼泽', safe: false, level: 12,
     ground: 'swamp', sky: 0x5a3a3a, fog: 0x6b3f3f, fogNear: 28, fogFar: 90,
     size: 96, ambient: 0x8a6a6a, sun: 0xff9a7a, sunI: 0.8, props: 'swamp',
-    spawns: ['spider', 'boar', 'snake', 'scorpion'], spawnCount: 16,
+    spawns: ['spider', 'boar', 'snake', 'scorpion', 'zombie', 'drowned', 'brood', 'wasp', 'toad', 'bogwitch'], spawnCount: 16,
     bosses: ['chief', 'golemking', 'snakequeen'], portal: { x: 0, z: 38 }, unlock: 8
   },
   mine: {
     id: 'mine', name: '玄铁矿洞', safe: false, level: 20,
     ground: 'rock', sky: 0x2a2a33, fog: 0x2e2a2a, fogNear: 22, fogFar: 75,
     size: 90, ambient: 0x6a6a78, sun: 0xffbb66, sunI: 0.7, props: 'mine',
-    spawns: ['golem', 'ghost', 'yaoguai', 'ghostfire'], spawnCount: 16,
+    spawns: ['golem', 'ghost', 'yaoguai', 'ghostfire', 'statue', 'scorpking', 'minerghost', 'magma', 'ironbeetle', 'runesmith'], spawnCount: 16,
     bosses: ['ghostlord', 'firegeneral', 'icequeen'], portal: { x: 0, z: 36 }, unlock: 16
   },
   abyss: {
     id: 'abyss', name: '九幽地宫', safe: false, level: 28,
     ground: 'abyss', sky: 0x1a1420, fog: 0x1e1626, fogNear: 20, fogFar: 70,
     size: 92, ambient: 0x6a5a7a, sun: 0x9a6aff, sunI: 0.65, props: 'abyss',
-    spawns: ['ghostfire', 'bloodlord', 'yaoguai', 'golem'], spawnCount: 17,
+    spawns: ['ghostfire', 'bloodlord', 'yaoguai', 'golem', 'headless', 'crane', 'bonewright', 'shade', 'ironmaiden'], spawnCount: 17,
     bosses: ['spidermother', 'ferryman', 'swordlord'], portal: { x: 0, z: 37 }, unlock: 24
   },
   heaven: {
     id: 'heaven', name: '天阙残境', safe: false, level: 35,
     ground: 'heaven', sky: 0x2a3a5a, fog: 0x40527a, fogNear: 26, fogFar: 85,
     size: 92, ambient: 0x9ab0e0, sun: 0xffe0a0, sunI: 0.95, props: 'heaven',
-    spawns: ['bloodlord', 'ghostfire', 'golem', 'yaoguai'], spawnCount: 18,
+    spawns: ['bloodlord', 'ghostfire', 'golem', 'yaoguai', 'fallen', 'voidbeast', 'swordwraith', 'thunderbird', 'jadeguard'], spawnCount: 18,
     bosses: ['chaos'], portal: { x: 0, z: 37 }, unlock: 32
   }
 };
@@ -77,7 +77,7 @@ const QUESTS = {
     id: 'q3', name: '巨木妖王', giver: 'elder', map: 'village',
     brief: '幽篁林深处，千年妖木已成王。斩了它，竹林才能安息。',
     objectives: [{ type: 'boss', target: 'treeking', count: 1, label: '击败巨木妖王' }],
-    rewards: { xp: 900, gold: 500, ilvl: 9, rarity: 'rare', skill: 'thrust' }, next: 'q4'
+    rewards: { xp: 900, gold: 500, ilvl: 9, rarity: 'rare', skill: 'thrust', talent: 2 }, next: 'q4'
   },
   q4: {
     id: 'q4', name: '嗜血长翼', giver: 'elder', map: 'village',
@@ -89,7 +89,7 @@ const QUESTS = {
     id: 'q5', name: '沼泽的骨堆', giver: 'elder', map: 'village',
     brief: '血月沼泽的半兽人部族正在堆骨为塔。去沼泽斩杀 12 只怪物，遏止它们的血祭。',
     objectives: [{ type: 'killAny', count: 12, label: '肃清血月沼泽的妖物' }],
-    rewards: { xp: 1600, gold: 800, ilvl: 13, rarity: 'rare' }, next: 'q6'
+    rewards: { xp: 1600, gold: 800, ilvl: 13, rarity: 'rare', talent: 2 }, next: 'q6'
   },
   q6: {
     id: 'q6', name: '碎骨酋长', giver: 'elder', map: 'village',
@@ -110,7 +110,7 @@ const QUESTS = {
     id: 'q8', name: '矿洞的低语', giver: 'elder', map: 'village',
     brief: '玄铁矿洞传出诵经声，幽魂道尊正在收割矿工的魂魄。',
     objectives: [{ type: 'boss', target: 'ghostlord', count: 1, label: '击败幽魂道尊' }],
-    rewards: { xp: 5200, gold: 2000, ilvl: 21, rarity: 'set', skill: 'heal' }, next: 'q9'
+    rewards: { xp: 5200, gold: 2000, ilvl: 21, rarity: 'set', skill: 'heal', talent: 3 }, next: 'q9'
   },
   q9: {
     id: 'q9', name: '冰火双魔', giver: 'elder', map: 'village',
@@ -135,6 +135,6 @@ const QUESTS = {
     id: 'q11', name: '九霄终焉', giver: 'elder', map: 'village',
     brief: '混沌无相天魔吞尽九霄灵气，天阙已残。此战，为苍生，也为你自己。',
     objectives: [{ type: 'boss', target: 'chaos', count: 1, label: '击败混沌·无相天魔' }],
-    rewards: { xp: 30000, gold: 12000, ilvl: 40, rarity: 'legendary', skill: 'avatar' }, next: null
+    rewards: { xp: 30000, gold: 12000, ilvl: 40, rarity: 'legendary', skill: 'avatar', talent: 3 }, next: null
   }
 };

@@ -402,10 +402,26 @@ function normalizeItem(item) {
   }
   if (!isFinite(item.reforges) || item.reforges < 0) item.reforges = 0;
   if (!isFinite(item.enhances) || item.enhances < 0) item.enhances = 0;
+  /* [B5] 基底阶 / 变体：旧档没有就按 ilvl 反推（升阶后 baseTier 与 ilvl 会脱钩，
+   * 所以这里不能每次都覆盖，只在缺失或越界时补） */
+  if (!isFinite(item.baseTier) || item.baseTier < 0 || item.baseTier > BASE_TIERS - 1) {
+    item.baseTier = tierIndex(item.ilvl || 1);
+  }
+  item.baseTier = Math.round(item.baseTier);
+  if (!isFinite(item.baseVar) || item.baseVar < 0) item.baseVar = 0;
+  item.baseVar = Math.round(item.baseVar);
+  if (!isFinite(item.tierUps) || item.tierUps < 0) item.tierUps = 0;
   return item;
 }
 
-function tierIndex(ilvl) { return CLAMP(Math.floor((ilvl - 1) / 8), 0, 4); }
+/* [M1] 基底 5 档 → 8 档：每 5 级一换皮（ilvl 1-40 → 0..7）。
+ * 顶档数值与旧版顶档一致（不抬上限），只是中间多垫了地煞 / 天罡 / 仙品三层，
+ * 让中期每 5 级都有「换一层皮」的期待。 */
+const BASE_TIERS = 8;
+const TIER_LEVELS = 5;
+function tierIndex(ilvl) {
+  return CLAMP(Math.floor((ilvl - 1) / TIER_LEVELS), 0, BASE_TIERS - 1);
+}
 
 function itemPower(item) {
   let s = 0;
@@ -551,16 +567,108 @@ function baseTierFor(slot, ilvl) {
   return ti;
 }
 
+/* ---------------- [M1/B5] 基底阶：查询与升阶 ----------------
+ * 计划要求「装备升品阶（+1 基底阶，消耗同名装备）」，
+ * 与已有的「品质提升（凡品→灵品→玄品→传世）」是两条线：
+ *   品质 = 词条条数与倍率；基底阶 = 这一件「是什么材料打的」（护甲/伤害/固有）。
+ * 升阶不动品质、不动词条、不动等级，只把基底换成下一档的同变体，
+ * 于是数值曲线天然是连续的（下一档 A 变体 vs 这一档 A 变体）。
+ *
+ * baseTier / baseVar 在 rollItem 时落库；旧档没有这两个字段时按 ilvl 反推。 */
+const BASE_TIER_NAME = ['凡兵', '精铁', '玄铁', '地煞', '天罡', '仙品', '神兵', '太初'];
+
+function itemBaseList(item) {
+  if (!item) return null;
+  if (item.slot === 'weapon') return WEAPON_BASES[item.cls] || null;
+  if (item.slot === 'offhand') return OFFHAND_BASES[item.cls] || null;
+  if (item.slot === 'relic') return null;          // 法器是目录固定件，没有基底阶
+  return ARMOR_BASES[item.slot] || null;
+}
+
+function itemBaseTier(item) {
+  if (!item) return 0;
+  if (typeof item.baseTier === 'number' && item.baseTier >= 0) {
+    return CLAMP(item.baseTier, 0, BASE_TIERS - 1);
+  }
+  return tierIndex(item.ilvl || 1);
+}
+
+function itemTierName(item) {
+  return BASE_TIER_NAME[itemBaseTier(item)] || BASE_TIER_NAME[0];
+}
+
+/* 能不能升：顶阶 / 法器 / 认不出部位都给出明确理由 */
+function upgradeTierInfo(item) {
+  if (!item) return { ok: false, msg: '没有这件装备。' };
+  const list = itemBaseList(item);
+  if (!list || !list.length) return { ok: false, msg: '这件装备没有基底阶（法器不能升阶）。' };
+  const tier = itemBaseTier(item);
+  const last = list.length - 1;
+  if (tier >= last) return { ok: false, msg: '已是顶阶「' + BASE_TIER_NAME[last] + '」，无法再升。' };
+  return { ok: true, tier, next: tier + 1, from: BASE_TIER_NAME[tier], to: BASE_TIER_NAME[tier + 1] };
+}
+
+/* 升阶价：越往上越贵，品质越高越贵（好底子本来就该更贵） */
+function upgradeTierCost(item) {
+  const info = upgradeTierInfo(item);
+  if (!info.ok) return null;
+  const mul = ({ common: 1, magic: 1.4, rare: 1.9, legendary: 2.6, set: 2.2, unique: 3 })[item.rarity] || 1;
+  return {
+    gold: Math.round((400 + info.next * 900) * mul),
+    crystal: Math.round((2 + info.next * 1.6) * mul)
+  };
+}
+
+/* 真的升一阶：换基底、按原公式重算护甲/伤害、换固有属性。
+ * 名字只在不属于套装/传世时才跟着基底走（套装件名是固定的）。 */
+function upgradeItemBaseTier(item) {
+  const info = upgradeTierInfo(item);
+  if (!info.ok) return null;
+  const list = itemBaseList(item);
+  const tierList = list[info.next];
+  const vi = CLAMP(item.baseVar || 0, 0, tierList.length - 1);
+  const oldName = item.baseName || item.name;
+  const rm = RARITY[item.rarity].mul;
+
+  if (item.slot === 'weapon') {
+    const base = tierList[vi];
+    item.baseName = base.name;
+    item.baseDmg = [
+      Math.round(base.dmg[0] * (1 + item.ilvl * 0.115) * rm),
+      Math.round(base.dmg[1] * (1 + item.ilvl * 0.115) * rm)
+    ];
+    item.speed = base.speed;
+    item.shape = base.shape || item.shape;
+    item.hand = weaponHandAt(item.cls, info.next, vi);
+  } else {
+    const [bn, barm, ik, iv] = tierList[vi];
+    item.baseName = bn;
+    item.baseArmor = Math.round(barm * (1 + item.ilvl * (item.slot === 'offhand' ? 0.1 : 0.13)) * rm);
+    item.implicit = ik ? { key: ik, val: iv } : null;
+  }
+  if (!item.setId && item.rarity !== 'unique') item.name = item.baseName;
+  item.baseTier = info.next;
+  item.baseVar = vi;
+  item.tierUps = (item.tierUps || 0) + 1;
+  return { from: info.from, to: info.to, oldName, newName: item.baseName, tier: info.next };
+}
+
+
 /* 生成一件装备 */
 function rollItem(ilvl, opts = {}) {
   ilvl = CLAMP(Math.round(ilvl), 1, 40);
-  let slot = opts.slot || PICK(['helm', 'chest', 'shoulders', 'gloves', 'boots', 'belt', 'amulet', 'ring', 'weapon', 'offhand']);
+  let slot = opts.slot || PICK(['helm', 'chest', 'shoulders', 'cloak', 'gloves', 'boots', 'belt', 'amulet', 'ring', 'weapon', 'offhand']);
   let cls = opts.cls || PICK(['warrior', 'mage', 'taoist']);
   /* v1.3.0：法器另有 6% 的掉落入口。挂在部位池之外，原有掉率分布不动。
    * 只在「完全随机」时溢出：指定了部位或品质的调用（任务奖励 / 定向刷装 / 统计）
    * 一律按调用方要求出，不会被法器顶掉。 */
   if (!opts.slot && !opts.rarity && !opts.noRelic && CHANCE(0.06)) slot = 'relic';
   if (slot === 'relic') return makeRelic(PICK(relicPool(cls, ilvl)), cls);
+  /* [M1] 命格：和法器同理，走独立的低概率入口（4%）。
+   * 它只有一格、且只吃机制型词条，掉率高了会把护具挤掉。
+   * 注意这里**不受 noRelic 影响**：noRelic 的语义是「别出目录固定件（法器）」，
+   * 而命格是正常基底 + 正常词条，属于普通装备统计的一部分。 */
+  if (!opts.slot && !opts.rarity && CHANCE(0.04)) slot = 'fate';
   let rarity = opts.rarity;
   if (!rarity) {
     const mf = opts.magicFind || 0;
@@ -611,6 +719,8 @@ function rollItem(ilvl, opts = {}) {
     const tier = CLAMP(tierIndex(ilvl), 0, list.length - 1);
     const bi = Math.floor(Math.random() * list[tier].length);
     const base = list[tier][bi];
+    /* [B5] 记住基底阶与变体：升阶要换「同变体的下一档」，而不是随机换一个 */
+    item.baseTier = tier; item.baseVar = bi;
     const rm = RARITY[rarity].mul;
     const lo = base.dmg[0] * (1 + ilvl * 0.115) * rm;
     const hi = base.dmg[1] * (1 + ilvl * 0.115) * rm;
@@ -626,7 +736,9 @@ function rollItem(ilvl, opts = {}) {
   } else if (slot === 'offhand') {
     const list = OFFHAND_BASES[cls];
     const tier = CLAMP(tierIndex(ilvl), 0, list.length - 1);
-    const [bn, barm, ik, iv] = PICK(list[tier]);
+    const vi = Math.floor(Math.random() * list[tier].length);
+    const [bn, barm, ik, iv] = list[tier][vi];
+    item.baseTier = tier; item.baseVar = vi;
     item.baseName = bn;
     item.baseArmor = Math.round(barm * (1 + ilvl * 0.1) * RARITY[rarity].mul);
     item.cls = cls;
@@ -637,7 +749,9 @@ function rollItem(ilvl, opts = {}) {
   } else {
     const list = ARMOR_BASES[slot];
     const tier = CLAMP(tierIndex(ilvl), 0, list.length - 1);
-    const [bn, barm, ik, iv] = PICK(list[tier]);
+    const vi = Math.floor(Math.random() * list[tier].length);
+    const [bn, barm, ik, iv] = list[tier][vi];
+    item.baseTier = tier; item.baseVar = vi;
     item.baseName = bn;
     item.baseArmor = Math.round(barm * (1 + ilvl * 0.13) * RARITY[rarity].mul);
     item.name = bn;
@@ -877,7 +991,9 @@ const STAT_CAPS = {
   dmgAll: 80, meleeDmg: 120, projDmg: 120, aoeDmg: 120, dotDmg: 150,
   skillDmg: 150, summonDmg: 150, lifesteal: 30, thorns: 120,
   healBonus: 100, shieldBonus: 100, overkillShield: 60,
-  costReduce: 50, cdr: 45
+  costReduce: 50, cdr: 45,
+  /* [C5] 光环减速封顶：叠满也只是「黏住」，不能变成群体定身 */
+  auraSlow: 45
 };
 
 /* [S4] 增益（buff）结算表：recalc 按这两张表把 buff.stats 应用到最终属性。
@@ -892,9 +1008,26 @@ const BUFF_ADD = ['crit', 'critDmg', 'allRes', 'fireRes', 'iceRes', 'poisonRes',
   'stunChance', 'slowChance', 'freezeChance', 'burnChance', 'moveSpdFlat'];
 
 /* 计算玩家最终属性。p.talents 为 { 节点id: 级数 }（S3 天赋投入）。 */
+/* [S5] 异兽志区域全录的永久加成。
+ * 单独抽成函数而不是塞进 aggregate：图鉴不属于装备，也不该被
+ * 「卸下装备重算」影响，放在 computePlayerStats 里合并最稳。 */
+function codexBonusStats(codex) {
+  const out = {};
+  if (!codex || !codex.regions) return out;
+  if (typeof CODEX_REGIONS === 'undefined') return out;
+  for (const def of CODEX_REGIONS) {
+    if (!codex.regions[def.id]) continue;
+    for (const k in def.bonus) out[k] = (out[k] || 0) + def.bonus[k];
+  }
+  return out;
+}
+
 function computePlayerStats(p) {
   const agg = aggregate(p.equipment, p.talents);
   const st = agg.stats;
+  /* [S5] 图鉴加成并进 st 之后，后面的面板属性、STAT_CAPS 封顶、透传全部自动生效 */
+  const cdb = codexBonusStats(p.codex);
+  for (const k in cdb) st[k] = (st[k] || 0) + cdb[k];
   const c = CLASSES[p.cls];
   const lv = p.level;
   const str = c.base.str + c.growth.str * (lv - 1) + st.str;
@@ -997,7 +1130,18 @@ const ITEM_ICONS = {
     <path d="M16 18.4 18.4 21 16 24.6 13.6 21Z" fill="${ICON_HOLE}" opacity=".5"/>`,
   ring: `<circle cx="16" cy="20" r="7.6" fill="none" stroke="currentColor" stroke-width="2.9" opacity=".9"/>
     <path d="M16 3.2 20.6 9.4 16 14.6 11.4 9.4Z" opacity=".96"/>
-    <path d="M16 5.8 18.2 9.4 16 13 13.8 9.4Z" fill="${ICON_HOLE}" opacity=".38"/>`
+    <path d="M16 5.8 18.2 9.4 16 13 13.8 9.4Z" fill="${ICON_HOLE}" opacity=".38"/>`,
+  /* [M1] 披风：领口 + 左右展开的布面 + 下摆开衩 */
+  cloak: `<path d="M16 4.6 22.6 7 28.4 27.4 21.4 29.6 16 12.8 10.6 29.6 3.6 27.4 9.4 7Z" opacity=".95"/>
+    <path d="M16 12.8 13.4 22.6 18.6 22.6Z" fill="${ICON_HOLE}" opacity=".55"/>
+    <path d="M12.2 7.8 16 4.6 19.8 7.8 16 11Z" opacity=".8"/>
+    <path d="M8.2 20.4 12.6 21.6M23.8 20.4 19.4 21.6" stroke="${ICON_HOLE}" stroke-width="1.2" opacity=".4"/>`,
+  /* [M1] 命格：外圈命盘 + 六芒星（不是器物，是一张图） */
+  fate: `<circle cx="16" cy="16" r="12.4" fill="none" stroke="currentColor" stroke-width="1.5" opacity=".62"/>
+    <path d="M16 4.2 26.2 22 5.8 22Z" opacity=".9"/>
+    <path d="M16 27.8 5.8 10 26.2 10Z" fill="${ICON_HOLE}" opacity=".42"/>
+    <circle cx="16" cy="16" r="3.1" opacity=".96"/>
+    <circle cx="16" cy="16" r="1.2" fill="${ICON_HOLE}" opacity=".8"/>`
 };
 
 function itemIconKey(item) {
@@ -1059,7 +1203,7 @@ function itemIcon(item, opts = {}) {
 }
 
 /* ---------------- 提示框 ---------------- */
-const SLOT_NAME = { helm: '头盔', chest: '战甲', shoulders: '护肩', gloves: '护手', boots: '战靴', belt: '腰带', amulet: '项链', ring: '戒指', ring1: '戒指', ring2: '戒指', weapon: '武器', offhand: '副手', relic: '法器' };
+const SLOT_NAME = { helm: '头盔', chest: '战甲', shoulders: '护肩', cloak: '披风', gloves: '护手', boots: '战靴', belt: '腰带', amulet: '项链', ring: '戒指', ring1: '戒指', ring2: '戒指', weapon: '武器', offhand: '副手', relic: '法器', fate: '命格' };
 
 /* ---------------- 装备评分 / 对比（v1.0.4） ----------------
  *

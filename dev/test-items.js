@@ -77,7 +77,7 @@ for (const c in OFFHAND_BASES) for (const tier of OFFHAND_BASES[c]) totalBases +
 
 console.log(`\n滚装 ${N} 次，耗时 ${ms}ms（${(N / (ms / 1000) / 1000).toFixed(1)} 万件/秒）\n`);
 console.log('基底覆盖', names.size, '/', totalBases);
-console.log('词缀覆盖', affixHit.size, '/', AFFIXES.length);
+console.log('词缀覆盖', affixHit.size, '/', new Set(AFFIXES.map(a => a.key)).size, `（条目 ${AFFIXES.length}）`);
 console.log('固有属性覆盖', implicitHit.size);
 
 ok(nanItem === 0, '装备数值出现 NaN/负值', 'count=' + nanItem);
@@ -100,13 +100,18 @@ for (const c in OFFHAND_BASES) {
 ok(names.size === totalBases, '有基底滚不出来', missingBase.slice(0, 8).join(', '));
 
 const missingAffix = AFFIXES.filter(a => !affixHit.has(a.key)).map(a => a.key);
-ok(affixHit.size === AFFIXES.length, '有词缀永远滚不到', missingAffix.join(', '));
+/* [M1] 元素伤害 / 全技能等级各有 3 阶同 key 条目，覆盖率按「唯一 key」统计 */
+const uniqAffixKeys = [...new Set(AFFIXES.map(a => a.key))];
+ok(affixHit.size === uniqAffixKeys.length, '有词缀永远滚不到',
+  [...new Set(missingAffix)].join(', ') + ` (${affixHit.size}/${uniqAffixKeys.length})`);
 
 /* ---------------- 2. 词缀概率分布 ---------------- */
 const tierWant = { 1: 0, 2: 0, 3: 0 };
-for (const a of AFFIXES) {
-  const n = affixHit.get(a.key) || 0;
-  tierWant[a.tier] = (tierWant[a.tier] || 0) + n;
+const keyTier = {};
+for (const a of AFFIXES) if (keyTier[a.key] === undefined) keyTier[a.key] = a.tier;
+for (const k of uniqAffixKeys) {
+  const n = affixHit.get(k) || 0;
+  tierWant[keyTier[k]] = (tierWant[keyTier[k]] || 0) + n;
 }
 const totalAffix = Object.values(tierWant).reduce((a, b) => a + b, 0);
 console.log('\ntier 实际占比',

@@ -100,6 +100,14 @@ Object.assign(UI, {
         return;
       }
 
+      /* [B5] 升阶 */
+      if (e.target.closest('[data-ftier]')) {
+        const r = Game.upgradeItemTier(item);
+        if (r.ok) { SFX.levelup(); this.renderForge(); }
+        else if (r.msg) UI.log(r.msg, 'bad');
+        return;
+      }
+
       const drillEl = e.target.closest('[data-fdrill]');
       if (drillEl) {
         const r = Game.drillSocketItem(item);
@@ -200,6 +208,7 @@ Object.assign(UI, {
     }
     const ok = it => {
       if (!it) return false;
+      if (want === 'tier') return !!itemBaseList(it);          // 法器没有基底阶
       if (want === 'rune') return socketCount(it) > 0 || canDrill(it);
       if (want === 'enhance') {
         const maxBase = RARITY[it.rarity].affixes || 0;
@@ -208,7 +217,7 @@ Object.assign(UI, {
       return it.affixes && it.affixes.length > 0;
     };
     const out = [];
-    const order = ['weapon', 'helm', 'chest', 'shoulders', 'gloves', 'boots', 'belt', 'amulet', 'ring1', 'ring2', 'offhand'];
+    const order = ['weapon', 'helm', 'chest', 'shoulders', 'cloak', 'gloves', 'boots', 'belt', 'amulet', 'ring1', 'ring2', 'offhand', 'fate'];
     for (const slot of order) {
       if (ok(s.equipment[slot])) out.push({ ref: 'eq:' + slot, item: s.equipment[slot], where: '已装备' });
     }
@@ -240,7 +249,8 @@ Object.assign(UI, {
         rune: '符文镶嵌后即刻生效；打孔可消耗玄晶为装备开孔（上限 5 孔，戒指/项链除外）。符文与玄晶不占行囊格。',
         reforge: '洗练只替换选中的那一条词缀；「定向」可锁定单条只升不降，或指定目标词条一键洗到为止。每次洗练费用 +35%。',
         enhance: '强化为装备扩充额外词缀，上限 +3 条；固定词条不参与强化，强化出来的词缀可以继续洗练。',
-        craft: '锻造消耗匠材与铜钱，把凡品 / 灵品重铸成更高品质的同部位装备。匠材由妖兽、精英与首领掉落，不占行囊格。'
+        craft: '锻造消耗匠材与铜钱，把凡品 / 灵品重铸成更高品质的同部位装备。匠材由妖兽、精英与首领掉落，不占行囊格。',
+        tier: '升阶把基底往上推一档（凡兵 → 精铁 → … → 太初）：护甲/伤害/固有属性重算，品质与词条原样保留。需要一件同名装备作引，另付铜钱与玄晶。'
       };
       hintEl.textContent = HINTS[this.forgeTab] || HINTS.rune;
     }
@@ -256,11 +266,13 @@ Object.assign(UI, {
       const fixedTxt = fixedN ? ' · ' + fixedN + ' 条固定' : '';
       const sub = this.forgeTab === 'craft'
         ? `${r.name} · ${it.ilvl} 级 · ${craftTierOf(it.ilvl)} 档料`
-        : (this.forgeTab === 'rune'
-          ? `孔 ${(it.runes || []).filter(Boolean).length}/${it.sockets}`
-          : (this.forgeTab === 'enhance'
-            ? `${it.affixes.length} 条可洗${fixedTxt}${extra > 0 ? ' · 已强化 ' + extra : ''}`
-            : `${it.affixes.length} 条可洗${fixedTxt}${it.reforges ? ' · 洗 ' + it.reforges + ' 次' : ''}`));
+        : (this.forgeTab === 'tier'
+          ? `${r.name} · ${itemTierName(it)} · ${it.ilvl} 级`
+          : (this.forgeTab === 'rune'
+            ? `孔 ${(it.runes || []).filter(Boolean).length}/${it.sockets}`
+            : (this.forgeTab === 'enhance'
+              ? `${it.affixes.length} 条可洗${fixedTxt}${extra > 0 ? ' · 已强化 ' + extra : ''}`
+              : `${it.affixes.length} 条可洗${fixedTxt}${it.reforges ? ' · 洗 ' + it.reforges + ' 次' : ''}`)));
       return `<div class="fitem ${x.ref === this.forgeRef ? 'sel' : ''}" data-fref="${x.ref}">
         <span class="fi" style="color:${r.color};border-color:${r.color}44">${itemIcon(it)}</span>
         <div style="min-width:0;flex:1">
@@ -281,7 +293,8 @@ Object.assign(UI, {
     }
     main.innerHTML = this.forgeTab === 'rune' ? this.forgeRuneView(item)
       : (this.forgeTab === 'enhance' ? this.forgeEnhanceView(item)
-        : (this.forgeTab === 'craft' ? this.forgeCraftView(item) : this.forgeReforgeView(item)));
+        : (this.forgeTab === 'craft' ? this.forgeCraftView(item)
+          : (this.forgeTab === 'tier' ? this.forgeTierView(item) : this.forgeReforgeView(item))));
   },
 
   forgeRuneView(item) {
@@ -500,6 +513,96 @@ Object.assign(UI, {
       <span class="fsub">${info.can ? '材料齐备，可以开炉。' : '还差：' + info.lack.join('、')}</span>
     </div>`;
     h += `<div class="hintline">匠材来自妖兽、精英与首领：低阶遍地都是，高阶只出在硬仗里。凡品胚按全价用料，灵品胚打六折 —— 底子越好，匠人省力。</div>`;
+    return h;
+  },
+
+  /* [M1/B5] 升阶页：把基底推上一档，品质与词条不动。
+   * 左边列表里所有有基底的装备都能进；右边把「现在 → 下一档」摊开，
+   * 缺材料 / 缺钱 / 顶阶 都各给一句人话。 */
+  forgeTierView(item) {
+    const r = RARITY[item.rarity];
+    const pv = Game.tierUpPreview(item);
+    const tierNow = itemBaseTier(item);
+    const list = itemBaseList(item) || [];
+    let h = `<div class="fhead">
+      <span class="fi" style="color:${r.color};border-color:${r.color}44">${itemIcon(item)}</span>
+      <div style="min-width:0">
+        <div class="fname" style="color:${r.color}">${item.name}</div>
+        <div class="fsub">${r.name} · ${SLOT_NAME[item.slot] || item.kind} · ${itemTierName(item)}（第 ${tierNow + 1}/${list.length} 阶）</div>
+      </div></div>`;
+
+    /* 八阶进度条：走过的亮金，当前的一格描边，后面的暗 */
+    h += `<div class="frune-label">基 底 阶 · ${BASE_TIER_NAME.slice(0, list.length).join(' → ')}</div>
+      <div class="tier-track">`;
+    for (let i = 0; i < list.length; i++) {
+      const cls = i < tierNow ? 'past' : (i === tierNow ? 'now' : '');
+      h += `<span class="tier-dot ${cls}">${BASE_TIER_NAME[i]}</span>`;
+    }
+    h += `</div>`;
+
+    if (!pv.ok) {
+      h += `<div class="fempty" style="margin-top:14px">${pv.msg}</div>`;
+      return h;
+    }
+    const info = pv.info;
+    /* 现在与下一档的数值对照 */
+    const nx = list[info.next][CLAMP(item.baseVar || 0, 0, list[info.next].length - 1)];
+    const rm = RARITY[item.rarity].mul;
+    let nextArmor = null, nextDmg = null, nextImp = null, nextName = '';
+    if (item.slot === 'weapon') {
+      nextName = nx.name;
+      nextDmg = [Math.round(nx.dmg[0] * (1 + item.ilvl * 0.115) * rm), Math.round(nx.dmg[1] * (1 + item.ilvl * 0.115) * rm)];
+    } else {
+      nextName = nx[0];
+      nextArmor = Math.round(nx[1] * (1 + item.ilvl * (item.slot === 'offhand' ? 0.1 : 0.13)) * rm);
+      nextImp = nx[2] ? { key: nx[2], val: nx[3] } : null;
+    }
+    const impTxt = imp => imp ? `+${imp.val}${(STATS[imp.key] || {}).pct ? '%' : ''} ${(STATS[imp.key] || {}).label}` : '无';
+    h += `<div class="tier-flow">
+      <span class="tf-a">${item.baseName || item.name}</span>
+      <span class="cf-arw">▸</span>
+      <span class="tf-b">${nextName}</span>
+      <span class="fsub" style="margin-left:8px">${info.from} → <b style="color:#ffd166">${info.to}</b></span>
+    </div>
+    <div class="tier-cmp">
+      <div class="tc-row"><span>护甲 / 伤害</span>
+        <span>${item.slot === 'weapon' ? item.baseDmg.join(' ~ ') : (item.baseArmor || 0)}
+        <i>→</i> <b style="color:#9ae0b0">${item.slot === 'weapon' ? nextDmg.join(' ~ ') : nextArmor}</b></span></div>
+      <div class="tc-row"><span>固有属性</span>
+        <span>${impTxt(item.implicit)} <i>→</i> <b style="color:#9ae0b0">${impTxt(nextImp)}</b></span></div>
+      <div class="tc-row"><span>品质 / 词条</span>
+        <span style="color:#8a8474">原样保留（${r.name} · ${item.affixes.length} 条可洗）</span></div>
+    </div>`;
+
+    /* 材料：同名装备 + 铜钱 + 玄晶，三格并排 */
+    const matName = item.baseName || item.name;
+    h += `<div class="frune-label">所 需</div><div class="cmat-grid">
+      <div class="cmat ${pv.mat ? '' : 'lack'}" style="--mc:#c9b8ff">
+        <span class="cm-ico"><b class="cm-coin">同</b></span>
+        <span class="cm-nm">同名「${matName}」</span>
+        <span class="cm-num">${pv.mat ? 1 : 0}<u>/1</u></span>
+      </div>
+      <div class="cmat ${pv.gold >= pv.cost.gold ? '' : 'lack'}" style="--mc:#d8b25a">
+        <span class="cm-ico"><b class="cm-coin">钱</b></span>
+        <span class="cm-nm">铜钱</span>
+        <span class="cm-num">${Math.round(pv.gold)}<u>/${pv.cost.gold}</u></span>
+      </div>
+      <div class="cmat ${pv.crystal >= pv.cost.crystal ? '' : 'lack'}" style="--mc:#8fd0ff">
+        <span class="cm-ico"><b class="cm-coin">晶</b></span>
+        <span class="cm-nm">玄晶</span>
+        <span class="cm-num">${pv.crystal}<u>/${pv.cost.crystal}</u></span>
+      </div>
+    </div>`;
+
+    const lack = [];
+    if (!pv.mat) lack.push('同名「' + matName + '」');
+    if (pv.gold < pv.cost.gold) lack.push('铜钱');
+    if (pv.crystal < pv.cost.crystal) lack.push('玄晶');
+    h += `<div style="display:flex;align-items:center;gap:10px;margin-top:12px;flex-wrap:wrap">
+      <button class="btn primary" data-ftier="1" ${pv.can ? '' : 'disabled'}>升 阶</button>
+      <span class="fsub">${pv.can ? '材料齐备，可以开炉。' : '还差：' + lack.join('、')}</span>
+    </div>
+    <div class="hintline">升阶只换基底：护甲/伤害与固有属性按新一档重算，品质、词条、孔位、符文、强化全部保留。同名装备在行囊里即可作引，会被消耗。</div>`;
     return h;
   },
 

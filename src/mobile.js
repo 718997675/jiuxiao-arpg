@@ -130,7 +130,10 @@ const Mobile = {
     const slots = Game.skillBar();
     wrap.innerHTML = slots.map((id, i) => {
       if (!id) return `<div class="mskill empty" data-slot="${i}"><span class="g">＋</span></div>`;
-      return `<div class="mskill" data-skill="${id}"><span class="g">${skillIconSvg(id, 22)}</span><div class="cd"></div></div>`;
+      /* [M1] 与 PC 技能条一致：变体角标 Ⅰ/Ⅱ/Ⅲ */
+      const vv = Game.skillVariant(id);
+      const vb = `<span class="vb" style="${vv > 0 ? '' : 'display:none'}">${['Ⅰ', 'Ⅱ', 'Ⅲ'][vv] || ''}</span>`;
+      return `<div class="mskill" data-skill="${id}">${vb}<span class="g">${skillIconSvg(id, 22)}</span><div class="cd"></div></div>`;
     }).join('');
     wrap.querySelectorAll('.mskill[data-skill]').forEach(el => {
       el.addEventListener('pointerdown', ev => {
@@ -266,13 +269,15 @@ const Mobile = {
       atk.style.fontSize = 17 * u + 'px';
     }
 
-    // 技能：3 列 × 2 行宫格，紧贴普攻左上
-    const cols = 3;
+    // 技能：4 列 × 2 行宫格（8 格），紧贴普攻左上
+    const cols = SKILL_BAR_SLOTS >= 8 ? 4 : SKILL_BAR_SLOTS;
+    const rows = Math.ceil(SKILL_BAR_SLOTS / cols);
     const gw = cols * skS + (cols - 1) * gap;
     const gRight = ax - atkR - 9 * u;
     const gBottom = ay + atkR;
     const gLeft = fx(gRight - gw, gw);
-    const gTop = fy(gBottom - (2 * skS + gap), 2 * skS + gap);
+    const gh = rows * skS + (rows - 1) * gap;
+    const gTop = fy(gBottom - gh, gh);
     document.querySelectorAll('#mSkills .mskill').forEach((el, i) => {
       const c = i % cols, r = Math.floor(i / cols);
       el.style.width = el.style.height = skS + 'px';

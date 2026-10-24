@@ -15,9 +15,15 @@ const SLOTS = {
   ring: { name: '戒指', glyph: '戒' },
   weapon: { name: '武器', glyph: '武' },
   offhand: { name: '副手', glyph: '副' },
-  relic: { name: '法器', glyph: '法' }
+  relic: { name: '法器', glyph: '法' },
+  /* [M1] 计划「槽位 11 → 14」补的两个真槽位：
+   *   cloak 披风 —— 常规护甲位，走 8 阶基底 + 通用词缀池（偏向移速/闪避/全抗）
+   *   fate  命格 —— 机制位，只吃「机制型」词缀（白名单见 AFFIX_SLOT_ALLOW），
+   *                基础护甲恒为 0，价值全在那条机制上 */
+  cloak: { name: '披风', glyph: '氅' },
+  fate: { name: '命格', glyph: '命' }
 };
-const SLOT_ORDER = ['helm', 'chest', 'shoulders', 'gloves', 'boots', 'belt', 'amulet', 'ring1', 'ring2', 'weapon', 'offhand', 'relic'];
+const SLOT_ORDER = ['helm', 'chest', 'shoulders', 'cloak', 'gloves', 'boots', 'belt', 'amulet', 'ring1', 'ring2', 'weapon', 'offhand', 'relic', 'fate'];
 
 /* ---------------- 格子尺寸档（v1.2.3） ----------------
  * 背包与纸娃娃的格子大小跟着部位走，让体量一眼能读出来：
@@ -31,8 +37,8 @@ const SLOT_ORDER = ['helm', 'chest', 'shoulders', 'gloves', 'boots', 'belt', 'am
  */
 const SLOT_SIZE = {
   chest: 'xl', weapon: 'xl',
-  helm: 'lg', shoulders: 'lg', boots: 'lg',
-  gloves: 'md', belt: 'md', offhand: 'md',
+  helm: 'lg', shoulders: 'lg', boots: 'lg', cloak: 'lg',
+  gloves: 'md', belt: 'md', offhand: 'md', fate: 'md',
   amulet: 'sm', ring: 'sm', ring1: 'sm', ring2: 'sm',
   relic: 'lg'
 };
@@ -44,9 +50,15 @@ function slotSize(slot) { return SLOT_SIZE[slot] || 'md'; }
 
 /* ---------------- 装备基底 ----------------
  * V2 S1：76 → 210 件。
+ * [M1] 现在 8 阶：凡兵 → 精铁 → 玄铁 → 地煞 → 天罡 → 仙品 → 神兵 → 太初
  *
  * 结构：BASES[槽][档位] = [变体, 变体, 变体]
- *       档位由 ilvl 决定（每 8 级一档，ilvl 1-40 → 5 档）
+ *       档位由 ilvl 决定（每 5 级一档，ilvl 1-40 → 8 档，见 items.js tierIndex）
+ *
+ * 为什么从 5 档改 8 档：
+ *   5 档 × 8 级一换，ilvl 33-40 整整八级只有一种「皮」，
+ *   玩家在中期几乎感觉不到换装。8 档 × 5 级一换，每 5 级换一层皮，
+ *   顶档数值仍是原来的顶档（不抬上限、不破坏平衡），只是中间多垫了三层。
  *
  * 每档三个变体是三个流派，不是三个名字：
  *   A 均衡  —— 基准值，无固有
@@ -54,67 +66,115 @@ function slotSize(slot) { return SLOT_SIZE[slot] || 'md'; }
  *   C 轻灵  —— 防护更低，带攻击/资源类固有
  * 固有属性写成 [名字, 护甲/伤害, 属性key, 属性值]，落地在 items.js 的 item.implicit。
  *
- * 护甲 8 槽 × 5 档 × 3 = 120
- * 武器 3 职业 × 5 档 × 3 = 45
- * 副手 3 职业 × 5 档 × 3 = 45
- *                        → 210
+ * 护甲 10 槽（含披风 / 命格）× 8 档 × 3 = 240
+ * 武器 3 职业 × 8 档 × 3 = 72
+ * 副手 3 职业 × 8 档 × 3 = 72
+ *                        → 384
  */
 const ARMOR_BASES = {
   helm: [
     [['布巾', 3], ['皮帽', 4, 'hp', 10], ['道巾', 2, 'mp', 8]],
-    [['皮盔', 7], ['铁面', 9, 'def', 3], ['灵冠', 6, 'int', 2]],
-    [['铁盔', 14], ['玄铁面', 18, 'def', 6], ['灵犀冠', 12, 'crit', 2]],
-    [['镇山盔', 24], ['重铁面罩', 30, 'def', 10], ['幽影冠', 21, 'dodge', 3]],
-    [['龙鳞盔', 38], ['太初玄盔', 47, 'def', 15], ['天机玉冠', 33, 'cdr', 4]]
+    [['皮盔', 4], ['硬皮面', 5, 'def', 2], ['灵巾', 3, 'int', 1]],
+    [['铁盔', 6], ['铁面', 8, 'def', 3], ['灵冠', 5, 'int', 2]],
+    [['玄铁盔', 9], ['玄铁面', 12, 'def', 4], ['灵犀冠', 8, 'crit', 2]],
+    [['地煞盔', 13], ['镇山面', 17, 'def', 6], ['幽影冠', 11, 'dodge', 2]],
+    [['天罡盔', 18], ['天罡面罩', 23, 'def', 8], ['踏云冠', 15, 'moveSpd', 2]],
+    [['仙品玉冠', 26], ['仙品重面', 33, 'def', 12], ['天机玉冠', 22, 'cdr', 3]],
+    [['龙鳞盔', 38], ['太初玄盔', 47, 'def', 15], ['太初天机冠', 32, 'cdr', 4]]
   ],
   chest: [
     [['布衣', 5], ['硬皮甲', 7, 'hp', 14], ['道袍', 4, 'mp', 10]],
-    [['皮甲', 11], ['钉皮甲', 14, 'def', 4], ['云纹袍', 10, 'int', 3]],
-    [['锁子甲', 22], ['玄铁胸甲', 28, 'def', 8], ['灵蚕衣', 19, 'crit', 3]],
-    [['玄铁重铠', 36], ['镇岳重铠', 45, 'def', 12], ['幽影战衣', 32, 'dodge', 4]],
-    [['龙鳞战甲', 54], ['太初天铠', 66, 'def', 18], ['天机道袍', 49, 'cdr', 5]]
+    [['皮甲', 7], ['钉皮甲', 9, 'def', 3], ['素纹袍', 6, 'int', 2]],
+    [['锁子甲', 10], ['铁胸甲', 13, 'def', 4], ['云纹袍', 8, 'int', 3]],
+    [['玄铁胸甲', 14], ['玄铁重甲', 18, 'def', 6], ['灵蚕衣', 12, 'crit', 3]],
+    [['地煞铠', 20], ['地煞重铠', 26, 'def', 8], ['幽影战衣', 17, 'dodge', 3]],
+    [['天罡战甲', 27], ['天罡重铠', 35, 'def', 11], ['踏云道袍', 23, 'moveSpd', 3]],
+    [['仙品天甲', 39], ['仙品重铠', 50, 'def', 15], ['天机道袍', 33, 'cdr', 4]],
+    [['龙鳞战甲', 54], ['太初天铠', 66, 'def', 18], ['太初道袍', 46, 'cdr', 5]]
   ],
   shoulders: [
     [['布肩', 2], ['皮护肩', 3, 'hp', 6], ['素云肩', 2, 'mp', 5]],
-    [['硬皮护肩', 5], ['铁肩', 6, 'def', 2], ['灵纹肩', 4, 'int', 1]],
-    [['铁护肩', 10], ['玄铁肩', 13, 'def', 4], ['灵蚕肩', 9, 'crit', 1]],
-    [['镇山护肩', 17], ['镇岳肩', 21, 'def', 6], ['幽影肩', 15, 'dodge', 2]],
-    [['龙鳞护肩', 27], ['太初天肩', 33, 'def', 9], ['天机肩', 24, 'cdr', 2]]
+    [['硬皮护肩', 3], ['钉肩', 4, 'def', 1], ['灵纹肩', 2, 'int', 1]],
+    [['铁护肩', 4], ['铁肩', 6, 'def', 2], ['灵蚕肩', 4, 'crit', 1]],
+    [['玄铁护肩', 6], ['玄铁肩', 9, 'def', 3], ['幽影肩', 5, 'dodge', 1]],
+    [['地煞护肩', 9], ['地煞肩', 13, 'def', 4], ['踏风肩', 7, 'moveSpd', 1]],
+    [['天罡护肩', 13], ['天罡肩', 18, 'def', 6], ['凌云肩', 10, 'dodge', 2]],
+    [['仙品天肩', 19], ['仙品重肩', 26, 'def', 8], ['天机肩', 15, 'cdr', 2]],
+    [['龙鳞护肩', 27], ['太初天肩', 33, 'def', 9], ['太初机肩', 21, 'cdr', 3]]
+  ],
+  /* [M1] 披风：比护肩厚一点、比战甲薄很多，固有偏向「动起来才值钱」的属性 */
+  cloak: [
+    [['粗布披风', 2], ['兽皮斗篷', 3, 'hp', 8], ['轻纱氅', 2, 'mp', 6]],
+    [['硬皮斗篷', 3], ['钉皮氅', 4, 'def', 1], ['灵纹氅', 2, 'int', 1]],
+    [['铁线披风', 4], ['铁鳞斗篷', 6, 'def', 2], ['疾风氅', 4, 'moveSpd', 1]],
+    [['玄铁斗篷', 6], ['玄鳞斗篷', 9, 'def', 3], ['幽影氅', 5, 'dodge', 1]],
+    [['地煞披风', 9], ['地煞斗篷', 13, 'def', 4], ['踏云氅', 7, 'moveSpd', 2]],
+    [['天罡披风', 13], ['天罡斗篷', 18, 'def', 6], ['凌虚氅', 10, 'dodge', 2]],
+    [['仙品云氅', 19], ['仙品重氅', 26, 'def', 8], ['天机氅', 15, 'allRes', 3]],
+    [['龙鳞披风', 26], ['太初天氅', 33, 'def', 9], ['太初机氅', 21, 'cdr', 2]]
   ],
   gloves: [
     [['布手', 2], ['皮护手', 3, 'hp', 5], ['素手', 2, 'mp', 4]],
-    [['硬皮护手', 4], ['铁护手', 5, 'def', 2], ['灵纹手', 3, 'int', 1]],
-    [['铁护手·精', 8], ['玄铁手', 10, 'def', 3], ['灵蚕手', 7, 'crit', 1]],
-    [['镇山护手', 14], ['镇岳手', 17, 'def', 5], ['幽影手', 12, 'dodge', 2]],
-    [['龙鳞护手', 22], ['太初天手', 27, 'def', 7], ['天机手', 19, 'cdr', 2]]
+    [['硬皮护手', 3], ['钉手', 4, 'def', 1], ['灵纹手', 2, 'int', 1]],
+    [['铁护手', 4], ['铁手', 5, 'def', 2], ['灵蚕手', 3, 'crit', 1]],
+    [['玄铁手', 6], ['玄铁护手', 8, 'def', 3], ['幽影手', 5, 'dodge', 1]],
+    [['地煞手', 8], ['地煞护手', 11, 'def', 4], ['疾击手', 7, 'aspd', 2]],
+    [['天罡手', 11], ['天罡护手', 15, 'def', 5], ['连斩手', 9, 'crit', 2]],
+    [['仙品天手', 16], ['仙品重手', 22, 'def', 7], ['天机手', 13, 'cdr', 2]],
+    [['龙鳞护手', 22], ['太初天手', 27, 'def', 7], ['太初机手', 17, 'cdr', 3]]
   ],
   boots: [
     [['草鞋', 2], ['皮靴', 3, 'moveSpdFlat', 1], ['布履', 2, 'mp', 3]],
-    [['硬皮靴', 4], ['铁靴', 5, 'def', 2], ['疾风履', 3, 'moveSpd', 2]],
-    [['铁战靴', 8], ['玄铁靴', 10, 'def', 3], ['踏风靴', 7, 'moveSpd', 3]],
-    [['镇山战靴', 14], ['镇岳靴', 17, 'def', 5], ['踏云靴', 12, 'moveSpd', 4]],
-    [['龙鳞战靴', 22], ['太初天靴', 27, 'def', 7], ['凌虚履', 19, 'moveSpd', 5]]
+    [['硬皮靴', 3], ['钉靴', 4, 'def', 1], ['轻履', 2, 'moveSpd', 1]],
+    [['铁靴', 4], ['铁战靴', 6, 'def', 2], ['疾风履', 4, 'moveSpd', 2]],
+    [['玄铁靴', 6], ['玄铁战靴', 8, 'def', 3], ['踏风靴', 5, 'moveSpd', 2]],
+    [['地煞靴', 8], ['地煞战靴', 11, 'def', 4], ['踏云靴', 7, 'moveSpd', 3]],
+    [['天罡靴', 11], ['天罡战靴', 15, 'def', 5], ['凌虚履', 9, 'moveSpd', 3]],
+    [['仙品天靴', 16], ['仙品重靴', 22, 'def', 7], ['天机履', 13, 'moveSpd', 4]],
+    [['龙鳞战靴', 22], ['太初天靴', 27, 'def', 7], ['太初云履', 17, 'moveSpd', 5]]
   ],
   belt: [
     [['布带', 1], ['皮束带', 2, 'hp', 8], ['素云带', 1, 'mp', 5]],
-    [['皮带', 3], ['铁腰带', 4, 'def', 2], ['灵纹带', 3, 'int', 1]],
-    [['铁腰带·精', 6], ['玄铁带', 8, 'def', 3], ['灵蚕带', 5, 'crit', 1]],
-    [['镇山腰带', 10], ['镇岳带', 13, 'def', 4], ['幽影带', 9, 'dodge', 1]],
-    [['蟠龙带', 16], ['太初天带', 20, 'def', 6], ['天机带', 14, 'cdr', 1]]
+    [['皮带', 2], ['钉皮带', 2, 'def', 1], ['灵纹带', 1, 'int', 1]],
+    [['铁腰带', 2], ['铁束带', 3, 'def', 2], ['灵蚕带', 2, 'crit', 1]],
+    [['玄铁带', 3], ['玄铁腰带', 5, 'def', 2], ['幽影带', 3, 'dodge', 1]],
+    [['地煞带', 5], ['地煞腰带', 7, 'def', 3], ['纳魂带', 4, 'mpOnKill', 3]],
+    [['天罡带', 7], ['天罡腰带', 10, 'def', 4], ['天机带', 6, 'cdr', 1]],
+    [['仙品天带', 11], ['仙品重带', 16, 'def', 6], ['天机玄带', 9, 'cdr', 2]],
+    [['蟠龙带', 16], ['太初天带', 20, 'def', 6], ['太初机带', 12, 'cdr', 2]]
   ],
   amulet: [
     [['木牌', 0, 'hp', 12], ['骨珠', 0, 'mp', 10], ['铜铃', 0, 'atk', 2]],
+    [['玉牌', 0, 'hp', 15], ['石珠', 0, 'mp', 12], ['铁铃', 0, 'atk', 3]],
     [['玉坠', 0, 'hp', 20], ['灵珠', 0, 'mp', 16], ['银铃', 0, 'atk', 4]],
-    [['灵玉项链', 0, 'hp', 32], ['碧水珠', 0, 'mp', 26], ['玄铁铃', 0, 'atk', 7]],
-    [['九幽魂链', 0, 'hp', 48], ['幽泉珠', 0, 'mp', 38], ['断魂铃', 0, 'atk', 10]],
-    [['太初神链', 0, 'hp', 70], ['太初灵珠', 0, 'mp', 55], ['天机铃', 0, 'atk', 14]]
+    [['灵玉项链', 0, 'hp', 26], ['碧水珠', 0, 'mp', 21], ['玄铁铃', 0, 'atk', 6]],
+    [['地煞魂链', 0, 'hp', 34], ['地泉珠', 0, 'mp', 27], ['断魂铃', 0, 'atk', 8]],
+    [['天罡魂链', 0, 'hp', 43], ['天泉珠', 0, 'mp', 34], ['追魂铃', 0, 'atk', 10]],
+    [['仙品神链', 0, 'hp', 56], ['仙品灵珠', 0, 'mp', 44], ['天机铃', 0, 'atk', 12]],
+    [['九幽魂链', 0, 'hp', 70], ['太初灵珠', 0, 'mp', 55], ['太初神铃', 0, 'atk', 15]]
   ],
   ring: [
     [['铜戒', 0, 'atk', 2], ['木戒', 0, 'str', 1], ['石戒', 0, 'def', 2]],
-    [['银戒', 0, 'atk', 3], ['铁戒', 0, 'str', 2], ['玉戒', 0, 'vit', 2]],
-    [['灵玉戒', 0, 'crit', 2], ['玄铁戒', 0, 'atk', 5], ['咒纹戒', 0, 'skillDmg', 3]],
-    [['九幽魔戒', 0, 'crit', 3], ['幽泉戒', 0, 'atk', 8], ['血咒戒', 0, 'lifesteal', 2]],
-    [['太初神戒', 0, 'crit', 5], ['太初魔戒', 0, 'atk', 12], ['天机戒', 0, 'cdr', 3]]
+    [['铁戒', 0, 'atk', 2], ['藤戒', 0, 'agi', 1], ['骨戒', 0, 'def', 2]],
+    [['银戒', 0, 'atk', 3], ['铁指环', 0, 'str', 2], ['玉戒', 0, 'vit', 2]],
+    [['灵玉戒', 0, 'crit', 2], ['玄铁戒', 0, 'atk', 4], ['咒纹戒', 0, 'skillDmg', 3]],
+    [['地煞魔戒', 0, 'crit', 2], ['地泉戒', 0, 'atk', 6], ['血咒戒', 0, 'lifesteal', 1]],
+    [['天罡魔戒', 0, 'crit', 3], ['天泉戒', 0, 'atk', 7], ['裂魂戒', 0, 'critDmg', 8]],
+    [['仙品神戒', 0, 'crit', 4], ['仙品魔戒', 0, 'atk', 10], ['天机戒', 0, 'cdr', 2]],
+    [['九幽魔戒', 0, 'crit', 5], ['太初魔戒', 0, 'atk', 12], ['太初机戒', 0, 'cdr', 3]]
+  ],
+  /* [M1] 命格：护甲恒为 0（不是护具），价值全在固有属性 + 机制型词缀。
+   * 固有刻意选「机制类」属性（濒死免疫 / 全技能等级 / 元素伤害 / 冷却），
+   * 与普通护具的「堆数值」区分开——命格是改玩法的那一格。 */
+  fate: [
+    [['残命格', 0, 'deathWard', 18], ['末途格', 0, 'critDmg', 6], ['薄暮格', 0, 'cdr', 1]],
+    [['灰命格', 0, 'deathWard', 20], ['灰途格', 0, 'critDmg', 8], ['微光格', 0, 'cdr', 1]],
+    [['青命格', 0, 'deathWard', 23], ['青途格', 0, 'critDmg', 10], ['流火格', 0, 'fireDmg', 5]],
+    [['玄命格', 0, 'deathWard', 26], ['玄途格', 0, 'critDmg', 13], ['寒霜格', 0, 'iceDmg', 7]],
+    [['地煞命格', 0, 'deathWard', 29], ['地煞途格', 0, 'critDmg', 16], ['雷引格', 0, 'lightningDmg', 9]],
+    [['天罡命格', 0, 'deathWard', 32], ['天罡途格', 0, 'critDmg', 20], ['蚀骨格', 0, 'poisonDmg', 11]],
+    [['仙品命格', 0, 'deathWard', 36], ['仙品途格', 0, 'critDmg', 24], ['通玄格', 0, 'skillLv', 1]],
+    [['太初命格', 0, 'deathWard', 42], ['太初途格', 0, 'critDmg', 28], ['天人格', 0, 'skillLv', 2]]
   ]
 };
 
@@ -126,24 +186,39 @@ const WEAPON_BASES = {
       { name: '手斧', shape: 'axe', dmg: [9, 15], speed: 0.88 }
     ],
     [
-      { name: '斩马刀', shape: 'saber', dmg: [11, 18], speed: 0.95 },
-      { name: '精铁剑', shape: 'sword', dmg: [10, 16], speed: 1.05 },
-      { name: '开山斧', shape: 'axe', dmg: [14, 22], speed: 0.85 }
+      { name: '精铁剑', shape: 'sword', dmg: [8, 14], speed: 1.02 },
+      { name: '柳叶刀', shape: 'saber', dmg: [7, 13], speed: 1.08 },
+      { name: '战斧', shape: 'axe', dmg: [11, 18], speed: 0.87 }
     ],
     [
-      { name: '开山巨斧', shape: 'axe', dmg: [16, 26], speed: 0.82 },
-      { name: '偃月刀', shape: 'glaive', dmg: [15, 24], speed: 0.9 },
-      { name: '玄铁重剑', shape: 'sword', dmg: [14, 23], speed: 0.95 }
+      { name: '铁剑·精', shape: 'sword', dmg: [9, 16], speed: 1.04 },
+      { name: '斩马刀', shape: 'saber', dmg: [10, 17], speed: 0.98 },
+      { name: '开山斧', shape: 'axe', dmg: [13, 21], speed: 0.86 }
     ],
     [
-      { name: '破军斧', shape: 'axe', dmg: [24, 37], speed: 0.8 },
-      { name: '偃月刀·精', shape: 'glaive', dmg: [22, 34], speed: 0.88 },
-      { name: '龙渊剑', shape: 'sword', dmg: [20, 31], speed: 1.0 }
+      { name: '玄铁重剑', shape: 'sword', dmg: [12, 20], speed: 0.98 },
+      { name: '偃月刀', shape: 'glaive', dmg: [13, 21], speed: 0.92 },
+      { name: '玄铁斧', shape: 'axe', dmg: [15, 25], speed: 0.84 }
     ],
     [
+      { name: '地煞重剑', shape: 'sword', dmg: [14, 23], speed: 1.0 },
+      { name: '地煞战刃', shape: 'glaive', dmg: [15, 25], speed: 0.9 },
+      { name: '地煞斧', shape: 'axe', dmg: [18, 30], speed: 0.82 }
+    ],
+    [
+      { name: '天罡重剑', shape: 'sword', dmg: [18, 29], speed: 1.0 },
+      { name: '天罡战刃', shape: 'glaive', dmg: [19, 31], speed: 0.9 },
+      { name: '天罡斧', shape: 'axe', dmg: [23, 38], speed: 0.81 }
+    ],
+    [
+      { name: '仙品龙渊剑', shape: 'sword', dmg: [23, 37], speed: 1.02 },
+      { name: '仙品战刃', shape: 'glaive', dmg: [24, 39], speed: 0.91 },
+      { name: '仙品斩斧', shape: 'axe', dmg: [28, 46], speed: 0.83 }
+    ],
+    [
+      { name: '天罡神剑', shape: 'sword', dmg: [28, 43], speed: 1.05 },
       { name: '龙纹战刃', shape: 'glaive', dmg: [30, 46], speed: 0.92 },
-      { name: '太初斩斧', shape: 'axe', dmg: [33, 50], speed: 0.85 },
-      { name: '天罡神剑', shape: 'sword', dmg: [28, 43], speed: 1.05 }
+      { name: '太初斩斧', shape: 'axe', dmg: [33, 50], speed: 0.85 }
     ]
   ],
   mage: [
@@ -153,19 +228,34 @@ const WEAPON_BASES = {
       { name: '石心杖', shape: 'staff', dmg: [7, 11], speed: 0.95 }
     ],
     [
-      { name: '青玉法杖', shape: 'staff', dmg: [10, 16], speed: 1.0 },
-      { name: '灵藤杖', shape: 'staff', dmg: [9, 14], speed: 1.06 },
-      { name: '玄石杖', shape: 'staff', dmg: [11, 17], speed: 0.96 }
+      { name: '灵藤杖', shape: 'staff', dmg: [7, 11], speed: 1.02 },
+      { name: '青竹杖', shape: 'staff', dmg: [6, 10], speed: 1.07 },
+      { name: '玄石杖', shape: 'staff', dmg: [8, 13], speed: 0.95 }
     ],
     [
-      { name: '玄冰法杖', shape: 'staff', dmg: [15, 24], speed: 1.0 },
-      { name: '雷纹杖', shape: 'staff', dmg: [14, 22], speed: 1.05 },
-      { name: '焚心杖', shape: 'staff', dmg: [16, 25], speed: 0.95 }
+      { name: '青玉法杖', shape: 'staff', dmg: [9, 14], speed: 1.0 },
+      { name: '灵藤杖·精', shape: 'staff', dmg: [8, 13], speed: 1.06 },
+      { name: '玄石杖·精', shape: 'staff', dmg: [10, 16], speed: 0.96 }
     ],
     [
-      { name: '焚天杖', shape: 'staff', dmg: [22, 33], speed: 1.0 },
-      { name: '太阴杖', shape: 'staff', dmg: [21, 31], speed: 1.04 },
-      { name: '九幽杖', shape: 'staff', dmg: [23, 35], speed: 0.96 }
+      { name: '玄冰法杖', shape: 'staff', dmg: [11, 18], speed: 1.0 },
+      { name: '雷纹杖', shape: 'staff', dmg: [10, 17], speed: 1.05 },
+      { name: '焚心杖', shape: 'staff', dmg: [12, 19], speed: 0.95 }
+    ],
+    [
+      { name: '地煞法杖', shape: 'staff', dmg: [14, 22], speed: 1.0 },
+      { name: '地泉杖', shape: 'staff', dmg: [13, 21], speed: 1.04 },
+      { name: '地火杖', shape: 'staff', dmg: [15, 24], speed: 0.96 }
+    ],
+    [
+      { name: '天罡法杖', shape: 'staff', dmg: [17, 27], speed: 1.0 },
+      { name: '天泉杖', shape: 'staff', dmg: [16, 26], speed: 1.04 },
+      { name: '天火杖', shape: 'staff', dmg: [19, 30], speed: 0.96 }
+    ],
+    [
+      { name: '仙品法杖', shape: 'staff', dmg: [22, 34], speed: 1.02 },
+      { name: '仙品灵杖', shape: 'staff', dmg: [21, 33], speed: 1.05 },
+      { name: '仙品焚天杖', shape: 'staff', dmg: [24, 37], speed: 0.97 }
     ],
     [
       { name: '太初法杖', shape: 'staff', dmg: [30, 45], speed: 1.05 },
@@ -180,23 +270,38 @@ const WEAPON_BASES = {
       { name: '铁符剑', shape: 'sword', dmg: [7, 12], speed: 0.98 }
     ],
     [
-      { name: '符文剑', shape: 'sword', dmg: [10, 17], speed: 1.05 },
-      { name: '雷击剑', shape: 'sword', dmg: [9, 15], speed: 1.1 },
-      { name: '铜环剑', shape: 'sword', dmg: [11, 18], speed: 0.98 }
+      { name: '符文剑', shape: 'sword', dmg: [7, 12], speed: 1.05 },
+      { name: '桃木剑·精', shape: 'taojian', dmg: [6, 11], speed: 1.1 },
+      { name: '铜环剑', shape: 'sword', dmg: [8, 13], speed: 0.98 }
     ],
     [
-      { name: '七星剑', shape: 'sword', dmg: [15, 25], speed: 1.05 },
-      { name: '紫电剑', shape: 'sword', dmg: [14, 23], speed: 1.09 },
-      { name: '玄铁符剑', shape: 'sword', dmg: [16, 26], speed: 0.97 }
+      { name: '七星剑', shape: 'sword', dmg: [9, 15], speed: 1.05 },
+      { name: '雷击剑', shape: 'sword', dmg: [8, 14], speed: 1.08 },
+      { name: '玄铁符剑', shape: 'sword', dmg: [10, 17], speed: 0.97 }
     ],
     [
-      { name: '雷符剑', shape: 'sword', dmg: [22, 34], speed: 1.05 },
-      { name: '上清剑', shape: 'sword', dmg: [21, 32], speed: 1.08 },
-      { name: '镇魂剑', shape: 'sword', dmg: [23, 36], speed: 0.98 }
+      { name: '紫电剑', shape: 'sword', dmg: [11, 18], speed: 1.06 },
+      { name: '上清剑', shape: 'sword', dmg: [10, 17], speed: 1.08 },
+      { name: '镇魂剑', shape: 'sword', dmg: [12, 19], speed: 0.97 }
     ],
     [
-      { name: '天罡剑', shape: 'sword', dmg: [30, 46], speed: 1.1 },
-      { name: '太初神剑', shape: 'sword', dmg: [29, 44], speed: 1.12 },
+      { name: '地煞剑', shape: 'sword', dmg: [14, 23], speed: 1.05 },
+      { name: '地煞符剑', shape: 'sword', dmg: [13, 21], speed: 1.07 },
+      { name: '地煞法剑', shape: 'sword', dmg: [15, 24], speed: 0.97 }
+    ],
+    [
+      { name: '天罡剑', shape: 'sword', dmg: [17, 28], speed: 1.06 },
+      { name: '天罡符剑', shape: 'sword', dmg: [16, 26], speed: 1.08 },
+      { name: '天罡法剑', shape: 'sword', dmg: [19, 30], speed: 0.98 }
+    ],
+    [
+      { name: '仙品神剑', shape: 'sword', dmg: [22, 35], speed: 1.07 },
+      { name: '仙品符剑', shape: 'sword', dmg: [21, 33], speed: 1.09 },
+      { name: '仙品法剑', shape: 'sword', dmg: [24, 38], speed: 0.98 }
+    ],
+    [
+      { name: '太初神剑', shape: 'sword', dmg: [30, 46], speed: 1.1 },
+      { name: '太初道剑', shape: 'sword', dmg: [29, 44], speed: 1.12 },
       { name: '混沌道剑', shape: 'sword', dmg: [32, 48], speed: 1.0 }
     ]
   ]
@@ -243,24 +348,33 @@ function weaponHandFallback(shape) {
 const OFFHAND_BASES = {
   warrior: [
     [['木盾', 4], ['藤盾', 5, 'def', 1], ['轻盾', 3, 'block', 2]],
-    [['铁盾', 9], ['镶钉盾', 11, 'def', 2], ['疾风盾', 8, 'block', 3]],
-    [['灵木盾', 16], ['玄铁盾', 20, 'def', 4], ['流光盾', 14, 'block', 4]],
-    [['玄铁塔盾', 26], ['镇岳塔盾', 33, 'def', 6], ['幽影盾', 23, 'block', 5]],
-    [['龙鳞盾', 40], ['太初天盾', 50, 'def', 9], ['天机盾', 36, 'block', 6]]
+    [['铁盾', 6], ['镶钉盾', 7, 'def', 1], ['疾风盾', 5, 'block', 2]],
+    [['铁盾·精', 9], ['玄铁盾', 11, 'def', 2], ['流光盾', 8, 'block', 3]],
+    [['灵木盾', 13], ['玄铁盾·精', 16, 'def', 3], ['幽影盾', 11, 'block', 3]],
+    [['地煞盾', 18], ['地煞塔盾', 23, 'def', 4], ['地煞轻盾', 15, 'block', 4]],
+    [['天罡盾', 24], ['天罡塔盾', 30, 'def', 5], ['天罡轻盾', 20, 'block', 5]],
+    [['仙品盾', 31], ['仙品塔盾', 39, 'def', 7], ['仙品轻盾', 26, 'block', 5]],
+    [['龙鳞盾', 40], ['太初天盾', 50, 'def', 9], ['天机盾', 34, 'block', 6]]
   ],
   mage: [
     [['木珠', 2, 'mp', 6], ['石珠', 3, 'hp', 8], ['灵珠·碎', 1, 'mpReg', 1]],
-    [['凝灵珠', 6, 'mp', 12], ['玉珠', 8, 'hp', 14], ['碧珠', 5, 'skillDmg', 2]],
-    [['碧波珠', 11, 'mp', 20], ['玄冰珠', 14, 'hp', 22], ['焚天珠·碎', 9, 'skillDmg', 3]],
-    [['焚天珠', 18, 'mp', 30], ['玄冥珠', 22, 'hp', 34], ['太阴珠', 15, 'skillDmg', 4]],
-    [['太初珠', 28, 'mp', 44], ['太初冥珠', 34, 'hp', 48], ['天机珠', 24, 'skillDmg', 6]]
+    [['凝灵珠', 4, 'mp', 9], ['玉珠', 5, 'hp', 10], ['碧珠·碎', 3, 'skillDmg', 1]],
+    [['凝灵珠·精', 6, 'mp', 12], ['玉珠·精', 8, 'hp', 14], ['碧珠', 5, 'skillDmg', 2]],
+    [['碧波珠', 9, 'mp', 17], ['玄冰珠', 11, 'hp', 18], ['焚天珠·碎', 7, 'skillDmg', 2]],
+    [['地煞珠', 13, 'mp', 22], ['地煞冥珠', 16, 'hp', 24], ['地煞火珠', 10, 'skillDmg', 3]],
+    [['天罡珠', 17, 'mp', 28], ['天罡冥珠', 20, 'hp', 30], ['天罡火珠', 13, 'skillDmg', 4]],
+    [['仙品珠', 22, 'mp', 35], ['仙品冥珠', 26, 'hp', 38], ['仙品火珠', 17, 'skillDmg', 5]],
+    [['太初珠', 28, 'mp', 44], ['太初冥珠', 34, 'hp', 48], ['天机珠', 22, 'skillDmg', 6]]
   ],
   taoist: [
     [['纸符', 2, 'mp', 5], ['桃符', 3, 'hp', 6], ['铜镜', 1, 'mpReg', 1]],
-    [['桃符·精', 6, 'mp', 10], ['八卦镜', 8, 'hp', 12], ['铜铎', 5, 'skillDmg', 2]],
-    [['八卦镜·精', 11, 'mp', 16], ['镇魂铃', 14, 'hp', 18], ['雷符', 9, 'skillDmg', 3]],
-    [['镇魂铃·精', 18, 'mp', 24], ['太阴镜', 22, 'hp', 28], ['紫符', 15, 'skillDmg', 4]],
-    [['太初令', 28, 'mp', 36], ['太初天镜', 34, 'hp', 40], ['天机符', 24, 'skillDmg', 6]]
+    [['桃符·精', 4, 'mp', 8], ['八卦镜', 5, 'hp', 9], ['铜铎·碎', 3, 'skillDmg', 1]],
+    [['桃符·灵', 6, 'mp', 11], ['八卦镜·精', 7, 'hp', 12], ['铜铎', 5, 'skillDmg', 2]],
+    [['八卦镜·灵', 9, 'mp', 15], ['镇魂铃', 11, 'hp', 16], ['雷符', 7, 'skillDmg', 2]],
+    [['地煞符', 13, 'mp', 19], ['地煞铃', 16, 'hp', 21], ['地煞雷符', 10, 'skillDmg', 3]],
+    [['天罡符', 17, 'mp', 24], ['天罡铃', 20, 'hp', 26], ['天罡雷符', 13, 'skillDmg', 4]],
+    [['仙品符', 22, 'mp', 30], ['仙品铃', 26, 'hp', 33], ['仙品雷符', 17, 'skillDmg', 5]],
+    [['太初令', 28, 'mp', 36], ['太初天镜', 34, 'hp', 40], ['天机符', 22, 'skillDmg', 6]]
   ]
 };
 
@@ -340,7 +454,39 @@ const AFFIXES = [
   { key: 'mpOnKill', pre: ['纳魂的', '收灵的'], suf: ['· 纳魂', '· 收灵'], min: 3, max: 9, tier: 3 },
   { key: 'overkillShield', pre: ['余威的', '不竭的'], suf: ['· 余威', '· 不竭'], min: 6, max: 18, tier: 3 },
   { key: 'aspdOnCrit', pre: ['疾击的', '连斩的'], suf: ['· 疾击', '· 连斩'], min: 5, max: 15, tier: 3 },
-  { key: 'cdrFlat', pre: ['顿悟的', '无碍的'], suf: ['· 顿悟', '· 无碍'], min: 1, max: 2, tier: 3 }
+  { key: 'cdrFlat', pre: ['顿悟的', '无碍的'], suf: ['· 顿悟', '· 无碍'], min: 1, max: 2, tier: 3 },
+
+  /* ---------- [M1] 元素伤害族（火 / 冰 / 雷 / 毒，各 3 阶） ----------
+   * 与族群抗性是一对：抗性让「一套装备打天下」不成立，
+   * 元素伤害则让「堆对元素」能真的打出伤害。
+   * 结算在 game.js damageEnemy：按本次伤害的 elem 取对应键。 */
+  { key: 'fireDmg', pre: ['炎爆的', '焚天的'], suf: ['· 炎心'], min: 4, max: 10, tier: 1 },
+  { key: 'fireDmg', pre: ['赤炎的', '燎原的'], suf: ['· 燎原'], min: 9, max: 19, tier: 2 },
+  { key: 'fireDmg', pre: ['焚世的', '九阳的'], suf: ['· 九阳'], min: 16, max: 30, tier: 3 },
+  { key: 'iceDmg', pre: ['寒霜的', '凛冬的'], suf: ['· 霜心'], min: 4, max: 10, tier: 1 },
+  { key: 'iceDmg', pre: ['玄冰的', '雪封的'], suf: ['· 雪封'], min: 9, max: 19, tier: 2 },
+  { key: 'iceDmg', pre: ['极寒的', '万里冰的'], suf: ['· 极寒'], min: 16, max: 30, tier: 3 },
+  { key: 'lightningDmg', pre: ['雷引的', '电闪的'], suf: ['· 雷心'], min: 4, max: 10, tier: 1 },
+  { key: 'lightningDmg', pre: ['惊雷的', '霆击的'], suf: ['· 霆击'], min: 9, max: 19, tier: 2 },
+  { key: 'lightningDmg', pre: ['天罚的', '紫霄的'], suf: ['· 紫霄'], min: 16, max: 30, tier: 3 },
+  { key: 'poisonDmg', pre: ['蚀骨的', '腐心的'], suf: ['· 蚀骨'], min: 4, max: 10, tier: 1 },
+  { key: 'poisonDmg', pre: ['毒煞的', '溃烂的'], suf: ['· 溃烂'], min: 9, max: 19, tier: 2 },
+  { key: 'poisonDmg', pre: ['万毒的', '九幽毒的'], suf: ['· 九幽'], min: 16, max: 30, tier: 3 },
+
+  /* ---------- [M1] 全技能等级（+N，叠在已投等级上，上限 20） ---------- */
+  { key: 'skillLv', pre: ['通玄的', '悟道的'], suf: ['· 通玄'], min: 1, max: 1, tier: 2 },
+  { key: 'skillLv', pre: ['入化的', '无碍的'], suf: ['· 入化'], min: 1, max: 2, tier: 3 },
+  { key: 'skillLv', pre: ['天人的', '大道的'], suf: ['· 天人'], min: 2, max: 3, tier: 3 },
+
+  /* ---------- [M1] 濒死免疫（致命伤保留 1 点生命并回复，60 秒冷却） ---------- */
+  { key: 'deathWard', pre: ['不死的', '续命的'], suf: ['· 续命', '· 不死'], min: 20, max: 45, tier: 3 },
+
+  /* ---------- [M1/C5] 光环族：身边常驻范围效果 ----------
+   * 与「触发率」不同，光环不需要命中：站在范围内就一直吃。
+   * 结算在 game.js updateAuras，每帧刷减速、每 0.8 秒跳一次灼烧。 */
+  { key: 'auraSlow', pre: ['缚足的', '迟滞的'], suf: ['· 缚足', '· 迟滞'], min: 8, max: 16, tier: 3, weight: 2 },
+  { key: 'auraBurn', pre: ['焚身的', '灼魂的'], suf: ['· 焚身', '· 灼魂'], min: 6, max: 14, tier: 3, weight: 2 },
+  { key: 'auraRange', pre: ['周天的', '环宇的'], suf: ['· 周天', '· 环宇'], min: 1, max: 3, tier: 2 }
 ];
 
 /* ---------------- 词条的职业 / 部位适配（v1.1.7） ----------------
@@ -378,9 +524,29 @@ const AFFIX_CLS_DENY = {
 
 const AFFIX_SLOT_GROUP = {
   weapon: 'weapon', offhand: 'weapon',
-  helm: 'armor', chest: 'armor', shoulders: 'armor',
+  helm: 'armor', chest: 'armor', shoulders: 'armor', cloak: 'armor',
   gloves: 'armor', boots: 'armor', belt: 'armor',
-  amulet: 'jewel', ring: 'jewel'
+  amulet: 'jewel', ring: 'jewel',
+  /* [M1] 命格自成一族：只吃机制型词条（见 AFFIX_SLOT_ALLOW.fate） */
+  fate: 'fate'
+};
+
+/* [M1] 命格的词条**白名单**。
+ * 普通护具用排除法（默认全开），命格反过来：它只有一条机制值得看，
+ * 掉出一件「+3 力量」的命格就是纯垃圾。所以这里列全机制型 key，
+ * 池子里的其他词条一律不出。白名单条数必须 > AFFIX_POOL_MIN，
+ * 否则 affixPool 会判定「池子枯竭」而退回全表（test-m1m4 有断言守着）。 */
+const AFFIX_SLOT_ALLOW = {
+  fate: [
+    'deathWard', 'skillLv',
+    'auraSlow', 'auraBurn', 'auraRange',
+    'fireDmg', 'iceDmg', 'lightningDmg', 'poisonDmg',
+    'critDmg', 'crit', 'cdr', 'cdrFlat', 'costReduce',
+    'hpPct', 'dmgReduce', 'lifesteal', 'executeDmg', 'firstStrike',
+    'aspdOnCrit', 'overkillShield', 'eliteDmg', 'bossDmg',
+    'goldFind', 'magicFind', 'expGain', 'pickupRadius', 'dropRate',
+    'thorns', 'hpOnKill', 'killHeal'
+  ]
 };
 
 const AFFIX_SLOT_DENY = {
@@ -388,9 +554,10 @@ const AFFIX_SLOT_DENY = {
   weapon: [
     'def', 'armorPct', 'dmgReduce', 'block', 'dodge', 'thorns',
     'hpPct', 'hpRegen', 'ccResist', 'shieldBonus', 'overkillShield',
-    'physRes', 'fireRes', 'iceRes', 'poisonRes', 'allRes'
+    'physRes', 'fireRes', 'iceRes', 'poisonRes', 'allRes',
+    'auraSlow', 'auraBurn', 'auraRange'
   ],
-  /* 六件防具：出防御与生存，不出武器专精（穿甲 / 暴伤 / 斩杀 / 吸血） */
+  /* 七件防具：出防御与生存，不出武器专精（穿甲 / 暴伤 / 斩杀 / 吸血） */
   armor: [
     'armorPen', 'critDmg', 'executeDmg', 'firstStrike', 'aspdOnCrit',
     'lifesteal', 'killHeal', 'minDmg'
@@ -400,7 +567,8 @@ const AFFIX_SLOT_DENY = {
     'def', 'armorPct', 'dmgReduce', 'block', 'thorns', 'hpPct',
     'meleeDmg', 'projDmg', 'aoeDmg', 'dotDmg', 'summonDmg',
     'armorPen', 'shieldBonus', 'overkillShield'
-  ]
+  ],
+  fate: []
 };
 
 /* 过滤后少于这个数就放弃过滤：宁可宽松，也不让某个职业/部位的池子枯竭 */
@@ -422,7 +590,15 @@ function affixSlotGroup(slot) {
 /* 取某职业某部位的可用词条池；cls 为 null 时按通用中性池 */
 function affixPool(cls, slot) {
   const dc = cls ? (AFFIX_CLS_DENY[cls] || []) : AFFIX_UNIVERSAL_DENY;
-  const dg = AFFIX_SLOT_DENY[affixSlotGroup(slot)] || [];
+  const g = affixSlotGroup(slot);
+  const dg = AFFIX_SLOT_DENY[g] || [];
+  /* [M1] 白名单部位（目前只有命格）：先按白名单收窄，再走职业排除。
+   * 白名单优先级最高 —— 否则命格会被 AFFIX_CLS_DENY 顺手削掉一半机制词条。 */
+  const allow = AFFIX_SLOT_ALLOW[g];
+  if (allow) {
+    const out = AFFIXES.filter(a => allow.indexOf(a.key) >= 0 && dc.indexOf(a.key) < 0);
+    if (out.length >= AFFIX_POOL_MIN) return out;
+  }
   if (!dc.length && !dg.length) return AFFIXES;
   const out = AFFIXES.filter(a => dc.indexOf(a.key) < 0 && dg.indexOf(a.key) < 0);
   return out.length >= AFFIX_POOL_MIN ? out : AFFIXES;
@@ -596,6 +772,61 @@ const SETS = {
         special: 'talismanPierce', flag: 'runeburn'
       }
     ]
+  },
+
+  /* ======================= 通用（全职业） =======================
+   * [M1] 计划要求「每职业 3 套 + 通用 3 套」，这里补齐缺的 3 套通用套。
+   * cls 为 null：打造时不锁职业，成品 cls 也是 null，三个职业都能穿。
+   * 取向刻意不碰职业技能（通用套不该改别人的招），只用全局词条 + 一条真机制，
+   * 保证谁穿都有感。slots 避开 weapon / offhand —— 那两格的形态与职业绑定，
+   * 通用套占上去会拿到一把「没有形态的武器」。 */
+  caravan: {
+    id: 'caravan', name: '行脚', cls: null, tag: '拾取', color: '#d8b25a',
+    pieces: ['行脚商囊', '行脚快靴', '行脚铜铃'],
+    slots: ['belt', 'boots', 'amulet'],
+    sig: ['goldFind', 'magicFind', 'pickupRadius', 'moveSpd', 'dropRate', 'hp'],
+    bonuses: [
+      {
+        need: 2, text: '金币获取 +45%，奇遇机缘 +20%，拾取范围 +2',
+        stats: { goldFind: 45, magicFind: 20, pickupRadius: 2 }
+      },
+      {
+        need: 3, text: '击杀后 3 秒内移速 +30%、攻速 +15%（刷图手感套）',
+        stats: { expGain: 12 }, special: 'lootRush'
+      }
+    ]
+  },
+  hermit: {
+    id: 'hermit', name: '隐修', cls: null, tag: '生存', color: '#8aa8b8',
+    pieces: ['隐修布冠', '隐修衲衣', '隐修护手', '隐修芒鞋'],
+    slots: ['helm', 'chest', 'gloves', 'boots'],
+    sig: ['hpPct', 'dmgReduce', 'allRes', 'shieldBonus', 'vit', 'def'],
+    bonuses: [
+      {
+        need: 2, text: '生命上限 +14%，伤害减免 +6%，护盾强度 +15%',
+        stats: { hpPct: 14, dmgReduce: 6, shieldBonus: 15 }
+      },
+      {
+        need: 4, text: '濒死免疫：受到致命伤害时保留 1 点生命并回复 40% 生命（60 秒冷却）',
+        stats: { deathWard: 40 }
+      }
+    ]
+  },
+  wanderer: {
+    id: 'wanderer', name: '游侠', cls: null, tag: '锐意', color: '#9ae0b0',
+    pieces: ['游侠披肩', '游侠手甲', '游侠指环', '游侠颈饰'],
+    slots: ['shoulders', 'gloves', 'ring', 'amulet'],
+    sig: ['projDmg', 'crit', 'aspd', 'critDmg', 'agi', 'moveSpd'],
+    bonuses: [
+      {
+        need: 2, text: '投射物伤害 +22%，攻击速度 +10%，暴击率 +5%',
+        stats: { projDmg: 22, aspd: 10, crit: 5 }
+      },
+      {
+        need: 4, text: '攻击满血目标必定暴击，且暴击伤害 +30%',
+        stats: { critDmg: 30 }, special: 'deadeye'
+      }
+    ]
   }
 };
 
@@ -615,6 +846,12 @@ const SET_TYPES = {
     { tag: '召唤', ids: ['qingfu'], desc: '灵狼 + 白虎 + 青龙 + 万剑归宗，兽群压场' },
     { tag: '毒煞', ids: ['danding'], desc: '毒雾 + 天师符，毒跳爆裂滚雪球' },
     { tag: '符箓', ids: ['tianshi'], desc: '五雷符 + 符箭 + 万剑，专打中毒 / 燃烧目标' }
+  ],
+  /* [M1] 通用套：不锁职业，任何职业都能穿，取向是「刷图 / 生存 / 锐意」三件事 */
+  universal: [
+    { tag: '拾取', ids: ['caravan'], desc: '金币与掉落拉满，击杀后有一段加速窗口' },
+    { tag: '生存', ids: ['hermit'], desc: '减伤堆满，濒死时留一条命' },
+    { tag: '锐意', ids: ['wanderer'], desc: '投射物 + 先手必暴，适合起手秒一只' }
   ]
 };
 
