@@ -123,6 +123,49 @@ const FAMILY_TONES = {
  */
 const AUDIO_SFX = {};
 
+/* ---------------- 玩家 / UI 音效素材 ----------------
+ * 和 AUDIO_SFX（怪物族声音）是两套清单，因为它们的调用入口不同：
+ * 怪物声走 AudioSys.mob() → voice() → _sample()，键是「族_事件」；
+ * 这里的键是 **SFX 门面里的方法名**，由 AudioSys.clip() 直接取。
+ *
+ * 值为空字符串或删掉这一行 = 该条继续实时合成。整体删掉 audio/ 目录也能跑，
+ * 只是每一次 clip() 会先失败一次再回退（_sampleTried 保证只试一次）。
+ *
+ * 注意 sfx-loot 只接管「普通拾取」：稀有掉落的五音上行是**听觉上的稀有度反馈**，
+ * 用同一段素材顶掉会让人分不清掉了什么，所以 loot(r) 的 rare 分支仍走合成。
+ */
+const AUDIO_CLIPS = {
+  ui:       'audio/sfx/sfx-click.wav',
+  levelup:  'audio/sfx/sfx-levelup.wav',
+  cast:     'audio/sfx/sfx-powerup.wav',
+  explode:  'audio/sfx/sfx-explosion.wav',
+  swing:    'audio/sfx/sfx-whoosh.wav',
+  hit:      'audio/sfx/sfx-hit.wav',
+  coin:     'audio/sfx/sfx-coin.wav',
+  loot:     'audio/sfx/sfx-pickup.wav',
+  heal:     'audio/sfx/sfx-shield.wav'
+  /* 已生成但**还没有接入点**的三条，别加进来（加了也只是永远不生效）：
+   *   sfx-footstep —— 本作没有跳跃、也没有脚步系统，要接得先在主循环里做
+   *                   「按移动距离累积触发」，那是新功能不是接线
+   *   sfx-land     —— 同上（无跳跃，落地只在传送/复活时发生）
+   *   sfx-blip     —— 项目里没有对话/提示文字的弹出音，暂时没有调用点 */
+};
+
+/* ---------------- 背景音乐素材 ----------------
+ * 三层各一首（古风，羽调）。**素材是成品曲，不跟着地图调式走** ——
+ * 六张图的探索曲会是同一首。这是当前的取舍：有真曲子比「每图不同但都是合成器」好听。
+ * 想恢复「按图变调」就把这里清空（写成 {}），BGM 会自动回到 _musicTick 的实时合成。
+ *
+ * 播放用 HTMLAudioElement + MediaElementSource 接进 bus.music，
+ * 这样四条音量滑杆与静音照旧生效；不用 decodeAudioData 是因为
+ * 53 秒立体声解码后约 18MB/首，三首同时驻留要 55MB，太贵。
+ */
+const AUDIO_BGM = {
+  explore: 'audio/bgm/guofeng-explore.m4a',
+  combat:  'audio/bgm/guofeng-combat.m4a',
+  boss:    'audio/bgm/guofeng-boss.m4a'
+};
+
 /* ---------------- 事件修饰 ----------------
  * dur     时长倍数        pitch  音高倍数（相对该族基频）
  * gain    音量倍数        bright 滤波器开合倍数（>1 更亮）

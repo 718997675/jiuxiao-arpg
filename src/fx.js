@@ -34,27 +34,41 @@ const SFX = {
 
   /* ---------------- 打击与施法 ---------------- */
 
-  swing() { this.noise(0.13, 0.2, 2600, 1.6); this.tone(430, 0.09, 'triangle', 0.07, 170); },
-  hit() { this.noise(0.1, 0.3, 700, 0.9); this.tone(118, 0.12, 'square', 0.16, 58); },
+  /* 素材优先。这些音效的**合成版本全部保留**，素材只是插在前面的快路径：
+   * 录音缺失 / 还没加载完 / 解码失败时 _clip 返回 false，下面几行照旧合成。
+   * 好处是换真录音只改 data-fauna.js 的 AUDIO_CLIPS，这里一行都不用动。 */
+  _clip(name, opts) {
+    if (!this.on || typeof AudioSys === 'undefined') return false;
+    return AudioSys.clip(name, opts);
+  },
+
+  swing() { if (this._clip('swing')) return; this.noise(0.13, 0.2, 2600, 1.6); this.tone(430, 0.09, 'triangle', 0.07, 170); },
+  hit() { if (this._clip('hit')) return; this.noise(0.1, 0.3, 700, 0.9); this.tone(118, 0.12, 'square', 0.16, 58); },
   crit() {
+    /* 暴击没有独立素材：拿命中素材变调升高 + 加音量当「更重的一下」，
+     * 比再合成一条更统一（同一件武器的皮，只是打得更狠） */
+    if (this._clip('hit', { rate: 1.14, gain: 1 })) { this.tone(1320, 0.1, 'triangle', 0.05, 880); return; }
     this.noise(0.16, 0.36, 900, 0.7);
     this.tone(220, 0.16, 'sawtooth', 0.18, 58);
     this.tone(900, 0.12, 'triangle', 0.1, 320);
   },
-  cast() { this.tone(520, 0.3, 'sine', 0.11, 900); this.noise(0.22, 0.07, 3000, 2); },
+  cast() { if (this._clip('cast')) return; this.tone(520, 0.3, 'sine', 0.11, 900); this.noise(0.22, 0.07, 3000, 2); },
   fire() { this.noise(0.3, 0.18, 480, 0.6); this.tone(170, 0.32, 'sawtooth', 0.11, 66); },
   ice() { this.tone(1250, 0.3, 'sine', 0.09, 600); this.noise(0.26, 0.1, 4200, 3); },
   thunder() { this.noise(0.3, 0.34, 2200, 0.5); this.tone(88, 0.26, 'square', 0.14, 38); },
-  explode() { this.noise(0.5, 0.42, 300, 0.5); this.tone(68, 0.55, 'sine', 0.26, 28); },
-  heal() { this.tone(660, 0.2, 'sine', 0.12, 990); this.tone(990, 0.32, 'sine', 0.07, 1320); },
+  explode() { if (this._clip('explode')) return; this.noise(0.5, 0.42, 300, 0.5); this.tone(68, 0.55, 'sine', 0.26, 28); },
+  heal() { if (this._clip('heal')) return; this.tone(660, 0.2, 'sine', 0.12, 990); this.tone(990, 0.32, 'sine', 0.07, 1320); },
   die() { this.tone(200, 0.45, 'sawtooth', 0.12, 48); this.noise(0.45, 0.18, 380, 0.6); },
-  coin() { this.tone(980, 0.08, 'square', 0.09); setTimeout(() => this.tone(1460, 0.1, 'square', 0.07), 60); },
-  levelup() { [523, 659, 784, 1046].forEach((f, i) => setTimeout(() => this.tone(f, 0.35, 'triangle', 0.14), i * 90)); },
-  ui() { this.tone(760, 0.05, 'square', 0.05); },
+  coin() { if (this._clip('coin')) return; this.tone(980, 0.08, 'square', 0.09); setTimeout(() => this.tone(1460, 0.1, 'square', 0.07), 60); },
+  levelup() { if (this._clip('levelup')) return; [523, 659, 784, 1046].forEach((f, i) => setTimeout(() => this.tone(f, 0.35, 'triangle', 0.14), i * 90)); },
+  ui() { if (this._clip('ui')) return; this.tone(760, 0.05, 'square', 0.05); },
   boss() { this.tone(60, 1.4, 'sawtooth', 0.2, 40); this.noise(1.2, 0.14, 210, 0.4); },
   loot(r) {
+    /* 稀有掉落必须保留五音上行 —— 那是玩家判断「掉了什么」的听觉依据，
+     * 用同一段拾取素材顶掉会让 unique 和普通白装听起来一样。 */
     if (r === 'unique') { [659, 784, 988, 1318, 1568].forEach((f, i) => setTimeout(() => this.tone(f, 0.5, 'triangle', 0.12), i * 90)); return; }
-    if (r === 'legendary' || r === 'set') { [784, 1046, 1318].forEach((f, i) => setTimeout(() => this.tone(f, 0.4, 'triangle', 0.11), i * 100)); }
+    if (r === 'legendary' || r === 'set') { [784, 1046, 1318].forEach((f, i) => setTimeout(() => this.tone(f, 0.4, 'triangle', 0.11), i * 100)); return; }
+    this._clip('loot');
   },
 
   /* ---------------- 技能释放层（S16 新增） ----------------

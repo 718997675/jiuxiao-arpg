@@ -707,6 +707,11 @@ const UI = {
     const events = (typeof VOICE_EVENTS !== 'undefined') ? VOICE_EVENTS : {};
     const amb = (typeof MAP_AMB !== 'undefined') ? MAP_AMB : {};
     const bgmModes = (typeof BGM_MODES !== 'undefined') ? BGM_MODES : {};
+    const clipTab = (typeof AUDIO_CLIPS !== 'undefined') ? AUDIO_CLIPS : {};
+    const clipList = Object.keys(clipTab).filter(k => clipTab[k]);
+    const bgmTab = (typeof AUDIO_BGM !== 'undefined') ? AUDIO_BGM : {};
+    const bgmList = Object.keys(bgmTab).filter(k => bgmTab[k])
+      .map(k => ({ explore: '探索', combat: '战斗', boss: '首领' })[k] || k);
     const usedFam = {};
     [MONSTERS, (typeof BOSSES !== 'undefined' ? BOSSES : {})].forEach(tab => {
       for (const k in (tab || {})) usedFam[tab[k].family || 'humanoid'] = 1;
@@ -723,7 +728,15 @@ const UI = {
       .map(k => `${({ volMaster: '主音量', volSfx: '音效', volAmb: '环境', volMusic: '音乐' })[k]} ${Settings.DEFAULTS[k]}`);
 
     H.push(sec('十二 · 声音', `${famKeys.length} 族音色 · ${Object.keys(events).length} 种事件`, [
-      row('怎么发声', `全部由浏览器<b>实时合成</b>（振荡器 + 噪声 + 滤波），没有音频文件，不占下载体积。若日后加入录音，按 <b>&lt;族&gt;_&lt;事件&gt;.mp3</b> 登记到清单即自动接管该条声音，删掉录音目录也仍会回退合成`),
+      row('怎么发声', `两套并存：<b>怪物声与环境音由浏览器实时合成</b>（振荡器 + 噪声 + 滤波），`
+        + `而<b>技能 / 界面音效与三层底乐是录音素材</b>（${clipList.length} 条音效 + ${bgmList.length} 首曲子）。`
+        + `素材缺失、还没加载完或解码失败时，每一条都<b>自动回退合成</b> —— 删掉整个 audio 目录游戏照样有声`),
+      row('音效素材', clipList.length
+        ? `${clipList.length} 条，接管：${clipList.join('、')}。素材清单在数据表 <b>AUDIO_CLIPS</b>，换真录音只改那张表`
+        : '<span class="hp-n">清单为空，全部实时合成（数据表 AUDIO_CLIPS）</span>'),
+      row('底乐素材', bgmList.length
+        ? `${bgmList.length} 首成品曲：${bgmList.join(' / ')}。素材是<b>固定曲目、不跟地图调式走</b> —— 六张图的探索曲是同一首。想恢复「按图变调」就把 AUDIO_BGM 清空`
+        : '<span class="hp-n">清空 AUDIO_BGM，底乐回到按图调式实时演奏</span>'),
       row('族音色', `共 ${famKeys.length} 族，其中 ${famLive.length} 族已有怪物在用：`),
       ...famKeys.map(f => {
         const t = tones[f];
@@ -734,7 +747,9 @@ const UI = {
       row('空间', L ? `HRTF 双耳定位，可听出左右与前后；超出 ${L.far} 米不发声，闲态叫声只给 ${L.idleFar} 米内。听者跟随相机，转视角时声像随之移动` : '按相机位置与朝向做双耳定位'),
       row('同时发声', L ? `最多 ${L.voices} 路怪声；同族同事件 ${Math.round(L.dedupe * 1000)}ms 内只发一次（狼群齐咬听起来是一声）；闲态每只 ${L.idleMin}~${L.idleMax} 秒一次。首领与阶段转换不受此限` : '同时发声数量有上限，同族同事件会去重'),
       row('环境音', `${ambList.length} 张图各有底噪与随机点缀：${ambList.map(k => `${MAPS[k] ? MAPS[k].name : k}（${amb[k].kind}）`).join(' / ')}。底噪由噪声层加慢速起伏合成，换图交叉淡出，不会硬切`),
-      row('底乐', `三层：${Object.keys(bgmModes).map(k => ({ explore: '探索', combat: '战斗', boss: '首领' })[k] || k).join(' / ')}，按调式实时演奏、交叉淡入。16 米内有已仇恨的敌人进战斗层，脱战 4 秒后淡回探索层；首领战强制首领层`),
+      row('底乐', `三层：${Object.keys(bgmModes).map(k => ({ explore: '探索', combat: '战斗', boss: '首领' })[k] || k).join(' / ')}，`
+        + `${bgmList.length ? '成品曲交叉淡入（同一层切回来 8 秒内接着放，不从头）' : '按调式实时演奏、交叉淡入'}。`
+        + `16 米内有已仇恨的敌人进战斗层，脱战 4 秒后淡回探索层；首领战强制首领层`),
       row('音量', `设置（${K('O')}）里四条滑杆${volumes.length ? '：' + volumes.join(' / ') : ''}，另有一键静音。拖动即时生效，与画质档位分开存（换角色不重设）；切到后台自动暂停，回到页面继续`),
       row('没有声音', `浏览器要求先有用户操作才允许播放：在页面上<b>点一下</b>（或按键）即可解锁。若仍无声，检查是否静音、主音量是否为 0，以及浏览器标签页是否被静音`)
     ]));

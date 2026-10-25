@@ -55,6 +55,9 @@ const AudioSys = {
   _amb: null,         // { id, spec, gain, nodes }
   _wantAmb: null,
   _layers: null,      // { explore, combat, boss } 三个 GainNode
+  _bgmEl: null,       // { explore, combat, boss } → { el, src, trim, ok, bad }
+  _bgmLive: null,     // 此刻真的在放素材的那一层（null = 走实时合成）
+  _preloaded: false,  // 音效素材预热是否已排入队列
   _bgmMode: 'explore',
   _wantBgm: 'explore',
   _beat: 0,
@@ -134,6 +137,7 @@ const AudioSys = {
     this.unlocked = true;
     if (this._wantAmb) this.ambient(this._wantAmb);
     if (this._wantBgm) this.bgm(this._wantBgm);
+    this.preload();
   },
 
   _hookEnv() {
@@ -150,8 +154,22 @@ const AudioSys = {
     }
   },
 
-  suspend() { try { if (this.ctx && this.ctx.state === 'running') this.ctx.suspend(); } catch (e) {} },
-  resume() { try { if (this.ctx && this.ctx.state === 'suspended') this.ctx.resume(); } catch (e) {} },
+  /* 切后台：Context 挂起能静掉合成音，但 MediaElement 自己还在走时间轴，
+   * 所以素材 BGM 要显式 pause，回来再续（否则回来时曲子已经跑了几分钟） */
+  _bgmPauseAll() {
+    const B = this._bgmEl;
+    if (!B) return;
+    for (const k in B) {
+      const st = B[k];
+      if (st.el.paused) continue;
+      try { st.el.pause(); } catch (e) {}
+      st.offAt = this.ctx ? this.ctx.currentTime : 0;
+    }
+    this._bgmLive = null;
+  },
+
+  suspend() { this._bgmPauseAll(); try { if (this.ctx && this.ctx.state === 'running') this.ctx.suspend(); } catch (e) {} },
+  resume() { try { if (this.ctx && this.ctx.state === 'suspended') this.ctx.resume(); } catch (e) {} this._bgmSync(); },
 
   /* ---------------- 音量 ---------------- */
 
@@ -259,6 +277,73 @@ const AudioSys = {
 
   _key(fam, ev) { return fam + '_' + ev; },
 
+  /* 通用素材加载：key 唯一，url 为空就什么都不做（保持合成）。
+   * 失败也记进 _sampleTried，避免每次调用都重发请求。 */
+  _loadInto(key, url) {
+    if (this._sampleTried[key]) return;
+    this._sampleTried[key] = true;
+    if (!url || !this.ctx || typeof fetch !== 'function') return;
+    /* file:// 直开（双击 index.html）时 fetch 的 origin 是 null，会被 CORS 拒，
+     * 控制台刷一屏红字 —— 而回退合成照样有声。所以干脆不发这个请求：
+     * 玩家看到的是「安静地走合成」，不是九条报错。http 部署下素材正常生效。
+     * 注意只拦 fetch：底乐用 <audio src>，媒体元素允许跨源，file:// 照样能放。 */
+    if (typeof location !== 'undefined' && location.protocol === 'file:') return;
+    /* fire-and-forget：没解码完的那几次照常合成，解码好了之后自动接管 */
+    fetch(url)
+      .then(r => { if (!r.ok) throw new Error('miss'); return r.arrayBuffer(); })
+      .then(ab => new Promise((res, rej) => {
+        try { this.ctx.decodeAudioData(ab, res, rej); } catch (e) { rej(e); }
+      }))
+      .then(b => { if (b && b.duration > 0) this._samples[key] = b; })
+      .catch(() => { /* 缺文件 / 解码失败：保持合成，不打扰任何人 */ });
+  },
+
+  /**
+   * 播一条**玩家 / UI 音效素材**（清单 AUDIO_CLIPS，键是 SFX 门面的方法名）。
+   * @returns {boolean} 素材可用且已排入播放返回 true；否则 false，调用方回退合成。
+   *   这个「先试素材、false 就走原来的合成」写法，让 181 处调用点一行都不用改。
+   */
+  clip(name, opts = {}) {
+    const c = this.ctx;
+    if (!c || !this.on || !this._running()) return false;
+    const key = 'clip:' + name;
+    const buf = this._samples[key];
+    if (!buf) {
+      const T = (typeof AUDIO_CLIPS !== 'undefined') ? AUDIO_CLIPS : null;
+      this._loadInto(key, T ? T[name] : null);
+      return false;
+    }
+    const t = c.currentTime + (opts.delay || 0);
+    const s = c.createBufferSource();
+    s.buffer = buf;
+    if (opts.rate) s.playbackRate.value = opts.rate;
+    const g = c.createGain();
+    g.gain.value = (opts.gain == null ? 1 : opts.gain);
+    s.connect(g);
+    g.connect(opts.dest || this.bus.sfx);
+    s.start(t);
+    return true;
+  },
+
+  /* 预热：解锁之后把清单里所有音效排进队列慢慢取，
+   * 否则「第一次挥砍」永远是合成音、第二次才变素材，听起来像 bug。
+   * 用 60ms 间隔串行，避免 12 个请求同时打开把主线程挤住。 */
+  preload() {
+    if (this._preloaded) return;
+    this._preloaded = true;
+    const T = (typeof AUDIO_CLIPS !== 'undefined') ? AUDIO_CLIPS : null;
+    if (!T) return;
+    const keys = Object.keys(T);
+    let i = 0;
+    const step = () => {
+      if (i >= keys.length) return;
+      const k = keys[i++];
+      this._loadInto('clip:' + k, T[k]);
+      setTimeout(step, 60);
+    };
+    setTimeout(step, 120);
+  },
+
   _sample(family, ev, out, gainScale) {
     const key = this._key(family, ev);
     const buf = this._samples[key];
@@ -275,18 +360,8 @@ const AudioSys = {
   },
 
   _tryLoad(key) {
-    if (this._sampleTried[key]) return;
-    this._sampleTried[key] = true;
     const url = (typeof AUDIO_SFX !== 'undefined') ? AUDIO_SFX[key] : null;
-    if (!url || !this.ctx || typeof fetch !== 'function') return;
-    /* fire-and-forget：没解码完的那几次照常合成，解码好了之后自动接管 */
-    fetch(url)
-      .then(r => { if (!r.ok) throw new Error('miss'); return r.arrayBuffer(); })
-      .then(ab => new Promise((res, rej) => {
-        try { this.ctx.decodeAudioData(ab, res, rej); } catch (e) { rej(e); }
-      }))
-      .then(b => { if (b && b.duration > 0) this._samples[key] = b; })
-      .catch(() => { /* 缺文件 / 解码失败：保持合成，不打扰任何人 */ });
+    this._loadInto(key, url);
   },
 
   /* ---------------- 族音色合成 ---------------- */
@@ -621,6 +696,105 @@ const AudioSys = {
 
   /* ---------------- BGM 三层 ---------------- */
 
+  /* ---------------- BGM 素材（三层各一首成品曲） ----------------
+   * 为什么用 HTMLAudioElement 而不是 decodeAudioData：
+   *   53 秒立体声解码后约 18MB/首，三首同时驻留要 55MB —— 手机直接崩。
+   *   MediaElementSource 让浏览器自己流式解码，内存只有几十 KB。
+   *
+   * 为什么每条都常驻、而不是切层时新建：
+   *   createMediaElementSource 对同一个元素只能建一次，反复 new 会漏节点；
+   *   而且换层的淡变（1.1 秒）需要旧轨还在响，不能一上来就 stop。
+   *
+   * 播放控制：
+   *   · 进某层 → 该层元素 play()（首次从头，8 秒内回来的从暂停处续）
+   *   · 出某层 → 等淡变（1.25 秒）结束再 pause()，不然淡出变成硬切
+   *   · 元素被浏览器中断（切后台、iOS 来电）→ bgm() 每 0.25 秒会顺手救回来
+   */
+  BGM_TRIM: 0.4,        // 成品曲比合成音响得多，整体压到 40% 才不盖音效
+
+  _bgmMount() {
+    if (this._bgmEl || !this.ctx || !this._layers) return;
+    if (typeof Audio === 'undefined') return;
+    const T = (typeof AUDIO_BGM !== 'undefined') ? AUDIO_BGM : null;
+    if (!T) return;
+    const c = this.ctx;
+    this._bgmEl = {};
+    for (const k in this._layers) {
+      const url = T[k];
+      if (!url) continue;
+      const el = new Audio();
+      el.src = url;
+      el.loop = true;
+      el.preload = 'auto';
+      let src = null;
+      try { src = c.createMediaElementSource(el); } catch (e) { src = null; }
+      if (!src) continue;
+      const trim = c.createGain();
+      trim.gain.value = this.BGM_TRIM;
+      src.connect(trim);
+      trim.connect(this._layers[k]);
+      const st = { el, src, trim, ok: false, bad: false, _t: 0, offAt: -1 };
+      /* canplay 而不是 canplaythrough：m4a 的 canplaythrough 要等整首缓冲，
+       * 太慢；canplay 就足够起播了 */
+      el.addEventListener('canplay', () => { st.ok = true; this._bgmSync(); });
+      el.addEventListener('error', () => { st.bad = true; this._bgmSync(); });
+      this._bgmEl[k] = st;
+    }
+  },
+
+  /* 让「当前层」的素材在播、其它层停。可以每帧调，内部只在状态真的不对时才动手。 */
+  _bgmSync() {
+    const B = this._bgmEl;
+    if (!B) return;
+    const mode = this._bgmMode || 'explore';
+    const cur = B[mode];
+    /* 这一层没有素材 / 还没加载好 / 加载失败 → 交给 _musicTick 实时合成 */
+    if (!cur || cur.bad || !cur.ok) {
+      if (this._bgmLive) {
+        /* 原来在放素材，现在回不去了（比如切到没素材的层）：停掉，别叠着合成音 */
+        const old = B[this._bgmLive];
+        if (old && !old.el.paused) { try { old.el.pause(); } catch (e) {} }
+      }
+      this._bgmLive = null;
+      return;
+    }
+    if (cur.el.paused) {
+      /* 这层刚从「等待暂停」状态被切回来：把上次排的暂停撤掉 */
+      cur._pend = false;
+      clearTimeout(cur._t);
+      /* 8 秒内从这层切走过 → 续播；否则从头。
+       * 探索↔战斗反复横跳时，每次都从曲头开始是很难听的。 */
+      const now = this.ctx ? this.ctx.currentTime : 0;
+      const recent = cur.offAt >= 0 && (now - cur.offAt) < 8;
+      if (!recent) { try { cur.el.currentTime = 0; } catch (e) {} }
+      cur.offAt = -1;
+      const p = cur.el.play();
+      if (p && p.catch) p.catch(() => {});   // 自动播放被拒：合成层会顶上
+    }
+    /* 只有在**真的能出声**时才算「素材接管」：
+     * play() 一调 el.paused 就变 false，但此时可能还在缓冲。
+     * 若这时就把 _bgmLive 设成 mode，_musicTick 会立刻停手 →
+     * 缓冲那几百毫秒里一片死寂。所以要求 readyState >= 3（HAVE_FUTURE_DATA）。
+     * bgm() 每 0.25 秒会再进来一次，缓冲够了就自动接上。 */
+    this._bgmLive = (cur.el.paused || cur.el.readyState < 3) ? null : mode;
+    for (const k in B) {
+      if (k === mode) continue;
+      const st = B[k];
+      if (st.el.paused || st._pend) continue;   // 已经排好暂停就别重排（见下）
+      /* 这个函数每 0.25 秒会被 bgm() 调一次。如果每次都 clearTimeout + 重设，
+       * 暂停永远不会发生 —— 元素一直被 layer gain 压成 0 在后台空跑，
+       * 白白耗电、白占一个解码通道。所以排一次就打个标记。 */
+      st._pend = true;
+      clearTimeout(st._t);
+      st._t = setTimeout(() => {
+        st._pend = false;
+        if (this._bgmMode === k) return;      // 这期间又切回来了，不能停
+        try { st.el.pause(); } catch (e) {}
+        st.offAt = this.ctx ? this.ctx.currentTime : 0;
+      }, 1250);
+    }
+  },
+
   _mkLayers() {
     if (this._layers || !this.ctx) return;
     const c = this.ctx;
@@ -643,9 +817,12 @@ const AudioSys = {
     const c = this.init();
     if (!c || !this._running()) return;
     this._mkLayers();
+    this._bgmMount();
     const lay = this._layers && this._layers[mode];
     if (!lay) return;                       // 未知层名：不静默改成别的层
-    if (this._bgmMode === mode && lay.gain.value > 0.4) return;
+    /* 已经在目标层且增益到位：只需顺手维持素材播放（这行每 0.25 秒会被调一次，
+     * 元素被浏览器中断时靠它救回来） */
+    if (this._bgmMode === mode && lay.gain.value > 0.4) { this._bgmSync(); return; }
     this._bgmMode = mode;
     const t = c.currentTime;
     for (const k in this._layers) {
@@ -658,6 +835,7 @@ const AudioSys = {
       } catch (e) { g.gain.value = target; }
     }
     this._beat = Math.min(this._beat, 0.05);
+    this._bgmSync();
   },
 
   _note(freq, dur, gain, type, dest) { this.tone(freq, dur, type, gain, null, dest); },
@@ -666,6 +844,9 @@ const AudioSys = {
    * 不做完整编曲 —— 这层只是「有呼吸」，别抢技能音效的频段。 */
   _musicTick(dt) {
     const mode = this._bgmMode || 'explore';
+    /* 素材层正在放这首，就别再叠实时合成的音符了 ——
+     * 两层音乐同时响不是「更丰富」，是跑调 */
+    if (this._bgmLive === mode) return;
     /* 先看有没有这一层的增益节点：bgm() 还没被调过时（没进过图、或者音频没解锁），
      * 这里不该推进节拍 —— 否则解锁那一刻会「补播」一串积压的音符 */
     const g = this._layers && this._layers[mode];
@@ -725,12 +906,19 @@ const AudioSys = {
 
   stats() {
     this._prune();
+    const T = (typeof AUDIO_CLIPS !== 'undefined') ? AUDIO_CLIPS : {};
+    const B = (typeof AUDIO_BGM !== 'undefined') ? AUDIO_BGM : {};
+    const clipKeys = Object.keys(T);
     return {
       on: this.on,
       state: this.ctx ? this.ctx.state : 'none',
       unlocked: this.unlocked,
       voices: this._slots.length,
       samples: Object.keys(this._samples).length,
+      clips: clipKeys.length,
+      clipsReady: clipKeys.filter(k => !!this._samples['clip:' + k]).length,
+      bgmTracks: Object.keys(B).length,
+      bgmLive: this._bgmLive,
       mode: this._bgmMode,
       amb: this._amb ? this._amb.id : null,
       master: this.master ? +this.master.gain.value.toFixed(3) : null,
