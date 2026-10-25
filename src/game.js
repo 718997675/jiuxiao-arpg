@@ -6214,32 +6214,79 @@ const Game = {
     return { ok: true, yields: out, text: txt };
   },
 
-  /* ---------------- 一键分解（v1.1.4） ----------------
-   * 默认只分凡品；includeMagic 时连带法器。
+  /* ---------------- 一键分解（v1.1.4 起；v1.9.2 改为品质阈值） ----------------
+   * 老版只有一个「连带法器」勾选框，而它认的其实是 rarity==='magic'（灵品），
+   * 名字叫法器、行囊里却按品质一刀切 —— 玩家按了以为只清白装，一整排灵品
+   * 跟着没了。现在改成<b>品质阈值</b>：选到哪一档，就把该档及以下的装备一起分
+   * （凡 → 灵 → 玄 → 神），选档即预览，产出实时更新。
+   *
+   * 两条永不参与：
+   *   1. 套装 / 传世 是「类型」不是品质档，不在 JUNK_TIERS 链上，任何档都碰不到；
+   *   2. 身上穿着的（含老档里「穿戴品同时留在行囊」的脏数据，按 uid + 对象身份双查）。
    * 带镶嵌的装备先自动卸下符文（全额返还）再分解，符文不会被吞。 */
-  previewDecomposeJunk(includeMagic) {
+  JUNK_TIERS: ['common', 'magic', 'rare', 'legendary'],
+
+  /* 阈值归一化：接受档位键 / 下标 / 老版布尔（true = 连带灵品，false = 只分凡品） */
+  junkTierKey(tier) {
+    const T = this.JUNK_TIERS;
+    if (typeof tier === 'boolean') return tier ? 'magic' : 'common';
+    if (typeof tier === 'number') return T[Math.max(0, Math.min(T.length - 1, Math.round(tier)))] || 'common';
+    return T.includes(tier) ? tier : 'common';
+  },
+
+  /* 待分清单：品质 ≤ 阈值，且不在身上 */
+  junkList(tier) {
     const s = this.state;
-    const rarities = includeMagic ? ['common', 'magic'] : ['common'];
-    const list = s.inventory.filter(it => it && rarities.includes(it.rarity));
+    const max = this.junkTierKey(tier);
+    const allow = this.JUNK_TIERS.slice(0, this.JUNK_TIERS.indexOf(max) + 1);
+    const worn = new Set(), wornUid = new Set();
+    const eq = (s && s.equipment) || {};
+    for (const k in eq) {
+      const it = eq[k];
+      if (!it) continue;
+      worn.add(it);
+      if (typeof it.uid === 'number') wornUid.add(it.uid);
+    }
+    return ((s && s.inventory) || []).filter(it =>
+      it && allow.includes(it.rarity) &&
+      !worn.has(it) && !(typeof it.uid === 'number' && wornUid.has(it.uid)));
+  },
+
+  previewDecomposeJunk(tier) {
+    const max = this.junkTierKey(tier);
+    const list = this.junkList(max);
     const total = [0, 0, 0, 0];
+    const byRarity = {};
     for (const it of list) {
       const y = this._decomposeYield(it);
       for (let i = 0; i < 4; i++) total[i] += y[i];
+      byRarity[it.rarity] = (byRarity[it.rarity] || 0) + 1;
     }
+    /* 行囊里「各档各有多少件」：按钮上的数字用这个，玩家才能一眼看出
+     * 「再往上抬一档会多毁掉几件」，而不是被范围内的累计数绕晕。 */
+    const bagByRarity = {};
+    for (const k of this.JUNK_TIERS) bagByRarity[k] = 0;
+    for (const it of this.junkList('legendary')) bagByRarity[it.rarity] = (bagByRarity[it.rarity] || 0) + 1;
     return {
+      tier: max,
+      tierName: (RARITY[max] || {}).name || max,
+      tiers: this.JUNK_TIERS.map(k => ({ key: k, name: (RARITY[k] || {}).name || k, color: (RARITY[k] || {}).color || '#cfcfd6' })),
       count: list.length,
-      magicCount: list.filter(it => it.rarity === 'magic').length,
+      magicCount: byRarity.magic || 0,
+      byRarity,
+      bagByRarity,
       yields: total,
       text: total.map((n, i) => n ? n + CRYSTAL_TIERS[i].name : '').filter(Boolean).join('、') || '无'
     };
   },
 
-  decomposeJunk(includeMagic) {
+  decomposeJunk(tier) {
     const s = this.state;
-    const rarities = includeMagic ? ['common', 'magic'] : ['common'];
-    const targets = s.inventory.filter(it => it && rarities.includes(it.rarity));
+    const max = this.junkTierKey(tier);
+    const tierName = (RARITY[max] || {}).name || max;
+    const targets = this.junkList(max);
     if (!targets.length) {
-      return { ok: false, msg: '没有可分解的' + (includeMagic ? '凡品/法器装备' : '凡品装备') + '。' };
+      return { ok: false, msg: '没有可分解的' + tierName + '及以下装备。' };
     }
     const total = [0, 0, 0, 0];
     for (const it of targets) {
@@ -6247,16 +6294,18 @@ const Game = {
       const y = this._decomposeYield(it);
       for (let i = 0; i < 4; i++) total[i] += y[i];
     }
-    s.inventory = s.inventory.filter(it => !(it && rarities.includes(it.rarity)));
+    /* 按对象身份剔除：uid 可能重复（老档脏数据），身份不会 */
+    const gone = new Set(targets);
+    s.inventory = s.inventory.filter(it => !(it && gone.has(it)));
     for (let i = 0; i < 4; i++) this.addCrystalTier(i + 1, total[i]);
     const txt = total.map((n, i) => n ? n + CRYSTAL_TIERS[i].name : '').filter(Boolean).join('、');
     SFX.levelup();
-    UI.log('一键分解 ' + targets.length + ' 件装备，获得 ' + txt, 'lv');
+    UI.log('一键分解 ' + targets.length + ' 件「' + tierName + '及以下」装备，获得 ' + txt, 'lv');
     UI.toast('分解 ' + targets.length + ' 件 · ' + txt, 'lv');
     UI.renderInventory();
     UI.renderHUD();
     this.save();
-    return { ok: true, count: targets.length, yields: total };
+    return { ok: true, count: targets.length, tier: max, tierName, yields: total };
   },
 
   /* [S3] 升级装备品质：common→magic→rare→legendary */

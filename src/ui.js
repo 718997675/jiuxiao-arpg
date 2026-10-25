@@ -183,14 +183,15 @@ const UI = {
     });
     const jb = document.getElementById('invJunkBar');
     if (jb) jb.addEventListener('click', e => {
-      if (e.target.closest('[data-junkmagic]')) {
-        this.invJunkMagic = !this.invJunkMagic;
+      const t = e.target.closest('[data-junktier]');
+      if (t) {
+        this.invJunkTier = t.dataset.junktier;
         SFX.ui();
         this.renderInventory();
         return;
       }
       if (e.target.closest('[data-junkok]')) {
-        const r = Game.decomposeJunk(this.invJunkMagic);
+        const r = Game.decomposeJunk(this.invJunkTier);
         this.invJunkOpen = false;
         if (!r.ok && r.msg) UI.log(r.msg, 'bad');
         this.renderInventory();
@@ -525,6 +526,9 @@ const UI = {
     ]));
 
     /* ---------------- 3. 装备 ---------------- */
+    /* 一键分解的档位文案从数据链算：Game.JUNK_TIERS 改动后这一页自己跟着变 */
+    const junkTierTxt = ((typeof Game !== 'undefined' && Array.isArray(Game.JUNK_TIERS)) ? Game.JUNK_TIERS : [])
+      .map(k => (RARITY[k] || {}).name || k).join(' → ') || '凡品 → 灵品 → 玄品 → 神品';
     H.push(sec('三 · 装备', `${slotN} 个槽位`, [
       row('槽位', `${slotN} 个：${slotNames.join(' / ')}`),
       row('基底阶', `${tierN} 阶：${BASE_TIER_NAME.join(' → ')}。同名字的装备阶数越高，基础数值越高。传世不在八阶体系内（见第六节）`),
@@ -533,6 +537,7 @@ const UI = {
       row('穿不上', `行囊里不满足需求的格子会压暗、左上角盖一枚「需」章；悬停可看差在哪一项、当前差多少。补上加点或换掉就恢复常色`),
       row('校验时机', `只在<b>穿戴那一刻</b>校验。已经穿在身上的装备，之后洗点或换装备导致属性下降也不会脱落 —— 免得洗一次点把全身扒光`),
       row('双手 / 双持', `武器分单手与双手：双手占用副手格；副手只能是盾、副手武器或法器`),
+      row('行囊与一键分解', `行囊按格收纳，容量可在行囊页顶部「扩容」逐级提升；装不下时格子区自行滚动。一键分解<b>按品质阈值</b>选档（${junkTierTxt}），选到哪一档就把该档及以下的装备一起分，玄晶产出随选档实时预估。<b>身上穿着的、套装、传世一律不参与</b>；带镶嵌的装备会先自动卸下符文并全额返还`),
       row('升阶', `炼器台「升阶」页：把一件装备的基底提升一阶，保留品质 / 词缀 / 孔位 / 符文 / 强化等级，只换基底。需要同名装备 + 铜钱 + 玄晶`)
     ]));
 
@@ -1289,7 +1294,7 @@ const UI = {
 
   /* ---------------- 背包 ---------------- */
   invJunkOpen: false,      // 一键分解确认条是否展开
-  invJunkMagic: false,     // 一键分解是否连带法器
+  invJunkTier: 'common',   // 一键分解的品质阈值（凡 → 灵 → 玄 → 神，分到这一档为止）
   invTab: 'equip',         // 行囊当前栏：equip / mat / pill / quest
   invUpOpen: false,        // 行囊扩容条是否展开（v1.4.0）
   /* 旧入口全部重定向到菜单页签：快捷键、老按钮、探针都还能这么调 */
@@ -1441,17 +1446,25 @@ const UI = {
     }
     ig.innerHTML = html;
 
-    /* 一键分解确认条：默认只分凡品，可勾选连带法器；预估产出实时更新 */
+    /* 一键分解确认条（v1.9.2）：品质阈值选到哪档分到哪档，产出实时更新。
+     * 默认只分凡品 —— 阈值越高越危险，别默认替玩家做决定。 */
     const jb = document.getElementById('invJunkBar');
     if (jb) {
       if (this.invJunkOpen) {
-        const pv = Game.previewDecomposeJunk(this.invJunkMagic);
+        const pv = Game.previewDecomposeJunk(this.invJunkTier);
         jb.style.display = '';
+        const chips = pv.tiers.map(t => {
+          const on = t.key === pv.tier;
+          const n = (pv.bagByRarity || {})[t.key] || 0;
+          return `<button class="jtier${on ? ' on' : ''}${n ? '' : ' zero'}" data-junktier="${t.key}"
+            title="${t.name}档：行囊里 ${n} 件（选到这一档会一并分解，该档以上保留）">${t.name}<i>${n}</i></button>`;
+        }).join('');
         jb.innerHTML = `<span class="jl">一键分解</span>
-          <span class="jt">将分解 <b style="color:#e8d8b0">${pv.count}</b> 件${this.invJunkMagic ? '凡品/法器' : '凡品'}装备，预计获得 <b style="color:#c9b8ff">${pv.text}</b></span>
-          <label class="jchk"><input type="checkbox" data-junkmagic ${this.invJunkMagic ? 'checked' : ''}>连带法器（${pv.magicCount} 件）</label>
+          <span class="jt">将分解 <b style="color:#e8d8b0">${pv.count}</b> 件「${pv.tierName}及以下」装备，预计获得 <b style="color:#c9b8ff">${pv.text}</b></span>
+          <span class="jtierwrap"><i>分解到</i>${chips}</span>
           <button class="btn primary" data-junkok ${pv.count ? '' : 'disabled'}>确认分解</button>
-          <button class="btn" data-junkcancel>取消</button>`;
+          <button class="btn" data-junkcancel>取消</button>
+          <span class="jnote">身上装备 · 套装 · 传世 不参与</span>`;
       } else { jb.style.display = 'none'; jb.innerHTML = ''; }
     }
 
@@ -1487,7 +1500,7 @@ const UI = {
           <i style="font-style:normal;font-size:9.5px;color:#5e594e">${sets.length ? sets.length + ' 套生效中' : '尚未成势'}</i></div>
         ${setBody}
         <div class="ft-tips"><span>左键 穿戴 / 卸下</span><span>Shift+左键 出售</span>
-          <span>一键分解 凡品→玄晶</span><span>扩容永久生效</span></div>`;
+          <span>一键分解 按品质阈值</span><span>扩容永久生效</span></div>`;
     }
   },
 

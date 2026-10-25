@@ -343,6 +343,17 @@
   .junkbar .jt b{font-weight:600}
   .junkbar .jchk{display:flex;align-items:center;gap:4px;cursor:pointer;color:#9ad0a8;user-select:none}
   .junkbar .btn{padding:3px 12px;font-size:11px;letter-spacing:1px}
+  /* 品质阈值（v1.9.2）：选到哪一档就分到哪一档，套装/传世不在链上 */
+  .junkbar .jtierwrap{display:flex;align-items:center;gap:3px}
+  .junkbar .jtierwrap>i{font-style:normal;font-size:10px;color:#6f6959;letter-spacing:1px;margin-right:2px}
+  .junkbar .jtier{font-family:inherit;font-size:10.5px;letter-spacing:1px;padding:2px 7px;cursor:pointer;
+    background:rgba(0,0,0,.3);border:1px solid rgba(216,178,90,.22);color:#a8a090;border-radius:2px;transition:.1s}
+  .junkbar .jtier i{font-style:normal;font-size:9.5px;margin-left:4px;opacity:.75;font-variant-numeric:tabular-nums}
+  .junkbar .jtier.zero i{opacity:.32}
+  .junkbar .jtier.on i{opacity:.85}
+  .junkbar .jtier:hover{border-color:rgba(216,178,90,.55);color:#e8d8b0}
+  .junkbar .jtier.on{border-color:var(--gold);color:#1a1510;background:linear-gradient(180deg,#e0c070,#b89840);font-weight:600}
+  .junkbar .jnote{font-size:10px;color:#6f6959;letter-spacing:.5px}
 
   /* ---------- 套装图鉴 ---------- */
   #setCodexPanel{left:50%;top:50%;transform:translate(-50%,-50%);width:720px;max-height:88vh;z-index:65}
@@ -898,7 +909,13 @@
   /* [P4] 变体专属特效的风格字（颜色由行内 style 给，与战斗里的光效同色） */
   .sd-fx{display:inline-block;margin-left:6px;padding:1px 6px;border-radius:3px;font-size:9.5px;
     border:1px solid currentColor;background:rgba(255,255,255,.04);vertical-align:1px;opacity:.9}
-  .igrid{display:grid;grid-template-columns:repeat(8,1fr);gap:6px;
+  /* grid-auto-rows 必须写死 max-content（v1.9.2 修）：
+   * 这个容器既是网格又是滚动容器（overflow-y:auto）且高度被面板压定，
+   * 行高留 auto 时浏览器会把可用高度平摊给全部行 —— 行囊一扩到 104 格
+   * （13 行）行高就被压成 23px，而格子里的方块仍是按宽度算出的 50 多像素，
+   * 于是上下叠在一起（v1.9.1 线上实拍）。钉成 max-content 后行高跟着
+   * 格子走，装不下就滚动，不再压扁。 */
+  .igrid{display:grid;grid-template-columns:repeat(8,1fr);grid-auto-rows:max-content;gap:6px;
     flex:0 1 auto;min-height:0;overflow-y:auto;overflow-x:hidden;align-content:start;padding-right:2px}
   /* 行囊格子同样按部位分档（v1.2.3）：轨道保持等宽等距，格子里的小方块按档位缩放，
    * 于是护甲/兵器占满、饰品只占六成 —— 索引映射不变，只改视觉体量。 */
