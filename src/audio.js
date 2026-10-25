@@ -327,19 +327,27 @@ const AudioSys = {
 
   /* 预热：解锁之后把清单里所有音效排进队列慢慢取，
    * 否则「第一次挥砍」永远是合成音、第二次才变素材，听起来像 bug。
-   * 用 60ms 间隔串行，避免 12 个请求同时打开把主线程挤住。 */
+   *
+   * 两个细节都是被线上实测逼出来的（GitHub Pages + 国内网络，5 秒只到位 3 条）：
+   *   · **按热度排序**：界面 / 命中 / 挥砍最先进队列。原来按声明顺序先取 levelup，
+   *     结果玩家砍了十刀，最该有素材的命中音还在排队。
+   *   · **两个一批**：纯串行会白白空等 RTT；并发太多又会和地图 / 模型的加载抢带宽。
+   */
   preload() {
     if (this._preloaded) return;
     this._preloaded = true;
     const T = (typeof AUDIO_CLIPS !== 'undefined') ? AUDIO_CLIPS : null;
     if (!T) return;
-    const keys = Object.keys(T);
+    const HOT = ['ui', 'hit', 'swing', 'coin', 'loot', 'explode', 'cast', 'heal', 'levelup'];
+    const keys = HOT.filter(k => T[k])
+      .concat(Object.keys(T).filter(k => HOT.indexOf(k) < 0));
     let i = 0;
     const step = () => {
-      if (i >= keys.length) return;
-      const k = keys[i++];
-      this._loadInto('clip:' + k, T[k]);
-      setTimeout(step, 60);
+      for (let n = 0; n < 2 && i < keys.length; n++) {
+        const k = keys[i++];
+        this._loadInto('clip:' + k, T[k]);
+      }
+      if (i < keys.length) setTimeout(step, 90);
     };
     setTimeout(step, 120);
   },

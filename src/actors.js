@@ -1059,17 +1059,30 @@ function applyPaperDoll(p) {
   } else if (P.aura) { P.aura.visible = false; }
 }
 
+/* 基底阶 → 材质。**这张表必须与 BASE_TIERS 同长**：
+ * M1 把基底从 5 档扩到 8 档时这里漏了，于是 ilvl ≥ 26 的装备
+ * （tierIndex 返回 5/6/7）拿到 metal=undefined → palette 是 undefined
+ * → `palette[0]` 抛 TypeError，一穿上就崩；而且读档走 applyDoll 是同一个
+ * 函数，所以崩过一次之后连存档都进不去（东西没坏，是渲染崩）。
+ * 名字对应八阶：凡兵 / 精铁 / 玄铁 / 地煞 / 天罡 / 仙品 / 神兵 / 太初。 */
+const TIER_METAL = ['cloth', 'leather', 'iron', 'darkiron', 'steel', 'jade', 'gold', 'dragon'];
+const METAL_PALETTE = {
+  cloth:    [0x6b5a4a, 0x4a3c30, 0.05],
+  leather:  [0x7a5a3a, 0x533c26, 0.1],
+  iron:     [0x8a8f96, 0x5a6068, 0.65],
+  darkiron: [0x4a5058, 0x30343a, 0.8],
+  steel:    [0x7d8a99, 0x4c5764, 0.7],
+  jade:     [0x86a394, 0x4c6b5c, 0.6],
+  gold:     [0xb69a5a, 0x6f5c33, 0.72],
+  dragon:   [0x6a7a5a, 0x3a4530, 0.75]
+};
+
 function itemVisualColor(item) {
   const glow = rarityGlow(item);
   const tier = tierIndex(item.ilvl);
-  const metal = ['cloth', 'leather', 'iron', 'darkiron', 'dragon'][tier];
-  const palette = {
-    cloth: [0x6b5a4a, 0x4a3c30, 0.05],
-    leather: [0x7a5a3a, 0x533c26, 0.1],
-    iron: [0x8a8f96, 0x5a6068, 0.65],
-    darkiron: [0x4a5058, 0x30343a, 0.8],
-    dragon: [0x6a7a5a, 0x3a4530, 0.75]
-  }[metal];
+  /* 双重兜底：就算以后又扩档而忘了加材质，也只是顶阶换色，不会整局崩 */
+  const metal = TIER_METAL[tier] || TIER_METAL[TIER_METAL.length - 1];
+  const palette = METAL_PALETTE[metal] || METAL_PALETTE.iron;
   let base = palette[0], dark = palette[1];
   if (item.slot === 'weapon' || item.slot === 'offhand') { base = 0xd0d4dc; dark = 0x7a8088; }
   if (glow && item.rarity !== 'common') base = mixHex(base, glow, 0.42);
