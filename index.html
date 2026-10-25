@@ -87,7 +87,26 @@
   .skill .g{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
     font-family:"STKaiti","KaiTi",serif;font-size:26px;color:#e8dcc0;text-shadow:0 2px 6px #000}
   .skill .k{position:absolute;left:2px;top:1px;font-size:9px;color:#a8a090;letter-spacing:0}
+  /* [M1] 技能变体角标：三个改造共用一张图标，靠右上角 Ⅰ/Ⅱ/Ⅲ 区分 */
+  .skill .vb{position:absolute;right:1px;top:1px;font-size:9px;line-height:1;padding:0 2px;
+    color:#1a1510;background:linear-gradient(180deg,#e8cf8a,#c8a24a);border-radius:2px;
+    font-weight:600;pointer-events:none;z-index:2}
   .skill .cost{position:absolute;right:3px;bottom:1px;font-size:9px;color:#7fb0e8}
+  /* [M1] 快捷栏标识：技能条右端的小方章，点它 / 按 Shift 切第二套 */
+  /* [v1.8.3] 角标里放剑 / 盾图标 + 「1/2」，不读字也知道自己在第几套 */
+  .barset svg{width:16px;height:16px;display:block}
+  .barset{width:26px;height:54px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;
+    border:1px solid rgba(216,178,90,.4);border-radius:4px;cursor:pointer;
+    background:linear-gradient(180deg,rgba(46,40,30,.9),rgba(12,10,10,.9));
+    font-family:"STKaiti","KaiTi",serif;font-size:15px;color:#d8b25a;
+    text-shadow:0 2px 6px #000;transition:.12s;user-select:none}
+  .barset .bs-n{font-size:9px;line-height:1;letter-spacing:0;color:#b8a680;font-family:system-ui,sans-serif}
+  .barset:hover{border-color:var(--gold);color:#ffe9a8;transform:translateY(-2px)}
+  /* 技能条空位：虚线占位，点它打开术法面板（K）配置 */
+  .skill.empty{border-style:dashed;border-color:#5a5040;background:rgba(12,11,9,.5);opacity:.9}
+  .skill.empty .g{font-size:19px;color:#6a6458}
+  .skill.empty:hover{border-color:var(--gold);opacity:1;transform:translateY(-2px)}
+  .skill.empty:hover .g{color:#a8a090}
   .skill .cd{position:absolute;inset:0;background:rgba(2,3,6,.78);display:flex;align-items:center;justify-content:center;
     font-size:15px;color:#fff;font-weight:600;display:none}
   .skill.locked{filter:grayscale(1) brightness(.62)}
@@ -102,6 +121,19 @@
   .potion .n{font-size:10px;color:#c8b090;margin-top:1px}
   .potion .k{position:absolute;top:1px;left:2px;font-size:9px;color:#8a8070}
   .potion.blue .g{color:#6aa8e8}
+
+  /* ---------- 增益 / 减益栏 ---------- */
+  #buffbar{position:absolute;left:50%;bottom:88px;transform:translateX(-50%);display:none;gap:6px;align-items:center;
+    justify-content:center;flex-wrap:wrap;max-width:min(680px,86vw);pointer-events:none;z-index:2}
+  .buff{display:flex;align-items:center;gap:5px;padding:3px 8px 3px 5px;background:rgba(10,10,14,.84);
+    border:1px solid var(--c,#d8b25a);box-shadow:0 0 10px rgba(216,178,90,.18);font-size:11px;letter-spacing:1px;
+    color:#e8dcc0;text-shadow:0 1px 2px #000;animation:buffIn .18s ease-out}
+  .buff .bi{display:flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:2px;
+    background:var(--c,#d8b25a);color:#10100c;font-size:11px;font-weight:700}
+  .buff .bt{margin-left:2px;color:var(--c,#d8b25a);font-variant-numeric:tabular-nums}
+  .buff.debuff{border-style:dashed;background:rgba(28,8,8,.86)}
+  @keyframes buffIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+  body.touch #buffbar{max-width:76vw;font-size:10px}
 
   /* ---------- 提示 / 日志 / 交互 ---------- */
   #interact{position:absolute;left:50%;bottom:92px;transform:translateX(-50%);font-size:13px;letter-spacing:2px;
@@ -136,7 +168,8 @@
   .panel{position:absolute;background:var(--panel);border:1px solid var(--line);display:none;pointer-events:auto;
     box-shadow:0 20px 60px rgba(0,0,0,.85),inset 0 0 40px rgba(216,178,90,.04);z-index:20}
   .panel.open{display:block;animation:popen .16s ease-out}
-  @keyframes popen{from{opacity:0;transform:scale(.985)}to{opacity:1;transform:none}}
+  /* 只动透明度：面板靠 transform:translate(-50%,-50%) 居中，动画覆盖 transform 会让它从右下角飞入 */
+  @keyframes popen{from{opacity:0}to{opacity:1}}
   .ph{display:flex;justify-content:space-between;align-items:center;padding:10px 14px;
     background:linear-gradient(180deg,rgba(60,48,28,.55),rgba(20,18,14,.2));border-bottom:1px solid var(--line)}
   .ph h3{font-family:"STKaiti","KaiTi",serif;font-size:16px;font-weight:500;letter-spacing:5px;color:#f0dca8}
@@ -144,52 +177,939 @@
   .ph .x:hover{color:#fff}
   .pb{padding:14px}
 
-  /* 背包 */
-  #invPanel{left:50%;top:50%;transform:translate(-50%,-50%);width:760px;max-height:88vh}
-  .inv-wrap{display:flex;gap:16px}
-  .doll{width:230px;flex:none}
+  /* 背包：左列装备栏（纸娃娃 + 角色属性，常驻且自己滚），右列行囊与其他栏位 */
+  /* display 只能写在 .open 上：ID 选择器特异性高于 .panel{display:none}，
+   * 写在 #invPanel 上会让背包面板无视关闭状态、开局就盖在屏幕正中。 */
+  #invPanel{left:50%;top:50%;transform:translate(-50%,-50%);width:892px;max-height:88vh}
+  #invPanel.open{display:flex;flex-direction:column}
+  /* 高度钉死，两列各自滚动；不钉死的话左列属性会把面板一路撑高 */
+  #invPanel .pb{height:calc(88vh - 44px);max-height:none;overflow:hidden}
+  .inv-wrap{display:flex;gap:14px;min-height:0}
+  .doll{width:300px;flex:none;display:flex;flex-direction:column;min-height:0}
   .doll-title{font-size:11px;color:var(--dim);letter-spacing:2px;margin-bottom:6px;text-align:center}
-  .doll-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
-  .eslot{height:62px;background:linear-gradient(160deg,rgba(38,34,28,.7),rgba(0,0,0,.55));
+  /* 左列分隔条：上面是装备位，下面是常驻属性 */
+  .doll-head{display:flex;align-items:baseline;justify-content:space-between;gap:8px;
+    margin:9px 0 3px;padding-top:7px;border-top:1px solid rgba(216,178,90,.16)}
+  .doll-head span{font-family:"STKaiti","KaiTi",serif;font-size:11.5px;letter-spacing:3px;color:#c9a86a}
+  .doll-head i{font-style:normal;font-size:9px;color:#5e594e;letter-spacing:.5px}
+  /* 纸娃娃：按身体方向排（v1.3.0 参考暗黑 3）
+   *   头在中上 → 左右肩（左上护肩 / 右上副手）→ 胸甲占中两行 →
+   *   手腰一排 → 战靴在下 → 最底一条长格放兵器。
+   * 格子大小仍跟部位走（v1.2.3），兵器/战甲最大、饰品格最小。
+   * 落位用 grid-template-areas 写死，不依赖 DOM 顺序。 */
+  .doll-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:6px;
+    grid-template-areas:
+      ".       .       helm    helm    .       ."
+      "cloak   cloak   chest   chest   relic   relic"
+      "shoulders shoulders chest chest amulet amulet"
+      "ring1   ring1   belt    belt    ring2   ring2"
+      "gloves  gloves  boots   boots   fate    fate"
+      "weapon  weapon  weapon  offhand offhand offhand"}
+  .eslot{width:100%;height:48px;background:linear-gradient(160deg,rgba(38,34,28,.7),rgba(0,0,0,.55));
     border:1px solid rgba(255,255,255,.115);box-shadow:inset 0 0 6px rgba(0,0,0,.5);position:relative;cursor:pointer;
-    display:flex;align-items:center;justify-content:center;font-size:9px;color:#5a5448;transition:.12s}
+    display:flex;align-items:center;justify-content:center;font-size:9px;color:#5a5448;transition:.12s;
+    justify-self:center;align-self:center}
+  .eslot[data-slot="helm"]{grid-area:helm}
+  .eslot[data-slot="chest"]{grid-area:chest}
+  .eslot[data-slot="shoulders"]{grid-area:shoulders}
+  .eslot[data-slot="amulet"]{grid-area:amulet}
+  .eslot[data-slot="gloves"]{grid-area:gloves}
+  .eslot[data-slot="ring1"]{grid-area:ring1}
+  .eslot[data-slot="weapon"]{grid-area:weapon}
+  .eslot[data-slot="belt"]{grid-area:belt}
+  .eslot[data-slot="ring2"]{grid-area:ring2}
+  .eslot[data-slot="boots"]{grid-area:boots}
+  .eslot[data-slot="offhand"]{grid-area:offhand}
+  .eslot[data-slot="relic"]{grid-area:relic}
+  .eslot[data-slot="cloak"]{grid-area:cloak}
+  .eslot[data-slot="fate"]{grid-area:fate}
+  /* 双手兵器占着副手位：副手格画成虚线锁定态 */
+  .eslot.locked{border-style:dashed;border-color:rgba(255,154,108,.45)!important;background:rgba(40,24,18,.55);cursor:not-allowed}
+  .eslot.locked .ico.empty::before{content:'锁';font-size:11px;color:rgba(255,154,108,.65)}
+  .eslot.locked:hover{border-color:rgba(255,154,108,.7)!important;background:rgba(50,28,20,.6)}
+  /* 尺寸档：特大（战甲/兵器，撑满两行）— 大 — 中 — 小（贴身饰品） */
+  .eslot[data-size="xl"]{height:100%}
+  .eslot[data-size="lg"]{height:52px}
+  .eslot[data-size="md"]{height:42px}
+  .eslot[data-size="sm"]{height:34px;width:auto;aspect-ratio:1}
+  /* 兵器长格（v1.3.0）：横跨三列，图标 + 名字 + 握持/DPS 一行读完 */
+  .eslot[data-slot="weapon"],.eslot[data-slot="offhand"]{height:56px;flex-direction:row;
+    justify-content:flex-start;gap:7px;padding:0 7px}
+  .eslot[data-slot="weapon"] .ico,.eslot[data-slot="offhand"] .ico{width:auto;height:auto;flex:none}
+  .eslot[data-slot="weapon"] .it-ico,.eslot[data-slot="offhand"] .it-ico{width:28px;height:28px}
+  .eslot[data-slot="weapon"] .lbl,.eslot[data-slot="offhand"] .lbl{display:none}
+  /* 空位仍然要把「武器 / 副手」两个字露出来，否则只剩一个加号认不出是什么位 */
+  .eslot[data-slot="weapon"].empty .lbl,.eslot[data-slot="offhand"].empty .lbl{display:block;top:4px;left:8px;font-size:9px}
+  .eslot[data-slot="weapon"] .wmeta,.eslot[data-slot="offhand"] .wmeta{display:flex;flex-direction:column;gap:2px;min-width:0;text-align:left;line-height:1.35}
+  .eslot[data-slot="weapon"] .wmeta b,.eslot[data-slot="offhand"] .wmeta b{font-weight:500;font-size:11px;letter-spacing:.5px;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#e8dcc0}
+  .eslot[data-slot="weapon"] .wmeta i,.eslot[data-slot="offhand"] .wmeta i{font-style:normal;font-size:8.5px;color:#7a7466;letter-spacing:0;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  /* 法器格（v1.3.0）：右上角，竖排 —— 汉字字形在上，名号 + 附带术法在下 */
+  .eslot[data-slot="relic"]{height:60px;flex-direction:column;justify-content:center;gap:1px;padding:1px 4px}
+  .eslot[data-slot="relic"] .ico{width:auto;height:auto;flex:none;overflow:hidden}
+  .eslot[data-slot="relic"] .lbl{display:none}
+  .eslot[data-slot="relic"].empty .lbl{display:block;top:4px;left:4px;font-size:9px;text-align:left}
+  .eslot[data-slot="relic"] .rmeta{display:block;width:100%;min-width:0;text-align:center;line-height:1.3}
+  .eslot[data-slot="relic"] .rmeta b{display:block;font-weight:500;font-size:9.5px;letter-spacing:.3px;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#e8dcc0}
+  .eslot[data-slot="relic"] .rmeta i{display:block;font-style:normal;font-size:8px;color:#7a7466;letter-spacing:0;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .eslot:hover{border-color:var(--gold-d);background:rgba(60,48,28,.3)}
   .eslot .lbl{position:absolute;top:1px;left:3px;font-size:8.5px;color:#6a6458;letter-spacing:0}
   .eslot.filled{border-color:rgba(216,178,90,.4)}
-  .eslot .ico{display:flex;align-items:center;justify-content:center;width:38px;height:38px;line-height:1;margin-top:6px}
+  .eslot .ico{display:flex;align-items:center;justify-content:center;width:100%;height:100%;line-height:1}
   .eslot.empty{color:#4a453c}
   .eslot .ico.empty::before{content:'＋';font-size:16px;color:#3f3a32}
+  .eslot[data-size="sm"] .ico.empty::before{font-size:12px}
+  .eslot[data-size="xl"] .ico.empty::before{font-size:22px}
   /* 装备图标 */
   .it-ico{display:block;width:30px;height:30px;flex:none}
-  .eslot .it-ico{width:36px;height:36px}
+  /* 法器图标是专属器物图形 + 法阵外圈（v1.3.0），比普通装备大一号、亮一档 */
+  .it-ico.it-relic{width:34px;height:34px}
+  .eslot .it-ico.it-relic{width:30px;height:30px}
+  .islot .it-ico.it-relic{width:30px;height:30px}
+  .shoprow .it-ico.it-relic{width:26px;height:26px}
+  .eslot[data-slot="relic"] .it-ico.it-relic{width:30px;height:30px}
+  /* 缓慢呼吸的辉光，法器在纸娃娃上会「活」一点 */
+  @keyframes relicBreath{
+    0%,100%{filter:drop-shadow(0 0 2px currentColor) drop-shadow(0 0 5px currentColor)}
+    50%{filter:drop-shadow(0 0 4px currentColor) drop-shadow(0 0 11px currentColor)}
+  }
+  .eslot[data-slot="relic"] .it-ico.it-relic{animation:relicBreath 3.6s ease-in-out infinite}
+  .eslot .it-ico{width:34px;height:34px}
+  .eslot[data-size="xl"] .it-ico{width:52px;height:52px}
+  .eslot[data-size="md"] .it-ico{width:28px;height:28px}
+  .eslot[data-size="sm"] .it-ico{width:22px;height:22px}
   .islot .it-ico{width:30px;height:30px}
   .shoprow .it-ico{width:26px;height:26px}
-  .inv-main{flex:1;min-width:0}
-  .inv-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+  .inv-main{flex:1;min-width:0;display:flex;flex-direction:column;min-height:0}
+  .inv-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;gap:8px}
   .inv-top .cap{font-size:11px;color:var(--dim);letter-spacing:1px}
-  .igrid{display:grid;grid-template-columns:repeat(8,1fr);gap:6px}
-  .islot{aspect-ratio:1;background:linear-gradient(160deg,rgba(38,34,28,.75),rgba(0,0,0,.55));
+  /* 排序条（v1.0.4） */
+  .sortbar{display:flex;align-items:center;gap:4px}
+  .sortbar .sortlab{font-size:10px;color:#6a6458;letter-spacing:1px;margin-right:2px}
+  .sbtn{font-family:inherit;font-size:10.5px;letter-spacing:1px;padding:3px 8px;cursor:pointer;
+    background:rgba(0,0,0,.35);border:1px solid rgba(216,178,90,.22);color:#a8a090;transition:.12s}
+  .sbtn:hover{border-color:rgba(216,178,90,.55);color:#e8d8b0;background:rgba(216,178,90,.1)}
+  .sbtn.on{border-color:var(--gold);color:#1a1510;background:linear-gradient(180deg,#e0c070,#b89840);font-weight:600}
+  .inv-tip{display:block;margin-bottom:6px}
+
+  /* ---------- 行囊扩容（v1.4.0） ---------- */
+  /* 入口与提示文字同一行，右侧对齐；不塞进顶栏，否则排序条会被挤成两行 */
+  .inv-sub{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:7px}
+  .inv-sub .inv-tip{margin-bottom:0;flex:1;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+  .capup{font-family:inherit;font-size:10.5px;letter-spacing:2px;padding:3px 9px;cursor:pointer;
+    background:linear-gradient(180deg,rgba(216,178,90,.16),rgba(0,0,0,.35));
+    border:1px solid rgba(216,178,90,.45);color:#e8d8b0;transition:.12s;flex:none}
+  .capup:hover{background:linear-gradient(180deg,rgba(216,178,90,.32),rgba(60,44,20,.5));
+    border-color:var(--gold);color:#fff3cc;box-shadow:0 0 10px rgba(216,178,90,.25)}
+  .capup.full{border-color:rgba(140,130,110,.3);color:#7a7466;cursor:default;background:rgba(0,0,0,.3)}
+  /* 扩容条做成行囊内的内联条：扩容后格子就在下面变多，反馈即时 */
+  .upbar{display:flex;flex-direction:column;gap:7px;padding:9px 11px;margin-bottom:7px;
+    border:1px solid rgba(216,178,90,.34);border-radius:3px;
+    background:linear-gradient(180deg,rgba(46,36,20,.62),rgba(20,18,14,.55))}
+  .upbar .urow{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+  .upbar .utitle{font-family:"STKaiti","KaiTi",serif;font-size:13px;letter-spacing:3px;color:#f0dca8}
+  .upbar .ucap{display:flex;align-items:baseline;gap:3px;font-size:11px;color:#8a8171;letter-spacing:1px}
+  .upbar .ucap b{font-family:"STKaiti","KaiTi",serif;font-size:18px;font-weight:500;color:#a89c80;line-height:1;vertical-align:-2px}
+  .upbar .ucap em{font-style:normal;color:#6a6458;margin:0 2px}
+  .upbar .ucap .nx{color:#f2d68e;text-shadow:0 0 10px rgba(216,178,90,.5)}
+  .upbar .utier{margin-left:auto;font-size:10px;color:#7a7466;letter-spacing:1px}
+  .upbar .udots{display:flex;gap:5px}
+  .upbar .udots span{width:7px;height:7px;border-radius:50%;border:1px solid rgba(216,178,90,.35)}
+  .upbar .udots span.done{background:#7a6132;border-color:#7a6132}
+  .upbar .udots span.now{background:linear-gradient(180deg,#f0d68a,#c39b40);border-color:#f0d68a;
+    box-shadow:0 0 8px rgba(240,214,138,.7)}
+  .upbar .ucosts{display:flex;align-items:center;gap:11px;flex-wrap:wrap}
+  .upbar .cst{display:flex;align-items:baseline;gap:4px;font-size:11px}
+  .upbar .cst .nm{letter-spacing:.5px}
+  .upbar .cst .hv{font-variant-numeric:tabular-nums;color:#9ecf8a}
+  .upbar .cst .hv.bad{color:#d88274}
+  .upbar .cst .hv b{font-weight:600}
+  .upbar .cst .hv u{text-decoration:none;color:#6a6458}
+  .upbar .ugo{margin-left:auto;font-family:inherit;font-size:11px;letter-spacing:3px;padding:5px 13px;cursor:pointer;
+    background:linear-gradient(180deg,rgba(216,178,90,.22),rgba(40,32,18,.9));
+    border:1px solid rgba(216,178,90,.55);color:#f0dca8;transition:.12s;flex:none}
+  .upbar .ugo:hover:not(:disabled){border-color:#f0dca8;color:#fff3cc;box-shadow:0 0 12px rgba(216,178,90,.35)}
+  .upbar .ugo:disabled{opacity:.4;cursor:not-allowed}
+  .upbar .ugo.max{border-color:rgba(140,130,110,.28);color:#7a7466;background:rgba(0,0,0,.3)}
+  .upbar .uhint{font-size:10px;color:#7a7466;letter-spacing:.5px;line-height:1.5}
+
+  /* ---------- 一键分解确认条 ---------- */
+  .junkbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:7px 10px;margin-bottom:6px;
+    border:1px solid rgba(216,178,90,.3);border-radius:3px;background:rgba(30,26,18,.5);font-size:11px;color:#b8ad90}
+  .junkbar .jl{letter-spacing:2px;color:#e8d8b0;font-size:11.5px}
+  .junkbar .jt b{font-weight:600}
+  .junkbar .jchk{display:flex;align-items:center;gap:4px;cursor:pointer;color:#9ad0a8;user-select:none}
+  .junkbar .btn{padding:3px 12px;font-size:11px;letter-spacing:1px}
+
+  /* ---------- 套装图鉴 ---------- */
+  #setCodexPanel{left:50%;top:50%;transform:translate(-50%,-50%);width:720px;max-height:88vh;z-index:65}
+  .codex-list{display:flex;flex-direction:column;gap:10px;margin-top:8px;max-height:66vh;overflow-y:auto;padding-right:4px}
+  .cx-set{border:1px solid;border-radius:3px;padding:9px 11px;background:rgba(20,18,14,.45)}
+  .cx-group{display:flex;align-items:baseline;gap:10px;margin:4px 0 -2px}
+  .cx-group .cx-gname{font-size:13px;letter-spacing:3px;font-weight:600}
+  .cx-group .cx-gdesc{font-size:10px;color:#6a6458;letter-spacing:1px}
+  .cx-head{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-bottom:7px}
+  .cx-name{font-size:14px;letter-spacing:2px}
+  .cx-tag{font-style:normal;font-size:9.5px;letter-spacing:1px;color:#b8a888;margin-left:7px;
+    border:1px solid rgba(216,178,90,.35);border-radius:2px;padding:0 5px;vertical-align:1px}
+  .cx-sub{font-size:10.5px;color:#8a8474;letter-spacing:1px}
+  .cx-pieces{display:flex;flex-wrap:wrap;gap:6px}
+  .cx-piece{display:flex;align-items:center;gap:5px;padding:3px 8px;border:1px solid rgba(255,255,255,.1);
+    border-radius:2px;background:rgba(0,0,0,.3);font-size:11px}
+  .cx-piece.got{background:rgba(60,48,28,.35)}
+  .cx-pslot{font-size:9.5px;color:#6a6458}
+  .cx-pname{color:#5a5448}
+  .cx-piece.got .cx-pname{color:#d8ccb0}
+  .cx-pilv{font-size:9.5px;color:#8a8474;font-variant-numeric:tabular-nums}
+  .cx-bonus{display:flex;flex-wrap:wrap;gap:6px;margin-top:7px}
+  .cx-b{display:flex;align-items:center;gap:5px;padding:2px 8px;border:1px solid rgba(255,255,255,.08);
+    border-radius:2px;font-size:10.5px;color:#5a5448}
+  .cx-b .cx-bn{font-size:9.5px;color:#4a453c;border:1px solid rgba(255,255,255,.12);padding:0 4px;border-radius:2px}
+  .cx-b.on{color:#9ad0a8;border-color:rgba(120,200,140,.35)}
+  .cx-b.on .cx-bn{color:#9ad0a8;border-color:rgba(120,200,140,.4)}
+
+  /* ---------- 天赋面板（S3） ---------- */
+  #talentPanel{left:50%;top:50%;transform:translate(-50%,-50%);width:760px;max-height:90vh;z-index:66}
+  .tl-top{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap}
+  .tl-trees{display:flex;gap:6px;flex-wrap:wrap}
+  .tl-tab{font-family:inherit;font-size:11.5px;letter-spacing:1px;padding:4px 12px;cursor:pointer;
+    background:rgba(0,0,0,.3);border:1px solid rgba(255,255,255,.12);color:#a8a090;transition:.12s}
+  .tl-tab:hover{border-color:rgba(216,178,90,.5);color:#e8d8b0}
+  .tl-tab.on{color:#1a1510;font-weight:600}
+  .tl-tab .tl-tp{font-size:9.5px;opacity:.85;margin-left:4px;font-variant-numeric:tabular-nums}
+  .tl-pts{font-size:11.5px;color:#a8a090;letter-spacing:1px;white-space:nowrap}
+  .tl-pts b{color:#ffd479;font-size:14px;font-weight:600;font-variant-numeric:tabular-nums}
+  .tl-main{position:relative;border:1px solid rgba(216,178,90,.22);background:
+    radial-gradient(ellipse at 50% 40%,rgba(48,40,26,.5),rgba(10,10,12,.6) 75%)}
+  #tlCanvas{display:block;cursor:pointer}
+  .tl-tip{position:absolute;pointer-events:none;max-width:250px;padding:8px 10px;z-index:5;
+    background:rgba(10,10,12,.96);border:1px solid var(--gold-d);box-shadow:0 8px 24px rgba(0,0,0,.7);
+    font-size:11px;line-height:1.7;color:#c8c0a8}
+  .tl-tip .tt-n{font-size:12.5px;color:#f0dca8;letter-spacing:1px;margin-bottom:2px}
+  .tl-tip .tt-r{font-size:10px;color:#8a8474;margin-bottom:3px}
+  /* [B4+] 协同页签的详细说明：8 枚隐藏星位 + 每枚的激活条件 + 当前显形进度 */
+  .tl-syn{display:none;margin-top:8px;padding:9px 12px;border:1px solid rgba(143,208,255,.28);
+    background:linear-gradient(180deg,rgba(143,208,255,.08),rgba(143,208,255,.02));font-size:11px;line-height:1.7;color:#a8c0d0}
+  .tl-syn.on{display:block}
+  .tl-syn h4{font-size:11.5px;color:#8fd0ff;letter-spacing:2px;font-weight:600;margin-bottom:4px}
+  .tl-syn .sy-desc{color:#8a98a6;font-size:10.5px;line-height:1.7;margin-bottom:6px}
+  .tl-syn .sy-grid{display:grid;grid-template-columns:1fr 1fr;gap:2px 14px}
+  .tl-syn .sy-row{display:flex;align-items:baseline;gap:6px;padding:1px 0;min-width:0}
+  .tl-syn .sy-dot{flex:none;width:5px;height:5px;border-radius:50%;position:relative;top:-2px}
+  .tl-syn .sy-nm{flex:none;min-width:38px}
+  .tl-syn .sy-ok{color:#8fd0ff}
+  .tl-syn .sy-no{color:#6a7480}
+  .tl-syn .sy-cd{color:#78848f;font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .tl-syn .sy-sum{margin-top:6px;padding-top:5px;border-top:1px solid rgba(143,208,255,.16);
+    color:#8fd0ff;font-size:10.5px}
+  @media (max-width:640px){ .tl-syn .sy-grid{grid-template-columns:1fr} }
+
+  /* ---------- 机制说明（helpPanel） ----------
+   * 左边竖排页签切分节，右边只显示当前这一节的内容（跟主菜单同一个交互习惯）。
+   * 内容由 UI.renderHelp() 按数据表实时生成：条数、名字、阶数全部读数据层，
+   * 以后加装备 / 加技能 / 加词缀，这一页自动跟着变，不需要手工同步。 */
+  #helpPanel{left:50%;top:50%;transform:translate(-50%,-50%);width:840px;max-height:88vh;z-index:70}
+  #helpPanel .pb{padding:10px 12px}
+  .hp-wrap{display:flex;gap:10px;height:min(560px,calc(88vh - 78px))}
+  .hp-nav{flex:none;width:124px;display:flex;flex-direction:column;gap:2px;overflow-y:auto;
+    padding-right:9px;border-right:1px solid rgba(216,178,90,.16)}
+  .hp-tab{font-family:inherit;font-size:11.5px;letter-spacing:1px;text-align:left;padding:6px 9px;
+    cursor:pointer;background:transparent;border:1px solid transparent;border-radius:3px;
+    color:#9a9488;transition:.12s;white-space:nowrap;flex:none}
+  .hp-tab:hover{color:#e8d8b0;background:rgba(216,178,90,.07)}
+  .hp-tab.on{color:#1a1510;font-weight:600;background:linear-gradient(180deg,#e0c070,#b89840);border-color:#ffd479}
+  .hp-tab .hp-tn{font-size:9px;opacity:.7;margin-right:5px}
+  .hp-body{flex:1;min-width:0;overflow-y:auto;display:flex;flex-direction:column;gap:8px;padding-right:2px}
+  .hp-sec{border:1px solid rgba(216,178,90,.2);background:rgba(0,0,0,.22);padding:9px 12px 10px}
+  .hp-sec>h4{font-size:12px;color:#e8c46a;letter-spacing:2px;margin-bottom:6px;font-weight:600;
+    display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+  .hp-sec>h4 .hp-n{font-size:9.5px;color:#7a7466;letter-spacing:0;font-weight:400}
+  .hp-row{display:flex;gap:9px;font-size:11.5px;line-height:1.8;color:#b8b0a0;padding:2px 0}
+  .hp-row>b{flex:none;min-width:78px;color:#d8cfbc;font-weight:600}
+  .hp-row>span{flex:1;min-width:0}
+  .hp-tags{display:flex;flex-wrap:wrap;gap:4px;margin-top:5px}
+  .hp-tag{font-size:10px;padding:1px 6px;border:1px solid rgba(216,178,90,.3);border-radius:3px;
+    color:#c8b890;background:rgba(216,178,90,.07);white-space:nowrap}
+  .hp-tag.mech{border-color:rgba(120,208,255,.42);color:#9fd4f0;background:rgba(120,208,255,.1)}
+  .hp-tag.uni{border-color:rgba(255,90,80,.42);color:#ff9b8a;background:rgba(255,70,60,.1)}
+  /* 键位小牌（v1.8.3）：一个键 + 一句功能，各占一块，换行时不会把分隔符甩到行尾 */
+  .hp-tags.kcs{gap:5px;margin-top:2px}
+  .hp-tag.kc{display:inline-flex;align-items:center;gap:4px;padding:1px 7px 1px 3px;
+    border-color:rgba(216,178,90,.24);color:#bdb39a;background:rgba(216,178,90,.05)}
+  .hp-tag.kc .hp-key{margin:0}
+  /* 说明页里出现的剑 / 盾小图标：和键位牌同高，不把行撑开 */
+  .hp-tag.kc svg{width:15px;height:15px;display:block;flex:none}
+  /* 品质小牌：名字用品质色，后面跟一句词条数 */
+  .hp-tag.q{display:inline-flex;align-items:baseline;gap:5px;padding:1px 7px;font-size:10.5px}
+  .hp-tag.q i{font-style:normal;font-size:9.5px;color:#8a8474}
+  .hp-note{font-size:10px;color:#7a7466;line-height:1.7;margin-top:5px}
+  .hp-key{display:inline-block;min-width:15px;text-align:center;padding:0 4px;margin:0 1px;
+    border:1px solid rgba(216,178,90,.35);border-radius:3px;font-size:10px;color:#d8cfbc;
+    background:rgba(216,178,90,.08)}
+  body.touch #helpPanel{width:min(840px,98vw)}
+  /* 手机上竖排页签太占宽度，改成顶部横向可滑的一条 */
+  body.touch .hp-wrap{flex-direction:column;height:min(620px,calc(88vh - 78px))}
+  body.touch .hp-nav{width:auto;flex-direction:row;overflow-x:auto;overflow-y:hidden;
+    padding:0 0 7px;border-right:none;border-bottom:1px solid rgba(216,178,90,.16)}
+  body.touch .hp-tab{padding:5px 10px;font-size:11px}
+  body.touch .hp-row{font-size:11.5px}
+  .tl-tip .tt-d{color:#b8b0a0}
+  .tl-tip .tt-c{font-size:10px;color:#e0c070;margin-top:3px}
+  .tl-tip .tt-c.no{color:#e05a5a}
+  .tl-foot{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:8px;flex-wrap:wrap}
+  .tl-presets{display:flex;gap:6px;flex-wrap:wrap}
+  .tl-pst{font-family:inherit;font-size:10.5px;letter-spacing:1px;padding:4px 10px;cursor:pointer;
+    background:rgba(0,0,0,.3);border:1px solid rgba(255,255,255,.12);color:#a8a090;transition:.12s}
+  .tl-pst:hover{border-color:rgba(216,178,90,.5);color:#e8d8b0}
+  .tl-pst.filled{border-color:rgba(216,178,90,.45);color:#d8ccb0}
+  #tlRespec,#tlMinus{font-size:11px;padding:5px 16px;letter-spacing:2px}
+  .tl-fbtn{display:flex;gap:8px;align-items:center}
+  #tlMinus:disabled{opacity:.35;cursor:default}
+
+  /* 技能 SVG 图标：颜色继承容器，尺寸由使用处控制 */
+  .skicon{display:block;flex:none}
+  .skill .g svg{width:27px;height:27px}
+  .mskill .g svg{width:24px;height:24px}
+  .sk-tile .sk-ico svg{width:26px;height:26px}
+  .sd-ico svg{width:30px;height:30px}
+  .sk-tip .tt-ico svg{width:16px;height:16px}
+  /* ---------- 术法面板（P1：独立整屏 · 树 + 技能条 + 说明书） ----------
+   * 从「山海录」里独立出来的原因很具体：菜单内容宽 842，扣掉右侧详情卡只剩 544，
+   * 而三系并排的树本身要 752 —— 只能缩到 70%，字就糊了。整屏层之后树按 100% 显示。 */
+  #skillPanel{left:50%;top:50%;transform:translate(-50%,-50%);width:min(1280px,96vw);
+    height:min(900px,92vh);max-height:92vh;z-index:66}
+  #skillPanel.open{display:flex;flex-direction:column}
+  #skillPanel .pb{position:relative;padding:10px 14px 12px;display:flex;flex-direction:column;
+    min-height:0;flex:1;overflow:hidden}
+  .sk-top{display:flex;justify-content:space-between;align-items:center;gap:10px;font-size:11.5px;
+    color:#a8a090;letter-spacing:1px;margin-bottom:7px;flex:none}
+  .sk-top b{color:#ffd479;font-size:14px;font-weight:600;font-variant-numeric:tabular-nums}
+  .sk-top .dim{font-size:10px;color:#6a6458;letter-spacing:0}
+  .sk-zoom{display:inline-flex;align-items:center;gap:3px;flex:none}
+  .sk-zoom .vb{font-family:inherit;font-size:12px;line-height:1;cursor:pointer;padding:3px 8px;
+    border:1px solid rgba(216,178,90,.26);border-radius:3px;color:#a89878;
+    background:linear-gradient(180deg,#211d17,#100e0b)}
+  .sk-zoom .vb:hover{border-color:#d8b25a;color:#ffe9a8}
+  .sk-zoom .skt-z{min-width:38px;text-align:center;color:#a89878;font-size:10.5px;letter-spacing:0}
+  /* [P2] 技能树洗点：平时与缩放按钮同款，确认态变红 */
+  .sk-respec{display:inline-flex;flex:none}
+  .sk-respec .vb{font-family:inherit;font-size:12px;line-height:1;cursor:pointer;padding:3px 8px;
+    border:1px solid rgba(216,178,90,.26);border-radius:3px;color:#a89878;
+    background:linear-gradient(180deg,#211d17,#100e0b)}
+  .sk-respec .vb:hover{border-color:#d8b25a;color:#ffe9a8}
+  .sk-respec .vb.danger{border-color:rgba(214,106,86,.7);color:#e08a72}
+  /* [P4] BD 推荐：三张卡横排，契合度用条，避免「看起来像强度榜」的大数字 */
+  .sk-bdbtn .vb{font-family:inherit;font-size:12px;line-height:1;cursor:pointer;padding:3px 8px;
+    border:1px solid rgba(216,178,90,.26);border-radius:3px;color:#a89878;
+    background:linear-gradient(180deg,#211d17,#100e0b)}
+  .sk-bdbtn .vb:hover{border-color:#d8b25a;color:#ffe9a8}
+  .sk-bdbtn .vb.on{border-color:rgba(216,178,90,.7);color:#ffe9a8;background:rgba(216,178,90,.1)}
+  .sk-bd{margin:6px 0 8px;padding:8px 10px;border:1px solid rgba(216,178,90,.18);
+    border-radius:3px;background:linear-gradient(180deg,rgba(30,26,18,.5),rgba(12,11,9,.5))}
+  .sk-bd-h{display:flex;align-items:center;gap:8px;font-size:11.5px;color:#c9a86a;letter-spacing:1px}
+  .sk-bd-h em{font-style:normal;font-size:9.5px;color:#6a6458;letter-spacing:0}
+  .sk-bd-h .vb{margin-left:auto;font-family:inherit;font-size:10.5px;cursor:pointer;padding:2px 7px;
+    border:1px solid rgba(216,178,90,.26);border-radius:3px;color:#a89878;background:none}
+  .sk-bd-list{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:7px}
+  .bd-card{border:1px solid rgba(216,178,90,.14);border-radius:3px;padding:7px 8px;
+    background:rgba(0,0,0,.18);display:flex;flex-direction:column;gap:4px;min-width:0}
+  .bd-card.top{border-color:rgba(216,178,90,.45);background:rgba(216,178,90,.05)}
+  .bd-top{display:flex;align-items:baseline;justify-content:space-between;gap:6px}
+  .bd-top b{font-size:13px;color:#ffe9a8;letter-spacing:1px}
+  .bd-fit{font-size:15px;color:#9fd4f0;font-variant-numeric:tabular-nums;cursor:help}
+  .bd-fit i{font-style:normal;font-size:9px;color:#6a7c88}
+  .bd-bar{height:3px;border-radius:2px;background:rgba(255,255,255,.07);overflow:hidden}
+  .bd-bar i{display:block;height:100%;background:linear-gradient(90deg,#4a90b8,#9fd4f0)}
+  .bd-line{font-size:10.5px;color:#c9a86a}
+  .bd-why{font-size:10px;line-height:1.45;color:#8a8272}
+  .bd-miss{font-size:9.5px;line-height:1.4;color:#c08a72}
+  .bd-miss.ok{color:#8ac09a}
+  .bd-act{display:flex;align-items:center;gap:6px;margin-top:auto}
+  .bd-act .vb{font-family:inherit;font-size:10.5px;cursor:pointer;padding:2px 7px;border-radius:3px;
+    border:1px solid rgba(120,208,255,.28);color:#9fd4f0;background:rgba(120,208,255,.06)}
+  .bd-act .vb:disabled{border-color:rgba(255,255,255,.1);color:#6a6458;background:none;cursor:default}
+  .bd-steps{font-size:9.5px;color:#6a6458;cursor:help}
+  .sk-list{flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden}
+  .sk-body{display:flex;gap:12px;align-items:stretch;flex:1;min-height:0}
+  .sk-left{flex:1;min-width:0;display:flex;flex-direction:column;min-height:0}
+  .sk-right{width:300px;flex:none;border:1px solid rgba(216,178,90,.22);padding:12px;
+    overflow-y:auto;
+    background:linear-gradient(180deg,rgba(30,26,18,.55),rgba(14,13,11,.6))}
+  .sk-tree{display:flex;align-items:baseline;gap:8px;font-size:11px;letter-spacing:3px;color:#c9a86a;
+    border-bottom:1px solid rgba(201,168,106,.25);padding-bottom:3px;margin:2px 0 7px}
+  .sk-tree:first-child{margin-top:0}
+  .sk-tree .sk-tn{font-size:9.5px;letter-spacing:0;color:#6a6458}
+  .sk-tiles{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px}
+
+  /* ---------- 技能树视图（P1） ---------- */
+
+  .skt-tabs{display:none;gap:6px;margin-bottom:8px}
+  .skt-tabs.on{display:flex}
+  .skt-tabs button{font-family:inherit;font-size:11.5px;letter-spacing:2px;cursor:pointer;flex:1;padding:5px 0;
+    border:1px solid rgba(216,178,90,.22);border-radius:3px;color:#a89878;
+    background:linear-gradient(180deg,#1d1a15,#0f0d0a)}
+  .skt-tabs button.on{background:linear-gradient(180deg,#c9ab62,#8f7634);color:#16120c;border-color:#e6d089}
+
+  .skt-stage{position:relative;overflow:auto;flex:1;min-height:0;cursor:grab;
+    user-select:none;-webkit-user-select:none;
+    border:1px solid rgba(216,178,90,.14);
+    background:
+      linear-gradient(rgba(216,178,90,.03) 1px,transparent 1px) 0 0/100% 53px,
+      linear-gradient(90deg,rgba(216,178,90,.03) 1px,transparent 1px) 0 0/55px 100%,
+      radial-gradient(ellipse at 50% 0%,#14120e,#0b0a09 70%)}
+  .skt-stage.panning{cursor:grabbing}
+  /* 整屏之后树只有 752 宽、容器 936：居中才不显得贴左（内容比容器宽时 auto 归零，不会切边） */
+  .skt-fit{position:relative;margin:0 auto}
+  .skt-plate{position:absolute;left:0;top:0;transform-origin:0 0}
+  .skt-wire{position:absolute;left:0;top:0;pointer-events:none;overflow:visible}
+  .skt-nd{position:absolute;width:46px;display:flex;flex-direction:column;align-items:center;cursor:pointer}
+  .skt-nd .box{width:46px;height:46px;display:flex;align-items:center;justify-content:center;
+    position:relative;transition:.14s}
+  .skt-nd.act .box{background:linear-gradient(180deg,#2a251c,#151310);border:1.5px solid #7a6433;border-radius:2px;
+    box-shadow:0 0 0 1px rgba(0,0,0,.6),inset 0 0 12px rgba(216,178,90,.07)}
+  .skt-nd.pas .box{background:linear-gradient(180deg,#1a2422,#0f1514);border:1.5px solid #3d6b62;border-radius:50%}
+  .skt-nd.key .box{background:linear-gradient(180deg,#28203a,#12101a);border:1.5px solid #6b4f9c;
+    clip-path:polygon(50% 0,93% 25%,93% 75%,50% 100%,7% 75%,7% 25%)}
+  .skt-nd.act .box svg{color:#e0c070}
+  .skt-nd.pas .box svg{color:#7ad0c0}
+  .skt-nd.key .box svg{color:#c090ff}
+  .skt-nd.key .box svg{transform:scale(.9)}
+  .skt-nd:hover .box{border-color:#ffe9a8;box-shadow:0 0 14px rgba(255,233,168,.3)}
+  .skt-nd.sel .box{border-color:#ffd479;box-shadow:0 0 16px rgba(255,212,121,.45),inset 0 0 14px rgba(255,212,121,.18)}
+  .skt-nd.locked{opacity:.45;filter:grayscale(.6)}
+  .skt-nd .bg{position:absolute;right:-7px;top:-7px;font-family:system-ui,sans-serif;font-size:8.5px;line-height:1;
+    padding:2px 3px;background:#0c0b09;color:#8c8270;border:1px solid rgba(216,178,90,.22);border-radius:2px;z-index:2}
+  .skt-nd.pas .bg{color:#6fae9f;border-color:rgba(122,208,192,.28)}
+  .skt-nd.key .bg{color:#a98fd0;border-color:rgba(160,120,220,.35)}
+  /* [P2] 已投点的被动：边框亮起（不用读徽标也看得出「这条点了」）；
+   * 满级的徽标变金 */
+  .skt-nd.pas.own .box{border-color:#7ad0c0;box-shadow:0 0 10px rgba(122,208,192,.4),inset 0 0 12px rgba(122,208,192,.12)}
+  .skt-nd.key.own .box{border-color:#a98fd0;box-shadow:0 0 12px rgba(160,120,220,.45),inset 0 0 12px rgba(160,120,220,.14)}
+  .skt-nd.max .bg{color:#ffe9a8;border-color:rgba(216,178,90,.6)}
+  .skt-nd .nm{margin-top:4px;font-size:10.5px;line-height:1.2;text-align:center;color:#b6ab92;
+    max-width:86px;letter-spacing:.4px;white-space:nowrap}
+  .skt-nd.key .nm{color:#b79fdc}
+  .skt-nd .marks{display:flex;gap:4px;margin-top:4px;height:7px;align-items:center}
+  .skt-nd .mk{width:6px;height:6px;border:1px solid #4c4538;background:transparent;cursor:pointer;
+    transition:.14s}
+  .skt-nd .mk:hover{border-color:#ffe9a8;box-shadow:0 0 6px rgba(255,233,168,.6)}
+  .skt-nd .mk.dia{transform:rotate(45deg);width:5px;height:5px}
+  .skt-nd .mk.core{border-color:#8a5c3c}
+  .skt-nd .mk.pick{border-color:#8a7135}
+  .skt-nd .mk.form{border-color:#3f6d8c}
+  .skt-nd .mk.ready{background:rgba(255,233,168,.55);border-color:#d8b25a}
+  /* 已经吃到效果 / 已经选了取向：实心，不用读提示也能看出「这条点了」 */
+  .skt-nd .mk.on{background:#d8b25a;border-color:#ffe9a8;box-shadow:0 0 5px rgba(255,233,168,.45)}
+  .skt-nd .mk.pick.on{background:#c9a86a}
+  .skt-nd .mk.core.on{background:#a8703c;border-color:#e0b070}
+  .skt-nd .mk.form.v0{border-color:#6f8c9e}
+  .skt-nd .mk.form.v1{border-color:#8fae5c;background:rgba(143,174,92,.35)}
+  .skt-nd .mk.form.v2{border-color:#5c93ae;background:rgba(92,147,174,.35)}
+  /* 节点下的变体名：不点开浮层也能看出「这个技能现在是Ⅰ/Ⅱ/Ⅲ 哪一个」 */
+  .skt-nd .vnm{margin-top:2px;font-size:8.5px;line-height:1.15;letter-spacing:.3px;
+    color:#7fa5bd;white-space:nowrap;cursor:pointer;transition:.12s}
+  .skt-nd .vnm:hover{color:#cdeaff;text-shadow:0 0 6px rgba(120,208,255,.5)}
+  .skt-nd .vnm.v1{color:#9dba74}
+  .skt-nd .vnm.v2{color:#8cc0d9}
+  .skt-nd .skt-slot{position:absolute;left:-6px;bottom:-6px;font-family:system-ui,sans-serif;
+    font-size:9px;font-weight:700;line-height:1;padding:2px 3px;border-radius:2px;
+    background:#c9a04a;color:#1a1510;z-index:2}
+  .skt-cap{position:absolute;font-size:11.5px;letter-spacing:3px;color:#9c7f4a;white-space:nowrap}
+  .skt-or{position:absolute;font-size:9px;color:#5e5648;letter-spacing:1px}
+  .skt-or i{display:inline-block;padding:1px 4px;border:1px solid rgba(216,178,90,.2);
+    border-radius:2px;background:#12100d;font-style:normal}
+  /* 岔口锁：互斥岔口的标记与被锁节点的样子（对面投了点，这边先退才能投） */
+  .skt-or.lock i{color:#e08a72;border-color:rgba(214,106,86,.4)}
+  .skt-nd.fklock .box{opacity:.55;filter:saturate(.5)}
+  .skt-nd.fklock .nm{color:#c98268}
+  .skt-nd.fklock{cursor:not-allowed}
+
+  /* 选中节点下方浮出的 ＋ / −：触屏没有右键，这是唯一路径；PC 上也留着好点。
+   * 节点下多了「变体名」一行，所以间距从 19px 收到 2px —— 否则会压到下一行节点上。 */
+  .skt-nd .skt-act{position:absolute;left:50%;top:100%;transform:translateX(-50%);
+    margin-top:2px;display:flex;gap:3px;z-index:4}
+  .skt-nd .sa{font-family:inherit;font-size:12px;line-height:1;width:19px;height:17px;cursor:pointer;
+    border:1px solid rgba(216,178,90,.45);border-radius:2px;color:#ffe9a8;
+    background:linear-gradient(180deg,#2a2418,#14110c);padding:0}
+  .skt-nd .sa:hover{border-color:#ffe9a8;background:#3a3020}
+  .skt-nd .sa:disabled{opacity:.3;cursor:default}
+
+  /* 分支浮层：就地展开在节点旁（不跳右侧），随缩放一起缩 */
+  .skt-pop{position:absolute;z-index:8;padding:8px 9px 7px;
+    border:1px solid rgba(216,178,90,.42);background:linear-gradient(180deg,#1b1813,#0c0b09);
+    box-shadow:0 10px 26px rgba(0,0,0,.85)}
+  .skt-pop .sp-hd{display:flex;align-items:baseline;gap:6px;padding-bottom:5px;margin-bottom:6px;
+    border-bottom:1px solid rgba(216,178,90,.18)}
+  .skt-pop .sp-hd b{font-size:12px;color:#ffe9a8;letter-spacing:1px}
+  .skt-pop .sp-hd span{font-size:9.5px;color:#6a6458;letter-spacing:2px}
+  .skt-pop .sp-x{margin-left:auto;font-style:normal;font-size:10px;color:#7a7466;cursor:pointer;line-height:1}
+  .skt-pop .sp-x:hover{color:#fff}
+  .skt-pop .sp-g{margin-bottom:7px}
+  .skt-pop .sp-l{display:flex;align-items:baseline;gap:5px;font-size:9.5px;letter-spacing:2px;color:#c9a86a;
+    margin-bottom:3px}
+  .skt-pop .sp-l i{font-style:normal;font-size:9px;letter-spacing:0;color:#6a6458}
+  .skt-pop .sp-r{display:block;width:100%;text-align:left;font-family:inherit;cursor:pointer;
+    padding:4px 6px;margin-bottom:3px;border:1px solid rgba(216,178,90,.14);
+    background:rgba(0,0,0,.3);color:#b6ab92;transition:.12s}
+  .skt-pop button.sp-r:hover{border-color:rgba(216,178,90,.55);color:#ffe9a8}
+  .skt-pop .sp-r b{display:block;font-size:10.5px;font-weight:500;letter-spacing:1px;color:#d8ccb0}
+  .skt-pop .sp-r em{display:block;font-style:normal;font-size:9.5px;line-height:1.5;color:#7a7466;margin-top:1px}
+  .skt-pop .sp-r.on{border-color:#ffd479;background:rgba(255,212,121,.14)}
+  .skt-pop .sp-r.on b{color:#ffe9a8}
+  .skt-pop .sp-r.lock{cursor:default;opacity:.55}
+  .skt-pop .sp-r.lock b{color:#9a8f7a}
+  /* 「待接」= 行为层还没实现，不许投点。做得比 lock 更暗一档并划掉名字，
+   * 免得玩家以为是点数不够，白攒半天点 */
+  .skt-pop .sp-r.na{cursor:not-allowed;opacity:.42;border-style:dashed;
+    border-color:rgba(160,120,90,.3);background:rgba(0,0,0,.18)}
+  .skt-pop .sp-r.na b{color:#8a8070}
+  /* 每条分支右上角的小标签：花钱 / 已选 / 待接 / 换向免费 */
+  .skt-pop .sp-r b{display:flex;align-items:baseline;gap:6px}
+  .skt-pop .sp-cost{margin-left:auto;flex:none;font-size:9px;letter-spacing:0;
+    font-weight:400;color:#8a8266;background:rgba(216,178,90,.1);
+    border:1px solid rgba(216,178,90,.2);border-radius:2px;padding:0 4px}
+  .skt-pop .sp-cost.on{color:#1a1510;background:#d8b25a;border-color:#ffe9a8}
+  .skt-pop .sp-cost.na{color:#a0826a;background:transparent;border-color:rgba(160,130,106,.35)}
+  .skt-pop .sp-ft{font-size:9px;line-height:1.5;color:#5e5648;border-top:1px solid rgba(216,178,90,.14);
+    padding-top:5px}
+
+  /* 底部技能条：平时只占一条窄行（收起），展开时向上浮一层，
+   * 不挤占树的高度 —— 展开/收起不会让整棵树跟着跳。 */
+  .sk-bar{position:relative;display:flex;align-items:center;gap:9px;flex:none;
+    margin-top:8px;padding-top:8px;border-top:1px solid rgba(216,178,90,.16)}
+  .sk-bar .sb-tog{display:flex;align-items:center;gap:8px;font-family:inherit;cursor:pointer;
+    border:0;background:transparent;padding:2px 0;color:inherit;flex:none}
+  .sk-bar .sb-mini{display:flex;gap:3px}
+  .sk-bar .sb-mini i{width:16px;height:16px;display:flex;align-items:center;justify-content:center;
+    border:1px solid rgba(216,178,90,.16);border-radius:2px;color:#5e5648}
+  .sk-bar .sb-mini i.on{color:#c8a860;border-color:rgba(216,178,90,.42);background:rgba(216,178,90,.07)}
+  .sk-bar .sb-arrow{font-size:9.5px;color:#7a7466;letter-spacing:1px}
+  .sk-bar .sb-tog:hover .sb-arrow{color:#ffe9a8}
+  .sk-bar.collapsed .sb-body{display:none}
+  .sk-bar:not(.collapsed) .sb-mini{display:none}
+  .sk-bar .sb-body{display:flex;align-items:center;gap:9px;flex:1;min-width:0;flex-wrap:wrap}
+  /* 展开态：浮在条的上方，树的高度不变 */
+  .sk-bar:not(.collapsed) .sb-body{position:absolute;left:0;right:0;bottom:100%;margin-bottom:7px;
+    padding:9px 10px;z-index:12;background:linear-gradient(180deg,rgba(24,21,15,.99),rgba(12,11,9,.99));
+    border:1px solid rgba(216,178,90,.34);box-shadow:0 -10px 28px rgba(0,0,0,.75)}
+  /* 拖动时跟着鼠标的小牌子 */
+  .sk-ghost{position:fixed;z-index:999;pointer-events:none;display:flex;align-items:center;gap:5px;
+    padding:3px 8px 3px 4px;border:1px solid rgba(255,233,168,.6);background:rgba(16,14,10,.94);
+    color:#ffe9a8;font-size:11px;letter-spacing:1px;box-shadow:0 6px 18px rgba(0,0,0,.8)}
+  .sk-bar .sb-lab{font-size:10.5px;letter-spacing:3px;color:#c9a86a;flex:none}
+  .sk-bar .sb-slots{display:flex;gap:4px;flex:none;flex-wrap:wrap}
+  .sk-bar .sb-slot{position:relative;width:34px;height:34px;flex:none;cursor:pointer;padding:0;
+    display:flex;align-items:center;justify-content:center;
+    border:1px solid rgba(216,178,90,.26);border-radius:2px;color:#8a8474;
+    background:radial-gradient(ellipse at 50% 30%,rgba(50,42,28,.6),rgba(10,9,7,.75) 80%);transition:.12s}
+  .sk-bar .sb-slot:hover{border-color:rgba(255,212,121,.7)}
+  .sk-bar .sb-slot.occ{color:#e0c070;border-color:rgba(216,178,90,.45);cursor:grab}
+  /* 拖拽落点高亮：拖动时底下这一格亮起来，松手就放这儿 */
+  .sk-bar .sb-slot.drop{border-color:#ffd479;background:rgba(255,212,121,.16);
+    box-shadow:0 0 12px rgba(255,212,121,.45),inset 0 0 8px rgba(255,212,121,.2)}
+  .sk-bar .sb-slot.on{border-color:#ffd479;box-shadow:0 0 10px rgba(255,212,121,.35),inset 0 0 10px rgba(255,212,121,.12)}
+  .sk-bar .sb-slot .sb-k{position:absolute;left:2px;top:0;font-family:system-ui,sans-serif;font-size:8.5px;
+    color:#6a6458;line-height:1.2}
+  .sk-bar .sb-slot.occ .sb-k{color:#a89878}
+  .sk-bar .sb-dot{width:5px;height:5px;border-radius:50%;background:rgba(216,178,90,.22)}
+  /* 传世秘技：树上没有节点，单独一小排（青色「秘」，与职业技能区分） */
+  .sk-bar .sb-grant{display:flex;align-items:center;gap:4px;flex:none;padding-left:8px;
+    border-left:1px solid rgba(216,178,90,.16)}
+  .sk-bar .sb-glab{font-size:9.5px;letter-spacing:1px;color:#4f7a76}
+  .sk-bar .sb-slot.gr{width:28px;height:28px;color:#7fe0d0;border-color:rgba(127,224,208,.4)}
+  .sk-bar .sb-slot.gr .sb-k{color:#4f7a76}
+  .sk-bar .sb-hint{font-size:10px;color:#6a6458;letter-spacing:0;margin-left:auto;white-space:nowrap;
+    overflow:hidden;text-overflow:ellipsis}
+
+  /* 说明书里的标签 / 分支摘要（只读，不放按钮） */
+  .sk-right .sd-tags{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:7px}
+  .sk-right .sd-tags .tg{font-style:normal;font-size:9px;letter-spacing:1px;padding:1px 5px;
+    border:1px solid rgba(216,178,90,.2);border-radius:2px;color:#a89878;background:rgba(216,178,90,.06)}
+  .sk-right .sd-tags .tg.elem{color:#e0b070;border-color:rgba(224,176,112,.32)}
+  .sk-right .sd-tags .tg.form{color:#8fb8c8;border-color:rgba(143,184,200,.3)}
+  .sk-right .sd-tags .tg.fx{color:#a08fc8;border-color:rgba(160,143,200,.3)}
+  .sk-right .sd-branch{margin-top:9px;padding-top:8px;border-top:1px solid rgba(216,178,90,.14);
+    font-size:10px;line-height:1.6;color:#a89878}
+  .sk-right .sd-branch>div{margin-bottom:4px}
+  .sk-right .sd-branch .sb-k{display:inline-block;margin-right:5px;font-size:9px;letter-spacing:1px;
+    padding:0 4px;border:1px solid rgba(216,178,90,.22);border-radius:2px;color:#c9a86a}
+  .sk-right .sd-branch em{display:block;font-style:normal;font-size:9.5px;color:#6a6458;line-height:1.5}
+  .sk-right .sd-branch .sd-tag{font-style:normal;margin-left:5px;font-size:8.5px;letter-spacing:0;
+    padding:0 3px;border:1px solid rgba(216,178,90,.25);border-radius:2px;color:#8a8266}
+  .sk-right .sd-branch .sd-tag.on{color:#1a1510;background:#d8b25a;border-color:#ffe9a8}
+  .sk-right .sd-branch .sd-tag.na{color:#a0826a;border-style:dashed;border-color:rgba(160,130,106,.4)}
+  .sk-top .sk-spent{font-size:10px;color:#7a7466;letter-spacing:0;margin-left:2px}
+  .sk-right .sd-branch .dim2{font-size:9px;color:#5e5648;margin-top:6px}
+  .sk-right .sd-hintline{margin-top:9px;font-size:9.5px;color:#6a6458;letter-spacing:0}
+
+  /* 窄屏 / 手机：左右结构改成上下，整页只留一条滚动条（树自己不再内滚，
+   * 否则树一条、卡片一条，手指不知道在滚谁），技能条吸在底部 */
+  @media (max-width:900px){
+    .sk-top .dim{display:none}
+    .sk-list{display:block;overflow-y:auto;overflow-x:hidden}
+    .sk-body{display:block}
+    .sk-left{display:block}
+    .skt-stage{display:block;height:auto;flex:none;overflow:visible}
+    .sk-right{width:auto;max-height:none;overflow:visible;margin-top:9px}
+    .sk-bar{position:sticky;bottom:0;z-index:9;margin-top:10px;padding:8px 0 6px;
+      background:linear-gradient(180deg,rgba(20,17,12,.92),rgba(14,12,9,.99))}
+    .sk-bar .sb-hint{display:none}
+    .sk-bar .sb-slot{width:30px;height:30px}
+  }
+  .sk-tile{position:relative;width:50px;height:50px;flex:none;display:flex;align-items:center;justify-content:center;
+    border:1px solid rgba(216,178,90,.3);border-radius:3px;cursor:pointer;transition:.12s;
+    background:radial-gradient(ellipse at 50% 30%,rgba(64,54,34,.55),rgba(12,11,9,.72) 80%)}
+  .sk-tile:hover{border-color:rgba(255,212,121,.75);transform:translateY(-1px)}
+  .sk-tile.sel{border-color:#ffd479;box-shadow:0 0 12px rgba(255,212,121,.28),inset 0 0 14px rgba(255,212,121,.12)}
+  .sk-tile.locked{opacity:.5;filter:grayscale(.7)}
+  .sk-tile .sk-ico{font-family:"STKaiti","KaiTi",serif;font-size:24px;color:#e8d8b0;
+    text-shadow:0 2px 8px rgba(0,0,0,.9);pointer-events:none}
+  .sk-tile.sel .sk-ico{color:#ffe9a8}
+  .sk-tile .sk-badge{position:absolute;right:3px;bottom:0;font-size:9.5px;font-weight:600;color:#ffd479;
+    font-variant-numeric:tabular-nums;text-shadow:0 1px 3px #000;pointer-events:none}
+  .sk-tile .sk-lk{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+    font-size:9.5px;color:#e0908a;background:rgba(0,0,0,.5);border-radius:2px;letter-spacing:0;pointer-events:none}
+  /* [UNIQUE-3] 传世秘技：跨职业授予的技能，青色「秘」角标与普通「N 级」区分开。
+     不能沿用 .sk-lk 的整格遮罩——那会把技能图标盖住，秘技只标角 */
+  .sk-tile .sk-lk.gr{inset:0 0 auto 0;height:auto;padding:0 0 1px;font-size:9px;line-height:1.3;
+    color:#7fe0d0;background:linear-gradient(rgba(6,26,26,.9),rgba(6,26,26,0));letter-spacing:1px}
+  .sk-tree.sk-tree-g{color:#7fe0d0}
+  .sk-tree.sk-tree-g .sk-tn{color:#4f7a76}
+  /* 已在技能条第几格：左上角小金标 */
+  .sk-tile .sk-onslot{position:absolute;left:2px;top:0;font-size:9px;font-weight:700;color:#1a1510;
+    background:#ffd479;border-radius:2px;padding:0 3px;line-height:1.35;pointer-events:none;
+    box-shadow:0 1px 3px rgba(0,0,0,.6)}
+  .sk-tip{position:absolute;pointer-events:none;max-width:240px;padding:8px 10px;z-index:5;
+    background:rgba(10,10,12,.96);border:1px solid var(--gold-d);box-shadow:0 8px 24px rgba(0,0,0,.7);
+    font-size:11px;line-height:1.7;color:#c8c0a8}
+  /* 没内容的浮层不能占着位置：否则首帧会在左下角留一个空框，压住下面的提示文字 */
+  .sk-tip:empty{display:none;border:0;padding:0;box-shadow:none;background:none}
+  .sk-tip .tt-n{font-size:12.5px;color:#f0dca8;letter-spacing:1px;margin-bottom:2px;display:flex;align-items:center;gap:5px}
+  .sk-tip .tt-n .tt-ico{display:flex;color:#e8d8b0}
+  .sk-tip .tt-r{font-size:10px;color:#8a8474;margin-bottom:3px}
+  .sk-tip .tt-d{color:#b8b0a0}
+  .sd-head{display:flex;gap:10px;align-items:center;margin-bottom:9px}
+  .sd-ico{width:54px;height:54px;flex:none;display:flex;align-items:center;justify-content:center;
+    font-family:"STKaiti","KaiTi",serif;font-size:28px;color:#ffe9a8;border:1px solid rgba(255,212,121,.45);
+    border-radius:3px;background:radial-gradient(ellipse at 50% 30%,rgba(64,54,34,.6),rgba(12,11,9,.78) 80%);
+    text-shadow:0 2px 8px rgba(0,0,0,.9)}
+  .sd-name{font-size:14px;color:#f0e0c0;letter-spacing:1px}
+  .sd-name .sk-lock{font-size:10px;color:#e0908a;letter-spacing:0;margin-left:6px}
+  .sd-name .sk-lock.gr{color:#7fe0d0}
+  .sd-sub{font-size:10px;color:#8a8474;margin-top:3px;letter-spacing:1px}
+  .sd-desc{font-size:11px;color:#a8a090;line-height:1.75;min-height:42px}
+  .sd-meta{font-size:10px;color:#8a8474;margin:7px 0 10px;padding:6px 9px;background:rgba(0,0,0,.28);
+    border-left:2px solid rgba(216,178,90,.4);line-height:1.7}
+  .sd-lv{display:flex;align-items:center;gap:9px;margin-bottom:10px}
+  .sk-pips{display:flex;gap:3px;flex:1}
+  .sk-pip{width:8px;height:8px;border:1px solid rgba(216,178,90,.4);transform:rotate(45deg)}
+  .sk-pip.on{background:#ffd479;box-shadow:0 0 5px rgba(255,212,121,.55)}
+  .sk-lvt{font-size:10.5px;color:#a8a090;font-variant-numeric:tabular-nums;white-space:nowrap}
+  .sk-lvt b{color:#ffd479}
+  .sk-lvb{font-family:inherit;font-size:11px;letter-spacing:1px;padding:3px 10px;cursor:pointer;
+    background:linear-gradient(180deg,rgba(216,178,90,.22),rgba(216,178,90,.08));
+    border:1px solid rgba(216,178,90,.45);color:#e8d8b0;transition:.12s;white-space:nowrap}
+  .sk-lvb:hover:not(:disabled){background:linear-gradient(180deg,#e0c070,#b89840);color:#1a1510}
+  .sk-lvb:disabled{opacity:.35;cursor:default}
+  .sk-vbtn{font-family:inherit;font-size:10.5px;letter-spacing:1px;padding:3px 9px;cursor:pointer;
+    background:rgba(0,0,0,.3);border:1px solid rgba(255,255,255,.12);color:#a8a090;transition:.12s}
+  .sk-vbtn:hover{border-color:rgba(216,178,90,.5);color:#e8d8b0}
+  .sk-vbtn.on{color:#1a1510;background:linear-gradient(180deg,#e0c070,#b89840);font-weight:600}
+  .sk-vbtn.locked{opacity:.4;cursor:default}
+  /* [C1] 机制型变体：改的是打法而不是数字，用青色描边和纯数值变体区分开 */
+  .sk-vbtn.mech{border-color:rgba(120,208,255,.45);color:#9fd4f0}
+  .sk-vbtn.mech::after{content:'◆';font-size:7px;margin-left:3px;vertical-align:top;opacity:.8}
+  .sk-vbtn.mech:hover{border-color:rgba(140,220,255,.8);color:#d0f0ff}
+  .sk-vbtn.mech.on{background:linear-gradient(180deg,#8ad8ff,#4a9ac8);border-color:#8ad8ff;color:#0d1a22}
+  /* 技能条配置行：详情卡底部 1-8 + 甲乙换栏
+   * [FIX-SKBAR-OVERFLOW] 5 格改 8 格之后这一行放不下了：8×22 + 间距 + 换栏 + 提示
+   * 一共 260px 上下，而详情卡可用宽度只有 300 出头，直接顶出面板。
+   * 现在格子缩到 20px、间距 3px，并且允许整行换行 —— 提示文字独占第二行，
+   * 无论几格都不会再溢出。 */
+  .sd-bar{display:flex;align-items:center;gap:8px;margin-top:10px;padding-top:9px;
+    border-top:1px solid rgba(216,178,90,.16);flex-wrap:wrap;row-gap:6px}
+  .sd-barlab{font-size:10px;color:#8a8474;letter-spacing:2px;flex:none}
+  .sd-barslots{display:flex;gap:3px;flex:none}
+  .sk-bslot{font-family:inherit;width:20px;height:20px;font-size:10.5px;font-weight:600;cursor:pointer;
+    background:rgba(0,0,0,.35);border:1px solid rgba(216,178,90,.35);color:#a8a090;transition:.12s;
+    font-variant-numeric:tabular-nums;padding:0}
+  .sk-bslot:hover:not(:disabled){border-color:#ffd479;color:#ffe9a8}
+  .sk-bslot.on{background:linear-gradient(180deg,#e0c070,#b89840);color:#1a1510;border-color:#ffd479}
+  .sk-bslot:disabled{opacity:.35;cursor:default}
+  .sd-barhint{font-size:9.5px;color:#6a6458;letter-spacing:0;line-height:1.5;flex:1 1 100%}
+  /* [M1] 两套快捷栏切换（甲 / 乙）：技能条格子右侧的两个小章 */
+  .sk-sets{display:inline-flex;align-items:center;gap:3px;margin:0 2px;vertical-align:middle;flex:none}
+  .sk-setslab{font-size:9.5px;letter-spacing:1px;color:#6a6458;margin-right:1px}
+  .sk-setbtn{font-family:"STKaiti","KaiTi",serif;width:20px;height:20px;font-size:11.5px;
+    cursor:pointer;border:1px solid rgba(216,178,90,.35);border-radius:3px;color:#a89878;
+    background:linear-gradient(180deg,#2a2620,#12100c);transition:.12s;padding:0}
+  .sk-setbtn:hover{border-color:#ffd479;color:#ffe9a8}
+  .sk-setbtn.on{background:linear-gradient(180deg,#e0c070,#b89840);color:#1a1510;border-color:#ffd479}
+  .sk-setbtn svg{width:13px;height:13px;display:block}
+  .sk-setbtn.on svg{color:#1a1510}
+  .sd-vars{display:flex;gap:6px;margin-bottom:6px}
+  .sd-vname{font-size:10px;color:#7a7466;line-height:1.65}
+  /* [P2] 说明书卡的三条分支：精研 / 取向 / 变体。
+   * 变体是三个可直接点的按钮 —— 它不该只藏在节点下的小圆点里。 */
+  .sd-branch{margin-top:8px;padding-top:7px;border-top:1px dashed rgba(216,178,90,.14);
+    display:flex;flex-direction:column;gap:7px}
+  .sd-branch>div{display:flex;align-items:baseline;gap:5px;flex-wrap:wrap}
+  .sb-k{flex:none;font-size:9px;letter-spacing:1.5px;color:#8a7f6b;padding:1px 4px;
+    border:1px solid rgba(216,178,90,.22);border-radius:2px;background:rgba(216,178,90,.05)}
+  .sd-branch b{font-weight:400;font-size:10.5px;color:#d8c9a4}
+  .sd-branch em{font-style:normal;font-size:9.5px;color:#6f6959;line-height:1.5}
+  .sd-tag{font-style:normal;font-size:9px;padding:1px 4px;border-radius:2px;color:#8a8270;
+    border:1px solid rgba(216,178,90,.18)}
+  .sd-tag.on{color:#ffd479;border-color:rgba(216,178,90,.5);background:rgba(216,178,90,.1)}
+  .sd-tag.na{color:#e08a72;border-color:rgba(214,106,86,.42);background:rgba(214,106,86,.08)}
+  .sb-forms{display:inline-flex;gap:4px;flex-wrap:wrap}
+  /* 变体：三条描述竖排（当前那条高亮）。只给名字的话玩家还得挨个切过去看。
+   * 竖排时 .sb-k 要自己靠左 —— 否则会被 stretch 拉成一条横贯整行的空框。 */
+  .sd-branch>div.sb-vwrap{flex-direction:column;align-items:flex-start;gap:4px}
+  .sb-vlist{display:flex;flex-direction:column;gap:3px;width:100%}
+  .sb-v{display:flex;align-items:baseline;gap:5px;flex-wrap:wrap;padding:3px 5px;border-radius:2px;
+    border:1px solid transparent;width:100%;box-sizing:border-box;font-family:inherit;
+    text-align:left;background:transparent;cursor:pointer;transition:.12s}
+  .sb-v:hover{border-color:rgba(120,208,255,.32);background:rgba(120,208,255,.05)}
+  .sb-v:disabled{cursor:default;opacity:.45}
+  .sb-v:disabled:hover{border-color:transparent;background:transparent}
+  .sb-v b{font-size:10px;font-weight:400;color:#7f8f9c;white-space:nowrap}
+  .sb-v em{font-size:9.5px;color:#6f6959;line-height:1.45}
+  .sb-v.on{border-color:rgba(120,208,255,.28);background:rgba(120,208,255,.06)}
+  .sb-v.on b{color:#bfe0f2}
+  .sb-vhint{font-size:9px;color:#5f5a4e}
+  /* [PICK-ROW-CLICKABLE] 取向那两条也是按钮：要花点数，所以用暖色区别于变体（蓝）。
+   * 以前这里只有一行纯文字，入口躲在树上节点的小记号里 —— 玩家会一直点节点
+   * （每点一次 +1 级），然后问「我都 4 级了怎么还选不了」。 */
+  .sd-branch>div.sb-pwrap{flex-direction:column;align-items:flex-start;gap:4px}
+  .sb-p b{color:#c9b487}
+  .sb-p span,.sb-p em{color:#6f6959}
+  .sb-p:hover:not(:disabled){border-color:rgba(216,178,90,.34);background:rgba(216,178,90,.06)}
+  .sb-p.on{border-color:rgba(216,178,90,.4);background:rgba(216,178,90,.09)}
+  .sb-p.on b{color:#ffd479}
+  .sb-fb{font-size:9.5px;line-height:1;padding:3px 6px;border-radius:2px;
+    border:1px solid rgba(92,147,174,.3);color:#8fb6cf;background:rgba(92,147,174,.07)}
+  /* [C1] 当前变体的机制标签 */
+  .sd-mech{display:inline-block;margin-left:6px;padding:1px 6px;border-radius:3px;font-size:9.5px;
+    color:#9fd4f0;background:rgba(120,208,255,.12);border:1px solid rgba(120,208,255,.35);vertical-align:1px}
+  /* [P4] 变体专属特效的风格字（颜色由行内 style 给，与战斗里的光效同色） */
+  .sd-fx{display:inline-block;margin-left:6px;padding:1px 6px;border-radius:3px;font-size:9.5px;
+    border:1px solid currentColor;background:rgba(255,255,255,.04);vertical-align:1px;opacity:.9}
+  .igrid{display:grid;grid-template-columns:repeat(8,1fr);gap:6px;
+    flex:0 1 auto;min-height:0;overflow-y:auto;overflow-x:hidden;align-content:start;padding-right:2px}
+  /* 行囊格子同样按部位分档（v1.2.3）：轨道保持等宽等距，格子里的小方块按档位缩放，
+   * 于是护甲/兵器占满、饰品只占六成 —— 索引映射不变，只改视觉体量。 */
+  .islot{width:100%;aspect-ratio:1;place-self:center;
+    background:linear-gradient(160deg,rgba(38,34,28,.75),rgba(0,0,0,.55));
     border:1px solid rgba(255,255,255,.115);box-shadow:inset 0 0 6px rgba(0,0,0,.55);position:relative;cursor:pointer;
     display:flex;align-items:center;justify-content:center;transition:.1s;overflow:hidden}
+  .islot[data-size="lg"]{width:92%}
+  .islot[data-size="md"]{width:82%}
+  .islot[data-size="sm"]{width:64%}
   .islot:hover{border-color:var(--gold);background:rgba(80,64,36,.25)}
   .islot .ico{display:flex;align-items:center;justify-content:center;width:100%;height:100%;line-height:1}
   .islot .qty{position:absolute;right:2px;bottom:0;font-size:10px;color:#e8e0c8}
   .islot .slot-tag{position:absolute;right:3px;bottom:1px;font-size:8px;line-height:1;color:rgba(255,255,255,.38);
     letter-spacing:0;pointer-events:none;text-shadow:0 1px 2px rgba(0,0,0,.8)}
-  .islot .slot-tag{position:absolute;right:3px;bottom:1px;font-size:8px;line-height:1;color:rgba(255,255,255,.38);
-    letter-spacing:0;pointer-events:none;text-shadow:0 1px 2px rgba(0,0,0,.8)}
+  .islot[data-size="sm"] .slot-tag{right:1px;bottom:0;font-size:7px}
+  /* 握持角标（v1.3.0）：只在兵器上出现，双手留一格明显的橙字 */
+  .islot .hand-tag{position:absolute;left:2px;bottom:0;font-size:7px;line-height:1.2;letter-spacing:0;
+    pointer-events:none;text-shadow:0 1px 2px rgba(0,0,0,.9);color:rgba(255,255,255,.4)}
+  .islot .hand-tag.h-dual{color:rgba(127,176,255,.75)}
+  .islot .hand-tag.h-two{color:rgba(255,154,108,.85)}
+  /* [v1.8.5] 穿戴需求不满足：整格压暗去色，右上角一枚「需」章。
+   * 只是想让你一眼分清「能穿 / 穿不上」，不隐藏——否则像装备没了。 */
+  .islot.req-miss{filter:grayscale(.85) brightness(.62);border-color:rgba(255,255,255,.08)}
+  .islot.req-miss:hover{filter:grayscale(.35) brightness(.9);border-color:rgba(232,86,74,.55)}
+  .islot .req-dot{position:absolute;left:2px;top:1px;font-size:8px;line-height:1.3;
+    padding:0 2px;color:#f0b0a8;background:rgba(90,24,20,.75);border:1px solid rgba(232,86,74,.5);
+    border-radius:2px;pointer-events:none;letter-spacing:0}
+
+  /* ---------- 行囊四栏（v1.3.0） ---------- */
+  .inv-tabs{display:flex;gap:4px;margin:6px 0 5px;border-bottom:1px solid rgba(216,178,90,.18);padding-bottom:5px}
+  .itab{font-family:inherit;font-size:11.5px;letter-spacing:1px;padding:4px 11px 5px;cursor:pointer;
+    background:rgba(0,0,0,.32);border:1px solid rgba(216,178,90,.18);border-bottom:none;color:#a8a090;transition:.12s;
+    border-radius:2px 2px 0 0}
+  .itab i{font-style:normal;font-size:9.5px;color:#6a6458;margin-left:2px}
+  .itab:hover{border-color:rgba(216,178,90,.5);color:#e8d8b0;background:rgba(216,178,90,.09)}
+  .itab.on{border-color:var(--gold);color:#1a1510;background:linear-gradient(180deg,#e0c070,#b89840);font-weight:600}
+  .itab.on i{color:rgba(26,21,16,.55)}
+
+  /* ---------- 材料 / 丹药 / 凭证：图标格子 + 数量角标（v1.6.0） ----------
+   * 一行一条的列表换成网格：形状替代文字，一屏能看全九种匠材；
+   * 名称与来源退到悬停提示（#tooltip），格子里只剩图标和右下角的数量。 */
+  .matlist{display:block;flex:1;min-height:0;overflow-y:auto;padding-right:2px}
+  .mgrid{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:6px;align-content:start}
+  .mgcell{position:relative;aspect-ratio:1;display:flex;align-items:center;justify-content:center;
+    background:radial-gradient(circle at 50% 42%,rgba(48,42,32,.62),rgba(0,0,0,.72) 72%);
+    border:1px solid rgba(255,255,255,.1);
+    box-shadow:inset 0 -2px 0 0 var(--mc,#8a8175),inset 0 0 9px rgba(0,0,0,.7);
+    transition:.1s;cursor:default}
+  .mgcell:hover{border-color:var(--mc,#d8b25a);background:radial-gradient(circle at 50% 42%,rgba(72,60,36,.7),rgba(0,0,0,.7) 72%)}
+  .mgcell .mg-ico{display:flex;align-items:center;justify-content:center;width:100%;height:100%}
+  .mgcell .mg-ico svg{width:92%;height:92%;display:block}
+  /* 委托凭证同款，靠左上角的序号区分是哪一单 */
+  .mgcell .mg-idx{position:absolute;left:2px;top:0;font-size:8.5px;line-height:1.4;color:#c9a86a;
+    font-variant-numeric:tabular-nums;pointer-events:none;text-shadow:0 1px 2px #000}
+  /* 角标压在图标右下角：带一圈黑描边，浅色图标上也读得清 */
+  .mgcell .mg-qty{position:absolute;right:3px;bottom:-1px;font-size:10.5px;line-height:1.35;color:#f5ecd6;
+    font-variant-numeric:tabular-nums;pointer-events:none;
+    text-shadow:0 1px 0 #000,0 0 4px #000,1px 0 0 #000,-1px 0 0 #000}
+  .mgcell.off{opacity:.32}
+  .mgcell.off .mg-qty{color:#8a8474}
+  .mgcell[data-use]{cursor:pointer}
+  .mat-empty{padding:26px 0;text-align:center;font-size:12px;color:#6a6458;line-height:2}
+  .mat-empty span{font-size:10.5px;color:#4e4a42}
+
+  /* ---------- 锻造页（v1.6.0） ---------- */
+  .craft-flow{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:10px;font-size:12px;line-height:1.5}
+  .craft-flow .cf-arw{color:#d8b25a}
+  .cmat-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;margin-top:6px}
+  .cmat{display:flex;flex-direction:column;align-items:center;gap:2px;padding:7px 4px 5px;
+    border:1px solid rgba(255,255,255,.1);border-bottom:2px solid var(--mc,#8a8175);
+    background:linear-gradient(160deg,rgba(38,34,28,.7),rgba(0,0,0,.48))}
+  .cmat.lack{border-color:rgba(224,90,74,.45);border-bottom-color:#e05a4a;
+    background:linear-gradient(160deg,rgba(52,22,18,.68),rgba(0,0,0,.5))}
+  .cmat .cm-nm{font-size:10px;color:#d8d0bc;letter-spacing:.5px;white-space:nowrap}
+  .cmat .cm-num{font-size:10.5px;color:#9ecf8a;font-variant-numeric:tabular-nums}
+  .cmat .cm-num u{text-decoration:none;color:#6a6458}
+  .cmat.lack .cm-num{color:#e0907e}
+  .cmat .cm-coin{display:flex;align-items:center;justify-content:center;width:24px;height:24px;
+    border:1px solid #d8b25a;border-radius:50%;color:#ffd166;font-size:11px;line-height:1}
+
+  /* ---------- 升阶页（M1/B5） ---------- */
+  .tier-track{display:flex;align-items:center;gap:4px;flex-wrap:wrap;margin-top:6px}
+  .tier-dot{font-size:10px;letter-spacing:1px;padding:2px 7px;border:1px solid rgba(255,255,255,.1);
+    color:#5f5a50;background:rgba(0,0,0,.35)}
+  .tier-dot.past{color:#c8b8a0;border-color:rgba(216,178,90,.35);background:rgba(80,62,30,.3)}
+  .tier-dot.now{color:#1a1510;border-color:var(--gold);background:linear-gradient(180deg,#e8c877,#c8a44a);font-weight:600}
+  .tier-flow{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:12px;font-size:13px}
+  .tier-flow .tf-a{color:#9a9284}
+  .tier-flow .tf-b{color:#ffe9a8}
+  .tier-cmp{margin-top:10px;border-top:1px solid rgba(255,255,255,.07)}
+  .tier-cmp .tc-row{display:flex;justify-content:space-between;gap:10px;padding:6px 2px;
+    font-size:11.5px;color:#b8b0a0;border-bottom:1px dashed rgba(255,255,255,.06)}
+  .tier-cmp .tc-row>span:first-child{color:#8a8474;flex:none}
+  .tier-cmp .tc-row i{font-style:normal;color:#6a6458;margin:0 5px}
+  .tier-cmp .tc-row b{font-weight:500}
+
+  /* ---------- 主菜单（v1.6.0） ----------
+   * 八个入口收成一个外壳：左侧页签竖排，右侧只挂当前这一页。
+   * 子面板是「搬」进来的（.embed 卸掉浮层定位），所以各页样式不用重写。 */
+  #menuPanel{left:50%;top:50%;transform:translate(-50%,-50%);width:940px;height:88vh;max-height:88vh;
+    display:none;flex-direction:column;z-index:60}
+  #menuPanel.open{display:flex}
+  #menuPanel .pb{padding:0;flex:1;min-height:0;overflow:hidden}
+  .menu-wrap{display:flex;min-height:0}
+  .menu-tabs{width:96px;flex:none;display:flex;flex-direction:column;gap:3px;padding:8px 0 8px 8px;
+    border-right:1px solid rgba(216,178,90,.18);overflow-y:auto}
+  .mtab{font-family:inherit;font-size:12px;letter-spacing:3px;text-align:left;padding:9px 10px;cursor:pointer;
+    background:rgba(0,0,0,.22);border:1px solid transparent;border-right:none;color:#a8a090;transition:.12s;
+    position:relative;flex:none}
+  .mtab span{float:right;font-size:9px;color:#5e594e;letter-spacing:0;margin-left:4px}
+  .mtab:hover{color:#e8d8b0;background:rgba(216,178,90,.1);border-color:rgba(216,178,90,.28)}
+  .mtab.on{color:#1a1510;background:linear-gradient(90deg,#e0c070,#b89840);font-weight:600;border-color:var(--gold)}
+  .mtab.on span{color:rgba(26,21,16,.5)}
+  /* ---- 异兽志（S5 怪物图鉴） ---- */
+  #codexPanel{left:50%;top:50%;transform:translate(-50%,-50%);width:880px;height:84vh;max-height:84vh}
+  .codex-wrap{display:flex;flex-direction:column;min-height:0;height:100%}
+  .codex-top{display:flex;align-items:center;gap:10px;padding:8px 12px;flex:none;
+    border-bottom:1px solid rgba(216,178,90,.14)}
+  .codex-top .cap{font-size:12px;color:var(--gold);letter-spacing:1px}
+  .codex-regions{display:flex;gap:5px;margin-left:auto;flex-wrap:wrap}
+  .creg{font-family:inherit;font-size:11px;letter-spacing:1px;padding:4px 9px;cursor:pointer;color:#a89878;
+    background:rgba(0,0,0,.22);border:1px solid rgba(216,178,90,.2)}
+  .creg:hover{color:#e8d8b0;border-color:rgba(216,178,90,.45)}
+  .creg.on{color:#1a1510;background:linear-gradient(90deg,#e0c070,#b89840);border-color:var(--gold);font-weight:600}
+  .creg i{font-style:normal;font-size:9px;opacity:.7;margin-left:3px}
+  .codex-grid{flex:1;min-height:0;overflow:auto;padding:10px 12px;align-content:start;
+    display:grid;grid-template-columns:repeat(auto-fill,minmax(256px,1fr));gap:8px}
+  .cx{display:flex;gap:8px;padding:8px;background:rgba(255,255,255,.022);
+    border:1px solid rgba(216,178,90,.14);border-left:2px solid var(--c,#666)}
+  .cx.lock{opacity:.4}
+  .cx-glyph{width:38px;height:38px;flex:0 0 38px;display:flex;align-items:center;justify-content:center;
+    font-family:"STKaiti","KaiTi",serif;font-size:19px;color:var(--c,#ccc);
+    border:1px solid var(--c,#444);background:rgba(0,0,0,.35)}
+  .cx-main{flex:1;min-width:0}
+  .cx-n{font-size:13px;color:#f0e0b8;letter-spacing:1px;display:flex;align-items:center;gap:6px}
+  .cx-n .fam{font-size:10px;padding:0 4px;border:1px solid var(--c,#666);color:var(--c,#aaa);letter-spacing:0}
+  .cx-n .lv{font-size:10px;color:#7a7466;letter-spacing:0;margin-left:auto;white-space:nowrap}
+  .cx-r{display:flex;gap:4px;margin-top:4px;flex-wrap:wrap}
+  .cx-r i{font-style:normal;font-size:10px;padding:0 3px;border:1px solid rgba(255,255,255,.1);color:#9a9488}
+  .cx-r i.up{color:#7fd44a;border-color:rgba(127,212,74,.4)}
+  .cx-r i.dn{color:#ff7a6a;border-color:rgba(255,122,106,.4)}
+  .cx-l{font-size:10px;color:#8a8474;margin-top:4px;line-height:1.5}
+  .cx-d{font-size:10px;color:#7a7466;margin-top:3px;line-height:1.5;
+    border-top:1px dashed rgba(216,178,90,.14);padding-top:3px}
+  .codex-foot{padding:6px 12px;flex:none;border-top:1px solid rgba(216,178,90,.14);font-size:11px;color:#8a8474}
+  body.touch #codexPanel{width:min(880px,98vw);height:92vh;max-height:92dvh}
+  body.touch .codex-grid{grid-template-columns:1fr}
+  .menu-body{flex:1;min-width:0;display:flex;min-height:0;position:relative;overflow:hidden}
+  #menuBody .panel.embed{position:relative;left:auto;top:auto;transform:none;display:flex;flex-direction:column;
+    width:100%;max-height:none;height:100%;border:none;box-shadow:none;background:transparent;
+    pointer-events:auto;z-index:auto;animation:none}
+  #menuBody .panel.embed>.ph{display:none}
+  #menuBody .panel.embed>.pb{flex:1;min-height:0;overflow:auto;padding:12px 14px}
+  #menuBody #invPanel.embed>.pb{height:100%;overflow:hidden}
+  #menuBody #setPanel.embed>.pb,#menuBody #savePanel.embed>.pb{max-height:none}
+
+  /* 左列下半：角色属性（常驻，超出左列高度自己滚）
+   * 两列排布 —— 左列只有 300px，三列会把「暴击伤害 128%」挤断行 */
+  .inv-stats{display:grid;grid-template-columns:repeat(2,1fr);gap:1px 12px;font-size:11px;color:#b8b0a0;
+    flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;align-content:start;
+    /* min-content：不给行高上限，内容多了才溢出滚动；用 auto 会被压成一条条细线 */
+    grid-auto-rows:min-content;padding-right:4px}
+  .inv-stats .st-grp{grid-column:1/-1;color:#c9a86a;font-size:10px;letter-spacing:3px;margin-top:5px;padding-bottom:2px;
+    border-bottom:1px solid rgba(201,168,106,.22)}
+  .inv-stats>div{display:flex;justify-content:space-between;gap:6px;padding:1px 0;white-space:nowrap;overflow:hidden}
+  .inv-stats b{color:#f0e0b8;font-weight:500}
+  /* 套装卡压到右列最底部：格子满不了的高度由它吃掉，视觉上有收尾不会空一块 */
+  .inv-foot{flex:1 1 auto;min-height:58px;max-height:236px;overflow-y:auto;margin-top:8px;padding:9px 11px;
+    border:1px solid rgba(216,178,90,.16);border-top-color:rgba(216,178,90,.3);
+    background:linear-gradient(180deg,rgba(32,27,20,.55),rgba(14,13,10,.35));
+    font-size:10.5px;color:#8a8474;letter-spacing:.3px;line-height:1.6}
+  .inv-foot .ft-h{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin-bottom:5px}
+  .inv-foot .ft-h b{font-family:"STKaiti","KaiTi",serif;font-size:11.5px;font-weight:500;letter-spacing:3px;color:#c9a86a}
+  .inv-foot .ft-h i{font-style:normal;font-size:9.5px;color:#5e594e;letter-spacing:0}
+  .inv-foot .ft-set{margin-bottom:5px}
+  .inv-foot .ft-set .ft-nm{letter-spacing:1px}
+  .inv-foot .ft-set .ft-on{color:#9ad0a8}
+  .inv-foot .ft-empty{color:#6a6458;margin-bottom:6px}
+  /* 容量进度条 */
+  .inv-foot .ft-bar{height:4px;background:rgba(0,0,0,.5);border:1px solid rgba(255,255,255,.07);
+    margin:0 0 6px;overflow:hidden}
+  .inv-foot .ft-bar i{display:block;height:100%;background:linear-gradient(90deg,#8a6a2a,#e0c070)}
+  .inv-foot .ft-q{display:flex;flex-wrap:wrap;gap:2px 10px;margin-bottom:7px}
+  .inv-foot .ft-q span{font-variant-numeric:tabular-nums}
+  .inv-foot .ft-sec{display:flex;align-items:baseline;justify-content:space-between;gap:8px;
+    margin:7px 0 4px;padding-top:6px;border-top:1px dashed rgba(255,255,255,.07)}
+  .inv-foot .ft-tips{display:grid;grid-template-columns:1fr 1fr;gap:1px 14px;margin-top:7px;padding-top:6px;
+    border-top:1px dashed rgba(255,255,255,.07);font-size:10px;color:#5e594e}
+  .inv-foot .ft-tips span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .islot.r-magic{border-color:rgba(103,169,255,.45);box-shadow:inset 0 0 10px rgba(103,169,255,.12)}
   .islot.r-rare{border-color:rgba(255,200,87,.5);box-shadow:inset 0 0 10px rgba(255,200,87,.13)}
   .islot.r-legendary{border-color:rgba(255,122,60,.65);box-shadow:inset 0 0 12px rgba(255,122,60,.2)}
   .islot.r-set{border-color:rgba(92,224,138,.6);box-shadow:inset 0 0 12px rgba(92,224,138,.18)}
-  .statbox{display:grid;grid-template-columns:1fr 1fr;gap:2px 12px;margin-top:10px;font-size:11.5px;
-    color:#b8b0a0;border-top:1px solid rgba(255,255,255,.07);padding-top:8px}
-  .statbox b{color:#f0e0b8;font-weight:500;float:right}
+  .islot.r-unique{border-color:rgba(255,59,59,.8);box-shadow:inset 0 0 14px rgba(255,59,59,.3)}
+  .sockbadge{position:absolute;left:2px;top:1px;font-size:8px;line-height:1.2;color:#b98cff;letter-spacing:0;
+    pointer-events:none;text-shadow:0 1px 2px rgba(0,0,0,.9)}
+  body.touch .sockbadge{font-size:7.5px;left:1px;top:0}
   .hintline{font-size:10.5px;color:#7a7466;margin-top:8px;letter-spacing:.5px;line-height:1.6}
 
   /* 属性面板 */
   #statPanel{left:50%;top:50%;transform:translate(-50%,-50%);width:420px}
-  .statlist{display:grid;grid-template-columns:1fr 1fr;gap:4px 18px;font-size:12px;color:#b8b0a0}
+  /* 挂进主菜单后宽度是整块菜单（~1000px），两列属性会被拉得很散：
+   * 「法师 · 术士」紧贴「境界」、数值甩到最右，读起来像一串。
+   * 统一限宽 + 居中，属性表才像一张表（v1.8.5）。 */
+  #menuBody #statPanel.embed>.pb>.attr-box,
+  #menuBody #statPanel.embed>.pb>.statlist{max-width:620px}
+  #menuBody #statPanel.embed>.pb>.attr-box{margin-left:auto;margin-right:auto}
+  #menuBody #statPanel.embed>.pb>.statlist{margin:0 auto}
+  #menuBody #statPanel.embed>.pb>.setshow{max-width:620px;margin:10px auto 0}
+  .statlist{display:grid;grid-template-columns:1fr 1fr;gap:4px 40px;font-size:12px;color:#b8b0a0}
   .statlist div{display:flex;justify-content:space-between;padding:2px 0;border-bottom:1px dashed rgba(255,255,255,.05)}
   .statlist b{color:#f0e0b8;font-weight:500}
   /* 属性面板分组标题：横跨两列，和条目区分开 */
@@ -198,6 +1118,78 @@
     border-bottom:1px solid rgba(201,168,106,.28)}
   .statlist .st-grp:first-child{margin-top:0}
   .setshow{margin-top:12px;font-size:11.5px;line-height:1.8;color:#9ae0b0}
+
+  /* ---------- 根基加点（v1.8.5） ---------- */
+  .attr-box{margin-bottom:12px;padding:9px 11px 10px;border:1px solid rgba(216,178,90,.22);
+    background:linear-gradient(180deg,rgba(40,34,24,.5),rgba(14,13,10,.4))}
+  .attr-box .ah{display:flex;align-items:center;gap:8px;margin-bottom:7px;flex-wrap:wrap}
+  .attr-box .ah b{font-family:"STKaiti","KaiTi",serif;font-weight:500;font-size:12.5px;
+    letter-spacing:3px;color:#c9a86a}
+  .attr-box .ah i{font-style:normal;font-size:10.5px;color:#8a8474;letter-spacing:.5px}
+  .attr-box .ah i em{font-style:normal;color:#6a6458;font-weight:600;font-size:12px}
+  .attr-box .ah i em.has{color:#ffd479}
+  .attr-box .ah-hint{font-size:9.5px;color:#5e594e;letter-spacing:.3px}
+  .attr-box .respec{margin-left:auto;font-family:inherit;font-size:10.5px;padding:2px 8px;cursor:pointer;
+    color:#c8b88a;background:rgba(0,0,0,.35);border:1px solid rgba(216,178,90,.28);border-radius:2px}
+  .attr-box .respec:hover:not(:disabled){color:#1a1510;background:linear-gradient(180deg,#e0c070,#b89840);border-color:#e0c070}
+  .attr-box .respec:disabled{opacity:.35;cursor:default}
+  .alist{display:flex;flex-direction:column;gap:3px}
+  .arow{display:grid;grid-template-columns:64px 58px 1fr auto;align-items:center;gap:8px;
+    padding:3px 4px;font-size:11.5px;border-bottom:1px dashed rgba(255,255,255,.05);cursor:help}
+  .arow:hover{background:rgba(216,178,90,.06)}
+  .arow.main{background:rgba(216,178,90,.045)}
+  .arow .an{color:#b8b0a0;letter-spacing:1px}
+  .arow .an .tag{font-style:normal;margin-left:4px;font-size:9px;padding:0 3px;border-radius:2px;
+    color:#1a1510;background:#c9a86a;letter-spacing:0}
+  .arow .av{color:#f0e0b8;font-weight:600;text-align:right;font-variant-numeric:tabular-nums}
+  .arow .av i{font-style:normal;font-size:9.5px;color:#7ee0a0;margin-left:3px}
+  .arow .ag{color:#7a7466;font-size:10px;line-height:1.4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .arow .ab{display:flex;gap:3px}
+  .arow .ab button{font-family:inherit;font-size:10.5px;line-height:1;padding:3px 7px;cursor:pointer;
+    color:#c8b88a;background:rgba(0,0,0,.4);border:1px solid rgba(216,178,90,.3);border-radius:2px}
+  .arow .ab button:hover:not(:disabled){color:#1a1510;background:linear-gradient(180deg,#e0c070,#b89840);border-color:#e0c070}
+  .arow .ab button:disabled{opacity:.28;cursor:default}
+  /* [C3] 未确认的改动：行底色 + 数值后面的绿/红净变化 */
+  .arow.dz{background:rgba(216,178,90,.09)}
+  .arow .av u{text-decoration:none;font-size:9.5px;margin-left:3px;font-weight:600}
+  .arow .av u.up{color:#7ee0a0}
+  .arow .av u.dn{color:#e08a7a}
+  .arow .ab button.minus{color:#d08a7a;border-color:rgba(208,138,122,.32)}
+  .arow .ab button.minus:hover:not(:disabled){color:#1a1510;background:linear-gradient(180deg,#d89a88,#a86a5a);border-color:#d89a88}
+  /* [C3] 未确认改动条：根基 / 天赋 / 技能三处共用 */
+  .dbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px;padding:6px 8px;
+    border:1px solid rgba(216,178,90,.42);border-radius:3px;
+    background:linear-gradient(180deg,rgba(60,48,26,.92),rgba(24,20,14,.92))}
+  .dbar .db-lab{font-size:10.5px;letter-spacing:1px;color:#c9a86a;flex:none}
+  .dbar .db-lab .db-sum{margin-left:4px;color:#ffd479;font-weight:600}
+  .dbar .db-list{display:flex;flex-wrap:wrap;gap:4px;flex:1;min-width:0}
+  .dbar .db-it{font-size:10px;line-height:1.5;padding:0 5px;border-radius:2px;
+    border:1px solid rgba(255,255,255,.12);color:#c8c0ae;white-space:nowrap}
+  .dbar .db-it.p{color:#7ee0a0;border-color:rgba(126,224,160,.34);background:rgba(126,224,160,.07)}
+  .dbar .db-it.m{color:#e08a7a;border-color:rgba(224,138,122,.34);background:rgba(224,138,122,.07)}
+  .dbar .db-btns{display:flex;gap:6px;flex:none}
+  .dbar button{font-family:inherit;font-size:10.5px;letter-spacing:1px;padding:4px 12px;cursor:pointer;border-radius:2px}
+  .dbar .db-ok{color:#1a1510;background:linear-gradient(180deg,#e0c070,#b89840);border:1px solid #e0c070}
+  .dbar .db-ok:hover{background:linear-gradient(180deg,#f0d488,#c8a850)}
+  .dbar .db-no{color:#b8b0a0;background:rgba(0,0,0,.35);border:1px solid rgba(255,255,255,.18)}
+  .dbar .db-no:hover{color:#e8e0d0;border-color:rgba(255,255,255,.34)}
+  /* 技能降级按钮 */
+  .sk-lvb.down{padding:3px 8px;color:#d08a7a;border-color:rgba(208,138,122,.34)}
+  .sk-lvb.down:hover:not(:disabled){background:linear-gradient(180deg,#d89a88,#a86a5a);color:#1a1510;border-color:#d89a88}
+  /* 属性说明浮层 */
+  .at-tip .tt-n em{font-style:normal;color:#ffd479;font-size:15px;margin-left:2px}
+  .at-tip .at-tag{font-style:normal;font-size:9px;margin-left:6px;padding:0 4px;border-radius:2px;
+    color:#8a8474;border:1px solid rgba(255,255,255,.15);vertical-align:1px}
+  .at-tip .at-tag.on{color:#1a1510;background:#c9a86a;border-color:#c9a86a}
+  .at-tip .at-sub{font-size:9.5px;color:#6a6458;letter-spacing:2px;margin:7px 0 3px}
+  .at-tip .at-rows{display:flex;flex-direction:column;gap:1px}
+  .at-tip .at-r{display:flex;justify-content:space-between;gap:10px;font-size:11px;color:#a8a090}
+  .at-tip .at-r b{color:#e8d8b0;font-weight:500}
+  .at-tip .at-rows.strong .at-r b{color:#ffd479}
+  .at-tip .at-src{margin-top:7px;padding-top:5px;border-top:1px solid rgba(255,255,255,.07);
+    font-size:10px;color:#7a7466;letter-spacing:.3px}
+  .at-tip .at-src b{color:#9ad0a8;font-weight:500}
+  .at-tip .at-foot{margin-top:5px;font-size:9.5px;color:#5e594e}
 
   /* 任务 */
   #questPanel{left:50%;top:50%;transform:translate(-50%,-50%);width:520px;max-height:80vh;overflow:hidden}
@@ -229,6 +1221,16 @@
   .shoprow .sn{font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .shoprow .ss{font-size:10.5px;color:#8a8474}
   .shoprow .sp{font-size:12px;color:#e8c878;white-space:nowrap}
+  /* 商店刷新条（v1.0.4） */
+  .shop-refresh{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:8px;
+    padding:6px 9px;background:rgba(216,178,90,.055);border:1px solid rgba(216,178,90,.16)}
+  .shop-refresh .sr-time{font-size:10.5px;color:#8a8474;letter-spacing:1px}
+  .shop-refresh .sr-time b{color:#e0c070;font-variant-numeric:tabular-nums;letter-spacing:1px}
+  .shop-refresh .sr-btn{font-family:inherit;font-size:10.5px;letter-spacing:1px;padding:4px 11px;cursor:pointer;
+    background:linear-gradient(180deg,rgba(216,178,90,.22),rgba(216,178,90,.08));
+    border:1px solid rgba(216,178,90,.45);color:#e8d8b0;transition:.12s;white-space:nowrap}
+  .shop-refresh .sr-btn:hover{background:linear-gradient(180deg,rgba(216,178,90,.34),rgba(216,178,90,.14));color:#fff0c8}
+  .shop-refresh .sr-btn.dis{opacity:.42;cursor:not-allowed;filter:grayscale(.5)}
 
   /* 传送 */
   #travelPanel{left:50%;top:50%;transform:translate(-50%,-50%);width:460px}
@@ -236,6 +1238,82 @@
   .trow.locked{opacity:.4}
   .trow .tn{font-size:13px;color:#e8dcc0;letter-spacing:2px}
   .trow .tl{font-size:10.5px;color:#8a8474}
+
+  /* ---------- 炼器台（S2） ---------- */
+  #forgePanel{left:50%;top:50%;transform:translate(-50%,-50%);width:760px;max-height:88vh;overflow:hidden}
+  .forge-wrap{display:flex;flex-direction:column;gap:9px}
+  .forge-tabs{display:flex;align-items:center;gap:8px}
+  .ftab{padding:6px 18px;background:rgba(0,0,0,.4);border:1px solid rgba(216,178,90,.22);color:#b8a888;
+    font-family:inherit;font-size:12px;letter-spacing:3px;cursor:pointer;transition:.15s;pointer-events:auto}
+  .ftab:hover{border-color:rgba(216,178,90,.55);color:#f0dca8}
+  .ftab.on{border-color:var(--gold);color:#f0dca8;background:rgba(80,62,30,.5);box-shadow:inset 0 0 14px rgba(216,178,90,.12)}
+  .forge-mat{margin-left:auto;font-size:11.5px;color:#c9b8ff;letter-spacing:1px}
+  .forge-mat b{color:#e8d8ff;font-weight:500}
+  .forge-body{display:flex;gap:12px;min-height:340px}
+  .forge-list{width:212px;flex:none;max-height:60vh;overflow-y:auto;border-right:1px solid rgba(255,255,255,.07);padding-right:8px}
+  .fitem{display:flex;align-items:center;gap:8px;padding:6px 7px;border:1px solid transparent;cursor:pointer;transition:.12s;min-width:0}
+  .fitem:hover{background:rgba(216,178,90,.07)}
+  .fitem.sel{border-color:rgba(216,178,90,.5);background:rgba(80,62,30,.3)}
+  .fitem .fi{width:30px;height:30px;flex:none;display:flex;align-items:center;justify-content:center;border:1px solid rgba(255,255,255,.12)}
+  .fitem .fi .it-ico{width:25px;height:25px}
+  .fitem .fn{font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .fitem .fs{font-size:10px;color:#8a8474;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .fempty{padding:40px 10px;text-align:center;font-size:12px;color:#7a7466;line-height:2}
+  .forge-main{flex:1;min-width:0;max-height:60vh;overflow-y:auto;padding-right:2px}
+  .fhead{display:flex;align-items:center;gap:10px;padding-bottom:8px;border-bottom:1px solid rgba(255,255,255,.07);margin-bottom:9px}
+  .fhead .fi{width:38px;height:38px;flex:none;display:flex;align-items:center;justify-content:center;border:1px solid rgba(255,255,255,.14)}
+  .fhead .fi .it-ico{width:31px;height:31px}
+  .fhead .fname{font-size:13px;letter-spacing:1px}
+  .fhead .fsub{font-size:10.5px;color:#8a8474;margin-top:2px}
+  .frune-label{font-size:10.5px;color:#8a8474;letter-spacing:2px;margin:9px 0 6px}
+  .fsocks{display:flex;gap:8px;flex-wrap:wrap}
+  .fsock{width:48px;height:48px;display:flex;align-items:center;justify-content:center;border:1px dashed rgba(216,178,90,.35);
+    background:rgba(0,0,0,.4);cursor:pointer;position:relative;color:#5a5448;font-size:18px;transition:.12s}
+  .fsock:hover{border-color:var(--gold);background:rgba(80,64,36,.25)}
+  .fsock.on{border-style:solid;border-color:rgba(185,140,255,.55);background:rgba(60,44,90,.25)}
+  .fsock.sel{border-color:var(--gold);box-shadow:0 0 12px rgba(216,178,90,.35)}
+  .fsock .fn2{position:absolute;right:2px;bottom:1px;font-size:8px;color:#6a6458}
+  .frunes{display:grid;grid-template-columns:repeat(8,1fr);gap:6px}
+  .frune{position:relative;height:54px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;
+    border:1px solid rgba(255,255,255,.1);background:rgba(0,0,0,.35);cursor:pointer;transition:.12s}
+  .frune:hover{border-color:var(--gold);background:rgba(80,64,36,.25)}
+  .frune.off{opacity:.26;cursor:default}
+  .frune.off:hover{border-color:rgba(255,255,255,.1);background:rgba(0,0,0,.35)}
+  .frune .frn{font-size:9px;color:#b8b0a0;letter-spacing:0}
+  .frune .frc{position:absolute;right:2px;top:0;font-size:9px;color:#e8dcc0}
+  .frune.t1{border-color:rgba(207,207,214,.25)}
+  .frune.t2{border-color:rgba(103,169,255,.3)}
+  .frune.t3{border-color:rgba(185,140,255,.42)}
+  .frune.t4{border-color:rgba(255,200,87,.5);box-shadow:inset 0 0 10px rgba(255,200,87,.1)}
+  .fword{border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.02);padding:6px 9px;margin-bottom:5px}
+  .fword .fwn{font-size:11.5px;letter-spacing:1px}
+  .fword .fws{font-size:10.5px;color:#9ad0a8;margin-top:3px;line-height:1.6}
+  .fword .fwd{font-size:10px;color:#8a8474;line-height:1.5;margin-top:2px}
+  .fword .fwr{display:flex;align-items:center;gap:3px;flex-wrap:wrap;margin-top:3px}
+  .fword .fwr .miss{opacity:.32}
+  .fword .fwr .arw{color:#5a5448;font-size:9px}
+  .faff-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:7px 2px;border-bottom:1px solid rgba(255,255,255,.05)}
+  .faff-row .fa{font-size:12px;color:#9ad0ff}
+  .faff-row .btn{padding:4px 12px;font-size:11px;letter-spacing:1px;white-space:nowrap}
+  .faff-row .btn:disabled{opacity:.34;cursor:default}
+  .faff-row .btn:disabled:hover{border-color:var(--line);background:linear-gradient(180deg,rgba(60,48,28,.9),rgba(20,18,14,.95));color:#d8ccb0}
+  /* 固定初始词条：锁定不可洗，用暗金标签区分 */
+  .faff-fixed .fa{color:#b3a88f}
+  .faff-tag{display:inline-block;margin-right:6px;padding:0 5px;border:1px solid rgba(216,178,90,.42);
+    border-radius:2px;font-size:9.5px;line-height:15px;color:#d8b25a;letter-spacing:.5px;vertical-align:1px}
+
+  /* ---------- 定向洗炼 ---------- */
+  .ftarget-box{margin-top:10px;padding:10px 10px 4px;border:1px solid rgba(216,178,90,.28);border-radius:3px;
+    background:rgba(30,26,18,.45);box-shadow:inset 0 0 18px rgba(216,178,90,.06)}
+  .fpicks{display:flex;flex-wrap:wrap;gap:6px;max-height:172px;overflow-y:auto;padding-right:4px}
+  .fpick{display:flex;align-items:center;gap:6px;padding:4px 9px;background:rgba(0,0,0,.35);border:1px solid;
+    font-size:11.5px;color:#d8ccb0;cursor:pointer;transition:.12s;letter-spacing:.5px}
+  .fpick:hover{background:rgba(80,62,30,.5);color:#f0dca8;transform:translateY(-1px)}
+  .fpick-v{font-size:10px;color:#8a8474;font-variant-numeric:tabular-nums}
+  /* 单条升级的数值进度条 */
+  .fup-bar{height:5px;margin:9px 0 3px;background:rgba(0,0,0,.55);border:1px solid rgba(216,178,90,.16);overflow:hidden}
+  .fup-bar i{display:block;height:100%;background:linear-gradient(90deg,#7a5a22,#e0b45c,#f4e0a8);
+    box-shadow:0 0 10px rgba(224,180,92,.45);transition:width .25s}
 
   /* ---------- 存档管理 ---------- */
   /* 可能从开始界面打开，所以要压过 #start 的 z-index:60 */
@@ -280,10 +1358,10 @@
     background:radial-gradient(ellipse at 50% 44%,rgba(20,26,40,.5) 0%,rgba(11,14,21,.78) 52%,rgba(5,6,10,.94) 100%);
     display:flex;flex-direction:column;align-items:center;justify-content:center;pointer-events:auto}
   /* 标题界面隐藏 HUD */
-  body.in-menu #charplate,body.in-menu #topright,body.in-menu #actionbar,
+  body.in-menu #charplate,body.in-menu #topright,body.in-menu #actionbar,body.in-menu #buffbar,
   body.in-menu #log,body.in-menu #bossbar,body.in-menu #mtouch,
   body.in-menu #openBtns,body.in-menu #toasts{opacity:0;pointer-events:none}
-  #charplate,#topright,#actionbar,#log,#bossbar{transition:opacity .45s ease}
+  #charplate,#topright,#actionbar,#buffbar,#log,#bossbar{transition:opacity .45s ease}
   #start::before{content:'';position:absolute;inset:0;
     background:repeating-linear-gradient(0deg,transparent 0 3px,rgba(255,255,255,.012) 3px 4px);pointer-events:none}
   #start h1{font-family:"STKaiti","KaiTi","STSong",serif;font-size:clamp(42px,7vw,86px);font-weight:400;
@@ -301,6 +1379,24 @@
   .cclass .cn{font-size:16px;letter-spacing:4px;margin-top:8px;color:#f0e4c8}
   .cclass .ct{font-size:10.5px;letter-spacing:2px;color:#9a8a6a;margin-top:2px}
   .cclass .cd{font-size:11px;line-height:1.75;color:#9a9488;margin-top:9px;text-align:left}
+
+  /* ---- 难度选择 ---- */
+  .diffs{display:flex;gap:10px;flex-wrap:wrap;justify-content:center}
+  .cdiff{min-width:118px;padding:9px 14px;border:1px solid rgba(216,178,90,.22);
+    background:linear-gradient(180deg,rgba(40,34,24,.5),rgba(10,10,12,.7));
+    cursor:pointer;transition:.18s;text-align:center;border-radius:2px}
+  .cdiff:hover{border-color:rgba(216,178,90,.55);transform:translateY(-2px)}
+  .cdiff.sel{border-color:var(--gold);background:linear-gradient(180deg,rgba(80,62,30,.6),rgba(16,14,12,.85));
+    box-shadow:0 0 18px rgba(216,178,90,.22)}
+  .cdiff .dn{font-size:14px;letter-spacing:3px;color:#f0e4c8;font-family:"STKaiti","KaiTi",serif}
+  .cdiff .dt2{font-size:10px;letter-spacing:1px;margin-top:3px;opacity:.85}
+  #diffDesc{margin-top:11px;font-size:11.5px;line-height:1.75;color:#9a9488;
+    max-width:520px;text-align:center;min-height:2.6em}
+  body.touch .diffs{gap:6px}
+  body.touch .cdiff{min-width:72px;padding:7px 8px}
+  body.touch .cdiff .dn{font-size:12.5px;letter-spacing:1px}
+  body.touch .cdiff .dt2{font-size:9px}
+  body.touch #diffDesc{font-size:10px;line-height:1.6;max-width:92vw;margin-top:7px;min-height:3.2em}
   #start .bottom{margin-top:26px;display:flex;gap:12px;align-items:center}
   #start .tips{position:absolute;bottom:22px;font-size:10.5px;color:#6a6458;letter-spacing:1px;text-align:center;line-height:1.9}
   #start .tips b{color:#a89878;font-weight:400}
@@ -322,25 +1418,129 @@
   .tt-htx{min-width:0;flex:1}
   .tt-name{font-size:14px;letter-spacing:1px;font-weight:600;text-shadow:0 0 12px rgba(0,0,0,.8)}
   .tt-sub{font-size:10px;color:#8a8474;margin:2px 0 0;letter-spacing:1px}
+  /* 握持标签（v1.3.0） */
+  .tt-hand{display:flex;align-items:center;gap:6px;font-size:10px;color:#9a9182;margin:6px 0 2px;letter-spacing:.5px}
+  .tt-hand-tag{flex:none;font-size:9.5px;padding:1px 5px;border:1px solid;letter-spacing:1px}
+  .tt-hand.h-one .tt-hand-tag{color:#b8ad90;border-color:rgba(184,173,144,.4)}
+  .tt-hand.h-dual .tt-hand-tag{color:#7fb0ff;border-color:rgba(127,176,255,.5)}
+  .tt-hand.h-two .tt-hand-tag{color:#ff9a6c;border-color:rgba(255,154,108,.6)}
   .tt-main{font-size:12px;color:#e8dcc0;margin:2px 0}
   .tt-aff{font-size:12px;color:#9ad0ff;line-height:1.6}
   .tt-imp{font-size:12px;color:#c9b8ff;line-height:1.6;margin-top:3px;padding:1px 0 1px 5px;border-left:2px solid rgba(185,140,255,.5)}
   .tt-aff .dim{color:#7f9ab0;font-size:10px}
+  /* S2 孔位 / 符文之语 */
+  .tt-socks{display:flex;gap:5px;margin-top:6px;padding-top:5px;border-top:1px dashed rgba(255,255,255,.08);flex-wrap:wrap}
+  .tsock{width:26px;height:26px;display:flex;align-items:center;justify-content:center;border:1px dashed rgba(216,178,90,.3);
+    color:#5a5448;font-size:13px;background:rgba(0,0,0,.35)}
+  .tsock.on{border-style:solid;border-color:rgba(185,140,255,.5);background:rgba(60,44,90,.2)}
+  .tsock svg{width:20px;height:20px}
+  .tt-rw{margin-top:5px;padding:5px 7px;border:1px solid var(--rwc,rgba(185,140,255,.4));background:rgba(30,20,46,.4)}
+  .tt-rw-t{font-size:11.5px;letter-spacing:1px;color:var(--rwc,#c9b8ff)}
+  .tt-rw-s{font-size:11px;color:#9ad0a8;line-height:1.65;margin-top:2px}
+  .tt-rw-d{font-size:10px;color:#8a8474;line-height:1.6;margin-top:2px}
+  .tt-rw-hint{font-size:10px;color:#8a7a5a;margin-top:4px}
   .tt-power{font-size:11.5px;color:#ff9a5c;margin-top:6px;line-height:1.6;border-top:1px dashed rgba(255,122,60,.25);padding-top:5px}
   .tt-set{margin-top:6px;border-top:1px dashed rgba(92,224,138,.25);padding-top:5px}
   .tt-set-t{font-size:11px;letter-spacing:1px}
   .tt-set-b{font-size:10.5px;line-height:1.65}
   .tt-set-b.on{color:#7ce09a}
   .tt-set-b.off{color:#5a6a60}
-  .tt-req{font-size:10.5px;color:#8a8474;margin-top:6px;border-top:1px solid rgba(255,255,255,.07);padding-top:4px}
+  /* 传世（Unique） */
+  .tt-lore{font-size:10.5px;color:#9a8f78;font-style:italic;line-height:1.6;margin-top:4px}
+  /* 法器（v1.3.0）：一句介绍 + 附带术法 */
+  .tt-relic-intro{font-size:11px;color:#dcc890;font-style:italic;letter-spacing:.6px;line-height:1.65;
+    margin:5px 0 1px;text-align:center}
+  .tt-grant{margin-top:5px;padding:3px 0 3px 7px;font-size:10.5px;line-height:1.55;color:#8fd0a8;
+    border-left:2px solid rgba(143,208,168,.55);background:linear-gradient(90deg,rgba(143,208,168,.10),transparent)}
+  .tt-grant b{font-weight:600;color:#b6e6c6;letter-spacing:.5px}
+  .tt-uaff{font-size:12px;color:#f0c878;line-height:1.6}
+  .tt-raff{color:#ffd76a}
+  .tt-raff-tag{display:inline-block;margin-right:6px;padding:0 5px;border:1px solid rgba(255,215,106,.55);
+    border-radius:2px;font-size:9px;line-height:14px;color:#ffd76a;background:rgba(255,215,106,.12);
+    letter-spacing:.5px;vertical-align:1px}
+  /* 固定初始词条：与可洗练词条视觉分开，右侧暗金小标签 */
+  .tt-faff{font-size:12px;color:#cdc2a6;line-height:1.6}
+  .tt-faff-tag{display:inline-block;margin-right:6px;padding:0 5px;border:1px solid rgba(216,178,90,.4);
+    border-radius:2px;font-size:9px;line-height:14px;color:#d8b25a;letter-spacing:.5px;vertical-align:1px}
+  .tt-aff-sep{height:1px;margin:5px 0 4px;background:linear-gradient(90deg,rgba(216,178,90,.30),rgba(216,178,90,0))}
+  .tt-unq{margin-top:6px;border-top:1px dashed rgba(217,164,65,.3);padding-top:5px}
+  .tt-trait{font-size:11px;line-height:1.7;color:#c8b088}
+  .tt-trait b{color:#e8c878;font-weight:600;margin-right:5px}
+  .tt-skill{font-size:11px;line-height:1.7;color:#ffcf8a;margin-top:5px;border-top:1px dashed rgba(217,164,65,.3);padding-top:5px}
+  .tt-skill b{color:#ffd166;font-weight:600;margin-right:5px}
+  /* [UNIQUE-1] 传世标签：提示框里直接写清「不入八阶」，与套装/八阶区分开 */
+  .tt-tierless{display:inline-block;font-size:9.5px;letter-spacing:1px;color:#ff9b8a;margin-top:4px;
+    border:1px solid rgba(255,120,100,.38);background:rgba(60,12,10,.5);border-radius:2px;padding:1px 5px}
+  /* [UNIQUE-3] 技能效果类型角标：秘技（授予）/ 强化（指定技能）/ 通玄（全技能）/ 精研（+等级） */
+  .tt-skill-tag{display:inline-block;font-style:normal;font-size:9px;letter-spacing:1px;padding:0 4px;
+    margin-right:5px;border-radius:2px;color:#0f0d0a;background:#ffd166;vertical-align:1px}
+  .tt-skill-tag:where(:not(:empty)){font-weight:700}
+  .tt-req{font-size:10.5px;color:#8a8474;margin-top:6px;border-top:1px solid rgba(255,255,255,.07);
+    padding-top:5px;display:flex;flex-wrap:wrap;gap:3px 6px;align-items:baseline}
+  .tt-req .rq-h{font-style:normal;color:#5e594e;letter-spacing:2px;font-size:9.5px;flex:1 0 100%}
+  /* 需求逐条：够的灰、差的标红（括号里写当前值） */
+  .tt-req .rq{font-size:10px;padding:0 4px;border-radius:2px;border:1px solid rgba(255,255,255,.1);
+    color:#8a8474;background:rgba(0,0,0,.3)}
+  .tt-req .rq.ok{color:#9ad0a8;border-color:rgba(120,220,160,.28);background:rgba(30,70,45,.32)}
+  .tt-req .rq.bad{color:#ffb0a6;border-color:rgba(232,86,74,.5);background:rgba(80,20,16,.5)}
+  .tt-req .rq.cls{color:#c9a86a;border-color:rgba(216,178,90,.3);background:rgba(46,38,20,.5)}
   .tt-val{font-size:10.5px;color:#c8a860}
   .tt-hint{font-size:10px;color:#7a7466;margin-top:3px}
+  /* 装备对比（v1.0.4） */
+  .tt-cmp{margin-top:6px;border-top:1px solid rgba(255,255,255,.09);padding-top:5px}
+  .tt-cmp-t{font-size:10.5px;color:#c8a860;letter-spacing:1px;margin-bottom:3px;display:flex;justify-content:space-between}
+  .tt-cmp-r{display:flex;justify-content:space-between;font-size:10.5px;line-height:1.7;color:#a8a090}
+  .tt-cmp-r b{font-weight:600;font-variant-numeric:tabular-nums}
+  .tt-cmp-s{font-size:10.5px;color:#8a8474;margin-top:4px;padding-top:3px;border-top:1px dashed rgba(255,255,255,.08);
+    display:flex;gap:4px;align-items:baseline}
+  .tt-cmp-s b{color:#e0d0a8}
+  .tt-cmp-none{font-size:10px;color:#6a6458;line-height:1.7}
+  .tt-score{font-size:10.5px;color:#8a8474;margin-top:3px}
+  .tt-score b{color:#e0d0a8}
+  .up{color:#5ce08a}
+  .down{color:#ff6b5a}
+  .flat{color:#9a9488}
   .dim{color:#8a8474}
 
   #openBtns{position:absolute;right:18px;bottom:22px;display:flex;flex-direction:column;gap:6px;align-items:flex-end}
   #openBtns .btn{padding:5px 12px;font-size:11px;letter-spacing:2px;background:rgba(10,10,14,.78)}
-  #help{position:absolute;left:18px;bottom:22px;font-size:10.5px;color:#6a6458;line-height:1.9;letter-spacing:.5px}
-  #help b{color:#a89878;font-weight:400}
+
+  /* ---------- 帧数面板（设置里可开关） ---------- */
+  #fpsHud{display:none;position:absolute;left:18px;top:100px;z-index:14;pointer-events:none;
+    font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:12px;line-height:1.3;
+    color:#cfc6b0;background:rgba(8,8,12,.66);border:1px solid rgba(216,178,90,.22);
+    padding:5px 9px 6px;border-radius:2px;letter-spacing:.5px;text-shadow:0 1px 2px rgba(0,0,0,.9)}
+  #fpsHud b{font-size:16px;font-weight:700;font-variant-numeric:tabular-nums}
+  #fpsHud b.ok{color:#7ce09a} #fpsHud b.mid{color:#e8c060} #fpsHud b.low{color:#ff6a5a}
+  #fpsHud i{display:block;font-style:normal;font-size:10.5px;color:#8a8378;margin-top:1px;letter-spacing:0}
+
+  /* ---------- 设置面板 ---------- */
+  /* z-index 要高过标题界面（#start 是 60）：低配机器往往需要在开局前就把画质调好 */
+  #setPanel{z-index:70;left:50%;top:50%;transform:translate(-50%,-50%);width:540px;max-height:88vh}
+  #setPanel .pb{padding:8px 16px 14px}
+  .setrow{display:flex;align-items:center;gap:12px;padding:9px 0;border-bottom:1px solid rgba(255,255,255,.055)}
+  .setrow:last-of-type{border-bottom:0}
+  .setlab{width:76px;flex:none;font-size:12px;color:#a89878;letter-spacing:2px}
+  /* 分区标题（画面 / 音频）：一行细线 + 小字，不合在 setrow 里，免得被当成可点的行 */
+  .sethead{display:flex;align-items:center;gap:8px;margin:10px 0 2px;font-size:11px;letter-spacing:3px;color:#8a7a58}
+  .sethead::after{content:'';flex:1;height:1px;background:linear-gradient(90deg,rgba(201,168,106,.35),rgba(201,168,106,0))}
+  .sethead:first-child{margin-top:0}
+  .setseg{display:flex;gap:5px;flex-wrap:wrap;flex:1;min-width:0}
+  .setseg .sbtn{min-width:44px;text-align:center;padding:4px 9px}
+  .setseg .sbtn.on{pointer-events:none}
+  /* 音频滑杆：用原生 range，但要压掉浏览器的默认蓝白配色，融进这套暗金 UI */
+  .setrange-wrap{align-items:center;gap:10px}
+  .setrange{-webkit-appearance:none;appearance:none;flex:1;min-width:120px;height:3px;border-radius:2px;
+    background:linear-gradient(90deg,#8a6a2a,#c9a86a);outline:none;cursor:pointer}
+  .setrange::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:14px;height:14px;border-radius:50%;
+    background:#f0e0b8;border:1px solid #8a6a2a;box-shadow:0 0 6px rgba(201,168,106,.5);cursor:pointer}
+  .setrange::-moz-range-thumb{width:13px;height:13px;border-radius:50%;background:#f0e0b8;border:1px solid #8a6a2a}
+  .setrange::-moz-range-track{height:3px;border-radius:2px;background:linear-gradient(90deg,#8a6a2a,#c9a86a)}
+  .setval{width:30px;flex:none;text-align:right;font-size:11px;color:#c9a86a;font-variant-numeric:tabular-nums}
+  #setHint{margin-top:12px;font-size:11px;line-height:1.85;color:#7a7468}
+  #setHint b{color:#b8a888;font-weight:400}
+  .setfoot{display:flex;justify-content:space-between;align-items:center;margin-top:12px;gap:10px}
+  .setfoot .dim{font-size:10.5px}
 
   ::-webkit-scrollbar{width:5px;height:5px}
   ::-webkit-scrollbar-track{background:rgba(255,255,255,.02)}
@@ -362,17 +1562,27 @@
    * 移动端（body.touch 由 mobile.js 添加，PC 上完全不生效）
    * ============================================================ */
   body.touch{-webkit-user-select:none;user-select:none;overscroll-behavior:none;
-    touch-action:manipulation}
+    touch-action:none;        /* [FIX-BUG2] 从 manipulation 改为 none，完全阻止 Safari 手势干扰 */
+    -webkit-touch-callout:none;
+    -webkit-overflow-scrolling:auto}  /* 关掉 momentum scrolling，防止地址栏跳动 */
   body.touch #gl,body.touch #mtouch,body.touch #mJoy{touch-action:none}
+  /* [FIX-BUG2] 面板内部允许滚动 */
+  body.touch .panel,body.touch #dialog{touch-action:auto}
   /* iOS Safari 的规矩：输入框字号 < 16px 时，一旦聚焦就自动把整页放大，
    * 而且键盘收起后不会还原。页面被放大 → 固定定位的摇杆被推出可视区（看起来「消失」）、
    * 右侧按钮整体显得更大。所以触屏下所有可输入控件一律 ≥16px。 */
   body.touch input,body.touch textarea{font-size:16px!important;letter-spacing:1px}
   body.touch #newName{width:132px;padding:6px 8px}
-  html,body{overflow:hidden;overscroll-behavior:none}
+  html,body{overflow:hidden;overscroll-behavior:none;
+    position:fixed;width:100%;height:100%;top:0;left:0}  /* [FIX-BUG2] position:fixed 阻止 Safari 地址栏收起时的页面滚动 */
 
   /* ---- 虚拟按键 ---- */
-  #mtouch{position:fixed;inset:0;z-index:12;pointer-events:none;display:none}
+  /* [FIX-BUG2] position:fixed 在 iOS Safari 上地址栏收起时会跳动，
+   * 但改为 position:absolute 会导致滚动时跟着走。
+   * 保持 fixed 但用 will-change 和 backface-visibility 优化，
+   * 并在 JS 中实时校正位置（layout 方法已处理）。 */
+  #mtouch{position:fixed;inset:0;z-index:12;pointer-events:none;display:none;
+    will-change:transform;-webkit-backface-visibility:hidden;backface-visibility:hidden}
   body.touch #mtouch{display:block}
   #mtouch .mbtn{position:absolute;border-radius:50%;pointer-events:auto;
     display:flex;align-items:center;justify-content:center;
@@ -391,6 +1601,14 @@
     background:rgba(8,8,12,.96);border:1px solid rgba(216,178,90,.45);color:#ffd88a;font-size:10px;
     font-family:system-ui,sans-serif;display:flex;align-items:center;justify-content:center;padding:0 3px;
     letter-spacing:0}
+  /* 换栏按钮：金色描边，和「交/闪/丹/露」区分开 */
+  #mtouch .mbtn.set{color:#ffd479;border-color:rgba(216,178,90,.5);background:rgba(30,24,12,.72)}
+  /* [v1.8.3] 手机换栏按钮：图标（剑 / 盾）表示是哪一套，右下角小数字表示第几套。
+   * 只放图标玩家会以为是攻击键，只有数字又看不出「两套」——两个一起才说得清。 */
+  #mtouch .mbtn.set .mi{display:flex;align-items:center;justify-content:center}
+  #mtouch .mbtn.set svg{width:18px;height:18px;display:block}
+  #mtouch .mbtn.set .idx{position:absolute;right:1px;bottom:-1px;font-size:9px;line-height:1;
+    font-family:system-ui,sans-serif;color:#ffd88a;text-shadow:0 1px 2px #000;letter-spacing:0}
   #mtouch .mbtn.on{border-color:rgba(120,220,140,.75);box-shadow:0 0 18px rgba(110,220,140,.5);
     background:radial-gradient(circle at 36% 28%,rgba(40,90,50,.95),rgba(10,20,12,.92))}
 
@@ -427,10 +1645,18 @@
     text-align:center;font-size:8px;color:#c8a878;letter-spacing:0}
   #mtouch .mskill.ready{border-color:rgba(216,178,90,.6);
     box-shadow:0 0 12px rgba(216,178,90,.25),0 4px 12px rgba(0,0,0,.55)}
+  /* 技能条空位：虚线圆 + 加号，点开术法面板配置 */
+  #mtouch .mskill.empty{border-style:dashed;border-color:rgba(216,178,90,.24);
+    background:rgba(12,10,10,.55);box-shadow:none}
+  #mtouch .mskill.empty .g{font-size:18px;color:#6a6458;line-height:1}
+  /* [M1] 变体角标：Ⅰ/Ⅱ/Ⅲ，与 PC 技能条一致 */
+  #mtouch .mskill .vb{position:absolute;right:-1px;top:-1px;min-width:13px;height:13px;
+    padding:0 2px;border-radius:7px;background:rgba(216,178,90,.92);color:#1a1509;
+    font-size:9px;font-weight:700;line-height:13px;text-align:center;
+    font-family:system-ui,sans-serif;box-shadow:0 1px 4px rgba(0,0,0,.6)}
 
   /* ---- HUD 缩放 ---- */
   body.touch #actionbar{display:none}
-  body.touch #help{display:none}
   body.touch #interact{display:none!important}
   body.touch #charplate{left:10px;top:8px;gap:7px;transform:scale(.8);transform-origin:top left}
   body.touch #topright{right:10px;top:8px;gap:5px}
@@ -454,16 +1680,39 @@
 
   /* 面板/对话打开时收起虚拟按键，避免误触 */
   body.touch.ui-open #mtouch,body.touch.ui-open #openBtns{opacity:0;pointer-events:none}
-  body.touch.ui-open #charplate,body.touch.ui-open #topright,
+  body.touch.ui-open #charplate,body.touch.ui-open #topright,body.touch.ui-open #buffbar,
   body.touch.ui-open #log,body.touch.ui-open #toasts{opacity:.18}
 
   /* ---- 触屏面板 ---- */
   body.touch .panel{max-height:84vh;max-height:84dvh;overflow:auto;-webkit-overflow-scrolling:touch;touch-action:auto}
-  body.touch #invPanel{width:min(760px,96vw);max-height:84vh;max-height:84dvh}
+  body.touch #invPanel{width:min(892px,96vw);max-height:84vh;max-height:84dvh}
+  /* 触屏不做「两列各自滚」：屏幕本来就矮，固定高度会把一边压成一条缝。
+   * 改成整面板滚动，装备栏与行囊都完整展开（.panel 已有 overflow:auto）。 */
+  body.touch #invPanel .pb{height:auto;max-height:none;overflow:visible}
+  /* 手机上排序条压扁，别把格子挤成一行两个字 */
+  body.touch .sortbar .sortlab{display:none}
+  body.touch .sbtn{padding:4px 7px;font-size:10px;letter-spacing:0}
+  body.touch .shop-refresh{padding:5px 7px;gap:6px}
+  body.touch .shop-refresh .sr-btn{padding:5px 9px;font-size:10px}
   body.touch #statPanel{width:min(420px,94vw)}
   body.touch #questPanel{width:min(520px,94vw);max-height:84vh;max-height:84dvh}
   body.touch #shopPanel{width:min(560px,94vw)}
   body.touch #travelPanel{width:min(460px,94vw)}
+  body.touch #forgePanel{width:min(760px,96vw);max-height:88vh;max-height:88dvh}
+  body.touch #setPanel{width:min(540px,96vw)}
+  body.touch .setlab{width:64px;font-size:11px;letter-spacing:1px}
+  body.touch .setseg .sbtn{min-width:40px;padding:5px 8px}
+  body.touch #fpsHud{left:8px;top:auto;bottom:calc(50% + 58px);font-size:11px}
+  body.touch #fpsHud b{font-size:14px}
+  body.touch .forge-body{flex-direction:column;min-height:0;gap:8px}
+  body.touch .forge-list{width:100%;max-height:17dvh;display:flex;gap:6px;overflow-x:auto;overflow-y:hidden;
+    border-right:none;border-bottom:1px solid rgba(255,255,255,.07);padding:0 0 6px}
+  body.touch .fitem{flex:none;width:148px}
+  /* 88dvh 减去标题/页签/物品条/底注后的剩余高度；横屏 390 高时底注不会被裁掉 */
+  body.touch .forge-main{max-height:calc(88dvh - 190px)}
+  body.touch .frunes{grid-template-columns:repeat(6,1fr);gap:5px}
+  body.touch .frune{height:48px}
+  body.touch .fsock{width:42px;height:42px}
   body.touch #savePanel{width:min(640px,96vw)}
   body.touch #savePanel .pb{-webkit-overflow-scrolling:touch;touch-action:pan-y}
   body.touch .sacts .btn{padding:7px 12px;font-size:11.5px}
@@ -471,20 +1720,61 @@
   body.touch .cmini{padding:8px 10px}
   body.touch #importText{height:64px;font-size:11px}
   body.touch .pb{padding:10px}
-  body.touch .doll{width:200px}
-  body.touch .doll-grid{grid-template-columns:repeat(3,1fr);gap:5px}
-  body.touch .eslot{height:42px}
+  /* 触屏沿用桌面那套 6 列落位：宽度等比缩小即可，武器与副手仍是底部一左一右各占三列。
+   * 早先用三列版把兵器拆成上下两条通栏，视觉上完全不像「左右手」，已废弃。 */
+  body.touch .doll{width:264px}
+  /* 触屏左列窄，属性改成单列，否则「暴击伤害 128%」被截断；整面板滚，不再单独限高 */
+  body.touch .inv-stats{grid-template-columns:1fr;font-size:10px;gap:0;flex:none;max-height:none;
+    overflow:visible}
+  body.touch .inv-stats>div{padding:0}
+  body.touch .doll-grid{gap:4px}
+  /* 触屏下调小各档尺寸，但仍保留档位差（战甲/兵器撑满两行，饰品格最小） */
+  body.touch .eslot[data-size="lg"]{height:44px}
+  body.touch .eslot[data-size="md"]{height:36px}
+  body.touch .eslot[data-size="sm"]{height:28px}
+  /* 兵器 / 副手 / 法器是横条格，不跟着档位高度走（写在档位规则之后才盖得住） */
+  body.touch .eslot[data-slot="weapon"],body.touch .eslot[data-slot="offhand"],
+  body.touch .eslot[data-slot="relic"]{height:46px}
+  body.touch .eslot[data-slot="relic"] .it-ico.it-relic{width:26px;height:26px}
   body.touch .igrid{grid-template-columns:repeat(10,minmax(0,1fr));gap:5px}
+  body.touch .mgrid{grid-template-columns:repeat(6,minmax(0,1fr));gap:6px}
+  body.touch .mgcell .mg-qty{font-size:10px;right:2px}
+  body.touch .cmat-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+  /* 主菜单：窄屏把左侧竖排页签翻成顶部横排，内容区整块滚动 */
+  body.touch #menuPanel{width:min(940px,98vw);height:92vh;max-height:92dvh}
+  body.touch #skillPanel{width:min(1280px,98vw);height:94vh;max-height:94dvh}
+  body.touch .menu-wrap{flex-direction:column}
+  body.touch .menu-tabs{width:auto;flex-direction:row;gap:4px;padding:6px 6px 0;overflow-x:auto;overflow-y:hidden;
+    border-right:none;border-bottom:1px solid rgba(216,178,90,.18)}
+  body.touch .mtab{padding:7px 8px;font-size:11px;letter-spacing:1px;white-space:nowrap;
+    border:1px solid rgba(216,178,90,.18);border-bottom:none}
+  body.touch .mtab span{display:none}
+  body.touch .menu-body{flex:1;min-height:0;overflow:auto}
+  body.touch #menuBody .panel.embed{height:auto;min-height:100%}
+  body.touch #menuBody .panel.embed>.pb{overflow:visible;padding:10px 10px 14px}
+  body.touch #menuBody #invPanel.embed>.pb{height:auto;overflow:visible}
+  /* 天赋轮盘是 660 逻辑宽的画布，窄屏按容器宽等比缩（命中判定按 rect 换算，缩放不影响点击） */
+  body.touch #tlCanvas{width:100%!important;height:auto!important}
   body.touch .islot .ico{font-size:18px}
-  body.touch .eslot .ico{width:28px;height:28px}
-  body.touch .eslot .it-ico{width:26px;height:26px}
-  body.touch .islot .it-ico{width:25px;height:25px}
+  body.touch .eslot .it-ico{width:28px;height:28px}
+  body.touch .eslot[data-size="xl"] .it-ico{width:40px;height:40px}
+  body.touch .eslot[data-size="md"] .it-ico{width:23px;height:23px}
+  body.touch .eslot[data-size="sm"] .it-ico{width:17px;height:17px}
+  body.touch .islot .it-ico{width:24px;height:24px}
+  body.touch .islot[data-size="lg"] .it-ico{width:22px;height:22px}
+  body.touch .islot[data-size="md"] .it-ico{width:19px;height:19px}
+  body.touch .islot[data-size="sm"] .it-ico{width:15px;height:15px}
   body.touch .islot .slot-tag{display:none}
-  body.touch .statbox{display:none}
   body.touch .hintline{font-size:9.5px}
   body.touch .qlist{max-height:52dvh}
   body.touch .shoplist{max-height:44dvh}
   body.touch .statlist{grid-template-columns:1fr 1fr;gap:3px 14px;font-size:11.5px}
+  /* 触屏没有悬停：根基行整行可点（点一下出说明），按钮放大到指头能按 */
+  body.touch .arow{grid-template-columns:52px 52px 1fr auto;gap:6px;padding:5px 3px;cursor:pointer}
+  body.touch .arow .ag{font-size:9.5px}
+  body.touch .arow .ab button{padding:6px 8px;font-size:11px}
+  body.touch .attr-box{padding:8px 9px}
+  body.touch .attr-box .ah-hint{display:none}
   body.touch #dialog{bottom:10px;width:96vw;max-height:46dvh;overflow:auto}
   body.touch #dialog .dt{font-size:12.5px;line-height:1.85}
   body.touch #dialog .dc .btn{padding:8px 16px;font-size:12.5px}
@@ -507,8 +1797,14 @@
 
   @media (orientation:portrait){
     body.touch .inv-wrap{flex-direction:column;gap:8px}
-    body.touch .doll{width:100%}
-    body.touch .doll-grid{grid-template-columns:repeat(6,1fr)}
+    body.touch .doll{width:100%;flex:none}
+    /* 竖屏上下堆叠：装备栏在上、行囊在下，整面板一起滚 */
+    body.touch .inv-stats{flex:none;max-height:none;overflow:visible;grid-template-columns:repeat(2,1fr);gap:0 10px}
+    body.touch .inv-main{flex:none;min-height:0}
+    /* 竖屏纸娃娃同样是 6 列（与桌面一致），宽度铺满即可；
+     * 兵器与副手在底部一左一右各占三列，不再拆成上下两条通栏 */
+    body.touch .eslot{max-width:100%}
+    body.touch .eslot[data-slot="ring1"],body.touch .eslot[data-slot="ring2"]{max-width:52px}
     body.touch .igrid{grid-template-columns:repeat(8,minmax(0,1fr))}
     body.touch #toasts{top:220px;max-width:76vw}
     body.touch #log{top:70px!important}
@@ -531,6 +1827,21 @@
     body.touch .scard{flex-wrap:wrap;gap:8px;padding:8px 10px}
     body.touch .sacts{width:100%;justify-content:flex-end}
     body.touch .sinfo{width:calc(100% - 44px)}
+    /* 设置项：窄屏上把标签挪到上一行，选项均分整宽，
+     * 否则 6 个选项会被挤成两行、面板高度直接翻倍 */
+    body.touch .setrow{flex-direction:column;align-items:stretch;gap:6px;padding:8px 0}
+    body.touch .setlab{width:auto;letter-spacing:2px}
+    body.touch .setseg{gap:4px}
+    body.touch .setseg .sbtn{flex:1;min-width:0;padding:7px 2px;letter-spacing:0}
+    body.touch #setPanel .pb{padding:6px 12px 12px}
+    /* 异兽志：5 个区域页签在 390px 宽下必然折成两行，标题也被挤掉。
+     * 页签改成单行横滑（跟着手指走），卡片改单列，整页铺满视口。 */
+    body.touch #codexPanel{width:100%;height:100%;max-height:100%;left:0;top:0;transform:none;border:none}
+    body.touch .codex-top{flex-wrap:wrap;gap:6px;padding:7px 10px}
+    body.touch .codex-regions{margin-left:0;width:100%;flex-wrap:nowrap;overflow-x:auto;overflow-y:hidden;
+      padding-bottom:2px;-webkit-overflow-scrolling:touch}
+    body.touch .creg{flex:none;font-size:10px;padding:3px 7px;letter-spacing:0}
+    body.touch .codex-grid{grid-template-columns:1fr;padding:8px 10px;gap:6px}
   }
 
   /* 横屏手机：高度吃紧，整体收紧一档 */
@@ -578,7 +1889,8 @@
   <div id="charplate">
     <div id="portrait"><span class="glyph" id="pGlyph">刀</span><span class="lv" id="pLv">1</span></div>
     <div class="bars">
-      <div class="pname"><span id="pName">无名</span><small id="pClass">战士</small></div>
+      <div class="pname"><span id="pName">无名</span>
+        <span style="display:flex;gap:7px;align-items:baseline"><small id="pClass">战士</small><small id="pDiff">普通</small></span></div>
       <div class="bar hp"><i id="hpFill"></i><span id="hpText">100 / 100</span></div>
       <div class="bar mp"><i id="mpFill"></i><span id="mpText">50 / 50</span></div>
       <div class="bar xp"><i id="xpFill"></i></div>
@@ -598,16 +1910,51 @@
     <div class="phase" id="bossPhase"></div>
   </div>
 
+  <div id="buffbar"></div>
   <div id="actionbar"></div>
   <div id="interact"></div>
   <div id="toasts"></div>
   <div id="log"></div>
-  <div id="help"></div>
+  <div id="fpsHud"></div>
   <div id="openBtns">
-    <button class="btn" onclick="UI.toggleInv()">背包 <span class="dim">I</span></button>
-    <button class="btn" onclick="UI.toggleStat()">属性 <span class="dim">C</span></button>
-    <button class="btn" onclick="UI.toggleQuest()">任务 <span class="dim">L</span></button>
-    <button class="btn" onclick="SaveUI.open()">存档 <span class="dim">P</span></button>
+    <button class="btn" onclick="UI.openMenu('bag')">行囊 <span class="dim">I</span></button>
+    <button class="btn" onclick="UI.toggleMenu()">菜单 <span class="dim">Tab</span></button>
+  </div>
+</div>
+
+<!-- 主菜单外壳（v1.6.0）：左页签 + 右侧内容区，子面板在切页时被搬进来/送回去 -->
+<div class="panel" id="menuPanel">
+  <div class="ph"><h3>山 海 录</h3><span class="x" onclick="UI.closeMenu()">✕</span></div>
+  <div class="pb menu-wrap">
+    <nav class="menu-tabs" id="menuTabs">
+      <button class="mtab on" data-mtab="bag">行 囊<span>I</span></button>
+      <button class="mtab" data-mtab="stat">道 途<span>C</span></button>
+      <button class="mtab" data-mtab="talent">天 赋<span>T</span></button>
+      <!-- 术法树是独立整屏层（树要满宽才看得全）：这枚页签点下去直接开整屏，不嵌在菜单里 -->
+      <button class="mtab" data-mtab="skill">术 法<span>K</span></button>
+      <button class="mtab" data-mtab="quest">山海志<span>L</span></button>
+      <button class="mtab" data-mtab="codex">异兽志<span>B</span></button>
+      <button class="mtab" data-mtab="forge">炼器台<span>R</span></button>
+      <button class="mtab" data-mtab="save">存 档<span>P</span></button>
+      <button class="mtab" data-mtab="help">说 明<span>H</span></button>
+      <button class="mtab" data-mtab="set">设 置<span>O</span></button>
+    </nav>
+    <div class="menu-body" id="menuBody"></div>
+  </div>
+</div>
+<!-- 子面板的原籍：关掉菜单后它们回到这里，下次仍能被独立打开 -->
+<div id="panelHome" style="display:none"></div>
+
+<!-- 异兽志（S5 怪物图鉴） -->
+<div class="panel" id="codexPanel">
+  <div class="ph"><h3>异 兽 志</h3><span class="x" onclick="UI.closeAll()">✕</span></div>
+  <div class="pb codex-wrap">
+    <div class="codex-top">
+      <span class="cap" id="codexCap">已录 0 / 0</span>
+      <div class="codex-regions" id="codexRegions"></div>
+    </div>
+    <div class="codex-grid" id="codexGrid"></div>
+    <div class="codex-foot" id="codexFoot"></div>
   </div>
 </div>
 
@@ -615,16 +1962,41 @@
 <div class="panel" id="invPanel">
   <div class="ph"><h3>行 囊</h3><span class="x" onclick="UI.closeAll()">✕</span></div>
   <div class="pb inv-wrap">
+    <!-- 左列：装备栏（纸娃娃 + 常驻角色属性） -->
     <div class="doll">
-      <div class="doll-title">纸 娃 娃</div>
+      <div class="doll-title">装 备 栏</div>
       <div class="doll-grid" id="dollGrid"></div>
-      <div class="statbox" id="statBox"></div>
+      <div class="doll-head"><span>角 色 属 性</span><i>滚轮查看全部</i></div>
+      <div class="inv-stats" id="invStats"></div>
     </div>
+    <!-- 右列：行囊 + 材料 / 丹药 / 任务物品 -->
     <div class="inv-main">
       <div class="inv-top"><span class="cap" id="invCap">0 / 40</span>
-        <span class="cap" id="invTip">左键装备 · Shift+左键出售</span></div>
+        <div class="sortbar" id="invSort">
+          <span class="sortlab">排序</span>
+          <button class="sbtn on" data-sort="score">评分</button>
+          <button class="sbtn" data-sort="rarity">品质</button>
+          <button class="sbtn" data-sort="slot">部位</button>
+          <button class="sbtn" data-sort="level">等级</button>
+          <button class="sbtn" id="invDecomposeBtn">一键分解</button>
+          <button class="sbtn" id="invCodexBtn">套装图鉴</button>
+        </div>
+      </div>
+      <div class="inv-tabs" id="invTabs">
+        <button class="itab on" data-tab="equip">装备 <i>0</i></button>
+        <button class="itab" data-tab="mat">材料 <i>0</i></button>
+        <button class="itab" data-tab="pill">丹药 <i>0</i></button>
+        <button class="itab" data-tab="quest">任务物品 <i>0</i></button>
+      </div>
+      <div class="inv-sub">
+        <span class="cap inv-tip" id="invTip">左键装备 · Shift+左键出售 · 格子大小随部位</span>
+        <button class="capup" id="invUpBtn" title="扩容行囊">扩 容</button>
+      </div>
+      <div class="junkbar" id="invJunkBar" style="display:none"></div>
+      <div class="upbar" id="invUpBar" style="display:none"></div>
       <div class="igrid" id="invGrid"></div>
-      <div class="hintline" id="setLine"></div>
+      <div class="matlist" id="invMats" style="display:none"></div>
+      <div class="inv-foot" id="setLine"></div>
     </div>
   </div>
 </div>
@@ -633,8 +2005,54 @@
 <div class="panel" id="statPanel">
   <div class="ph"><h3>道 途</h3><span class="x" onclick="UI.closeAll()">✕</span></div>
   <div class="pb">
+    <!-- 根基加点（v1.8.5）：四项属性各自加 1 / 加 5，悬停看每点收益 -->
+    <div class="attr-box" id="attrBox"></div>
     <div class="statlist" id="statList"></div>
     <div class="setshow" id="setShow"></div>
+  </div>
+</div>
+
+<!-- 套装图鉴 -->
+<div class="panel" id="setCodexPanel">
+  <div class="ph"><h3>套 装 图 鉴</h3><span class="x" onclick="UI.closeAll()">✕</span></div>
+  <div class="pb">
+    <div class="hintline" id="setCodexSum" style="margin-top:0"></div>
+    <div class="codex-list" id="setCodexList"></div>
+  </div>
+</div>
+
+<!-- 天赋（S3） -->
+<div class="panel" id="talentPanel">
+  <div class="ph"><h3>天 赋</h3><span class="x" onclick="UI.closeAll()">✕</span></div>
+  <div class="pb">
+    <div class="tl-top">
+      <div class="tl-trees" id="tlTrees"></div>
+      <div class="tl-pts">可用 <b id="tlPts">0</b> 点</div>
+    </div>
+    <div class="tl-main">
+      <canvas id="tlCanvas" width="660" height="440"></canvas>
+      <div class="tl-tip" id="tlTip" style="display:none"></div>
+    </div>
+    <div class="tl-syn" id="tlSyn"></div>
+    <div class="tl-foot">
+      <div class="tl-presets" id="tlPresets"></div>
+      <div class="tl-fbtn">
+        <button class="btn" id="tlMinus" title="把最后点过的那个节点退 1 级（手机上没有 Shift，用这个）">退 1 点</button>
+        <button class="btn" id="tlRespec">重置天赋</button>
+      </div>
+    </div>
+    <div id="tlDraft"></div>
+    <div class="hintline">左键加点 · Shift + 左键 −1 级（也可用右下「退 1 点」退最后点过的那个）· <b>改动先进「未确认」条，点确认才生效</b>（点错直接点取消）· 节点外圈金弧 = 已投入等级 / 上限 · 大节点需本系已投入 5 点 · 每级获得 1 点<br>天赋随等级解锁：第 2 层 4 级 · 第 3 层 8 级 · 第 4 层 12 级 · 中节点 18 级 · 大节点 26 级 · 通用系长链按序号<br>预设：左键读取 · Shift + 左键保存当前加点 · 重置天赋费用递增（1k / 5k / 20k / 50k 金）</div>
+  </div>
+</div>
+
+<!-- 技能（S4 / P1：独立整屏层，操作全在树上） -->
+<div class="panel" id="skillPanel">
+  <div class="ph"><h3>术 法</h3><span class="x" onclick="UI.closeAll()">✕</span></div>
+  <div class="pb sk-wrap">
+    <div class="sk-list" id="skList"></div>
+    <div id="skDraft"></div>
+    <div class="sk-tip" id="skTip" style="display:none"></div>
   </div>
 </div>
 
@@ -655,6 +2073,7 @@
 <div class="panel" id="shopPanel">
   <div class="ph"><h3 id="shopTitle">铁 匠 铺</h3><span class="x" onclick="UI.closeAll()">✕</span></div>
   <div class="pb">
+    <div class="shop-refresh" id="shopRefresh"></div>
     <div class="shoplist" id="shopList"></div>
     <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px">
       <span class="hintline" id="shopHint">点击购买 · 价格随品质浮动</span>
@@ -668,6 +2087,44 @@
   <div class="ph"><h3>传 送 阵</h3><span class="x" onclick="UI.closeAll()">✕</span></div>
   <div class="pb"><div id="travelList"></div>
     <div class="hintline">深入更险之地，需先达到对应境界。</div></div>
+</div>
+
+<!-- 炼器台 -->
+<div class="panel" id="forgePanel">
+  <div class="ph"><h3>炼 器 台</h3><span class="x" onclick="UI.closeAll()">✕</span></div>
+  <div class="pb forge-wrap">
+    <div class="forge-tabs">
+      <button class="ftab on" data-ftab="rune">符 文</button>
+      <button class="ftab" data-ftab="reforge">洗 练</button>
+      <button class="ftab" data-ftab="enhance">强 化</button>
+      <button class="ftab" data-ftab="craft">锻 造</button>
+      <button class="ftab" data-ftab="tier">升 阶</button>
+      <span class="forge-mat" id="forgeMat"></span>
+    </div>
+    <div class="forge-body">
+      <div class="forge-list" id="forgeList"></div>
+      <div class="forge-main" id="forgeMain"></div>
+    </div>
+    <div class="hintline" id="forgeHint">符文镶嵌后即刻生效；洗练只替换选中的那一条词缀，「定向」可指定目标词条一键自动洗炼；强化可为装备扩充额外词缀（上限 3 条）；打孔可消耗玄晶为装备开孔（上限 5 孔，戒指/项链除外）。符文与玄晶不占背包格。</div>
+  </div>
+</div>
+
+<!-- 炼金师 -->
+<div class="panel" id="alchemistPanel">
+  <div class="ph"><h3>炼 金 师</h3><span class="x" onclick="UI.closeAll()">✕</span></div>
+  <div class="pb">
+    <div class="forge-tabs">
+      <button class="ftab on" data-atab="decompose">分 解</button>
+      <button class="ftab" data-atab="upgrade">升 级</button>
+      <button class="ftab" data-atab="setcraft">套 装</button>
+      <span class="forge-mat" id="alchemistMat"></span>
+    </div>
+    <div class="forge-body">
+      <div class="forge-list" id="alchemistList"></div>
+      <div class="forge-main" id="alchemistMain"></div>
+    </div>
+    <div class="hintline">分解装备获得玄晶材料；消耗材料升级装备品质；套装打造可把属性满意的装备转成指定套装件（词缀 / 孔位 / 符文全保留）。</div>
+  </div>
 </div>
 
 <!-- 存档管理 -->
@@ -699,6 +2156,30 @@
   </div>
 </div>
 
+<!-- 说明（机制总览：内容按数据表实时生成，改了数值这里会自动跟着变） -->
+<div class="panel" id="helpPanel">
+  <div class="ph"><h3>机 制 说 明</h3><span class="x" onclick="UI.closeAll()">✕</span></div>
+  <div class="pb">
+    <div class="hp-wrap">
+      <nav class="hp-nav" id="hpNav"></nav>
+      <div class="hp-body" id="helpBody"></div>
+    </div>
+  </div>
+</div>
+
+<!-- 设置 -->
+<div class="panel" id="setPanel">
+  <div class="ph"><h3>设 置</h3><span class="x" onclick="UI.closeAll()">✕</span></div>
+  <div class="pb">
+    <div id="setBody"></div>
+    <div id="setHint"></div>
+    <div class="setfoot">
+      <span class="dim">设置只影响本机画面，不影响存档</span>
+      <button class="btn" onclick="Settings.reset()">恢复默认</button>
+    </div>
+  </div>
+</div>
+
 <!-- 死亡 -->
 <div id="death">
   <h2>身 陨</h2>
@@ -713,16 +2194,20 @@
   <div class="divider"></div>
   <div class="pick">择 一 道 而 行</div>
   <div class="classes" id="classPick"></div>
+  <div class="pick" style="margin-top:20px">择 一 难 度</div>
+  <div class="diffs" id="diffPick"></div>
+  <div id="diffDesc"></div>
   <div class="bottom">
     <input id="nameInput" maxlength="8" placeholder="道号" style="pointer-events:auto;background:rgba(0,0,0,.6);border:1px solid var(--line);
       color:#f0e0b8;padding:9px 14px;width:150px;font-family:inherit;font-size:13px;letter-spacing:2px;outline:none;text-align:center">
     <button class="btn primary" id="startBtn">踏 入 山 海</button>
     <button class="btn" id="continueBtn" style="display:none">继 续 前 世</button>
     <button class="btn" id="saveMgrBtn">存 档</button>
+    <button class="btn" onclick="UI.openSettings()">设 置</button>
   </div>
   <div class="tips" id="startTips">
-    <b>WASD</b> 移动 · <b>鼠标</b> 瞄准 · <b>左键</b> 普攻 · <b>1-6</b> 技能 · <b>空格</b> 翻滚 · <b>F</b> 交互 · <b>I</b> 背包 · <b>C</b> 属性 · <b>L</b> 任务 · <b>P</b> 存档<br>
-    拾取装备可穿戴，纸娃娃实时变化 · 绿字为套装 · 橙字为神兵 · 三个角色位，可导出备份
+    进入游戏后按 <b>H</b> 打开「说明」：全部键位、装备 / 传世 / 天赋 / 术法机制都在里面<br>
+    拾取装备可穿戴，纸娃娃实时变化 · 符文镶入孔位可成符文之语 · 玄晶可洗练词缀 · 三个角色位，可导出备份
   </div>
 </div>
 
@@ -742,21 +2227,44 @@
 <!-- 内核：兜底 → 存储驱动 → 存档 v2 -->
 <script src="src/core/boot.js"></script>
 <script src="src/core/store.js"></script>
+<script src="src/core/settings.js"></script>
 <script src="src/core/save.js"></script>
 <!-- 数据层：基础 / 装备 / 技能 / 怪物 / 世界（顺序不可换，后者依赖前者的常量） -->
 <script src="src/data/data-core.js"></script>
+<script src="src/data/data-icons.js"></script>
 <script src="src/data/data-items.js"></script>
+<script src="src/data/data-relics.js"></script>
+<script src="src/data/data-relic-icons.js"></script>
+<script src="src/data/data-craft.js"></script>
+<script src="src/data/data-mat-icons.js"></script>
+<script src="src/data/data-uniques.js"></script>
 <script src="src/data/data-skills.js"></script>
+<script src="src/data/data-skill-icons.js"></script>
+<script src="src/data/data-skill-tree.js"></script>
+<script src="src/data/data-form-fx.js"></script>
+<script src="src/data/data-talents.js"></script>
+<!-- 职业包注册表：必须在 CLASSES / SKILLS / SKILL_ICONS / TALENTS 之后加载 -->
+<script src="src/data/class-pack.js"></script>
+<script src="src/data/data-builds.js"></script>
 <script src="src/data/data-monsters.js"></script>
+<script src="src/data/data-fauna.js"></script>
+<script src="src/data/data-elites.js"></script>
 <script src="src/data/data-world.js"></script>
 <!-- 逻辑层 -->
+<script src="src/weapons.js"></script>
 <script src="src/items.js"></script>
 <script src="src/actors.js"></script>
+<script src="src/charforge.js"></script>
+<script src="src/audio.js"></script>
 <script src="src/fx.js"></script>
 <script src="src/world.js"></script>
 <script src="src/ui.js"></script>
+<script src="src/ui-skills.js"></script>
+<script src="src/ui-forge.js"></script>
 <script src="src/mobile.js"></script>
 <script src="src/ui-save.js"></script>
 <script src="src/game.js"></script>
+<script src="src/skill-beh.js"></script>
+<script src="src/skill-passive.js"></script>
 </body>
 </html>

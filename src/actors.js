@@ -78,6 +78,10 @@ function reg(actor, mat) { actor.mats.push(mat); return mat; }
 
 /* ---------------- 武器 ---------------- */
 function buildWeapon(shape, color, glow, scale = 1) {
+  /* 新版建模在 src/weapons.js（Shape 挤出真实轮廓，尺寸也收过）。
+   * 取不到该模块时退回下面的方块拼法，保证一定能出武器 */
+  if (typeof WeaponForge !== 'undefined') return WeaponForge.build(shape, color, glow, scale);
+
   const g = new THREE.Group();
   const metal = M(color, { metal: 0.75, rough: 0.35, emissive: glow, ei: glow ? 0.55 : 0 });
   const wood = M(0x5a4028, { rough: 0.95 });
@@ -206,10 +210,26 @@ function buildHumanoid(cfg) {
   actor.parts.capeG = capeG;
 
   actor.mats.push.apply(actor.mats, [eyeMat]);
-  return actor;
+  return setFootR(actor);
 }
 
 /* 不同怪物造型 */
+/* 落地占位半径不再拍脑袋估算，而是由 builder 用 Box3 自动测出真实包围，
+ * 彻底避免「模型比碰撞体大一圈 → 玩家站进体内穿模」的问题。 */
+function setFootR(a) {
+  const g = a.group;
+  const saved = g.scale.clone();
+  g.scale.set(1, 1, 1);          // 去掉 scene-scale，测原始模型尺寸
+  g.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(g);
+  g.scale.copy(saved);
+  g.updateMatrixWorld(true);
+  const sz = new THREE.Vector3();
+  box.getSize(sz);
+  a.footR = Math.max(0.3, Math.hypot(sz.x, sz.z) * 0.5);
+  return a;
+}
+
 function buildMonster(kind, cfg) {
   let a;
   const s = cfg.scale || 1;
@@ -267,10 +287,20 @@ function buildMonster(kind, cfg) {
         const tip = mesh(sphGeo(0.06, 4), dark, foot[0], foot[1] + 0.02, foot[2], g);
       }
     }
-    a.parts.torso = g; a.parts.headG = head; a.parts.weaponHand = null;
+    /* 蜘蛛是整体建模（八条腿脚底就在 y≈0），没有独立躯干节点。
+     * 绝不能把根 group 当 torso：updateActorAnim 会无条件写
+     * P.torso.position.y/.z，等于直接改写世界坐标，
+     * 把 updateEnemies 同步过来的 group.position 抹成 (0, 0.92)，
+     * 结果就是「逻辑坐标已经走远、模型还钉在出生点」。
+     * 这里塞一层内层 group 承接呼吸/摆身，根 group 只归游戏逻辑管。 */
+    const bodyRoot = new THREE.Group();
+    while (g.children.length) bodyRoot.add(g.children[0]);
+    g.add(bodyRoot);
+    a.parts.torso = bodyRoot; a.parts.headG = head; a.parts.weaponHand = null;
+    a.torsoBaseY = 0;           // 内层 group 起始 y = 0，动画用基座 + 偏移
     a.group.scale.setScalar(s);
     a.parts.bodyMat = body;
-    return a;
+    return setFootR(a);
   }
   if (kind === 'beast') {
     const g = new THREE.Group();
@@ -309,7 +339,7 @@ function buildMonster(kind, cfg) {
     tail.rotation.x = 0.4;
     a.parts.weaponHand = null; a.parts.offHand = null;
     a.group.scale.setScalar(s);
-    return a;
+    return setFootR(a);
   }
   if (kind === 'bat' || kind === 'batking') {
     const g = new THREE.Group();
@@ -334,9 +364,14 @@ function buildMonster(kind, cfg) {
       mesh(boxGeo(0.95, 0.75, 0.04), wingMat, sx * 0.5, 0, 0, w);
       a.parts['wing' + (sx < 0 ? 'L' : 'R')] = w;
     }
-    a.parts.torso = g; a.parts.headG = head;
+    /* 同蜘蛛：整体建模、根 group 不能当 torso（否则飞行/位移全被抹掉） */
+    const bodyRoot = new THREE.Group();
+    while (g.children.length) bodyRoot.add(g.children[0]);
+    g.add(bodyRoot);
+    a.parts.torso = bodyRoot; a.parts.headG = head;
+    a.torsoBaseY = 0;
     a.group.scale.setScalar(s);
-    return a;
+    return setFootR(a);
   }
   if (kind === 'ghost') {
     const g = new THREE.Group();
@@ -359,7 +394,7 @@ function buildMonster(kind, cfg) {
     a.parts.offHand = new THREE.Group();
     a.parts.legL = a.parts.legR = null;
     a.group.scale.setScalar(s);
-    return a;
+    return setFootR(a);
   }
   if (kind === 'treant') {
     const g = new THREE.Group();
@@ -411,7 +446,7 @@ function buildMonster(kind, cfg) {
     armR.add(a.parts.weaponHand);
     a.parts.offHand = new THREE.Group();
     a.group.scale.setScalar(s);
-    return a;
+    return setFootR(a);
   }
   if (kind === 'golem') {
     const g = new THREE.Group();
@@ -419,12 +454,20 @@ function buildMonster(kind, cfg) {
     const stone = M(cfg.color, { rough: 0.95, flatShading: true });
     const moss = M(cfg.cloth, { rough: 1 });
     reg(a, stone); reg(a, moss);
-    mesh(boxGeo(1.15, 1.1, 0.85), stone, 0, 1.55, 0, g);
-    mesh(boxGeo(0.9, 0.4, 0.7), stone, 0, 0.9, 0, g);
-    const head = mesh(boxGeo(0.62, 0.55, 0.6), stone, 0, 2.28, 0.05, g);
-    const eye = M(kind === 'treant' ? 0x9aff60 : 0xff8a30, { emissive: kind === 'treant' ? 0x66ff30 : 0xff5500, ei: 1.5 });
-    mesh(boxGeo(0.12, 0.07, 0.05), eye, -0.14, 2.32, 0.36, g);
-    mesh(boxGeo(0.12, 0.07, 0.05), eye, 0.14, 2.32, 0.36, g);
+    /* [S5] 原来整只石头直接挂在根 group 上，没有 parts.torso，
+     * updateActorAnim 会在 `if (!P.torso) return;` 处直接返回 ——
+     * 石魔/熔岩兽因此是「不呼吸、不摆臂、走路像被推着滑」的纯静态模型。
+     * 这里补一层躯干 group（胸口高度做转轴），几何全部改成相对坐标，
+     * torsoBaseY 必须等于 group 的 position.y，否则第一帧会弹回 0.92。 */
+    const torso = new THREE.Group(); torso.position.y = 1.5; g.add(torso);
+    a.parts.torso = torso;
+    a.torsoBaseY = 1.5;
+    mesh(boxGeo(1.15, 1.1, 0.85), stone, 0, 0.05, 0, torso);
+    mesh(boxGeo(0.9, 0.4, 0.7), stone, 0, -0.6, 0, torso);
+    const head = mesh(boxGeo(0.62, 0.55, 0.6), stone, 0, 0.78, 0.05, torso);
+    const eye = M(0xff8a30, { emissive: 0xff5500, ei: 1.5 });
+    mesh(boxGeo(0.12, 0.07, 0.05), eye, -0.14, 0.82, 0.36, torso);
+    mesh(boxGeo(0.12, 0.07, 0.05), eye, 0.14, 0.82, 0.36, torso);
     const armL = new THREE.Group(); armL.position.set(-0.72, 1.9, 0); g.add(armL);
     const armR = new THREE.Group(); armR.position.set(0.72, 1.9, 0); g.add(armR);
     a.parts.armL = armL; a.parts.armR = armR;
@@ -436,19 +479,378 @@ function buildMonster(kind, cfg) {
     const legR = new THREE.Group(); legR.position.set(0.32, 0.95, 0); g.add(legR);
     a.parts.legL = legL; a.parts.legR = legR;
     for (const lg of [legL, legR]) mesh(boxGeo(0.38, 0.95, 0.4), stone, 0, -0.48, 0, lg);
-    mesh(boxGeo(1.2, 0.2, 0.9), moss, 0, 1.05, 0, g);
-    if (kind === 'treant') {
-      for (const sx of [-1, 1]) {
-        const br = mesh(boxGeo(0.14, 0.9, 0.14), M(0x4a3a24), sx * 0.5, 2.7, -0.1, g);
-        br.rotation.z = sx * 0.5;
-        mesh(coneGeo(0.42, 0.7, 5), M(0x2f5a28), sx * 0.78, 3.1, -0.1, g);
-      }
-    }
+    mesh(boxGeo(1.2, 0.2, 0.9), moss, 0, -0.45, 0, torso);
     a.parts.weaponHand = new THREE.Group(); a.parts.weaponHand.position.set(0, -1.25, 0);
     armR.add(a.parts.weaponHand);
     a.parts.headG = head;
     a.group.scale.setScalar(s);
-    return a;
+    return setFootR(a);
+  }
+
+  /* ============================================================
+   * [S5] 新增模型：wolf / fox / lantern / zombie / drowned /
+   * brood / statue / scorpking / crane / headless（+ 补 snake）
+   *
+   * 两条硬约束（踩过坑，别改）：
+   * 1. 整体建模（没有独立躯干节点）的模型，必须把几何塞进内层 group
+   *    再把 parts.torso 指过去。根 group 归游戏逻辑管，
+   *    updateActorAnim 会写 torso.position，指错了模型就钉在出生点。
+   * 2. torsoBaseY 必须等于内层 group 的 position.y，
+   *    否则动画第一帧会把躯干弹回默认的 0.92。
+   * ============================================================ */
+  if (kind === 'wolf') {
+    const g = new THREE.Group();
+    a = { group: g, mats: [], parts: {} };
+    const fur = M(cfg.color, { rough: 1 });
+    const dark = M(cfg.cloth, { rough: 1 });
+    reg(a, fur); reg(a, dark);
+    const body = new THREE.Group(); body.position.y = 0.86; g.add(body);
+    a.parts.torso = body;
+    mesh(boxGeo(0.6, 0.6, 1.5), fur, 0, 0, 0, body);
+    mesh(boxGeo(0.5, 0.28, 1.15), dark, 0, 0.34, -0.05, body);   // 背脊鬃毛
+    const headG = new THREE.Group(); headG.position.set(0, 0.3, 0.85); body.add(headG);
+    a.parts.headG = headG;
+    mesh(boxGeo(0.46, 0.44, 0.48), fur, 0, 0, 0.06, headG);
+    mesh(boxGeo(0.24, 0.22, 0.4), dark, 0, -0.12, 0.4, headG);   // 吻部
+    const eye = M(0xffc040, { emissive: 0xff9020, ei: 1.4 });
+    mesh(boxGeo(0.09, 0.07, 0.05), eye, -0.13, 0.08, 0.3, headG);
+    mesh(boxGeo(0.09, 0.07, 0.05), eye, 0.13, 0.08, 0.3, headG);
+    for (const sx of [-1, 1]) {
+      const ear = mesh(coneGeo(0.11, 0.3, 4), fur, sx * 0.15, 0.33, 0.0, headG);
+      ear.rotation.z = sx * 0.24;
+      const fang = mesh(coneGeo(0.03, 0.12, 4), M(0xf0e8d0), sx * 0.07, -0.16, 0.52, headG);
+      fang.rotation.x = Math.PI;
+    }
+    const mkLeg = (x, z) => {
+      const lg = new THREE.Group(); lg.position.set(x, 0.72, z); g.add(lg);
+      mesh(boxGeo(0.19, 0.72, 0.2), fur, 0, -0.36, 0, lg);
+      mesh(boxGeo(0.22, 0.12, 0.28), dark, 0, -0.7, 0.04, lg);
+      return lg;
+    };
+    a.parts.legL = mkLeg(-0.22, 0.5); a.parts.legR = mkLeg(0.22, 0.5);
+    a.parts.legBL = mkLeg(-0.22, -0.52); a.parts.legBR = mkLeg(0.22, -0.52);
+    const tail = mesh(coneGeo(0.12, 0.9, 5), dark, 0, 0.26, -0.88, body);
+    tail.rotation.x = -1.0;
+    a.parts.weaponHand = null; a.parts.offHand = null;
+    a.torsoBaseY = 0.86;
+    a.group.scale.setScalar(s);
+    return setFootR(a);
+  }
+  if (kind === 'fox') {
+    a = buildHumanoid({
+      skin: 0xe8c8a8, color: cfg.color, cloth: cfg.cloth,
+      legColor: cfg.cloth, bootColor: cfg.cloth, sleeve: cfg.color, glove: cfg.cloth, hair: 0xc87a4a
+    });
+    /* 狐耳 + 三条尾：人形骨架直接复用，只加辨识特征 */
+    const earMat = reg(a, M(cfg.color, { rough: 0.9 }));
+    for (const sx of [-1, 1]) {
+      const ear = mesh(coneGeo(0.1, 0.36, 4), earMat, sx * 0.16, 0.42, -0.02, a.parts.headG);
+      ear.rotation.z = sx * 0.3;
+      mesh(coneGeo(0.05, 0.18, 4), M(0xf0d8c0), sx * 0.16, 0.34, 0.02, a.parts.headG);
+    }
+    const tailMat = reg(a, M(cfg.color, { rough: 0.95 }));
+    for (let i = 0; i < 3; i++) {
+      const tl = mesh(coneGeo(0.13, 1.0, 5), tailMat, (i - 1) * 0.2, 0.42, -0.34, a.parts.torso);
+      tl.rotation.set(-1.25 + i * 0.14, (i - 1) * 0.4, (i - 1) * 0.3);
+    }
+    a.group.scale.setScalar(s);
+    return setFootR(a);
+  }
+  if (kind === 'lantern') {
+    const g = new THREE.Group();
+    a = { group: g, mats: [], parts: {} };
+    const frame = M(0x3a2a20, { rough: 0.9, metal: 0.3 });
+    const paper = M(cfg.color, { rough: 0.6, emissive: cfg.color, ei: 0.85, transparent: true, opacity: 0.9 });
+    const wisp = M(cfg.cloth, { rough: 0.5, emissive: cfg.cloth, ei: 0.6, transparent: true, opacity: 0.5 });
+    reg(a, frame); reg(a, paper); reg(a, wisp);
+    const bodyRoot = new THREE.Group(); bodyRoot.position.y = 1.4; g.add(bodyRoot);
+    a.parts.torso = bodyRoot;
+    mesh(boxGeo(0.6, 0.7, 0.6), paper, 0, 0, 0, bodyRoot);
+    mesh(boxGeo(0.68, 0.1, 0.68), frame, 0, 0.4, 0, bodyRoot);
+    mesh(boxGeo(0.68, 0.1, 0.68), frame, 0, -0.4, 0, bodyRoot);
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
+      mesh(boxGeo(0.06, 0.8, 0.06), frame, sx * 0.3, 0, sz * 0.3, bodyRoot);
+    }
+    const hook = mesh(torusGeo(0.14, 0.028, 6, 12), frame, 0, 0.5, 0, bodyRoot);
+    hook.rotation.x = Math.PI / 2;
+    /* 芯火：整只灯灵的光源感靠它，所以给它最高自发光 */
+    const core = mesh(sphGeo(0.17, 6), M(0xffffff, { emissive: 0xffe0a0, ei: 1.8 }), 0, 0, 0, bodyRoot);
+    a.parts.headG = core;
+    for (let i = 0; i < 3; i++) {
+      const w = mesh(coneGeo(0.15 - i * 0.04, 0.3, 5), wisp, 0, -0.56 - i * 0.24, 0, bodyRoot);
+      w.rotation.x = Math.PI;
+    }
+    a.parts.legL = a.parts.legR = null;
+    a.parts.weaponHand = null; a.parts.offHand = null;
+    a.torsoBaseY = 1.4;
+    a.group.scale.setScalar(s);
+    return setFootR(a);
+  }
+  if (kind === 'zombie') {
+    a = buildHumanoid({
+      skin: 0x8a9a72, color: cfg.color, cloth: cfg.cloth,
+      legColor: 0x3a3028, bootColor: 0x2a2018, sleeve: cfg.color, glove: 0x5a5040, hair: 0x2a2a20
+    });
+    /* 注意：updateActorAnim 每帧会重写 torso / arm 的 rotation，
+     * 所以「驼背 + 前伸双臂」不能靠 rotation 定死，只能落在
+     * headG（动画不碰）和躯干子网格上。 */
+    a.parts.headG.rotation.x = 0.34;
+    a.parts.headG.position.z = 0.1;
+    const rag = reg(a, M(cfg.cloth, { rough: 1 }));
+    for (let i = 0; i < 5; i++) {
+      const r = mesh(boxGeo(0.13, 0.4 + i * 0.06, 0.04), rag, (i - 2) * 0.14, 0.06, 0.2, a.parts.torso);
+      r.rotation.z = (i - 2) * 0.07;
+    }
+    const eye = M(0x9aff60, { emissive: 0x66ff30, ei: 1.6 });
+    mesh(boxGeo(0.06, 0.05, 0.03), eye, -0.08, 0.14, 0.23, a.parts.headG);
+    mesh(boxGeo(0.06, 0.05, 0.03), eye, 0.08, 0.14, 0.23, a.parts.headG);
+    a.group.scale.setScalar(s);
+    return setFootR(a);
+  }
+  if (kind === 'drowned') {
+    a = buildHumanoid({
+      skin: 0x6a9aa8, color: cfg.color, cloth: cfg.cloth,
+      legColor: 0x2a4a52, bootColor: 0x1a3238, sleeve: cfg.color, glove: 0x3a5a62, hair: 0x1a3a40
+    });
+    /* 长发盖脸 + 身上挂水草：水鬼的辨识点是「看不清脸」 */
+    const hairMat = reg(a, M(0x14282e, { rough: 1 }));
+    for (let i = 0; i < 7; i++) {
+      const hx = (i - 3) * 0.07;
+      const h = mesh(boxGeo(0.06, 0.5 + (i % 3) * 0.12, 0.05), hairMat, hx, -0.16, 0.2, a.parts.headG);
+      h.rotation.x = -0.1;
+    }
+    const weed = reg(a, M(0x2f5a3a, { rough: 1 }));
+    for (let i = 0; i < 4; i++) {
+      const w = mesh(boxGeo(0.08, 0.45, 0.03), weed, (i - 1.5) * 0.18, -0.1, 0.22, a.parts.torso);
+      w.rotation.z = (i - 1.5) * 0.12;
+    }
+    const eye = M(0x8affd8, { emissive: 0x40ffb0, ei: 1.4 });
+    mesh(boxGeo(0.05, 0.04, 0.03), eye, -0.07, 0.12, 0.22, a.parts.headG);
+    mesh(boxGeo(0.05, 0.04, 0.03), eye, 0.07, 0.12, 0.22, a.parts.headG);
+    a.group.scale.setScalar(s);
+    return setFootR(a);
+  }
+  if (kind === 'brood') {
+    const g = new THREE.Group();
+    a = { group: g, mats: [], parts: {} };
+    const flesh = M(cfg.color, { rough: 0.75 });
+    const sac = M(cfg.cloth, { rough: 0.55, transparent: true, opacity: 0.92 });
+    const glow = M(0xd8a8ff, { emissive: 0xb06aff, ei: 1.3 });
+    reg(a, flesh); reg(a, sac); reg(a, glow);
+    const bodyRoot = new THREE.Group(); bodyRoot.position.y = 0.55; g.add(bodyRoot);
+    a.parts.torso = bodyRoot;
+    const main = mesh(sphGeo(0.82, 8), flesh, 0, 0.32, 0, bodyRoot);
+    main.scale.set(1.15, 0.88, 1.05);
+    for (let i = 0; i < 7; i++) {
+      const ang = i / 7 * 6.28;
+      const ox = Math.cos(ang) * 0.7, oz = Math.sin(ang) * 0.7;
+      const s2 = mesh(sphGeo(0.25, 6), sac, ox, 0.2 + (i % 3) * 0.1, oz, bodyRoot);
+      mesh(sphGeo(0.09, 5), glow, ox, 0.2, oz, bodyRoot);
+    }
+    const maw = mesh(coneGeo(0.32, 0.5, 6), M(0x2a1020, { rough: 0.8 }), 0, 0.56, 0.62, bodyRoot);
+    maw.rotation.x = -0.5;
+    a.parts.headG = maw;
+    for (let i = 0; i < 6; i++) {
+      const ang = i / 6 * 6.28;
+      const f = mesh(coneGeo(0.05, 0.26, 4), M(0xf0e8d0), Math.cos(ang) * 0.2, 0.62, 0.74, bodyRoot);
+      f.rotation.set(1.25, 0, ang);
+    }
+    for (let i = 0; i < 5; i++) {
+      const ang = i / 5 * 6.28;
+      const t2 = mesh(coneGeo(0.08, 0.72, 4), flesh, Math.cos(ang) * 0.48, 0.06, Math.sin(ang) * 0.48, bodyRoot);
+      t2.rotation.set(1.35, ang, 0);
+    }
+    a.parts.legL = a.parts.legR = null;
+    a.parts.weaponHand = null; a.parts.offHand = null;
+    a.torsoBaseY = 0.55;
+    a.group.scale.setScalar(s);
+    return setFootR(a);
+  }
+  if (kind === 'statue') {
+    const g = new THREE.Group();
+    a = { group: g, mats: [], parts: {} };
+    const stone = M(cfg.color, { rough: 0.9, flatShading: true });
+    const trim = M(cfg.cloth, { rough: 0.85 });
+    const gold = M(0xc0a050, { metal: 0.8, rough: 0.35 });
+    reg(a, stone); reg(a, trim); reg(a, gold);
+    const torso = new THREE.Group(); torso.position.y = 1.0; g.add(torso);
+    a.parts.torso = torso;
+    mesh(boxGeo(0.84, 1.0, 0.58), stone, 0, 0.4, 0, torso);
+    mesh(boxGeo(0.9, 0.18, 0.64), trim, 0, -0.08, 0, torso);
+    for (const sx of [-1, 1]) {
+      const p = mesh(boxGeo(0.34, 0.26, 0.5), trim, sx * 0.54, 0.84, 0, torso);
+      p.rotation.z = sx * 0.2;
+      mesh(coneGeo(0.07, 0.26, 4), gold, sx * 0.54, 1.02, -0.1, torso);
+    }
+    const head = mesh(boxGeo(0.46, 0.5, 0.44), stone, 0, 1.0, 0, torso);
+    a.parts.headG = head;
+    mesh(boxGeo(0.5, 0.12, 0.48), trim, 0, 1.22, 0, torso);
+    const eye = M(0xff8a30, { emissive: 0xff5500, ei: 1.6 });
+    mesh(boxGeo(0.1, 0.05, 0.04), eye, -0.11, 1.02, 0.23, torso);
+    mesh(boxGeo(0.1, 0.05, 0.04), eye, 0.11, 1.02, 0.23, torso);
+    const armL = new THREE.Group(); armL.position.set(-0.6, 0.8, 0); torso.add(armL);
+    const armR = new THREE.Group(); armR.position.set(0.6, 0.8, 0); torso.add(armR);
+    a.parts.armL = armL; a.parts.armR = armR;
+    for (const ar of [armL, armR]) {
+      mesh(boxGeo(0.26, 0.8, 0.28), stone, 0, -0.42, 0, ar);
+      mesh(boxGeo(0.3, 0.24, 0.32), trim, 0, -0.86, 0, ar);
+    }
+    const legL = new THREE.Group(); legL.position.set(-0.24, 1.0, 0); g.add(legL);
+    const legR = new THREE.Group(); legR.position.set(0.24, 1.0, 0); g.add(legR);
+    a.parts.legL = legL; a.parts.legR = legR;
+    for (const lg of [legL, legR]) mesh(boxGeo(0.3, 1.0, 0.34), stone, 0, -0.5, 0, lg);
+    const wp = new THREE.Group(); wp.position.set(0, -0.9, 0.05); armR.add(wp);
+    a.parts.weaponHand = wp;
+    mesh(boxGeo(0.1, 1.5, 0.1), M(0x9a9aa2, { metal: 0.6, rough: 0.4 }), 0, -0.6, 0, wp);
+    mesh(boxGeo(0.36, 0.1, 0.12), gold, 0, 0.12, 0, wp);
+    a.parts.offHand = null;
+    a.torsoBaseY = 1.0;
+    a.group.scale.setScalar(s);
+    return setFootR(a);
+  }
+  if (kind === 'scorpking') {
+    const g = new THREE.Group();
+    a = { group: g, mats: [], parts: {} };
+    const shell = M(cfg.color, { rough: 0.7 });
+    const dark = M(cfg.cloth, { rough: 0.85 });
+    const sting = M(0xff6a3a, { emissive: 0xff3a10, ei: 1.3 });
+    reg(a, shell); reg(a, dark); reg(a, sting);
+    const bodyRoot = new THREE.Group(); bodyRoot.position.y = 0.8; g.add(bodyRoot);
+    a.parts.torso = bodyRoot;
+    const body = mesh(sphGeo(0.6, 7), shell, 0, 0.1, -0.1, bodyRoot);
+    body.scale.set(1.1, 0.72, 1.35);
+    for (let i = 0; i < 3; i++) {
+      const pl = mesh(sphGeo(0.38 - i * 0.06, 6), dark, 0, 0.34 - i * 0.02, -0.02 - i * 0.3, bodyRoot);
+      pl.scale.set(1.05, 0.34, 0.8);
+    }
+    mesh(sphGeo(0.34, 6), dark, 0, 0.05, 0.6, bodyRoot);
+    a.parts.headG = body;
+    /* 双螯 */
+    for (const sx of [-1, 1]) {
+      const arm = new THREE.Group(); arm.position.set(sx * 0.4, 0.2, 0.58); bodyRoot.add(arm);
+      mesh(boxGeo(0.16, 0.16, 0.5), shell, sx * 0.14, 0, 0.2, arm);
+      const up = mesh(boxGeo(0.16, 0.3, 0.44), shell, sx * 0.34, 0.06, 0.44, arm);
+      up.rotation.y = sx * 0.4;
+      const dn = mesh(boxGeo(0.16, 0.3, 0.44), shell, sx * 0.34, -0.2, 0.4, arm);
+      dn.rotation.y = sx * 0.4;
+      a.parts['claw' + (sx < 0 ? 'L' : 'R')] = arm;
+    }
+    /* 八足 */
+    a.parts.legs = [];
+    for (const sx of [-1, 1]) for (let k = 0; k < 4; k++) {
+      const z0 = 0.28 - k * 0.28;
+      const lg = new THREE.Group(); lg.position.set(sx * 0.34, 0.5, z0); bodyRoot.add(lg);
+      mesh(boxGeo(0.1, 0.5, 0.1), shell, sx * 0.18, -0.1, 0, lg);
+      mesh(boxGeo(0.08, 0.55, 0.08), dark, sx * 0.4, -0.4, 0, lg);
+      a.parts.legs.push(lg);
+    }
+    /* 分节尾 + 毒针 */
+    let prev = bodyRoot;
+    for (let i = 0; i < 4; i++) {
+      const seg = new THREE.Group();
+      seg.position.set(0, i === 0 ? 0.3 : 0.32, i === 0 ? -0.62 : -0.14);
+      prev.add(seg);
+      mesh(sphGeo(0.2 - i * 0.03, 6), shell, 0, 0.16, 0, seg);
+      seg.rotation.x = -0.3;
+      prev = seg;
+    }
+    const st = mesh(coneGeo(0.1, 0.42, 5), sting, 0, 0.4, -0.08, prev);
+    st.rotation.x = 1.7;
+    a.parts.tailG = prev;
+    a.parts.weaponHand = null; a.parts.offHand = null;
+    a.torsoBaseY = 0.8;
+    a.group.scale.setScalar(s);
+    return setFootR(a);
+  }
+  if (kind === 'crane') {
+    const g = new THREE.Group();
+    a = { group: g, mats: [], parts: {} };
+    const feather = M(cfg.color, { rough: 0.9 });
+    const dark = M(cfg.cloth, { rough: 0.8 });
+    reg(a, feather); reg(a, dark);
+    const bodyRoot = new THREE.Group(); bodyRoot.position.y = 1.5; g.add(bodyRoot);
+    a.parts.torso = bodyRoot;
+    const body = mesh(sphGeo(0.44, 7), feather, 0, 0, 0, bodyRoot);
+    body.scale.set(1.0, 0.85, 1.5);
+    const tailF = mesh(coneGeo(0.3, 0.8, 6), feather, 0, 0.02, -0.62, bodyRoot);
+    tailF.rotation.x = -1.95;
+    const neck = mesh(cylGeo(0.085, 0.11, 0.95, 6), feather, 0, 0.52, 0.42, bodyRoot);
+    neck.rotation.x = -0.2;
+    const headG = new THREE.Group(); headG.position.set(0, 1.0, 0.5); bodyRoot.add(headG);
+    a.parts.headG = headG;
+    mesh(sphGeo(0.17, 6), feather, 0, 0, 0, headG);
+    const beak = mesh(coneGeo(0.06, 0.46, 4), M(0xffd166, { metal: 0.3 }), 0, -0.02, 0.26, headG);
+    beak.rotation.x = Math.PI / 2;
+    mesh(sphGeo(0.07, 5), M(0xff4a4a, { emissive: 0xaa2020, ei: 0.8 }), 0, 0.16, -0.02, headG);
+    const eye = M(0xffe0a0, { emissive: 0xffaa40, ei: 1.3 });
+    mesh(sphGeo(0.04, 4), eye, -0.11, 0.04, 0.1, headG);
+    mesh(sphGeo(0.04, 4), eye, 0.11, 0.04, 0.1, headG);
+    for (const sx of [-1, 1]) {
+      const w = new THREE.Group(); w.position.set(sx * 0.34, 0.05, 0); bodyRoot.add(w);
+      const wm = mesh(boxGeo(0.9, 0.06, 0.6), feather, sx * 0.48, 0, 0, w);
+      wm.rotation.z = sx * 0.12;
+      a.parts['wing' + (sx < 0 ? 'L' : 'R')] = w;
+    }
+    const legL = new THREE.Group(); legL.position.set(-0.12, 1.5, 0.05); g.add(legL);
+    const legR = new THREE.Group(); legR.position.set(0.12, 1.5, 0.05); g.add(legR);
+    a.parts.legL = legL; a.parts.legR = legR;
+    for (const lg of [legL, legR]) {
+      mesh(cylGeo(0.045, 0.055, 1.5, 4), dark, 0, -0.75, 0, lg);
+      for (let k = -1; k <= 1; k++) mesh(boxGeo(0.04, 0.04, 0.22), dark, k * 0.06, -1.5, 0.1, lg);
+    }
+    a.parts.weaponHand = null; a.parts.offHand = null;
+    a.torsoBaseY = 1.5;
+    a.group.scale.setScalar(s);
+    return setFootR(a);
+  }
+  if (kind === 'headless') {
+    a = buildHumanoid({
+      skin: 0x8a8a92, color: cfg.color, cloth: cfg.cloth, metal: 0x7a7a86,
+      legColor: 0x3a3a44, bootColor: 0x2a2a30, sleeve: cfg.color, glove: 0x4a4a52, hair: 0x2a2a30
+    });
+    /* 无头：把头组里的东西全隐掉（含头发/眼睛/头盔），只留断颈 */
+    for (const c of a.parts.headG.children) c.visible = false;
+    const stump = reg(a, M(0x6a1a1a, { rough: 0.6, emissive: 0x3a0808, ei: 0.7 }));
+    mesh(cylGeo(0.16, 0.19, 0.18, 6), stump, 0, 0.1, 0, a.parts.headG);
+    const plate = reg(a, M(cfg.color, { metal: 0.7, rough: 0.35 }));
+    for (const [sh, sx] of [[a.parts.shoulderL, -1], [a.parts.shoulderR, 1]]) {
+      const p = mesh(boxGeo(0.32, 0.26, 0.44), plate, 0, 0.06, 0, sh);
+      p.rotation.z = sx * 0.16;
+      mesh(coneGeo(0.06, 0.24, 4), plate, 0, 0.2, -0.08, sh);
+    }
+    const wp = new THREE.Group(); wp.position.set(0, -0.6, 0.05); a.parts.weaponHand.add(wp);
+    mesh(boxGeo(0.11, 1.7, 0.09), M(0xb0b4bc, { metal: 0.75, rough: 0.3 }), 0, -0.75, 0, wp);
+    mesh(boxGeo(0.42, 0.09, 0.14), M(0x8a6a30, { metal: 0.6 }), 0, 0.12, 0, wp);
+    const capeMat = reg(a, M(0x2a1016, { rough: 0.95, side: THREE.DoubleSide }));
+    mesh(boxGeo(0.72, 1.15, 0.05), capeMat, 0, -0.55, -0.06, a.parts.capeG);
+    a.group.scale.setScalar(s);
+    return setFootR(a);
+  }
+  if (kind === 'snake') {
+    /* [S5 修复] 之前没有 snake 分支，蛇妖/蛇姬一直悄悄回退成默认人形。
+     * 现在换成「人形上半身 + 盘绕蛇尾」，并把腿藏掉。 */
+    a = buildHumanoid({
+      skin: 0xa8d8b8, color: cfg.color, cloth: cfg.cloth,
+      legColor: cfg.color, bootColor: cfg.cloth, sleeve: cfg.color, glove: cfg.cloth, hair: 0x1d4a38
+    });
+    const g = a.group;
+    if (a.parts.legL) a.parts.legL.visible = false;
+    if (a.parts.legR) a.parts.legR.visible = false;
+    const scaleM = reg(a, M(cfg.color, { rough: 0.65 }));
+    const belly = reg(a, M(0xc8e8b8, { rough: 0.8 }));
+    const coil = new THREE.Group(); coil.position.y = 0.4; g.add(coil);
+    a.parts.coil = coil;
+    for (let i = 0; i < 3; i++) {
+      const t = mesh(torusGeo(0.52 - i * 0.11, 0.19, 7, 14), i % 2 ? belly : scaleM, 0, i * 0.24, 0, coil);
+      t.rotation.x = Math.PI / 2;
+    }
+    const tip = mesh(coneGeo(0.13, 0.75, 6), scaleM, 0, 0.1, -0.6, coil);
+    tip.rotation.set(1.25, 0, 0);
+    const eye = M(0xffe040, { emissive: 0xffaa00, ei: 1.2 });
+    mesh(sphGeo(0.045, 4), eye, -0.08, 0.14, 0.22, a.parts.headG);
+    mesh(sphGeo(0.045, 4), eye, 0.08, 0.14, 0.22, a.parts.headG);
+    a.group.scale.setScalar(s);
+    return setFootR(a);
   }
 
   /* 默认人形（半兽人 / 骷髅 / 妖僧 / Boss） */
@@ -500,7 +902,7 @@ function buildMonster(kind, cfg) {
       }
     }
   }
-  return a;
+  return setFootR(a);
 }
 
 /* ---------------- 纸娃娃：穿上装备 ---------------- */
@@ -508,6 +910,7 @@ function clearGroup(g) { while (g.children.length) g.remove(g.children[0]); }
 
 function rarityGlow(item) {
   if (!item) return null;
+  if (item.rarity === 'unique') return 0xff3b3b;
   if (item.rarity === 'legendary') return 0xff7a3c;
   if (item.rarity === 'set') return 0x5ce08a;
   if (item.rarity === 'rare') return 0xffc857;
@@ -521,18 +924,22 @@ function applyPaperDoll(p) {
   const cls = CLASSES[p.cls];
   const P = a.parts;
 
-  /* 身体基础色随职业 */
-  P.clothMat.color.setHex(cls.color);
-  P.cloth2Mat.color.setHex(cls.cloth);
-  P.sleeveMat.color.setHex(cls.color);
-  P.legMat.color.setHex(cls.cloth);
-  P.bootMat.color.setHex(cls.cloth);
-  P.handMat.color.setHex(cls.cloth);
+  /* 身体基础色随职业：古风角色有自己的配色，只在没有装备时保留，
+   * 有装备时下面各分支会按装备色覆盖 */
+  if (!a.cf) {
+    P.clothMat.color.setHex(cls.color);
+    P.cloth2Mat.color.setHex(cls.cloth);
+    P.sleeveMat.color.setHex(cls.color);
+    P.legMat.color.setHex(cls.cloth);
+    P.bootMat.color.setHex(cls.cloth);
+    P.handMat.color.setHex(cls.cloth);
+  }
   P.chestMesh.material = P.clothMat;
 
-  /* 护甲：躯干颜色、金属质感 */
+  /* 护甲：躯干颜色、金属质感。古风角色保留自己的配色，
+   * 装备只通过头盔/护肩/披风/武器体现，避免把整套古风色冲掉 */
   const chest = eq.chest;
-  if (chest) {
+  if (chest && !a.cf) {
     const c = itemVisualColor(chest);
     P.clothMat.color.setHex(c.base);
     P.clothMat.metalness = c.metal;
@@ -600,7 +1007,7 @@ function applyPaperDoll(p) {
   /* 披风 */
   clearGroup(P.capeG);
   const capeItem = eq.chest;
-  if (capeItem && (capeItem.rarity === 'legendary' || capeItem.rarity === 'set' || capeItem.rarity === 'rare')) {
+  if (capeItem && (capeItem.rarity === 'unique' || capeItem.rarity === 'legendary' || capeItem.rarity === 'set' || capeItem.rarity === 'rare')) {
     const c = itemVisualColor(capeItem);
     const cm = M(c.dark, { rough: 0.9, side: THREE.DoubleSide, emissive: c.glow, ei: 0.18 });
     a.mats.push(cm);
@@ -614,10 +1021,20 @@ function applyPaperDoll(p) {
   if (wp) {
     const c = itemVisualColor(wp);
     const w = buildWeapon(wp.shape || 'sword', c.base, wp.rarity === 'common' ? null : c.glow);
-    if (wp.shape === 'staff' || wp.shape === 'charm') w.rotation.set(0, 0, -0.08);
-    else w.rotation.set(-0.12, 0, -0.85);
-    w.position.set(0.1, 0.06, 0.04);
+    if (a.cf) {
+      /* 古风手型：大刀与桃木剑都斜持（直握会插进地面），
+       * 这个倾角也让挥砍带出横向刀光；杖/符立握 */
+      if (wp.shape === 'staff' || wp.shape === 'charm') { w.rotation.set(0.05, 0, -0.06); w.position.set(0.02, -0.05, 0.02); }
+      else if (wp.shape === 'saber') { w.rotation.set(-0.78, 0, Math.PI + 0.55); w.position.set(0.02, 0.02, 0.03); }
+      else { w.rotation.set(-0.80, 0, Math.PI + 0.45); w.position.set(0.02, 0.02, 0.03); }
+    } else {
+      if (wp.shape === 'staff' || wp.shape === 'charm') w.rotation.set(0, 0, -0.08);
+      else w.rotation.set(-0.12, 0, -0.85);
+      w.position.set(0.1, 0.06, 0.04);
+    }
     P.weaponHand.add(w);
+    /* 古风角色要按攻击进度调刀，必须把引用指到这把新武器上 */
+    if (a.cf) a.weapon = w;
     P.weaponMat = c;
   }
 
@@ -741,6 +1158,8 @@ const ATK_KEYS = {
 
 function updateActorAnim(a, dt) {
   const P = a.parts;
+  /* 古风角色（charforge）：走自己的动作曲线，多一节屈膝与袖子/下摆摆动 */
+  if (a.cf && typeof CharForge !== 'undefined') return CharForge.update(a, dt);
   const t = a.time = (a.time || 0) + dt;
   if (!P.torso) return;
 
@@ -801,8 +1220,15 @@ function updateActorAnim(a, dt) {
   if (P.armL) { P.armL.rotation.x = armLx; P.armL.rotation.z = armLz; }
   if (P.armR) P.armR.rotation.set(armRx, armRy, armRz);
 
-  P.torso.position.y = 0.92 + tPosY + (moving ? Math.abs(Math.sin(t * 11)) * 0.05 : Math.sin(t * 2.4) * 0.02);
-  P.torso.position.z = tPosZ;
+  /* 通用动画只能写「躯干相对偏移」。若 parts.torso 指向 actor 根 group
+   * （整体建模的怪：蜘蛛 / 血蝠等），写 position 就是改写世界坐标，
+   * 会把 updateEnemies 同步过来的 e.pos 抹掉 —— BOSS「模型和实际位置分家」的根因。
+   * 这里双保险：根节点一律不写 position，只写 rotation。 */
+  if (P.torso !== a.group) {
+    const baseY = a.torsoBaseY === undefined ? 0.92 : a.torsoBaseY;
+    P.torso.position.y = baseY + tPosY + (moving ? Math.abs(Math.sin(t * 11)) * 0.05 : Math.sin(t * 2.4) * 0.02);
+    P.torso.position.z = tPosZ;
+  }
   P.torso.rotation.set(torsoRx, torsoRy, torsoRz);
   if (P.weaponHand) P.weaponHand.rotation.set(handRx, 0, handRz);
 

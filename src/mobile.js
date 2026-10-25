@@ -4,13 +4,42 @@
  * 走原来的键鼠逻辑，互不影响。
  * ============================================================ */
 
+/* [FIX-MOBILE-LANDSCAPE] 移动端判定曾经在 iPhone 横屏下失败，整页退回 PC 布局。
+ * 原因是三重条件全都要满足，其中两个在真机上会骗人：
+ *   · `matchMedia('(pointer: coarse)')` —— iOS 横屏、微信内置浏览器、
+ *     以及开了「请求桌面网站」的 Safari 都可能把它报成 fine；
+ *   · `innerWidth/innerHeight` —— 转屏瞬间是过渡值，拿它算短边不可靠。
+ * 现在改成：手机 UA + 有触摸点 → 直接认定移动端，不再看 pointer 媒体查询；
+ * 其余设备退回原来的「触摸 + 粗指针 + 短边」三重判定。
+ * 另外支持 `?mobile=1` / `?mobile=0` 手动强制，方便出问题时自救。 */
+const _ua = (() => { try { return navigator.userAgent || ''; } catch (e) { return ''; } })();
+const _touchCap = (() => {
+  try {
+    return ('ontouchstart' in window) || (navigator.maxTouchPoints || 0) > 0 || ('onmsgesturechange' in window);
+  } catch (e) { return false; }
+})();
+/* 手机（不是平板 / 桌面）UA：这些设备一定有触屏，直接按移动端处理 */
+const _uaPhone = /iPhone|iPod|Android.*Mobile|Windows Phone|BlackBerry|IEMobile|Opera Mini|HarmonyOS.*Mobile/i.test(_ua)
+  || (() => { try { return !!(navigator.userAgentData && navigator.userAgentData.mobile); } catch (e) { return false; } })();
+/* iPad / 安卓平板：屏幕短边 > 1024 的按 PC，否则也走移动端 */
+const _uaTablet = /iPad|Android(?!.*Mobile)/i.test(_ua);
+
 const IS_TOUCH = (() => {
   try {
-    const touch = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
+    const q = location.search || '';
+    if (/[?&]mobile=1/.test(q)) return true;
+    if (/[?&]mobile=0/.test(q)) return false;
+    if (!_touchCap) return false;
+    if (_uaPhone) return true;
+    /* 短边取 screen 而不是 innerWidth：转屏时 innerWidth/innerHeight 会互换，
+     * screen 的短边才是设备物理短边 */
+    const sw = screen.width || 9999, sh = screen.height || 9999;
+    const shortSide = Math.min(sw, sh);
+    if (_uaTablet) return shortSide <= 1024;
     const coarse = window.matchMedia('(pointer: coarse)').matches
-      || window.matchMedia('(hover: none)').matches;
-    const small = Math.min(window.innerWidth, window.innerHeight) <= 1024;
-    return touch && coarse && small;
+      || window.matchMedia('(hover: none)').matches
+      || window.matchMedia('(any-pointer: coarse)').matches;
+    return coarse && shortSide <= 1024;
   } catch (e) { return false; }
 })();
 
@@ -49,15 +78,49 @@ const Mobile = {
       window.visualViewport.addEventListener('resize', () => this.queueLayout(60));
       window.visualViewport.addEventListener('scroll', () => this.queueLayout(60));
     }
-    /* iOS Safari 从 10 起直接无视 user-scalable=no，捏合照样能把整页放大；
-     * 放大后 position:fixed 的 HUD 会被推出可视区。这两个手势直接掐掉。 */
+    /* [FIX-BUG2] iOS Safari 从 10 起直接无视 user-scalable=no，捏合照样能把整页放大；
+     * 放大后 position:fixed 的 HUD 会被推出可视区。
+     * 除了 gesture 事件，还需要阻止 touchstart 上的多指默认行为，
+     * 因为 Safari 某些版本的双指手势不经过 gesture 事件。
+     * 同时阻止 dblclick 和 touchend 上的双击缩放。 */
     ['gesturestart', 'gesturechange', 'gestureend'].forEach(t =>
       document.addEventListener(t, e => e.preventDefault(), { passive: false }));
     document.addEventListener('dblclick', e => e.preventDefault(), { passive: false });
+    /* [FIX-BUG2] 额外阻止 Safari 的双指缩放：
+     * Safari 某些版本在 touchstart 时就已经决定了是否缩放，
+     * 如果只在 gesture 事件阻止就来不及。
+     * 对 touches.length >= 2 的 touchstart 调用 preventDefault。 */
+    document.addEventListener('touchstart', e => {
+      if (e.touches.length >= 2) e.preventDefault();
+    }, { passive: false });
+    /* [FIX-BUG2] 阻止 Safari 的双击缩放（touchend 后 300ms 内的再次 touchstart） */
+    let lastTouchEnd = 0;
+    document.addEventListener('touchend', e => {
+      const now = Date.now();
+      if (now - lastTouchEnd <= 300) e.preventDefault();
+      lastTouchEnd = now;
+    }, { passive: false });
+    /* [FIX-BUG2] 阻止整页滚动/橡皮筋效果，iPhone Safari 上
+     * 触摸时页面被拖动会导致 visualViewport 偏移、摇杆跑位 */
+    document.addEventListener('touchmove', e => {
+      if (e.touches.length >= 1) e.preventDefault();
+    }, { passive: false });
     document.addEventListener('visibilitychange', () => {
       if (document.hidden) this.resetJoy();
       else this.queueLayout(120);   // 切回来可能已经转过屏 / 换过尺寸
     });
+    /* [FIX-BUG2] 触控层强制保持可见：Safari 地址栏变化时
+     * 有时会短暂移除 body.touch class，导致 #mtouch display:none。
+     * 用 MutationObserver 监控 body class 变化，确保 touch 始终在。 */
+    try {
+      this._bodyObs = new MutationObserver(() => {
+        if (this.on && !document.body.classList.contains('touch')) {
+          document.body.classList.add('touch');
+          this.queueLayout(60);
+        }
+      });
+      this._bodyObs.observe(document.body, { attributes: true, attributeFilter: ['class'] });
+    } catch (e) { }
     const tipEl = document.getElementById('startTips');
     if (tipEl) tipEl.innerHTML = '<b>左摇杆</b> 移动 · <b>右侧按钮</b> 普攻与技能 · <b>拖动画面</b> 转视角<br>'
       + '双击摇杆翻滚 · 拾取装备可穿戴，纸娃娃实时变化';
@@ -79,6 +142,7 @@ const Mobile = {
       <div id="mSkills"></div>
       <div id="mAtk" class="mbtn atk"><span class="mi">攻</span></div>
       <div id="mUtil">
+        <div class="mbtn sm set" id="mBarSet" title="切换快捷栏"><span class="mi"></span><i class="idx">1/2</i></div>
         <div class="mbtn sm" id="mUse"><span class="mi">交</span></div>
         <div class="mbtn sm" id="mDash"><span class="mi">闪</span></div>
         <div class="mbtn sm pot" data-potion="hp"><span class="mi">丹</span><i class="cnt">0</i></div>
@@ -92,11 +156,16 @@ const Mobile = {
     if (!this.on || !Game.state) return;
     const wrap = document.getElementById('mSkills');
     if (!wrap) return;
-    wrap.innerHTML = SKILL_ORDER[Game.state.cls].map(id => {
-      const sk = SKILLS[id];
-      return `<div class="mskill" data-skill="${id}"><span class="g">${sk.glyph}</span><div class="cd"></div></div>`;
+    /* [S4] 技能条 8 格手动配置：宫格与 PC 动作条一致，空位是占位 */
+    const slots = Game.skillBar();
+    wrap.innerHTML = slots.map((id, i) => {
+      if (!id) return `<div class="mskill empty" data-slot="${i}"><span class="g">＋</span></div>`;
+      /* [M1] 与 PC 技能条一致：变体角标 Ⅰ/Ⅱ/Ⅲ */
+      const vv = Game.skillVariant(id);
+      const vb = `<span class="vb" style="${vv > 0 ? '' : 'display:none'}">${['Ⅰ', 'Ⅱ', 'Ⅲ'][vv] || ''}</span>`;
+      return `<div class="mskill" data-skill="${id}">${vb}<span class="g">${skillIconSvg(id, 22)}</span><div class="cd"></div></div>`;
     }).join('');
-    wrap.querySelectorAll('.mskill').forEach(el => {
+    wrap.querySelectorAll('.mskill[data-skill]').forEach(el => {
       el.addEventListener('pointerdown', ev => {
         ev.preventDefault(); ev.stopPropagation();
         SFX.init();
@@ -105,6 +174,37 @@ const Mobile = {
         setTimeout(() => el.classList.remove('hit'), 130);
       });
     });
+    /* 空位：打开术法面板去配置 */
+    wrap.querySelectorAll('.mskill.empty').forEach(el => {
+      el.addEventListener('pointerdown', ev => {
+        ev.preventDefault(); ev.stopPropagation();
+        SFX.init();
+        if (typeof UI !== 'undefined' && UI.openSkill) UI.openSkill();
+      });
+    });
+    /* [M1] 手机上也要能换栏：PC 是 Shift，触屏没有 Shift，给一枚小按钮。
+     * [v1.8.3] 图标（剑 = 输出栏 / 盾 = 防守栏）+ 右下角「1 / 2」套数。
+     * 只放图标会被当成攻击键，只放数字又看不出「有两套」，两个一起才说得清。 */
+    const setBtn = document.getElementById('mBarSet');
+    if (setBtn) {
+      const si = Game.barSet();
+      const mi = setBtn.querySelector('.mi');
+      if (mi) mi.innerHTML = barSetIcon(si, 18);
+      const idx = setBtn.querySelector('.idx');
+      if (idx) idx.textContent = (si + 1) + '/' + SKILL_BAR_SETS;
+      const label = '切换快捷栏（当前第 ' + (si + 1) + ' 套 · ' + (si === 0 ? '输出栏' : '防守栏') + '）';
+      setBtn.title = label;
+      setBtn.setAttribute('aria-label', label);
+      if (!setBtn._bound) {
+        setBtn._bound = true;
+        setBtn.addEventListener('pointerdown', ev => {
+          ev.preventDefault(); ev.stopPropagation();
+          SFX.init();
+          Game.switchBarSet();
+          this.buildSkills();
+        });
+      }
+    }
     this.layout();
   },
 
@@ -112,17 +212,39 @@ const Mobile = {
   layout() {
     if (!this.on) return;
 
-    /* 尺寸优先级：visualViewport > innerWidth/innerHeight。
+    /* [FIX-BUG2] 尺寸优先级：visualViewport > innerWidth/innerHeight。
      * 两个都是真机会骗人的地方：
      *  · 页面被放大（iOS 输入框聚焦会自动放大）时 innerWidth 还是 390，
      *    但真正看得见的只有 260 宽；
      *  · 转屏/收放地址栏的中间态，innerWidth 可能已经报成横屏宽度，高度还是竖屏的。
-     * visualViewport 反映的是「此刻真正看得见的区域」，以它为准最稳。 */
+     * visualViewport 反映的是「此刻真正看得见的区域」，以它为准最稳。
+     * [FIX] 额外检查 scale：如果页面被意外缩放（scale > 1.05），
+     * 强制重置到 scale=1，否则 position:fixed 元素会偏移。 */
     const vv = window.visualViewport;
     const vvOk = !!(vv && vv.width > 120 && vv.height > 120);
-    const W = Math.round((vvOk ? vv.width : 0) || window.innerWidth || 0);
-    const H = Math.round((vvOk ? vv.height : 0) || window.innerHeight || 0);
+    let W = Math.round((vvOk ? vv.width : 0) || window.innerWidth || 0);
+    let H = Math.round((vvOk ? vv.height : 0) || window.innerHeight || 0);
     if (W < 120 || H < 120) return;          // 转屏/收放地址栏途中的 0 或极小值，直接不理
+
+    /* [FIX-BUG2] 如果页面被缩放（Safari 上可能发生），尝试恢复 */
+    if (vv && vv.scale > 1.05) {
+      try {
+        /* 通过设置 meta viewport 来尝试恢复缩放 */
+        const meta = document.querySelector('meta[name="viewport"]');
+        if (meta) {
+          /* 重新设置 viewport 可以在部分 Safari 版本上重置缩放 */
+          meta.setAttribute('content', 'width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover');
+        }
+        /* 用 visualViewport.scrollTo 回到原点 */
+        if (vv.scrollTo) {
+          vv.scrollTo(0, 0);
+        }
+      } catch (e) { }
+      /* 缩放状态下用 innerWidth/innerHeight 更可靠 */
+      W = Math.round(window.innerWidth || W);
+      H = Math.round(window.innerHeight || H);
+    }
+
     this.vp = { w: W, h: H, zoomed: !!(vv && vv.scale > 1.02) };
 
     // 自愈：ui-open 卡住会让整个触控层透明（看起来就是「摇杆不见了」）
@@ -136,15 +258,23 @@ const Mobile = {
       if (!document.body.classList.contains('touch')) document.body.classList.add('touch');
     } catch (e) { }
 
-    // 触控层对齐到「当前可见的区域」，页面被放大/滚走时也跟着走
-    if (this.el && vv) {
-      this.off = { x: vv.offsetLeft || 0, y: vv.offsetTop || 0 };
-      this.el.style.left = vv.offsetLeft + 'px';
-      this.el.style.top = vv.offsetTop + 'px';
-      this.el.style.width = vv.width + 'px';
-      this.el.style.height = vv.height + 'px';
+    /* [FIX-BUG2] 触控层对齐到「当前可见的区域」。
+     * 在 iPhone Safari 上，地址栏变化时 visualViewport.offsetTop 会跳动，
+     * 导致触控层跟着跳动。用 requestAnimationFrame 在下一帧再次校正位置。 */
+    if (this.el) {
+      const ox = vv ? (vv.offsetLeft || 0) : 0;
+      const oy = vv ? (vv.offsetTop || 0) : 0;
+      this.off = { x: ox, y: oy };
+      this.el.style.left = ox + 'px';
+      this.el.style.top = oy + 'px';
+      this.el.style.width = W + 'px';
+      this.el.style.height = H + 'px';
       this.el.style.right = 'auto';
       this.el.style.bottom = 'auto';
+      /* [FIX-BUG2] 确保 #mtouch 始终可见，不被推出屏幕 */
+      this.el.style.display = 'block';
+      this.el.style.opacity = '1';
+      this.el.style.pointerEvents = 'none';  /* 容器不拦截，子元素各自 pointer-events:auto */
     }
 
     const portrait = H > W;
@@ -192,13 +322,15 @@ const Mobile = {
       atk.style.fontSize = 17 * u + 'px';
     }
 
-    // 技能：3 列 × 2 行宫格，紧贴普攻左上
-    const cols = 3;
+    // 技能：4 列 × 2 行宫格（8 格），紧贴普攻左上
+    const cols = SKILL_BAR_SLOTS >= 8 ? 4 : SKILL_BAR_SLOTS;
+    const rows = Math.ceil(SKILL_BAR_SLOTS / cols);
     const gw = cols * skS + (cols - 1) * gap;
     const gRight = ax - atkR - 9 * u;
     const gBottom = ay + atkR;
     const gLeft = fx(gRight - gw, gw);
-    const gTop = fy(gBottom - (2 * skS + gap), 2 * skS + gap);
+    const gh = rows * skS + (rows - 1) * gap;
+    const gTop = fy(gBottom - gh, gh);
     document.querySelectorAll('#mSkills .mskill').forEach((el, i) => {
       const c = i % cols, r = Math.floor(i / cols);
       el.style.width = el.style.height = skS + 'px';
@@ -218,6 +350,16 @@ const Mobile = {
       el.style.top = uy + 'px';
       el.style.fontSize = 13 * u + 'px';
     });
+
+    /* 增益 / 减益栏：触屏技能格上方，跟着 HUD 一起缩放 */
+    const bb = document.getElementById('buffbar');
+    if (bb) {
+      bb.style.left = '50%';
+      bb.style.top = Math.max(ins.t + 4, uy - 28 * u) + 'px';
+      bb.style.bottom = 'auto';
+      bb.style.transform = 'translateX(-50%)';
+      bb.style.maxWidth = Math.min(W - 20, 360 * u) + 'px';
+    }
   },
 
   /* ---------------- 摇杆 ---------------- */
@@ -318,12 +460,16 @@ const Mobile = {
       if (pts.size === 2) this.pinchDist = this.pinch();
     });
 
+    /* [FIX-BUG2] 改为 passive: false 以便在需要时阻止默认行为，
+     * 防止 Safari 上拖动画面时触发页面滚动/地址栏收起 */
     window.addEventListener('pointermove', e => {
       const p = pts.get(e.pointerId);
       if (!p) return;
       if (pts.size === 1) {
         const dx = e.clientX - p.x;
         Game.camYaw -= dx * 0.0042;
+        /* [FIX-BUG2] 阻止默认行为，防止页面跟着滚动 */
+        e.preventDefault();
       }
       p.x = e.clientX; p.y = e.clientY;
 
@@ -334,8 +480,9 @@ const Mobile = {
           Game.camHeight = 12.2 + (Game.camDist - 11.6) * 0.42;
         }
         this.pinchDist = d;
+        e.preventDefault();
       }
-    }, { passive: true });
+    }, { passive: false });
 
     const up = e => {
       pts.delete(e.pointerId);

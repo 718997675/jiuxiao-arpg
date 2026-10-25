@@ -135,6 +135,11 @@ const SaveUI = {
     try {
       if (typeof Game !== 'undefined' && Game.running && Game.state) Game.save();
     } catch (e) { }
+    /* v1.6.0：游戏内存档成了主菜单的一页；标题界面没有 state，仍旧独立弹窗 */
+    if (typeof UI !== 'undefined' && UI.openMenu && typeof Game !== 'undefined' && Game.state) {
+      UI.openMenu('save');
+      return;
+    }
     UI.closeAll(p);
     p.classList.add('open');
     this.pendingDelete = 0;
@@ -147,7 +152,12 @@ const SaveUI = {
     const p = this.$('savePanel');
     if (p) p.classList.remove('open');
     this.pendingDelete = 0;
-    try { UI.closeAll(); } catch (e) { }
+    try {
+      /* 在菜单里就只合上菜单；标题界面的独立弹窗才全员关闭 */
+      const mp = document.getElementById('menuPanel');
+      if (mp && mp.classList.contains('open')) UI.closeMenu();
+      else UI.closeAll();
+    } catch (e) { }
   },
 
   /* ---------------- 渲染 ---------------- */
@@ -212,12 +222,15 @@ const SaveUI = {
     const nameEl = this.$('newName');
     const name = ((nameEl && nameEl.value) || '').trim() || '无名客';
     const slot = this.slotForNew || 0;
+    /* [DIFF] 存档面板新建角色时，沿用开始界面选的难度 */
+    const diff = (typeof UI !== 'undefined' && UI.selectedDiff) || DEFAULT_DIFF;
+    if (typeof Game !== 'undefined') Game.pendingDifficulty = diff;
     const r = SaveManager.createCharacter(this.selectedCls, name, slot);
     if (!r.ok) { this.hint('建档失败：' + r.error, true); try { UI.toast(r.error, 'bad'); } catch (e) { } return; }
     this.slotForNew = 0;
     if (nameEl) nameEl.value = '';
     try { SFX.ui(); } catch (e) { }
-    const started = (typeof Game !== 'undefined') && Game.startNew(this.selectedCls, name, r.slot);
+    const started = (typeof Game !== 'undefined') && Game.startNew(this.selectedCls, name, r.slot, diff);
     if (!started) { this.render(); this.syncStart(); }
     this.close();
   },

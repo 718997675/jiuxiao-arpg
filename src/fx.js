@@ -1,61 +1,107 @@
 /* ============================================================
- * 表现层：粒子 / 投射物 / 地面预警 / 伤害数字 / 屏幕震动 / 合成音效
+ * 表现层：粒子 / 投射物 / 地面预警 / 伤害数字 / 屏幕震动 / 音效门面
  * ============================================================ */
 
+/* ---------------- 音效门面（S16 起转调 AudioSys） ----------------
+ *
+ * 这一层保留 SFX.xxx 的名字，是因为全仓有 181 处调用点，
+ * 但它们现在只是「音色名」，真正发声的是 audio.js 的 AudioSys：
+ * 它管总线（音效 / 环境 / 音乐三条）、距离衰减、左右定位、声部预算。
+ *
+ * SFX.init() 以前只 new AudioContext 不 resume()，于是浏览器把上下文
+ * 一直挂在 suspended 上、currentTime 恒为 0 —— 表现为「整局没有一点声音，
+ * 但代码全对」。现在 init() 就是 AudioSys.unlock()，必须由用户手势调用。
+ */
 const SFX = {
-  ctx: null, on: true, master: null,
+  on: true,
+
   init() {
-    if (this.ctx) return;
-    try {
-      this.ctx = new (window.AudioContext || window.webkitAudioContext)();
-      this.master = this.ctx.createGain();
-      this.master.gain.value = 0.28;
-      const comp = this.ctx.createDynamicsCompressor();
-      this.master.connect(comp); comp.connect(this.ctx.destination);
-      const len = this.ctx.sampleRate * 1.0;
-      this.noiseBuf = this.ctx.createBuffer(1, len, this.ctx.sampleRate);
-      const d = this.noiseBuf.getChannelData(0);
-      for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
-    } catch (e) { this.on = false; }
+    if (typeof AudioSys === 'undefined') return null;
+    AudioSys.on = this.on;
+    AudioSys.unlock();
+    return AudioSys.ctx;
   },
+
   tone(freq, dur, type = 'sine', gain = 0.2, slideTo) {
-    if (!this.on) return; this.init(); if (!this.ctx) return;
-    const t = this.ctx.currentTime;
-    const o = this.ctx.createOscillator(), g = this.ctx.createGain();
-    o.type = type; o.frequency.setValueAtTime(freq, t);
-    if (slideTo) o.frequency.exponentialRampToValueAtTime(Math.max(20, slideTo), t + dur);
-    g.gain.setValueAtTime(0.0001, t);
-    g.gain.exponentialRampToValueAtTime(gain, t + 0.008);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-    o.connect(g); g.connect(this.master);
-    o.start(t); o.stop(t + dur + 0.02);
+    if (!this.on || typeof AudioSys === 'undefined') return;
+    AudioSys.tone(freq, dur, type, gain, slideTo);
   },
+
   noise(dur = 0.15, gain = 0.2, freq = 1200, q = 1) {
-    if (!this.on) return; this.init(); if (!this.ctx) return;
-    const t = this.ctx.currentTime;
-    const s = this.ctx.createBufferSource(); s.buffer = this.noiseBuf;
-    const f = this.ctx.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = freq; f.Q.value = q;
-    const g = this.ctx.createGain();
-    g.gain.setValueAtTime(gain, t);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-    s.connect(f); f.connect(g); g.connect(this.master);
-    s.start(t); s.stop(t + dur);
+    if (!this.on || typeof AudioSys === 'undefined') return;
+    AudioSys.noise(dur, gain, freq, q);
   },
-  swing() { this.noise(0.13, 0.16, 2600, 1.6); this.tone(420, 0.09, 'triangle', 0.05, 180); },
-  hit() { this.noise(0.1, 0.26, 700, 0.9); this.tone(120, 0.12, 'square', 0.12, 60); },
-  crit() { this.noise(0.16, 0.32, 900, 0.7); this.tone(220, 0.16, 'sawtooth', 0.13, 60); this.tone(880, 0.12, 'triangle', 0.08, 300); },
-  cast() { this.tone(520, 0.28, 'sine', 0.09, 880); this.noise(0.2, 0.05, 3000, 2); },
-  fire() { this.noise(0.25, 0.14, 500, 0.6); this.tone(180, 0.3, 'sawtooth', 0.08, 70); },
-  ice() { this.tone(1200, 0.3, 'sine', 0.07, 600); this.noise(0.25, 0.08, 4200, 3); },
-  thunder() { this.noise(0.3, 0.3, 2200, 0.5); this.tone(90, 0.25, 'square', 0.1, 40); },
-  explode() { this.noise(0.45, 0.4, 320, 0.5); this.tone(70, 0.5, 'sine', 0.2, 30); },
-  coin() { this.tone(980, 0.08, 'square', 0.06); setTimeout(() => this.tone(1460, 0.1, 'square', 0.05), 60); },
-  heal() { this.tone(660, 0.2, 'sine', 0.1, 990); this.tone(990, 0.3, 'sine', 0.06, 1320); },
-  levelup() {[523, 659, 784, 1046].forEach((f, i) => setTimeout(() => this.tone(f, 0.35, 'triangle', 0.12), i * 90)); },
-  die() { this.tone(200, 0.4, 'sawtooth', 0.08, 50); this.noise(0.4, 0.15, 400, 0.6); },
-  ui() { this.tone(760, 0.05, 'square', 0.03); },
-  boss() { this.tone(60, 1.4, 'sawtooth', 0.18, 42); this.noise(1.2, 0.12, 220, 0.4); },
-  loot(r) { if (r === 'legendary' || r === 'set') {[784, 1046, 1318].forEach((f, i) => setTimeout(() => this.tone(f, 0.4, 'triangle', 0.1), i * 100)); } }
+
+  /* ---------------- 打击与施法 ---------------- */
+
+  swing() { this.noise(0.13, 0.2, 2600, 1.6); this.tone(430, 0.09, 'triangle', 0.07, 170); },
+  hit() { this.noise(0.1, 0.3, 700, 0.9); this.tone(118, 0.12, 'square', 0.16, 58); },
+  crit() {
+    this.noise(0.16, 0.36, 900, 0.7);
+    this.tone(220, 0.16, 'sawtooth', 0.18, 58);
+    this.tone(900, 0.12, 'triangle', 0.1, 320);
+  },
+  cast() { this.tone(520, 0.3, 'sine', 0.11, 900); this.noise(0.22, 0.07, 3000, 2); },
+  fire() { this.noise(0.3, 0.18, 480, 0.6); this.tone(170, 0.32, 'sawtooth', 0.11, 66); },
+  ice() { this.tone(1250, 0.3, 'sine', 0.09, 600); this.noise(0.26, 0.1, 4200, 3); },
+  thunder() { this.noise(0.3, 0.34, 2200, 0.5); this.tone(88, 0.26, 'square', 0.14, 38); },
+  explode() { this.noise(0.5, 0.42, 300, 0.5); this.tone(68, 0.55, 'sine', 0.26, 28); },
+  heal() { this.tone(660, 0.2, 'sine', 0.12, 990); this.tone(990, 0.32, 'sine', 0.07, 1320); },
+  die() { this.tone(200, 0.45, 'sawtooth', 0.12, 48); this.noise(0.45, 0.18, 380, 0.6); },
+  coin() { this.tone(980, 0.08, 'square', 0.09); setTimeout(() => this.tone(1460, 0.1, 'square', 0.07), 60); },
+  levelup() { [523, 659, 784, 1046].forEach((f, i) => setTimeout(() => this.tone(f, 0.35, 'triangle', 0.14), i * 90)); },
+  ui() { this.tone(760, 0.05, 'square', 0.05); },
+  boss() { this.tone(60, 1.4, 'sawtooth', 0.2, 40); this.noise(1.2, 0.14, 210, 0.4); },
+  loot(r) {
+    if (r === 'unique') { [659, 784, 988, 1318, 1568].forEach((f, i) => setTimeout(() => this.tone(f, 0.5, 'triangle', 0.12), i * 90)); return; }
+    if (r === 'legendary' || r === 'set') { [784, 1046, 1318].forEach((f, i) => setTimeout(() => this.tone(f, 0.4, 'triangle', 0.11), i * 100)); }
+  },
+
+  /* ---------------- 技能释放层（S16 新增） ----------------
+   * 技能自己的「命中 / 爆发」音在各技能代码里，这里补的是**起手**：
+   * 每发技能都有，音量压得低（0.05~0.07）、时长短（0.1~0.2 秒），
+   * 作用是让「按下技能键」有即时反馈，同时不抢命中音。
+   * 元素优先读 SKILLS[id].elem，没有就按名字与描述里的字猜 —— 这样
+   * 新增技能不写 elem 也有合理音色，写了就以此为准。 */
+  skillElem(sk) {
+    if (!sk) return 'phys';
+    if (sk.elem) return sk.elem;
+    const t = (sk.name || '') + (sk.desc || '');
+    if (/火|炎|焰|焚|燃/.test(t)) return 'fire';
+    if (/冰|寒|霜|雪|冻/.test(t)) return 'ice';
+    if (/雷|电|霆|霹雳/.test(t)) return 'lightning';
+    if (/毒|腐|瘟|蚀/.test(t)) return 'poison';
+    if (/血|魂|煞/.test(t)) return 'blood';
+    if (/风|影|疾/.test(t)) return 'wind';
+    return 'phys';
+  },
+
+  skill(sk) {
+    if (!this.on || !sk) return;
+    const type = sk.type || 'melee';
+    if (type === 'buff' || type === 'shield') { this.tone(300, 0.26, 'triangle', 0.07, 620); return; }
+    if (type === 'heal') { this.tone(700, 0.22, 'sine', 0.06, 1050); return; }
+    if (type === 'summon') { this.tone(220, 0.3, 'sine', 0.07, 440); this.noise(0.28, 0.05, 900, 1.4); return; }
+    if (type === 'dash') { this.noise(0.18, 0.11, 1400, 0.9); this.tone(300, 0.16, 'sawtooth', 0.06, 640); return; }
+    if (type === 'ultimate' || type === 'meteor' || type === 'rain') { this.noise(0.3, 0.1, 700, 0.7); return; }
+    switch (this.skillElem(sk)) {
+      case 'fire': this.noise(0.2, 0.09, 620, 0.8); break;
+      case 'ice': this.tone(1500, 0.14, 'sine', 0.05, 2100); break;
+      case 'lightning': this.noise(0.12, 0.09, 3200, 1.4); break;
+      case 'poison': this.tone(320, 0.16, 'sine', 0.05, 520); break;
+      case 'blood': this.tone(150, 0.2, 'sawtooth', 0.06, 96); break;
+      case 'wind': this.noise(0.16, 0.07, 2200, 1.2); break;
+      default: this.noise(0.12, 0.06, 1800, 1.1); break;
+    }
+  },
+
+  /* ---------------- 转调 AudioSys（怪物 / 环境 / 音乐） ----------------
+   * game.js 那边也直接调 AudioSys，这几个别名只是为了让「音效相关」
+   * 有一个统一入口，测试里 stub SFX 时不用再去找第二个对象。 */
+  mob(e, ev) { if (typeof AudioSys !== 'undefined') return AudioSys.mob(e, ev); return false; },
+  voice(fam, size, ev, o) { if (typeof AudioSys !== 'undefined') return AudioSys.voice(fam, size, ev, o); return 0; },
+  ambient(id) { if (typeof AudioSys !== 'undefined') AudioSys.ambient(id); },
+  bgm(m) { if (typeof AudioSys !== 'undefined') AudioSys.bgm(m); }
 };
 
 /* ---------------- 怪物血条 ---------------- */
@@ -125,11 +171,41 @@ function makeHpBar(host, opts = {}) {
   fill.renderOrder = 21;
   g.add(fill);
 
-  // 精英：底槽换成暗金边
-  if (opts.elite) bgMat.color.setHex(0x2a1c08);
+  // 精英：底槽换成暗金边，填充条转金色（[S5] 一眼分出精英与普通怪）
+  if (opts.elite) {
+    bgMat.color.setHex(0x2a1c08);
+    fillMat.color.setHex(0xd8b25a);
+  }
 
   host.add(g);
   return { group: g, fill, bg, w: HPBAR_W, s };
+}
+
+/* 复用的四元数，避免每帧为每条血条 new 对象 */
+const _qBarParent = new THREE.Quaternion();
+
+/**
+ * 把血条组校正到「世界空间正对相机」。
+ *
+ * 血条由「底槽 + 填充」两张 Sprite 组成，填充用 position.x=-W/2 左对齐。
+ * Sprite 的朝向恒面向相机，但位置会被父级矩阵变换——怪物转身时那个 -W/2 偏移
+ * 就在世界空间里绕着血条中心画圆，于是填充条和底槽被甩开，看起来是「两条分开的横条」。
+ * 反向旋转后，血条组的局部 X 轴恒等于屏幕右方向，偏移只发生在屏幕平面内，两者不会再错位。
+ *
+ * 注意：必须用「本帧最终的相机姿态」调用（见 game.js animate 里的 faceHpBars），
+ * 在相机更新之前调用会差一帧，留下可见偏差。
+ */
+function faceHpBar(bar, camera) {
+  if (!bar || !bar.group || !camera) return;
+  const parent = bar.group.parent;
+  if (parent) {
+    parent.getWorldQuaternion(_qBarParent);   // 父级世界朝向
+    _qBarParent.invert();
+    _qBarParent.multiply(camera.quaternion);  // local = inv(parentWorld) * camera
+    bar.group.quaternion.copy(_qBarParent);
+  } else {
+    bar.group.quaternion.copy(camera.quaternion);
+  }
 }
 
 /**
@@ -137,13 +213,17 @@ function makeHpBar(host, opts = {}) {
  * @param {object} bar makeHpBar 的返回值
  * @param {number} ratio 剩余血量比例
  * @param {number} [dist] 血条到相机的距离，传入则同步尺寸
+ * @param {THREE.Camera} [camera] 传入则顺带校正朝向（每帧的最终校正走 faceHpBars）
  */
-function updateHpBar(bar, ratio, dist) {
+function updateHpBar(bar, ratio, dist, camera) {
   const r = CLAMP(ratio, 0, 1);
   bar.fill.scale.x = Math.max(0.001, bar.w * r);
   bar.fill.visible = r > 0.002;
   const col = r > 0.6 ? 0x46c651 : (r > 0.28 ? 0xd8b13a : 0xd2402f);
   if (bar.fill.material.color.getHex() !== col) bar.fill.material.color.setHex(col);
+
+  if (camera) faceHpBar(bar, camera);
+
   // 屏幕上高度恒定：大屏 9px、小屏 7px，远近一致
   if (dist > 0.1) {
     const H = window.innerHeight || 900;
@@ -174,6 +254,77 @@ const fxRingThin = (inner, outer, seg) =>
   _fxGeo(`t${inner}_${outer}_${seg}`, () => new THREE.RingGeometry(inner, outer, seg));
 
 /* ---------------- 粒子 ---------------- */
+/* 符纸贴图（v1.0.4）：程序化画一张竖长黄符，朱砂字 + 朱印。
+ * 只生成一次并复用 —— 道士普攻/技能会连续出符，每次新建 CanvasTexture 会
+ * 直接把显存和上传带宽吃满（和当初投射物挂 PointLight 是同一类问题）。 */
+let _talismanTex = null;
+function talismanTexture() {
+  if (_talismanTex) return _talismanTex;
+  const W = 96, H = 160;
+  const c = document.createElement('canvas');
+  c.width = W; c.height = H;
+  const g = c.getContext('2d');
+  // 纸
+  const grd = g.createLinearGradient(0, 0, W, H);
+  grd.addColorStop(0, '#f6e8b4');
+  grd.addColorStop(0.5, '#e8d190');
+  grd.addColorStop(1, '#c8a860');
+  g.fillStyle = grd;
+  g.fillRect(0, 0, W, H);
+  // 朱砂边
+  g.strokeStyle = 'rgba(190,48,30,.9)';
+  g.lineWidth = 4;
+  g.strokeRect(5, 5, W - 10, H - 10);
+  g.strokeStyle = 'rgba(190,48,30,.42)';
+  g.lineWidth = 1.5;
+  g.strokeRect(11, 11, W - 22, H - 22);
+  // 符头「敕令」
+  g.fillStyle = '#b02818';
+  g.font = 'bold 26px "STKaiti","KaiTi",serif';
+  g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.fillText('敕', W / 2 - 17, 34);
+  g.fillText('令', W / 2 + 17, 34);
+  // 符胆：竖笔 + 折笔，模拟朱砂符文
+  g.strokeStyle = '#a8241a';
+  g.lineWidth = 4.5;
+  g.lineCap = 'round';
+  g.beginPath();
+  g.moveTo(W / 2, 54); g.lineTo(W / 2, 118);
+  g.stroke();
+  g.lineWidth = 3.5;
+  const bars = [[30, 66, 66], [30, 80, 66], [34, 94, 62], [38, 108, 58]];
+  for (const [x1, y, x2] of bars) {
+    g.beginPath(); g.moveTo(x1, y); g.lineTo(x2, y); g.stroke();
+  }
+  // 两侧勾
+  g.beginPath();
+  g.moveTo(24, 58); g.lineTo(24, 88); g.lineTo(34, 96);
+  g.moveTo(W - 24, 58); g.lineTo(W - 24, 88); g.lineTo(W - 34, 96);
+  g.stroke();
+  // 朱印
+  g.fillStyle = 'rgba(178,32,24,.86)';
+  g.fillRect(W / 2 - 15, 124, 30, 24);
+  g.fillStyle = 'rgba(246,232,180,.9)';
+  g.font = 'bold 15px "STKaiti","KaiTi",serif';
+  g.fillText('雷', W / 2, 137);
+  // 外发光，暗场景里更抓眼
+  g.globalCompositeOperation = 'lighter';
+  g.shadowColor = 'rgba(255,214,120,.95)';
+  g.shadowBlur = 14;
+  g.strokeStyle = 'rgba(255,226,150,.5)';
+  g.lineWidth = 2;
+  g.strokeRect(2, 2, W - 4, H - 4);
+  g.globalCompositeOperation = 'source-over';
+
+  _talismanTex = new THREE.CanvasTexture(c);
+  _talismanTex.needsUpdate = true;
+  return _talismanTex;
+}
+const fxPlane = (w, h) => _fxGeo(`p${w}_${h}`, () => new THREE.PlaneGeometry(w, h));
+
+/* 追踪用的临时向量：每帧每个投射物都 new 一个 Vector3 会造成 GC 抖动 */
+const _vHome = new THREE.Vector3();
+
 const FX = {
   scene: null, cam: null, layer: null,
   parts: [], projectiles: [], zones: [], texts: [], beams: [],
@@ -194,22 +345,46 @@ const FX = {
     const speed = opts.speed || 6;
     const size = opts.size || 0.1;
     const life = opts.life || 0.5;
-    const geo = boxGeo(size, size, size);
-    const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 1, blending: opts.additive ? THREE.AdditiveBlending : THREE.NormalBlending, depthWrite: false });
-    const group = new THREE.Group();
-    group.position.copy(pos);
-    this.scene.add(group);
-    const list = [];
+
+    /* [v1.0.6] 一次爆发 = 一个 THREE.Points = 一次 draw call。
+     *
+     * 旧实现是 count 个独立 Mesh（各自挂在一个 Group 下），也就是 count 次 draw call。
+     * Boss 死亡/爆血一次就是 40 颗，同时堆满 40 组 = 最多 1600 次绘制，
+     * 光粒子就能把浏览器主线程压死 —— 这是「Boss 战特别卡」的头号原因。
+     * 现在整组共用一个 BufferGeometry，位置在 CPU 端逐帧更新，
+     * 一簇粒子从 count 次绘制降到 1 次，视觉上只是方块变方点，小尺寸下看不出差别。
+     */
+    const n3 = count * 3;
+    const arr = new Float32Array(n3);
+    const vel = new Float32Array(n3);
     for (let i = 0; i < count; i++) {
-      const m = new THREE.Mesh(geo, mat);
-      m.position.set(RND(-0.2, 0.2), RND(-0.1, 0.3), RND(-0.2, 0.2));
-      group.add(m);
+      const k = i * 3;
+      arr[k] = pos.x + RND(-0.2, 0.2);
+      arr[k + 1] = pos.y + RND(-0.1, 0.3);
+      arr[k + 2] = pos.z + RND(-0.2, 0.2);
       const ang = Math.random() * Math.PI * 2, el = RND(0.1, 0.9);
-      list.push({
-        m, v: new THREE.Vector3(Math.cos(ang) * speed * RND(0.4, 1), el * speed * RND(0.5, 1.1), Math.sin(ang) * speed * RND(0.4, 1))
-      });
+      vel[k] = Math.cos(ang) * speed * RND(0.4, 1);
+      vel[k + 1] = el * speed * RND(0.5, 1.1);
+      vel[k + 2] = Math.sin(ang) * speed * RND(0.4, 1);
     }
-    this.parts.push({ group, mat, list, life, max: life, gravity: opts.gravity !== undefined ? opts.gravity : 14, drag: opts.drag || 2.6 });
+    const geo = new THREE.BufferGeometry();
+    const attr = new THREE.BufferAttribute(arr, 3);
+    attr.dynamic = true;
+    geo.setAttribute('position', attr);
+    const mat = new THREE.PointsMaterial({
+      color, size, sizeAttenuation: true,
+      transparent: true, opacity: 1, depthWrite: false,
+      blending: opts.additive ? THREE.AdditiveBlending : THREE.NormalBlending
+    });
+    const pts = new THREE.Points(geo, mat);
+    pts.frustumCulled = false;      // 顶点每帧在动，包围盒不更新，交给它自己判断反而会误剔
+    this.scene.add(pts);
+    this.parts.push({
+      obj: pts, geo, mat, attr, arr, vel, n: count,
+      life, max: life,
+      gravity: opts.gravity !== undefined ? opts.gravity : 14,
+      drag: opts.drag || 2.6
+    });
   },
 
   spark(pos, color = 0xffe0a0, count = 8) { this.burst(pos, color, count, { speed: 8, size: 0.07, life: 0.28, additive: true, gravity: 6 }); },
@@ -299,32 +474,70 @@ const FX = {
     this.zones.push({ mesh: m, mat, life: 0.2, max: 0.2, type: 'slash' });
   },
 
+  /**
+   * 生成一枚投射物。
+   * style: 'orb'（默认，法球）| 'talisman'（符咒）
+   * hitRadius: 命中判定半径，和视觉半径分开 —— 法球看起来只有 0.3，
+   *            但判定给 0.6 才不会「擦着模型飞过去」。
+   * homing: 一个 Vector3 引用（通常直接传 enemy.pos），有值就自动追踪。
+   */
   projectile(opts) {
     const r = opts.radius || 0.3;
     const col = opts.color || 0xffaa44;
-    const geo = sphGeo(r, 7);
-    const mat = new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.95 });
-    const m = new THREE.Mesh(geo, mat);
+    const style = opts.style || 'orb';
+    let m, mat, haloMat = null, haloMat2 = null;
+
+    if (style === 'talisman') {
+      /* 符咒：一张竖长符纸 + 背后一层加色光晕。
+       * 符纸始终朝向相机（billboard），旋转量只有绕视线的一点摆动，
+       * 这样无论从哪个角度看都能看清「这是一道符」，不会缩成一条线。
+       *
+       * 尺寸按角色身高反推：主角约 1.8 单位高，符纸取 0.64 高（约三分之一身）。
+       * 原先是 1.03 高，飞起来像举着一面幡，挡视野也挡怪物。 */
+      const scl = opts.scale || 1;
+      mat = new THREE.MeshBasicMaterial({
+        map: talismanTexture(), transparent: true, opacity: 1,
+        depthWrite: false, side: THREE.DoubleSide
+      });
+      m = new THREE.Mesh(fxPlane(0.40 * scl, 0.64 * scl), mat);
+      haloMat = new THREE.MeshBasicMaterial({
+        color: col, transparent: true, opacity: 0.42,
+        blending: THREE.AdditiveBlending, depthWrite: false
+      });
+      const glow = new THREE.Mesh(fxPlane(0.72 * scl, 0.98 * scl), haloMat);
+      glow.position.z = -0.01;
+      m.add(glow);
+    } else {
+      mat = new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.95 });
+      m = new THREE.Mesh(sphGeo(r, 7), mat);
+      /* 不再给投射物挂 PointLight。
+       * 场景里光源数量一变，three 就会把所有材质的 shader 重新编译一次，
+       * 战斗中不停发射/消失 → 每帧几百次重编译 → 这是「非常卡」的头号原因。
+       * 改用两层叠加光晕，视觉上几乎等价，成本只是两个精灵。
+       */
+      haloMat = new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.34, blending: THREE.AdditiveBlending, depthWrite: false });
+      m.add(new THREE.Mesh(sphGeo(r * 1.9, 6), haloMat));
+      haloMat2 = new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.13, blending: THREE.AdditiveBlending, depthWrite: false });
+      m.add(new THREE.Mesh(sphGeo(r * 3.4, 6), haloMat2));
+      if (opts.scale) m.scale.setScalar(opts.scale);
+    }
     m.position.copy(opts.pos);
-    /* 不再给投射物挂 PointLight。
-     * 场景里光源数量一变，three 就会把所有材质的 shader 重新编译一次，
-     * 战斗中不停发射/消失 → 每帧几百次重编译 → 这是「非常卡」的头号原因。
-     * 改用两层叠加光晕，视觉上几乎等价，成本只是两个精灵。
-     */
-    const haloMat = new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.34, blending: THREE.AdditiveBlending, depthWrite: false });
-    const halo = new THREE.Mesh(sphGeo(r * 1.9, 6), haloMat);
-    m.add(halo);
-    const haloMat2 = new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.13, blending: THREE.AdditiveBlending, depthWrite: false });
-    const halo2 = new THREE.Mesh(sphGeo(r * 3.4, 6), haloMat2);
-    m.add(halo2);
-    if (opts.scale) m.scale.setScalar(opts.scale);
     this.scene.add(m);
     const p = {
-      mesh: m, mat, haloMat, haloMat2, trailT: 0, pos: m.position, vel: opts.dir.clone().multiplyScalar(opts.speed || 18),
-      radius: r, life: opts.life || 2.4, team: opts.team || 'player',
+      mesh: m, mat, haloMat, haloMat2, trailT: 0, pos: m.position,
+      /* prevPos 是「上一帧的位置」，扫掠碰撞要用它和 pos 连成线段。
+       * 只在 update 里推进位置，碰撞判定在 Game.updateProjectiles 里做。 */
+      prevPos: m.position.clone(),
+      vel: opts.dir.clone().multiplyScalar(opts.speed || 18),
+      speed: opts.speed || 18,
+      radius: r, hitRadius: opts.hitRadius || r,
+      life: opts.life || 2.4, team: opts.team || 'player',
       dmg: opts.dmg || 10, onHit: opts.onHit, pierce: opts.pierce || false,
       trail: opts.trail !== false, color: opts.color || 0xffaa44, elem: opts.elem,
       knock: opts.knock || 0,
+      style, spin: Math.random() * 6.28, spinSpd: opts.spinSpd || 3.2,
+      homing: opts.homing || null, homeTurn: opts.homeTurn || 6,
+      hitSet: null,
       tag: opts.tag           // [S1] 伤害乘区标记，命中时由调用方取回
     };
     this.projectiles.push(p);
@@ -344,18 +557,25 @@ const FX = {
   },
 
   update(dt) {
-    // 粒子
+    // 粒子（THREE.Points：整组一个 draw call，位置在这里逐帧刷新）
     for (let i = this.parts.length - 1; i >= 0; i--) {
       const p = this.parts[i];
       p.life -= dt;
       p.mat.opacity = Math.max(0, p.life / p.max);
-      for (const q of p.list) {
-        q.v.y -= p.gravity * dt;
-        q.v.multiplyScalar(Math.max(0, 1 - p.drag * dt));
-        q.m.position.addScaledVector(q.v, dt);
+      const arr = p.arr, vel = p.vel, n = p.n;
+      const damp = Math.max(0, 1 - p.drag * dt);
+      const g = p.gravity * dt;
+      for (let k = 0; k < n * 3; k += 3) {
+        vel[k + 1] -= g;
+        vel[k] *= damp; vel[k + 1] *= damp; vel[k + 2] *= damp;
+        arr[k] += vel[k] * dt;
+        arr[k + 1] += vel[k + 1] * dt;
+        arr[k + 2] += vel[k + 2] * dt;
       }
+      p.attr.needsUpdate = true;
       if (p.life <= 0) {
-        this.scene.remove(p.group);
+        this.scene.remove(p.obj);
+        p.geo.dispose();
         p.mat.dispose();
         this.parts.splice(i, 1);
       }
@@ -410,7 +630,23 @@ const FX = {
     for (let i = this.projectiles.length - 1; i >= 0; i--) {
       const p = this.projectiles[i];
       p.life -= dt;
+      /* 记录推进前的位置：Game 的扫掠碰撞用它和 pos 连成线段，
+       * 否则高速投射物一帧跨过整只怪，判定点永远踩空。 */
+      p.prevPos.copy(p.pos);
+      if (p.homing) {
+        _vHome.set(p.homing.x - p.pos.x, 1.0 - p.pos.y, p.homing.z - p.pos.z);
+        if (_vHome.lengthSq() > 1e-6) {
+          _vHome.normalize().multiplyScalar(p.speed);
+          p.vel.lerp(_vHome, Math.min(1, p.homeTurn * dt));
+        }
+      }
       p.pos.addScaledVector(p.vel, dt);
+      if (p.style === 'talisman' && this.cam) {
+        /* 符纸永远正对镜头，只绕视线轴做小幅摆动，任何角度都能看清是张符 */
+        p.mesh.quaternion.copy(this.cam.quaternion);
+        p.spin += dt * p.spinSpd;
+        p.mesh.rotateZ(Math.sin(p.spin) * 0.34);
+      }
       // 拖尾按时间节流：原来每帧 70% 概率新建一组粒子，战斗中每秒几十次分配
       p.trailT = (p.trailT || 0) - dt;
       if (p.trail && p.trailT <= 0) {
@@ -447,7 +683,8 @@ const FX = {
     }
     this.zones.length = 0;
     for (const pa of this.parts) {
-      if (pa.group.parent) pa.group.parent.remove(pa.group);
+      if (pa.obj.parent) pa.obj.parent.remove(pa.obj);
+      pa.geo.dispose();
       pa.mat.dispose();
     }
     this.parts.length = 0;

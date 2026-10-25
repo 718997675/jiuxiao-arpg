@@ -1,0 +1,1355 @@
+/* ============================================================
+ * 技能面板（P1 · 从 ui.js 拆出来的）
+ *
+ * 为什么单独一个文件：
+ *   重构期间 dev-v3 与 feat/skill-refactor 两条线并行。技能面板马上要整个
+ *   换成树形画布，而 dev-v3 上仍可能修这里的小 bug。只要它还在 ui.js 里，
+ *   两条线就会撞同一段代码 —— 那是语义冲突，不是'选一边'能解决的。
+ *   文件级隔离之后，冲突最多是'这个文件谁改'，合并时选一边即可。
+ *
+ * 怎么挂上去：
+ *   下面用 Object.assign(UI, {...}) 把方法挂回同一个 UI 对象，
+ *   调用方（Game.onSkillChanged 等）完全不用改。加载顺序必须在 ui.js 之后。
+ *
+ * 面板结构（P1 第二步 · 操作全部并入树）：
+ *   ┌ 标题 / 可用点数 / 缩放百分比 ────────────────┐
+ *   │  树（左键加点 · 右键退点 · 滚轮缩放 · 拖拽平移）  说明卡（只读数，不放按钮）
+ *   ├ 未确认条（加了点才出现）─────────────────────┤
+ *   └ 技能条 8 格 · 甲乙两栏 ──────────────────────┘
+ *   右侧卡从「操作面板」降级成「说明书」：数值、描述、机制、分支，全是只读。
+ * ============================================================ */
+
+/* 技能树几何常量。
+ * 与 dev/preview-tree.html 顶部那份 G 是同一组数字 —— 预览页和正式面板
+ * 必须同源，否则「预览看着行、上线挤成一团」。 */
+const SKG = {
+  node: 46,        // 节点边长
+  rowH: 106,       // 行距
+  subGap: 112,     // 同系内：主动侧 → 被动侧
+  treeGap: 252,    // 系与系之间（主动侧到主动侧）
+  padX: 8,
+  padY: 30,
+  popW: 236        // 分支浮层宽度
+};
+
+Object.assign(UI, {
+  skTreeTab: null,     // 手机按系分页时当前是哪一系
+  skZoom: 1,           // 缩放 0.45 ~ 2
+  skZoomAuto: true,    // 没手动调过就按容器大小自动适配一档
+  skPop: null,         // 展开了分支浮层的技能 id
+  skBarOpen: false,    // 底部技能条是否展开（默认收起：它不是信息，是要用的时候才用的东西）
+
+  onSkillChanged() {
+    const p = document.getElementById('skillPanel');
+    if (p && p.classList.contains('open')) this.renderSkillPanel();
+    this.updateSkillbar();
+  },
+
+  /* 技能条配置变化（放技能 / 腾空）：动作条与术法面板一起重画 */
+  onSkillBarChanged() {
+    this.buildActionBar();
+    const p = document.getElementById('skillPanel');
+    if (p && p.classList.contains('open')) this.renderSkillPanel();
+  },
+
+  renderSkillPanel() {
+    const p = document.getElementById('skillPanel');
+    if (!p || !Game.state) return;
+    const s = Game.state;
+    const order = SKILL_ORDER[s.cls] || [];
+    const pts = Game.skillPoints();
+    /* 已投账本：等级点数与分支点数分开写，玩家能看出「点花在哪了」 */
+    const skState = Game.skillState();
+    let lvSpent = 0;
+    for (const sid in skState) lvSpent += Math.max(0, (skState[sid].lv || 1) - 1);
+    const brSpent = (typeof Game.branchSpent === 'function') ? Game.branchSpent() : 0;
+    /* [C3] 未确认改动条 */
+    const sdf = document.getElementById('skDraft');
+    if (sdf) sdf.innerHTML = this.draftBarHTML('skill');
+    /* [UNIQUE-3] 传世授予的秘技：不在本职业技能树里，树上也画不出，
+     * 所以只在选中时给一句说明（它们没有加点，只有「在不在身上」） */
+    const gmap = (s.stats && s.stats.grantedSkills) || {};
+    const grantedIds = Object.keys(gmap).filter(gid => SKILLS[gid] && order.indexOf(gid) < 0);
+    if (this.skPop && !SKILLS[this.skPop]) this.skPop = null;
+    if (!this.skSel || (!order.includes(this.skSel) && grantedIds.indexOf(this.skSel) < 0)) {
+      this.skSel = order[0];
+    }
+    /* 预览（skHover）可能是上一套树 / 上一个职业留下的 —— 换职业或换存档之后
+     * 它指向的技能已经不在这棵树上了，留着会让右侧卡显示一个「树上找不到」的技能 */
+    if (this.skHover && !SKILLS[this.skHover] && !(SKILL_TREE.passives || {})[this.skHover]) {
+      this.skHover = null;
+    }
+
+    let h = `<div class="sk-top">
+      <span id="skPtsTxt">可用技能点 <b>${pts}</b></span>
+      <span class="sk-spent" title="等级每升 1 级消耗 1 点；每条取向 1 点；精研与变体不消耗技能点">投入 ${lvSpent} 级 · 分支 ${brSpent}</span>
+      <span class="sk-respec"><button class="vb" id="skRespec" title="退光全部技能等级、取向与被动（阶梯收费，每洗一次涨一档）">洗点 ${Game.treeRespecFee ? Game.treeRespecFee() : '?'} 金</button></span>
+      <span class="sk-bdbtn"><button class="vb${this.skBuilds ? ' on' : ''}" id="skBuilds" aria-pressed="${this.skBuilds ? 'true' : 'false'}"
+        title="按当前存档算三套最省事的流派（契合度，不是强度榜）">推荐流派</button></span>
+      <span class="sk-zoom"><button class="vb" data-sktz="-1" title="缩小">−</button>
+        <span class="vhint skt-z">${Math.round((this.skZoom || 1) * 100)}%</span>
+        <button class="vb" data-sktz="1" title="放大">＋</button></span>
+      <span class="dim">滚轮缩放 · 按住拖动画布（四周留有余量）· 左键加 1 级 · 右键减 1 级 · 节点下方标记选择分支 · 节点可拖入技能条，条上格位可拖动换位</span>
+    </div>`;
+
+    h += this.skBuilds ? this.skBuildsHTML() : '';
+    h += '<div class="sk-body"><div class="sk-left">' + this.skTreeHTML() + '</div>';
+    h += this.skCardHTML(this.skShown()) + '</div>';
+    h += this.skBarHTML();
+
+    const list = document.getElementById('skList');
+    list.innerHTML = h;
+
+    /* ---------------- BD 推荐：开关与「切变体」 ---------------- */
+    const bdBtn = list.querySelector('#skBuilds');
+    if (bdBtn) bdBtn.addEventListener('click', () => {
+      this.skBuilds = !this.skBuilds;
+      SFX.ui();
+      this.renderSkillPanel();
+    });
+    const bdClose = list.querySelector('#skBdClose');
+    if (bdClose) bdClose.addEventListener('click', () => {
+      this.skBuilds = false;
+      SFX.ui();
+      this.renderSkillPanel();
+    });
+    /* 「切到「疾风」」= 只切变体。加点和被动不代劳 —— 花点是不可逆的，
+     * 面板给出清单，让玩家自己决定要不要花。 */
+    list.querySelectorAll('[data-bform]').forEach(el => {
+      el.addEventListener('click', () => {
+        const r = Game.applyBuildForm(el.dataset.bform);
+        this.toast(r.msg, r.ok ? '' : 'bad');
+        if (r.ok) { SFX.ui(); this.renderSkillPanel(); }
+      });
+    });
+
+    /* ---------------- 树：指针 / 键盘操作 ---------------- */
+    const touch = (typeof IS_TOUCH !== 'undefined' && IS_TOUCH) || window.innerWidth < 780;
+    list.querySelectorAll('.skt-nd').forEach(el => {
+      const id = el.dataset.skpick;
+      if (id) {
+        /* PC：悬停预览（右侧卡跟着走，但只是预览 —— 见 hoverSkill）；
+         * 点击 = 钉住这个技能 + 加 1 级。悬停走 document 上的 mouseover，
+         * 这里不再逐个绑（重画一次就全丢，是上一版的老毛病）。 */
+        el.addEventListener('click', () => {
+          if (this._panMoved) return;              // 刚才是拖画布，不是点节点
+          this.selectSkill(id);
+          if (!Game.skillUnlocked(id)) {
+            this.toast('「' + SKILLS[id].name + '」需 ' + SKILLS[id].unlock + ' 级领悟');
+            return;
+          }
+          if (touch) return;                       // 触屏：点只选中，下方浮出 ＋ / −
+          this.skillStep(id, true);
+        });
+        el.addEventListener('contextmenu', e => {
+          e.preventDefault();
+          if (this._panMoved || !Game.skillUnlocked(id)) return;
+          this.skillStep(id, false);
+        });
+      } else {
+        /* [P2] 被动 / 关键被动：真投点（左 +1 / 右 −1，走草稿确认），
+         * 门槛与「待接」双拦 —— 没实现的被动和没实现的取向一样不给花点 */
+        const pid = el.dataset.sktpas;
+        const nm = el.dataset.sktname || '被动';
+        const pasStep = up => {
+          if (this._panMoved) return;
+          if (Game.passiveImplemented && !Game.passiveImplemented(pid)) {
+            this.toast('「' + nm + '」的增益还没接入'); return;
+          }
+          if (up && !Game.passiveUnlocked(pid)) {
+            this.toast('「' + nm + '」需 ' + Game.passiveUnlockLv(pid) + ' 级'); return;
+          }
+          const had = this.snapDirty('skill');
+          this.snapTake('skill');
+          const r = up ? Game.levelUpPassive(pid) : Game.levelDownPassive(pid);
+          if (!r.ok) {
+            if (!had && this.snaps) delete this.snaps.skill;
+            this.toast(r.msg, up ? 'bad' : '');
+            return;
+          }
+          SFX.ui();
+          this.renderSkillPanel();
+        };
+        el.addEventListener('click', () => {
+          this.selectSkill(pid);
+          if (touch) return;                       // 触屏：点只选中看卡
+          pasStep(true);
+        });
+        el.addEventListener('contextmenu', e => {
+          e.preventDefault();
+          pasStep(false);
+        });
+      }
+    });
+
+    /* 节点下三个小记号 → 就地展开分支浮层（不跳右侧） */
+    list.querySelectorAll('[data-mark]').forEach(el => {
+      el.addEventListener('click', e => {
+        e.stopPropagation();
+        if (this._panMoved) return;
+        const id = el.dataset.mark;
+        this.skSel = id;
+        this.skHover = null;          // 点开分支 = 明确指定这个技能，预览让位
+        this.skPop = (this.skPop === id) ? null : id;
+        SFX.ui();
+        this.renderSkillPanel();
+      });
+    });
+    /* 说明书卡上的三条变体（点哪条切哪条）走「委托」，见 bindTreeNav 里那段
+     * 说明 —— 卡会被 selectSkill 整块换掉，逐个绑事件的写法活不过一次悬停。
+     * 换变体的口径统一在 UI.applyVariantForm()。 */
+    /* 节点下的变体名：点一下切到下一个「能用的」变体（免费、不用开浮层）。
+     * form 通道里待接 / 前提不满足的条目会跳过，不会切到一个点不动的死条。 */
+    list.querySelectorAll('[data-vnext]').forEach(el => {
+      el.addEventListener('click', e => {
+        e.stopPropagation();
+        if (this._panMoved) return;
+        const id = el.dataset.vnext;
+        if (!SKILLS[id]) return;
+        const view = this.skillFormView(id);
+        if (!view) return;
+        /* 往后找第一个「点得动」的变体：待接 / 前提不满足的跳过，
+         * 三圈都不可用就停在原地（不硬切到一条没实现的） */
+        let nx = view.idx;
+        for (let k = 1; k <= 3; k++) {
+          const i = (view.idx + k) % 3;
+          const it = view.items[i];
+          if (it && !(it.pending || []).length && it.condOk) { nx = i; break; }
+        }
+        if (this.applyVariantForm(id, nx)) this.renderSkillPanel();
+      });
+    });
+    list.querySelectorAll('[data-popx]').forEach(el => {
+      el.addEventListener('click', e => {
+        e.stopPropagation();
+        this.skPop = null;
+        this.renderSkillPanel();
+      });
+    });
+    /* 浮层里的变体三选一（新 form 通道或旧 variants，都能真生效） */
+    list.querySelectorAll('[data-form]').forEach(b => {
+      b.addEventListener('click', e => {
+        e.stopPropagation();
+        const [sid, vi] = b.dataset.form.split(':');
+        if (this.applyVariantForm(sid, parseInt(vi, 10))) this.renderSkillPanel();
+      });
+    });
+    /* 浮层里的取向二选一：花 1 点，走草稿，确认才落盘。
+     * 逻辑与卡片上的取向行共用 UI.skillPickBranch，别在这里再写一份。 */
+    list.querySelectorAll('[data-pick]').forEach(b => {
+      b.addEventListener('click', e => {
+        e.stopPropagation();
+        const [sid, vi] = b.dataset.pick.split(':');
+        this.skillPickBranch(sid, parseInt(vi, 10));
+      });
+    });
+
+    /* 选中节点下方的 ＋ / −（触屏唯一路径；PC 上是个可点的显式入口）
+     * —— 同时是 dev/probe-draft.js 的稳定选择器 */
+    list.querySelectorAll('[data-sklv]').forEach(b => b.addEventListener('click', e => {
+      e.stopPropagation();
+      this.skillStep(b.dataset.sklv, true);
+    }));
+    list.querySelectorAll('[data-sklvd]').forEach(b => b.addEventListener('click', e => {
+      e.stopPropagation();
+      this.skillStep(b.dataset.sklvd, false);
+    }));
+
+    /* 手机按系分页 */
+    list.querySelectorAll('[data-skttree]').forEach(b => b.addEventListener('click', () => {
+      this.skTreeTab = b.dataset.skttree;
+      SFX.ui();
+      this.renderSkillPanel();
+    }));
+
+    /* 底部技能条：点格子把当前选中术法放上去；右键腾空 */
+    list.querySelectorAll('[data-skbar]').forEach(b => b.addEventListener('click', () => {
+      const i = parseInt(b.dataset.skbar, 10);
+      const cur = Game.skillBar()[i];
+      const r = (cur && cur === this.skSel)
+        ? Game.unassignSkillBar(i)
+        : Game.assignSkillBar(i, this.skSel);
+      if (r.ok) SFX.ui();
+      else this.toast(r.msg, 'bad');
+    }));
+    list.querySelectorAll('[data-skbar]').forEach(b => b.addEventListener('contextmenu', e => {
+      e.preventDefault();
+      const r = Game.unassignSkillBar(parseInt(b.dataset.skbar, 10));
+      if (r.ok) SFX.ui();
+    }));
+    /* 传世秘技：不在树上，只能从条边上那一排选 */
+    list.querySelectorAll('.sb-grant [data-skpick]').forEach(b => b.addEventListener('click', () => {
+      this.skSel = b.dataset.skpick;
+      this.skHover = null;
+      SFX.ui();
+      this.renderSkillPanel();
+    }));
+    /* 技能条展开 / 收起 */
+    list.querySelectorAll('[data-skbartog]').forEach(b => b.addEventListener('click', () => {
+      this.skBarOpen = !this.skBarOpen;
+      SFX.ui();
+      this.renderSkillPanel();
+    }));
+    /* [M1] 切快捷栏（甲 / 乙） */
+    list.querySelectorAll('[data-skset]').forEach(b => b.addEventListener('click', () => {
+      Game.switchBarSet(parseInt(b.dataset.skset, 10));
+      SFX.ui();
+    }));
+
+    /* 缩放按钮（滚轮之外的手动入口） */
+    list.querySelectorAll('[data-sktz]').forEach(b => b.addEventListener('click', () => {
+      const d = parseInt(b.dataset.sktz, 10) || 0;
+      this.skZoomAuto = false;
+      this.skZoom = this.clampZoom((this.skZoom || 1) + d * 0.1);
+      this.renderSkillPanel();
+    }));
+
+    /* [P2] 技能树洗点：两段式确认（照天赋洗点的交互），洗后草稿作废 */
+    const rb = document.getElementById('skRespec');
+    if (rb) rb.addEventListener('click', () => {
+      if (!this._skRespecArm) {
+        this._skRespecArm = true;
+        rb.textContent = '确认扣除 ' + Game.treeRespecFee() + ' 金？';
+        rb.classList.add('danger');
+        clearTimeout(this._skRespecTimer);
+        this._skRespecTimer = setTimeout(() => {
+          this._skRespecArm = false;
+          this.renderSkillPanel();
+        }, 3000);
+        return;
+      }
+      this._skRespecArm = false;
+      clearTimeout(this._skRespecTimer);
+      const r = Game.respecTree();
+      /* 洗点把已投的点全退了，未确认的草稿就没意义了（否则确认后又加回去） */
+      if (this.snaps) delete this.snaps.skill;
+      this.toast(r.msg, r.ok ? '' : 'bad');
+      this.renderSkillPanel();
+    });
+
+    /* 树视图：插进 DOM 之后才量得到容器大小 */
+    requestAnimationFrame(() => this.fitSkillTree());
+  },
+
+  /* ---------------- BD 推荐（P4） ----------------
+   * 三张卡：契合度最高的三套流派。它回答的是「我现在这套离哪套最近」，
+   * 不是「哪套最强」—— 没有 DPS 模拟就别假装有强度榜。
+   * 卡片上只放一个能一键做的事：切变体（免费）。加点和被动留成清单，
+   * 因为花技能点是不可逆的决定（洗点要收钱）。 */
+  skBuildsHTML() {
+    const list = (typeof Game.recommendBuilds === 'function') ? Game.recommendBuilds(3) : [];
+    if (!list.length) {
+      return '<div class="sk-bd"><div class="sk-bd-h">推荐流派<em>本职业还没有流派模板</em></div></div>';
+    }
+    const cards = list.map((it, rank) => {
+      const b = it.build;
+      const sk = SKILLS[b.skill] || {};
+      const pk = (typeof buildPickName === 'function') ? buildPickName(b) : '';
+      const fm = (typeof buildFormName === 'function') ? buildFormName(b) : '';
+      const parts = (it.parts || []).map(p =>
+        `<span title="${p.label}：${p.got}/${p.max}">${p.label} <b>${p.got}</b></span>`).join('');
+      const miss = it.missing.length
+        ? `<div class="bd-miss">还差：${it.missing.slice(0, 4).join(' · ')}${it.missing.length > 4 ? ' …' : ''}</div>`
+        : '<div class="bd-miss ok">已经完全对上了，直接打就行</div>';
+      /* 变体按钮：只有技能到 5 级才亮。没到就说明「差在哪」，
+       * 而不是给一个点了报错的按钮。 */
+      const canForm = (Game.skillLevel(b.skill) >= (SKILL_TREE.formAt || 5));
+      const curForm = Game.skillVariant(b.skill);
+      const formBtn = curForm === b.form
+        ? '<button class="vb" disabled>已是「' + fm + '」</button>'
+        : canForm
+          ? `<button class="vb" data-bform="${b.id}">切到「${fm}」</button>`
+          : `<button class="vb" disabled>${SKILL_TREE.formAt || 5} 级可切「${fm}」</button>`;
+      return `<div class="bd-card${rank === 0 ? ' top' : ''}">
+        <div class="bd-top"><b>${b.name}</b>
+          <span class="bd-fit" title="${parts.replace(/<[^>]+>/g, ' ')}">${it.fit}<i>%</i></span></div>
+        <div class="bd-bar"><i style="width:${it.fit}%"></i></div>
+        <div class="bd-line">${sk.name || b.skill}${pk ? ' · ' + pk : ''}${fm ? ' · ' + fm : ''}</div>
+        <div class="bd-why">${b.tagline}</div>
+        ${miss}
+        <div class="bd-act">${formBtn}
+          <span class="bd-steps" title="${(b.steps || []).join(' → ')}">${(b.steps || []).length} 步打法</span></div>
+      </div>`;
+    }).join('');
+    return `<div class="sk-bd">
+      <div class="sk-bd-h">推荐流派 <em>按当前存档实时计算 · 契合度为接近程度而非强度排名 · 卡片内仅支持一键切换变体</em>
+        <button class="vb" id="skBdClose">收起</button></div>
+      <div class="sk-bd-list">${cards}</div></div>`;
+  },
+
+  /* ---------------- 换变体（三个入口共用一个口径） ----------------
+   * 入口有三处：树上那行变体名（data-vnext）、节点浮层三条（data-form）、
+   * 说明书卡三行（data-vset）。三处必须走同一段逻辑 —— 各写一份的话，
+   * 「待接 / 前提不满足」这类校验迟早会在某一处漏掉。
+   *
+   * 为什么卡上那三行用「委托」而不是逐个 addEventListener：
+   * selectSkill() 悬停换选中时把 .sk-right 整个 outerHTML 换掉，
+   * 新卡上的按钮是全新元素，逐个绑的事件跟着旧节点一起没了。
+   * 玩家看到的症状就是「变体有时候点不动」：先悬停碰过别的节点、
+   * 或者重开面板时鼠标正好压在某个节点上（浏览器会给新挪过来的元素补一次
+   * mouseenter），卡上那三行就再也点不亮 —— 而树上那行变体名还是好的，
+   * 所以看起来像「时灵时不灵」。委托挂在一直不换的 #skList 上，换多少次卡都在。 */
+  applyVariantForm(id, idx) {
+    const view = this.skillFormView(id);
+    if (!view) return false;
+    if (view.idx === idx) return false;      // 点的是「当前」那条：什么都不做
+    const r = Game.setSkillForm(id, idx);
+    this.toast(r.msg, r.ok ? '' : 'bad');
+    if (!r.ok) return false;
+    SFX.ui();
+    return true;
+  },
+
+  /* ---------------- 选取向（两个入口共用一个口径） ----------------
+   * 入口：节点浮层两条（data-pick）、说明书卡两条（data-pset）。
+   * 取向要花技能点，所以必须走「草稿 → 确认」，不能直接落盘。
+   * 点已经选中的那一条 = 退掉（点数返还）。 PICK-ROW-CLICKABLE */
+  skillPickBranch(id, idx) {
+    const cur = Game.branchPick(id);
+    const had = this.snapDirty('skill');
+    this.snapTake('skill');
+    const r = Game.setBranchPick(id, idx === cur ? -1 : idx);
+    if (!r.ok) {
+      if (!had && this.snaps) delete this.snaps.skill;
+      this.toast(r.msg, 'bad');
+      return false;
+    }
+    SFX.ui();
+    this.toast(r.msg);
+    this.renderSkillPanel();
+    return true;
+  },
+
+  /* ---------------- 变体视图 ----------------
+   * 只有一条通道：SKILL_TREE.branches[id].form（三层里的第三层）。
+   * 旧 SKILLS[id].variants 在 P3 收尾后不再参与任何结算，所以这里也不再有
+   * 「两套变体二选一」的判断 —— 一份数据、一个口径，面板与战斗不会脱节。
+   * 返回 { kind, idx, items[] }，卡片和节点都读它，不各写一套。 */
+  skillFormView(id) {
+    const sk = SKILLS[id];
+    if (!sk) return null;
+    const br = (typeof skillBranches === 'function') ? skillBranches(id) : null;
+    if (!br || !br.form.length) return { kind: 'form', idx: 0, items: [] };
+    const idx = (typeof Game.skillForm === 'function') ? Game.skillForm(id) : 0;
+    const st = Game.state && Game.state.stats;
+    return {
+      kind: 'form', idx,
+      items: br.form.map((o, i) => ({
+        i, name: o.name, desc: o.desc, on: i === idx,
+        pending: (typeof skillFormPending === 'function') ? skillFormPending(o) : [],
+        condOk: (typeof skillFormCondOk === 'function') ? skillFormCondOk(o, st) : true,
+        cond: o.cond || null,
+        /* 有 beh 就是「改打法」，只有 mods 是「改数字」—— 三层分支里
+         * 这一栏要让人一眼分清，不然三条看起来都一样 */
+        mechLabel: (o.beh && Object.keys(o.beh).length) ? '改打法' : null,
+        /* [P4] 这条变体施法时是什么样子（风格字 + 主色）。
+         * 纯数值变体返回plain，面板不显示 —— 不给它硬安光效。 */
+        fx: (typeof skillFormFx === 'function') ? skillFormFx(id, i) : null
+      }))
+    };
+  },
+
+  /* ---------------- 右侧说明书 ----------------
+   * 只读：数值 / 描述 / 机制 / 分支。操作全在树上，这里不放按钮。 */
+  skCardHTML(id) {
+    const s = Game.state;
+    const sk = SKILLS[id];
+    /* [P2] 被动 / 关键被动有自己的说明书卡 */
+    if (!sk && SKILL_TREE.passives && SKILL_TREE.passives[id]) return this.skPassiveCardHTML(id);
+    if (!sk) return '<div class="sk-right"><div class="vhint">这个方向还没有术法</div></div>';
+    /* 两个等级，别混：
+     *   lv   等阶 —— 打起来是几级（已投 + 装备 / 命格 / 传世的「+技能等级」）
+     *   inv  已投 —— 技能点花了几级，分支（精研 / 取向）的门槛只看这个
+     * 只显示 lv 会出现玩家最常问的那句：「我技能都 3 级了，怎么还不让选取向」
+     * —— 那 3 级里有一级是装备给的。所以两个都要写出来。 LEVEL-INVESTED-PATCH */
+    const lv = Game.skillLevel(id);
+    const inv = ((Game.skillState()[id] || {}).lv) || 1;
+    const lvBonus = Math.max(0, lv - inv);
+    const view = this.skillFormView(id);
+    const locked = !Game.skillUnlocked(id);
+    const isGrant = (SKILL_ORDER[s.cls] || []).indexOf(id) < 0;
+    /* 预览伤害：攻击力 × 倍率 ×（变体 + 等级 + 分支）。
+     * 必须与 Game.effSkillMods(id) 同口径 —— 卡上算一套、施法算另一套，
+     * 玩家就会遇到「面板说 +30%，打出来没变」。 */
+    const smod = mergeSkillMods(Game.skillMod(id),
+      (typeof Game.branchMods === 'function' ? Game.branchMods(id) : null),
+      (typeof Game.formMods === 'function' ? Game.formMods(id) : null));
+    const lvMul = 1 + SKILL_LV_STEP * (lv - 1);
+    const spow = (smod ? 1 + (smod.dmg || 0) / 100 : 1) * lvMul;
+    const dmgTxt = Math.round(s.stats.atk * sk.mult * spow);
+    const desc = (sk.desc || '').replace(/\{dmg\}/g, '<b style="color:#ffe9a8">' + dmgTxt + '</b>');
+    const castTxt = sk.cast === 'ground' ? '指定位置' : sk.cast === 'dir' ? '指定方向' : sk.cast === 'enemy' ? '自动索敌' : '自身';
+    const pips = Array.from({ length: SKILL_LV_MAX }, (_, i) => `<span class="sk-pip ${i < inv ? 'on' : ''}"></span>`).join('');
+
+    /* 标签：装备词缀按这些标签生效，所以摆在卡上（BD 的另一半） */
+    const tg = (typeof skillTags === 'function') ? skillTags(id) : [];
+    const tags = tg.length
+      ? `<div class="sd-tags">${tg.map(t => `<i class="tg ${skillTagKind(t) || ''}">${SKILL_TREE.tagName[t] || t}</i>`).join('')}</div>`
+      : '';
+
+    /* 三条分支：精研（自动）/ 取向（二选一 · 1 点）/ 变体（三选一 · 免费）。
+     * 卡上写的是「你现在拥有什么、还能怎么换」，不是「以后会有什么」。
+     * 变体这一格是可以直接点的（树上节点下的小记号是同一个入口）。 */
+    const br = (typeof skillBranches === 'function') ? skillBranches(id) : null;
+    const at = SKILL_TREE.pickAt || 3;      // inv 已在上面算过（已投等级）
+    const coreOn = (typeof skillBranchCoreOn === 'function') && skillBranchCoreOn(inv);
+    const pk = (typeof Game.branchPick === 'function') ? Game.branchPick(id) : -1;
+    const rd = (typeof Game.branchReady === 'function') ? Game.branchReady(id) : { core: true, pick: [] };
+
+    let rows = '';
+    if (br) {
+      const coreTxt = br.core
+        ? `<b>${br.core.name}</b><em>${br.core.desc}</em>` +
+          (coreOn ? (rd.core ? '<i class="sd-tag on">已生效</i>' : '<i class="sd-tag na">尚未实现</i>')
+            : `<i class="sd-tag">${at} 级自动</i>`)
+        : '—';
+      rows += `<div><span class="sb-k">精研</span>${coreTxt}</div>`;
+      /* 取向：二选一 · 1 点。卡上也必须能点。
+       * 以前这里只有一行纯文字，入口全靠「树上节点下的小记号」——
+       * 玩家最常干的事就是反复点节点（每点一次 +1 级），
+       * 于是就会出现那句：「我技能都 4 级了，怎么还是选不了取向」。
+       * 三条分支在卡上长得一样、点得一样，才不会再有这个误解。 PICK-ROW-CLICKABLE */
+      if (br.pick.length) {
+        const pCost = SKILL_TREE.branchCost.pick;
+        const pPts = Game.skillPoints();
+        const pItems = br.pick.map((o, i) => {
+          const on = pk === i;
+          const ready = !rd || !rd.pick || rd.pick[i];
+          const notYet = !ready ? false : inv < at;
+          const poor = ready && !on && pk < 0 && pPts < pCost;
+          const dis = !ready || notYet || poor;
+          let tail = '';
+          if (!ready) {
+            const pend = (rd && rd.pending && rd.pending[i]) || [];
+            tail = `<i class="sd-tag na" title="尚未实现：${pend.join(' / ')}">未开放</i>`;
+          } else if (notYet) {
+            tail = `<i class="sd-tag">尚需 ${at - inv} 级</i>`;
+          } else if (on) {
+            tail = '<i class="sd-tag on">已选</i>';
+          } else if (poor) {
+            tail = '<i class="sd-tag na">技能点不足</i>';
+          } else if (pk >= 0) {
+            tail = `<i class="sd-tag">换向 · 不另计点</i>`;
+          } else {
+            tail = `<i class="sd-tag">${pCost} 点</i>`;
+          }
+          let tip = '';
+          if (notYet) tip = `投入等级 ${inv}：需达到 ${at} 级方可选择（装备与命格的等级加成不计入投入等级${lvBonus ? '；当前等阶 ' + (inv + lvBonus) : ''}）`;
+          else if (poor) tip = `技能点不足：选取取向需 ${pCost} 点，当前 ${pPts} 点`;
+          else if (!ready) tip = '该条目尚未实现';
+          else if (on) tip = '取消该取向并返还点数';
+          else tip = '选择「' + o.name + '」（' + (pk >= 0 ? '换向不另计点' : '消耗 ' + pCost + ' 点，需确认') + '）';
+          return `<button class="sb-v sb-p${on ? ' on' : ''}${dis ? ' na' : ''}" data-pset="${id}:${i}"
+            aria-pressed="${on ? 'true' : 'false'}" title="${tip}" ${dis ? 'disabled' : ''}>
+            <b>${o.name}</b><em>${o.desc}</em>${tail}</button>`;
+        }).join('');
+        rows += `<div class="sb-vwrap sb-pwrap"><span class="sb-k">取向</span>
+          <div class="sb-vlist sb-plist">${pItems}</div>
+          <em class="sb-vhint">二选一 · 消耗 ${pCost} 点 · 已选项可取消并返还点数</em></div>`;
+      }
+    }
+    /* 变体：三选一、随时可换、不花点。三条描述全列出来 ——
+     * 只摆三个名字，玩家还得挨个切过去才知道换的是什么。
+     * 这三行本身就能点（切到那一条）；节点下的变体名是同一个入口的快捷方式。
+     * form 通道里没接完的那条标「待接」且点不动 —— 不许「点了没反应」。 */
+    const vItems = (view ? view.items : []).map(it => {
+      const on = it.on;
+      const na = it.pending && it.pending.length;
+      const condNo = !na && it.condOk === false;
+      const dis = locked || na || condNo;
+      let tail = '';
+      if (na) {
+        tail = `<i class="sd-tag na" title="尚未实现：${it.pending.join(' / ')}">未开放</i>`;
+      } else if (condNo) {
+        const need = it.cond && it.cond.rageMax ? '怒气上限 ' + it.cond.rageMax : '前提不足';
+        tail = `<i class="sd-tag na" title="${need}">需 ${need}</i>`;
+      } else if (on) {
+        tail = '<i class="sd-tag on">当前</i>';
+      }
+      if (on && it.mechLabel) tail += `<i class="sd-mech">机制 · ${it.mechLabel}</i>`;
+      /* 这条变体的特效风格（施法时就是这个颜色）。摆名字旁边是为了让
+       * 「我换的是打法不是数字」这件事在面板上也成立。 */
+      const fxc = it.fx && it.fx.key !== 'plain'
+        ? '#' + ('000000' + it.fx.color.toString(16)).slice(-6) : '';
+      const fxChip = fxc ? `<i class="sd-fx" style="color:${fxc};border-color:${fxc}44">${it.fx.name}</i>` : '';
+      return `<button class="sb-v${on ? ' on' : ''}${dis ? ' na' : ''}" data-vset="${id}:${it.i}"
+        aria-pressed="${on ? 'true' : 'false'}"
+        title="${na ? '尚未实现：' + it.pending.join(' / ') : condNo ? '前提不满足' : on ? '当前变体' : '切换至 ' + ['Ⅰ', 'Ⅱ', 'Ⅲ'][it.i] + ' ' + it.name}"
+        ${dis ? 'disabled' : ''}>
+        <b>${['Ⅰ', 'Ⅱ', 'Ⅲ'][it.i]} ${it.name}</b><em>${it.desc}</em>${tail}${fxChip}</button>`;
+    }).join('');
+    rows += `<div class="sb-vwrap"><span class="sb-k">变体</span>
+      <div class="sb-vlist">${vItems}</div>
+      <em class="sb-vhint">${view && view.kind === 'form'
+        ? '三选一 · 可随时切换 · 不消耗技能点'
+        : '三选一 · 可随时切换 · 不消耗技能点'}</em></div>`;
+    const branch = `<div class="sd-branch">${rows}
+        <div class="dim2">${inv < at
+          ? '投入等级 ' + inv + ' · 达到 ' + at + ' 级自动获得精研并开放取向'
+            + (lvBonus ? '（装备的 +' + lvBonus + ' 级不算门槛）' : '')
+          : '取向与变体均可直接点选；节点下方标记为同一入口'}</div>
+      </div>`;
+
+    return `<div class="sk-right">
+      <div class="sd-head"><span class="sd-ico">${skillIconSvg(id, 30)}</span>
+        <div><div class="sd-name">${sk.name}${isGrant ? '<span class="sk-lock gr">传世秘技</span>' : (locked ? `<span class="sk-lock">${sk.unlock} 级领悟</span>` : '')}</div>
+        <div class="sd-sub">${sk.tree} · ${isGrant ? '传世授予（脱下即失去）' : (locked ? '未领悟'
+          : '等阶 ' + lv + (lvBonus ? '（投入 ' + inv + ' · 加成 +' + lvBonus + '）' : ''))}</div></div></div>
+      ${tags}
+      <div class="sd-desc">${desc}</div>
+      <div class="sd-meta">消耗 ${Game.skillCost(sk)} · 冷却 ${Game.skillCd(sk).toFixed(1)}s · ${castTxt}${sk.castRange ? ' · ' + sk.castRange + ' 码' : ''}</div>
+      <div class="sd-lv"><div class="sk-pips">${pips}</div>
+        <span class="sk-lvt">投入 <b>${inv}</b>/${SKILL_LV_MAX}${lvBonus ? ' · 装备 +' + lvBonus : ''}</span></div>
+      ${branch}
+      <div class="sd-hintline">${locked ? '领悟后可分配技能点' : '左键加 1 级 · 右键减 1 级 · 节点标记选择分支'}${inv > 1 ? ' · 已分配 ' + (inv - 1) + ' 点' : ''}</div>
+    </div>`;
+  },
+
+  /* [P2] 被动 / 关键被动的说明书卡：数值实时读，增益来源写清楚 */
+  skPassiveCardHTML(id) {
+    const def = SKILL_TREE.passives[id];
+    const info = (typeof skillPassiveInfo === 'function') ? skillPassiveInfo(id) : null;
+    const lv = Game.passiveLv(id);
+    const locked = !Game.passiveUnlocked(id);
+    const na = Game.passiveImplemented && !Game.passiveImplemented(id);
+    const max = def.max || 1;
+    const pips = Array.from({ length: max }, (_, i) => `<span class="sk-pip ${i < lv ? 'on' : ''}"></span>`).join('');
+    const ico = `<svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor"
+      stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${SKILL_TREE.icons[def.icon || (info && info.key ? 'key' : 'passive')] || ''}</svg>`;
+    const stLine = locked
+      ? `${info ? info.unlock : 1} 级解锁（与「${info && SKILLS[info.active] ? SKILLS[info.active].name : '同岔口主动'}」同门槛）`
+      : na ? '增益尚未接入 · 暂不可分配' : `投入 ${lv} 级 · 每级 1 点`;
+    return `<div class="sk-right">
+      <div class="sd-head"><span class="sd-ico">${ico}</span>
+        <div><div class="sd-name">${def.name}<span class="sk-lock ${info && info.key ? 'gr' : ''}">${info && info.key ? '关键被动 · 限 1 点' : '被动'}</span></div>
+        <div class="sd-sub">${info ? info.tree + ' · ' : ''}与「${info && SKILLS[info.active] ? SKILLS[info.active].name : '同岔口主动'}」同一道岔口</div></div></div>
+      <div class="sd-desc">${def.desc}</div>
+      <div class="sd-lv"><div class="sk-pips">${pips}</div><span class="sk-lvt"><b>${lv}</b>/${max}</span></div>
+      <div class="sd-meta">${stLine}</div>
+      <div class="sd-hintline">${na ? '尚未实现 · 暂不可分配' : locked ? '解锁后左键加 1 级 · 右键减 1 级' : '左键加 1 级 · 右键减 1 级 · 经过「未确认」条'}</div>
+    </div>`;
+  },
+
+  /* ---------------- 选中：点击「钉住」+ 悬停「预览」 ----------------
+   * 为什么要有两个状态（skSel / skHover）：
+   * 右侧说明书卡就在树的右边，鼠标从节点移过去**必然扫过中间那一列节点**。
+   * 早先的做法是「悬停 = 直接改选中」，于是：
+   *   · 扫过被动节点时卡被换成一张小得多的被动卡 —— 看着像「面板消失了」；
+   *   · 扫过别的主动时卡换成了别的技能，到了右边点变体，切的是那个技能的
+   *     变体 —— 看着像「变体切换不了」（其实是切错了对象）。
+   * 现在：点击钉住（skSel），悬停只是预览（skHover），指针离开树就回位。
+   * 玩家点过谁，右边就一直是谁，中间飘过的节点只借来看一眼。 */
+
+  /* 当前该展示谁：有预览就展示预览，否则展示钉住的那个 */
+  skShown() {
+    const h = this.skHover;
+    if (h && (SKILLS[h] || (SKILL_TREE.passives || {})[h])) return h;
+    return this.skSel;
+  },
+
+  /* 只重画高亮与说明书卡，不整块重建（否则鼠标一停下 hover 就丢） */
+  paintSel() {
+    const list = document.getElementById('skList');
+    if (!list) return;
+    const id = this.skShown();
+    list.querySelectorAll('.skt-nd.sel').forEach(n => n.classList.remove('sel'));
+    const el = list.querySelector('.skt-nd[data-sktpas="' + id + '"]')
+      || list.querySelector('.skt-nd.act[data-skpick="' + id + '"]');
+    if (el) el.classList.add('sel');
+    const card = list.querySelector('.sk-right');
+    /* 整块换掉卡。代价：新卡上的按钮没有绑定 —— 所以卡上的变体三行用
+     * 委托（bindTreeNav），这里不需要也不应该再补绑。 */
+    if (card) card.outerHTML = this.skCardHTML(id);
+    const hint = list.querySelector('.sb-hint');
+    if (hint) hint.textContent = this.skBarHint();
+  },
+
+  /* 点击 = 钉住（同时清掉预览） */
+  selectSkill(id) {
+    this.killHoverTimer();
+    const same = (this.skSel === id) && !this.skHover;
+    this.skSel = id;
+    this.skHover = null;
+    if (!same) this.paintSel();
+  },
+
+  /* 悬停 = 预览。触摸设备不预览（没有「悬停」这回事，点了才算）。
+   * 要「停住 260ms」才真的换卡：鼠标从节点移向右边说明书卡的这段路上
+   * 必然扫过中间那一列节点（几百像素、好几个节点），掠过就换卡会让人以为
+   * 「卡消失了 / 卡变了」。停住不动才预览 —— 想看一眼别的技能照样看得到。 */
+  hoverSkill(id) {
+    const touch = (typeof IS_TOUCH !== 'undefined' && IS_TOUCH) || window.innerWidth < 780;
+    if (touch) return;
+    this.killHoverTimer();
+    if (this.skSel === id) {            // 悬停回自己：撤掉预览，卡回到钉住的那个
+      if (this.skHover) { this.skHover = null; this.paintSel(); }
+      return;
+    }
+    if (this.skHover === id) return;
+    this._skHoverT = setTimeout(() => {
+      this._skHoverT = null;
+      if (this.skSel === id) return;
+      this.skHover = id;
+      this.paintSel();
+    }, 260);
+  },
+
+  killHoverTimer() {
+    if (this._skHoverT) { clearTimeout(this._skHoverT); this._skHoverT = null; }
+  },
+
+  /* 指针离开树（去右边看卡 / 点变体）：预览作废，卡回到钉住的那个 */
+  clearHover() {
+    this.killHoverTimer();
+    if (!this.skHover) return;
+    this.skHover = null;
+    this.paintSel();
+  },
+
+  skBarHint() {
+    const id = this.skSel;
+    if (!id) return '先点一个术法';
+    if (!SKILLS[id]) {
+      if (SKILL_TREE.passives && SKILL_TREE.passives[id]) return '被动不占技能条 · 左键加 / 右键减';
+      return '先点一个术法';
+    }
+    if (!Game.skillUnlocked(id)) return '「' + SKILLS[id].name + '」领悟后可上条';
+    return '点格子放「' + SKILLS[id].name + '」· 也可以直接把节点拖进格子 · 拖有东西的格子可换位 · 右键腾空';
+  },
+
+  /* ---------------- 底部技能条 ----------------
+   * 默认收起：它不是一个「要一直看」的东西，是要配的时候才用的东西。
+   * 点「技 能 条」或用鼠标把节点往下拖，才会展开 8 个格子。 */
+  skBarHTML() {
+    const bar = Game.skillBar();
+    const setIdx = Game.barSet();
+    const sel = this.skSel;
+    const open = !!this.skBarOpen;
+    const slots = bar.map((bid, i) => {
+      const sk = bid ? SKILLS[bid] : null;
+      return `<button class="sb-slot ${bid && bid === sel ? 'on' : ''} ${sk ? 'occ' : ''}" data-skbar="${i}"
+        title="${sk ? sk.name + ' · 右键腾空' : '空位 ' + (i + 1)}">
+        ${sk ? skillIconSvg(bid, 22) : '<span class="sb-dot"></span>'}
+        <span class="sb-k">${i + 1}</span></button>`;
+    }).join('');
+    /* 收起状态的小预览：8 个小图标，只表示「放了什么」，不可点 */
+    const mini = bar.map(bid => `<i class="${bid ? 'on' : ''}">${bid ? skillIconSvg(bid, 13) : ''}</i>`).join('');
+    /* 传世授予的秘技不在本职业树上（树上根本没这个节点），
+     * 但它们是能上技能条的，所以展开时单独留一小排，点一下选中再点格子。 */
+    const gmap = (Game.state.stats && Game.state.stats.grantedSkills) || {};
+    const granted = Object.keys(gmap).filter(gid => SKILLS[gid] && (SKILL_ORDER[Game.state.cls] || []).indexOf(gid) < 0);
+    const gHtml = granted.length
+      ? `<span class="sb-grant"><span class="sb-glab">秘技</span>` + granted.map(gid =>
+        `<button class="sb-slot gr ${gid === sel ? 'on' : ''} occ" data-skpick="${gid}"
+          title="${SKILLS[gid].name} · 传世授予（脱下即失去）">${skillIconSvg(gid, 22)}<span class="sb-k">秘</span></button>`).join('') + '</span>'
+      : '';
+    return `<div class="sk-bar ${open ? 'open' : 'collapsed'}">
+      <button class="sb-tog" data-skbartog="1" title="${open ? '收起技能条' : '展开技能条，把术法拖进格子'}">
+        <span class="sb-lab">技 能 条</span>
+        <span class="sb-mini">${mini}</span>
+        <span class="sb-arrow">${open ? '收起 ▾' : '配置 ▴'}</span>
+      </button>
+      <span class="sb-body">
+        <span class="sb-slots">${slots}</span>
+        ${gHtml}
+        <span class="sk-sets"><span class="sk-setslab">栏</span>${SKILL_BAR_SET_NAME.map((nm, i) =>
+          `<button class="sk-setbtn ${i === setIdx ? 'on' : ''}" data-skset="${i}" title="${nm}（${SKILL_BAR_SET_LABEL} / ${SKILL_BAR_SET_KEY_ALT} 切换）">${['甲', '乙'][i] || (i + 1)}</button>`).join('')}</span>
+        <span class="sb-hint">${this.skBarHint()}</span>
+      </span>
+    </div>`;
+  },
+
+  /* ---------------- 树形画布 ----------------
+   * 坐标全部来自 SKILL_TREE.layout，不手写。
+   * 一个节点上承载的信息：图标 / 等级（或解锁等级）/ 是否在技能条上 /
+   * 三个分支记号 / 选中时浮出的 ＋ −。 */
+  skTreeHTML() {
+    const cls = Game.state.cls;
+    const lay = (typeof SKILL_TREE !== 'undefined' && SKILL_TREE.layout && SKILL_TREE.layout[cls]) || [];
+    if (!lay.length) return '<div class="skt-stage"><div class="vhint">这个职业还没有技能树</div></div>';
+
+    const nodes = skillTreeNodes(cls);
+    const forks = skillTreeForks(cls);
+    const trees = lay.map(t => t.name);
+    const mob = (typeof IS_TOUCH !== 'undefined' && IS_TOUCH) || window.innerWidth < 780;
+    if (this.skTreeTab == null || trees.indexOf(this.skTreeTab) < 0) this.skTreeTab = trees[0];
+    const shown = mob ? [this.skTreeTab] : trees;
+    const list = nodes.filter(n => shown.indexOf(n.tree) >= 0);
+    const forkList = forks.filter(f => shown.indexOf(f.tree) >= 0);
+    const z = Math.max(0.45, Math.min(2, this.skZoom || 1));
+
+    const xOf = col => {
+      const ti = Math.floor(col / 2), sub = col % 2;
+      return mob ? SKG.padX + sub * SKG.subGap
+        : SKG.padX + ti * SKG.treeGap + sub * SKG.subGap;
+    };
+    const yOf = row => SKG.padY + row * SKG.rowH;
+    const maxCol = list.reduce((a, n) => Math.max(a, n.col), 0);
+    const maxRow = list.reduce((a, n) => Math.max(a, n.row), 0);
+    const W = mob
+      ? SKG.padX * 2 + SKG.subGap + SKG.node + 92
+      : SKG.padX * 2 + Math.floor(maxCol / 2) * SKG.treeGap + SKG.subGap + SKG.node + 74;
+    const H = yOf(maxRow) + SKG.node + 70;
+
+    const byId = {};
+    list.forEach(n => byId[n.id] = n);
+
+    /* 连线：竖脊 + 到主动的横枝 + 主动↔被动的虚线（虚线 = 二选一） */
+    let wire = `<svg class="skt-wire" width="${W}" height="${H}">`;
+    for (const t of lay) {
+      if (shown.indexOf(t.name) < 0) continue;
+      const sp = byId[t.spine];
+      if (!sp) continue;
+      const spX = xOf(sp.col) + SKG.node / 2;
+      wire += `<path d="M${spX} ${yOf(sp.row) + SKG.node}V${yOf(t.forks.length) + SKG.node / 2}" stroke="rgba(216,178,90,.36)" stroke-width="1.5" fill="none"/>`;
+      for (const f of t.forks) {
+        const a = byId[f.active], p = byId[f.passive];
+        if (!a || !p) continue;
+        const ay = yOf(a.row) + SKG.node / 2;
+        wire += `<path d="M${spX} ${ay}H${xOf(a.col)}" stroke="rgba(216,178,90,.36)" stroke-width="1.5" fill="none"/>`;
+        /* 岔口锁：第 3 个岔口起二选一，虚线换成警示色提醒「这边锁那边」 */
+        const fi = t.forks.indexOf(f);
+        const flocked = (fi + 1) >= (SKILL_TREE.forkLockAt || 3);
+        wire += `<path class="fk-dash" d="M${xOf(a.col) + SKG.node} ${ay}H${xOf(p.col)}" stroke="${flocked ? 'rgba(214,106,86,.55)' : 'rgba(216,178,90,.26)'}" stroke-width="1.3" stroke-dasharray="3 4" fill="none"/>`;
+      }
+    }
+    wire += '</svg>';
+
+    /* 被动 / 关键被动用的是 SKILL_TREE.icons 里的通用纹样，不走 skillIconSvg */
+    const tIcon = (body, size) =>
+      `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor"
+        stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${body || ''}</svg>`;
+
+    let h = '';
+    if (mob) {
+      h += '<div class="skt-tabs on">' + trees.map(t =>
+        `<button class="${t === this.skTreeTab ? 'on' : ''}" data-skttree="${t}">${t}</button>`).join('') + '</div>';
+    }
+    /* 余量（skPad）直接烘进标记里：重排时不会先闪一帧「内容贴边」，
+     * 探针在同一帧读到的大小也才是最终值 */
+    const pad0 = this.skPad || 0;
+    h += `<div class="skt-stage"><div class="skt-fit" style="width:${Math.round(W * z + pad0 * 2)}px;height:${Math.round(H * z + pad0 * 2)}px">
+      <div class="skt-plate" data-w="${W}" data-h="${H}" style="width:${W}px;height:${H}px;left:${pad0}px;top:${pad0}px;transform:scale(${z})">`;
+    h += wire;
+
+    /* 系标题（手机形态已有分页签，不再重复） */
+    if (!mob) {
+      shown.forEach(name => {
+        const cols = list.filter(n => n.tree === name).map(n => n.col);
+        if (!cols.length) return;
+        const x = xOf(Math.min.apply(null, cols)) + (SKG.subGap + SKG.node) / 2 - 24;
+        h += `<div class="skt-cap" style="left:${x}px;top:2px">${name}</div>`;
+      });
+    }
+
+    const onBar = Game.skillBar();
+    const touch = (typeof IS_TOUCH !== 'undefined' && IS_TOUCH) || window.innerWidth < 780;
+    for (const n of list) {
+      const kind = n.kind === 'active' ? 'act' : (n.kind === 'key' ? 'key' : 'pas');
+      /* [P2] 被动也走真投点：门槛 = 同岔口主动的领悟等级，账本在 s.passives */
+      const isPas = n.kind !== 'active';
+      const locked = isPas
+        ? !(Game.passiveUnlocked && Game.passiveUnlocked(n.id))
+        : !Game.skillUnlocked(n.id);
+      const sel = n.id === this.skShown();
+      const slot = n.kind === 'active' ? onBar.indexOf(n.id) : -1;
+      const lv = n.kind === 'active' ? Game.skillLevel(n.id) : (Game.passiveLv ? Game.passiveLv(n.id) : 0);
+      /* 已投等级：技能点花了几级。装备 / 命格给的「+技能等级」抬的是等阶（lv），
+       * 不能拿来顶分支门槛，也不能拿来判「满了没」—— 否则身上带 +3 的装备，
+       * 2 级的技能会显示成满级、＋ 按钮点不动，玩家还以为是 bug。
+       * NODE-INVESTED-PATCH */
+      const invLv = n.kind === 'active' ? (((Game.skillState()[n.id] || {}).lv) || 1) : lv;
+      const full = isPas ? lv >= n.max : invLv >= SKILL_LV_MAX;
+      const x = xOf(n.col), y = yOf(n.row);
+
+      /* 三个小记号：精研（到 3 级自动）· 取向（3 级二选一 · 1 点）· 变体（当前 Ⅰ/Ⅱ/Ⅲ）。
+       * 门槛与账本一律看「已投等级」invested，不看装备加成后的 skillLevel ——
+       * 否则脱一件 +技能等级的装备，分支就凭空多出来 / 少回去。 */
+      let marks = '', vnmDiv = '';
+      if (n.kind === 'active') {
+        const invested = invLv;
+        const coreOn = invested >= (SKILL_TREE.pickAt || 3);
+        const pk = Game.branchPick(n.id);
+        const rd = (typeof Game.branchReady === 'function') ? Game.branchReady(n.id) : { core: true, pick: [] };
+        const vv = this.skillFormView(n.id);
+        const v = vv ? vv.idx : Game.skillVariant(n.id);
+        const vn = (vv && vv.items[v]) ? vv.items[v].name : '';
+        /* [P4] 变体专属特效：树上那行变体名染成这条变体的主色，
+         * 战斗里放的也是同一种色。名字 + 颜色对上，玩家不用点开面板就知道装的哪条。 */
+        const vfx = (typeof skillFormFx === 'function') ? skillFormFx(n.id, v) : null;
+        const vfxCol = (vfx && vfx.key !== 'plain') ? '#' + ('000000' + vfx.color.toString(16)).slice(-6) : '';
+        marks = `<div class="marks">
+          <span class="mk core ${coreOn ? 'on' : ''} ${coreOn && rd && rd.core ? 'ready' : ''}" data-mark="${n.id}"
+            title="精研 · ${coreOn ? (rd && rd.core ? '已生效' : '尚未实现') : '技能 ' + (SKILL_TREE.pickAt || 3) + ' 级自动'}"></span>
+          <span class="mk dia pick ${pk >= 0 ? 'on' : ''} ${coreOn ? 'ready' : ''}" data-mark="${n.id}"
+            title="取向 · ${pk >= 0 ? '已选（点开可换 / 退）' : coreOn ? '二选一 · ' + SKILL_TREE.branchCost.pick + ' 点' : '技能 ' + (SKILL_TREE.pickAt || 3) + ' 级解锁'}"></span>
+          <span class="mk dia form v${v}" data-mark="${n.id}" title="变体 · ${{ 0: 'Ⅰ', 1: 'Ⅱ', 2: 'Ⅲ' }[v]} ${vn}"></span>
+        </div>
+        `;
+        vnmDiv = `<div class="vnm v${v}" data-vnext="${n.id}"${vfxCol ? ` style="color:${vfxCol}"` : ''} title="当前变体 · ${vn}${vfx && vfx.key !== 'plain' ? '（' + vfx.name + '·' + vfx.key + '）' : ''}（点击切换至下一条）">${vn}</div>`;
+      }
+
+      const inner = n.kind === 'active'
+        ? skillIconSvg(n.id, 26)
+        : tIcon(SKILL_TREE.icons[n.kind === 'key' ? 'key' : 'passive'], n.kind === 'key' ? 24 : 25);
+      const badge = n.kind === 'active'
+        ? (locked ? n.unlock + '级' : lv)
+        : (locked ? n.unlock + '级' : (lv > 0 ? lv : n.max));
+      /* 等阶比已投高 = 身上有「+技能等级」的加成，角标说清楚，
+       * 不然玩家会拿这个数字去对分支门槛（门槛看的是已投） */
+      const badgeTip = (n.kind === 'active' && lv > invLv)
+        ? `等阶 ${lv} = 投入 ${invLv} + 加成 ${lv - invLv}（分支门槛以投入等级 ${invLv} 计）` : '';
+      const attr = n.kind === 'active'
+        ? `data-skpick="${n.id}"`
+        : `data-sktpas="${n.id}" data-sktname="${n.name}"`;
+
+      /* [P2] 岔口锁：第 3 个岔口起主动 ↔ 被动二选一 —— 对面投过点就打被锁标记 */
+      let fkLockNm = null;
+      if (typeof skillForkOf === 'function') {
+        const fk = skillForkOf(n.id);
+        if (fk && fk.lock) {
+          const otherInv = fk.side === 'active'
+            ? (Game.passiveLv ? Game.passiveLv(fk.other) > 0 : false)
+            : ((Game.skillState()[fk.other] || {}).lv || 1) > 1;
+          if (otherInv) {
+            const od = fk.side === 'active' ? SKILL_TREE.passives[fk.other] : SKILLS[fk.other];
+            fkLockNm = (od && od.name) || fk.other;
+          }
+        }
+      }
+
+      h += `<div class="skt-nd ${kind}${locked ? ' locked' : ''}${sel ? ' sel' : ''}${full ? ' max' : ''}${isPas && lv > 0 ? ' own' : ''}${fkLockNm ? ' fklock' : ''}" ${attr}${fkLockNm ? ` title="岔口二选一：「${fkLockNm}」已分配点数，需先退还"` : ''}
+        style="left:${x}px;top:${y}px">
+        <div class="box">${inner}<span class="bg"${badgeTip ? ` title="${badgeTip}"` : ''}>${badge}</span>${slot >= 0 ? `<span class="skt-slot">${slot + 1}</span>` : ''}</div>
+        <div class="nm">${n.name}</div>${vnmDiv}${marks}`;
+
+      /* 选中节点的 ±：触屏唯一路径；PC 上也能点（键盘 / 无右键的场合） */
+      if (sel && !locked && n.kind === 'active') {
+        const canUp = invLv < SKILL_LV_MAX && Game.skillPoints() > 0;
+        h += `<div class="skt-act">
+          <button class="sa" data-sklv="${n.id}" ${canUp ? '' : 'disabled'} title="加 1 级（也只改草稿）">＋</button>
+          <button class="sa" data-sklvd="${n.id}" ${invLv <= 1 ? 'disabled' : ''} title="退 1 级">−</button>
+        </div>`;
+      }
+      h += '</div>';
+    }
+
+    /* 「或」标记：压在两节点之间的虚线上方；互斥岔口（第 3 个起）显示「锁」 */
+    for (const f of forkList) {
+      const a = byId[f.active], p = byId[f.passive];
+      if (!a || !p) continue;
+      const x = (xOf(a.col) + SKG.node + xOf(p.col)) / 2 - 9;
+      const y = yOf(a.row) + SKG.node / 2 - 19;
+      const flo = f.row >= (SKILL_TREE.forkLockAt || 3);
+      h += `<div class="skt-or${flo ? ' lock' : ''}" style="left:${x}px;top:${y}px"><i>${flo ? '锁' : '或'}</i></div>`;
+    }
+
+    /* 分支浮层：就地展开在节点旁，不跳右侧 */
+    if (this.skPop && byId[this.skPop]) {
+      const n = byId[this.skPop];
+      const nx = xOf(n.col), ny = yOf(n.row);
+      let px = nx + SKG.node + 10;
+      if (px + SKG.popW > W) px = Math.max(2, nx - SKG.popW - 10);
+      const py = Math.min(Math.max(2, ny - 8), Math.max(2, H - 210));
+      h += this.skPopHTML(n.id, px, py);
+    }
+
+    h += '</div></div></div>';
+    return h;
+  },
+
+  /* 节点的分支浮层：精研 / 取向 / 变体三段。
+   * 取向要花点，所以每一行都得说清「能不能点、点了扣几点」。 */
+  skPopHTML(id, px, py) {
+    const sk = SKILLS[id];
+    if (!sk) return '';
+    const br = (typeof skillBranches === 'function') ? skillBranches(id) : null;
+    const rd = (typeof Game.branchReady === 'function') ? Game.branchReady(id) : null;
+    const v = Game.skillVariant(id);
+    const inv = ((Game.skillState()[id] || {}).lv) || 1;
+    /* 等阶（含装备 / 命格 / 传世的 +技能等级）与已投分开 —— 门槛只看已投。
+     * 浮层里必须写出来，否则玩家会拿角标上的「3」来质疑「为什么还不让选」。
+     * POP-INVESTED-PATCH */
+    const lvBonus = Math.max(0, Game.skillLevel(id) - inv);
+    const at = SKILL_TREE.pickAt || 3;
+    const coreOn = (typeof skillBranchCoreOn === 'function') && skillBranchCoreOn(inv);
+    const pick = (typeof Game.branchPick === 'function') ? Game.branchPick(id) : -1;
+    const cost = SKILL_TREE.branchCost.pick;
+    const pts = Game.skillPoints();
+
+    let h = `<div class="skt-pop" style="left:${px}px;top:${py}px;width:${SKG.popW}px">
+      <div class="sp-hd"><b>${sk.name}</b><span>分支</span><i class="sp-x" data-popx="1">✕</i></div>`;
+
+    /* ---- 精研：不选、不花点，等级到了自动生效 ---- */
+    if (br && br.core) {
+      const ready = !rd || rd.core;
+      h += `<div class="sp-g"><div class="sp-l">精研
+          <i>${coreOn ? (ready ? '已生效' : '等级已达 · 尚未实现')
+            : '投入 ' + inv + ' 级 · 达到 ' + at + ' 级自动'}</i></div>
+        <div class="sp-r ${coreOn && ready ? 'on' : ''} ${ready ? '' : 'na'}">
+          <b>${br.core.name}<span class="sp-cost">不耗点</span></b><em>${br.core.desc}</em></div></div>`;
+    }
+
+    /* ---- 取向：二选一，1 点 ---- */
+    if (br && br.pick.length) {
+      h += `<div class="sp-g"><div class="sp-l">取向<i>二选一 · ${cost} 点${pick >= 0 ? ' · 再点一次退掉' : ''}</i></div>`;
+      br.pick.forEach((o, i) => {
+        const ready = !rd || rd.pick[i];
+        const on = pick === i;
+        let cls = 'ok', tail = `<span class="sp-cost">${cost} 点</span>`;
+        if (!ready) {
+          cls = 'na';
+          const pend = (rd && rd.pending[i]) || [];
+          tail = `<span class="sp-cost na" title="尚未实现：${pend.join(' / ')}">未开放</span>`;
+        } else if (inv < at) {
+          cls = 'lock';
+          tail = `<span class="sp-cost">尚需 ${at - inv} 级</span>`;
+        } else if (on) {
+          cls = 'on';
+          tail = `<span class="sp-cost on">已选</span>`;
+        } else if (pick < 0 && pts < cost) {
+          cls = 'lock';
+          tail = `<span class="sp-cost">技能点不足</span>`;
+        } else if (pick >= 0) {
+          tail = `<span class="sp-cost">换向 · 不另计点</span>`;
+        }
+        let lockTip = '';
+        if (cls === 'lock') {
+          lockTip = (inv < at)
+            ? `投入等级 ${inv}：需达到 ${at} 级方可选择（装备与命格的等级加成不计入投入等级${lvBonus ? '；当前等阶 ' + (inv + lvBonus) : ''}）`
+            : `技能点不足：选取取向需 ${cost} 点，当前 ${pts} 点`;
+        }
+        h += `<button class="sp-r ${cls}" data-pick="${id}:${i}" ${cls === 'lock' ? 'disabled' : ''}${lockTip ? ` title="${lockTip}"` : ''}>
+          <b>${o.name}${tail}</b><em>${o.desc}</em></button>`;
+      });
+      h += '</div>';
+    }
+
+    /* ---- 变体：三选一，改打法不花点（新 form 通道或旧 variants） ---- */
+    const vview = this.skillFormView(id);
+    h += `<div class="sp-g"><div class="sp-l">变体<i>三选一 · 改变战斗方式 · 不耗点</i></div>` +
+      (vview ? vview.items : []).map(it => {
+        const na = (it.pending || []).length > 0;
+        const condNo = !na && it.condOk === false;
+        const cls = it.on ? 'on' : na || condNo ? 'na' : '';
+        let tail = '';
+        if (na) tail = `<span class="sp-cost na" title="尚未实现：${it.pending.join(' / ')}">未开放</span>`;
+        else if (condNo) {
+          const need = it.cond && it.cond.rageMax ? '怒气上限 ' + it.cond.rageMax : '前提不足';
+          tail = `<span class="sp-cost na">需 ${need}</span>`;
+        } else if (it.on) tail = '<span class="sp-cost on">当前</span>';
+        return `<button class="sp-r ${cls}" data-form="${id}:${it.i}" ${na || condNo ? 'disabled' : ''}>
+          <b>${['Ⅰ', 'Ⅱ', 'Ⅲ'][it.i]} ${it.name}${tail}</b><em>${it.desc}</em></button>`;
+      }).join('') + '</div>';
+
+    /* 底注：只写「现在能做什么」，不写开发计划 */
+    const tips = [];
+    if (inv < at) {
+      tips.push(`投入 ${inv} 级 · 达到 ${at} 级开放精研与取向`
+        + (lvBonus ? `（装备提供的 +${lvBonus} 级不计入投入等级）` : ''));
+    }
+    if (br && br.pick.length && rd && rd.pick.some(x => !x)) tips.push('标注「未开放」的分支尚未实现，当前不可选');
+    if (pick >= 0) tips.push('取向可取消，点数全额返还');
+    h += `<div class="sp-ft">${tips.join(' · ') || '变体可随时切换，不消耗技能点'}</div></div>`;
+    return h;
+  },
+
+  /* ---------------- 缩放与平移 ----------------
+   * 树比容器大时：滚轮以光标为锚点缩放，按住拖动平移。
+   * 事件挂在 document 上做委托 —— 面板每次重画都会换掉 DOM，
+   * 直接绑在 .skt-stage 上必然漏绑。 */
+  clampZoom(z) {
+    return Math.max(0.45, Math.min(2, Math.round((z || 1) * 100) / 100));
+  },
+
+  bindTreeNav() {
+    if (this._treeNavBound) return;
+    this._treeNavBound = true;
+    const stageOf = t => (t && t.closest) ? t.closest('#skList .skt-stage') : null;
+
+    /* 说明书卡的变体三行 / 取向两条：委托在文档上、用 #skList 圈定范围。
+     * 这张卡会被 selectSkill 反复整体替换（outerHTML），
+     * 逐个绑事件的做法一换就失效 —— 见 UI.applyVariantForm 的注释。 */
+    document.addEventListener('click', e => {
+      const el = (e.target && e.target.closest) ? e.target.closest('#skList .sb-vlist [data-vset]') : null;
+      if (!el || el.disabled) return;
+      if (this._panMoved) return;
+      const parts = el.dataset.vset.split(':');
+      if (this.applyVariantForm(parts[0], parseInt(parts[1], 10))) this.renderSkillPanel();
+    });
+
+    /* 取向两条：花点数，所以走「草稿 → 确认」，与浮层里的 [data-pick] 同一套逻辑。
+     * 点已选中的那条 = 退掉（点数返还）。 PICK-ROW-CLICKABLE */
+    document.addEventListener('click', e => {
+      const el = (e.target && e.target.closest) ? e.target.closest('#skList .sb-plist [data-pset]') : null;
+      if (!el || el.disabled) return;
+      if (this._panMoved) return;
+      const parts = el.dataset.pset.split(':');
+      this.skillPickBranch(parts[0], parseInt(parts[1], 10));
+    });
+
+    /* 悬停预览 / 离开树回位：委托在 document 上（mouseover 会冒泡）。
+     * 不用节点上的 mouseenter —— 每次重画都得重绑一次，漏一处就「时灵时不灵」。
+     * 判定：压在节点上 → 预览它；压在树上空白 → 保持现状；
+     * 压在树外（右侧卡 / 顶栏 / 技能条）→ 预览作废，回到钉住的那个。 */
+    document.addEventListener('mouseover', e => {
+      const t = e.target;
+      if (!t || !t.closest) return;
+      const nd = t.closest('#skList .skt-nd');
+      if (nd) {
+        const id = nd.dataset.skpick || nd.dataset.sktpas;
+        if (id) this.hoverSkill(id);
+        return;
+      }
+      if (t.closest('#skList .skt-stage')) return;
+      this.clearHover();
+    });
+
+    /* 滚轮缩放：以光标为锚点，缩放后手指底下还是同一处 */
+    document.addEventListener('wheel', e => {
+      const stage = stageOf(e.target);
+      if (!stage) return;
+      e.preventDefault();
+      const r = stage.getBoundingClientRect();
+      const mx = e.clientX - r.left, my = e.clientY - r.top;
+      const old = this.skZoom || 1;
+      const next = this.clampZoom(old * (e.deltaY < 0 ? 1.1 : 1 / 1.1));
+      if (next === old) return;
+      /* 内容原点在 pad 处，换算时要减掉，否则放大时会往左上飘 */
+      const pad = this.skPad || 0;
+      const sx = (stage.scrollLeft + mx - pad) / old;
+      const sy = (stage.scrollTop + my - pad) / old;
+      this.skZoomAuto = false;
+      this.skZoom = next;
+      this.applyZoom();
+      stage.scrollLeft = pad + sx * next - mx;
+      stage.scrollTop = pad + sy * next - my;
+    }, { passive: false });
+
+    /* 拖拽：从节点拖 = 把技能放进技能条第几格；从空白拖 = 平移画布。
+     * 两者都从 pointerdown 开始，靠起点是不是节点来分流，
+     * 移动超过 5px 才当真（否则那是一次点击）。 */
+    let pan = null, ndrag = null, sdrag = null;
+    const dropOf = t => (t && t.closest) ? t.closest('#skList .sb-slot[data-skbar]') : null;
+    const clearDrop = () => document.querySelectorAll('#skList .sb-slot.drop').forEach(x => x.classList.remove('drop'));
+    const ghostOf = (id, x, y) => {
+      const sk = SKILLS[id] || {};
+      const g = document.createElement('div');
+      g.className = 'sk-ghost';
+      g.innerHTML = (typeof skillIconSvg === 'function' ? skillIconSvg(id, 26) : '') + `<b>${sk.name || ''}</b>`;
+      g.style.left = (x + 10) + 'px';
+      g.style.top = (y + 10) + 'px';
+      document.body.appendChild(g);
+      return g;
+    };
+
+    document.addEventListener('pointerdown', e => {
+      if (e.button !== 0) { pan = ndrag = sdrag = null; return; }
+      /* 技能条上有东西的格子：拖它换位（空位不拖，留给 click 上技能） */
+      const slotEl = dropOf(e.target);
+      if (slotEl) {
+        const si = parseInt(slotEl.dataset.skbar, 10);
+        const sid = Game.skillBar()[si];
+        pan = null; ndrag = null;
+        sdrag = sid ? { from: si, id: sid, x: e.clientX, y: e.clientY, on: false } : null;
+        return;
+      }
+      /* 树上的主动节点 / 条边上的传世秘技：拖到格子上等于「放上去」 */
+      const node = (e.target.closest && e.target.closest('#skList .skt-nd.act, #skList .sb-grant [data-skpick]'));
+      if (node && node.dataset.skpick) {
+        ndrag = { id: node.dataset.skpick, x: e.clientX, y: e.clientY, on: false };
+        pan = null; sdrag = null;
+        return;
+      }
+      const stage = stageOf(e.target);
+      if (!stage || (e.target.closest && e.target.closest('.skt-pop'))) { pan = null; return; }
+      pan = { stage, x: e.clientX, y: e.clientY, sl: stage.scrollLeft, st: stage.scrollTop, moved: false };
+    });
+
+    document.addEventListener('pointermove', e => {
+      /* 技能条内换位：ghost 跟着手，底下格子高亮成落点 */
+      if (sdrag) {
+        if (!sdrag.on && Math.abs(e.clientX - sdrag.x) + Math.abs(e.clientY - sdrag.y) > 5) {
+          sdrag.on = true;
+          this._panMoved = true;
+          sdrag.el = ghostOf(sdrag.id, e.clientX, e.clientY);
+        }
+        if (sdrag.on) {
+          if (sdrag.el) {
+            sdrag.el.style.left = (e.clientX + 10) + 'px';
+            sdrag.el.style.top = (e.clientY + 10) + 'px';
+          }
+          /* 落点用坐标反查，不靠 e.target：ghost 在跟手，合成事件也没有真 target */
+          const over = dropOf(document.elementFromPoint(e.clientX, e.clientY));
+          document.querySelectorAll('#skList .sb-slot.drop').forEach(x => { if (x !== over) x.classList.remove('drop'); });
+          if (over && parseInt(over.dataset.skbar, 10) !== sdrag.from) over.classList.add('drop');
+        }
+        return;
+      }
+      /* 节点拖动：起 ghost（fixed 定位、不吃指针），并把技能条展开好当靶子 */
+      if (ndrag) {
+        if (!ndrag.on && Math.abs(e.clientX - ndrag.x) + Math.abs(e.clientY - ndrag.y) > 5) {
+          ndrag.on = true;
+          this._panMoved = true;
+          ndrag.el = ghostOf(ndrag.id, e.clientX, e.clientY);
+          const barEl = document.querySelector('#skList .sk-bar');
+          if (barEl) barEl.classList.remove('collapsed');
+        }
+        if (ndrag.on) {
+          if (ndrag.el) {
+            ndrag.el.style.left = (e.clientX + 10) + 'px';
+            ndrag.el.style.top = (e.clientY + 10) + 'px';
+          }
+          const over = dropOf(document.elementFromPoint(e.clientX, e.clientY));
+          document.querySelectorAll('#skList .sb-slot.drop').forEach(x => { if (x !== over) x.classList.remove('drop'); });
+          if (over) over.classList.add('drop');
+        }
+        return;
+      }
+      if (!pan) return;
+      const dx = e.clientX - pan.x, dy = e.clientY - pan.y;
+      if (!pan.moved && Math.abs(dx) + Math.abs(dy) > 4) {
+        pan.moved = true;
+        this._panMoved = true;
+        pan.stage.classList.add('panning');
+      }
+      if (pan.moved) {
+        pan.stage.scrollLeft = pan.sl - dx;
+        pan.stage.scrollTop = pan.st - dy;
+      }
+    });
+
+    const end = e => {
+      /* 技能条内换位：落到别的格子上就交换，落到原格 / 外面就取消 */
+      if (sdrag) {
+        const d = sdrag;
+        sdrag = null;
+        if (d.on) {
+          if (d.el) d.el.remove();
+          const cell = dropOf(document.elementFromPoint(e.clientX, e.clientY));
+          const to = cell ? parseInt(cell.dataset.skbar, 10) : -1;
+          clearDrop();
+          if (to >= 0 && to !== d.from) {
+            const other = Game.skillBar()[to];
+            const r = Game.assignSkillBar(to, d.id);
+            if (r.ok && other) Game.assignSkillBar(d.from, other);   // 对方回填原格 = 交换
+            this.skBarOpen = true;
+            if (r.ok) {
+              SFX.ui();
+              this.toast(other ? `第 ${d.from + 1} 格 ⇄ 第 ${to + 1} 格` : `移到第 ${to + 1} 格`);
+            } else this.toast(r.msg, 'bad');
+            this.renderSkillPanel();
+          }
+          setTimeout(() => { this._panMoved = false; }, 40);
+        }
+        return;
+      }
+      /* 松手落在哪个格子上，就把技能放进哪一格 */
+      if (ndrag) {
+        const dragged = ndrag;
+        ndrag = null;
+        if (dragged.on) {
+          if (dragged.el) dragged.el.remove();
+          const cell = dropOf(document.elementFromPoint(e.clientX, e.clientY));
+          clearDrop();
+          if (cell) {
+            const i = parseInt(cell.dataset.skbar, 10);
+            const r = Game.assignSkillBar(i, dragged.id);
+            this.skBarOpen = true;
+            if (r.ok) { SFX.ui(); this.toast(r.msg); } else this.toast(r.msg, 'bad');
+            this.renderSkillPanel();
+          } else {
+            /* 没落在格子上：条就保持展开（用户显然是想配，只是没放准） */
+            this.skBarOpen = true;
+            this.renderSkillPanel();
+          }
+          setTimeout(() => { this._panMoved = false; }, 40);
+        }
+        return;
+      }
+      if (!pan) return;
+      if (pan.moved) pan.stage.classList.remove('panning');
+      const moved = pan.moved;
+      pan = null;
+      if (moved) setTimeout(() => { this._panMoved = false; }, 40);
+    };
+    document.addEventListener('pointerup', end);
+    document.addEventListener('pointercancel', end);
+  },
+
+  /* 把当前 skZoom 写到 plate / fit / 百分比标签上。
+   * 内容四周留 pad 的空白（skPad）：树拖到边还能再拉出去一截，
+   * 不然「顶到边就拖不动」会让人觉得画布是死的。 */
+  applyZoom(recenter) {
+    const stage = document.querySelector('#skList .skt-stage');
+    const plate = document.querySelector('#skList .skt-plate');
+    const fit = document.querySelector('#skList .skt-fit');
+    if (!plate || !fit) return;
+    const W = parseFloat(plate.dataset.w) || 0;
+    const H = parseFloat(plate.dataset.h) || 0;
+    const z = this.clampZoom(this.skZoom || 1);
+    const pad = this.skPad || 0;
+    plate.style.transform = 'scale(' + z + ')';
+    plate.style.left = pad + 'px';
+    plate.style.top = pad + 'px';
+    fit.style.width = Math.round(W * z + pad * 2) + 'px';
+    fit.style.height = Math.round(H * z + pad * 2) + 'px';
+    const lab = document.querySelector('#skList .skt-z');
+    if (lab) lab.textContent = Math.round(z * 100) + '%';
+    /* 重排后回到「内容居中、四周都是空白」的起始视角 */
+    if (recenter && stage) {
+      const cx = (W * z + pad * 2 - stage.clientWidth) / 2;
+      const cy = (H * z + pad * 2 - stage.clientHeight) / 2;
+      stage.scrollLeft = Math.max(0, cx);
+      stage.scrollTop = Math.max(0, cy);
+    }
+  },
+
+  /* 自适应：面板现在是独立的整屏层，宽高都够就该 100% 显示整棵树；
+   * 塞不下才缩（宽、高取更紧的那一边）。用户手动缩放过就不再插手。 */
+  fitSkillTree() {
+    this.bindTreeNav();
+    const stage = document.querySelector('#skList .skt-stage');
+    const plate = document.querySelector('#skList .skt-plate');
+    if (!stage || !plate) return;
+    const W = parseFloat(plate.dataset.w) || 0;
+    const H = parseFloat(plate.dataset.h) || 0;
+    if (!W || !H) return;
+    if (this.skZoomAuto) {
+      const haveW = stage.clientWidth - 12;
+      const haveH = stage.clientHeight - 12;
+      const mob = (typeof IS_TOUCH !== 'undefined' && IS_TOUCH) || window.innerWidth < 780;
+      let z = 1;
+      if (mob) {
+        /* 手机上不为了「一屏塞下」把字缩没：宁可上下滚，最小 70% */
+        if (haveW > 40) z = haveW / W;
+        z = Math.max(0.7, z);
+      } else {
+        /* 桌面：宽高都塞得下就放大到铺满（上限 1.2），整棵树始终完整可见 */
+        z = Math.min(1.2, haveW / W, haveH / H);
+      }
+      this.skZoom = this.clampZoom(Math.floor(z * 100) / 100);
+    }
+    /* 可拖拽余量：按视口短边的一半算，四周都能拉出半屏空白；
+     * 触屏上不铺这么宽（否则上下滚很久才见到树） */
+    const mob2 = (typeof IS_TOUCH !== 'undefined' && IS_TOUCH) || window.innerWidth < 780;
+    const base = Math.min(stage.clientWidth || 900, stage.clientHeight || 700);
+    this.skPad = mob2 ? Math.round(Math.max(40, base * 0.12)) : Math.round(Math.max(120, base * 0.5));
+    this.applyZoom(true);
+  },
+
+  /* 加点 / 退点：走草稿，确认才落库。
+   * 走完要整块重画 —— 节点上的等级、点数、未确认条都得跟着变。 */
+  skillStep(sid, up) {
+    const had = this.snapDirty('skill');
+    this.snapTake('skill');
+    const r = up ? Game.levelUpSkill(sid) : Game.levelDownSkill(sid);
+    if (!r.ok) {
+      if (!had && this.snaps) delete this.snaps.skill;
+      this.toast(r.msg);
+      return;
+    }
+    SFX.ui();
+    this.renderSkillPanel();
+  },
+});

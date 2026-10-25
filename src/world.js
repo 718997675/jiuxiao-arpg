@@ -565,7 +565,8 @@ function buildNPC(npcId) {
     quest: { color: 0xb8a06a, cloth: 0x6a5a3a, skin: 0xd8b090 },
     shop: { color: 0x8a6a4a, cloth: 0x5a3a26, skin: 0xb08a68 },
     potion: { color: 0x6a9a7a, cloth: 0x3a5a46, skin: 0xe0c0a0 },
-    travel: { color: 0x9a9ab0, cloth: 0x4a4a5a, skin: 0xd0b090 }
+    travel: { color: 0x9a9ab0, cloth: 0x4a4a5a, skin: 0xd0b090 },
+    decompose: { color: 0xc08060, cloth: 0x6a4026, skin: 0xd8b090 }
   }[npc.role];
   const a = buildHumanoid({
     color: roleCfg.color, cloth: roleCfg.cloth, skin: roleCfg.skin,
