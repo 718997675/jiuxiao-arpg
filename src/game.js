@@ -324,7 +324,7 @@ const Game = {
     const eq = makeStarterSet(cls);
     const diff = DIFFS[difficulty] ? difficulty : (this.pendingDifficulty || DEFAULT_DIFF);
     const s = {
-      cls, name, level: 1, xp: 0, xpNext: 120, gold: 120,
+      cls, name, level: 1, xp: 0, xpNext: (typeof xpToNext === 'function' ? xpToNext(1) : 180), gold: 120,
       difficulty: diff,
       potions: { hp: 4, mp: 3 },
       teleportStones: 0,
@@ -1260,8 +1260,15 @@ const Game = {
     /* [DIFF] 难度系数在这里一次性乘进怪物基础属性。
      * 之后所有战斗计算（伤害、掉落、经验）都按已放大的数值走，不用到处再判难度。 */
     const D = this.diff();
-    let hp = isBoss ? cfg.hp : cfg.hp * (1 + lvl * 0.48);
-    if (elite) hp *= 2.1;
+    /* [v1.10.0] 血量成长由 BALANCE 决定：普通怪 1 + lv·hpLv + lv²·hpLv2（超线性），
+     * 首领在固定 cfg.hp 基础上按自身等级放大约 12 倍 —— 老版首领血量写死，
+     * 玩家伤害涨了十几倍之后首领就成了沙包。 */
+    const MB = (typeof BALANCE !== 'undefined' ? BALANCE.mob : { hpLv: 0.55, hpLv2: 0.010, eliteHp: 2.4 });
+    const BB = (typeof BALANCE !== 'undefined' ? BALANCE.boss : { hpMul: 12, hpMulPow: 2, refLv: 38, dmgLv: 0.09 });
+    let hp = isBoss
+      ? cfg.hp * (typeof bossHpScale === 'function' ? bossHpScale(lvl) : 1)
+      : cfg.hp * (1 + lvl * MB.hpLv + lvl * lvl * MB.hpLv2);
+    if (elite) hp *= MB.eliteHp;
     hp *= D.mobHp;
 
     /* [DIFF] 极难：给原本没有元素属性的怪随机附一个元素，
@@ -1317,7 +1324,7 @@ const Game = {
       id: 'e' + Math.random().toString(36).slice(2),
       kind: bossId || kind, cfg: ecfg, actor: a, boss: isBoss, elite: !!elite,
       level: lvl, hp, maxHp: hp,
-      dmg: (cfg.atk || 10) * (1 + lvl * (isBoss ? 0.09 : 0.18)) * (elite ? 1.3 : 1) * D.mobDmg,
+      dmg: (cfg.atk || 10) * (1 + lvl * (isBoss ? BB.dmgLv : MB.dmgLv)) * (elite ? MB.eliteDmg : 1) * D.mobDmg,
       spd: (cfg.spd || 3) * D.mobSpd,
       /* range 只表示「数据设定的攻击距离」（远程怪用来卡位）。
        * 近战另算 reach：贴到「碰撞半径 + 余量」就该出手。
@@ -5270,7 +5277,10 @@ const Game = {
 
     // 经验（[DIFF] 难度越高给得越多，作为硬核的正反馈）
     const D = this.diff();
-    const baseXp = e.boss ? (e.cfg.level * 45) : (e.cfg.xp || 12) * (1 + e.level * 0.18);
+    /* [v1.10.0] 经验成长系数收进 BALANCE：老版 1 + lv·0.18 + 首领 lv·45，
+     * 高档图的怪一只给几百点，一小时能从 1 级推到通关。 */
+    const XB = (typeof BALANCE !== 'undefined' ? BALANCE.xp : { mobLv: 0.12, bossLv: 30 });
+    const baseXp = e.boss ? (e.cfg.level * XB.bossLv) : (e.cfg.xp || 12) * (1 + e.level * XB.mobLv);
     const xp = Math.round(baseXp * (e.elite ? 2 : 1) * D.xp);
     this.gainXp(xp);
 
@@ -5281,23 +5291,26 @@ const Game = {
     // 装备
     const sto = this.state.stats;
     const ilvl = Math.max(1, e.level + (e.boss ? 2 : 0));
-    let dropChance = e.boss ? 1 : (e.elite ? 0.85 : 0.3);
-    /* [DIFF] 掉落率随难度提高（打得更难，回报也更高） */
-    dropChance = Math.min(1, dropChance * D.drop);
-    /* [S1] 掉落数量：按一半概率额外多掉一件，封顶 60% */
-    let drops = e.boss ? 3 : 1;
-    if (sto.dropRate && CHANCE(Math.min(0.6, sto.dropRate / 200))) drops += 1;
+    /* [v1.10.0] 掉落改为「按层级分池」：
+     *   小怪池 = 凡/灵/玄（掉不出神品以上，从机制上堵住「小怪掉橙」）
+     *   精英池 = 灵/玄/神/套装（不出传世）
+     *   首领池 = 玄/神/套装/传世（传世 4%）
+     * 概率与件数全部来自 BALANCE.drop；magicFind 只在池内加权，且按 mfScale 缩水。 */
+    const DB = (typeof BALANCE !== 'undefined' ? BALANCE.drop
+      : { normal: { chance: 0.16, extra: 0.35, pool: [['common', 76], ['magic', 21], ['rare', 3]] }, elite: { chance: 0.62, extra: 0.5, pool: [['magic', 54], ['rare', 38], ['legendary', 7], ['set', 1]] }, boss: { count: 2, extra: 0.5, pool: [['rare', 58], ['legendary', 26], ['set', 12], ['unique', 4]] } });
+    const tier = e.boss ? DB.boss : (e.elite ? DB.elite : DB.normal);
+    let dropChance = Math.min(1, (tier.chance === undefined ? 0.16 : tier.chance) * D.drop);
+    let drops = e.boss ? (tier.count || 2) : 1;
+    /* [S1] 「掉落数量」词条：额外多掉一件，概率按 mfScale 缩水后封顶 40% */
+    if (sto.dropRate && CHANCE(Math.min(0.4, sto.dropRate / 200 * DB.mfScale))) drops += 1;
     for (let i = 0; i < drops; i++) {
-      if (i > 0 && !CHANCE(0.55)) continue;
+      if (i > 0 && !CHANCE(tier.extra === undefined ? 0.5 : tier.extra)) continue;
       if (Math.random() > dropChance) continue;
-      let opts = { cls: CHANCE(0.78) ? this.state.cls : PICK((typeof classPackIds === 'function') ? classPackIds() : ['warrior', 'mage', 'taoist']), magicFind: this.state.stats.magicFind };
-      if (e.boss) {
-        const r = Math.random();
-        /* 首领必掉，且有 8% 直接掉传世；传世池不够时 rollItem 会自动退化为神品 */
-        opts.rarity = r < 0.08 ? 'unique' : (r < 0.24 ? 'set' : (r < 0.48 ? 'legendary' : 'rare'));
-      } else if (e.elite) {
-        opts.rarity = CHANCE(0.05) ? 'unique' : (CHANCE(0.35) ? 'rare' : 'magic');
-      }
+      let opts = {
+        cls: CHANCE(0.78) ? this.state.cls : PICK((typeof classPackIds === 'function' ? classPackIds() : ['warrior', 'mage', 'taoist'])),
+        magicFind: this.state.stats.magicFind,
+        pool: tier.pool
+      };
       const it = rollItem(ilvl, opts);
       this.spawnLoot(p, it, 0);
     }
@@ -5392,7 +5405,8 @@ const Game = {
     while (s.xp >= s.xpNext) {
       s.xp -= s.xpNext;
       s.level++;
-      s.xpNext = Math.round(120 * Math.pow(s.level, 1.55));
+      /* [v1.10.0] 曲线收进 BALANCE（base × L^pow），升级点与新建角色同一口径 */
+      s.xpNext = (typeof xpToNext === 'function') ? xpToNext(s.level) : Math.round(180 * Math.pow(s.level, 1.70));
       this.recalc();
       s.hp = s.stats.hpMax; s.mp = s.stats.mpMax;
       UI.toast('境界提升 · ' + s.level + ' 级', 'lv');

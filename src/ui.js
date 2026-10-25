@@ -469,7 +469,17 @@ const UI = {
     const runeWordN = len(RUNE_WORDS);
     const tierN = len(BASE_TIER_NAME);
     const rarList = Object.keys(RARITY).map(k => RARITY[k]);
-    const diffList = Object.keys(DIFFS).map(k => DIFFS[k]);
+    const diffList = Object.keys(DIFFS).map(d => DIFFS[d]);
+    /* [v1.10.0] 平衡旋钮：掉落池 / 暴击起点 / 经验曲线全部现读 BALANCE，
+     * 调完那张表，说明页这一节自己跟着变 */
+    const BAL = (typeof BALANCE !== 'undefined') ? BALANCE : null;
+    const poolTxt = pool => {
+      const t = pool.reduce((s, p) => s + p[1], 0);
+      return pool.filter(p => p[1] > 0)
+        .map(p => `${(RARITY[p[0]] || {}).name || p[0]} ${Math.round(p[1] / t * 100)}%`)
+        .join(' / ');
+    };
+    const pctOf = v => Math.round((v || 0) * 100) + '%';
     const barSlots = (typeof SKILL_BAR_SLOTS === 'number') ? SKILL_BAR_SLOTS : 8;
     const barSets = (typeof SKILL_BAR_SETS === 'number') ? SKILL_BAR_SETS : 2;
     const lvStep = (typeof SKILL_LV_STEP === 'number') ? Math.round(SKILL_LV_STEP * 100) : 8;
@@ -519,6 +529,16 @@ const UI = {
         .map(k => row(CLASSES[k].title || CLASSES[k].name || k, attrLine(k))),
       row('洗点', `随时可洗，价 ${attrRespecCost(1)} 金起（随境界上涨，约为境界 ×60）。<b>洗点不会让身上的装备脱落</b>：穿戴需求只在穿戴那一刻校验`),
       row('伤害乘区', `攻击力（决定所有伤害基数）× 暴击率 × 暴击伤害 × 攻速 × 元素增伤 × 技能增伤 × 对精英/首领增伤 —— 各乘区独立相乘，堆单一乘区收益会衰减`),
+      /* [v1.10.0] 暴击起点与经验曲线都是 BALANCE 里的旋钮，别再写死 */
+      row('暴击起点', BAL
+        ? `裸装 Lv1 为 <b>暴击率 ${BAL.crit.base}% / 暴击伤害 ${BAL.crit.dmg}%</b>` +
+          `（上限 ${BAL.crit.dmgCap}%）。往上靠三处：敏捷（暴击率）、力量（刀客爆伤）、装备词条与天赋`
+        : '裸装 Lv1 的暴击率与暴击伤害都很低，主要靠装备与加点堆'),
+      row('境界经验', BAL && typeof xpToNext === 'function'
+        ? `升到下一级需要 <b>${BAL.xp.base} × 等级^${BAL.xp.pow}</b> 经验（Lv1 → ${xpToNext(1)}，`
+          + `Lv20 → ${xpToNext(20)}，Lv38 → ${xpToNext(38)}）。怪物经验按自身等级成长，`
+          + `越级打高级图的怪，升级明显更快 —— 但也更容易死`
+        : '升级所需经验随等级快速上升，越级打怪收益更高'),
       row('防御', `护甲、闪避、格挡、伤害减免、各元素抗性（上限 75%）、濒死免疫（致死时留 1 血，60 秒冷却）。护甲主要来自体质与装备`),
       row('资源', `${((typeof classPackList === 'function') ? classPackList() : [])
         .map(p => (p.meta.title || p.meta.name) + ' 用' + p.meta.res).join('、')}；消耗降低 / 回复速度 / 击杀回蓝都会影响技能循环。灵力上限与回灵来自灵力`),
@@ -555,6 +575,15 @@ const UI = {
       row('三条线', `<b>基底阶</b>（${tierN} 阶，决定基础数值，见第三节）· <b>品质</b>（决定词条条数与边框颜色）· <b>类型</b>（普通 / 套装 / 传世）为三个独立维度。一件装备同时具备一个阶、一个品质、一个类型 —— 例：同为「${BASE_TIER_NAME[1]}」基底的长剑，可为凡品（0 词条），也可为玄品（${RARITY.rare.affixes + RARITY.rare.fixed} 词条）。阶决定数值，品质决定词条`),
       row('品质（可升品）', `<div class="hp-tags kcs">${qualityChain.map(r =>
         `<span class="hp-tag q" style="color:${r.color};border-color:${r.color}55" title="掉落权重 ${r.weight}">${r.name}<i>${r.affixes + r.fixed} 词条</i></span>`).join('')}</div>`),
+      /* [v1.10.0] 掉落按层级分池：小怪的池里根本没有神品以上，
+       * 「小怪掉橙」从机制上不可能，不是靠低概率碰运气 */
+      row('掉落来源', BAL
+        ? `<b>按怪物层级分池，低层级池里没有高档品质</b>：<br>`
+          + `小怪（掉率 ${pctOf(BAL.drop.normal.chance)}）：${poolTxt(BAL.drop.normal.pool)}<br>`
+          + `精英（掉率 ${pctOf(BAL.drop.elite.chance)}）：${poolTxt(BAL.drop.elite.pool)}<br>`
+          + `首领（必掉 ${BAL.drop.boss.count} 件）：${poolTxt(BAL.drop.boss.pool)}<br>`
+          + `<span class="hp-n">传世只出在首领身上；「掉落数量」词条只在池内加权，不会把池外品质抽出来</span>`
+        : '小怪不掉神品以上，传世只出在首领身上'),
       row('套装（类型）', `绿色边框，${setIds.length} 套。品质固定为「套装」（${RARITY.set.affixes + RARITY.set.fixed} 词条），靠穿够 2 / 3 / 4 / 5 件激活套装效果，不走升品链`),
       row('传世（类型）', `红色边框，${uniN} 件。固定词条 + 独有特性 + 技能效果，既不在升品链也不在八阶链 —— 详见第六节`),
       row('词缀池', `共 ${affN} 条：一阶 ${affTier[1]} 条 / 二阶 ${affTier[2]} 条 / 三阶 ${affTier[3]} 条。阶数越高数值越大，掉落权重越低`),
@@ -578,13 +607,12 @@ const UI = {
       row('是什么', `红色边框的「传世」装备，共 ${uniN} 件（${clsUniN} 件职业专属、${uniN - clsUniN} 件三职业通用）。每件都有固定名字、固定词条区间、独有特性和专属技能效果`),
       row('不入八阶', `八阶（${BASE_TIER_NAME.join(' → ')}）讲的是「同一件东西被锻造到多好」；传世天生就是这个样子 —— <b>没有阶、不能升阶</b>，炼器台会直接拒绝并说明原因`),
       row('特性唯一', `${traitN} 条特性，每条仅属于一件传世，<b>全表不重复</b>。强化某件装备只为其新增专属特性，不复用其他装备的特性`),
-      row('属性类特性', `直接进面板，看到多少就是多少：饮血、金刚、巨灵、疾风这类`),
-      row('触发类特性', `满足条件自动触发：霜噬减速、焚烬爆炸、雷罚连锁、回响不进冷却、血怒击杀加速`),
+      row('属性类特性', `直接进面板，看到多少就是多少：饮血、金刚、巨灵、疾风这类`),      row('触发类特性', `满足条件自动触发：霜噬减速、焚烬爆炸、雷罚连锁、回响不进冷却、血怒击杀加速`),
       row('机制类特性', `独立实现的一次性机制：涅槃复活、收魂回血、狂战、裂魂暴击爆炸`),
       row('技能效果', `每件都带一条，二选一：<b>授予新技能</b>（${grantN} 件，跨职业秘技，术法面板里单独一组「秘技」，脱下即失去）或<b>强化已有技能</b>（${upN} 件，指定技能 +伤害 / -冷却 / +范围，'通玄' 则是全部技能）`),
       row('与套装区别', `套装按装备件数逐级激活，单件收益较低；传世单件即为完整形态，不计入套装件数，也不触发套装效果`),
       row('穿戴', `比同等级神品只多一格（约 0~10 点），另加一条敏捷印记 —— 它低于自然成长，所以永远显示为已满足，不额外吃加点`),
-      row('怎么来', `怪物等级达到该件的 ilvl 后进入掉落池，首领与高难度掉率更高；同一件可以重复掉落，每次数值重新 roll`),
+      row('怎么来', `只在<b>首领</b>身上掉（小怪与精英的掉落池里没有传世），且首领等级达到该件的 ilvl 后才会进入池子；同一件可以重复掉落，每次数值重新 roll`),
       tags(uniList.map(u => `${u.name}${u.cls ? '（' + CLASSES[u.cls].name + '）' : ''}`), 'uni')
     ]));
 

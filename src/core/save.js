@@ -160,7 +160,9 @@ const SaveManager = {
     c.level = this._int(c.level, 1, 99, m.level);
     c.xp = this._num(c.xp, 0);
     const xpDef = Math.max(1, Math.round(c.level * 100));
-    c.xpNext = Math.max(1, this._num(c.xpNext, xpDef));
+    /* [v1.10.0] xpNext 一律按当前曲线重算：老档里存的是旧曲线（1.55 次方）的值，
+     * 留着会让老角色比新角色升级快一截，属于「隐性 buff」 */
+    c.xpNext = (typeof xpToNext === 'function') ? xpToNext(c.level) : Math.max(1, this._num(c.xpNext, xpDef));
     c.gold = this._int(c.gold, 0, 1e12, 0);
     /* 难度 / 传送石 / 技能领悟：旧档没有时补默认值，避免 unpack 出 undefined */
     c.difficulty = this._difficulty(c.difficulty);
@@ -257,7 +259,7 @@ const SaveManager = {
         name: String(s.name || '无名客').slice(0, 12),
         level: this._int(s.level, 1, 99, 1),
         xp: this._num(s.xp, 0),
-        xpNext: Math.max(1, this._num(s.xpNext, 120)),
+        xpNext: (typeof xpToNext === 'function') ? xpToNext(this._int(s.level, 1, 99, 1)) : Math.max(1, this._num(s.xpNext, 180)),
         gold: this._int(s.gold, 0, 1e12, 0),
         difficulty: this._difficulty(s.difficulty),
         teleportStones: this._int(s.teleportStones, 0, 9999, 0),
@@ -516,7 +518,7 @@ const SaveManager = {
   _fallbackState(cls, name) {
     const eq = (typeof makeStarterSet === 'function') ? makeStarterSet(cls) : { chest: null, weapon: null };
     return {
-      cls, name, level: 1, xp: 0, xpNext: 120, gold: 120,
+      cls, name, level: 1, xp: 0, xpNext: (typeof xpToNext === 'function' ? xpToNext(1) : 180), gold: 120,
       difficulty: (typeof DEFAULT_DIFF !== 'undefined') ? DEFAULT_DIFF : 'normal',
       potions: { hp: 4, mp: 3 }, teleportStones: 0, hp: 100, mp: 50,
       equipment: { helm: null, chest: eq.chest, shoulders: null, cloak: null, gloves: null, boots: null, belt: null, amulet: null, ring1: null, ring2: null, weapon: eq.weapon, offhand: null, relic: null, fate: null },

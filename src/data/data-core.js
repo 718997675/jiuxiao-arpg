@@ -189,9 +189,12 @@ const DIFFS = {
   nightmare: {
     key: 'nightmare', name: '极难', color: '#e8564a', tag: '九幽炼狱',
     mobHp: 2.40, mobDmg: 1.95, mobSpd: 1.20, taken: 1.70,
-    xp: 1.80, gold: 1.50, drop: 1.45, rune: 1.45,
+    /* [v1.10.0] 经验 1.80 → 1.50：极难要「更久」，不是「同样久但更痛」。
+     * 怪血量 2.4 倍本来就把杀怪速度压到 42%，再给 1.8 倍经验等于白送 ——
+     * 现在折成 1.5，通关时长约为普通的 1.6 倍。 */
+    xp: 1.50, gold: 1.50, drop: 1.45, rune: 1.45,
     elite: 0.26, aggro: 1.45, elem: true, deathPenalty: 0.25, bossRush: true,
-    desc: '怪物附带火/冰/毒元素，精英成群，死亡损 25% 金币。收益 +80% 经验。'
+    desc: '怪物附带火/冰/毒元素，精英成群，死亡损 25% 金币。收益 +50% 经验。'
   }
 };
 const DIFF_ORDER = ['novice', 'normal', 'hard', 'nightmare'];
@@ -301,4 +304,80 @@ function deriveFromAttrs(cls, attrs) {
     for (const dk in w) out[dk] = (out[dk] || 0) + w[dk] * v;
   }
   return out;
+}
+
+/* ============================================================
+ * BALANCE —— 平衡旋钮（v1.10.0）
+ * ------------------------------------------------------------
+ * 起因（用户试玩反馈）：小怪随手掉橙、首领几乎必掉红；1 级暴击伤害就 150%；
+ * 一小时通关，装备来得太容易、升级太快，没挑战。
+ * 根因有三条，全部收在这张表里，以后调平衡只改这里，不再满仓库找魔数：
+ *
+ *   1. 掉落只看全局权重（神品 5.9% / 套装 2.9% / 传世 2.0%），小怪也一样；
+ *   2. 暴击基础值写死在 computePlayerStats 里（5 / 150），无成长曲线；
+ *   3. 首领血量是写死的固定值（1800 → 42000），而玩家伤害随等级与装备
+ *      涨了十几二十倍 —— 于是首领越到后期越好打。
+ *
+ * 各字段含义见行内注释。drop.pools 的权重是「相对值」，不必凑成 100。
+ * ============================================================ */
+const BALANCE = {
+  /* 暴击：裸装起点。1 级 3% / 125%，靠根基、装备、天赋往上堆 */
+  crit: { base: 3, dmg: 125, dmgCap: 500 },
+
+  /* 经验：境界 = xpNext(L) = base × L^pow；
+   *      普通怪 = cfg.xp × (1 + 怪物等级 × mobLv)；首领 = 等级 × bossLv */
+  /* base/pow 是按「普通难度通关 ≈ 10 小时」反解出来的：
+   * dev/balance-report.js 的第六节会用同一套公式复算，调完跑一遍就知道差多少 */
+  xp: { base: 200, pow: 1.80, mobLv: 0.12, bossLv: 30 },
+
+  /* 掉落：按怪物层级分池。低层级池里根本没有高档品质，
+   * 于是「小怪掉橙」从机制上不可能，而不是靠低概率碰运气。 */
+  drop: {
+    /* 掉落数量 / 符文 / 玄晶的加成（源自「掉落数量」词条）按这个系数缩水 */
+    mfScale: 0.5,
+    normal: {
+      chance: 0.16,                 // 单件掉落概率
+      extra: 0.35,                  // 额外再掉一件的概率
+      pool: [['common', 76], ['magic', 21], ['rare', 3]]
+    },
+    elite: {
+      chance: 0.62,
+      extra: 0.5,
+      pool: [['magic', 54], ['rare', 38], ['legendary', 7], ['set', 1]]
+    },
+    boss: {
+      count: 2,                     // 必掉件数
+      extra: 0.5,                   // 额外第三件的概率
+      pool: [['rare', 58], ['legendary', 26], ['set', 12], ['unique', 4]]
+    }
+  },
+
+  /* 怪物强度：血量随等级超线性，伤害线性；精英额外倍血 */
+  mob: { hpLv: 0.55, hpLv2: 0.010, dmgLv: 0.20, eliteHp: 2.4, eliteDmg: 1.3 },
+
+  /* 首领：血量按「自身等级 / refLv」的 pow 次方放大到 hpMul 倍，
+   * 前期几乎不变（1.0 倍），终盘约 12 倍 —— 首领不会再被越级碾平 */
+  boss: { hpMul: 12, hpMulPow: 2, refLv: 38, dmgLv: 0.09 }
+};
+
+/* 首领血量倍率：Lv.refLv 时 = 1 + (lv/refLv)^pow × (hpMul - 1) */
+function bossHpScale(lv) {
+  const b = BALANCE.boss;
+  const t = Math.max(0, Math.min(1.2, (lv || 1) / b.refLv));
+  return 1 + Math.pow(t, b.hpMulPow) * (b.hpMul - 1);
+}
+/* 按权重池抽一个品质；池里没有的档永远不会出现 */
+function pickFromPool(pool) {
+  let total = 0;
+  for (const p of pool) total += p[1];
+  let r = Math.random() * total;
+  for (const p of pool) { if (r < p[1]) return p[0]; r -= p[1]; }
+  return pool[0][0];
+}
+
+/* 升到下一境界所需经验：base × L^pow（BALANCE.xp）。唯一口径，
+ * 升级、新建角色、读档整形三处都调它，别各写一遍。 */
+function xpToNext(level) {
+  const x = (typeof BALANCE !== 'undefined' && BALANCE.xp) ? BALANCE.xp : { base: 180, pow: 1.70 };
+  return Math.max(1, Math.round(x.base * Math.pow(Math.max(1, level || 1), x.pow)));
 }

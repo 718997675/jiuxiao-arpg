@@ -683,24 +683,33 @@ function rollItem(ilvl, opts = {}) {
   /* v1.3.0：法器另有 6% 的掉落入口。挂在部位池之外，原有掉率分布不动。
    * 只在「完全随机」时溢出：指定了部位或品质的调用（任务奖励 / 定向刷装 / 统计）
    * 一律按调用方要求出，不会被法器顶掉。 */
-  if (!opts.slot && !opts.rarity && !opts.noRelic && CHANCE(0.06)) slot = 'relic';
+  /* [v1.10.0] 法器掉率 6% → 2%：法器是目录固定件、品质恒为「神品」（橙色边框），
+   * 6% 的入口加上小怪 30% 的掉率，等于每 50 只小怪就有一件橙 —— 这正是
+   * 玩家反馈「小怪掉橙几率也不小」的主要来源。降到 2% 后入口仍保留，
+   * 但不再把橙色稀释成常见色。 */
+  if (!opts.slot && !opts.rarity && !opts.noRelic && CHANCE(0.02)) slot = 'relic';
   if (slot === 'relic') return makeRelic(PICK(relicPool(cls, ilvl)), cls);
   /* [M1] 命格：和法器同理，走独立的低概率入口（4%）。
    * 它只有一格、且只吃机制型词条，掉率高了会把护具挤掉。
    * 注意这里**不受 noRelic 影响**：noRelic 的语义是「别出目录固定件（法器）」，
    * 而命格是正常基底 + 正常词条，属于普通装备统计的一部分。 */
-  if (!opts.slot && !opts.rarity && CHANCE(0.04)) slot = 'fate';
+  if (!opts.slot && !opts.rarity && CHANCE(0.02)) slot = 'fate';
   let rarity = opts.rarity;
   if (!rarity) {
-    const mf = opts.magicFind || 0;
-    const w = [
-      ['common', RARITY.common.weight],
-      ['magic', RARITY.magic.weight + mf * 0.16],
-      ['rare', RARITY.rare.weight + mf * 0.1],
-      ['legendary', RARITY.legendary.weight + mf * 0.05],
-      ['set', RARITY.set.weight + mf * 0.04],
-      ['unique', RARITY.unique.weight + mf * 0.03]
-    ];
+    const mf = (opts.magicFind || 0) * ((typeof BALANCE !== 'undefined' && BALANCE.drop) ? BALANCE.drop.mfScale : 0.5);
+    /* v1.10.0：调用方可以指定品质池（opts.pool），掉落按怪物层级分池 ——
+     * 小怪的池里根本没有神品以上，于是「小怪掉橙」从机制上不可能。
+     * 不传 pool 时沿用全局权重（商店 / 任务 / 打造等入口不变）。 */
+    const w = opts.pool
+      ? opts.pool.map(([k, v]) => [k, v + (k === 'common' ? 0 : mf * (k === 'magic' ? 0.16 : k === 'rare' ? 0.1 : k === 'legendary' ? 0.05 : k === 'set' ? 0.04 : 0.03))])
+      : [
+        ['common', RARITY.common.weight],
+        ['magic', RARITY.magic.weight + mf * 0.16],
+        ['rare', RARITY.rare.weight + mf * 0.1],
+        ['legendary', RARITY.legendary.weight + mf * 0.05],
+        ['set', RARITY.set.weight + mf * 0.04],
+        ['unique', RARITY.unique.weight + mf * 0.03]
+      ];
     let total = w.reduce((s, x) => s + x[1], 0), r = Math.random() * total;
     for (const [k, v] of w) { if (r < v) { rarity = k; break; } r -= v; }
     if (!rarity) rarity = 'common';
@@ -1087,8 +1096,11 @@ function computePlayerStats(p) {
   const atk = (c.baseAtk + st.atk + d.atk) * (1 + st.atkPct / 100);
   const hpMax = (c.baseHp + lv * 16 + d.hpMax + st.hp) * (1 + st.hpPct / 100);
   const mpMax = (c.baseMp + lv * 4 + d.mpMax + st.mp) * (1 + st.mpPct / 100);
-  const crit = CLAMP(5 + d.crit + st.crit, 0, 75);
-  const critDmg = 150 + d.critDmg + st.critDmg;
+  /* 暴击起点读平衡表（v1.10.0）：老版写死 5 / 150，1 级裸装就 150% 爆伤，
+   * 玩家反馈「这不合理」。缺表时退回同一组默认值，单文件测试也能跑。 */
+  const BC = (typeof BALANCE !== 'undefined' && BALANCE.crit) ? BALANCE.crit : { base: 3, dmg: 125, dmgCap: 500 };
+  const crit = CLAMP(BC.base + d.crit + st.crit, 0, 75);
+  const critDmg = Math.min(BC.dmgCap, BC.dmg + d.critDmg + st.critDmg);
   const aspd = (1 + st.aspd / 100) * (1 + d.aspd / 100);
   const moveSpd = (7.2 + d.moveSpd) * (1 + st.moveSpd / 100) + st.moveSpdFlat;
   const def = (st.def + d.def) * (1 + st.armorPct / 100);
