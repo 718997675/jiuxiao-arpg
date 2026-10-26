@@ -334,6 +334,92 @@ function makePillar(h = 7, broken = false, col = 0x8a8a92) {
   return g;
 }
 
+/* ---------------- M12：区域化工具 ----------------
+ * 可走区域 = MAP_ZONES 里所有 zone 的并集（见 src/data/data-maps.js）。
+ * 这里负责把「数据上的区域」变成看得见的地面、墙和道具分布。 */
+
+/* 区域边界采样点：返回 { x, z, nx, nz }，法线朝区域外 */
+function zoneEdgePoints(z, step) {
+  const pts = [];
+  step = step || 2.6;
+  if (z.type === 'circle') {
+    const n = Math.max(12, Math.round(Math.PI * 2 * z.r / step));
+    for (let i = 0; i < n; i++) {
+      const a = i / n * Math.PI * 2;
+      pts.push({ x: z.x + Math.cos(a) * z.r, z: z.z + Math.sin(a) * z.r, nx: Math.cos(a), nz: Math.sin(a) });
+    }
+    return pts;
+  }
+  const hw = z.w / 2, hh = z.h / 2;
+  const nx = Math.max(2, Math.round(z.w / step)), nz = Math.max(2, Math.round(z.h / step));
+  for (let i = 0; i <= nx; i++) {
+    const x = z.x - hw + z.w * i / nx;
+    pts.push({ x, z: z.z - hh, nx: 0, nz: -1 });
+    pts.push({ x, z: z.z + hh, nx: 0, nz: 1 });
+  }
+  for (let i = 1; i < nz; i++) {
+    const zz = z.z - hh + z.h * i / nz;
+    pts.push({ x: z.x - hw, z: zz, nx: -1, nz: 0 });
+    pts.push({ x: z.x + hw, z: zz, nx: 1, nz: 0 });
+  }
+  return pts;
+}
+
+/* 在可走区域里随机取点（按面积加权，走廊不撒道具 —— 否则会挡路） */
+function pickSpotInZones(mapId, pad) {
+  if (typeof mapZones !== 'function') return null;
+  const zs = mapZones(mapId);
+  if (!zs) return null;
+  const rooms = zs.filter(z => z.kind !== 'link');
+  if (!rooms.length) return null;
+  const areaOf = z => (z.type === 'circle' ? Math.PI * z.r * z.r : z.w * z.h);
+  let total = 0;
+  for (const z of rooms) total += areaOf(z);
+  let t = Math.random() * total;
+  let pick = rooms[rooms.length - 1];
+  for (const z of rooms) { t -= areaOf(z); if (t <= 0) { pick = z; break; } }
+  return randomPointInZone(pick, pad);
+}
+
+/* 在区域外轮廓上摆一圈乱石当墙。走廊开口处自动留空（外侧仍在区域内就跳过）。
+ * 用 InstancedMesh 合成一次 draw call —— 每张图近 200 块石头，逐个 Mesh 会拖垮手机。 */
+function buildZoneWalls(mapId, root, mat) {
+  if (typeof mapZones !== 'function') return 0;
+  const zs = mapZones(mapId);
+  if (!zs) return 0;
+  const spots = [];
+  for (const z of zs) {
+    for (const p of zoneEdgePoints(z, 2.6)) {
+      /* 外侧 1.7 米仍在可走区域内 → 这里是走廊口或两区接缝，不放墙 */
+      if (zonesContain(mapId, p.x + p.nx * 1.7, p.z + p.nz * 1.7)) continue;
+      /* 内侧 1.2 米必须是可走区域，否则是两块区域之间的夹缝，也不用堵 */
+      if (!zonesContain(mapId, p.x - p.nx * 1.2, p.z - p.nz * 1.2)) continue;
+      spots.push(p);
+    }
+  }
+  if (!spots.length) return 0;
+  const geo = new THREE.DodecahedronGeometry(1, 0);
+  const inst = new THREE.InstancedMesh(geo, mat, spots.length);
+  inst.castShadow = false;
+  inst.receiveShadow = true;
+  const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), eul = new THREE.Euler(), v = new THREE.Vector3(), s = new THREE.Vector3();
+  for (let i = 0; i < spots.length; i++) {
+    const p = spots[i];
+    const jx = p.x + p.nx * RND(0.4, 1.5) + RND(-0.5, 0.5);
+    const jz = p.z + p.nz * RND(0.4, 1.5) + RND(-0.5, 0.5);
+    const sc = RND(1.1, 2.4);
+    eul.set(RND(0, 3.1), RND(0, 3.1), RND(0, 3.1));
+    q.setFromEuler(eul);
+    s.set(sc, sc * RND(0.7, 1.3), sc);
+    v.set(jx, RND(-0.3, 0.9), jz);
+    m4.compose(v, q, s);
+    inst.setMatrixAt(i, m4);
+  }
+  inst.instanceMatrix.needsUpdate = true;
+  root.add(inst);
+  return spots.length;
+}
+
 /* ---------------- 构建地图 ---------------- */
 function buildMap(mapId) {
   const cfg = MAPS[mapId];
@@ -343,12 +429,19 @@ function buildMap(mapId) {
   const occluders = [];
   const labels = [];
 
-  const groundTex = makeGroundTexture(cfg.ground);
-  const groundMat = new THREE.MeshStandardMaterial({ map: groundTex, color: 0xffffff, roughness: 0.98, metalness: 0 });
-  groundMat.color.setHex({
+  /* [M12] 有区域配置的图走「区域 + 走廊」，没有的（老图 / 试炼场）仍用圆形 */
+  const zones = (typeof mapZones === 'function') ? mapZones(mapId) : null;
+  const baseColor = {
     dirt: 0xc6d2b0, bamboo: 0xa6c096, swamp: 0x9a8064,
     rock: 0xa8a8b2, abyss: 0xc0a8dc, heaven: 0xc4d2e6, trial: 0xd2c8ec
-  }[cfg.ground] || 0xffffff);
+  }[cfg.ground] || 0xffffff;
+
+  const groundTex = makeGroundTexture(cfg.ground);
+  const groundMat = new THREE.MeshStandardMaterial({ map: groundTex, color: 0xffffff, roughness: 0.98, metalness: 0 });
+  groundMat.color.setHex(baseColor);
+  /* 区域化地图：底层压暗当「不可走的荒原」，可走区域再单独铺亮色，
+   * 玩家一眼能看出「哪能走」—— 这比墙更早建立空间感。 */
+  if (zones) groundMat.color.multiplyScalar(0.40);
   const gEmis = { abyss: [0x2a1040, 0.75], heaven: [0x223350, 0.5], mine: [0x140e08, 0.35], trial: [0x2a1444, 0.4] }[cfg.ground];
   if (gEmis) { groundMat.emissive.setHex(gEmis[0]); groundMat.emissiveIntensity = gEmis[1]; }
   const ground = new THREE.Mesh(new THREE.PlaneGeometry(cfg.size * 3, cfg.size * 3, 1, 1), groundMat);
@@ -356,16 +449,52 @@ function buildMap(mapId) {
   ground.receiveShadow = true;
   root.add(ground);
 
-  // 边界（雾气环绕的岩壁）
+  /* 可走区域的地面。每个 zone 单独一块，纹理按区域尺寸重复，
+   * 免得 30 米的大厅把 8 米小径的纹理拉糊。y 逐块微抬避免共面闪烁。 */
+  if (zones) {
+    zones.forEach((z, i) => {
+      const tex = groundTex.clone();
+      tex.needsUpdate = true;
+      tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+      const w = z.type === 'circle' ? z.r * 2 : z.w;
+      const h = z.type === 'circle' ? z.r * 2 : z.h;
+      tex.repeat.set(Math.max(1, w / 9), Math.max(1, h / 9));
+      const mat = new THREE.MeshStandardMaterial({ map: tex, color: baseColor, roughness: 0.98, metalness: 0 });
+      if (gEmis) { mat.emissive.setHex(gEmis[0]); mat.emissiveIntensity = gEmis[1] * 0.8; }
+      const geo = z.type === 'circle'
+        ? new THREE.CircleGeometry(z.r, 48)
+        : new THREE.PlaneGeometry(z.w, z.h);
+      const m = new THREE.Mesh(geo, mat);
+      m.rotation.x = -Math.PI / 2;
+      m.position.set(z.x, 0.02 + i * 0.0012, z.z);
+      m.receiveShadow = true;
+      root.add(m);
+    });
+  }
+
+  // 边界
   const R = cfg.size * 0.5;
   const borderM = M(cfg.ground === 'heaven' ? 0x8a9ab0 : (cfg.ground === 'abyss' ? 0x2b2038 : 0x3a3a40), { rough: 1 });
-  for (let i = 0; i < 40; i++) {
-    const ang = i / 40 * Math.PI * 2;
-    const r = R + RND(2, 8);
-    const x = Math.cos(ang) * r, z = Math.sin(ang) * r;
-    const rock = mesh(new THREE.DodecahedronGeometry(RND(2, 5), 0), borderM, x, RND(0, 2), z, root);
-    rock.rotation.set(RND(0, 3), RND(0, 3), RND(0, 3));
-    rock.castShadow = false;
+  if (zones) {
+    /* 区域化：墙沿区域外轮廓长出来，走廊口自动留空 */
+    buildZoneWalls(mapId, root, borderM);
+    /* 外围远景再撒一圈大石，避免压暗的荒原一眼望到天边 */
+    for (let i = 0; i < 26; i++) {
+      const ang = i / 26 * Math.PI * 2 + RND(-0.1, 0.1);
+      const r = R + RND(4, 12);
+      const rock = mesh(new THREE.DodecahedronGeometry(RND(3, 6), 0), borderM, Math.cos(ang) * r, RND(-1, 1), Math.sin(ang) * r, root);
+      rock.rotation.set(RND(0, 3), RND(0, 3), RND(0, 3));
+      rock.castShadow = false;
+    }
+  } else {
+    for (let i = 0; i < 40; i++) {
+      const ang = i / 40 * Math.PI * 2;
+      const r = R + RND(2, 8);
+      const x = Math.cos(ang) * r, z = Math.sin(ang) * r;
+      const rock = mesh(new THREE.DodecahedronGeometry(RND(2, 5), 0), borderM, x, RND(0, 2), z, root);
+      rock.rotation.set(RND(0, 3), RND(0, 3), RND(0, 3));
+      rock.castShadow = false;
+    }
   }
 
   const add = (obj, x, z, collide = true, y = 0) => {
@@ -374,6 +503,18 @@ function buildMap(mapId) {
     if (collide && obj.userData.collider) colliders.push({ x, z, r: obj.userData.collider.r });
     occluders.push({ obj, r: (obj.userData.collider ? obj.userData.collider.r : 1.0) + 0.5 });
     return obj;
+  };
+
+  /* [M12] 道具撒点：有区域配置时只在可走区域内撒（走廊除外），
+   * 否则会有一半竹子长在墙外、玩家看得见摸不着。
+   * 没有区域配置的图（试炼擂台）退回原来的圆形撒点。 */
+  const spot = (rmin, rmax, pad) => {
+    if (zones) {
+      const p = pickSpotInZones(mapId, pad === undefined ? 2.2 : pad);
+      if (p) return p;
+    }
+    const ang = Math.random() * 7, r = RND(rmin, rmax);
+    return { x: Math.cos(ang) * r, z: Math.sin(ang) * r };
   };
 
   if (cfg.props === 'village') {
@@ -428,27 +569,23 @@ function buildMap(mapId) {
     add(well, 10, -7, true);
   } else if (cfg.props === 'bamboo') {
     for (let i = 0; i < 95; i++) {
-      const ang = Math.random() * 7, r = RND(8, R + 4);
-      const x = Math.cos(ang) * r, z = Math.sin(ang) * r;
-      if (Math.hypot(x, z) < 7) continue;
+      const { x, z } = spot(8, R + 4);
       add(makeBamboo(RND(0.8, 1.5)), x, z);
     }
     for (let i = 0; i < 26; i++) {
-      const ang = Math.random() * 7, r = RND(6, R);
-      add(makeRock(RND(0.5, 1.1), 0x6a6a62), Math.cos(ang) * r, Math.sin(ang) * r);
+      const { x, z } = spot(6, R, 3.2);
+      add(makeRock(RND(0.5, 1.1), 0x6a6a62), x, z);
     }
     for (let i = 0; i < 4; i++) {
-      const ang = Math.random() * 7, r = RND(12, R - 4);
-      const t = makeTorch(); add(t, Math.cos(ang) * r, Math.sin(ang) * r, false);
+      const { x, z } = spot(12, R - 4, 3);
+      const t = makeTorch(); add(t, x, z, false);
       anims.push(a => { t.userData.flicker.intensity = 1.0 + Math.sin(a * 9 + i) * 0.3; });
     }
-    scatterFoliage(root, 420, 6, R * 0.94, 0x3f5f2c, 0x9a6ac0);
     scatterFoliage(root, 420, 6, R * 0.94, 0x3f5f2c, 0x9a6ac0);
   } else if (cfg.props === 'swamp') {
     // 死树
     for (let i = 0; i < 55; i++) {
-      const ang = Math.random() * 7, r = RND(9, R + 3);
-      const x = Math.cos(ang) * r, z = Math.sin(ang) * r;
+      const { x, z } = spot(9, R + 3, 3.4);
       const g = new THREE.Group();
       const tm = M(0x3a2f26, { rough: 1 });
       mesh(cylGeo(0.25, 0.45, RND(3, 5), 5), tm, 0, 2, 0, g);
@@ -463,29 +600,27 @@ function buildMap(mapId) {
     }
     // 毒潭
     for (let i = 0; i < 9; i++) {
-      const ang = Math.random() * 7, r = RND(10, R - 8);
-      const puddle = mesh(new THREE.CircleGeometry(RND(2.5, 5), 16), new THREE.MeshStandardMaterial({ color: 0x2a4a30, emissive: 0x1a3a20, emissiveIntensity: 0.6, roughness: 0.3, metalness: 0.4, transparent: true, opacity: 0.85 }), Math.cos(ang) * r, 0.04, Math.sin(ang) * r, root);
+      const { x, z } = spot(10, R - 8, 5);
+      const puddle = mesh(new THREE.CircleGeometry(RND(2.5, 5), 16), new THREE.MeshStandardMaterial({ color: 0x2a4a30, emissive: 0x1a3a20, emissiveIntensity: 0.6, roughness: 0.3, metalness: 0.4, transparent: true, opacity: 0.85 }), x, 0.04, z, root);
       puddle.rotation.x = -Math.PI / 2;
     }
     for (let i = 0; i < 12; i++) {
-      const ang = Math.random() * 7, r = RND(10, R - 4);
-      add(makeBonePile(), Math.cos(ang) * r, Math.sin(ang) * r, false);
+      const { x, z } = spot(10, R - 4, 3);
+      add(makeBonePile(), x, z, false);
     }
     scatterFoliage(root, 260, 7, R * 0.9, 0x3a4a28, 0x7ab04a);
-    scatterFoliage(root, 260, 7, R * 0.9, 0x3a4a28, 0x7ab04a);
     for (let i = 0; i < 5; i++) {
-      const ang = Math.random() * 7, r = RND(14, R - 6);
-      const t = makeTorch(); add(t, Math.cos(ang) * r, Math.sin(ang) * r, false);
+      const { x, z } = spot(14, R - 6, 3);
+      const t = makeTorch(); add(t, x, z, false);
       anims.push(a => { t.userData.flicker.intensity = 1.0 + Math.sin(a * 8 + i) * 0.35; });
     }
   } else if (cfg.props === 'mine') {
     for (let i = 0; i < 60; i++) {
-      const ang = Math.random() * 7, r = RND(8, R + 2);
-      add(makeRock(RND(0.7, 2.0), 0x55555e), Math.cos(ang) * r, Math.sin(ang) * r);
+      const { x, z } = spot(8, R + 2, 3.4);
+      add(makeRock(RND(0.7, 2.0), 0x55555e), x, z);
     }
     for (let i = 0; i < 18; i++) {
-      const ang = Math.random() * 7, r = RND(9, R - 4);
-      const x = Math.cos(ang) * r, z = Math.sin(ang) * r;
+      const { x, z } = spot(9, R - 4, 3);
       const sup = new THREE.Group();
       const wm = M(0x4a3524, { rough: 0.95 });
       mesh(boxGeo(0.4, 5, 0.4), wm, -2, 2.5, 0, sup);
@@ -496,8 +631,8 @@ function buildMap(mapId) {
       root.add(sup);
     }
     for (let i = 0; i < 8; i++) {
-      const ang = Math.random() * 7, r = RND(10, R - 6);
-      const t = makeTorch(); add(t, Math.cos(ang) * r, Math.sin(ang) * r, false);
+      const { x, z } = spot(10, R - 6, 3);
+      const t = makeTorch(); add(t, x, z, false);
       anims.push(a => { t.userData.flicker.intensity = 1.1 + Math.sin(a * 11 + i * 2) * 0.4; });
     }
     // 矿车
@@ -508,42 +643,41 @@ function buildMap(mapId) {
         const w = mesh(cylGeo(0.28, 0.28, 0.16, 8), M(0x2a2a2e), sx * 0.7, 0.28, sz * 0.5, cart);
         w.rotation.z = Math.PI / 2;
       }
-      add(cart, RND(-20, 20), RND(-20, 20));
+      const cs = spot(10, R - 6, 4);
+      add(cart, cs.x, cs.z);
     }
   } else if (cfg.props === 'abyss') {
     for (let i = 0; i < 22; i++) {
-      const ang = Math.random() * 7, r = RND(9, R - 2);
-      add(makePillar(RND(4, 9), CHANCE(0.4), 0x584a68), Math.cos(ang) * r, Math.sin(ang) * r);
+      const { x, z } = spot(9, R - 2, 3.6);
+      add(makePillar(RND(4, 9), CHANCE(0.4), 0x584a68), x, z);
     }
     for (let i = 0; i < 26; i++) {
-      const ang = Math.random() * 7, r = RND(8, R);
+      const { x, z } = spot(8, R, 2.5);
       const orb = new THREE.Group();
       const s = mesh(sphGeo(RND(0.16, 0.3), 6), M(0xb07aff, { emissive: 0x9a4aff, ei: 2.4 }), 0, RND(1.5, 5), 0, orb);
       const l = new THREE.PointLight(0x9a6aff, 0.7, 8, 2); orb.add(l);
-      const x = Math.cos(ang) * r, z = Math.sin(ang) * r;
       orb.position.set(x, 0, z);
       root.add(orb);
       anims.push(a => { orb.position.y = Math.sin(a * 1.4 + i) * 0.4; s.rotation.y += 0.01; });
     }
     for (let i = 0; i < 16; i++) {
-      const ang = Math.random() * 7, r = RND(6, R);
-      add(makeBonePile(), Math.cos(ang) * r, Math.sin(ang) * r, false);
+      const { x, z } = spot(6, R, 2.5);
+      add(makeBonePile(), x, z, false);
     }
   } else if (cfg.props === 'heaven') {
     for (let i = 0; i < 20; i++) {
-      const ang = Math.random() * 7, r = RND(10, R - 2);
-      add(makePillar(RND(6, 11), CHANCE(0.5)), Math.cos(ang) * r, Math.sin(ang) * r);
+      const { x, z } = spot(10, R - 2, 3.8);
+      add(makePillar(RND(6, 11), CHANCE(0.5)), x, z);
     }
     for (let i = 0; i < 30; i++) {
-      const ang = Math.random() * 7, r = RND(6, R);
-      const cloud = mesh(sphGeo(RND(1.2, 2.6), 5), new THREE.MeshStandardMaterial({ color: 0xdde8f5, transparent: true, opacity: 0.5, roughness: 1 }), Math.cos(ang) * r, RND(0.5, 2), Math.sin(ang) * r, root);
+      const { x, z } = spot(6, R, 2.2);
+      const cloud = mesh(sphGeo(RND(1.2, 2.6), 5), new THREE.MeshStandardMaterial({ color: 0xdde8f5, transparent: true, opacity: 0.5, roughness: 1 }), x, RND(0.5, 2), z, root);
       cloud.scale.y = 0.35;
     }
     // 悬浮碎块
     for (let i = 0; i < 12; i++) {
-      const ang = Math.random() * 7, r = RND(14, R);
-      if (Math.abs(Math.cos(ang) * r) < 12 && Math.sin(ang) * r < -18) continue;
-      const blk = mesh(boxGeo(RND(1, 3), RND(0.4, 0.8), RND(1, 3)), M(0x8a94a8, { rough: 1 }), Math.cos(ang) * r, RND(3, 9), Math.sin(ang) * r, root);
+      const { x, z } = spot(14, R, 4);
+      const blk = mesh(boxGeo(RND(1, 3), RND(0.4, 0.8), RND(1, 3)), M(0x8a94a8, { rough: 1 }), x, RND(3, 9), z, root);
       blk.rotation.set(RND(0, 1), RND(0, 3), RND(0, 1));
       anims.push(a => { blk.position.y += Math.sin(a * 0.8 + i) * 0.003; blk.rotation.y += 0.0015; });
     }

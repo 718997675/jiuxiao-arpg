@@ -53,11 +53,12 @@ const MOB_CULL_DIST = 62;
  * 但省下的是「每只怪 22 个部件各一个 draw call」的整条阴影通道。 */
 const MOB_SHADOW_DIST = 20;
 
-const BOSS_POS = {
-  treeking: [28, -26], batking: [-30, -22],  chief: [34, 26], golemking: [-36, 24], snakequeen: [0, -36],
-  ghostlord: [30, 30], firegeneral: [-32, 28], icequeen: [0, -34],
-  spidermother: [30, 30], ferryman: [-32, 30], swordlord: [0, -32],
-  chaos: [0, -30]
+/* [M12] 首领落点改由 data-maps.js 的 MAP_BOSS_POS 提供（必须落在 sanctum 圆内）。
+ * 这里保留 BOSS_POS 这个名字，调用方不用改；缺表时退回一组安全默认值。 */
+const BOSS_POS = (typeof MAP_BOSS_POS !== 'undefined') ? MAP_BOSS_POS : {
+  treeking: [0, -28], batking: [7, -24], chief: [0, -30], golemking: [-7, -26], snakequeen: [7, -26],
+  ghostlord: [0, -28], firegeneral: [-7, -24], icequeen: [7, -24],
+  spidermother: [0, -29], ferryman: [-7, -25], swordlord: [7, -25], chaos: [0, -29]
 };
 
 /* 技能账本一项的更新：保留没被这次操作改到的字段。
@@ -1151,8 +1152,16 @@ const Game = {
 
     this.world = buildMap(mapId);
     this.scene.add(this.world.root);
-    // 出生点
-    const p = mapId === 'village' ? { x: 0, z: 6 } : { x: 0, z: 6 };
+    /* [M12] 出生点取入口区域靠内的位置：从传送阵往地图里挪 6 米，
+     * 玩家一进图就站在「门口」，而不是凭空出现在地图中央。 */
+    let p = { x: 0, z: 6 };
+    if (typeof mapEntryZone === 'function') {
+      const ez = mapEntryZone(mapId);
+      if (ez && ez.kind === 'entry') {
+        p = { x: ez.x, z: ez.z - 6 };
+        if (typeof zonesContain === 'function' && !zonesContain(mapId, p.x, p.z)) p = { x: ez.x, z: ez.z };
+      }
+    }
     s.playerPos = { x: p.x, z: p.z };
     this.playerGroup.position.set(p.x, 0, p.z);
     this.playerGroup.rotation.y = Math.PI;
@@ -1239,9 +1248,24 @@ const Game = {
   spawnEnemies() {
     const m = MAPS[this.state.mapId];
     if (m.safe || !m.spawns) return;
+    const D = this.diff();
+    /* [M12] 按区域刷：每个 zone 有自己的怪种与数量，主厅最多、走廊不刷。
+     * 这样「走进西坡」和「走进主厅」遇到的怪不一样，地图才有分区感。 */
+    const zs = (typeof zoneSpawners === 'function') ? zoneSpawners(this.state.mapId) : null;
+    if (zs && zs.length) {
+      for (const z of zs) {
+        const n = z.spawns.count || 0;
+        for (let i = 0; i < n; i++) {
+          const kind = zonePickKind(z, m.spawns);
+          if (!kind) continue;
+          const p = randomPointInZone(z, 2.6);
+          this.spawnEnemy(kind, p.x, p.z, CHANCE(D.elite));
+        }
+      }
+      return;
+    }
     const count = m.spawnCount || 14;
     /* [DIFF] 精英出现概率由难度决定：新手 3%，普通 8%，困难 16%，极难 26% */
-    const D = this.diff();
     for (let i = 0; i < count; i++) {
       const ang = Math.random() * Math.PI * 2;
       const r = RND(16, m.size * 0.46);
@@ -1478,6 +1502,9 @@ const Game = {
       if (b) {
         b.dmg = BOSSES[bid].atk * (1 + BOSSES[bid].level * 0.09);
         b.patternCd = RND(2.5, 4.5);
+        /* [M12] 拴绳锚点：玩家跑出祭坛之后首领要回位，
+         * 而不是顶着祭坛的硬墙原地抖（区域化之前圆环是软的，看不出来）。 */
+        b.anchor = { x: pos[0], z: pos[1] };
       }
     }
   },
@@ -1834,6 +1861,8 @@ const Game = {
     this.updatePlayer(dt);
     /* [P3] 跟随变体：区域锚点 / 特效跟着玩家走（必须在 updatePlayer 之后） */
     this.tickFollow(dt);
+    /* [M12] 换区提示：进入新区域时报一次名，让「区域 + 走廊」结构被玩家看见 */
+    this.tickZone(dt);
     this.updateAuras(dt);
     this.updateEnemies(dt);
     this.updateAllies(dt);
@@ -2035,7 +2064,7 @@ const Game = {
         pg.rotation.y = this.lerpAngle(pg.rotation.y, targetRot, 1 - Math.pow(0.0001, dt));
       }
     }
-    this.collideWorld(pg.position, 0.55);
+    this.collideWorld(pg.position, 0.55, this.movingNow ? this.lastMoveDir : null);
 
     if (this.dashT > 0) {
       this.dashT -= dt;
@@ -2046,7 +2075,7 @@ const Game = {
       pg.position.x += d.x * dspd * dt;
       pg.position.z += d.z * dspd * dt;
       if (Math.random() < 0.6) FX.burst(new THREE.Vector3(pg.position.x, 0.6, pg.position.z), 0xaaccff, 2, { speed: 1, size: 0.14, life: 0.3, gravity: 0, additive: true });
-      this.collideWorld(pg.position, 0.55);
+      this.collideWorld(pg.position, 0.55, d);
     }
 
     // 面向瞄准（攻击时）
@@ -2076,17 +2105,52 @@ const Game = {
     return a + d * t;
   },
 
-  collideWorld(pos, r) {
+  /* [M12] slide：本帧的移动方向（可选）。
+   * 只做「推出圆外」的话，「正对障碍物走」会变成一个稳定的死点 ——
+   * 每帧往前挪 0.05 米、每帧被原样推回，位置一个像素都不动，
+   * 看起来就是怪顶着树原地抖。这里按穿透深度沿切线补一段，
+   * 任何非零切向分量都能滑出去，玩家贴墙走也不会再被卡住。
+   *
+   * noProps：只受区域边界约束、不吃装饰物碰撞。**怪物一律传 true**。
+   * 原因是随机撒的石头/树会两两重叠，重叠处形成一个凹槽：两边的径向
+   * 推出互相抵消，切线分量也抵消，任何半径的圆都会被楔在里面出不来。
+   * 这不是「怪太笨」，是几何上就没有出口 —— 没有 navmesh 的前提下，
+   * 让怪穿过装饰物（视觉上只是蹭一下灌木）远好过让它原地抖一辈子。
+   * 玩家仍然吃道具碰撞：人有判断力，往旁边挪一步就出来了。 */
+  collideWorld(pos, r, slide, noProps) {
     if (!this.world) return;
-    for (const c of this.world.colliders) {
-      const dx = pos.x - c.x, dz = pos.z - c.z;
-      const d = Math.hypot(dx, dz), min = c.r + r;
-      if (d < min && d > 0.0001) {
-        pos.x = c.x + dx / d * min;
-        pos.z = c.z + dz / d * min;
+    if (!noProps) {
+      for (const c of this.world.colliders) {
+        const dx = pos.x - c.x, dz = pos.z - c.z;
+        const d = Math.hypot(dx, dz), min = c.r + r;
+        if (d < min && d > 0.0001) {
+          const nx = dx / d, nz = dz / d;
+          pos.x = c.x + nx * min;
+          pos.z = c.z + nz * min;
+          if (slide) {
+            const tx = -nz, tz = nx;
+            const s = slide.x * tx + slide.z * tz;
+            const pen = min - d;
+            const sign = s < 0 ? -1 : 1;
+            pos.x += tx * sign * pen;
+            pos.z += tz * sign * pen;
+          }
+        }
       }
     }
-    const lim = MAPS[this.state.mapId].size * 0.47;
+    /* [M12] 边界：区域化地图用「所有 zone 的并集」判定，出界时推回最近的
+     * 区域边界点。每帧位移很小，所以这个推回等于「沿墙滑动」，
+     * 不会出现被瞬移回房间中央的生硬感。
+     * 没有区域配置的图（试炼擂台）仍用旧的径向钳制。 */
+    const mid = this.state.mapId;
+    if (typeof zonesContain === 'function' && typeof mapZones === 'function' && mapZones(mid)) {
+      if (!zonesContain(mid, pos.x, pos.z)) {
+        const p = closestZonePoint(mid, pos.x, pos.z);
+        if (p) { pos.x = p.x; pos.z = p.z; }
+      }
+      return;
+    }
+    const lim = MAPS[mid].size * 0.47;
     const dd = Math.hypot(pos.x, pos.z);
     if (dd > lim) { pos.x *= lim / dd; pos.z *= lim / dd; }
   },
@@ -2225,6 +2289,38 @@ const Game = {
       }
       f.ox = pp.x; f.oz = pp.z;
     }
+  },
+
+  /* ---------------- [M12] 换区提示 ----------------
+   * 地图从「一个大圆圈」变成「区域 + 走廊」之后，最大的体验风险是玩家
+   * 根本意识不到自己在不同区域里走动 —— 走廊看起来只是地面变窄了一截。
+   * 所以每进一个新区域就报一次名，把结构「说出来」。
+   * 节流 0.2 秒：zoneAt 只是 8 次矩形/圆判定，但没必要每帧算。
+   * 单区地图（桃源村）和试炼场（没有 zones）直接不提示，免得刷屏。 */
+  tickZone(dt) {
+    if (typeof zoneAt !== 'function' || typeof mapZones !== 'function') return;
+    const mid = this.state.mapId;
+    if (mid !== this._zoneMap) {
+      this._zoneMap = mid;
+      this._zoneId = null;
+      /* 切图瞬间先让地图名横幅播完，再报区域名 */
+      this._zoneT = 1.2;
+    }
+    const zs = mapZones(mid);
+    if (!zs || zs.length < 2) return;
+    this._zoneT = (this._zoneT || 0) - dt;
+    if (this._zoneT > 0) return;
+    this._zoneT = 0.2;
+
+    const pp = this.playerGroup && this.playerGroup.position;
+    if (!pp) return;
+    const z = zoneAt(mid, pp.x, pp.z);
+    if (!z || z.id === this._zoneId) return;
+    this._zoneId = z.id;
+    if (typeof UI === 'undefined' || !UI.toast) return;
+    /* 首领区加个前缀，让「再往前就是 boss」这件事有预告感 */
+    if (z.kind === 'boss') UI.toast('⚔ ' + z.name, 'bad');
+    else UI.toast(z.name);
   },
 
   /* 这发技能真正生效的六通道修正（装备 + 等级加点 + 精研 + 取向 + 变体）。
@@ -4030,25 +4126,33 @@ const Game = {
           }
           /* [C2] 先跑行为原型。返回 true 表示这一帧归原型管；
            * 返回 false（近战 / 远程 / 逃逸的常态）就落回下面的基础逻辑。 */
-          const took = this.mobAI(e, dt, dtg, tg, spd);
+          /* [M12] 跨区寻路：怪和玩家不在同一块区域时，直线过去只会撞墙。
+           * steer 换成「通往下一区域的那道门」，跨过去之后 zoneAt 变了就自动重规划。
+           * 攻击判定仍然用 dtg（到真实目标的距离），所以隔着门不会隔墙砍人。 */
+          const door = (typeof zoneSteer === 'function' && !e.boss)
+            ? zoneSteer(this.state.mapId, e.pos.x, e.pos.z, tg.x, tg.z) : null;
+          const steer = door || tg;
+          const took = this.mobAI(e, dt, dtg, steer, spd);
           if (!took) {
             if (e.cfg.ranged) {
-              if (dtg > e.range * 0.85) this.moveEnemy(e, tg, spd, dt);
-              else if (dtg < e.range * 0.45) this.moveEnemy(e, tg, -spd * 0.6, dt);
+              /* door 非空 = 隔着墙，这一帧只走路不射击（远程怪隔着墙点人比卡墙更离谱） */
+              if (door || dtg > e.range * 0.85) this.moveEnemy(e, steer, spd, dt);
+              else if (dtg < e.range * 0.45) this.moveEnemy(e, steer, -spd * 0.6, dt);
               else {
                 a.moving = false;
                 if (e.atkCd <= 0) this.enemyRangedAttack(e);
               }
             } else {
-              if (dtg > e.reach * 0.85) this.moveEnemy(e, tg, spd, dt);
+              if (door || dtg > e.reach * 0.85) this.moveEnemy(e, steer, spd, dt);
               else {
                 a.moving = false;
                 this.mobMeleeSwing(e, dt, tg);
               }
             }
           }
-          // 面向目标（被嘲讽时面向灵兽）
-          const ang = Math.atan2(tg.x - e.pos.x, tg.z - e.pos.z);
+          // 面向目标（被嘲讽时面向灵兽；跨区时面向门）
+          const fa = door || tg;
+          const ang = Math.atan2(fa.x - e.pos.x, fa.z - e.pos.z);
           a.group.rotation.y = this.lerpAngle(a.group.rotation.y, ang, 1 - Math.pow(0.001, dt));
         } else a.moving = false;
       }
@@ -4070,7 +4174,7 @@ const Game = {
         e.pos.x = pp.x + dxp / dp * minp;
         e.pos.z = pp.z + dzp / dp * minp;
       }
-      this.collideWorld(e.pos, e.radius * 0.7);
+      this.collideWorld(e.pos, e.radius * 0.7, (e.actor.moving && e._mv) ? e._mv : null, true);
 
       /* [P3] 攻速压制：atkCd 倒数按倍率放慢 ≡ 攻速 −N%。
        * 写在这里而不是改 atkCdBase，是因为 atkCdBase 会被狂暴词缀写回，
@@ -4507,6 +4611,8 @@ const Game = {
     e.pos.x += dx / d * spd * dt;
     e.pos.z += dz / d * spd * dt;
     e.actor.moving = true;
+    /* [M12] 记下这一帧的移动方向，给 collideWorld 的切线滑动用 */
+    e._mv = { x: dx / d, z: dz / d };
   },
 
   enemyRangedAttack(e) {
@@ -4581,7 +4687,21 @@ const Game = {
       }
       FX.burst(new THREE.Vector3(e.pos.x, 0.6, e.pos.z), 0xaa8866, 4, { speed: 3, size: 0.14, life: 0.4, gravity: 4 });
     } else if (d > e.reach * 0.8) {
-      this.moveEnemy(e, pp, e.spd * (1 + e.phase * 0.12), dt);
+      /* [M12] 拴绳：玩家不在首领所在的区域时，首领走回自己的锚点。
+       * 不这么做的话它会一直朝玩家直线走，撞在祭坛的墙上磨 —— 区域化之后
+       * 边界是硬墙，而老的大圆圈只有一层径向钳制，看不出这个毛病。 */
+      let leashed = false;
+      if (e.anchor && typeof zoneAt === 'function') {
+        const bz = zoneAt(this.state.mapId, e.pos.x, e.pos.z);
+        const pz = zoneAt(this.state.mapId, pp.x, pp.z);
+        if (bz && pz && bz.id !== pz.id) {
+          leashed = true;
+          const ad = Math.hypot(e.anchor.x - e.pos.x, e.anchor.z - e.pos.z);
+          if (ad > 1.2) this.moveEnemy(e, e.anchor, e.spd * 0.85, dt);
+          else a.moving = false;
+        }
+      }
+      if (!leashed) this.moveEnemy(e, pp, e.spd * (1 + e.phase * 0.12), dt);
     } else {
       a.moving = false;
     }
@@ -5511,10 +5631,22 @@ const Game = {
     const cap = m.spawnCount || 14;
     if (alive < cap * 0.7) {
       const n = Math.min(3, cap - alive);
+      /* [M12] 按区域补怪：随机挑一个有刷怪配置的区域，在它内部刷 */
+      const zs = (typeof zoneSpawners === 'function') ? zoneSpawners(this.state.mapId) : null;
       for (let i = 0; i < n; i++) {
-        const ang = Math.random() * 6.28, r = RND(22, m.size * 0.44);
+        let kind = null, p = null;
+        if (zs && zs.length) {
+          const z = zs[Math.floor(Math.random() * zs.length)];
+          kind = zonePickKind(z, m.spawns);
+          p = randomPointInZone(z, 2.8);
+        } else {
+          const ang = Math.random() * 6.28, r = RND(22, m.size * 0.44);
+          kind = PICK(m.spawns);
+          p = { x: Math.cos(ang) * r, z: Math.sin(ang) * r };
+        }
+        if (!kind) continue;
         /* [DIFF] 刷新怪同样按难度滚精英 */
-        const e = this.spawnEnemy(PICK(m.spawns), Math.cos(ang) * r, Math.sin(ang) * r, CHANCE(this.diff().elite));
+        const e = this.spawnEnemy(kind, p.x, p.z, CHANCE(this.diff().elite));
         if (e) FX.flashCircle(e.pos, 1.2, 0x9a66ff, 0.5);
       }
     }

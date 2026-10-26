@@ -1022,7 +1022,7 @@ const UI = {
     document.getElementById('xpFill').style.width = CLAMP(s.xp / s.xpNext * 100, 0, 100) + '%';
     document.getElementById('goldTxt').textContent = '金 ' + s.gold;
     document.getElementById('potionTxt').textContent = `红药 ${s.potions.hp} · 蓝药 ${s.potions.mp} · 传送石 ${s.teleportStones || 0}`;
-    document.getElementById('zoneName').textContent = MAPS[s.mapId].name;
+    document.getElementById('zoneName').textContent = this.zoneLabel(s);
     document.getElementById('vignette').style.opacity = hpP < 35 ? (1 - hpP / 35) * 0.9 : 0;
     this.updateQuestTrack();
     if (typeof Mobile !== 'undefined' && Mobile.on) Mobile.syncHud();
@@ -3108,6 +3108,18 @@ const UI = {
   hideStart() { document.getElementById('start').style.display = 'none'; document.body.classList.remove('in-menu'); },
 
   /* ---------------- 小地图 ---------------- */
+  /* [M12] 小地图下面那行字：地图名 · 当前区域名。
+   * 只写地图名的话，「区域 + 走廊」这个结构在 UI 上完全看不见；
+   * 单区地图（桃源村）和试炼场不加后缀。 */
+  zoneLabel(s) {
+    const base = MAPS[s.mapId].name;
+    if (typeof zoneAt !== 'function' || typeof mapZones !== 'function') return base;
+    const zs = mapZones(s.mapId);
+    if (!zs || zs.length < 2) return base;
+    const z = zoneAt(s.mapId, s.playerPos.x, s.playerPos.z);
+    return z ? base + ' · ' + z.name : base;
+  },
+
   drawMinimap() {
     const s = Game.state;
     if (!s) return;
@@ -3134,11 +3146,48 @@ const UI = {
     const tx = x => R + (x - px) * scale;
     const tz = z => R + (z - pz) * scale;
 
-    // 网格
-    g.strokeStyle = 'rgba(216,178,90,.06)'; g.lineWidth = 1;
-    for (let i = -4; i <= 4; i++) {
-      g.beginPath(); g.moveTo(R + i * 40, 0); g.lineTo(R + i * 40, H); g.stroke();
-      g.beginPath(); g.moveTo(0, R + i * 40); g.lineTo(W, R + i * 40); g.stroke();
+    /* [M12] 区域轮廓：矩形房间 / 圆形场地 / 走廊各画一遍。
+     * 走廊用暗一档的填充，房间带描边 —— 玩家能一眼看出「哪是路、哪是屋子」，
+     * 而不是原来那种「一片圆 + 几个点」。 */
+    const zs = (typeof mapZones === 'function') ? mapZones(s.mapId) : null;
+    if (zs) {
+      if (zs.length > 1) {
+        const el = document.getElementById('zoneName');
+        const txt = this.zoneLabel(s);
+        if (el && el.textContent !== txt) el.textContent = txt;
+      }
+      for (const z of zs) {
+        g.beginPath();
+        if (z.type === 'circle') g.arc(tx(z.x), tz(z.z), z.r * scale, 0, 7);
+        else g.rect(tx(z.x - z.w / 2), tz(z.z - z.h / 2), z.w * scale, z.h * scale);
+        const isLink = z.kind === 'link';
+        const isBoss = z.kind === 'boss';
+        g.fillStyle = isLink ? '#332f24' : (isBoss ? '#3d2a2a' : '#45402f');
+        g.fill();
+        g.strokeStyle = isBoss ? 'rgba(255,90,70,.5)' : (isLink ? 'rgba(216,178,90,.16)' : 'rgba(216,178,90,.38)');
+        g.lineWidth = isLink ? 1 : 1.4;
+        g.stroke();
+      }
+    } else {
+      // 网格（没有区域配置的图，例如试炼擂台）
+      g.strokeStyle = 'rgba(216,178,90,.06)'; g.lineWidth = 1;
+      for (let i = -4; i <= 4; i++) {
+        g.beginPath(); g.moveTo(R + i * 40, 0); g.lineTo(R + i * 40, H); g.stroke();
+        g.beginPath(); g.moveTo(0, R + i * 40); g.lineTo(W, R + i * 40); g.stroke();
+      }
+    }
+
+    /* 视野扇形：朝向前方 70°，压在区域上面，用来指示朝向 */
+    {
+      const fa = Math.atan2(Game.playerFace.x, Game.playerFace.z);
+      g.save();
+      g.translate(R, R); g.rotate(fa);
+      const fan = g.createRadialGradient(0, 0, 4, 0, 0, R * 0.62);
+      fan.addColorStop(0, 'rgba(240,224,184,.20)');
+      fan.addColorStop(1, 'rgba(240,224,184,0)');
+      g.fillStyle = fan;
+      g.beginPath(); g.moveTo(0, 0); g.arc(0, 0, R * 0.62, -0.61, 0.61); g.closePath(); g.fill();
+      g.restore();
     }
 
     // 传送阵
