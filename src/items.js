@@ -654,8 +654,8 @@ function upgradeItemBaseTier(item) {
     const base = tierList[vi];
     item.baseName = base.name;
     item.baseDmg = [
-      Math.round(base.dmg[0] * (1 + item.ilvl * 0.115) * rm),
-      Math.round(base.dmg[1] * (1 + item.ilvl * 0.115) * rm)
+      Math.round(base.dmg[0] * (1 + item.ilvl * 0.100) * rm),
+      Math.round(base.dmg[1] * (1 + item.ilvl * 0.100) * rm)
     ];
     item.speed = base.speed;
     item.shape = base.shape || item.shape;
@@ -754,8 +754,8 @@ function rollItem(ilvl, opts = {}) {
     /* [B5] 记住基底阶与变体：升阶要换「同变体的下一档」，而不是随机换一个 */
     item.baseTier = tier; item.baseVar = bi;
     const rm = RARITY[rarity].mul;
-    const lo = base.dmg[0] * (1 + ilvl * 0.115) * rm;
-    const hi = base.dmg[1] * (1 + ilvl * 0.115) * rm;
+    const lo = base.dmg[0] * (1 + ilvl * 0.100) * rm;
+    const hi = base.dmg[1] * (1 + ilvl * 0.100) * rm;
     item.baseName = base.name;
     item.shape = base.shape;
     /* v1.3.0 握持：同档三变体按均伤排（最轻双持 / 居中单手 / 最重双手） */
@@ -772,7 +772,7 @@ function rollItem(ilvl, opts = {}) {
     const [bn, barm, ik, iv] = list[tier][vi];
     item.baseTier = tier; item.baseVar = vi;
     item.baseName = bn;
-    item.baseArmor = Math.round(barm * (1 + ilvl * 0.1) * RARITY[rarity].mul);
+    item.baseArmor = Math.round(barm * (1 + ilvl * 0.088) * RARITY[rarity].mul);
     item.cls = cls;
     item.name = bn;
     item.kind = '副手';
@@ -785,7 +785,7 @@ function rollItem(ilvl, opts = {}) {
     const [bn, barm, ik, iv] = list[tier][vi];
     item.baseTier = tier; item.baseVar = vi;
     item.baseName = bn;
-    item.baseArmor = Math.round(barm * (1 + ilvl * 0.13) * RARITY[rarity].mul);
+    item.baseArmor = Math.round(barm * (1 + ilvl * 0.112) * RARITY[rarity].mul);
     item.name = bn;
     item.kind = SLOTS[slot].name;
     if (ik) item.implicit = { key: ik, val: iv };
@@ -1107,7 +1107,10 @@ function computePlayerStats(p) {
   const crit = CLAMP(BC.base + d.crit + st.crit, 0, 75);
   const critDmg = Math.min(BC.dmgCap, BC.dmg + d.critDmg + st.critDmg);
   const aspd = (1 + st.aspd / 100) * (1 + d.aspd / 100);
-  const moveSpd = (7.2 + d.moveSpd) * (1 + st.moveSpd / 100) + st.moveSpdFlat;
+  /* 基础移速读平衡表（v1.11.0）：原写死 7.2，配合小地图跑图过快。
+   * 缺表时退回同一组默认值，单文件测试也能跑。 */
+  const MV = (typeof BALANCE !== 'undefined' && BALANCE.move) ? BALANCE.move : { base: 4.2 };
+  const moveSpd = (MV.base + d.moveSpd) * (1 + st.moveSpd / 100) + st.moveSpdFlat;
   const def = (st.def + d.def) * (1 + st.armorPct / 100);
   const cdr = CLAMP(st.cdr + d.cdr, 0, 45);
 

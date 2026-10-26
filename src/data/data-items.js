@@ -398,7 +398,9 @@ const AFFIXES = [
   { key: 'mpReg', pre: ['凝神的', '静心的'], suf: ['· 凝神', '· 静心'], min: 1, max: 3, tier: 1 },
   { key: 'goldFind', pre: ['富贵的', '聚宝的'], suf: ['· 聚宝', '· 财源'], min: 6, max: 18, tier: 1 },
   { key: 'thorns', pre: ['棘刺的', '反噬的'], suf: ['· 棘刺', '· 反噬'], min: 3, max: 10, tier: 1 },
-  { key: 'moveSpdFlat', pre: ['轻快的', '疾行的'], suf: ['· 疾行', '· 迅足'], min: 1, max: 3, tier: 1 },
+  /* 固定值移速：基础移速 4.2 之后 +3 相当于 +71%，比 +7% 的乘区词缀强一个量级，
+   * 上限收到 2（≈ +48%），保证它仍是「轻快」而非「飞毛腿」。 */
+  { key: 'moveSpdFlat', pre: ['轻快的', '疾行的'], suf: ['· 疾行', '· 迅足'], min: 1, max: 2, tier: 1 },
   { key: 'hpRegen', pre: ['生养的', '回春的'], suf: ['· 回春', '· 生机'], min: 1, max: 4, tier: 1 },
   { key: 'minDmg', pre: ['沉稳的', '笃实的'], suf: ['· 沉稳', '· 笃实'], min: 3, max: 8, tier: 1 },
   { key: 'pickupRadius', pre: ['善缘的', '结缘的'], suf: ['· 善缘', '· 广纳'], min: 1, max: 2, tier: 1 },

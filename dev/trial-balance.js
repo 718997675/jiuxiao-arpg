@@ -77,18 +77,20 @@ function dpsOf(st, skillMul = 1.9) {
 }
 
 /* ---------- 2. 试炼曲线 ---------- */
+const MOB = g('BALANCE').mob;
 function enemyHp(cfgHp, lvl, wave) {
-  const f = 1 + lvl * 0.55 + lvl * lvl * 0.010;      // 游戏本体公式
+  /* 与 game.js spawnEnemy 同口径（v1.11.0 起含 hpBase） */
+  const f = (MOB.hpBase || 1) + lvl * MOB.hpLv + lvl * lvl * MOB.hpLv2;
   return cfgHp * f * g('trialHpMul')(wave);
 }
 function enemyDmg(atk, lvl, wave) {
-  return atk * (1 + lvl * 0.20) * g('trialDmgMul')(wave);
+  return atk * (1 + lvl * MOB.dmgLv) * g('trialDmgMul')(wave);
 }
 /* 玩家承伤：与 game.js damagePlayer 同口径 ——
  *   reduce = min(0.75, def / (def + 320 + level×22))
  * 抗性 / 减伤 / 格挡按 0 算，留出余量（祝福会把它们堆起来）。 */
 function reduceOf(st, level) {
-  return Math.min(0.75, st.def / (st.def + 320 + level * 22));
+  return Math.min(0.70, st.def / (st.def + 380 + level * 28));
 }
 function ehpOf(st, level) {
   return st.hpMax / (1 - reduceOf(st, level));

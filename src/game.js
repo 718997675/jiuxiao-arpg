@@ -69,6 +69,12 @@ function keepPick(prev, next) {
   return next;
 }
 
+/* [v1.11.0] 冲刺速度表：突进 / 跃击 / 闪避各自的冲刺速度（m/s）。
+ * 与基础移速解耦，改 BALANCE.move.base 不会再连带改掉技能位移距离。
+ * 缺表时用同一组默认值，单文件测试也能跑。 */
+const DASH_SPD = (typeof BALANCE !== 'undefined' && BALANCE.move && BALANCE.move.dash)
+  ? BALANCE.move.dash : { thrust: 50, leap: 28, dodge: 20 };
+
 const Game = {
   /* three */
   renderer: null, scene: null, camera: null, clock: null, sun: null, hemi: null,
@@ -1279,10 +1285,12 @@ const Game = {
      * 首领在固定 cfg.hp 基础上按自身等级放大约 12 倍 —— 老版首领血量写死，
      * 玩家伤害涨了十几倍之后首领就成了沙包。 */
     const MB = (typeof BALANCE !== 'undefined' ? BALANCE.mob : { hpLv: 0.55, hpLv2: 0.010, eliteHp: 2.4 });
-    const BB = (typeof BALANCE !== 'undefined' ? BALANCE.boss : { hpMul: 12, hpMulPow: 2, refLv: 38, dmgLv: 0.09 });
+    const BB = (typeof BALANCE !== 'undefined' ? BALANCE.boss : { hpMul: 4.5, dmgLv: 0.28 });
+    /* [v1.11.0] 玩家整体降速后，怪物移速同步缩放（见 BALANCE.move） */
+    const MV = (typeof BALANCE !== 'undefined' && BALANCE.move) ? BALANCE.move : { mobScale: 1 };
     let hp = isBoss
       ? cfg.hp * (typeof bossHpScale === 'function' ? bossHpScale(lvl) : 1)
-      : cfg.hp * (1 + lvl * MB.hpLv + lvl * lvl * MB.hpLv2);
+      : cfg.hp * ((MB.hpBase || 1) + lvl * MB.hpLv + lvl * lvl * MB.hpLv2);
     if (elite) hp *= MB.eliteHp;
     hp *= D.mobHp;
 
@@ -1340,7 +1348,7 @@ const Game = {
       kind: bossId || kind, cfg: ecfg, actor: a, boss: isBoss, elite: !!elite,
       level: lvl, hp, maxHp: hp,
       dmg: (cfg.atk || 10) * (1 + lvl * (isBoss ? BB.dmgLv : MB.dmgLv)) * (elite ? MB.eliteDmg : 1) * D.mobDmg,
-      spd: (cfg.spd || 3) * D.mobSpd,
+      spd: (cfg.spd || 3) * D.mobSpd * MV.mobScale,
       /* range 只表示「数据设定的攻击距离」（远程怪用来卡位）。
        * 近战另算 reach：贴到「碰撞半径 + 余量」就该出手。
        * 否则蜘蛛这种 radius 1.55 的大体积怪，被分离逻辑卡在 2.10 外，
@@ -2016,7 +2024,9 @@ const Game = {
       this.movingNow = true;
       /* [M1] 行脚套·疾行：击杀后 3 秒移速 +30% */
       const rush = this.lootRushT > 0 ? 1.3 : 1;
-      const spd = st.moveSpd * analog * (this.dashT > 0 ? 4.6 : 1) * (1 - (this.playerSlow || 0)) * rush;
+      /* 冲刺期间的速度由 dashSpd 单独决定（见下方 dashT 分支），
+       * 这里不再叠 ×4.6 —— 原来按着方向键冲刺比松开冲刺快一截。 */
+      const spd = st.moveSpd * analog * (1 - (this.playerSlow || 0)) * rush;
       pg.position.x += mx * spd * dt;
       pg.position.z += mz * spd * dt;
       this.lastMoveDir = { x: mx, z: mz };
@@ -2030,8 +2040,11 @@ const Game = {
     if (this.dashT > 0) {
       this.dashT -= dt;
       const d = this.lastMoveDir || { x: Math.sin(pg.rotation.y), z: Math.cos(pg.rotation.y) };
-      pg.position.x += d.x * 30 * dt;
-      pg.position.z += d.z * 30 * dt;
+      /* [v1.11.0] 冲刺速度与基础移速解耦：各技能按「标称距离 ÷ 时长」定值，
+       * 以后调 BALANCE.move.base 不会再连带改掉技能位移距离。 */
+      const dspd = this.dashSpd || 30;
+      pg.position.x += d.x * dspd * dt;
+      pg.position.z += d.z * dspd * dt;
       if (Math.random() < 0.6) FX.burst(new THREE.Vector3(pg.position.x, 0.6, pg.position.z), 0xaaccff, 2, { speed: 1, size: 0.14, life: 0.3, gravity: 0, additive: true });
       this.collideWorld(pg.position, 0.55);
     }
@@ -2382,6 +2395,7 @@ const Game = {
         this.actor.atkAnim = 1; this.actor.atkType = 'swing'; this.actor.atkSpeed = 2.9;
         /* 龙骧 4 件：突进距离 +30%（冲刺时长等比延长） */
         this.dashT = 0.22 * (st.flags.longDash ? 1.3 : 1); this.invuln = 0.3; this.lastMoveDir = { x: dir.x, z: dir.z };
+        this.dashSpd = DASH_SPD.thrust;
         SFX.fire(); SFX.swing();
         this.shake = 0.3;
         const start = pp.clone();
@@ -2501,6 +2515,7 @@ const Game = {
          * 关掉，否则「原地」还会往前窜 6 码 */
         const inPlace = !!(bBeh && bBeh.selfCast) || dist < 0.8;
         this.dashT = inPlace ? 0 : 0.2 + (dist / 10) * 0.16;
+        this.dashSpd = DASH_SPD.leap;
         this.invuln = inPlace ? 0.15 : 0.3;
         if (!inPlace) this.lastMoveDir = { x: dir.x, z: dir.z };
         SFX.fire(); SFX.swing();
@@ -3656,7 +3671,11 @@ const Game = {
       return;
     }
 
-    const reduce = Math.min(0.75, st.def / (st.def + 320 + this.state.level * 22));
+    /* [v1.11.0] 护甲收益收紧：分母 320+22L → 380+28L，上限 75% → 70%。
+     * 旧曲线下 35 级玩家 def 1800 就能拿到 62% 减伤、40 级 69%，
+     * 叠上回血就是「站着不动也打不死」，怪再强也没用。
+     * 现在同档装备的减伤约降 4~6 个百分点，承伤多一成左右。 */
+    const reduce = Math.min(0.70, st.def / (st.def + 380 + this.state.level * 28));
     /* [DIFF] 玩家承受伤害系数：放在减伤之后，保证「护甲收益」在四档难度里一致，
      * 难度只放大最终结果，不扭曲装备词条的价值。 */
     let dmg = amount * (1 - reduce) * this.diff().taken;
@@ -6552,6 +6571,7 @@ const Game = {
     if (!this.state || this.dead || this.dashCd > 0) return;
     this.dashCd = 1.3;
     this.dashT = 0.18;
+    this.dashSpd = DASH_SPD.dodge;
     this.invuln = 0.3;
     SFX.swing();
     const d = this.lastMoveDir || { x: Math.sin(this.playerGroup.rotation.y), z: Math.cos(this.playerGroup.rotation.y) };

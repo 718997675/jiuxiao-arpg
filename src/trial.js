@@ -181,10 +181,12 @@ const Trial = {
 
     for (let i = 0; i < trash; i++) {
       const ang = (i / Math.max(1, trash)) * Math.PI * 2 + RND(-0.22, 0.22);
-      /* 半径 11~18：默认镜头（camDist 11.6 / FOV 46）能看到的范围大约就是
+      /* 半径 10~16：默认镜头（camDist 11.6 / FOV 46）能看到的范围大约就是
        * 12~14 米，怪刷在 15~24 会全部落在屏幕外 —— 玩家只会听到「有东西来了」
-       * 却看不见，完全失去「一波压上来」的压迫感。 */
-      const rad = RND(11, 18);
+       * 却看不见，完全失去「一波压上来」的压迫感。
+       * [v1.11.0] 基础移速降到 4.2 之后，18 米外要跑 4.3 秒才接敌，
+       * 一波的节奏被拖散；收到 10~16 米，接敌时间压回 2.4~3.8 秒。 */
+      const rad = RND(10, 16);
       const x = Math.cos(ang) * rad, z = Math.sin(ang) * rad;
       const kind = PICK(pool);
       const e = G.spawnEnemy(kind, x, z, CHANCE(eliteChance), lvl);
