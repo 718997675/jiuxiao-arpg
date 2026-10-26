@@ -15,38 +15,38 @@ const MAPS = {
   },
   forest: {
     id: 'forest', name: '幽篁林', safe: false, level: 4,
-    ground: 'bamboo', sky: 0x7fae8f, fog: 0x93b89c, fogNear: 30, fogFar: 95,
-    size: 90, ambient: 0xa8d0b0, sun: 0xd8f0c0, sunI: 0.95, props: 'bamboo',
-    spawns: ['halfork', 'bat', 'skelarch', 'wolf', 'hornet', 'fox', 'lantern', 'bamboo', 'shigandang'], spawnCount: 14, bosses: ['treeking', 'batking'],
-    portal: { x: 0, z: 34 }, unlock: 1
+    ground: 'bamboo', sky: 0x7fae8f, fog: 0x93b89c, fogNear: 42, fogFar: 132,
+    size: 130, ambient: 0xa8d0b0, sun: 0xd8f0c0, sunI: 0.95, props: 'bamboo',
+    spawns: ['halfork', 'bat', 'skelarch', 'wolf', 'hornet', 'fox', 'lantern', 'bamboo', 'shigandang'], spawnCount: 10, bosses: ['treeking', 'batking'],
+    portal: { x: 0, z: 49.3 }, unlock: 1
   },
   swamp: {
     id: 'swamp', name: '血月沼泽', safe: false, level: 12,
-    ground: 'swamp', sky: 0x5a3a3a, fog: 0x6b3f3f, fogNear: 28, fogFar: 90,
-    size: 96, ambient: 0x8a6a6a, sun: 0xff9a7a, sunI: 0.8, props: 'swamp',
-    spawns: ['spider', 'boar', 'snake', 'scorpion', 'zombie', 'drowned', 'brood', 'wasp', 'toad', 'bogwitch'], spawnCount: 16,
-    bosses: ['chief', 'golemking', 'snakequeen'], portal: { x: 0, z: 38 }, unlock: 8
+    ground: 'swamp', sky: 0x5a3a3a, fog: 0x6b3f3f, fogNear: 39, fogFar: 126,
+    size: 140, ambient: 0x8a6a6a, sun: 0xff9a7a, sunI: 0.8, props: 'swamp',
+    spawns: ['spider', 'boar', 'snake', 'scorpion', 'zombie', 'drowned', 'brood', 'wasp', 'toad', 'bogwitch'], spawnCount: 11,
+    bosses: ['chief', 'golemking', 'snakequeen'], portal: { x: 0, z: 55.1 }, unlock: 8
   },
   mine: {
     id: 'mine', name: '玄铁矿洞', safe: false, level: 20,
-    ground: 'rock', sky: 0x2a2a33, fog: 0x2e2a2a, fogNear: 22, fogFar: 75,
-    size: 90, ambient: 0x6a6a78, sun: 0xffbb66, sunI: 0.7, props: 'mine',
-    spawns: ['golem', 'ghost', 'yaoguai', 'ghostfire', 'statue', 'scorpking', 'minerghost', 'magma', 'ironbeetle', 'runesmith'], spawnCount: 16,
-    bosses: ['ghostlord', 'firegeneral', 'icequeen'], portal: { x: 0, z: 36 }, unlock: 16
+    ground: 'rock', sky: 0x2a2a33, fog: 0x2e2a2a, fogNear: 31, fogFar: 105,
+    size: 130, ambient: 0x6a6a78, sun: 0xffbb66, sunI: 0.7, props: 'mine',
+    spawns: ['golem', 'ghost', 'yaoguai', 'ghostfire', 'statue', 'scorpking', 'minerghost', 'magma', 'ironbeetle', 'runesmith'], spawnCount: 11,
+    bosses: ['ghostlord', 'firegeneral', 'icequeen'], portal: { x: 0, z: 52.2 }, unlock: 16
   },
   abyss: {
     id: 'abyss', name: '九幽地宫', safe: false, level: 28,
-    ground: 'abyss', sky: 0x1a1420, fog: 0x1e1626, fogNear: 20, fogFar: 70,
-    size: 92, ambient: 0x6a5a7a, sun: 0x9a6aff, sunI: 0.65, props: 'abyss',
-    spawns: ['ghostfire', 'bloodlord', 'yaoguai', 'golem', 'headless', 'crane', 'bonewright', 'shade', 'ironmaiden'], spawnCount: 17,
-    bosses: ['spidermother', 'ferryman', 'swordlord'], portal: { x: 0, z: 37 }, unlock: 24
+    ground: 'abyss', sky: 0x1a1420, fog: 0x1e1626, fogNear: 28, fogFar: 98,
+    size: 134, ambient: 0x6a5a7a, sun: 0x9a6aff, sunI: 0.65, props: 'abyss',
+    spawns: ['ghostfire', 'bloodlord', 'yaoguai', 'golem', 'headless', 'crane', 'bonewright', 'shade', 'ironmaiden'], spawnCount: 12,
+    bosses: ['spidermother', 'ferryman', 'swordlord'], portal: { x: 0, z: 53.7 }, unlock: 24
   },
   heaven: {
     id: 'heaven', name: '天阙残境', safe: false, level: 35,
-    ground: 'heaven', sky: 0x2a3a5a, fog: 0x40527a, fogNear: 26, fogFar: 85,
-    size: 92, ambient: 0x9ab0e0, sun: 0xffe0a0, sunI: 0.95, props: 'heaven',
-    spawns: ['bloodlord', 'ghostfire', 'golem', 'yaoguai', 'fallen', 'voidbeast', 'swordwraith', 'thunderbird', 'jadeguard'], spawnCount: 18,
-    bosses: ['chaos'], portal: { x: 0, z: 37 }, unlock: 32
+    ground: 'heaven', sky: 0x2a3a5a, fog: 0x40527a, fogNear: 36, fogFar: 119,
+    size: 134, ambient: 0x9ab0e0, sun: 0xffe0a0, sunI: 0.95, props: 'heaven',
+    spawns: ['bloodlord', 'ghostfire', 'golem', 'yaoguai', 'fallen', 'voidbeast', 'swordwraith', 'thunderbird', 'jadeguard'], spawnCount: 12,
+    bosses: ['chaos'], portal: { x: 0, z: 53.7 }, unlock: 32
   },
   /* ---------------- 无尽试炼场（v2.0） ----------------
    * 特殊地图：spawns / bosses 都为空 —— 刷怪完全由 src/trial.js 接管

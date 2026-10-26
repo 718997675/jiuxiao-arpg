@@ -478,10 +478,20 @@ function buildMap(mapId) {
   if (zones) {
     /* 区域化：墙沿区域外轮廓长出来，走廊口自动留空 */
     buildZoneWalls(mapId, root, borderM);
-    /* 外围远景再撒一圈大石，避免压暗的荒原一眼望到天边 */
+    /* 外围远景再撒一圈大石，避免压暗的荒原一眼望到天边。
+     * [v1.12.1] 半径不能再用 size×0.5 —— 区域放大后地图的对角半径
+     * 比 size 的一半还远，按 size 摆石环会直接把大石头摆进房间里。
+     * 改成按 zone 包围盒的对角半径算。 */
+    let farR = R;
+    for (const z of zones) {
+      const hw = z.type === 'circle' ? z.r : z.w / 2;
+      const hh = z.type === 'circle' ? z.r : z.h / 2;
+      farR = Math.max(farR, Math.hypot(Math.abs(z.x) + hw, Math.abs(z.z) + hh));
+    }
+    farR += 8;
     for (let i = 0; i < 26; i++) {
       const ang = i / 26 * Math.PI * 2 + RND(-0.1, 0.1);
-      const r = R + RND(4, 12);
+      const r = farR + RND(4, 12);
       const rock = mesh(new THREE.DodecahedronGeometry(RND(3, 6), 0), borderM, Math.cos(ang) * r, RND(-1, 1), Math.sin(ang) * r, root);
       rock.rotation.set(RND(0, 3), RND(0, 3), RND(0, 3));
       rock.castShadow = false;

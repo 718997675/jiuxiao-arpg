@@ -53,6 +53,15 @@ const MOB_CULL_DIST = 62;
  * 但省下的是「每只怪 22 个部件各一个 draw call」的整条阴影通道。 */
 const MOB_SHADOW_DIST = 20;
 
+/* [v1.12.1] 仇恨 / 脱战参数（旋钮在 BALANCE.aggro，这里只是取出来省得每帧查表）。
+ * 索敌半径 13 米 ≈ 玩家视野半径；脱战 34 米 ≈ 跑出一个房间才会脱战。 */
+const AGGRO_R = (BALANCE.aggro && BALANCE.aggro.aggroR) || 13;
+const DEAGGRO_R = (BALANCE.aggro && BALANCE.aggro.deaggroR) || 34;
+const DEAGGRO_T = (BALANCE.aggro && BALANCE.aggro.deaggroT) || 4;
+const HOME_WALK = (BALANCE.aggro && BALANCE.aggro.homeWalk) || 0.55;
+/* 刷怪 / 补怪时离玩家至少这么远，避免怪直接刷在脸上 */
+const SPAWN_SAFE = 20;
+
 /* [M12] 首领落点改由 data-maps.js 的 MAP_BOSS_POS 提供（必须落在 sanctum 圆内）。
  * 这里保留 BOSS_POS 这个名字，调用方不用改；缺表时退回一组安全默认值。 */
 const BOSS_POS = (typeof MAP_BOSS_POS !== 'undefined') ? MAP_BOSS_POS : {
@@ -1153,18 +1162,23 @@ const Game = {
     this.world = buildMap(mapId);
     this.scene.add(this.world.root);
     /* [M12] 出生点取入口区域靠内的位置：从传送阵往地图里挪 6 米，
-     * 玩家一进图就站在「门口」，而不是凭空出现在地图中央。 */
+     * 玩家一进图就站在「门口」，而不是凭空出现在地图中央。
+     * [v1.12.1] 区域放大后固定 6 米太靠墙（入口区进深已到 26 米），
+     * 改成按入口区进深的 3 成偏移，永远落在房间中段靠后的位置。 */
     let p = { x: 0, z: 6 };
     if (typeof mapEntryZone === 'function') {
       const ez = mapEntryZone(mapId);
       if (ez && ez.kind === 'entry') {
-        p = { x: ez.x, z: ez.z - 6 };
+        const back = ez.h ? ez.h * 0.30 : 8;
+        p = { x: ez.x, z: ez.z - back };
         if (typeof zonesContain === 'function' && !zonesContain(mapId, p.x, p.z)) p = { x: ez.x, z: ez.z };
       }
     }
     s.playerPos = { x: p.x, z: p.z };
     this.playerGroup.position.set(p.x, 0, p.z);
     this.playerGroup.rotation.y = Math.PI;
+    /* [v1.12.1] 落地保护：进图头几秒不索敌，先让玩家看清地形 */
+    this.aggroGrace = (BALANCE.aggro && BALANCE.aggro.grace) || 3;
 
     if (mapId === 'village') this.spawnNPCs();
     this.spawnEnemies();
@@ -1253,12 +1267,21 @@ const Game = {
      * 这样「走进西坡」和「走进主厅」遇到的怪不一样，地图才有分区感。 */
     const zs = (typeof zoneSpawners === 'function') ? zoneSpawners(this.state.mapId) : null;
     if (zs && zs.length) {
+      const sp = this.playerGroup.position;
       for (const z of zs) {
         const n = z.spawns.count || 0;
         for (let i = 0; i < n; i++) {
           const kind = zonePickKind(z, m.spawns);
           if (!kind) continue;
-          const p = randomPointInZone(z, 2.6);
+          /* [v1.12.1] 别刷在出生点附近。走廊上端与入口区是重叠的，
+           * 只把入口区的刷怪数量清零不够 —— 走廊刷出来的怪照样站在玩家脸上。
+           * 连试 8 次都找不到远处的位置就跳过这只（宁可少刷也不刷脸）。 */
+          let p = null;
+          for (let k = 0; k < 8; k++) {
+            const q = randomPointInZone(z, 2.6);
+            if (Math.hypot(q.x - sp.x, q.z - sp.z) >= SPAWN_SAFE) { p = q; break; }
+          }
+          if (!p) continue;
           this.spawnEnemy(kind, p.x, p.z, CHANCE(D.elite));
         }
       }
@@ -1370,6 +1393,8 @@ const Game = {
     const e = {
       id: 'e' + Math.random().toString(36).slice(2),
       kind: bossId || kind, cfg: ecfg, actor: a, boss: isBoss, elite: !!elite,
+      /* [v1.12.1] 出生点：脱战后走回这里，避免怪被追着跑之后全堆在入口 */
+      home: { x, z },
       level: lvl, hp, maxHp: hp,
       dmg: (cfg.atk || 10) * (1 + lvl * (isBoss ? BB.dmgLv : MB.dmgLv)) * (elite ? MB.eliteDmg : 1) * D.mobDmg,
       spd: (cfg.spd || 3) * D.mobSpd * MV.mobScale,
@@ -1857,6 +1882,8 @@ const Game = {
     if (this.state) this.state.phoenixCd = Math.max(0, (this.state.phoenixCd || 0) - dt);
     if (this.state) this.state.deathWardCd = Math.max(0, (this.state.deathWardCd || 0) - dt);
     this.lootRushT = Math.max(0, (this.lootRushT || 0) - dt);
+    /* [v1.12.1] 落地保护倒计时：进图头几秒不索敌 */
+    if (this.aggroGrace > 0) this.aggroGrace = Math.max(0, this.aggroGrace - dt);
     this.updateBuffs(dt);
     this.updatePlayer(dt);
     /* [P3] 跟随变体：区域锚点 / 特效跟着玩家走（必须在 updatePlayer 之后） */
@@ -4021,7 +4048,14 @@ const Game = {
         updateHpBar(e.bar, e.hp / e.maxHp, bd, this.camera);
       }
 
-      if (e.stun > 0) { e.stun -= dt; a.moving = false; updateActorAnim(a, dt); continue; }
+      /* [v1.12.1] 眩晕 / 未激活的首领会 continue 跳过循环末尾的 collideWorld，
+       * 万一前一帧被推到边界外就再也夹不回来了（越界计数会一直涨）。
+       * 这两个早退分支各补一次边界夹取。 */
+      if (e.stun > 0) {
+        e.stun -= dt; a.moving = false; updateActorAnim(a, dt);
+        this.collideWorld(e.pos, e.radius * 0.7, null, true);
+        continue;
+      }
       if (e.slowT > 0) { e.slowT -= dt; if (e.slowT <= 0) e.slow = 0; }
       /* [P2] 技能树分支挂上的 debuff 计时：易伤 / 破甲 / 禁疗 */
       if (e.vulnT > 0) e.vulnT = Math.max(0, e.vulnT - dt);
@@ -4097,6 +4131,7 @@ const Game = {
       if (e.boss && !e.active) {
         a.moving = false;
         updateActorAnim(a, dt);
+        this.collideWorld(e.pos, e.radius * 0.7, null, true);
         continue;
       }
       /* [P3] 被嘲讽的怪改打灵兽：目标点换成嘲讽点，其它逻辑原样走。
@@ -4116,7 +4151,10 @@ const Game = {
       }      else {
         // 普怪 AI（[DIFF] 索敌半径按难度缩放，极难更远，容易被围）
         if (e.tauntT > 0) e.aggro = true;
-        if (dtg < 26 * this.diff().aggro || e.aggro) {
+        /* [v1.12.1] 索敌：半径从写死的 26 米收到 BALANCE.aggro.aggroR（13 米），
+         * 再乘难度倍率；落地保护期内完全不索敌。
+         * 原来 26 米 = 玩家视野的两倍，传送一落地四周的怪全冲过来。 */
+        if (e.aggro || (this.aggroGrace <= 0 && dtg < AGGRO_R * this.diff().aggro)) {
           if (!e.aggro) {
             /* [C2] 刚被惊动的这一帧：主动技能错开冷却，否则同一批怪会同时开技能 */
             e.aggro = true;
@@ -4154,7 +4192,27 @@ const Game = {
           const fa = door || tg;
           const ang = Math.atan2(fa.x - e.pos.x, fa.z - e.pos.z);
           a.group.rotation.y = this.lerpAngle(a.group.rotation.y, ang, 1 - Math.pow(0.001, dt));
-        } else a.moving = false;
+        } else {
+          /* [v1.12.1] 未仇恨：慢慢走回自己的出生点。
+           * 不这么做的话，玩家绕一圈回来会发现怪全堆在入口 —— 因为旧的
+           * 26 米索敌半径会让半张图的怪一起追过来，脱战后它们就原地待着。 */
+          let walked = false;
+          if (e.home && !e.boss) {
+            const hd = Math.hypot(e.home.x - e.pos.x, e.home.z - e.pos.z);
+            if (hd > 2.5) { this.moveEnemy(e, e.home, spd * HOME_WALK, dt); walked = true; }
+          }
+          if (!walked) a.moving = false;
+        }
+      }
+
+      /* [v1.12.1] 脱战：离得太远且持续一段时间就放弃追击。
+       * 判定放在 AI 之后、分离之前 —— 这一帧先按「已仇恨」跑完，下一帧才真正脱战，
+       * 避免刚越过阈值就来回横跳。 */
+      if (e.aggro && !e.boss) {
+        if (d > DEAGGRO_R) {
+          e.deaggroT = (e.deaggroT || 0) + dt;
+          if (e.deaggroT >= DEAGGRO_T) { e.aggro = false; e.deaggroT = 0; }
+        } else e.deaggroT = 0;
       }
 
       // 分离
@@ -5624,13 +5682,14 @@ const Game = {
     if (m.safe || !m.spawns) return;
     this.mobTimer = (this.mobTimer || 0) + dt;
     /* 先判时间再数怪：原来每帧都 filter 一遍，怪多的时候等于每帧白扔一个数组 */
-    if (this.mobTimer <= 14) return;
+    if (this.mobTimer <= 18) return;
     this.mobTimer = 0;      // 不论这次刷没刷成功都重新计时，避免满员后每帧都数一遍
     let alive = 0;
     for (const e of this.enemies) if (!e.dead && !e.boss) alive++;
     const cap = m.spawnCount || 14;
-    if (alive < cap * 0.7) {
+    if (alive < cap * 0.6) {
       const n = Math.min(3, cap - alive);
+      const pp = this.playerGroup.position;
       /* [M12] 按区域补怪：随机挑一个有刷怪配置的区域，在它内部刷 */
       const zs = (typeof zoneSpawners === 'function') ? zoneSpawners(this.state.mapId) : null;
       for (let i = 0; i < n; i++) {
@@ -5638,7 +5697,12 @@ const Game = {
         if (zs && zs.length) {
           const z = zs[Math.floor(Math.random() * zs.length)];
           kind = zonePickKind(z, m.spawns);
-          p = randomPointInZone(z, 2.8);
+          /* [v1.12.1] 别刷在玩家脸上：连试 6 次，实在找不到远处的位置就这次不刷 */
+          for (let k = 0; k < 6; k++) {
+            const q = randomPointInZone(z, 2.8);
+            if (Math.hypot(q.x - pp.x, q.z - pp.z) >= SPAWN_SAFE) { p = q; break; }
+          }
+          if (!p) continue;
         } else {
           const ang = Math.random() * 6.28, r = RND(22, m.size * 0.44);
           kind = PICK(m.spawns);

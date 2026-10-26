@@ -34,19 +34,18 @@ const MAP_ZONES = {
   forest: {
     entry: 'gate',
     zones: [
-      { id: 'gate', name: '林口', type: 'rect', x: 0, z: 28, w: 26, h: 18, kind: 'entry',
-        spawns: { kinds: ['halfork', 'bat'], count: 1 } },
-      { id: 'path', name: '竹径', type: 'rect', x: 0, z: 12, w: 11, h: 16, kind: 'path',
+      { id: 'gate', name: '林口', type: 'rect', x: 0, z: 40.6, w: 37.7, h: 26.1, kind: 'entry' },
+      { id: 'path', name: '竹径', type: 'rect', x: 0, z: 17.4, w: 15.9, h: 23.2, kind: 'path',
         spawns: { kinds: ['bat', 'hornet'], count: 2 } },
-      { id: 'hall', name: '林中空地', type: 'rect', x: 0, z: -8, w: 30, h: 26, kind: 'hall',
-        spawns: { kinds: ['halfork', 'wolf', 'skelarch'], count: 5 } },
-      { id: 'westLink', name: '西廊', type: 'rect', x: -15, z: -8, w: 10, h: 8, kind: 'link' },
-      { id: 'west', name: '西坡', type: 'rect', x: -27, z: -8, w: 17, h: 20, kind: 'wing',
-        spawns: { kinds: ['bamboo', 'fox'], count: 3 } },
-      { id: 'eastLink', name: '东廊', type: 'rect', x: 15, z: -8, w: 10, h: 8, kind: 'link' },
-      { id: 'east', name: '东坡', type: 'rect', x: 27, z: -8, w: 17, h: 20, kind: 'wing',
-        spawns: { kinds: ['shigandang', 'hornet'], count: 3 } },
-      { id: 'sanctum', name: '妖王祭坛', type: 'circle', x: 0, z: -28, r: 13, kind: 'boss' }
+      { id: 'hall', name: '林中空地', type: 'rect', x: 0, z: -11.6, w: 43.5, h: 37.7, kind: 'hall',
+        spawns: { kinds: ['halfork', 'wolf', 'skelarch'], count: 4 } },
+      { id: 'westLink', name: '西廊', type: 'rect', x: -21.8, z: -11.6, w: 14.5, h: 11.6, kind: 'link' },
+      { id: 'west', name: '西坡', type: 'rect', x: -39.1, z: -11.6, w: 24.6, h: 29, kind: 'wing',
+        spawns: { kinds: ['bamboo', 'fox'], count: 2 } },
+      { id: 'eastLink', name: '东廊', type: 'rect', x: 21.8, z: -11.6, w: 14.5, h: 11.6, kind: 'link' },
+      { id: 'east', name: '东坡', type: 'rect', x: 39.1, z: -11.6, w: 24.6, h: 29, kind: 'wing',
+        spawns: { kinds: ['shigandang', 'hornet'], count: 2 } },
+      { id: 'sanctum', name: '妖王祭坛', type: 'circle', x: 0, z: -40.6, r: 18.8, kind: 'boss' }
     ]
   },
 
@@ -54,19 +53,18 @@ const MAP_ZONES = {
   swamp: {
     entry: 'gate',
     zones: [
-      { id: 'gate', name: '沼泽渡口', type: 'rect', x: 0, z: 32, w: 28, h: 18, kind: 'entry',
-        spawns: { kinds: ['toad', 'wasp'], count: 2 } },
-      { id: 'path', name: '泥沼栈道', type: 'rect', x: 0, z: 14, w: 12, h: 20, kind: 'path',
+      { id: 'gate', name: '沼泽渡口', type: 'rect', x: 0, z: 46.4, w: 40.6, h: 26.1, kind: 'entry' },
+      { id: 'path', name: '泥沼栈道', type: 'rect', x: 0, z: 20.3, w: 17.4, h: 29, kind: 'path',
         spawns: { kinds: ['spider', 'wasp'], count: 2 } },
-      { id: 'hall', name: '血月滩', type: 'rect', x: 0, z: -9, w: 32, h: 30, kind: 'hall',
-        spawns: { kinds: ['boar', 'snake', 'zombie'], count: 6 } },
-      { id: 'westLink', name: '西廊', type: 'rect', x: -17, z: -9, w: 12, h: 9, kind: 'link' },
-      { id: 'west', name: '枯林西泽', type: 'rect', x: -30, z: -9, w: 18, h: 22, kind: 'wing',
-        spawns: { kinds: ['drowned', 'bogwitch'], count: 3 } },
-      { id: 'eastLink', name: '东廊', type: 'rect', x: 17, z: -9, w: 12, h: 9, kind: 'link' },
-      { id: 'east', name: '毒潭东岸', type: 'rect', x: 30, z: -9, w: 18, h: 22, kind: 'wing',
-        spawns: { kinds: ['scorpion', 'brood'], count: 3 } },
-      { id: 'sanctum', name: '酋长祭坛', type: 'circle', x: 0, z: -30, r: 13, kind: 'boss' }
+      { id: 'hall', name: '血月滩', type: 'rect', x: 0, z: -13, w: 46.4, h: 43.5, kind: 'hall',
+        spawns: { kinds: ['boar', 'snake', 'zombie'], count: 5 } },
+      { id: 'westLink', name: '西廊', type: 'rect', x: -24.6, z: -13, w: 17.4, h: 13, kind: 'link' },
+      { id: 'west', name: '枯林西泽', type: 'rect', x: -43.5, z: -13, w: 26.1, h: 31.9, kind: 'wing',
+        spawns: { kinds: ['drowned', 'bogwitch'], count: 2 } },
+      { id: 'eastLink', name: '东廊', type: 'rect', x: 24.6, z: -13, w: 17.4, h: 13, kind: 'link' },
+      { id: 'east', name: '毒潭东岸', type: 'rect', x: 43.5, z: -13, w: 26.1, h: 31.9, kind: 'wing',
+        spawns: { kinds: ['scorpion', 'brood'], count: 2 } },
+      { id: 'sanctum', name: '酋长祭坛', type: 'circle', x: 0, z: -43.5, r: 18.8, kind: 'boss' }
     ]
   },
 
@@ -74,19 +72,18 @@ const MAP_ZONES = {
   mine: {
     entry: 'gate',
     zones: [
-      { id: 'gate', name: '矿口', type: 'rect', x: 0, z: 30, w: 26, h: 16, kind: 'entry',
-        spawns: { kinds: ['ironbeetle', 'minerghost'], count: 2 } },
-      { id: 'path', name: '主巷道', type: 'rect', x: 0, z: 12, w: 11, h: 22, kind: 'path',
+      { id: 'gate', name: '矿口', type: 'rect', x: 0, z: 43.5, w: 37.7, h: 23.2, kind: 'entry' },
+      { id: 'path', name: '主巷道', type: 'rect', x: 0, z: 17.4, w: 15.9, h: 31.9, kind: 'path',
         spawns: { kinds: ['ironbeetle', 'ghostfire'], count: 2 } },
-      { id: 'hall', name: '采掘大厅', type: 'rect', x: 0, z: -10, w: 30, h: 26, kind: 'hall',
-        spawns: { kinds: ['golem', 'yaoguai', 'statue'], count: 6 } },
-      { id: 'westLink', name: '西廊', type: 'rect', x: -15, z: -10, w: 10, h: 8, kind: 'link' },
-      { id: 'west', name: '废矿西坑', type: 'rect', x: -27, z: -10, w: 17, h: 20, kind: 'wing',
-        spawns: { kinds: ['minerghost', 'magma'], count: 3 } },
-      { id: 'eastLink', name: '东廊', type: 'rect', x: 15, z: -10, w: 10, h: 8, kind: 'link' },
-      { id: 'east', name: '熔脉东窟', type: 'rect', x: 27, z: -10, w: 17, h: 20, kind: 'wing',
-        spawns: { kinds: ['magma', 'runesmith'], count: 3 } },
-      { id: 'sanctum', name: '幽魂祭坛', type: 'circle', x: 0, z: -28, r: 13, kind: 'boss' }
+      { id: 'hall', name: '采掘大厅', type: 'rect', x: 0, z: -14.5, w: 43.5, h: 37.7, kind: 'hall',
+        spawns: { kinds: ['golem', 'yaoguai', 'statue'], count: 5 } },
+      { id: 'westLink', name: '西廊', type: 'rect', x: -21.8, z: -14.5, w: 14.5, h: 11.6, kind: 'link' },
+      { id: 'west', name: '废矿西坑', type: 'rect', x: -39.1, z: -14.5, w: 24.6, h: 29, kind: 'wing',
+        spawns: { kinds: ['minerghost', 'magma'], count: 2 } },
+      { id: 'eastLink', name: '东廊', type: 'rect', x: 21.8, z: -14.5, w: 14.5, h: 11.6, kind: 'link' },
+      { id: 'east', name: '熔脉东窟', type: 'rect', x: 39.1, z: -14.5, w: 24.6, h: 29, kind: 'wing',
+        spawns: { kinds: ['magma', 'runesmith'], count: 2 } },
+      { id: 'sanctum', name: '幽魂祭坛', type: 'circle', x: 0, z: -40.6, r: 18.8, kind: 'boss' }
     ]
   },
 
@@ -94,19 +91,18 @@ const MAP_ZONES = {
   abyss: {
     entry: 'gate',
     zones: [
-      { id: 'gate', name: '地宫甬道', type: 'rect', x: 0, z: 31, w: 26, h: 16, kind: 'entry',
-        spawns: { kinds: ['shade', 'ghostfire'], count: 1 } },
-      { id: 'path', name: '引魂廊', type: 'rect', x: 0, z: 13, w: 11, h: 22, kind: 'path',
+      { id: 'gate', name: '地宫甬道', type: 'rect', x: 0, z: 44.9, w: 37.7, h: 23.2, kind: 'entry' },
+      { id: 'path', name: '引魂廊', type: 'rect', x: 0, z: 18.8, w: 15.9, h: 31.9, kind: 'path',
         spawns: { kinds: ['shade', 'crane'], count: 2 } },
-      { id: 'hall', name: '白骨大殿', type: 'rect', x: 0, z: -10, w: 30, h: 26, kind: 'hall',
-        spawns: { kinds: ['golem', 'yaoguai', 'headless'], count: 6 } },
-      { id: 'westLink', name: '西廊', type: 'rect', x: -15, z: -10, w: 10, h: 8, kind: 'link' },
-      { id: 'west', name: '西侧耳室', type: 'rect', x: -27, z: -10, w: 17, h: 20, kind: 'wing',
-        spawns: { kinds: ['bonewright', 'bloodlord'], count: 4 } },
-      { id: 'eastLink', name: '东廊', type: 'rect', x: 15, z: -10, w: 10, h: 8, kind: 'link' },
-      { id: 'east', name: '东侧耳室', type: 'rect', x: 27, z: -10, w: 17, h: 20, kind: 'wing',
-        spawns: { kinds: ['ironmaiden', 'ghostfire'], count: 4 } },
-      { id: 'sanctum', name: '忘川祭坛', type: 'circle', x: 0, z: -29, r: 13.5, kind: 'boss' }
+      { id: 'hall', name: '白骨大殿', type: 'rect', x: 0, z: -14.5, w: 43.5, h: 37.7, kind: 'hall',
+        spawns: { kinds: ['golem', 'yaoguai', 'headless'], count: 5 } },
+      { id: 'westLink', name: '西廊', type: 'rect', x: -21.8, z: -14.5, w: 14.5, h: 11.6, kind: 'link' },
+      { id: 'west', name: '西侧耳室', type: 'rect', x: -39.1, z: -14.5, w: 24.6, h: 29, kind: 'wing',
+        spawns: { kinds: ['bonewright', 'bloodlord'], count: 2 } },
+      { id: 'eastLink', name: '东廊', type: 'rect', x: 21.8, z: -14.5, w: 14.5, h: 11.6, kind: 'link' },
+      { id: 'east', name: '东侧耳室', type: 'rect', x: 39.1, z: -14.5, w: 24.6, h: 29, kind: 'wing',
+        spawns: { kinds: ['ironmaiden', 'ghostfire'], count: 3 } },
+      { id: 'sanctum', name: '忘川祭坛', type: 'circle', x: 0, z: -42, r: 19.6, kind: 'boss' }
     ]
   },
 
@@ -114,19 +110,18 @@ const MAP_ZONES = {
   heaven: {
     entry: 'gate',
     zones: [
-      { id: 'gate', name: '南天门', type: 'rect', x: 0, z: 31, w: 26, h: 16, kind: 'entry',
-        spawns: { kinds: ['fallen', 'thunderbird'], count: 2 } },
-      { id: 'path', name: '云阶', type: 'rect', x: 0, z: 13, w: 11, h: 22, kind: 'path',
+      { id: 'gate', name: '南天门', type: 'rect', x: 0, z: 44.9, w: 37.7, h: 23.2, kind: 'entry' },
+      { id: 'path', name: '云阶', type: 'rect', x: 0, z: 18.8, w: 15.9, h: 31.9, kind: 'path',
         spawns: { kinds: ['fallen', 'swordwraith'], count: 2 } },
-      { id: 'hall', name: '残阙广场', type: 'rect', x: 0, z: -10, w: 30, h: 26, kind: 'hall',
-        spawns: { kinds: ['golem', 'yaoguai', 'voidbeast'], count: 6 } },
-      { id: 'westLink', name: '西廊', type: 'rect', x: -15, z: -10, w: 10, h: 8, kind: 'link' },
-      { id: 'west', name: '西偏殿', type: 'rect', x: -27, z: -10, w: 17, h: 20, kind: 'wing',
-        spawns: { kinds: ['jadeguard', 'bloodlord'], count: 4 } },
-      { id: 'eastLink', name: '东廊', type: 'rect', x: 15, z: -10, w: 10, h: 8, kind: 'link' },
-      { id: 'east', name: '东偏殿', type: 'rect', x: 27, z: -10, w: 17, h: 20, kind: 'wing',
-        spawns: { kinds: ['swordwraith', 'thunderbird'], count: 4 } },
-      { id: 'sanctum', name: '九霄之巅', type: 'circle', x: 0, z: -29, r: 13.5, kind: 'boss' }
+      { id: 'hall', name: '残阙广场', type: 'rect', x: 0, z: -14.5, w: 43.5, h: 37.7, kind: 'hall',
+        spawns: { kinds: ['golem', 'yaoguai', 'voidbeast'], count: 5 } },
+      { id: 'westLink', name: '西廊', type: 'rect', x: -21.8, z: -14.5, w: 14.5, h: 11.6, kind: 'link' },
+      { id: 'west', name: '西偏殿', type: 'rect', x: -39.1, z: -14.5, w: 24.6, h: 29, kind: 'wing',
+        spawns: { kinds: ['jadeguard', 'bloodlord'], count: 2 } },
+      { id: 'eastLink', name: '东廊', type: 'rect', x: 21.8, z: -14.5, w: 14.5, h: 11.6, kind: 'link' },
+      { id: 'east', name: '东偏殿', type: 'rect', x: 39.1, z: -14.5, w: 24.6, h: 29, kind: 'wing',
+        spawns: { kinds: ['swordwraith', 'thunderbird'], count: 3 } },
+      { id: 'sanctum', name: '九霄之巅', type: 'circle', x: 0, z: -42, r: 19.6, kind: 'boss' }
     ]
   }
 };
@@ -136,11 +131,11 @@ const MAP_ZONES = {
  * 多个首领的图在圆内分散摆开，避免叠在一起。
  * 校验：node dev/zone-check.js 会逐条检查。 */
 const MAP_BOSS_POS = {
-  treeking: [0, -28], batking: [7, -24],
-  chief: [0, -30], golemking: [-7, -26], snakequeen: [7, -26],
-  ghostlord: [0, -28], firegeneral: [-7, -24], icequeen: [7, -24],
-  spidermother: [0, -29], ferryman: [-7, -25], swordlord: [7, -25],
-  chaos: [0, -29]
+  treeking: [0, -40.6], batking: [10.2, -34.8],
+  chief: [0, -43.5], golemking: [-10.2, -37.7], snakequeen: [10.2, -37.7],
+  ghostlord: [0, -40.6], firegeneral: [-10.2, -34.8], icequeen: [10.2, -34.8],
+  spidermother: [0, -42], ferryman: [-10.2, -36.2], swordlord: [10.2, -36.2],
+  chaos: [0, -42]
 };
 
 /* ---------------- 纯函数 ---------------- */
@@ -164,12 +159,19 @@ function zoneById(mapId, id) {
 }
 
 /* 点是否在 zone 内 */
+/* 点在区域内判定。留 2 厘米宽容：区域边界都是「中心 ± 半宽」算出来的，
+ * 玩家/怪走到边界上时 5.800000000000001 > 5.8 这种浮点误差会让判定翻脸 ——
+ * 更糟的是 clampToZone 那边认为「已经在里面不用动」，两边打架，怪就永远
+ * 卡在越界状态（地宫 westLink 的上下边各 5.8 米，正好踩这个坑）。
+ * 2 厘米对玩法没有影响，但把两套判定的口径对齐了。 */
+const ZONE_EPS = 0.02;
 function zoneContains(z, x, zz) {
   if (z.type === 'circle') {
     const dx = x - z.x, dz = zz - z.z;
-    return dx * dx + dz * dz <= z.r * z.r;
+    const rr = z.r + ZONE_EPS;
+    return dx * dx + dz * dz <= rr * rr;
   }
-  return Math.abs(x - z.x) <= z.w * 0.5 && Math.abs(zz - z.z) <= z.h * 0.5;
+  return Math.abs(x - z.x) <= z.w * 0.5 + ZONE_EPS && Math.abs(zz - z.z) <= z.h * 0.5 + ZONE_EPS;
 }
 
 /* 把点夹到 zone 内（最近点） */
@@ -178,7 +180,10 @@ function clampToZone(z, x, zz) {
     const dx = x - z.x, dz = zz - z.z;
     const d = Math.hypot(dx, dz);
     if (d <= z.r || d < 0.0001) return { x, z: zz };
-    const k = z.r / d;
+    /* 留 1 厘米余量：k = r/d 算出来的点正好落在圆周上，浮点误差可能让它
+     * 差一丝跑到圆外，于是 collideWorld 每帧把怪夹到同一个「越界」的点，
+     * 越界计数每帧 +1（地宫 320 帧次就是这么来的）。 */
+    const k = Math.max(0, z.r - 0.01) / d;
     return { x: z.x + dx * k, z: z.z + dz * k };
   }
   const hw = z.w * 0.5, hh = z.h * 0.5;

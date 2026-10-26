@@ -3127,7 +3127,23 @@ const UI = {
     const g = cv.getContext('2d');
     const W = cv.width, H = cv.height, R = W / 2;
     const map = MAPS[s.mapId];
-    const scale = R / (map.size * 0.56);
+    /* [v1.12.1] 小地图显示半径不能直接挂 map.size —— 区域放大后 size 跟着涨，
+     * 挂 size 会让小地图一次显示整张图，区域轮廓糊成一团小方块。
+     * 改成按 zone 包围盒算，再夹在 30~58 米之间：
+     * 桃源村（半径 31）刚好能看全，战斗图固定显示身边 ~58 米的局部。 */
+    const zs = (typeof mapZones === 'function') ? mapZones(s.mapId) : null;
+    let span = map.size * 0.5;
+    if (zs) {
+      let mr = 0;
+      for (const z of zs) {
+        const hw = z.type === 'circle' ? z.r : z.w / 2;
+        const hh = z.type === 'circle' ? z.r : z.h / 2;
+        mr = Math.max(mr, Math.hypot(Math.abs(z.x) + hw, Math.abs(z.z) + hh));
+      }
+      span = mr * 1.12;
+    }
+    span = Math.max(30, Math.min(span, 52));
+    const scale = R / span;
     g.clearRect(0, 0, W, H);
     g.save();
     g.beginPath(); g.arc(R, R, R - 3, 0, 7); g.clip();
@@ -3149,7 +3165,6 @@ const UI = {
     /* [M12] 区域轮廓：矩形房间 / 圆形场地 / 走廊各画一遍。
      * 走廊用暗一档的填充，房间带描边 —— 玩家能一眼看出「哪是路、哪是屋子」，
      * 而不是原来那种「一片圆 + 几个点」。 */
-    const zs = (typeof mapZones === 'function') ? mapZones(s.mapId) : null;
     if (zs) {
       if (zs.length > 1) {
         const el = document.getElementById('zoneName');
