@@ -5,13 +5,21 @@
  * ============================================================ */
 const puppeteer = require('puppeteer-core');
 const path = require('path');
+const fs = require('fs');
 const wait = ms => new Promise(r => setTimeout(r, ms));
+/* 跨平台找浏览器：本机 Windows 用 Edge，macOS 退回 Chrome（原来写死 mac 路径，Windows 上直接跑不起来） */
+const exe = [
+  'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',
+  'C:/Program Files/Microsoft/Edge/Application/msedge.exe',
+  'C:/Program Files/Google/Chrome/Application/chrome.exe',
+  '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
+].find(f => fs.existsSync(f));
 
 (async () => {
   const b = await puppeteer.launch({
-    executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+    executablePath: exe,
     headless: 'new',
-    args: ['--no-sandbox', '--enable-webgl', '--use-gl=angle']
+    args: ['--no-sandbox', '--enable-unsafe-swiftshader', '--use-gl=angle', '--use-angle=swiftshader']
   });
   const p = await b.newPage();
   const errs = [];

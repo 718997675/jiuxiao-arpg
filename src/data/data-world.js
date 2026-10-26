@@ -10,7 +10,7 @@ const MAPS = {
     id: 'village', name: '桃源村', safe: true, level: 1,
     ground: 'dirt', sky: 0x9fc7d9, fog: 0xa8c8d8, fogNear: 45, fogFar: 120,
     size: 70, ambient: 0xbfd9e6, sun: 0xffe6b8, sunI: 1.05, props: 'village',
-    npcs: ['elder', 'smith', 'herbalist', 'monk', 'alchemist'],
+    npcs: ['elder', 'smith', 'herbalist', 'monk', 'alchemist', 'warden'],
     spawns: [], bosses: [], portal: { x: 0, z: -18 }, music: 'calm'
   },
   forest: {
@@ -47,6 +47,16 @@ const MAPS = {
     size: 92, ambient: 0x9ab0e0, sun: 0xffe0a0, sunI: 0.95, props: 'heaven',
     spawns: ['bloodlord', 'ghostfire', 'golem', 'yaoguai', 'fallen', 'voidbeast', 'swordwraith', 'thunderbird', 'jadeguard'], spawnCount: 18,
     bosses: ['chaos'], portal: { x: 0, z: 37 }, unlock: 32
+  },
+  /* ---------------- 无尽试炼场（v2.0） ----------------
+   * 特殊地图：spawns / bosses 都为空 —— 刷怪完全由 src/trial.js 接管
+   * （updateSpawner 看到 spawns 为空会直接 return，不会往里塞野生怪）。
+   * trial: true 用于各处「这是试炼场」的判断，免得靠 id 字符串比较。 */
+  trial: {
+    id: 'trial', name: '九霄试炼场', safe: false, level: 1,
+    ground: 'trial', sky: 0x1a1426, fog: 0x2c2038, fogNear: 40, fogFar: 118,
+    size: 78, ambient: 0xb4a4dc, sun: 0xffe0b8, sunI: 1.02, props: 'trial',
+    spawns: [], spawnCount: 0, bosses: [], portal: { x: 0, z: 30 }, unlock: 6, trial: true
   }
 };
 
@@ -56,7 +66,13 @@ const NPCS = {
   smith: { id: 'smith', name: '铁匠·石九', glyph: '铁', color: 0x9a7a5a, role: 'shop', lines: ['好钢要千锤百炼，人也一样。', '看看这些家什，都是好货。'] },
   herbalist: { id: 'herbalist', name: '药师·青娘', glyph: '药', color: 0x7fb08a, role: 'potion', lines: ['伤药苦口，但能救命。', '血月一出，草药都染了邪气。'] },
   monk: { id: 'monk', name: '云游道人', glyph: '道', color: 0xc0b090, role: 'travel', lines: ['天地为炉，众生为薪。', '想去何处？贫道为你开一道口子。'] },
-  alchemist: { id: 'alchemist', name: '炼金师·丹朱', glyph: '炼', color: 0xc08060, role: 'decompose', lines: ['万物皆可炼，废铁也能出玄晶。', '想提升装备品质？得先准备足够的材料。'] }
+  alchemist: { id: 'alchemist', name: '炼金师·丹朱', glyph: '炼', color: 0xc08060, role: 'decompose', lines: ['万物皆可炼，废铁也能出玄晶。', '想提升装备品质？得先准备足够的材料。'] },
+  /* 试炼使者：无尽试炼的入口。放在村里而不是菜单里 —— 玩家是「走过去、说话、
+   * 上台」，这条动线本身就在讲故事，比一个面板按钮有分量。 */
+  warden: {
+    id: 'warden', name: '试炼使者·无咎', glyph: '试', color: 0xa88ad8, role: 'trial',
+    lines: ['台上无岁月，只有一波接一波。', '试炼场不问你从哪来，只问你能站到第几波。', '死了不丢东西，丢的是那一口不甘心。']
+  }
 };
 
 /* ---------------- 任务链 ---------------- */

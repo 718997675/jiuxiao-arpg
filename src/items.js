@@ -1082,6 +1082,11 @@ function computePlayerStats(p) {
   /* [P2] 被动 / 关键被动：与图鉴同一条并加通道 —— 封顶、透传、面板显示自动生效 */
   const pdb = (typeof passiveBonusStats === 'function') ? passiveBonusStats(p) : {};
   for (const k in pdb) st[k] = (st[k] || 0) + pdb[k];
+  /* [试炼] 无尽试炼的祝福：走同一条并加通道。
+   * 必须并在这里（而不是 recalc 之后往 stats 上叠），否则 atkPct / hpPct
+   * 这类乘区词条会被已经算完的 atk 直接吃掉，变成「面板好看、实际没效果」。 */
+  const tdb = (typeof trialBonusStats === 'function') ? trialBonusStats(p) : {};
+  for (const k in tdb) st[k] = (st[k] || 0) + tdb[k];
   const c = CLASSES[p.cls];
   const lv = p.level;
   /* [v1.8.5] 玩家自己分配的点数：四项根基的第四来源（职业基础 + 等级成长 + 装备词条 + 加点） */

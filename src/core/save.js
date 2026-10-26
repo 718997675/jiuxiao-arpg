@@ -79,6 +79,17 @@ const SaveManager = {
     return n;
   },
   _obj(v) { return (v && typeof v === 'object' && !Array.isArray(v)) ? v : null; },
+  /* [试炼] 无尽试炼的永久记录：{ best, runs, bestAt }
+   * 只存「最高波数 / 总轮数 / 达成时间」—— 波次进度本身不落盘
+   * （中途退出即作废，这是 roguelite 的规矩），所以这里不存在「恢复本轮」的脏状态。 */
+  _trialRec(v) {
+    const src = this._obj(v) || {};
+    return {
+      best: this._int(src.best, 0, 9999, 0),
+      runs: this._int(src.runs, 0, 999999, 0),
+      bestAt: this._num(src.bestAt, 0)
+    };
+  },
   /* [S5] 异兽志归一化：{ mon: { kind: {kills, at} }, regions: { id: true } }
    * 旧档里 codex 只是个空对象，手改存档可能塞进字符串/数组，
    * 一律收敛成合法结构——图鉴面板会直接取 kills，结构不对就整页崩。 */
@@ -223,6 +234,8 @@ const SaveManager = {
     d.talentBonus = this._int(d.talentBonus, 0, 40, 0);
     /* [v1.8.5] 根基加点：四项非负整数，缺省补零（旧档按等级自动得到可分配点数） */
     d.attrAlloc = this._attrAlloc(d.attrAlloc);
+    /* [试炼] 无尽试炼记录（最高波数 / 总轮数） */
+    d.trial = this._trialRec(d.trial);
     /* S4 技能：等级 / 变体 / 技能条 8 格 × 2 套配置 */
     d.skills = this._obj(d.skills) || {};
     d.skillbar = this._bar(d.skillbar);
@@ -290,6 +303,7 @@ const SaveManager = {
       talents: this._obj(s.talents) || {},
       talentBonus: this._int(s.talentBonus, 0, 40, 0),
       attrAlloc: this._attrAlloc(s.attrAlloc),
+      trial: this._trialRec(s.trial),
       /* S4：技能等级 / 变体 / 技能条 8 格 × 2 套（id 或 null） */
       skills: this._obj(s.skills) || {},
       skillbar: this._bar(s.skillbar),
@@ -317,6 +331,7 @@ const SaveManager = {
       talents: doc.talents || {},
       talentBonus: this._int(doc.talentBonus, 0, 40, 0),
       attrAlloc: this._attrAlloc(doc.attrAlloc),
+      trial: this._trialRec(doc.trial),
       skills: doc.skills || {},
       skillbar: this._bar(doc.skillbar),
       skillbar2: this._bar(doc.skillbar2),

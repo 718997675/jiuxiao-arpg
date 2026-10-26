@@ -1010,7 +1010,7 @@ const UI = {
     }
     const hpP = CLAMP(s.hp / st.hpMax * 100, 0, 100);
     document.getElementById('hpFill').style.width = hpP + '%';
-    document.getElementById('hpText').textContent = `${Math.ceil(s.hp)} / ${Math.round(st.hpMax)}`;
+    document.getElementById('hpText').textContent = `${Math.ceil(Math.max(0, s.hp))} / ${Math.round(st.hpMax)}`;
     // 资源条（怒气 / 灵力 / 道力）随职业换色，文字带上简称
     const cc = CLASSES[s.cls];
     if (this._resCls !== s.cls) {
@@ -3183,5 +3183,229 @@ const UI = {
     g.beginPath(); g.arc(R, R, R - 3, 0, 7); g.stroke();
     g.strokeStyle = 'rgba(0,0,0,.8)'; g.lineWidth = 1;
     g.beginPath(); g.arc(R, R, R - 6, 0, 7); g.stroke();
+  },
+
+  /* ============================================================
+   * 无尽试炼（v2.0）
+   * 入口面板 / 左上角战况 / 开场大字 / 三选一 / 结算
+   * 状态与数值全部在 src/trial.js，这里只管「怎么显示」。
+   * ============================================================ */
+
+  /* ---------------- 入口面板 ---------------- */
+  openTrialPanel() {
+    if (!Game.state) return;
+    const s = Game.state;
+    const rec = s.trial || { best: 0, runs: 0, bestAt: 0 };
+    const need = TRIAL_CFG.unlockLevel;
+    const lock = s.level < need;
+    const body = document.getElementById('trialPanelBody');
+    if (!body) return;
+    const bestTxt = rec.best > 0
+      ? `<div class="tp-rec"><div><div class="k">最高纪录</div><div class="v">${rec.best}<small>波</small></div></div>
+         <div><div class="k">挑战次数</div><div class="v">${rec.runs}<small>次</small></div></div></div>`
+      : `<div class="tp-rec"><div><div class="k">最高纪录</div><div class="v">—</div></div>
+         <div><div class="k">挑战次数</div><div class="v">${rec.runs || 0}<small>次</small></div></div></div>`;
+    body.innerHTML = `
+      <div class="tp-hero">
+        <h4>无限波数 · 每波三选一 · 越战越强</h4>
+        <p>擂台之上，妖潮无穷。每清一波，可从三项祝福里择一强化自身；每五波一位首领，
+           每十波一位试炼之主。台上没有终点，只有你站到第几波。</p>
+        <div class="tp-rules">
+          <div class="tp-rule"><b>祝福</b>：基础数值 / 装备效果 / 技能效果，三类随机</div>
+          <div class="tp-rule"><b>首领</b>：每 5 波一位，每 10 波大首领带精英护卫</div>
+          <div class="tp-rule"><b>掉落</b>：每 3 波必出装备，首领波必出 2~3 件</div>
+          <div class="tp-rule"><b>规则</b>：死亡即终止，本轮所得全部保留</div>
+        </div>
+        ${bestTxt}
+        ${lock ? `<div class="tp-lock">需境界 ${need} 级方可入场（当前 ${s.level} 级）</div>` : ''}
+      </div>
+      <div class="tp-acts">
+        <button class="btn" onclick="UI.closeAll()">再等等</button>
+        <button class="btn primary" id="trialGo" ${lock ? 'disabled' : ''}>踏 上 擂 台</button>
+      </div>`;
+    const go = document.getElementById('trialGo');
+    if (go && !lock) go.addEventListener('click', () => {
+      SFX.ui();
+      this.closeAll();
+      Trial.start();
+    });
+    this.closeAll(document.getElementById('trialPanel'));
+    document.getElementById('trialPanel').classList.add('open');
+  },
+
+  /* ---------------- 左上角战况 ---------------- */
+  _thT: 0,
+  renderTrialHud(show) {
+    const el = document.getElementById('trialHud');
+    if (!el) return;
+    if (show === false) { el.classList.remove('on'); return; }
+    if (!(typeof Trial !== 'undefined' && Trial.run)) { el.classList.remove('on'); return; }
+    el.classList.add('on');
+    this.trialHudTick(true);
+  },
+
+  /* 每帧会被 Trial.tick 调一次，内部按 0.1 秒节流：
+   * 战况文字不需要 60fps，反复写 DOM 反而会挤掉战斗帧。 */
+  trialHudTick(force) {
+    if (!(typeof Trial !== 'undefined' && Trial.run)) return;
+    const now = performance.now();
+    if (!force && now - this._thT < 100) return;
+    this._thT = now;
+    const i = Trial.info();
+    if (!i) return;
+    const wEl = document.getElementById('thWave');
+    const sEl = document.getElementById('thState');
+    const aEl = document.getElementById('thAlive');
+    const bEl = document.getElementById('thBoss');
+    const cEl = document.getElementById('thBless');
+    const bar = document.getElementById('thBar');
+    if (wEl) wEl.textContent = i.wave;
+    if (sEl) {
+      if (i.phase === 'prep') sEl.textContent = '妖潮将至 · ' + i.prep.toFixed(1) + 's';
+      else if (i.phase === 'choose') sEl.textContent = '清场 · 择祝福';
+      else sEl.textContent = '交战中';
+    }
+    if (aEl) aEl.textContent = i.phase === 'fight' ? ('剩余 ' + i.alive + ' / ' + i.spawned) : '—';
+    if (bEl) {
+      bEl.textContent = i.isBoss ? (i.isBig ? '试炼之主降临' : '首领战') : (i.nextBoss + ' 波后');
+      bEl.style.color = i.isBoss ? '#ff7a5a' : '#ffd479';
+    }
+    if (cEl) cEl.textContent = i.blessCount;
+    if (bar) {
+      /* 进度条：战斗中 = 已清比例；读秒 = 读秒进度；翻牌 = 满 */
+      let pctv = 100;
+      if (i.phase === 'fight') pctv = i.spawned > 0 ? (i.spawned - i.alive) / i.spawned * 100 : 0;
+      else if (i.phase === 'prep') pctv = CLAMP(100 - i.prep / Math.max(0.1, TRIAL_CFG.prepTime) * 100, 0, 100);
+      bar.style.width = CLAMP(pctv, 0, 100) + '%';
+    }
+  },
+
+  /* ---------------- 开场大字 ---------------- */
+  trialBanner(wave, kind) {
+    const el = document.getElementById('trialBanner');
+    if (!el) return;
+    const sub = document.getElementById('tbSub');
+    const main = document.getElementById('tbMain');
+    el.classList.remove('show', 'boss', 'big');
+    if (kind === 'boss' || kind === 'big') {
+      el.classList.add(kind);
+      if (sub) sub.textContent = kind === 'big' ? '试 炼 之 主' : '首 领 来 袭';
+      if (main) main.innerHTML = '<em>' + wave + '</em> 波';
+    } else {
+      if (sub) sub.textContent = '第';
+      if (main) main.innerHTML = '<em>' + wave + '</em> 波';
+    }
+    /* 重启动画：先清 class，强制一次回流再挂上，否则同一帧内改 class 不重播 */
+    void el.offsetWidth;
+    el.classList.add('show');
+  },
+
+  /* ---------------- 三选一 ---------------- */
+  _trialOffers: [],
+
+  /* 词条明细：把这条祝福要加的 key 摊成「当前 → 选择后」两列。
+   * 直接读 stats.raw（已含装备 + 图鉴 + 被动 + 试炼祝福），所以数字是真实生效值，
+   * 不是「基础值」——玩家看到的和面板上的一致。 */
+  _trialStatRows(b) {
+    if (!b.stats) return '';
+    const st = (Game.state && Game.state.stats) || {};
+    const raw = st.raw || {};
+    const keys = Object.keys(b.stats).slice(0, 2);
+    const rows = keys.map(k => {
+      const meta = (typeof STATS !== 'undefined' && STATS[k]) || null;
+      const label = meta ? meta.label : k;
+      const isPct = !!(meta && meta.pct);
+      const unit = isPct ? '%' : '';
+      /* 乘区类（atkPct 等）不在最终面板里，读 raw 的「装备+祝福」小计；
+       * crit / aspd / def 这类派生量读最终值，跟角色面板对得上。 */
+      const tracked = (k in st) || (k in raw);
+      const curV = tracked ? Math.round(Number(k in st ? st[k] : raw[k]) || 0) : 0;
+      const addV = Number(b.stats[k]) || 0;
+      const addTxt = (addV > 0 ? '+' : '') + addV + unit;
+      /* 有底子 → 「当前 → 选后总值」，一眼看出这条值不值；
+       * 完全没这属性（点燃几率这类词条）→ 只给增量，别摆出 0 → 7% 的假总账。 */
+      const right = (tracked && curV !== 0)
+        ? `<i>${curV}${unit}</i><s>→</s><em>${curV + addV}${unit}</em>`
+        : `<i>—</i><s>→</s><em>${addTxt}</em>`;
+      return `<div class="tc-stat"><span>${label}</span>${right}</div>`;
+    }).join('');
+    return rows ? `<div class="tc-stats">${rows}</div>` : '';
+  },
+  openTrialBless(offers, wave) {
+    const box = document.getElementById('blCards');
+    const root = document.getElementById('trialBless');
+    if (!box || !root) return;
+    this._trialOffers = offers.slice();
+    const kick = document.getElementById('blKicker');
+    if (kick) kick.textContent = '第 ' + wave + ' 波 · 清场';
+    box.innerHTML = offers.map((b, i) => {
+      const col = TRIAL_CAT_COLOR[b.cat] || '#d8b25a';
+      const owned = (Trial.run && Trial.run.bless[b.id]) || 0;
+      const tierName = ['', '常', '稀', '传'][b.tier] || '';
+      const cur = owned > 0
+        ? `已叠 <b>${owned}</b> 层 · 上限 ${b.max}`
+        : `未持有 · 最多叠 ${b.max} 层`;
+      return `<div class="tcard t${b.tier}" data-bid="${b.id}" data-idx="${i}">
+        <div class="tc-tier">${tierName}</div>
+        <div class="tc-top">
+          <div class="tc-icon" style="color:${col}">${b.icon || '祝'}</div>
+          <div>
+            <div class="tc-name">${b.name}</div>
+            <div class="tc-cat" style="color:${col}">${TRIAL_CAT_NAME[b.cat] || ''}</div>
+          </div>
+        </div>
+        <div class="tc-body">
+          <div class="tc-desc">${b.desc}</div>
+          ${this._trialStatRows(b)}
+          <div class="tc-cur">${cur}</div>
+        </div>
+        <div class="tc-key">${i + 1}</div>
+      </div>`;
+    }).join('');
+    box.querySelectorAll('.tcard').forEach(el => {
+      el.addEventListener('click', () => Trial.pickBlessing(el.dataset.bid));
+    });
+    root.classList.add('open');
+    SFX.ui();
+  },
+
+  pickTrialByIndex(i) {
+    const id = this._trialOffers[i];
+    if (id) Trial.pickBlessing(id);
+  },
+
+  closeTrialBless() {
+    const root = document.getElementById('trialBless');
+    if (root) root.classList.remove('open');
+    this._trialOffers = [];
+  },
+
+  /* ---------------- 结算 ---------------- */
+  showTrialEnd(sum) {
+    const root = document.getElementById('trialEnd');
+    if (!root) return;
+    document.getElementById('teWave').textContent = sum.wave;
+    const bestEl = document.getElementById('teBest');
+    if (bestEl) {
+      bestEl.textContent = sum.isBest ? '★ 新 纪 录 ★' : '历史最高 ' + sum.best + ' 波';
+      bestEl.style.color = sum.isBest ? '#ffd479' : '#b08a72';
+    }
+    document.getElementById('teKills').textContent = sum.kills;
+    document.getElementById('teItems').textContent = sum.items;
+    document.getElementById('teGold').textContent = fmt(sum.gold || 0);
+    document.getElementById('teLevel').textContent = sum.levelFrom === sum.levelTo
+      ? 'Lv ' + sum.levelTo
+      : 'Lv ' + sum.levelFrom + ' → ' + sum.levelTo;
+    const hint = document.getElementById('teHint');
+    if (hint) {
+      const m = Math.floor((sum.seconds || 0) / 60), sec = (sum.seconds || 0) % 60;
+      hint.textContent = '本轮用时 ' + m + ' 分 ' + sec + ' 秒 · 所得已全部入袋，死亡不损失装备';
+    }
+    root.classList.add('open');
+  },
+
+  hideTrialEnd() {
+    const root = document.getElementById('trialEnd');
+    if (root) root.classList.remove('open');
   }
 };

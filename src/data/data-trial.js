@@ -1,0 +1,290 @@
+/* ============================================================
+ * 数据层 · 无尽试炼
+ * ------------------------------------------------------------
+ * 试炼模式是「无限波数」的挑战场：一波清完立刻下一波，每波结束三选一
+ * 强化（基础数值 / 装备效果 / 技能效果），每 5 波首领、每 10 波大首领。
+ * 本文件只放**纯数据与纯函数**（不碰 THREE、不碰 DOM），
+ * 运行时状态机在 src/trial.js，面板在 src/ui.js。
+ *
+ * 为什么怪物等级要「跟着玩家走」：
+ *   本体的怪物血量是 1 + lv×0.55 + lv²×0.01 —— 平方项在高等级非常陡。
+ *   如果试炼把怪物等级写成固定曲线，30 级玩家和 8 级玩家面对的 TTK 会差
+ *   三四倍：要么高手一路平推，要么新手第 8 波就卡死。所以这里让怪物等级
+ *   贴着玩家等级走（+1 级 + 每波 0.12），**难度全部交给 hpMul / dmgMul
+ *   两个乘区**，这样任何人进来，第一波的体感都是「能打」，之后靠波数变难。
+ *   验算见 dev/trial-balance.js。
+ * ============================================================ */
+
+const TRIAL_CFG = {
+  /* ---- 波次 ---- */
+  blessCards: 3,          // 每波结束给几张卡
+  prepTime: 3.0,          // 开波前的读秒
+  firstPrep: 2.2,         // 第 1 波读秒（短一点，别让人等）
+  clearDelay: 1.15,       // 清场到翻牌的停顿
+  nextDelay: 0.9,         // 选完卡到下一波的停顿
+
+  /* ---- 怪物等级：贴玩家等级 ---- */
+  lvOffset: 1,            // 比玩家高 1 级
+  lvPerWave: 0.12,        // 每波再抬一点
+  lvMax: 70,
+
+  /* ---- 数量与精英 ---- */
+  countBase: 5,
+  countPerWave: 0.68,
+  countMax: 22,
+  eliteBase: 0.05,
+  elitePerWave: 0.011,
+  eliteMax: 0.42,
+
+  /* ---- 首领 ----
+   * 首领的血量**不用数据表里的 cfg.hp**，而是以「本波小怪的平均血量」为锚点乘倍数。
+   * 原因：本体首领血量是给固定等级写的（混沌天魔 42000），再叠上试炼的血量乘区
+   * 会直接爆到几百万，一场首领战要打十分钟。以本波小怪为锚点，首领战长度就恒等于
+   * 「小怪 TTK × 倍数」。
+   *
+   * 倍数随波数**衰减**（bossEquivDecay）：后期小怪 TTK 本来就在变长，
+   * 如果倍数不降，第 40 波的首领要打两分钟。衰减后整场的首领战稳定在 25~35 秒，
+   * 大首领 45~60 秒。 */
+  bossEvery: 5,           // 每 5 波一个首领
+  bossBigEvery: 10,       // 每 10 波是大首领
+  bossHpEquiv: 16,        // 首领血量 = 本波小怪均血 × 16 / (1 + 波数×衰减)
+  bossBigHpEquiv: 28,     // 大首领 = × 28 / 同衰减
+  bossEquivDecay: 0.075,
+  bossAtkEquiv: 1.9,      // 首领攻击 = 本波小怪均攻 × 1.9
+  bossBigAtkEquiv: 2.4,
+  bossGuardElite: 2,      // 大首领身边带几只精英护卫
+
+  /* ---- 清场经验：按「当前升级所需」的比例给，自动适配任何等级 ---- */
+  xpWaveRatio: 0.34,      // 普通波
+  xpWaveRatioBoss: 0.72,  // 首领波
+  xpWaveRatioBig: 1.05,   // 大首领波
+
+  /* ---- 清场掉落 ---- */
+  dropGoldBase: 40,       // 金币 = base × 波数 × 难度系数
+  dropWaves: [1, 3, 6, 10, 15, 20, 26, 33, 41, 50],  // 这些波次额外掉装备
+  dropIlvlGap: 1,         // 装备等级 = 玩家等级 + gap（保证穿得上）
+
+  /* ---- 记录 ---- */
+  unlockLevel: 6          // 6 级开启（够玩家摸完前两图，有基础装备）
+};
+
+/* ---------------- 难度曲线 ----------------
+ * 两个乘区都是「线性 + 平方」的复合曲线：前期线性、后期加速，
+ * 但平方系数压得很低，避免第 40 波直接变成血牛。
+ * 目标：普通玩家 25~35 波，成型 BD 45+，极限 60+。 */
+function trialHpMul(wave) {
+  const w = Math.max(0, wave || 0);
+  return 1 + 0.100 * w + 0.0045 * w * w;
+}
+function trialDmgMul(wave) {
+  const w = Math.max(0, wave || 0);
+  return 1 + 0.045 * w + 0.0010 * w * w;
+}
+/* 每波怪物数量 */
+function trialWaveCount(wave) {
+  const w = Math.max(1, wave || 1);
+  return Math.min(TRIAL_CFG.countMax, Math.round(TRIAL_CFG.countBase + TRIAL_CFG.countPerWave * (w - 1)));
+}
+/* 精英概率 */
+function trialEliteChance(wave) {
+  const w = Math.max(1, wave || 1);
+  return Math.min(TRIAL_CFG.eliteMax, TRIAL_CFG.eliteBase + TRIAL_CFG.elitePerWave * (w - 1));
+}
+/* 是否首领波 / 大首领波 */
+function trialIsBossWave(wave) {
+  return (wave % TRIAL_CFG.bossEvery) === 0;
+}
+function trialIsBigBossWave(wave) {
+  return (wave % TRIAL_CFG.bossBigEvery) === 0;
+}
+/* 怪物等级：贴玩家等级 */
+function trialEnemyLevel(wave, playerLevel) {
+  const lv = (playerLevel || 1) + TRIAL_CFG.lvOffset + Math.max(0, (wave || 1) - 1) * TRIAL_CFG.lvPerWave;
+  return CLAMP(Math.round(lv), 1, TRIAL_CFG.lvMax);
+}
+
+/* 首领血量 = 本波小怪均血 × 本函数返回值。
+ * 波数越高倍数越低 —— 抵消「小怪 TTK 随波数变长」，让首领战长度稳定。 */
+function trialBossEquiv(wave, big) {
+  const base = big ? TRIAL_CFG.bossBigHpEquiv : TRIAL_CFG.bossHpEquiv;
+  return base / (1 + Math.max(0, wave || 1) * TRIAL_CFG.bossEquivDecay);
+}
+
+/* 祝福带来的「综合战力乘区」——只给 dev 验算脚本用，
+ * 运行时是逐条加到 stats 上的（见 Trial.applyStats），这里是一个拟合值。 */
+function trialBlessingPower(wave) {
+  const picks = Math.max(0, (wave || 1) - 1);
+  /* 每条祝福平均让战力涨 9%，但同类是加法叠加（收益递减），
+   * 折成 1 + 0.085 × picks / (1 + picks / 55) 这条饱和曲线 */
+  return 1 + 0.085 * picks / (1 + picks / 55);
+}
+
+/* ---------------- 怪物池 ----------------
+ * 按波数逐段解锁：前期只有幽篁林的小怪，往后把后面几张图的怪并进来。
+ * 同一波里混编不同族群的怪，逼玩家在「火/冰/毒抗」之间取舍。 */
+const TRIAL_MOB_TIERS = [
+  { at: 1, pool: ['halfork', 'bat', 'skelarch', 'wolf', 'hornet', 'fox', 'bamboo', 'shigandang', 'lantern'] },
+  { at: 5, pool: ['spider', 'boar', 'snake', 'scorpion', 'zombie', 'drowned', 'brood', 'wasp', 'toad', 'bogwitch'] },
+  { at: 11, pool: ['golem', 'ghost', 'yaoguai', 'ghostfire', 'statue', 'scorpking', 'minerghost', 'magma', 'ironbeetle', 'runesmith'] },
+  { at: 19, pool: ['bloodlord', 'headless', 'crane', 'bonewright', 'shade', 'ironmaiden'] },
+  { at: 27, pool: ['fallen', 'voidbeast', 'swordwraith', 'thunderbird', 'jadeguard'] }
+];
+
+function trialMobPool(wave) {
+  const out = [];
+  for (const t of TRIAL_MOB_TIERS) if (wave >= t.at) out.push.apply(out, t.pool);
+  return out.length ? out : TRIAL_MOB_TIERS[0].pool;
+}
+
+/* 首领出场表：按波数推进，越往后越凶。
+ * 每 5 波取当前段位里的一只；每 10 波（大首领）取段位末位那只。 */
+const TRIAL_BOSS_TIERS = [
+  { at: 5, list: ['treeking', 'batking'] },
+  { at: 10, list: ['chief', 'golemking'] },
+  { at: 15, list: ['snakequeen', 'ghostlord'] },
+  { at: 20, list: ['firegeneral', 'icequeen'] },
+  { at: 25, list: ['spidermother', 'ferryman'] },
+  { at: 30, list: ['swordlord'] },
+  { at: 35, list: ['chaos'] }
+];
+
+function trialBossFor(wave) {
+  const big = trialIsBigBossWave(wave);
+  let list = TRIAL_BOSS_TIERS[0].list;
+  for (const t of TRIAL_BOSS_TIERS) if (wave >= t.at) list = t.list;
+  /* 大首领：优先取当前段位最后一只（通常是段位里最强的） */
+  if (big) return list[list.length - 1];
+  return PICK(list);
+}
+
+/* ============================================================
+ * 祝福池
+ * ------------------------------------------------------------
+ * 三类（用户指定）：基础数值 / 装备效果 / 技能效果。
+ * 每条祝福只做一件事：往 stats 上叠一个已有 key 的数值（所以**必然生效**，
+ * 不会出现「面板好看但战斗里没用」的假词条），外加两条机制型（见 special）。
+ *
+ * tier：1 普通（权重高）/ 2 稀有 / 3 传说（权重低、强度高）
+ * max ：最多叠几层；到顶后不再进池
+ * val ：每层数值
+ * stats：{ key: 每层数值 }
+ * ============================================================ */
+const TRIAL_BLESSINGS = [
+  /* ---------- 基础数值 ---------- */
+  { id: 'atk', name: '锋锐', cat: 'stat', tier: 1, max: 12, icon: '刃', val: 12, stats: { atkPct: 12 }, desc: '攻击力 +12%' },
+  { id: 'hp', name: '厚土', cat: 'stat', tier: 1, max: 12, icon: '岳', val: 14, stats: { hpPct: 14 }, desc: '生命上限 +14%' },
+  { id: 'def', name: '铁壁', cat: 'stat', tier: 1, max: 10, icon: '壁', val: 15, stats: { armorPct: 15 }, desc: '护甲 +15%' },
+  { id: 'crit', name: '锐眼', cat: 'stat', tier: 1, max: 10, icon: '目', val: 4, stats: { crit: 4 }, desc: '暴击率 +4%' },
+  { id: 'critdmg', name: '裂心', cat: 'stat', tier: 1, max: 10, icon: '心', val: 18, stats: { critDmg: 18 }, desc: '暴击伤害 +18%' },
+  { id: 'aspd', name: '疾风', cat: 'stat', tier: 1, max: 8, icon: '风', val: 7, stats: { aspd: 7 }, desc: '攻击速度 +7%' },
+  { id: 'movespd', name: '踏云', cat: 'stat', tier: 1, max: 6, icon: '云', val: 6, stats: { moveSpd: 6 }, desc: '移动速度 +6%' },
+  { id: 'hpregen', name: '生生不息', cat: 'stat', tier: 1, max: 8, icon: '生', val: 9, stats: { hpRegen: 9 }, desc: '每秒回复生命 +9' },
+  { id: 'mpreg', name: '灵泉', cat: 'stat', tier: 1, max: 6, icon: '泉', val: 3, stats: { mpReg: 3 }, desc: '灵力回复/秒 +3' },
+  { id: 'res', name: '五行护体', cat: 'stat', tier: 2, max: 8, icon: '御', val: 7, stats: { allRes: 7 }, desc: '全元素抗性 +7%' },
+  { id: 'reduce', name: '玄甲', cat: 'stat', tier: 2, max: 6, icon: '甲', val: 4, stats: { dmgReduce: 4 }, desc: '受到伤害减免 +4%' },
+  { id: 'str', name: '力拔山', cat: 'stat', tier: 2, max: 8, icon: '力', val: 14, stats: { str: 14 }, desc: '力量 +14' },
+  { id: 'agi', name: '身法', cat: 'stat', tier: 2, max: 8, icon: '身', val: 14, stats: { agi: 14 }, desc: '敏捷 +14' },
+  { id: 'vit', name: '金刚体', cat: 'stat', tier: 2, max: 8, icon: '刚', val: 14, stats: { vit: 14 }, desc: '体质 +14' },
+  { id: 'int', name: '灵台清明', cat: 'stat', tier: 2, max: 8, icon: '台', val: 14, stats: { int: 14 }, desc: '灵力 +14' },
+
+  /* ---------- 装备效果（把装备词条里最值钱的那几条做成可叠祝福） ---------- */
+  { id: 'lifesteal', name: '饮血', cat: 'equip', tier: 2, max: 6, icon: '饮', val: 3, stats: { lifesteal: 3 }, desc: '生命偷取 +3%' },
+  { id: 'thorns', name: '荆棘', cat: 'equip', tier: 2, max: 6, icon: '棘', val: 16, stats: { thorns: 16 }, desc: '伤害反弹 +16%' },
+  { id: 'dodge', name: '虚步', cat: 'equip', tier: 2, max: 6, icon: '虚', val: 4, stats: { dodge: 4 }, desc: '闪避率 +4%' },
+  { id: 'block', name: '铁壁格挡', cat: 'equip', tier: 2, max: 6, icon: '挡', val: 5, stats: { block: 5 }, desc: '格挡率 +5%' },
+  { id: 'overkill', name: '余劲', cat: 'equip', tier: 2, max: 5, icon: '余', val: 9, stats: { overkillShield: 9 }, desc: '溢出伤害转护盾 +9%' },
+  { id: 'killheal', name: '屠戮回春', cat: 'equip', tier: 1, max: 8, icon: '屠', val: 10, stats: { killHeal: 10 }, desc: '击杀回复生命 +10' },
+  { id: 'magicfind', name: '天缘', cat: 'equip', tier: 1, max: 6, icon: '缘', val: 28, stats: { magicFind: 28 }, desc: '奇遇机缘 +28%（掉落品质更好）' },
+  { id: 'goldfind', name: '聚宝', cat: 'equip', tier: 1, max: 6, icon: '宝', val: 40, stats: { goldFind: 40 }, desc: '金币获取 +40%' },
+  { id: 'droprate', name: '满载', cat: 'equip', tier: 1, max: 6, icon: '载', val: 40, stats: { dropRate: 40 }, desc: '掉落数量 +40%' },
+  { id: 'elitedmg', name: '屠魔', cat: 'equip', tier: 2, max: 6, icon: '魔', val: 22, stats: { eliteDmg: 22 }, desc: '对精英伤害 +22%' },
+  { id: 'bossdmg', name: '斩王', cat: 'equip', tier: 2, max: 6, icon: '王', val: 22, stats: { bossDmg: 22 }, desc: '对首领伤害 +22%' },
+  { id: 'armorpen', name: '破甲', cat: 'equip', tier: 2, max: 6, icon: '破', val: 11, stats: { armorPen: 11 }, desc: '护甲穿透 +11%' },
+  { id: 'stun', name: '震岳', cat: 'equip', tier: 2, max: 5, icon: '震', val: 5, stats: { stunChance: 5 }, desc: '眩晕几率 +5%' },
+  { id: 'burn', name: '燎原', cat: 'equip', tier: 1, max: 6, icon: '燎', val: 9, stats: { burnChance: 9 }, desc: '点燃几率 +9%' },
+  { id: 'pickup', name: '纳物', cat: 'equip', tier: 1, max: 4, icon: '纳', val: 2, stats: { pickupRadius: 2 }, desc: '拾取范围 +2' },
+
+  /* ---------- 技能效果 ---------- */
+  { id: 'skilldmg', name: '术法精研', cat: 'skill', tier: 1, max: 10, icon: '术', val: 13, stats: { skillDmg: 13 }, desc: '技能伤害 +13%' },
+  { id: 'cdr', name: '通玄', cat: 'skill', tier: 1, max: 8, icon: '玄', val: 5, stats: { cdr: 5 }, desc: '冷却缩减 +5%' },
+  { id: 'aoe', name: '荡涤', cat: 'skill', tier: 1, max: 8, icon: '荡', val: 15, stats: { aoeDmg: 15 }, desc: '范围伤害 +15%' },
+  { id: 'proj', name: '穿云', cat: 'skill', tier: 1, max: 8, icon: '云', val: 15, stats: { projDmg: 15 }, desc: '投射物伤害 +15%' },
+  { id: 'dot', name: '蚀骨', cat: 'skill', tier: 1, max: 8, icon: '蚀', val: 17, stats: { dotDmg: 17 }, desc: '持续伤害 +17%' },
+  { id: 'melee', name: '刀意', cat: 'skill', tier: 1, max: 8, icon: '刀', val: 15, stats: { meleeDmg: 15 }, desc: '近战伤害 +15%' },
+  { id: 'summon', name: '驭兽', cat: 'skill', tier: 2, max: 6, icon: '驭', val: 18, stats: { summonDmg: 18 }, desc: '召唤物伤害 +18%' },
+  { id: 'cost', name: '蓄灵', cat: 'skill', tier: 2, max: 6, icon: '蓄', val: 7, stats: { costReduce: 7 }, desc: '技能消耗降低 +7%' },
+  { id: 'elem', name: '五行归一', cat: 'skill', tier: 3, max: 4, icon: '归', val: 14, stats: { fireDmg: 14, iceDmg: 14, lightningDmg: 14, poisonDmg: 14 }, desc: '全元素伤害 +14%' },
+  { id: 'skilllv', name: '悟道', cat: 'skill', tier: 3, max: 3, icon: '悟', val: 1, stats: { skillLv: 1 }, desc: '全技能等级 +1' },
+
+  /* ---------- 传说（机制型） ---------- */
+  {
+    id: 'waveheal', name: '血泉', cat: 'equip', tier: 3, max: 4, icon: '泉', val: 18,
+    special: 'waveHeal', desc: '每波结束时回复 18% 生命'
+  },
+  {
+    id: 'thunder', name: '天雷引', cat: 'skill', tier: 3, max: 4, icon: '雷', val: 1,
+    special: 'thunder', desc: '每 5 秒引落天雷，对最近的敌人造成 260% 攻击伤害'
+  },
+  {
+    id: 'bloodlust', name: '嗜血狂潮', cat: 'equip', tier: 3, max: 3, icon: '嗜', val: 1,
+    special: 'bloodlust', desc: '生命低于 40% 时，攻击力 +25%（每层 +25%）'
+  },
+  {
+    id: 'fortune', name: '天赐机缘', cat: 'equip', tier: 3, max: 3, icon: '赐', val: 1,
+    special: 'fortune', desc: '首领必掉 1 件额外装备，且装备等级 +2（每层）'
+  }
+];
+
+const TRIAL_BLESS_BY_ID = {};
+for (const b of TRIAL_BLESSINGS) TRIAL_BLESS_BY_ID[b.id] = b;
+
+const TRIAL_CAT_NAME = { stat: '基础数值', equip: '装备效果', skill: '技能效果' };
+const TRIAL_CAT_COLOR = { stat: '#ffc857', equip: '#5ce08a', skill: '#67a9ff' };
+
+/* 抽卡：按 tier 权重 + 「同类不出三张」+ 已叠满的剔除。
+ * owned = { id: 层数 } */
+const TRIAL_TIER_WEIGHT = { 1: 100, 2: 42, 3: 13 };
+
+function trialRollBlessings(n, wave, owned) {
+  owned = owned || {};
+  const pool = TRIAL_BLESSINGS.filter(b => (owned[b.id] || 0) < b.max);
+  const out = [];
+  const cats = [];
+  /* 尽量三张卡分属三类：先每类各抽一张，抽不满再用剩下的补 */
+  const byCat = { stat: [], equip: [], skill: [] };
+  for (const b of pool) (byCat[b.cat] || (byCat[b.cat] = [])).push(b);
+
+  const pickOne = (list) => {
+    if (!list || !list.length) return null;
+    let total = 0;
+    for (const b of list) total += TRIAL_TIER_WEIGHT[b.tier] || 10;
+    let r = Math.random() * total;
+    for (const b of list) {
+      const w = TRIAL_TIER_WEIGHT[b.tier] || 10;
+      if (r < w) return b;
+      r -= w;
+    }
+    return list[list.length - 1];
+  };
+
+  const catOrder = shuffle(['stat', 'equip', 'skill']);
+  for (const c of catOrder) {
+    if (out.length >= n) break;
+    const b = pickOne(byCat[c]);
+    if (b) { out.push(b); cats.push(c); }
+  }
+  /* 补足：从全部池子里抽（不重复） */
+  let guard = 0;
+  while (out.length < n && guard++ < 60) {
+    const rest = pool.filter(b => out.indexOf(b) < 0);
+    if (!rest.length) break;
+    const b = pickOne(rest);
+    if (b) out.push(b);
+  }
+  return out;
+}
+
+/* 波次奖励装备的等级：保证「穿得上」——玩家的等级门槛是 reqLv = ilvl - 1 */
+function trialDropIlvl(playerLevel, fortuneStacks) {
+  return CLAMP(Math.round((playerLevel || 1) + TRIAL_CFG.dropIlvlGap + (fortuneStacks || 0) * 2), 1, 40);
+}

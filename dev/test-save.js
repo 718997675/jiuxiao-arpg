@@ -15,14 +15,14 @@ const path = require('path');
 const vm = require('vm');
 
 const ROOT = path.resolve(__dirname, '..');
+/* 数据层文件清单从 index.html 里读（见 dev/_load.js）：
+ * 手写清单在 data-* 越拆越多之后必然漏，漏一个就报 UNIQUE_ITEMS 未定义。
+ * 顺序仍按「core → 全部 data → save → items」，和线上一致。 */
+const { listFiles } = require('./_load');
 const FILES = [
   'src/core/boot.js',
   'src/core/store.js',
-  'src/data/data-core.js',
-  'src/data/data-items.js',
-  'src/data/data-skills.js',
-  'src/data/data-monsters.js',
-  'src/data/data-world.js',
+  ...listFiles().filter(f => f.startsWith('src/data/')),
   'src/core/save.js',
   'src/items.js'
 ];

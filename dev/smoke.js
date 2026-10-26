@@ -1,12 +1,19 @@
 const puppeteer = require('puppeteer-core');
 const path = require('path');
+const fs = require('fs');
 const wait = ms => new Promise(r => setTimeout(r, ms));
+const exe = [
+  'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',
+  'C:/Program Files/Microsoft/Edge/Application/msedge.exe',
+  'C:/Program Files/Google/Chrome/Application/chrome.exe',
+  '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
+].find(f => fs.existsSync(f));
 
 (async () => {
   const browser = await puppeteer.launch({
-    executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+    executablePath: exe,
     headless: 'new',
-    args: ['--no-sandbox', '--enable-webgl', '--use-gl=angle', '--window-size=1280,800']
+    args: ['--no-sandbox', '--enable-unsafe-swiftshader', '--use-gl=angle', '--use-angle=swiftshader', '--window-size=1280,800']
   });
   const page = await browser.newPage();
   await page.setViewport({ width: 1280, height: 800 });

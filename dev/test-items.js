@@ -14,14 +14,8 @@ const fs = require('fs');
 const vm = require('vm');
 const path = require('path');
 
-const ctx = { console, Math, Set, Map, JSON };
-vm.createContext(ctx);
-const load = f => vm.runInContext(
-  fs.readFileSync(path.join(__dirname, '..', 'src', f), 'utf8'), ctx, { filename: f }
-);
-load('data/data-core.js');
-load('data/data-items.js');
-load('items.js');
+const { loadData } = require('./_load');
+const ctx = loadData();
 
 const pick = name => vm.runInContext(name, ctx);
 const STATS = pick('STATS');
@@ -39,7 +33,7 @@ const ok = (cond, msg, extra) => {
 };
 
 /* ---------------- 1. 滚 1 万件 ---------------- */
-const N = 10000;
+const N = 20000;   /* 20000：最稀的词缀（tier3 / 部位限定）也能稳定出现，1 万时会有抽样噪声 */
 const names = new Map();          // baseName -> 次数
 const affixHit = new Map();       // affix key -> 次数
 const implicitHit = new Map();    // 固有 key -> 次数
@@ -73,7 +67,7 @@ for (const c in WEAPON_BASES) for (const tier of WEAPON_BASES[c]) totalBases += 
 for (const c in OFFHAND_BASES) for (const tier of OFFHAND_BASES[c]) totalBases += tier.length;
 
 console.log(`\n滚装 ${N} 次，耗时 ${ms}ms（${(N / (ms / 1000) / 1000).toFixed(1)} 万件/秒）\n`);
-console.log('基底覆盖', names.size, '/', totalBases);
+console.log('基底覆盖', names.size, '/', totalBases, '（多出的是传世 / 法器，它们不走基底表）');
 console.log('词缀覆盖', affixHit.size, '/', AFFIXES.length);
 console.log('固有属性覆盖', implicitHit.size);
 
@@ -94,10 +88,11 @@ for (const c in WEAPON_BASES) {
 for (const c in OFFHAND_BASES) {
   for (const tier of OFFHAND_BASES[c]) for (const v of tier) if (!names.has('offhand|' + v[0])) missingBase.push('off:' + c + ':' + v[0]);
 }
-ok(names.size === totalBases, '有基底滚不出来', missingBase.slice(0, 8).join(', '));
+/* 只比「表里有的都滚出来了」，不比总数：传世 / 法器有自己的命名，会额外占 names */
+ok(missingBase.length === 0, '有基底滚不出来', missingBase.slice(0, 8).join(', '));
 
 const missingAffix = AFFIXES.filter(a => !affixHit.has(a.key)).map(a => a.key);
-ok(affixHit.size === AFFIXES.length, '有词缀永远滚不到', missingAffix.join(', '));
+ok(missingAffix.length === 0, '有词缀永远滚不到', missingAffix.join(', '));
 
 /* ---------------- 2. 词缀概率分布 ---------------- */
 const tierWant = { 1: 0, 2: 0, 3: 0 };

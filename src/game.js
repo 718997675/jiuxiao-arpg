@@ -212,6 +212,14 @@ const Game = {
       /* repeat 的 keydown 不触发翻滚/技能/药水等动作，避免持续触发 */
     if (e.repeat) return;
       if (k === ' ') { this.tryDash(); e.preventDefault(); return; }
+      /* [试炼] 翻牌阶段：数字键 1-3 直接选卡。必须放在技能条之前拦下来，
+       * 否则按 1 会先放掉快捷栏第一个技能。 */
+      if (typeof Trial !== 'undefined' && Trial.run && Trial.run.phase === 'choose'
+        && k >= '1' && k <= String(TRIAL_CFG.blessCards)) {
+        UI.pickTrialByIndex(parseInt(k) - 1);
+        e.preventDefault();
+        return;
+      }
       /* [S4][M1] 技能条 8 格手动配置：键 1-8 依次施放当前快捷栏上的技能 */
       if (k >= '1' && k <= String(SKILL_BAR_SLOTS)) {
         const bar = this.skillBar();
@@ -332,6 +340,8 @@ const Game = {
       equipment: { helm: null, chest: eq.chest, shoulders: null, cloak: null, gloves: null, boots: null, belt: null, amulet: null, ring1: null, ring2: null, weapon: eq.weapon, offhand: null, relic: null, fate: null },
       inventory: [], maxInv: BAG_BASE_CAP,
       stash: { items: [], mats: {} },
+      /* [试炼] 无尽试炼的永久记录（跨轮保留）：最高波数 / 总轮数 / 达成时间 */
+      trial: { best: 0, runs: 0, bestAt: 0 },
       quests: { active: [], done: [], next: 'q1', announced: {} },
       mapId: 'village', playerPos: { x: 0, z: 10 },
       bossKilled: {}, playTime: 0,
@@ -977,6 +987,11 @@ const Game = {
   /* 读档 / 导入后补新字段（S3 天赋、S4 技能） */
   normalizeProgress(s) {
     if (!s) return;
+    /* [试炼] 记录整形：旧档没有这一段，缺省补零；脏值收敛成非负整数 */
+    if (!s.trial || typeof s.trial !== 'object') s.trial = { best: 0, runs: 0, bestAt: 0 };
+    s.trial.best = Math.max(0, Math.round(Number(s.trial.best) || 0));
+    s.trial.runs = Math.max(0, Math.round(Number(s.trial.runs) || 0));
+    s.trial.bestAt = Math.max(0, Number(s.trial.bestAt) || 0);
     if (!s.talents || typeof s.talents !== 'object') s.talents = { spent: {}, presets: [null, null, null], respecCount: 0 };
     if (!s.talents.spent || typeof s.talents.spent !== 'object') s.talents.spent = {};
     if (!Array.isArray(s.talents.presets) || s.talents.presets.length !== 3) s.talents.presets = [null, null, null];
@@ -1183,7 +1198,7 @@ const Game = {
   },
 
   spawnNPCs() {
-    const pos = { elder: [-7, 2], smith: [7, 7], herbalist: [-10, 14], monk: [9, 15], alchemist: [2, 18] };
+    const pos = { elder: [-7, 2], smith: [7, 7], herbalist: [-10, 14], monk: [9, 15], alchemist: [2, 18], warden: [-6, 20] };
     for (const id of MAPS.village.npcs) {
       const a = buildNPC(id);
       const [x, z] = pos[id];
@@ -1821,6 +1836,9 @@ const Game = {
     this.updateProjectiles(dt);
     this.updateLoot(dt);
     this.updateSpawner(dt);
+    /* [试炼] 波次状态机：读秒 / 清场判定 / 天雷与嗜血狂潮两条机制祝福。
+     * 放在 updateSpawner 之后 —— 试炼场的 spawns 为空，那边会直接返回。 */
+    if (typeof Trial !== 'undefined' && Trial.active) Trial.tick(dt);
     this.updateWorldAnims(dt);
     this.updateInteract();
     this.tickAudio(dt);
@@ -3826,7 +3844,12 @@ const Game = {
     this.actor.group.rotation.z = 0;
     SFX.die();
     this.shake = 0.8;
-    UI.closeAll(); UI.showDeath('你的道，还未走完。');
+    UI.closeAll();
+    /* 试炼里死亡不弹「身陨」框，改弹本轮结算 —— 玩家要看到的是「打到第几波」，
+     * 而不是一句「你的道还未走完」。惩罚照旧按难度扣金币。 */
+    const inTrial = (typeof Trial !== 'undefined' && Trial.active);
+    if (inTrial) Trial.onPlayerDeath();
+    else UI.showDeath('你的道，还未走完。');
     /* [DIFF] 死亡惩罚按难度：新手 0%，普通 10%，困难 15%，极难 25% */
     const rate = this.diff().deathPenalty;
     const lost = Math.floor(this.state.gold * rate);
@@ -3845,6 +3868,7 @@ const Game = {
     this.actor.group.rotation.z = 0;
     this.actor.group.position.y = 0;
     UI.hideDeath();
+    UI.hideTrialEnd && UI.hideTrialEnd();
     this.buffs = [];
     /* 分支叠层（技能树 stack）跟着 buff 一起清：复活后不该留着满层战意 */
     this.behStack = {}; this._drainOn = null; this._follows = null;
@@ -5375,25 +5399,34 @@ const Game = {
     if (this.state.stats.flags.explode) this.explodeAt(p, 3.2, this.state.stats.atk * 0.8, 0xff7a30, false, true);
 
     this.onKill(e);
+    /* [试炼] 击杀计数（结算面板用） */
+    if (typeof Trial !== 'undefined' && Trial.run) Trial.run.kills++;
     if (e.boss) {
       this.state.bossKilled[e.kind] = (this.state.bossKilled[e.kind] || 0) + 1;
       this.onBossKill(e);
       if (this.boss === e) { this.boss = null; UI.updateBoss(null); }
       UI.toast('击败 ' + e.cfg.name, 'lv');
       this.save();
-      // 首领重生
-      const bid = e.kind, gen = this.mapGen;
-      setTimeout(() => {
-        if (this.mapGen !== gen || this.dead || !this.state) return;
-        const pos = BOSS_POS[bid] || [0, -30];
-        const nb = this.spawnEnemy(null, pos[0], pos[1], false, BOSSES[bid].level, bid);
-        if (nb) {
-          nb.dmg = BOSSES[bid].atk * (1 + BOSSES[bid].level * 0.09);
-          FX.flashCircle(nb.pos, 3, 0xff5522, 0.8);
-          UI.log('妖气再聚，' + e.cfg.name + ' 重返此地。', 'bad');
-        }
-      }, 75000);
-      if (bid === 'chaos') this.victory();
+      /* [试炼] 试炼场的首领不重生：一来「每 5 波一个首领」已经管够，
+       * 二来 BOSS_POS 是按大地图坐标写的，重生点会落在擂台的错误位置。
+       * 混沌天魔在试炼里也不触发通关结算（那是主线终章的演出）。 */
+      const inTrial = (typeof Trial !== 'undefined' && Trial.active);
+      if (inTrial) {
+        if (e.kind === 'chaos') UI.log('混沌之影散去，台上又起新的杀机。', 'good');
+      } else {
+        const bid = e.kind, gen = this.mapGen;
+        setTimeout(() => {
+          if (this.mapGen !== gen || this.dead || !this.state) return;
+          const pos = BOSS_POS[bid] || [0, -30];
+          const nb = this.spawnEnemy(null, pos[0], pos[1], false, BOSSES[bid].level, bid);
+          if (nb) {
+            nb.dmg = BOSSES[bid].atk * (1 + BOSSES[bid].level * 0.09);
+            FX.flashCircle(nb.pos, 3, 0xff5522, 0.8);
+            UI.log('妖气再聚，' + e.cfg.name + ' 重返此地。', 'bad');
+          }
+        }, 75000);
+        if (bid === 'chaos') this.victory();
+      }
     }
   },
 
@@ -5408,7 +5441,16 @@ const Game = {
       /* [v1.10.0] 曲线收进 BALANCE（base × L^pow），升级点与新建角色同一口径 */
       s.xpNext = (typeof xpToNext === 'function') ? xpToNext(s.level) : Math.round(180 * Math.pow(s.level, 1.70));
       this.recalc();
-      s.hp = s.stats.hpMax; s.mp = s.stats.mpMax;
+      /* 升级回满血蓝。试炼里改成「至少回一半」——
+       * 试炼大约每 3 波升一级，如果每级都满血，续航压力会被彻底抹平，
+       * 药水与「血泉」祝福也就失去意义了。 */
+      const inTrial = (typeof Trial !== 'undefined' && Trial.active);
+      if (inTrial) {
+        s.hp = Math.max(s.hp, Math.round(s.stats.hpMax * 0.5));
+        s.mp = Math.max(s.mp, Math.round(s.stats.mpMax * 0.5));
+      } else {
+        s.hp = s.stats.hpMax; s.mp = s.stats.mpMax;
+      }
       UI.toast('境界提升 · ' + s.level + ' 级', 'lv');
       SFX.levelup();
       FX.ring(new THREE.Vector3(this.playerGroup.position.x, 0, this.playerGroup.position.z), 5, 0xffd166, 1.0, 0.3);
@@ -5499,7 +5541,11 @@ const Game = {
     const t = this.interactTarget;
     if (!t) return;
     if (t.type === 'npc') this.openNPC(t.id);
-    else if (t.type === 'portal') UI.openTravel();
+    else if (t.type === 'portal') {
+      /* 试炼场里的传送阵就是「退场门」：先确认再走，别让人误触丢进度 */
+      if (typeof Trial !== 'undefined' && Trial.active) Trial.quit();
+      else UI.openTravel();
+    }
   },
 
   /* ---------------- NPC 交互 ---------------- */
@@ -5537,6 +5583,8 @@ const Game = {
         { label: '套装打造', action: () => UI.openSetCraft() },
         { label: '离开', action: () => UI.closeAll() }
       ]);
+    } else if (id === 'warden') {
+      UI.openTrialPanel();
     }
   },
 
@@ -6514,6 +6562,11 @@ const Game = {
     if (!MAPS[mapId]) return;
     const m = MAPS[mapId];
     if (this.state.level < (m.unlock || 1)) { UI.log('境界不足。', 'bad'); return; }
+    /* 试炼中不允许直接传送：先把本轮结算掉，否则祝福会跟着人跑到别的地图上 */
+    if (typeof Trial !== 'undefined' && Trial.active) {
+      Trial.end('quit');
+      if (mapId === 'trial') return;
+    }
     FX.flashCircle(this.playerGroup.position, 3, 0x88bbff, 0.6);
     SFX.cast();
     setTimeout(() => {
@@ -6584,6 +6637,13 @@ const Game = {
     this.skillBar(barMissing);
     this.state.quests = this.state.quests || { active: [], done: [], next: 'q1', announced: {} };
     this.state.quests.announced = this.state.quests.announced || {};
+    /* [试炼] 存档里的 mapId 可能是 trial（在台上被关掉页面）。
+     * 试炼的波次进度不落盘（这是 roguelite 的规矩：中途退出即作废），
+     * 所以这里把玩家送回村，而不是让他站在一个没有波次的空擂台上。 */
+    if (this.state.mapId === 'trial' || !MAPS[this.state.mapId]) {
+      this.state.mapId = 'village';
+      this.state.playerPos = { x: 0, z: 10 };
+    }
     this.savedSlot = n;
     /* 读档后把商店货架接回来（存档里带 { at, items, rolls }）。
      * 过期或结构不对就重新进货，避免面板打开时是空的。 */

@@ -13,7 +13,9 @@ function makeGroundTexture(type) {
     swamp: ['#42342e', '#332824', '#4e3d34', '#2a201c'],
     rock: ['#4a4a52', '#3c3c44', '#565660', '#30303a'],
     abyss: ['#221c2a', '#1a1422', '#2c2236', '#140f1c'],
-    heaven: ['#a8b8cc', '#96a8bc', '#bccadd', '#8a9cae']
+    heaven: ['#a8b8cc', '#96a8bc', '#bccadd', '#8a9cae'],
+    /* 试炼场：冷紫黑石，比九幽再「干净」一点 —— 这里是擂台，不是废墟 */
+    trial: ['#3c3452', '#332c46', '#4a4064', '#2a2440']
   }[type] || ['#7a6a48'];
   g.fillStyle = conf[0]; g.fillRect(0, 0, S, S);
   for (let i = 0; i < 9000; i++) {
@@ -345,9 +347,9 @@ function buildMap(mapId) {
   const groundMat = new THREE.MeshStandardMaterial({ map: groundTex, color: 0xffffff, roughness: 0.98, metalness: 0 });
   groundMat.color.setHex({
     dirt: 0xc6d2b0, bamboo: 0xa6c096, swamp: 0x9a8064,
-    rock: 0xa8a8b2, abyss: 0xc0a8dc, heaven: 0xc4d2e6
+    rock: 0xa8a8b2, abyss: 0xc0a8dc, heaven: 0xc4d2e6, trial: 0xd2c8ec
   }[cfg.ground] || 0xffffff);
-  const gEmis = { abyss: [0x2a1040, 0.75], heaven: [0x223350, 0.5], mine: [0x140e08, 0.35] }[cfg.ground];
+  const gEmis = { abyss: [0x2a1040, 0.75], heaven: [0x223350, 0.5], mine: [0x140e08, 0.35], trial: [0x2a1444, 0.4] }[cfg.ground];
   if (gEmis) { groundMat.emissive.setHex(gEmis[0]); groundMat.emissiveIntensity = gEmis[1]; }
   const ground = new THREE.Mesh(new THREE.PlaneGeometry(cfg.size * 3, cfg.size * 3, 1, 1), groundMat);
   ground.rotation.x = -Math.PI / 2;
@@ -545,6 +547,95 @@ function buildMap(mapId) {
       blk.rotation.set(RND(0, 1), RND(0, 3), RND(0, 1));
       anims.push(a => { blk.position.y += Math.sin(a * 0.8 + i) * 0.003; blk.rotation.y += 0.0015; });
     }
+  } else if (cfg.props === 'trial') {
+    /* ---------------- 无尽试炼场 ----------------
+     * 设计原则：**没有遮挡、没有死角**。无限波数的核心是走位与聚怪，
+     * 任何能卡住玩家的地形都会变成 bug 制造机。所以：
+     *   · 台面是纯圆形，边缘一圈石阶收口；
+     *   · 柱子只立在最外圈（半径 24）当视觉边界，不参与战斗空间；
+     *   · 中央只放阵纹与火盆（火盆不带碰撞），不挡视线。
+     */
+    const AR = 26;
+    const platMat = new THREE.MeshStandardMaterial({
+      map: makeGroundTexture('trial'), color: 0xd6cce6, roughness: 0.9, metalness: 0.08
+    });
+    const plat = new THREE.Mesh(new THREE.CylinderGeometry(AR, AR + 1.4, 0.6, 64), platMat);
+    plat.position.y = -0.28;           // 顶面落在 y=0.02，和玩家脚底几乎齐平
+    plat.receiveShadow = true;
+    root.add(plat);
+    /* 边缘石阶：两圈略低一点的环，让「台」有厚度 */
+    for (let i = 0; i < 2; i++) {
+      const r0 = AR + 0.9 + i * 1.0;
+      const step = new THREE.Mesh(new THREE.CylinderGeometry(r0, r0 + 0.9, 0.34, 64), M(0x3a3348, { rough: 1 }));
+      step.position.y = -0.5 - i * 0.3;
+      step.receiveShadow = true;
+      root.add(step);
+    }
+    /* 中央阵纹：三层同心环 + 旋转，作为「这里是擂台」的视觉锚点 */
+    const runeMat = new THREE.MeshBasicMaterial({
+      color: 0xa06aff, transparent: true, opacity: 0.42,
+      blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide
+    });
+    const runeG = new THREE.Group();
+    [[5.6, 6.0], [8.4, 8.62], [12.2, 12.34]].forEach(([a, b], i) => {
+      const rg = new THREE.Mesh(ringGeo(a, b, 72), runeMat);
+      rg.rotation.x = -Math.PI / 2; rg.position.y = 0.03 + i * 0.002;
+      runeG.add(rg);
+    });
+    /* 阵纹射线：八条短线，让圆盘看得出「在转」 */
+    for (let i = 0; i < 8; i++) {
+      const ang = i / 8 * Math.PI * 2;
+      const sp = new THREE.Mesh(boxGeo(0.18, 0.01, 3.2), runeMat);
+      sp.position.set(Math.cos(ang) * 9.6, 0.035, Math.sin(ang) * 9.6);
+      sp.rotation.y = -ang;
+      runeG.add(sp);
+    }
+    root.add(runeG);
+    anims.push(a => { runeG.rotation.y = a * 0.09; runeMat.opacity = 0.30 + Math.sin(a * 1.3) * 0.12; });
+
+    /* 八根符文柱（最外圈，带碰撞） */
+    const pillarM = M(0x4a4058, { rough: 0.85, metal: 0.15 });
+    const glowM = new THREE.MeshBasicMaterial({ color: 0x9a6aff, transparent: true, opacity: 0.75, blending: THREE.AdditiveBlending, depthWrite: false });
+    for (let i = 0; i < 8; i++) {
+      const ang = i / 8 * Math.PI * 2 + Math.PI / 8;
+      const p = new THREE.Group();
+      mesh(cylGeo(1.0, 1.3, 0.5, 10), pillarM, 0, 0.25, 0, p);
+      mesh(boxGeo(1.35, 8.4, 1.35), pillarM, 0, 4.6, 0, p);
+      mesh(boxGeo(1.7, 0.55, 1.7), pillarM, 0, 9.1, 0, p);
+      /* 柱身三道发光符带 */
+      for (let k = 0; k < 3; k++) {
+        const band = new THREE.Mesh(boxGeo(1.42, 0.16, 1.42), glowM);
+        band.position.y = 2.4 + k * 2.1;
+        p.add(band);
+      }
+      p.userData.collider = { r: 1.15 };
+      add(p, Math.cos(ang) * 24, Math.sin(ang) * 24, true);
+      anims.push(a => { p.children.forEach(c => { if (c.material === glowM) c.material.opacity = 0.5 + Math.sin(a * 2 + i) * 0.2; }); });
+    }
+
+    /* 四只火盆（不带碰撞，纯氛围 + 点光） */
+    for (let i = 0; i < 4; i++) {
+      const ang = i / 4 * Math.PI * 2 + Math.PI / 4;
+      const bx = Math.cos(ang) * 13.5, bz = Math.sin(ang) * 13.5;
+      const g = new THREE.Group();
+      mesh(cylGeo(0.32, 0.5, 1.5, 8), M(0x3a3348, { metal: 0.5, rough: 0.6 }), 0, 0.75, 0, g);
+      mesh(cylGeo(1.0, 0.55, 0.45, 10), M(0x4a4058, { metal: 0.6, rough: 0.5 }), 0, 1.6, 0, g);
+      const flame = new THREE.Mesh(new THREE.SphereGeometry(0.55, 8, 6), new THREE.MeshBasicMaterial({
+        color: 0xff9a4a, transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false
+      }));
+      flame.position.y = 2.0; flame.scale.y = 1.5;
+      g.add(flame);
+      const lt = new THREE.PointLight(0xff8a3a, 1.5, 16, 2);
+      lt.position.y = 2.1;
+      g.add(lt);
+      add(g, bx, bz, false);
+      anims.push(a => {
+        const f = 0.85 + Math.sin(a * 9 + i * 2) * 0.18 + Math.sin(a * 21 + i) * 0.06;
+        lt.intensity = 1.5 * f;
+        flame.scale.set(f, 1.5 * f, f);
+        flame.material.opacity = 0.7 * f + 0.2;
+      });
+    }
   }
 
   // 传送阵
@@ -566,7 +657,9 @@ function buildNPC(npcId) {
     shop: { color: 0x8a6a4a, cloth: 0x5a3a26, skin: 0xb08a68 },
     potion: { color: 0x6a9a7a, cloth: 0x3a5a46, skin: 0xe0c0a0 },
     travel: { color: 0x9a9ab0, cloth: 0x4a4a5a, skin: 0xd0b090 },
-    decompose: { color: 0xc08060, cloth: 0x6a4026, skin: 0xd8b090 }
+    decompose: { color: 0xc08060, cloth: 0x6a4026, skin: 0xd8b090 },
+    /* 试炼使者：紫袍，和「传送 / 任务」两种黄褐色系明确区分开 */
+    trial: { color: 0x8a6ec0, cloth: 0x3a2a58, skin: 0xd8c0a8 }
   }[npc.role];
   const a = buildHumanoid({
     color: roleCfg.color, cloth: roleCfg.cloth, skin: roleCfg.skin,
@@ -589,6 +682,10 @@ function buildNPC(npcId) {
   } else if (npc.role === 'travel') {
     const sword = buildWeapon('taojian', 0x9a8a5a, 0x88ffaa, 0.85);
     a.parts.weaponHand.add(sword);
+  } else if (npc.role === 'trial') {
+    /* 试炼使者拿一柄紫光电刃 —— 远远看见那道紫光就知道「那是试炼入口」 */
+    const blade = buildWeapon('taojian', 0x6a5a8a, 0xb08aff, 0.95);
+    a.parts.weaponHand.add(blade);
   }
   const ring = new THREE.Mesh(new THREE.RingGeometry(0.9, 1.05, 20), new THREE.MeshBasicMaterial({ color: 0xffd166, transparent: true, opacity: 0.5, side: THREE.DoubleSide }));
   ring.rotation.x = -Math.PI / 2; ring.position.y = 0.03;
