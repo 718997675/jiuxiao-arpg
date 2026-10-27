@@ -13,7 +13,7 @@
 | README | 有 6 张截图 + 1 段战斗动图 | ✅ 已达到「能看」的门槛 |
 | About / Topics | **空** | 搜不到，GitHub 站内流量为 0 |
 | Release | **无** | 没有版本概念，别人不知道该看哪个提交 |
-| 可玩入口 | 只有 `workbuddy.host` 的分享链接 | 域名不像游戏站，转发时缺乏信任感 |
+| 可玩入口 | 已切到 `https://718997675.github.io/jiuxiao-arpg/` | 有固定域名，可直接转发；旧的 `workbuddy.host` 分享链接已废弃 |
 | 外部曝光 | 0 | 没有任何入口带来流量 |
 
 **结论：现在缺的不是代码，是「入口」和「门面」。** 下面按性价比排序。
@@ -89,11 +89,13 @@ Release 的价值：**别人 star 的时候会顺手点 Watch**，而且以后�
 > zip -r jiuxiao-itch.zip index.html src lib -x "*.DS_Store"
 > ```
 
-**上架后把 itch 链接放到 GitHub 的 About 里**——itch 的域名比 `workbuddy.host` 可信得多。
+**上架后把 itch 链接放到 GitHub 的 About 里**——itch 的域名比 `github.io` 更「像个游戏」。
 
-### GitHub Pages（顺手，5 分钟）
+### GitHub Pages（已启用，正式入口）
 
-Settings → Pages → Source: `Deploy from a branch` → `main` / `/ (root)`。
+线上地址：<https://718997675.github.io/jiuxiao-arpg/>
+
+Settings → Pages → Source: `Deploy from a branch` → `main` / `/ (root)`，仓库根目录即站点根目录（`.nojekyll` 已包含）。本地 `./push.sh` 推 main 即上线，30~60 秒生效。
 得 `https://718997675.github.io/jiuxiao-arpg/`。
 
 好处：所有 GitHub 访客都能「点一下就玩」，不用去 itch。缺点：国内访问慢。

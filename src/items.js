@@ -1034,17 +1034,14 @@ function aggregate(equipped, talents) {
  * 词缀数值本身会随 ilvl 放大（×(1+ilvl×0.055)，40 级约 3.2 倍），单件 6% 闪避到 40 级
  * 就是 19%，十件叠起来能到 90%——不封顶的话后期玩家会直接无敌。
  * 这里既是安全阀，也是策划的「可堆叠天花板」：调平衡改这张表即可。 */
+/* [v2.x] 上限口径调整（按需求）：
+ *   只有「百分比到 100% 就到顶」的两项保留封顶 —— 暴击率 100%（必定暴击）、
+ *   冷却缩减 100%（技能无冷却，但 skillCd 里仍有 0.5 秒硬下限防无限连）。
+ *   其余属性（闪避 / 减伤 / 增伤 / 爆伤 / 吸血 / 破甲 …）**全部不设上限**，
+ *   靠词缀数值与掉落曲线自然收敛；这张表以后只放「必须封顶」的键。 */
 const STAT_CAPS = {
-  dodge: 25, block: 25, dmgReduce: 30, ccResist: 70,
-  stunChance: 30, slowChance: 40, freezeChance: 25, burnChance: 40,
-  armorPen: 60, crit: 75, critDmg: 400,
-  executeDmg: 120, firstStrike: 100, eliteDmg: 120, bossDmg: 140,
-  dmgAll: 80, meleeDmg: 120, projDmg: 120, aoeDmg: 120, dotDmg: 150,
-  skillDmg: 150, summonDmg: 150, lifesteal: 30, thorns: 120,
-  healBonus: 100, shieldBonus: 100, overkillShield: 60,
-  costReduce: 50, cdr: 45,
-  /* [C5] 光环减速封顶：叠满也只是「黏住」，不能变成群体定身 */
-  auraSlow: 45
+  crit: 100,
+  cdr: 100
 };
 
 /* [S4] 增益（buff）结算表：recalc 按这两张表把 buff.stats 应用到最终属性。
@@ -1104,15 +1101,17 @@ function computePlayerStats(p) {
   /* 暴击起点读平衡表（v1.10.0）：老版写死 5 / 150，1 级裸装就 150% 爆伤，
    * 玩家反馈「这不合理」。缺表时退回同一组默认值，单文件测试也能跑。 */
   const BC = (typeof BALANCE !== 'undefined' && BALANCE.crit) ? BALANCE.crit : { base: 3, dmg: 125, dmgCap: 500 };
-  const crit = CLAMP(BC.base + d.crit + st.crit, 0, 75);
-  const critDmg = Math.min(BC.dmgCap, BC.dmg + d.critDmg + st.critDmg);
+  /* [v2.x] 暴击率封顶 100%（必定暴击）；暴击伤害不再设上限 */
+  const crit = CLAMP(BC.base + d.crit + st.crit, 0, 100);
+  const critDmg = BC.dmg + d.critDmg + st.critDmg;
   const aspd = (1 + st.aspd / 100) * (1 + d.aspd / 100);
   /* 基础移速读平衡表（v1.11.0）：原写死 7.2，配合小地图跑图过快。
    * 缺表时退回同一组默认值，单文件测试也能跑。 */
-  const MV = (typeof BALANCE !== 'undefined' && BALANCE.move) ? BALANCE.move : { base: 4.2 };
+  const MV = (typeof BALANCE !== 'undefined' && BALANCE.move) ? BALANCE.move : { base: 4.5 };
   const moveSpd = (MV.base + d.moveSpd) * (1 + st.moveSpd / 100) + st.moveSpdFlat;
   const def = (st.def + d.def) * (1 + st.armorPct / 100);
-  const cdr = CLAMP(st.cdr + d.cdr, 0, 45);
+  /* [v2.x] 冷却缩减封顶 100%（与 STAT_CAPS.cdr 同口径） */
+  const cdr = CLAMP(st.cdr + d.cdr, 0, 100);
 
   const out = {
     str, agi, vit, int, atk, hpMax: Math.round(hpMax), mpMax: Math.round(mpMax),

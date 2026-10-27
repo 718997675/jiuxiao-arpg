@@ -29,6 +29,12 @@ const Settings = {
     shadow: 'auto',      // 'auto' | 'on' | 'off'
     fx: 'auto',          // 'auto' | 'high' | 'mid' | 'low'
     mobCap: 'auto',      // 'auto' | 12 | 20 | 28 | 36 | 48
+    /* 镜头（v2.x）：视角预设 + 震动强度。和画质分开，低配机器也能用高视角。
+     *   view  classic 默认（俯视 43°）/ torch 火炬之光（更远更高、无推镜、跟随更硬）
+     *         diablo 暗黑4（接近俯视 64°）/ fp 第一人称
+     *   shake off | weak | std | strong —— 打击震屏的倍率，off 完全不晃 */
+    view: 'torch',
+    shake: 'weak',
     /* 音频四条滑杆（0–100）+ 一键静音。和画质分开存同一个 key，
      * 换角色不重设；曲线在 AudioSys.gainOf（1.6 次幂，线性滑杆听感太哑） */
     mute: false,
@@ -69,6 +75,10 @@ const Settings = {
     d.shadow = this._pick(o.shadow, ['auto', 'on', 'off'], 'auto');
     d.fx = this._pick(o.fx, ['auto', 'high', 'mid', 'low'], 'auto');
     d.mobCap = this._pick(o.mobCap, ['auto', 12, 20, 28, 36, 48], 'auto');
+    /* 镜头：老存档没有这两项 → 落默认（火炬之光视角 / 弱震动），
+     * 也就是「默认就给一个更舒服、不晃的镜头」。 */
+    d.view = this._pick(o.view, ['classic', 'torch', 'diablo', 'fp'], this.DEFAULTS.view);
+    d.shake = this._pick(o.shake, ['off', 'weak', 'std', 'strong'], this.DEFAULTS.shake);
     /* 音量：夹到 0–100 的整数。旧存档没有这几项 → 落默认值，不会静音 */
     d.mute = !!o.mute;
     d.volMaster = this._vol(o.volMaster, this.DEFAULTS.volMaster);
@@ -165,6 +175,10 @@ const Settings = {
   apply(changed) {
     /* 音量立刻生效（还没解锁音频时只是把增益值写好，解锁后自然对） */
     if (typeof AudioSys !== 'undefined') AudioSys.applyVolumes();
+    /* 镜头：视角 / 震动。放在 renderer 守卫之前 —— 标题界面也允许先调好视角 */
+    if (typeof Game !== 'undefined' && Game.applyCamView) {
+      try { Game.applyCamView(changed); } catch (e) { console.error('[镜头] 应用失败', e); }
+    }
     if (typeof Game === 'undefined' || !Game.renderer) return;
     /* 手动档位不参与自动升降：把等级钉在 0，避免下一次 tickPerf 又改回去 */
     if (!this.autoAdjust()) Game.perf.level = 0;

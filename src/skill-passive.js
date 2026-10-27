@@ -23,7 +23,7 @@
 const PASSIVE_PENDING = [];
 
 /* 数值型被动：级数 → 属性增量。全部走 computePlayerStats 标准管线，
- * 所以键必须是真属性键（cdr 会吃 45% 封顶、dmgReduce 吃 40% 封顶）。 */
+ * 所以键必须是真属性键（目前只有 cdr 吃 100% 封顶，其余属性已不设上限）。 */
 const PASSIVE_STATS = {
   /* 刀客 */
   w_fero:    lv => ({ critDmg: 12 * lv }),            // 狂怒：暴击伤害
@@ -33,7 +33,7 @@ const PASSIVE_STATS = {
   w_sunder:  lv => ({ armorPen: 6 * lv }),            // 破甲：无视护甲
   w_ruin:    lv => ({ executeDmg: 12 * lv }),         // 摧枯：对 <30% 血目标（同处决乘区）
   /* 术士 */
-  m_focus:   lv => ({ cdr: 6 * lv }),                 // 专注：冷却缩减（吃 45% 封顶）
+  m_focus:   lv => ({ cdr: 6 * lv }),                 // 专注：冷却缩减（吃 100% 封顶）
   m_volt:    lv => ({ lightningDmg: 10 * lv }),       // 高压：雷电伤害
   /* 符师 */
   t_sigil:   lv => ({ sigilDmg: 9 * lv }),            // 符力：符法伤害（符箓系专属元素）

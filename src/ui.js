@@ -388,6 +388,17 @@ const UI = {
       opts: [['auto', '自动'], ['48', '多'], ['36', '标准'], ['28', '少'], ['20', '很少'], ['12', '极少']] },
     { k: 'fps', label: '显示帧数',
       opts: [['0', '关'], ['1', '开']] },
+    /* 全屏不是「存下来的设置」——它由浏览器掌握（Esc / 手势都能退出），
+     * 所以只做动作行：点「开」请求全屏，高亮读 document.fullscreenElement。 */
+    { k: 'fullscreen', label: '全屏', act: 'fs',
+      opts: [['0', '关'], ['1', '开']] },
+    /* 镜头分区（v2.x）：视角预设决定机位高度/俯角/FOV/是否第一人称，
+     * 震动决定打击震屏的倍率。两项都与画质档位无关，互不干扰。 */
+    { head: '镜头' },
+    { k: 'view', label: '视角',
+      opts: [['torch', '火炬之光'], ['classic', '默认俯视'], ['diablo', '暗黑4'], ['fp', '第一人称']] },
+    { k: 'shake', label: '镜头震动',
+      opts: [['off', '关'], ['weak', '弱'], ['std', '标准'], ['strong', '强']] },
     /* 音频分区：四条滑杆 + 静音。mute 用 bool 标记，值是 Boolean 而不是字符串 */
     { head: '音频' },
     { k: 'mute', label: '静音', bool: true,
@@ -492,6 +503,9 @@ const UI = {
     /* ---------------- 1. 操作 ---------------- */
     H.push(sec('一 · 怎么玩', '键位全在这里，游戏画面上不再贴提示', [
       row('移动 / 视角', kcs([['WASD', '移动'], ['鼠标', '瞄准'], ['Q / E', '转视角'], ['滚轮', '缩放'], ['空格', '翻滚']])),
+      row('视角', `设置（${K('O')}）→ 镜头 → <b>视角</b>可切四档：<b>火炬之光</b>（默认，机位更高更远、跟随更硬、出手不推镜）、` +
+        `<b>默认俯视</b>（老版机位）、<b>暗黑4</b>（接近俯视）、<b>第一人称</b>（点画面锁鼠标、移动鼠标转身、Esc 解锁）。` +
+        `同一页的<b>镜头震动</b>可关掉打击震屏，关掉后画面完全不晃`),
       row('战斗', kcs([['左键', '普攻（按住连击）'], [`1-${barSlots}`, '技能条'], [SKILL_BAR_SET_LABEL, '切换快捷栏'], ['Z', '红药'], ['X', '蓝药'], ['9', '传送石']])),
       row('交互', kcs([['F', '交互 / 拾取'], ['Tab', '开关菜单'], ['Esc', '关闭面板']])),
       row('面板', kcs([['I', '行囊'], ['C', '道途'], ['T', '天赋'], ['K', '术法'], ['L', '山海志'], ['B', '异兽志'], ['R', '炼器台'], ['P', '存档'], ['O', '设置'], ['H', '说明']])),
@@ -532,8 +546,10 @@ const UI = {
       /* [v1.10.0] 暴击起点与经验曲线都是 BALANCE 里的旋钮，别再写死 */
       row('暴击起点', BAL
         ? `裸装 Lv1 为 <b>暴击率 ${BAL.crit.base}% / 暴击伤害 ${BAL.crit.dmg}%</b>` +
-          `（上限 ${BAL.crit.dmgCap}%）。往上靠三处：敏捷（暴击率）、力量（刀客爆伤）、装备词条与天赋`
+          `（暴击率上限 <b>100%</b>，暴击伤害不设上限）。往上靠三处：敏捷（暴击率）、力量（刀客爆伤）、装备词条与天赋`
         : '裸装 Lv1 的暴击率与暴击伤害都很低，主要靠装备与加点堆'),
+      row('上限口径', `只有两项封顶：<b>暴击率 100%</b>、<b>冷却缩减 100%</b>` +
+        `（满冷却时技能仍有 0.5 秒硬下限）。闪避、减伤、各类增伤、爆伤、吸血等一律不设上限`),
       row('境界经验', BAL && typeof xpToNext === 'function'
         ? `升到下一级需要 <b>${BAL.xp.base} × 等级^${BAL.xp.pow}</b> 经验（Lv1 → ${xpToNext(1)}，`
           + `Lv20 → ${xpToNext(20)}，Lv38 → ${xpToNext(38)}）。怪物经验按自身等级成长，`
@@ -831,8 +847,10 @@ const UI = {
           + `<b class="setval" data-rv="${r.k}">${v}</b></div></div>`;
       }
       /* fps 存的是布尔值，选项却是 '0'/'1'，直接 String() 会永远对不上高亮；
-       * 静音也是布尔，同一套处理 */
-      const cur = r.bool ? (d[r.k] ? '1' : '0') : (r.k === 'fps' ? (d.fps ? '1' : '0') : String(d[r.k]));
+       * 静音也是布尔，同一套处理。全屏同理 —— 但它读的是浏览器状态，不是设置值 */
+      const cur = r.act === 'fs'
+        ? ((typeof Game !== 'undefined' && Game.isFullscreen && Game.isFullscreen()) ? '1' : '0')
+        : (r.bool ? (d[r.k] ? '1' : '0') : (r.k === 'fps' ? (d.fps ? '1' : '0') : String(d[r.k])));
       return `<div class="setrow"><span class="setlab">${r.label}</span><div class="setseg">`
         + r.opts.map(([v, t]) =>
           `<button class="sbtn${cur === v ? ' on' : ''}" data-k="${r.k}" data-v="${v}">${t}</button>`).join('')
@@ -844,6 +862,12 @@ const UI = {
         : '当前为<b>自动</b>：帧率低于 42 会自动降一档，稳定高于 57 再升回来。';
       hint.innerHTML = perf
         + '<br>卡的时候优先降<b>渲染倍率</b>——0.65x 只损失一点锐度，像素量却少了 58%。'
+        + '<br>镜头：<b>火炬之光</b>机位更远更高、跟随更硬、出手不推镜，长时间刷图最省眼睛；'
+        + '<b>暗黑4</b>接近俯视；<b>第一人称</b>点一下画面锁定鼠标、移动鼠标转身，Esc 解锁。'
+        + '滚轮随时拉近拉远。'
+        + '<br>镜头震动<b>关</b>之后只剩受击的方向反馈，完全不会晃。'
+        + '<br>全屏：安卓 Chrome / 桌面浏览器可直接全屏；<b>iPhone 的 Safari 不支持网页全屏</b>，'
+        + '请点「分享 → 添加到主屏幕」，从图标启动就没有地址栏，效果等同全屏。'
         + '<br>音频：<b>音效</b>管技能与打击，<b>环境</b>管风声虫鸣，<b>音乐</b>是随战斗切换的三层底乐。'
         + '若整局无声，先在页面任意处点一下（浏览器要求先有交互才允许播放）。';
     }
@@ -865,6 +889,12 @@ const UI = {
     if (!b || typeof Settings === 'undefined') return;
     const k = b.dataset.k;
     let v = b.dataset.v;
+    /* 全屏是动作而不是设置项：不进 Settings，直接调浏览器 API，再按真实状态重绘高亮 */
+    if (k === 'fullscreen') {
+      if (typeof Game !== 'undefined' && Game.toggleFullscreen) Game.toggleFullscreen();
+      setTimeout(() => this.renderSettings(), 260);
+      return;
+    }
     const row = this.SET_ROWS.filter(r => r.k === k)[0];
     if (row && row.bool) v = (v === '1');
     else if (k === 'fps') v = (v === '1');
@@ -1189,6 +1219,8 @@ const UI = {
     this.menuTab = id;
     /* 先合上其它浮层（对话框 / 商店 / 图鉴），菜单自己除外 */
     this.closeAll(p);
+    /* 第一人称下鼠标是锁定的（光标不可见），不释放的话点不到面板上的任何按钮 */
+    if (typeof Game !== 'undefined' && Game.exitLook) Game.exitLook();
     p.classList.add('open');
     this.menuMount(id);
     try { SFX.ui(); } catch (e) { }
@@ -2348,6 +2380,7 @@ const UI = {
       document.body.appendChild(p);
     }
     this.closeAll(p);
+    if (typeof Game !== 'undefined' && Game.exitLook) Game.exitLook();
     p.classList.add('open');
     this.renderSkillPanel();
     try { SFX.ui(); } catch (e) { }

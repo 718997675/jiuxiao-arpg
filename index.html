@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#0b0c10">
 <title>九霄 · 山海录</title>
@@ -462,7 +463,7 @@
     background:rgba(216,178,90,.08)}
   body.touch #helpPanel{width:min(840px,98vw)}
   /* 手机上竖排页签太占宽度，改成顶部横向可滑的一条 */
-  body.touch .hp-wrap{flex-direction:column;height:min(620px,calc(88vh - 78px))}
+  body.touch .hp-wrap{flex-direction:column;height:min(620px,calc(var(--app-h,100dvh) * .88 - 78px))}
   body.touch .hp-nav{width:auto;flex-direction:row;overflow-x:auto;overflow-y:hidden;
     padding:0 0 7px;border-right:none;border-bottom:1px solid rgba(216,178,90,.16)}
   body.touch .hp-tab{padding:5px 10px;font-size:11px}
@@ -1062,7 +1063,7 @@
   .cx-d{font-size:10px;color:#7a7466;margin-top:3px;line-height:1.5;
     border-top:1px dashed rgba(216,178,90,.14);padding-top:3px}
   .codex-foot{padding:6px 12px;flex:none;border-top:1px solid rgba(216,178,90,.14);font-size:11px;color:#8a8474}
-  body.touch #codexPanel{width:min(880px,98vw);height:92vh;max-height:92dvh}
+  body.touch #codexPanel{width:min(880px,98vw);height:calc(var(--app-h,100dvh) * .92);max-height:calc(var(--app-h,100dvh) - 12px)}
   body.touch .codex-grid{grid-template-columns:1fr}
   .menu-body{flex:1;min-width:0;display:flex;min-height:0;position:relative;overflow:hidden}
   #menuBody .panel.embed{position:relative;left:auto;top:auto;transform:none;display:flex;flex-direction:column;
@@ -1534,7 +1535,8 @@
   /* ---------- 设置面板 ---------- */
   /* z-index 要高过标题界面（#start 是 60）：低配机器往往需要在开局前就把画质调好 */
   #setPanel{z-index:70;left:50%;top:50%;transform:translate(-50%,-50%);width:540px;max-height:88vh}
-  #setPanel .pb{padding:8px 16px 14px}
+  /* 加了「镜头」分区之后行数变多，矮屏（<720px）会顶出面板边框，这里让它自己滚 */
+  #setPanel .pb{padding:8px 16px 14px;max-height:calc(88vh - 44px);overflow-y:auto}
   .setrow{display:flex;align-items:center;gap:12px;padding:9px 0;border-bottom:1px solid rgba(255,255,255,.055)}
   .setrow:last-of-type{border-bottom:0}
   .setlab{width:76px;flex:none;font-size:12px;color:#a89878;letter-spacing:2px}
@@ -1701,8 +1703,24 @@
   body.touch.ui-open #log,body.touch.ui-open #toasts{opacity:.18}
 
   /* ---- 触屏面板 ---- */
-  body.touch .panel{max-height:84vh;max-height:84dvh;overflow:auto;-webkit-overflow-scrolling:touch;touch-action:auto}
-  body.touch #invPanel{width:min(892px,96vw);max-height:84vh;max-height:84dvh}
+  /* 高度与居中都以「此刻真正看得见的区域」为准：Mobile.layout 会把
+   * visualViewport 的实时高度/偏移写进 --app-h / --app-oy。
+   * 用 !important 是因为下面各面板的 ID 规则（#questPanel 80vh、#forgePanel 88vh…）
+   * 特异性高于 .panel，不压住就会在 iOS Safari 上按「含地址栏的 100vh」算，
+   * 结果是面板偏下、底部被裁且没有滚动条。 */
+  /* 注意 :not(.embed)：菜单里内嵌的面板（.embed）不能套这套居中/限高，
+   * 它们的高度要跟着内容走、由 .menu-body 统一滚（否则会被钉在屏幕正中
+   * 并把内容裁掉 —— 第一版就是漏了这个，导致内嵌面板 top:50% 生效）。 */
+  body.touch .panel:not(.embed){
+    max-height:calc(var(--app-h,100dvh) - 12px) !important;
+    top:calc(var(--app-oy,0px) + (var(--app-h,100dvh) / 2)) !important;
+    overflow:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;touch-action:auto}
+  /* 触屏默认不显示滚动条，用户会以为「下面没有了」。给一条常驻的细条当提示 */
+  body.touch .panel::-webkit-scrollbar,body.touch .menu-body::-webkit-scrollbar{width:4px;height:4px}
+  body.touch .panel::-webkit-scrollbar-thumb,body.touch .menu-body::-webkit-scrollbar-thumb{
+    background:rgba(216,178,90,.45);border-radius:2px}
+  body.touch .panel::-webkit-scrollbar-track,body.touch .menu-body::-webkit-scrollbar-track{background:transparent}
+  body.touch #invPanel{width:min(892px,96vw);max-height:calc(var(--app-h,100dvh) - 12px)}
   /* 触屏不做「两列各自滚」：屏幕本来就矮，固定高度会把一边压成一条缝。
    * 改成整面板滚动，装备栏与行囊都完整展开（.panel 已有 overflow:auto）。 */
   body.touch #invPanel .pb{height:auto;max-height:none;overflow:visible}
@@ -1712,25 +1730,30 @@
   body.touch .shop-refresh{padding:5px 7px;gap:6px}
   body.touch .shop-refresh .sr-btn{padding:5px 9px;font-size:10px}
   body.touch #statPanel{width:min(420px,94vw)}
-  body.touch #questPanel{width:min(520px,94vw);max-height:84vh;max-height:84dvh}
+  /* 这三个面板的桌面规则是 overflow:hidden（内部各自滚），触屏下如果内容比面板高
+   * 就再也滚不到了 —— 统一放开成 auto，交给 .panel 自己滚 */
+  body.touch #questPanel{width:min(520px,94vw);overflow:auto}
+  body.touch #forgePanel,body.touch #savePanel{overflow:auto}
   body.touch #shopPanel{width:min(560px,94vw)}
   body.touch #travelPanel{width:min(460px,94vw)}
-  body.touch #forgePanel{width:min(760px,96vw);max-height:88vh;max-height:88dvh}
+  body.touch #forgePanel{width:min(760px,96vw)}
   body.touch #setPanel{width:min(540px,96vw)}
   body.touch .setlab{width:64px;font-size:11px;letter-spacing:1px}
   body.touch .setseg .sbtn{min-width:40px;padding:5px 8px}
   body.touch #fpsHud{left:8px;top:auto;bottom:calc(50% + 58px);font-size:11px}
   body.touch #fpsHud b{font-size:14px}
   body.touch .forge-body{flex-direction:column;min-height:0;gap:8px}
-  body.touch .forge-list{width:100%;max-height:17dvh;display:flex;gap:6px;overflow-x:auto;overflow-y:hidden;
+  body.touch .forge-list{width:100%;max-height:calc(var(--app-h,100dvh) * .17);display:flex;gap:6px;overflow-x:auto;overflow-y:hidden;
     border-right:none;border-bottom:1px solid rgba(255,255,255,.07);padding:0 0 6px}
   body.touch .fitem{flex:none;width:148px}
-  /* 88dvh 减去标题/页签/物品条/底注后的剩余高度；横屏 390 高时底注不会被裁掉 */
-  body.touch .forge-main{max-height:calc(88dvh - 190px)}
+  /* 可见高度减去标题/页签/物品条/底注后的剩余高度；横屏 390 高时底注不会被裁掉 */
+  body.touch .forge-main{max-height:calc(var(--app-h,100dvh) * .88 - 190px)}
   body.touch .frunes{grid-template-columns:repeat(6,1fr);gap:5px}
   body.touch .frune{height:48px}
   body.touch .fsock{width:42px;height:42px}
   body.touch #savePanel{width:min(640px,96vw)}
+  /* 炼器台顶部页签在窄屏会挤出去 9px，允许横向滚 */
+  body.touch .forge-tabs{overflow-x:auto;overflow-y:hidden;flex-wrap:nowrap;-webkit-overflow-scrolling:touch}
   body.touch #savePanel .pb{-webkit-overflow-scrolling:touch;touch-action:pan-y}
   body.touch .sacts .btn{padding:7px 12px;font-size:11.5px}
   body.touch #newName{width:112px}
@@ -1758,15 +1781,19 @@
   body.touch .mgcell .mg-qty{font-size:10px;right:2px}
   body.touch .cmat-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
   /* 主菜单：窄屏把左侧竖排页签翻成顶部横排，内容区整块滚动 */
-  body.touch #menuPanel{width:min(940px,98vw);height:92vh;max-height:92dvh}
-  body.touch #skillPanel{width:min(1280px,98vw);height:94vh;max-height:94dvh}
+  body.touch #menuPanel{width:min(940px,98vw);height:calc(var(--app-h,100dvh) * .92);max-height:calc(var(--app-h,100dvh) - 12px)}
+  body.touch #skillPanel{width:min(1280px,98vw);height:calc(var(--app-h,100dvh) * .94);max-height:calc(var(--app-h,100dvh) - 12px)}
   body.touch .menu-wrap{flex-direction:column}
   body.touch .menu-tabs{width:auto;flex-direction:row;gap:4px;padding:6px 6px 0;overflow-x:auto;overflow-y:hidden;
     border-right:none;border-bottom:1px solid rgba(216,178,90,.18)}
   body.touch .mtab{padding:7px 8px;font-size:11px;letter-spacing:1px;white-space:nowrap;
     border:1px solid rgba(216,178,90,.18);border-bottom:none}
   body.touch .mtab span{display:none}
-  body.touch .menu-body{flex:1;min-height:0;overflow:auto}
+  /* 关键：align-items:flex-start 让内嵌面板的高度跟着内容走。
+   * 默认的 stretch 会把它拉成和容器等高，于是 .pb 里的内容溢出到面板外面，
+   * 而 .menu-body 的 scrollHeight 又量不到 —— 表现就是「横屏下面板下拉不动」。 */
+  body.touch .menu-body{flex:1;min-height:0;overflow:auto;-webkit-overflow-scrolling:touch;
+    overscroll-behavior:contain;align-items:flex-start}
   body.touch #menuBody .panel.embed{height:auto;min-height:100%}
   body.touch #menuBody .panel.embed>.pb{overflow:visible;padding:10px 10px 14px}
   body.touch #menuBody #invPanel.embed>.pb{height:auto;overflow:visible}

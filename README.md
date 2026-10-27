@@ -9,7 +9,7 @@
 
 <br>
 
-[![在线试玩](https://img.shields.io/badge/▶%20%20在线试玩-立刻开始-c0392b?style=for-the-badge)](https://jiuxiao-arpg.app.workbuddy.host/?sharecode=KMOWFYC4VF)
+[![在线试玩](https://img.shields.io/badge/▶%20%20在线试玩-立刻开始-c0392b?style=for-the-badge)](https://718997675.github.io/jiuxiao-arpg/)
 [![License](https://img.shields.io/badge/license-MIT-3d8b3d?style=for-the-badge)](LICENSE)
 [![three.js](https://img.shields.io/badge/three.js-r128-1a1a1a?style=for-the-badge&logo=three.js&logoColor=white)](https://threejs.org/)
 [![No Build](https://img.shields.io/badge/build-无构建-2b3a4a?style=for-the-badge)](.)
@@ -540,10 +540,30 @@ node dev/test-save-browser.js   # 浏览器：真实 localStorage + 三端布局
 
 ## 六、部署到服务器
 
+> **线上地址（唯一正式入口）：<https://718997675.github.io/jiuxiao-arpg/>**
+> 由 GitHub Pages 从仓库 `main` 分支根目录自动发布。**推 main 即上线**，无需额外操作：
+>
+> ```bash
+> ./push.sh "feat: 说明"     # 语法检查 → 提交 → 推 main → Pages 自动重建
+> ```
+>
+> 推送后通常 30~60 秒生效。Pages 有 CDN 缓存，`index.html` 是 `no-cache`，
+> 但 `src/*.js` 可能被缓存几分钟；改完没看到效果先强刷（Ctrl/Cmd+Shift+R）。
+
 本作是**纯静态站点**（无后端、无数据库、无构建步骤），部署等于「把文件按原路径放到能访问的地方」。
 需要上传的只有：`index.html`、`src/`、`lib/`（合计约 870 KB，打进 zip 约 228 KB）。
 
-### 方式一：Nginx（自有服务器，最常用）
+### 方式一：GitHub Pages（当前正式部署方式）
+
+仓库根目录直接作为站点根目录，无构建、无 `dist/`：
+
+1. Settings → Pages → Source 选 `Deploy from a branch` → 分支 `main` / 目录 `/ (root)`
+2. 本地 `./push.sh` 推到 `main`
+3. Actions 里会跑一次 `pages build and deployment`，绿勾即可访问
+
+`.nojekyll` 必须存在（仓库已包含），否则下划线开头的路径会被 Jekyll 吞掉。
+
+### 方式二：Nginx（自有服务器）
 
 ```bash
 # 1. 上传（本地执行）
@@ -556,7 +576,7 @@ nginx -t && systemctl reload nginx
 
 `deploy/nginx.conf` 里已配好 gzip（three.js 603 KB → 约 150 KB）、MIME、缓存策略。
 
-### 方式二：Docker（一条命令）
+### 方式三：Docker（一条命令）
 
 ```bash
 docker build -f deploy/Dockerfile -t jiuxiao .
@@ -564,7 +584,7 @@ docker run -d --name jiuxiao -p 8080:80 jiuxiao
 # 打开 http://服务器IP:8080
 ```
 
-### 方式三：托管平台（不用买服务器）
+### 方式四：其它托管平台
 
 包内已含 `index.html` 在根目录，直接把整个目录拖上去即可：
 
@@ -572,10 +592,9 @@ docker run -d --name jiuxiao -p 8080:80 jiuxiao
 | --- | --- |
 | **Vercel / Netlify** | 新建项目 → 拖入目录（或连 Git 仓库）→ 框架选 Other，构建命令留空，输出目录 `.` |
 | **Cloudflare Pages** | 上传资源 → 直接传目录，无构建 |
-| **GitHub Pages** | 推到仓库 → Settings → Pages → 分支选 `main` / 目录 `/root` |
 | **腾讯云 COS / 阿里云 OSS** | 开「静态网站」功能 → 上传文件 → 把 `index.html` 设为默认首页 |
 
-### 方式四：临时演示（5 秒）
+### 方式五：临时演示（5 秒）
 
 ```bash
 # 在项目目录下

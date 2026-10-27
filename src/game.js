@@ -85,10 +85,43 @@ function keepPick(prev, next) {
 const DASH_SPD = (typeof BALANCE !== 'undefined' && BALANCE.move && BALANCE.move.dash)
   ? BALANCE.move.dash : { thrust: 50, leap: 28, dodge: 20 };
 
+/* ============================================================
+ * 镜头预设（v2.x）—— 设置面板「镜头 → 视角」直接映射到这张表
+ *
+ * 之前只有一套写死的机位（dist 11.6 / height 12.2，俯角约 43°），
+ * 加上出手推镜（camPunch）和打击震屏，长时间刷图有人会晕。
+ * 现在拆成四个可选机位，机位参数全部集中在这里：
+ *
+ *   dist    水平半径（米）；height 机位高度（米）→ 两者共同决定俯角
+ *   pitchK  滚轮拉远时额外抬高的系数（0.42 ≈ 原版手感）
+ *   fov     竖直视野角。机位越高越该收窄，否则边缘畸变明显
+ *   punch   出手推镜倍率（0 = 完全不推镜）
+ *   smooth  跟随平滑基数，越小越「硬」。火炬之光调到 2e-6 是为了消除
+ *           跑动时角色在屏幕里来回漂移的滞后感
+ *   lookY   视线焦点高度：越高越平视，越低越俯视
+ *   fp      第一人称：机位贴到眼睛高度，人物模型隐藏
+ * ============================================================ */
+const CAM_VIEWS = {
+  /* 原版机位，留给习惯老视角的玩家 */
+  classic: { name: '默认俯视', dist: 11.6, height: 12.2, pitchK: 0.42, fov: 46, punch: 1,    smooth: 0.0018,   lookY: 1.3, fp: false },
+  /* 火炬之光：机位比默认再高一点（约 49°）、视野稍宽、跟随更硬、出手不推镜 —— 默认档。
+   * 距离刻意只比默认远 14%：拉太远人物会小成一个色块（实测 dist 15 时只有 25px 高）。 */
+  torch:   { name: '火炬之光', dist: 12.4, height: 15.4, pitchK: 0.42, fov: 45, punch: 0,    smooth: 0.000002, lookY: 1.2, fp: false },
+  /* 暗黑4：接近俯视（约 62°），保留一点推镜让打击有分量 */
+  diablo:  { name: '暗黑4',   dist: 10.0, height: 20.0, pitchK: 0.50, fov: 45, punch: 0.35, smooth: 0.0004,   lookY: 0.7, fp: false },
+  /* 第一人称：贴眼机位，宽视野；人物隐藏，鼠标转身 */
+  fp:      { name: '第一人称', dist: 0,    height: 0,    pitchK: 0,    fov: 74, punch: 0,    smooth: 0,        lookY: 1.58, fp: true }
+};
+
+/* 震屏强度倍率：设置面板「镜头震动」*/
+const SHAKE_MUL = { off: 0, weak: 0.35, std: 1, strong: 1.8 };
+
 const Game = {
   /* three */
   renderer: null, scene: null, camera: null, clock: null, sun: null, hemi: null,
   camYaw: 0, camDist: 11.6, camHeight: 12.2, camPunch: 0,
+  /* 镜头（v2.x）：view = CAM_VIEWS 的键；camZoom = 滚轮/捏合的拉近拉远倍率 */
+  camView: 'torch', camZoom: 1, shakeMul: SHAKE_MUL.weak, fpPitch: -0.13, pl: false,
 
   /* 数据 */
   state: null, actor: null, playerGroup: null,
@@ -152,6 +185,9 @@ const Game = {
 
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(46, window.innerWidth / window.innerHeight, 0.1, 600);
+    /* 镜头预设（视角 / 震动）在这里第一次落地：FOV 必须在建相机之后、
+     * 第一次渲染之前写好，否则会先按 46° 画一帧再跳变 */
+    try { this.applyCamView(); } catch (e) { console.error('[镜头] 初始化失败', e); }
     this.clock = new THREE.Clock();
 
     this.hemi = new THREE.HemisphereLight(0xdfe8ff, 0x3a3020, 0.62);
@@ -191,6 +227,12 @@ const Game = {
      * 全部收进「说明」页第一节，按 H 随时可查。 */
 
     window.addEventListener('resize', () => this.updateViewport());
+    /* 进出全屏（含用户按 Esc / 手势退出）都要重排一次：画布尺寸、触屏键位、设置面板的高亮 */
+    ['fullscreenchange', 'webkitfullscreenchange'].forEach(ev => document.addEventListener(ev, () => {
+      this.updateViewport();
+      if (typeof Mobile !== 'undefined' && Mobile.on) Mobile.queueLayout(80);
+      if (typeof UI !== 'undefined' && UI.renderSettings) UI.renderSettings();
+    }));
     this.updateViewport();
 
     /* 存档里的设置在这里第一次落地（分辨率 / 阴影 / 粒子 / 怪数上限）。
@@ -211,6 +253,58 @@ const Game = {
     this.camZoomMul = this.camera.aspect >= 1 ? 1 : Math.min(1.62, Math.pow(1 / this.camera.aspect, 0.55));
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(w, h);
+  },
+
+  /* ======================================================= */
+  /* ---------------- 全屏 ----------------
+   * 能力差异很大，只能按「有没有 API」分三档：
+   *   桌面 / 安卓 Chrome  requestFullscreen() —— 真全屏，地址栏消失
+   *   iPad Safari         webkitRequestFullscreen() 存在，但只对部分元素生效
+   *   iPhone Safari       **没有网页全屏**（只有 video 能全屏），只能引导「添加到主屏幕」
+   * 所以这里不承诺一定成功：拿不到 API 就给出能走通的那条路。 */
+  fullscreenEl() {
+    return document.fullscreenElement || document.webkitFullscreenElement || document.msFullscreenElement || null;
+  },
+
+  isFullscreen() { return !!this.fullscreenEl(); },
+
+  enterFullscreen() {
+    if (this.isFullscreen()) return true;
+    const el = document.documentElement;
+    const req = el.requestFullscreen || el.webkitRequestFullscreen || el.msRequestFullscreen;
+    if (!req) {
+      try {
+        UI.toast('这个浏览器不支持网页全屏。iPhone 上请点「分享 → 添加到主屏幕」，从图标启动就没有地址栏', 'bad');
+      } catch (e) { }
+      return false;
+    }
+    try {
+      const r = req.call(el, { navigationUI: 'hide' });
+      if (r && typeof r.catch === 'function') {
+        r.catch(() => {
+          try { UI.toast('浏览器拒绝了全屏请求，先点一下画面再试', 'bad'); } catch (e) { }
+        });
+      }
+    } catch (e) {
+      try { UI.toast('全屏失败：' + (e.message || e), 'bad'); } catch (e2) { }
+      return false;
+    }
+    /* 进出全屏都会改可视区尺寸，下一帧重新排一次键位与画布 */
+    setTimeout(() => { this.updateViewport(); if (typeof Mobile !== 'undefined' && Mobile.on) Mobile.queueLayout(80); }, 120);
+    return true;
+  },
+
+  exitFullscreen() {
+    const ex = document.exitFullscreen || document.webkitExitFullscreen || document.msExitFullscreen;
+    if (ex && this.isFullscreen()) {
+      try { ex.call(document); } catch (e) { /* 忽略 */ }
+    }
+    setTimeout(() => { this.updateViewport(); if (typeof Mobile !== 'undefined' && Mobile.on) Mobile.queueLayout(80); }, 120);
+  },
+
+  toggleFullscreen() {
+    if (this.isFullscreen()) { this.exitFullscreen(); return false; }
+    return this.enterFullscreen();
   },
 
   /* ======================================================= */
@@ -284,6 +378,10 @@ const Game = {
     const cv = this.renderer.domElement;
     cv.addEventListener('mousedown', e => {
       if (IS_TOUCH) return;   // 触屏由虚拟按键接管
+      /* 第一人称：点画面锁鼠标（浏览器要求用户手势才允许 pointer lock） */
+      if (this.isFP() && !this.pl) {
+        try { cv.requestPointerLock && cv.requestPointerLock(); } catch (err) { /* 被 iframe 权限挡掉就用普通鼠标移动 */ }
+      }
       if (e.button === 0) { this.mouseDown = true; SFX.init(); }
       if (e.button === 2) { const bar = this.skillBar(); const id = bar[0] || (SKILL_ORDER[this.state.cls] || [])[0]; if (id) this.castSkill(id); }
     });
@@ -292,11 +390,28 @@ const Game = {
     window.addEventListener('mousemove', e => {
       if (IS_TOUCH) return;   // 触屏走自动瞄准
       this.mouseX = e.clientX; this.mouseY = e.clientY;
+      /* 第一人称：相对位移转身 + 俯仰。
+       * 只在「已锁定鼠标」或「鼠标在画布上」时转 —— 否则去点 HUD 上的按钮
+       * 也会把镜头甩走。指针锁定在 Chrome 里需要一次用户手势（点画布）。 */
+      if (this.isFP()) {
+        const onCanvas = (e.target === cv);
+        if (this.pl || onCanvas) {
+          const dx = e.movementX || 0, dy = e.movementY || 0;
+          if (dx) this.camYaw -= dx * 0.0026;
+          if (dy) this.fpPitch = CLAMP((this.fpPitch || 0) - dy * 0.0018, -0.7, 0.35);
+        }
+      }
       this.updateAim();
     });
+    /* 指针锁定状态（第一人称用）：Esc 或切视角时浏览器会自己退出 */
+    document.addEventListener('pointerlockchange', () => {
+      this.pl = (document.pointerLockElement === cv);
+    });
     cv.addEventListener('wheel', e => {
-      this.camDist = CLAMP(this.camDist + e.deltaY * 0.012, 11.6, 32);
-      this.camHeight = 12.2 + (this.camDist - 11.6) * 0.42;
+      /* 滚轮改成「倍率」而不是绝对距离：换视角后仍按该机位的比例拉近拉远 */
+      if (this.isFP()) { e.preventDefault(); return; }
+      const f = Math.exp((e.deltaY || 0) * 0.0012);
+      this.camZoom = CLAMP((this.camZoom || 1) * f, 0.7, 2.4);
       e.preventDefault();
     }, { passive: false });
 
@@ -306,6 +421,7 @@ const Game = {
   updateAim() {
     if (IS_TOUCH) return this.updateAutoAim();
     if (!this.camera) return;
+    if (this.isFP()) return this.updateFpAim();
     const v = new THREE.Vector2(
       (this.mouseX / window.innerWidth) * 2 - 1,
       -(this.mouseY / window.innerHeight) * 2 + 1
@@ -320,6 +436,34 @@ const Game = {
         const d = p.clone().sub(this.playerGroup.position); d.y = 0;
         if (d.lengthSq() > 0.01) this.aimDir.copy(d.normalize());
       }
+    }
+  },
+
+  /* 第一人称瞄准：视线方向即准心，再加一层「正前方吸附」。
+   * 地面射线在平视时几乎打不到平面（射线平行于地面），所以不能沿用
+   * 俯视那套 setFromCamera → intersectPlane，直接拿 camYaw 的前向量。 */
+  updateFpAim() {
+    const pg = this.playerGroup;
+    if (!pg) return;
+    const p = pg.position;
+    const dx = -Math.sin(this.camYaw), dz = -Math.cos(this.camYaw);
+    /* 吸附：26 米内、偏离视线 30° 以内最近的敌人。第一人称没有鼠标指哪打哪，
+     * 纯靠视线对准小目标太苛刻，近战尤其容易砍空。 */
+    let best = null, bd = 26;
+    for (const e of this.enemies) {
+      if (e.dead) continue;
+      const ex = e.pos.x - p.x, ez = e.pos.z - p.z;
+      const d = Math.hypot(ex, ez);
+      if (d < 1.2 || d > bd) continue;
+      if ((ex * dx + ez * dz) / d < 0.87) continue;   // ≈30° 锥角
+      bd = d; best = e;
+    }
+    if (best) {
+      this.aimDir.set(best.pos.x - p.x, 0, best.pos.z - p.z).normalize();
+      this.aimPoint.set(best.pos.x, 0, best.pos.z);
+    } else {
+      this.aimDir.set(dx, 0, dz);
+      this.aimPoint.set(p.x + dx * 9, 0, p.z + dz * 9);
     }
   },
 
@@ -1109,6 +1253,8 @@ const Game = {
     this.aimDir.set(0, 0, -1);
     this.aimPoint.set(this.playerGroup.position.x, 0, this.playerGroup.position.z - 6);
     this.applyDoll();
+    /* 新人物建好后重新落地一次镜头设置：第一人称要藏人、FOV 要对 */
+    try { this.applyCamView(); } catch (e) { /* 不影响开局 */ }
   },
 
   applyDoll() {
@@ -1708,6 +1854,9 @@ const Game = {
 
   menuCamera() {
     const t = this.time * 0.1;
+    /* 标题镜头固定用 46°：如果玩家把视角设成第一人称（74°），
+     * 退回标题界面时会看到一张畸变的远景，看着像坏了 */
+    if (this.camera.fov !== 46) { this.camera.fov = 46; this.camera.updateProjectionMatrix(); }
     this.camera.position.set(Math.sin(t) * 25, 6.2, Math.cos(t) * 25);
     this.camera.lookAt(0, 5.2, 0);
     // 萤火浮动
@@ -1802,25 +1951,104 @@ const Game = {
     if (this.minimapT > 0.1) { this.minimapT = 0; UI.drawMinimap(); }
   },
 
+  /* ---------------- 镜头预设 ---------------- */
+
+  viewDef() { return CAM_VIEWS[this.camView] || CAM_VIEWS.classic; },
+  isFP() { return !!this.viewDef().fp; },
+
+  /* 释放第一人称的鼠标锁定。打开菜单 / 退出第一人称时必须调 ——
+   * 锁定状态下光标是隐藏的，不释放就点不到面板上的按钮。 */
+  exitLook() {
+    if (!this.pl) return;
+    this.pl = false;
+    try { document.exitPointerLock && document.exitPointerLock(); } catch (e) { /* 忽略 */ }
+  },
+
+  /* 读设置 → 落地到相机。设置面板改视角/震动时由 Settings.apply 调过来；
+   * 开局（setupPlayer）也会调一次，保证人物显隐与 FOV 跟着视角走。 */
+  applyCamView(changed) {
+    const d = (typeof Settings !== 'undefined' && Settings.d) ? Settings.d : null;
+    const view = (d && CAM_VIEWS[d.view]) ? d.view : 'classic';
+    const changedView = (view !== this.camView);
+    this.camView = view;
+    this.shakeMul = (d && SHAKE_MUL[d.shake] !== undefined) ? SHAKE_MUL[d.shake] : 1;
+    const v = this.viewDef();
+
+    /* 换视角时把滚轮缩放归位，否则从「暗黑4 拉到最远」切到「第一人称」会残留倍率 */
+    if (changedView) { this.camZoom = 1; this.camPunch = 0; this.fpPitch = -0.13; }
+
+    if (this.camera) {
+      this.camera.fov = v.fov;
+      this.camera.updateProjectionMatrix();
+    }
+    /* 第一人称必须藏掉人物，否则镜头卡在后脑勺里 */
+    if (this.playerGroup) this.playerGroup.visible = !v.fp;
+    /* 退出第一人称时释放鼠标锁，不然光标一直藏着 */
+    if (!v.fp) this.exitLook();
+    /* 机位立刻贴到位，避免切换瞬间镜头从旧位置飞过来 */
+    this.camDist = v.dist * (this.camZoom || 1);
+    this.camHeight = v.height + (this.camDist - v.dist) * v.pitchK;
+    if (changed === 'view' && v.fp) {
+      try { UI.toast('第一人称：点一下画面锁定鼠标，移动鼠标转身，Esc 解锁', 'info'); } catch (e) { }
+    }
+  },
+
   updateCamera(raw) {
     const p = this.playerGroup.position;
-    // 出手瞬间轻微推镜，放大挥砍动作
+    const v = this.viewDef();
+
+    /* ---------- 第一人称 ---------- */
+    if (v.fp) {
+      this.camPunch = 0;
+      const fx = -Math.sin(this.camYaw), fz = -Math.cos(this.camYaw);
+      const eyeY = p.y + v.lookY;
+      /* 机位直接吸附（不做插值）：第一人称任何跟随滞后都会晕 */
+      this.camera.position.set(p.x, eyeY, p.z);
+      if (this.shake > 0.001) {
+        const s = this.shake * this.shakeMul;
+        if (s > 0.001) {
+          this.camera.position.x += RND(-1, 1) * s * 0.5;
+          this.camera.position.y += RND(-0.6, 0.6) * s * 0.5;
+          this.camera.position.z += RND(-1, 1) * s * 0.5;
+        }
+        this.shake *= Math.pow(0.0025, raw);
+      } else this.shake = 0;
+      const pitch = CLAMP(this.fpPitch || 0, -0.7, 0.35);
+      this.camera.lookAt(p.x + fx * 12, eyeY + Math.tan(pitch) * 12, p.z + fz * 12);
+      /* 贴脸道具淡出（竹林 / 柱子），否则第一人称会被一片叶子糊住 */
+      this.occT = (this.occT || 0) + raw;
+      if (this.occT > 0.08) { this.occT = 0; this.updateOccluders(); }
+      this.sun.position.set(p.x + 24, 38, p.z + 18);
+      this.sun.target.position.set(p.x, 0, p.z);
+      return;
+    }
+
+    /* ---------- 俯视 / 斜俯视 ---------- */
+    // 出手瞬间轻微推镜，放大挥砍动作（视角预设可关掉）
     if (this.camPunch > 0.0005) this.camPunch *= Math.pow(0.015, raw); else this.camPunch = 0;
+    const zoom = this.camZoom || 1;
+    this.camDist = v.dist * zoom;
+    this.camHeight = v.height + (this.camDist - v.dist) * v.pitchK;
     // 竖屏时横向视野窄，把镜头拉远一点，避免角色占满屏幕
-    const dist = this.camDist * (this.camZoomMul || 1) * (1 - (this.camPunch || 0));
+    const zm = this.camZoomMul || 1;
+    const punch = (this.camPunch || 0) * (v.punch === undefined ? 1 : v.punch);
+    const dist = this.camDist * zm * (1 - punch);
     const targetX = p.x + Math.sin(this.camYaw) * dist;
     const targetZ = p.z + Math.cos(this.camYaw) * dist;
-    const k = 1 - Math.pow(0.0018, raw);
+    const k = 1 - Math.pow(v.smooth, raw);
     this.camera.position.x = LERP(this.camera.position.x, targetX, k);
     this.camera.position.z = LERP(this.camera.position.z, targetZ, k);
-    this.camera.position.y = LERP(this.camera.position.y, p.y + this.camHeight * (this.camZoomMul || 1), k);
+    this.camera.position.y = LERP(this.camera.position.y, p.y + this.camHeight * zm, k);
     if (this.shake > 0.001) {
-      this.camera.position.x += RND(-1, 1) * this.shake;
-      this.camera.position.y += RND(-0.6, 0.6) * this.shake;
-      this.camera.position.z += RND(-1, 1) * this.shake;
+      const s = this.shake * this.shakeMul;
+      if (s > 0.001) {
+        this.camera.position.x += RND(-1, 1) * s;
+        this.camera.position.y += RND(-0.6, 0.6) * s;
+        this.camera.position.z += RND(-1, 1) * s;
+      }
       this.shake *= Math.pow(0.0025, raw);
     } else this.shake = 0;
-    this.camera.lookAt(p.x, p.y + 1.3, p.z);
+    this.camera.lookAt(p.x, p.y + v.lookY, p.z);
     this.occT = (this.occT || 0) + raw;
     if (this.occT > 0.08) { this.occT = 0; this.updateOccluders(); }
     this.sun.position.set(p.x + 24, 38, p.z + 18);
@@ -1831,6 +2059,7 @@ const Game = {
   updateOccluders() {
     if (!this.world || !this.world.occluders) return;
     const cam = this.camera.position, p = this.playerGroup.position;
+    const fp = this.isFP();
     const dx = p.x - cam.x, dz = p.z - cam.z;
     const len2 = dx * dx + dz * dz || 1;
     for (const o of this.world.occluders) {
@@ -1843,11 +2072,24 @@ const Game = {
         });
       }
       const pos = o.obj.position;
-      const t = ((pos.x - cam.x) * dx + (pos.z - cam.z) * dz) / len2;
       let hide = false;
-      if (t > 0.05 && t < 1.0) {
-        const px = cam.x + dx * t, pz = cam.z + dz * t;
-        hide = Math.hypot(pos.x - px, pos.z - pz) < o.r + 0.4;
+      if (fp) {
+        /* 第一人称：镜头就贴在人物身上，「镜头到人物之间」这条线没有意义。
+         * 改成两件事：① 贴脸 / 身体已经在道具里的直接淡出；
+         * ② 正前方 5 米、±40° 内的道具也淡出 —— 否则站在竹林里会被竹竿糊满屏幕。 */
+        const ox = pos.x - cam.x, oz = pos.z - cam.z;
+        const od = Math.hypot(ox, oz);
+        if (od < o.r + 0.6) hide = true;
+        else if (od < 5.5 && od > 0.001) {
+          const fwx = -Math.sin(this.camYaw), fwz = -Math.cos(this.camYaw);
+          if ((ox * fwx + oz * fwz) / od > 0.77) hide = true;
+        }
+      } else {
+        const t = ((pos.x - cam.x) * dx + (pos.z - cam.z) * dz) / len2;
+        if (t > 0.05 && t < 1.0) {
+          const px = cam.x + dx * t, pz = cam.z + dz * t;
+          hide = Math.hypot(pos.x - px, pos.z - pz) < o.r + 0.4;
+        }
       }
       const target = hide ? 0.09 : 1;
       if (o.cur === undefined) o.cur = 1;
@@ -2120,6 +2362,9 @@ const Game = {
       const r = Math.atan2(this.aimDir.x, this.aimDir.z);
       pg.rotation.y = this.lerpAngle(pg.rotation.y, r, 1 - Math.pow(0.08, dt));
     }
+
+    /* 第一人称：角色永远面朝视线（人物本身隐藏，但挥砍弧、弹道起点要跟着视线） */
+    if (this.isFP()) pg.rotation.y = Math.atan2(-Math.sin(this.camYaw), -Math.cos(this.camYaw));
 
     this.playerFace.set(Math.sin(pg.rotation.y), 0, Math.cos(pg.rotation.y));
     updateActorAnim(this.actor, dt);
@@ -3986,6 +4231,8 @@ const Game = {
     this.actor.group.rotation.z = 0;
     SFX.die();
     this.shake = 0.8;
+    /* 第一人称：死了要能点「复活 / 回城」，先把鼠标放出来 */
+    this.exitLook();
     UI.closeAll();
     /* 试炼里死亡不弹「身陨」框，改弹本轮结算 —— 玩家要看到的是「打到第几波」，
      * 而不是一句「你的道还未走完」。惩罚照旧按难度扣金币。 */

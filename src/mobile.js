@@ -247,6 +247,16 @@ const Mobile = {
 
     this.vp = { w: W, h: H, zoomed: !!(vv && vv.scale > 1.02) };
 
+    /* 把「此刻真正看得见的区域」写成 CSS 变量给面板用。
+     * iOS Safari 的 100vh 含地址栏那一条，面板按 vh 居中会整体偏下、底部被裁；
+     * 用 visualViewport 的实时高度 + 偏移量，横竖屏切换 / 地址栏收放都能跟上。 */
+    try {
+      const de = document.documentElement.style;
+      de.setProperty('--app-h', H + 'px');
+      de.setProperty('--app-oy', ((vv ? vv.offsetTop : 0) || 0) + 'px');
+      de.setProperty('--app-ox', ((vv ? vv.offsetLeft : 0) || 0) + 'px');
+    } catch (e) { }
+
     // 自愈：ui-open 卡住会让整个触控层透明（看起来就是「摇杆不见了」）
     try {
       const dlg = document.getElementById('dialog');
@@ -323,39 +333,78 @@ const Mobile = {
     }
 
     // 技能：4 列 × 2 行宫格（8 格），紧贴普攻左上
-    const cols = SKILL_BAR_SLOTS >= 8 ? 4 : SKILL_BAR_SLOTS;
-    const rows = Math.ceil(SKILL_BAR_SLOTS / cols);
-    const gw = cols * skS + (cols - 1) * gap;
+    /* ---- 右手区：普攻 → 功能键 → 技能宫格 ----
+     * 以前宫格是「贴底右对齐」直接摆的：窄屏上它的左缘会压到摇杆上
+     * （390×844 实测重叠 46×46 像素，320 宽更糟），功能键那一行也会压到摇杆顶部。
+     * 现在改成先算三块矩形，再按「谁碰到摇杆就整块抬到摇杆上方」排，
+     * 列数随格数自动变（≤5 格一行排完，6 格 3×2，8 格 4×2），
+     * 竖屏塞不下时先把格子缩到 34u，再不行才上移。 */
+    const slots = Math.max(1, SKILL_BAR_SLOTS | 0);
+    const cols = slots <= 5 ? slots : (slots <= 6 ? 3 : 4);
+    const rows = Math.ceil(slots / cols);
+    let cell = skS;
     const gRight = ax - atkR - 9 * u;
-    const gBottom = ay + atkR;
-    const gLeft = fx(gRight - gw, gw);
-    const gh = rows * skS + (rows - 1) * gap;
-    const gTop = fy(gBottom - gh, gh);
+    const topLimit = ins.t + 46 * u;            // 顶部 HUD（角色板 / 首领条）预留
+    const gwOf = c => cols * c + (cols - 1) * gap;
+    const ghOf = c => rows * c + (rows - 1) * gap;
+    /* 竖屏高度吃紧：整摞（宫格 + 功能行 + 普攻）装不下就缩格子。
+     * 下限取「36px 与 34u 中的较大者」—— 跟着 u 一路缩到 24px 会按不准。 */
+    if (portrait) {
+      const cellMin = Math.max(36, 34 * u);
+      let guard = 0;
+      while (ay + atkR - (ghOf(cell) + 9 * u + smS + 8 * u) < topLimit && cell > cellMin && guard++ < 8) {
+        cell -= 2 * u;
+      }
+    }
+    const gw = gwOf(cell), gh = ghOf(cell);
+    const gLeft0 = fx(gRight - gw, gw);
+    const uGap = 8 * u;
+    const util = document.querySelectorAll('#mUtil .mbtn');
+    const uw = util.length * smS + (util.length - 1) * uGap;
+    const uLeft0 = fx(gRight - uw, smS);
+
+    /* 兜底：谁和摇杆的方框相交，就整块抬到摇杆上沿之上（横屏一般不会触发）。
+     * 顺序很重要：功能行先定死，宫格再按「功能行的最终位置」往上叠 ——
+     * 反过来做的话，功能行被抬高之后会撞进按旧位置算好的宫格里。 */
+    const joyL = jx - joyR, joyRr = jx + joyR, joyT = jy - joyR, joyB = jy + joyR;
+    const hitJoy = (l, t, w, h) => (l < joyRr + gap) && (t < joyB) && (l + w > joyL) && (t + h > joyT);
+    let uy, gTop;
+    if (portrait) {
+      /* 竖屏：自下而上堆 —— 普攻在最下，功能行压在它上面，宫格再压在功能行上面 */
+      uy = fy(ay - atkR - 8 * u - smS, smS);
+      if (hitJoy(uLeft0, uy, uw, smS)) uy = fy(joyT - gap - smS, smS);
+      gTop = fy(uy - 9 * u - gh, gh);
+      if (hitJoy(gLeft0, gTop, gw, gh)) gTop = fy(joyT - gap - gh, gh);
+    } else {
+      /* 横屏：宽度够，宫格留在普攻左侧的底边，功能行压在宫格上面（原版排布） */
+      gTop = fy(ay + atkR - gh, gh);
+      if (hitJoy(gLeft0, gTop, gw, gh)) gTop = fy(joyT - gap - gh, gh);
+      uy = fy(gTop - 9 * u - smS, smS);
+      if (hitJoy(uLeft0, uy, uw, smS)) uy = fy(joyT - gap - smS, smS);
+    }
+
+    const gLeft = gLeft0;
     document.querySelectorAll('#mSkills .mskill').forEach((el, i) => {
       const c = i % cols, r = Math.floor(i / cols);
-      el.style.width = el.style.height = skS + 'px';
-      el.style.left = fx(gLeft + c * (skS + gap), skS) + 'px';
-      el.style.top = fy(gTop + r * (skS + gap), skS) + 'px';
-      el.style.fontSize = 15 * u + 'px';
+      el.style.width = el.style.height = cell + 'px';
+      el.style.left = fx(gLeft + c * (cell + gap), cell) + 'px';
+      el.style.top = fy(gTop + r * (cell + gap), cell) + 'px';
+      el.style.fontSize = (cell * 0.31) + 'px';
     });
 
-    // 功能键：技能格上方一行，右对齐
-    const util = document.querySelectorAll('#mUtil .mbtn');
-    const uGap = 8 * u;
-    const uw = util.length * smS + (util.length - 1) * uGap;
-    const uy = fy(gTop - 9 * u - smS, smS);
+    // 功能键：一行，右对齐（位置见上面 gTop / uy 的排布）
     util.forEach((el, i) => {
       el.style.width = el.style.height = smS + 'px';
-      el.style.left = fx(gRight - uw + i * (smS + uGap), smS) + 'px';
+      el.style.left = fx(uLeft0 + i * (smS + uGap), smS) + 'px';
       el.style.top = uy + 'px';
       el.style.fontSize = 13 * u + 'px';
     });
 
-    /* 增益 / 减益栏：触屏技能格上方，跟着 HUD 一起缩放 */
+    /* 增益 / 减益栏：宫格上方，跟着 HUD 一起缩放 */
     const bb = document.getElementById('buffbar');
     if (bb) {
       bb.style.left = '50%';
-      bb.style.top = Math.max(ins.t + 4, uy - 28 * u) + 'px';
+      bb.style.top = Math.max(ins.t + 4, gTop - 26 * u) + 'px';
       bb.style.bottom = 'auto';
       bb.style.transform = 'translateX(-50%)';
       bb.style.maxWidth = Math.min(W - 20, 360 * u) + 'px';
@@ -476,8 +525,8 @@ const Mobile = {
       if (pts.size === 2) {
         const d = this.pinch();
         if (this.pinchDist > 0 && d > 0) {
-          Game.camDist = CLAMP(Game.camDist * (this.pinchDist / d), 11.6, 32);
-          Game.camHeight = 12.2 + (Game.camDist - 11.6) * 0.42;
+          /* 双指捏合改「倍率」而不是绝对距离：换视角预设后仍按该机位比例缩放 */
+          Game.camZoom = CLAMP((Game.camZoom || 1) * (this.pinchDist / d), 0.7, 2.4);
         }
         this.pinchDist = d;
         e.preventDefault();

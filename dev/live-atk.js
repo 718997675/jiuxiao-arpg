@@ -1,6 +1,6 @@
 const puppeteer = require('puppeteer-core');
 const wait = ms => new Promise(r => setTimeout(r, ms));
-const URL = 'https://jiuxiao-arpg.app.workbuddy.host/?sharecode=KMOWFYC4VF';
+const URL = 'https://718997675.github.io/jiuxiao-arpg/?t=' + Date.now();
 
 (async () => {
   const browser = await puppeteer.launch({
