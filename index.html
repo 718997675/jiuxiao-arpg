@@ -1680,6 +1680,11 @@
   #fatal pre{margin:0 0 18px;max-height:220px;overflow:auto;font-size:11px;line-height:1.7;
     color:#c8a9a0;background:rgba(0,0,0,.5);border:1px solid rgba(255,255,255,.06);
     border-radius:3px;padding:12px;white-space:pre-wrap;word-break:break-all;user-select:text}
+  /* 主按钮独占一行，两个次要按钮并排 —— 手机上挤在一行会折得很难看 */
+  #fatal .fbtns{display:flex;gap:10px;flex-wrap:wrap}
+  #fatal .fbtns .btn{padding:7px 20px;font-size:12px;letter-spacing:2px}
+  #fatal .fbtns .btn.primary{flex:1 1 100%}
+  #fatal .fbtns .btn:not(.primary){flex:1 1 0}
 
   /* ============================================================
    * 移动端（body.touch 由 mobile.js 添加，PC 上完全不生效）
@@ -2595,7 +2600,11 @@
     <h3>山海未开 · 运行出错</h3>
     <p>请把下面这段信息发给开发者，或尝试刷新页面：</p>
     <pre id="fatalMsg"></pre>
-    <button class="btn primary" onclick="location.reload()">重 新 加 载</button>
+    <div class="fbtns">
+      <button class="btn primary" onclick="location.reload()">重 新 加 载</button>
+      <button class="btn" id="fatalDismiss">继 续</button>
+      <button class="btn" id="fatalCopy">复 制 信 息</button>
+    </div>
   </div>
 </div>
 

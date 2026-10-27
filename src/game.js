@@ -139,9 +139,27 @@ const Game = {
   init() {
     const canvas = document.getElementById('gl');
     // WebGL 上下文丢失时给出提示，避免只剩一个黑画布
+    /* [CTX-LOST] 但别一丢就判死刑。Safari 弹分享面板、切到别的 App、
+     * 生成「添加到主屏幕」的快照时，经常丢一次上下文，面板一关它自己就回来了。
+     * three.js 内部已经接管了丢失/恢复（丢失期间 render() 直接返回），
+     * 所以这里只需要：先等一下，4 秒还不回来才算真出事。 */
+    let ctxLostT = 0;
     canvas.addEventListener('webglcontextlost', e => {
-      e.preventDefault();
-      showFatal('WebGL 上下文丢失（显卡驱动或内存不足）。\n请刷新页面，或关闭其他占用显卡的标签页。');
+      e.preventDefault();          // 不 preventDefault 就拿不到 restored
+      if (ctxLostT) return;
+      ctxLostT = setTimeout(() => {
+        ctxLostT = 0;
+        showFatal('WebGL 上下文丢失（显卡驱动或内存不足）。\n请刷新页面，或关闭其他占用显卡的标签页。', '', true);
+      }, 4000);
+      try { if (typeof UI !== 'undefined' && UI.toast) UI.toast('画面暂时中断，正在恢复…'); } catch (err) { }
+    });
+    canvas.addEventListener('webglcontextrestored', () => {
+      if (ctxLostT) { clearTimeout(ctxLostT); ctxLostT = 0; }
+      /* 已经弹出错误页的话收回去，并把「只报一次」的闸门放开 */
+      const box = document.getElementById('fatal');
+      if (box) box.style.display = 'none';
+      __fatalShown = false;
+      try { if (typeof UI !== 'undefined' && UI.toast) UI.toast('画面已恢复'); } catch (err) { }
     });
     /* 高分屏（Windows 125%/150% 缩放）本身就在做降采样，再叠 MSAA 等于付两次钱，
      * 视觉上几乎看不出差别，帧率却能掉一截。所以只在 dpr≈1 时才开抗锯齿。 */
