@@ -167,18 +167,22 @@ for MODE in exact slug-exact slug-prefix contains; do
   case "$MODE" in
     exact)       MATCHES=$(printf '%s\n' "$ALL" | grep -xF -- "$Q" || true) ;;
     slug-exact)  MATCHES=$(printf '%s\n' "$ALL" | while IFS= read -r b; do [ "$(slug_of "$b")" = "$Q" ] && echo "$b"; done || true) ;;
-    slug-prefix) MATCHES=$(printf '%s\n' "$ALL" | while IFS= read -r b; do case "$(slug_of "$b")" in "$Q"*) echo "$b" ;; esac; done || true) ;;
+    slug-prefix) MATCHES=$(printf '%s\n' "$ALL" | while IFS= read -r b; do
+      s=$(slug_of "$b")
+      # 前缀匹配不用 case：bash 3.2 会把 case 模式的 `)` 当成 $( 的结束符
+      [ "${s#"$Q"}" != "$s" ] && echo "$b"
+    done || true) ;;
     contains)    MATCHES=$(printf '%s\n' "$ALL" | grep -iF -- "$Q" || true) ;;
   esac
   [ -n "$MATCHES" ] && break
 done
 
 if [ -z "$MATCHES" ]; then
-  die "没有名字含「$Q」的分支。./dev/branch.sh 看全部"
+  die "没有名字含「${Q}」的分支。./dev/branch.sh 看全部"
 fi
 COUNT=$(printf '%s\n' "$MATCHES" | wc -l | tr -d ' ')
 if [ "$COUNT" -gt 1 ]; then
-  warn "「$Q」匹配到 $COUNT 个分支，说具体点："
+  warn "「${Q}」匹配到 $COUNT 个分支，说具体点："
   printf '%s\n' "$MATCHES" | sed 's/^/   /'
   exit 1
 fi
