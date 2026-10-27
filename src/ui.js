@@ -903,6 +903,47 @@ const UI = {
       row('没有声音', `浏览器要求先有用户操作才允许播放：在页面上<b>点一下</b>（或按键）即可解锁。若仍无声，检查是否静音、主音量是否为 0，以及浏览器标签页是否被静音`)
     ]));
 
+    /* ---------------- 12. 地脉裂隙（M5 落地时漏了说明页，M6 补上） ----------------
+     * 全节实时读 data-dungeon.js：加一类、加一阶、加一条词缀，这一页自己跟着变。
+     * 只有 KEY_TIERS 那一句是硬编码依赖 —— 它定义这个玩法存不存在，
+     * 缺了就不渲染这一节，表结构变了也不会炸。 */
+    if (typeof KEY_TIERS !== 'undefined' && KEY_TIERS.length) {
+      const kt = KEY_TIERS;
+      const dTypes = (typeof DUNGEON_TYPES !== 'undefined') ? DUNGEON_TYPES : [];
+      const dLayers = (typeof DUNGEON_LAYERS !== 'undefined') ? DUNGEON_LAYERS : [];
+      const dAff = (typeof DUNGEON_AFFIXES !== 'undefined') ? DUNGEON_AFFIXES : [];
+      const dCodex = (typeof DUNGEON_CODEX !== 'undefined') ? DUNGEON_CODEX : [];
+      const xpMul = (typeof BALANCE !== 'undefined' && BALANCE.dungeon) ? BALANCE.dungeon.xpMul : 1;
+      const maxAff = Math.max.apply(null, kt.map(t => t.affixN || 0));
+      H.push(sec('十三 · 地脉裂隙', `${dTypes.length} 类 × ${kt.length} 阶 × ${dLayers.length} 层 · ${dAff.length} 条词缀`, [
+        row('是什么', `营地里提青灯的<b>地脉守</b>能用<b>钥匙</b>把地脉推开一条缝。里面是<b>三张独立小图</b>，`
+          + `每层要打够一定比例的怪，尽头的<b>地脉门</b>才会开；第三层是首领场 —— 杀了守卫才算走完一趟`),
+        row('钥匙', `${kt.length} 阶，<b>一阶对一卷</b>：`
+          + kt.map(t => `${t.name}（${t.lvFrom}~${t.lvTo} 级）`).join(' / ') + '。'
+          + `来源两条：精英约一成概率、首领必掉本阶`
+          + `，通关还有三成概率再掉一把次阶钥匙`
+          + `<b>地脉内部不掉钥匙</b> —— 否则「开门 → 门里产钥匙」就成了自循环`),
+        row('怎么进', `在营地找<b>地脉守</b> → 选一把钥匙 → 再选<b>类型</b>（${dTypes.map(t => t.name).join(' / ')}）→ 推门。`
+          + `类型是可以随便挑的：<b>钥匙不带类型</b>，它只决定钥匙的阶`),
+        row('三层', dLayers.map(l =>
+          `${l.name}：${l.total ? l.total + ' 只怪、清 <b>' + Math.round(l.need * 100) + '%</b> 开门' : '只有守关的那个，杀了它才算走完'}`
+        ).join(' · ')),
+        row('词缀', `${dAff.length} 条，<b>随阶递增</b>：低阶一条起步，每往上一阶多一条，最高 ${maxAff} 条。`
+          + `同一阶每次进都是<b>从同一份表随机抽</b>的，所以同一趟开两次门的难度不一样：`),
+        `<div class="hp-tags">${dAff.map(a =>
+          `<span class="hp-tag q">${a.name}（${a.minTier} 阶起）</span>`).join('')}</div>`,
+        row('地脉里的怪', `经验是<b>同卷野外的 ${xpMul} 倍</b> —— 这是一把钥匙换来的，不如野外划算就没人推这道门。`
+          + `怪的等级跟着角色走，守卫的血量与伤害按<b>同层小怪的强度反解</b>（不是写死的固定值），所以五阶的尸冢守卫和五阶的坠天守卫是同样难`),
+        row('地脉异闻', `${dCodex.length} 条（${dTypes.length} 类 × ${kt.length} 阶），每一类每一阶<b>首次通关</b>记一条；`
+          + `某一类凑满 ${kt.length} 阶另有加成。加成是<b>永久属性</b>，跟异兽志走同一条 computePlayerStats 通道`),
+        row('死了', `在地脉里死亡<b>进度作废、钥匙不退</b>，回到本卷营地。`
+          + `这就是「消耗品换时间」的意思 —— 进去之前想清楚`),
+        row('中途退出', `关掉页面 = 这一趟作废（钥匙已经扣了）。下次上线会站在<b>本卷营地</b>，不会卡在半道上`),
+        row('悬赏板', `每卷的悬赏里都有一条<b>地脉悬赏</b>：推一趟对应阶的地脉（任一类都算）就够交。`
+          + `钥匙有限，它更多是「顺手做」—— 指望它刷满一条经验线是不行的`)
+      ]));
+    }
+
     /* 反解短名：'一 · 怎么玩' → '怎么玩'，作为左侧页签文字 */
     const SECTIONS = H.map((html, i) => {
       const m = html.match(/<h4>([^<]*)/);

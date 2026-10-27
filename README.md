@@ -485,6 +485,7 @@ src/data/data-maps.js      地图区域结构（zone 几何 / 连接 / 分区刷
 src/data/data-fauna.js     族音色（9 族）/ 事件修饰 / 每图环境音与调式 / 录音回退清单
 src/data/data-trial.js     试炼配置、波次曲线、怪物 / 首领分池、40 条祝福、抽卡与掉落纯函数
 src/data/data-dungeon.js   地脉裂隙：5 阶钥匙 / 3 层 / 5 类地下城 / 10 条词缀 / 25 条地脉异闻
+src/data/data-quests.js    68 条任务（主线 39 / 支线 9 / 悬赏 20）· 6 种目标类型
 src/data/data-uniques.js   28 件传世（ilvl 8~26 早期 · 44~60 终局）+ 35 条独占特性
 src/items.js        随机装备生成、稀有度、套装、法器、属性汇总、提示框
 src/actors.js       低多边形人物/怪物建模、纸娃娃、程序化动作

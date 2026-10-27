@@ -407,6 +407,14 @@ const Dungeon = {
         lines.push('地脉异闻 ' + prog.done + ' / ' + prog.total);
         this.checkTypeBonus(r.tid);
       }
+      /* [M6] 地脉结算也是任务的完成条件 —— objectives 的 dungeon 类型
+       * 从 data-quests.js 起了数据、QuestSys.onDungeon 写了实现，
+       * 但整整一个版本没人调它：那 5 条悬赏永远停在 0/1。
+       * 必须放在 pop 对话框**之前**：达成时 QuestSys 会 toast，
+       * 人要能在结算文案里看见「悬赏进了一条」。 */
+      if (typeof QuestSys !== 'undefined' && QuestSys.onDungeon) {
+        try { QuestSys.onDungeon(r.tid, r.tier); } catch (e) {}
+      }
     } else {
       lines.push(reason === 'quit' ? '你退出了地脉，第 ' + r.layer + ' 层就此封回去。' : '你倒在了第 ' + r.layer + ' 层。');
       lines.push('');

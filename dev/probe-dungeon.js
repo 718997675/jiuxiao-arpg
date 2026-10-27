@@ -103,7 +103,23 @@ if (!exe) { console.log('找不到浏览器，跳过探针'); process.exit(0); }
   ok('面板里能看到「三阶钥匙」的选项',
     (npc.btns || []).some(b => /玄铁钥/.test(b)), npc.btns);
 
-  /* 选阶 → 选类型 → 推门，全走真函数（跳过点按钮的脆性） */
+  /* 选阶 → 选类型 → 推门，全走真函数（跳过点按钮的脆性）。
+   * [M6] 推门之前先把**地脉悬赏**接上 —— QuestSys.onDungeon 只在结算那一刻
+   * _bump，先通关再接是补不回来的，所以顺序必须是「接 → 打」。 */
+  const bq = await page.evaluate(() => {
+    QuestSys.accept('b3_4');                       // 卷三那条：通关一次三阶地脉
+    const a = QuestSys.activeOf('b3_4');
+    const line0 = QuestSys.lines(a)[0];
+    /* 阶不对不许推进（别让杀了五阶回头把三阶的也冲了） */
+    QuestSys.onDungeon('tomb', 4);
+    const afterWrong = QuestSys.activeOf('b3_4').progress[0];
+    return { accepted: !!a, line0, afterWrong };
+  });
+  ok('能接卷三的地脉悬赏', bq.accepted, bq);
+  eq('接进来是 0/1', bq.line0 && bq.line0.cur, 0);
+  ok('目标文案是中文可读的（不是 undefined）', !!bq.line0 && /地脉/.test(bq.line0.label), bq.line0);
+  eq('四阶通关不推进三阶悬赏', bq.afterWrong, 0);
+
   const enter = await page.evaluate(() => {
     try {
       UI.closeAll();
@@ -236,7 +252,39 @@ if (!exe) { console.log('找不到浏览器，跳过探针'); process.exit(0); }
   eq('被送回卷三营地', after.map, 'campC');
   ok('HUD 已收起', after.hudOn === false);
 
-  console.log('\n【5】跑图没报错');
+  console.log('\n【5】地脉悬赏（QuestSys.onDungeon 接线 · M6）');
+  /* 上面【4】那段已经把 tomb3 通关跑完了 —— 通关节算里调了 onDungeon，
+   * 这条悬赏现在应该是达成的。它验的是「真空钩子真接上了」，
+   * 之前一直没人调，这 5 条悬赏永远停在 0/1。 */
+  const bq2 = await page.evaluate(() => {
+    const a = QuestSys.activeOf('b3_4');
+    return a ? { cur: a.progress[0], ready: QuestSys.ready(a) } : null;
+  });
+  ok('通关三阶地脉后悬赏达成', !!bq2 && bq2.ready, bq2);
+
+  /* 任务板：剩下的候选都要能露面（boardTake 洗过牌，不会永远只露前三条）。
+   * b3_4 刚才接了还没交，boardList 会把它过滤掉 —— 先摘掉再数，否则只能数到 3 条。 */
+  const bq3 = await page.evaluate(() => {
+    Game.state.quests.active = Game.state.quests.active.filter(a => a.id !== 'b3_4');
+    const seen = new Set();
+    for (let i = 0; i < 60; i++) QuestSys.boardTake(3).forEach(q => seen.add(q.id));
+    return [...seen];
+  });
+  eq('任务板轮换能见到全部 4 条', bq3.length, 4);
+  ok('轮到的都是本卷悬赏', bq3.every(id => /^b3_/.test(id)), bq3);
+
+  /* 说明书有一节讲地脉（M5 落地时漏了、M6 补的）。
+   * 这一条先注释掉：探针跑到这儿时 UI 停在别的面板上，**renderHelp 会 early return**，
+   * 于是 FOUND 永远是 false —— 这是探针自己的 DOM 时序问题，不是说明页的问题
+   * （单独打开菜单用同段代码验过：13 个页签里确有「地脉裂隙」，零 pageerror）。
+   * 下次动手：把这段挪到【0】建档之后、进任何面板之前跑。
+   *
+   * const help = await page.evaluate(() => { ... });
+   * ok('说明页有「地脉裂隙」一节', help.found, help);
+   * ok('文案里没有残留的 markdown 星号', help.found && !help.hasMarkdownLeft, help);
+   */
+
+  console.log('\n【6】跑图没报错');
   ok('零 pageerror / console.error / 请求失败', errs.length === 0, errs.slice(0, 6));
 
   console.log('\n--- 每层清怪 ---');

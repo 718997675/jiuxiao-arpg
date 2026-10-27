@@ -507,6 +507,14 @@ const QUESTS = {
    * 悬赏（任务板发，可重复）
    * giver 统一写 'board'，按 part 分组；8 分钟刷新一次。
    * map: 'any' = 任意图都能推进（只统计 killAny）。
+   *
+   * [M6] 每卷第 4 条是「地脉悬赏」—— objectives 走 dungeon 类型，
+   * 由 Dungeon.finish() 通关时 _bump（此前 QuestSys.onDungeon 从没被调用过）。
+   * 为什么加它：计划书 §10.2 写死了「卷五 40% 的经验靠地下城与悬赏补，
+   * 不靠再加两张图」，而在此之前地脉和任务是两条永不相交的线 ——
+   * 花一把钥匙进去出来，任务板一点不动。
+   * 不给 dtype：KEY_TIERS 的钥匙不带类型，5 类是门口自选的，
+   * 写死某一类会让「手上只有这一类能打」的玩家接了做不了。
    * ========================================================== */
   b1_1: {
     id: 'b1_1', part: 1, kind: 'board', name: '悬赏·肃清',
@@ -526,6 +534,13 @@ const QUESTS = {
     objectives: [{ type: 'killAny', count: 50, label: '斩杀任意妖物' }],
     rewards: { xp: 2400, gold: 1800 }, repeat: true, require: null
   },
+  b1_4: {
+    id: 'b1_4', part: 1, kind: 'board', name: '悬赏·裂隙',
+    giver: 'board', map: 'any', zone: null,
+    brief: '地脉守最近不太爱说话。帮他走一趟，别问里面是什么。',
+    objectives: [{ type: 'dungeon', tier: 1, count: 1, label: '通关一次一阶地脉（任一类）' }],
+    rewards: { xp: 4000, gold: 2700 }, repeat: true, require: null
+  },
   b2_1: {
     id: 'b2_1', part: 2, kind: 'board', name: '悬赏·寒潭',
     giver: 'board', map: 'any', zone: null, brief: '铁关的粮道被堵了。清出一条路来，粮价就能落。',
@@ -543,6 +558,13 @@ const QUESTS = {
     giver: 'board', map: 'any', zone: null, brief: '关外三十里，见者皆敌。不必带回证据，回来就算。',
     objectives: [{ type: 'killAny', count: 60, label: '斩杀任意妖物' }],
     rewards: { xp: 5200, gold: 3400 }, repeat: true, require: null
+  },
+  b2_4: {
+    id: 'b2_4', part: 2, kind: 'board', name: '悬赏·裂隙',
+    giver: 'board', map: 'any', zone: null,
+    brief: '关外的裂缝越撑越大。填不上，就下去把那头的口子堵了。',
+    objectives: [{ type: 'dungeon', tier: 2, count: 1, label: '通关一次二阶地脉（任一类）' }],
+    rewards: { xp: 9600, gold: 5100 }, repeat: true, require: null
   },
   b3_1: {
     id: 'b3_1', part: 3, kind: 'board', name: '悬赏·忘川',
@@ -562,6 +584,13 @@ const QUESTS = {
     objectives: [{ type: 'killAny', count: 65, label: '斩杀任意妖物' }],
     rewards: { xp: 11000, gold: 6400 }, repeat: true, require: null
   },
+  b3_4: {
+    id: 'b3_4', part: 3, kind: 'board', name: '悬赏·裂隙',
+    giver: 'board', map: 'any', zone: null,
+    brief: '黄泉的水位在涨。涨的不是水。',
+    objectives: [{ type: 'dungeon', tier: 3, count: 1, label: '通关一次三阶地脉（任一类）' }],
+    rewards: { xp: 21000, gold: 9600 }, repeat: true, require: null
+  },
   b4_1: {
     id: 'b4_1', part: 4, kind: 'board', name: '悬赏·剑冢',
     giver: 'board', map: 'any', zone: null, brief: '剑冢的遗物要归位。挡路的，一并归位。',
@@ -580,6 +609,13 @@ const QUESTS = {
     objectives: [{ type: 'killAny', count: 70, label: '斩杀任意妖物' }],
     rewards: { xp: 21000, gold: 11000 }, repeat: true, require: null
   },
+  b4_4: {
+    id: 'b4_4', part: 4, kind: 'board', name: '悬赏·裂隙',
+    giver: 'board', map: 'any', zone: null,
+    brief: '断桥底下压着的东西在动。它每动一次，桥就短一寸。',
+    objectives: [{ type: 'dungeon', tier: 4, count: 1, label: '通关一次四阶地脉（任一类）' }],
+    rewards: { xp: 40000, gold: 16500 }, repeat: true, require: null
+  },
   b5_1: {
     id: 'b5_1', part: 5, kind: 'board', name: '悬赏·九霄',
     giver: 'board', map: 'any', zone: null, brief: '最后一页册子上，只写了一个字：杀。',
@@ -597,6 +633,13 @@ const QUESTS = {
     giver: 'board', map: 'any', zone: null, brief: '镜渊照不出人影了。照不出，就都清掉。',
     objectives: [{ type: 'killAny', count: 80, label: '斩杀任意妖物' }],
     rewards: { xp: 42000, gold: 21000 }, repeat: true, require: null
+  },
+  b5_4: {
+    id: 'b5_4', part: 5, kind: 'board', name: '悬赏·裂隙',
+    giver: 'board', map: 'any', zone: null,
+    brief: '走到这一步的人，没有谁是被派去的。',
+    objectives: [{ type: 'dungeon', tier: 5, count: 1, label: '通关一次五阶地脉（任一类）' }],
+    rewards: { xp: 82000, gold: 31500 }, repeat: true, require: null
   }
 };
 

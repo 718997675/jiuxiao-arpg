@@ -342,4 +342,88 @@ for (const [lv, mapId] of [[1, 'forest'], [2, 'forest'], [3, 'forest'], [5, 'for
     padL(hp.toFixed(0), 7) + padL((hp / dps).toFixed(1) + 's', 7));
 }
 
+/* ============================================================
+ * 七、经验供给结构（计划书 §10.2「卷五靠地下城与悬赏补」的验收）
+ *
+ * §10.2 写死了：卷五吃掉 40% 的经验，**不许靠再加两张图**，
+ * 要靠「悬赏 + 无限地下城」这两条重复线。这一节就是查它做到了没有：
+ *   一次性任务只能吃一次，算完就从需求里扣掉；
+ *   剩下的差额只有三条路 —— 纯刷 / 悬赏循环 / 地脉，各折算多少小时。
+ *  repeats 的每小时收益差得越多，说明「只刷一张图」的诱惑越大，内容就越浪费。
+ * ============================================================ */
+console.log('\n=== 七、经验供给结构与重复可刷深度（normal 难度）===');
+const QUESTS = g('QUESTS');
+const DIFFS = g('DIFFS');
+const DL = g('DUNGEON_LAYERS');
+const dungeonMobLevel = g('dungeonMobLevel');
+const D = DIFFS.normal;
+function partQuests(p) {
+  return Object.values(QUESTS).filter(q => q.part === p);
+}
+/* 悬赏一轮要杀多少只（killAny 才算击杀；地脉那条不算，它卖的是一把钥匙） */
+function boardRound(rows) {
+  let xp = 0, kills = 0, dg = 0, dgXp = 0;
+  for (const q of rows) {
+    if (q.kind !== 'board') continue;
+    xp += (q.rewards && q.rewards.xp) || 0;
+    for (const o of (q.objectives || [])) {
+      if (o.type === 'killAny') kills += o.count;
+      else if (o.type === 'dungeon') { dg += o.count; dgXp += q.rewards.xp; }
+    }
+  }
+  return { xp, kills, dg, dgXp };
+}
+/* 一次地脉的收益：3 层小怪（1.8 倍经验）+ 守关首领 + 该卷那条地脉悬赏 */
+function dungeonRun(p) {
+  const mobs = DL.reduce((a, l) => a + (l.total || 0), 0);
+  const lvOfP = Math.round((PARTS[p].from + PARTS[p].to) / 2);
+  const mlv = dungeonMobLevel(lvOfP, p);
+  const mobXp = mobs * partMobXp(p) * (BALANCE.dungeon ? BALANCE.dungeon.xpMul : 1);
+  const bossXp = mlv * XP.bossLv;
+  const b = boardRound(partQuests(p));
+  return { mobs, mlv, mobXp, bossXp, bounty: b.dgXp, total: mobXp + bossXp + b.dgXp };
+}
+console.log(pad('卷', 3) + padL('本卷需求', 10) + padL('一次性', 9) + padL('净需求', 10) +
+  padL('悬赏/只', 9) + padL('地脉/趟', 10) + padL('纯刷', 7) + padL('做悬赏', 8) + padL('刷地脉', 8));
+console.log(line(74));
+let hPlain = 0, hBoard = 0, hDgn = 0;
+for (let p = 1; p <= 5; p++) {
+  const rows = partQuests(p);
+  const once = rows.filter(q => q.kind !== 'board').reduce((a, q) => a + ((q.rewards && q.rewards.xp) || 0), 0);
+  const net = Math.max(0, (segXp[p] || 0) - once);
+  const ttk = partTtk(p, HOUR_CLS);
+  const sec = ttk + 2.2;                                  /* 一只怪的总耗时：打 + 走过去 */
+  /* 平均每只怪的经验：精英占比 × dramatic 2 倍（game.js: baseXp × (e.elite ? 2 : 1)） */
+  const perBase = partMobXp(p) * (1 + D.elite);
+  const b = boardRound(rows);
+  /* 悬赏循环：每杀一只，还分摊到 29~180 分之一条悬赏 */
+  const perBoard = b.kills ? b.xp / b.kills : 0;
+  const run = dungeonRun(p);
+  const tPlain = net / perBase * sec / 3600;
+  const tBoard = net / (perBase + perBoard) * sec / 3600;
+  /* 地脉一趟的总耗时：3 层怪（含 1.8 倍经验下的击杀数）+ 首领一首叹]。
+   * 首领按「同阶小怪均血 × 14」反解（dungeon.js），用 TTK 折算。 */
+  const bossSec = (ttk * 14) + 20;
+  const tDgn = net / run.total * ((run.mobs * sec) + bossSec) / 3600;
+  hPlain += tPlain; hBoard += tBoard; hDgn += tDgn;
+  console.log(pad(p, 3) + padL(((segXp[p] || 0) / 10000).toFixed(1) + '万', 10) +
+    padL((once / 10000).toFixed(1) + '万', 9) + padL((net / 10000).toFixed(1) + '万', 10) +
+    padL(perBoard.toFixed(0), 9) + padL((run.total / 10000).toFixed(1) + '万', 10) +
+    padL(tPlain.toFixed(1) + 'h', 7) + padL(tBoard.toFixed(1) + 'h', 8) + padL(tDgn.toFixed(1) + 'h', 8));
+  if (p === 5) {
+    console.log('     └ 卷五地脉明细：小怪 ' + run.mobs + ' 只(lv' + run.mlv + ') ' +
+      Math.round(run.mobXp / 1000) + 'k + 首领 ' + Math.round(run.bossXp / 1000) + 'k + 悬赏 ' +
+      Math.round(run.bounty / 1000) + 'k');
+  }
+}
+console.log(line(74));
+console.log(pad('合', 3) + padL((totalXp / 10000).toFixed(1) + '万', 10) + padL('', 9) + padL('', 10) +
+  padL('', 9) + padL('', 10) + padL(hPlain.toFixed(1) + 'h', 7) + padL(hBoard.toFixed(1) + 'h', 8) +
+  padL(hDgn.toFixed(1) + 'h', 8));
+console.log('  「做悬赏」比「纯刷」快 ' + (hPlain / hBoard).toFixed(2) + ' 倍 —— 这个倍数是**内容引导**，' +
+  '不是惩罚：' );
+console.log('  太大 = 不做悬赏就是傻（玩家被迫每 8 分钟回一趟营地）；太小 = 悬赏板没人看。项目口径落在 1.3~2.0。');
+console.log('  ⚠ 地脉受**钥匙供给**限制（小怪 0.6% / 精英 10% / 首领必掉本阶），不能无限刷 ——');
+console.log('    上表按「钥匙管够」算，实际它只是把刷怪的一部分时间换成了更高密度。');
+
 console.log('');

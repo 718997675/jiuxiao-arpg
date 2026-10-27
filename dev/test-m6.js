@@ -261,5 +261,79 @@ const mobGrow = (lv) => (MB.hpBase + lv * MB.hpLv + lv * lv * MB.hpLv2);
 const mobRatio = mobGrow(60) / mobGrow(40);
 ok(mobRatio > 1.6 && mobRatio < 2.6, '40→60 同级怪血量约 2 倍', mobRatio.toFixed(2));
 
+/* ============================================================
+ * 7. 地脉悬赏：接上 QuestSys.onDungeon（M5 起就没人调过的钩子）
+ * ============================================================ */
+console.log('\n【7】地脉悬赏 · dungeon 目标接线');
+const QUESTS = pick('QUESTS');
+const QALL = Object.values(QUESTS);
+/* 每卷必须有且只有一条「地脉悬赏」，且 tier === part（钥匙本来就一阶对一卷） */
+for (let p = 1; p <= 5; p++) {
+  const boards = QALL.filter(q => q.part === p && q.kind === 'board');
+  eq(`卷${p} 悬赏 4 条`, boards.length, 4);
+  const dg = boards.filter(q => (q.objectives || []).some(o => o.type === 'dungeon'));
+  eq(`卷${p} 恰好 1 条地脉悬赏`, dg.length, 1);
+  const o = dg.length ? dg[0].objectives.find(x => x.type === 'dungeon') : null;
+  eq(`卷${p} 地脉悬赏 tier = ${p}（钥匙一阶对一卷）`, o && o.tier, p);
+  eq(`卷${p} 地脉悬赏 count = 1`, o && o.count, 1);
+  /* 不给 dtype 是刻意的：钥匙不带类型、5 类在门口自选，写死会让某些玩家做不了 */
+  ok(!(o && o.dtype), `卷${p} 地脉悬赏不锁类型（钥匙本就不带类型）`, o && o.dtype);
+  ok(dg[0].rewards && dg[0].rewards.xp >= 3000,
+    `卷${p} 地脉悬赏经验不低于本卷 killAny 悬赏的量级`, dg[0].rewards && dg[0].rewards.xp);
+}
+/* 「dungeon」必须是 6 种目标类型之一，且在 onDungeon 里真的被消费 */
+const okTypes = new Set(['kill', 'killAny', 'boss', 'reach', 'collect', 'dungeon']);
+const badType = QALL.flatMap(q => q.objectives || []).filter(o => !okTypes.has(o.type));
+ok(badType.length === 0, '所有目标类型都是 6 种合法之一', badType.map(o => o.type));
+
+/* 真跑一遍 QuestSys.onDungeon —— 这条钩子全项目只有 Dungeon.finish 在调，
+ * 之前没调过，所以 5 条悬赏永远停在 0/1。这里直接给一个假 Game 跑通。 */
+const questSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'quests.js'), 'utf8');
+ctx.Game = {
+  state: {
+    part: 5, level: 55,
+    quests: {
+      active: [{ id: 'b5_4', progress: [0], at: Date.now() }],
+      done: [], announced: {}, board: { cd: {}, count: {} }
+    }
+  }
+};
+vm.runInContext(questSrc, ctx, { filename: 'src/quests.js' });
+const QuestSys = vm.runInContext('QuestSys', ctx);
+const before = QuestSys.lines({ id: 'b5_4', progress: [0] })[0];
+eq('地脉悬赏初始进度 0/1', before.cur, 0);
+/* 阶不对不该推进 */
+QuestSys.onDungeon('tomb', 3);
+eq('三阶通关不推进五阶悬赏', QuestSys.activeOf('b5_4').progress[0], 0);
+/* 阶对了才推进 */
+QuestSys.onDungeon('tomb', 5);
+eq('五阶通关推进悬赏', QuestSys.activeOf('b5_4').progress[0], 1);
+ok(QuestSys.ready(QuestSys.activeOf('b5_4')), '一次五阶地脉就够交悬赏');
+/* 任意类型都要能推进（作者可能在门口自选了「坠天」而不是「尸冢」） */
+QuestSys.activeOf('b5_4').progress[0] = 0;
+QuestSys.onDungeon('fall', 5);
+eq('换一类地脉也能推进（不锁 dtype）', QuestSys.activeOf('b5_4').progress[0], 1);
+
+/* Dungeon.finish 里必须有这一句 —— 静态 grep 源码比造假更直接 */
+const dgSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'dungeon.js'), 'utf8');
+ok(/QuestSys\.onDungeon\s*\(/.test(dgSrc), 'Dungeon.finish 里有调 QuestSys.onDungeon');
+ok(/onDungeon[\s\S]{0,200}catch/.test(dgSrc) || /try\s*\{\s*QuestSys\.onDungeon/.test(dgSrc),
+  '这一句包了 try/catch（任务系统出岔子不能把结算弹窗弄崩）');
+
+/* 任务板：4 条候选要能轮换，不能永远只露前三条。
+ * active 必须先清空 —— boardList 会把进行中的那条过滤掉测试前我刚 b5_4 推进过，不清就永远只有 3 条候选。 */
+ctx.Game.state.quests.active = [];
+const b5 = QALL.filter(q => q.part === 5 && q.kind === 'board').map(q => q.id);
+const seen = new Set();
+for (let i = 0; i < 200; i++) {
+  for (const id of QuestSys.boardTake(5).map(q => q.id)) seen.add(id);
+}
+eq('200 次开板能见到全部 4 条（boardTake 洗牌了）', seen.size, 4);
+ok([...seen].every(id => b5.indexOf(id) >= 0), '开板只出本卷的悬赏', [...seen]);
+/* 每次只给 3 条（§4.1 的规格） */
+const take1 = QuestSys.boardTake(5);
+ok(take1.length === 3, '任务板一次列 3 条', take1.length);
+ok(new Set(take1.map(q => q.id)).size === 3, '同一批不重复', take1.map(q => q.id));
+
 console.log(`\n${fail === 0 ? '✓ 全部通过' : '✗ 有失败项'}  ${pass} 通过 / ${fail} 失败\n`);
 process.exit(fail === 0 ? 0 : 1);
