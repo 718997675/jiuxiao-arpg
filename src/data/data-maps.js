@@ -711,7 +711,13 @@ function buildZones(mapId, spec) {
    * 摊不匀的零头补给权重最大的区，保证总数精确等于 spawnTotal ——
    * zone-density 校验的就是这个数，不能「大约 44」。 */
   const pool = spec.kinds || [];
-  const total = spec.spawnTotal || suggestSpawnTotal(spec.archetype, spec.size);
+  /* spawnTotal === 0 是**有效值**：地下城的首领场只放守卫、不放杂兵。
+   * 原来的 `spec.spawnTotal || 公式` 把 0 当成「没传」（0 是 falsy），
+   * 结果首领场悄悄按公式刷了 40 只，而 run.total 记的是 1 —— 清怪进度永远 0%。
+   * 只有 undefined / null 才走公式。 */
+  const total = (spec.spawnTotal === undefined || spec.spawnTotal === null)
+    ? suggestSpawnTotal(spec.archetype, spec.size)
+    : Math.max(0, spec.spawnTotal);
   const weightSum = zones.reduce((a, z) => a + (ARCHETYPE_SPAWN_WEIGHT[z.kind] || 0), 0);
   let used = 0;
   zones.forEach((z, i) => {

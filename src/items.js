@@ -1076,6 +1076,11 @@ function computePlayerStats(p) {
   /* [S5] 图鉴加成并进 st 之后，后面的面板属性、STAT_CAPS 封顶、透传全部自动生效 */
   const cdb = codexBonusStats(p.codex);
   for (const k in cdb) st[k] = (st[k] || 0) + cdb[k];
+  /* [M5] 地脉异闻（地下城 5 类 × 5 阶）的永久加成。
+   * 和异兽志走同一条并加通道 —— 图鉴不属于装备，也不该被「卸装备重算」影响。
+   * 加成本身不落存档（存档只记 cleared），所以以后改数值不用迁移老档。 */
+  const dgb = (typeof dungeonBonusStats === 'function') ? dungeonBonusStats(p.dungeon) : {};
+  for (const k in dgb) st[k] = (st[k] || 0) + dgb[k];
   /* [P2] 被动 / 关键被动：与图鉴同一条并加通道 —— 封顶、透传、面板显示自动生效 */
   const pdb = (typeof passiveBonusStats === 'function') ? passiveBonusStats(p) : {};
   for (const k in pdb) st[k] = (st[k] || 0) + pdb[k];

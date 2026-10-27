@@ -1471,7 +1471,9 @@ function buildNPC(npcId) {
     /* 试炼使者：紫袍，和「传送 / 任务」两种黄褐色系明确区分开 */
     trial: { color: 0x8a6ec0, cloth: 0x3a2a58, skin: 0xd8c0a8 },
     /* [M6] 仓管：青灰长袍。仓库要的是「稳」，配色跟着压低饱和度 */
-    stash: { color: 0x6a8a98, cloth: 0x33454e, skin: 0xd8bda8 }
+    stash: { color: 0x6a8a98, cloth: 0x33454e, skin: 0xd8bda8 },
+    /* [M5] 地脉守：青金袍（地脉的颜色），和试炼使者的紫、仓管的青灰都拉得开 */
+    dungeon: { color: 0x4fa898, cloth: 0x1e3833, skin: 0xd8c8b0 }
   }[npc.role];
   const a = buildHumanoid({
     color: roleCfg.color, cloth: roleCfg.cloth, skin: roleCfg.skin,
@@ -1498,6 +1500,18 @@ function buildNPC(npcId) {
     /* 试炼使者拿一柄紫光电刃 —— 远远看见那道紫光就知道「那是试炼入口」 */
     const blade = buildWeapon('taojian', 0x6a5a8a, 0xb08aff, 0.95);
     a.parts.weaponHand.add(blade);
+  } else if (npc.role === 'dungeon') {
+    /* [M5] 地脉守提一盏青灯 —— 地底的东西，光比兵器更像信号 */
+    const lamp = new THREE.Group();
+    mesh(boxGeo(0.05, 0.9, 0.05), M(0x2a3a36), 0, 0.45, 0, lamp);
+    const glow = new THREE.Mesh(
+      new THREE.SphereGeometry(0.16, 8, 6),
+      new THREE.MeshBasicMaterial({ color: 0x7fe0c8, transparent: true, opacity: 0.9 })
+    );
+    glow.position.set(0, 1.02, 0);
+    lamp.add(glow);
+    mesh(boxGeo(0.2, 0.06, 0.2), M(0x3a4a44, { metal: 0.6 }), 0, 0.9, 0, lamp);
+    a.parts.weaponHand.add(lamp);
   } else if (npc.role === 'stash') {
     /* [M6] 仓管抱一只木匣：远远看见就知道「东西可以放他那儿」，
      * 比在头顶挂一个「仓」字更省字，也不破坏村里的氛围。 */

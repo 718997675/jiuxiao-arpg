@@ -249,7 +249,7 @@ const ok = (name, cond, extra) => {
   ok('营地有掌事', r.hasMain === true, r.marked);
   ok('营地有录事', r.hasSide === true, r.marked);
   ok('两个发布者都挂了任务标记', r.marked.indexOf('campB_main') >= 0 && r.marked.indexOf('campB_side') >= 0, r.marked);
-  ok('营地 NPC 总数 7（原 5 + 掌事 + 录事）', r.npcCount === 7, r.npcCount);
+  ok('营地 NPC 总数 8（原 5 + 掌事 + 录事 + 地脉守）', r.npcCount === 8, r.npcCount);
   ok('抵达卷二后 campB 已解锁', r.camps.indexOf('campB') >= 0, r.camps);
 
   console.log('\n' + (fail ? '❌ ' + fail + ' 项失败' : '✅ 全部通过') + `（${pass} 项）`);

@@ -3,10 +3,11 @@
 - 分支：`feat/act-expansion`（优先级 **高**，先于技能重构合入 main）
 - 计划文档：`docs/ACT-EXPANSION-PLAN.md`（15 节）
 - 预览站：<https://718997675.github.io/jiuxiao-arpg/preview/act-expansion/>
-- 更新：2026-10-28 01:05
+- 更新：2026-10-28 02:10
 
-> 当前：M3a / M3b / **M4 全部完成**（30 张图 · 76 种怪 · 图鉴按卷分 5 大区 · 5 个卷末首领）。
-> 下一步 M5（地下城）。
+> 当前：M3a / M3b / M4 / **M5 全部完成**（30 张图 · 80 种怪 · 图鉴 5 卷 + 秘境 · 5 个卷末首领 ·
+> 5 阶钥匙 × 5 类地下城 × 3 层 + 词缀 + 25 条地脉异闻）。
+> 下一步 M6（60 级曲线复算 + 平衡收口）。
 
 ## 一句话现状
 
@@ -23,8 +24,14 @@ M4 把「怪」补齐了：`MONSTERS` 40 → **76**（计划书 §6.2 的 36 只
 76 只按「出场最多的卷」归区（31/14/13/9/9），老档旧区 key 自动迁移、加成一分不少。
 5 个卷末首领就地取材（重定级 + 卷末血量线 + 次阶钥匙 8%/15% 掉率钩子）。
 
-**剩下的**：M5（地下城，接 `Game.addKey` 空钩子 + 补 4 只地下城专属怪 → 图鉴 80）、
-M6（60 级曲线）。
+M5 把「钥匙」变成了第二套循环：`KEY_TIERS` 5 阶（一阶对一卷）→ 营地里找**地脉守**
+开门 → 门口自选 5 类地缝（尸冢 / 塌井 / 兽窟 / 沉狱 / 坠天）→ 3 层（清 70% → 清 80% →
+首领场）→ 词缀随阶递增（2 阶 1 条 … 5 阶 4 条，共 10 条）。钥匙供给三条线：
+小怪 0.6% / 精英 10% / 首领必掉本阶，卷末首领另抽 8% 次阶（终局 15%），通关再来 35% 次阶。
+`MONSTERS` → **80**（+4 只地下城专属怪），图鉴加第 6 区「秘境 · 地脉裂隙」，
+另有一套独立的 25 条地脉异闻（5 类 × 5 阶，单类全清给一类加成、25 条全清给终局加成）。
+
+**剩下的**：M6（60 级曲线 + 平衡收口）。
 
 ## 节点表
 
@@ -39,7 +46,7 @@ M6（60 级曲线）。
 | M3a | 地图扩容第一批：8 种骨架、`ash` 地貌、4 张新图（卷二 2-2/2-3）、密度公式、小地图 | ✅ | `src/data/data-maps.js`、`src/ui-minimap.js` | `da3dbf7` |
 | M3b | 地图扩容第二批：4 种地貌（snow/bone/void/flood）、**19 张新图**、16 只新首领、23 条新任务 | ✅ | `src/data/data-maps.js`、`src/data/data-world.js`、`src/data/data-monsters.js`、`src/data/data-quests.js`、`src/world.js` | 本次 |
 | M4 | 怪物 / 首领：**36 只新怪**（全量，非 24）；图鉴改 5 大卷；5 个卷末首领强化 | ✅ | `src/data/data-monsters.js`、`src/data/data-world.js`、`src/data/data-maps.js`、`src/game.js`、`src/ui.js`、`src/data/data-core.js`、`dev/test-m4.js` | 本次 |
-| M5 | 地下城：`dungeon.js`；5 类 × 5 阶；词缀；图鉴加成；钥匙掉落 | ⬜ | 新建 `src/dungeon.js` | — |
+| M5 | 地下城：`dungeon.js`；5 类 × 5 阶；词缀；图鉴加成；钥匙掉落 | ✅ | 新建 `src/dungeon.js`、`src/data/data-dungeon.js`、`dev/test-m5.js`、`dev/dungeon-sim.js`、`dev/probe-dungeon.js`；改 `index.html`、`src/game.js`、`src/core/save.js`、`src/items.js`、`src/world.js`、`src/data/data-monsters.js`、`src/data/data-world.js`、`src/data/data-core.js`、`src/data/data-maps.js` | 本次 |
 | M6 | 平衡 / 打磨：60 级曲线复算；基底 12 阶；传世补齐；性能实测；手机端回归 | ⬜ | `src/data/data-core.js` | — |
 
 ### M4 交付明细（已完成）
@@ -110,8 +117,8 @@ M6（60 级曲线）。
   `firegeneral` 23 → **21** 并从 `mine` 挪到 `frost`（`m2_1_1` 的任务图一直是寒潭水牢，
   之前挂在矿洞 = 任务指过去打不到），`ferryman` 30 → **32** 留在九幽地宫对齐该图等级。
 - **钥匙钩子**：`BALANCE.keyDrop = { actBoss: 0.08, actBossFinal: 0.15 }`，`onEnemyDeath` 里
-  `bcfg.actEnd` 的怪按 `keyTier` 抽一次 `Game.addKey(tier, 1)`。**`Game.addKey` 目前不存在**，
-  所以这一抽静默不出 —— 钩子由 M5 落地，现有流程一点不受影响。
+  `bcfg.actEnd` 的怪按 `keyTier` 抽一次 `Game.addKey(tier, 1)`。M4 落地时 `Game.addKey` 还不存在，
+  这一抽静默不出；**M5 已把它接到 `Dungeon.addKey`**（同时补上小怪 / 精英 / 首领的常规供给）。
 - 为什么 8% 而不是必掉：首领可重复刷（`spawnBosses` 不读 `bossKilled`），低概率才形成刷子循环。
 
 #### 5. 回归
@@ -133,8 +140,70 @@ M6（60 级曲线）。
 > 1.8 秒只跑出 9 帧，远处的怪还没轮到 AI，`e.culled` 自然是 0。
 >
 > 两条由此得出的操作纪律：① **跑 `m3-check` 不许和别的 puppeteer 脚本并行**（两个浏览器抢 CPU
-> 必然假红，本次第一轮就是这么红的）；② 真要判定性能回归，得**同机交替跑基线**对照，
+> 必然红一片，本次第一轮就是这么红的）；② 真要判定性能回归，得**同机交替跑基线**对照，
 > 不能只看绝对 FPS。
+
+### M5 交付明细（已完成）
+
+#### 1. 数据层 · 新建 `src/data/data-dungeon.js`
+
+| 表 | 内容 |
+|---|---|
+| `KEY_TIERS`(5) | 朽骨 / 青铜 / 玄铁 / 赤金 / 九霄。`tier === part`（一阶对一卷），等级段 1~18 / 19~30 / 31~40 / 41~50 / 51~60 **连续无空洞**，`affixN = tier − 1`，`price` 400→15000 |
+| `DUNGEON_LAYERS`(3) | 入口厅 150㎡/20 只/清 70% · 主厅 140㎡/18 只/清 80% · 首领场 130㎡/**0 只** |
+| `DUNGEON_TYPES`(5) | 尸冢 `tomb`(ring/bone) · 塌井 `well`(spiral/rock) · 兽窟 `den`(isles/swamp) · 沉狱 `gaol`(twin/flood) · 坠天 `fall`(radial/void)。每类 8~11 种怪 + 自己的守卫 + 一个机制名 |
+| `DUNGEON_AFFIXES`(10) | minTier 2~5 逐阶解锁。`mob` 是乘到怪身上的系数，`player` / `loot` / `fog` / `healPct` / `ramp` / `teleport` / `chests` 是其它六种效果 |
+| `DUNGEON_CODEX`(25) | 5 类 × 5 阶，id = `类型+阶`（`tomb3`）。`DUNGEON_TYPE_BONUS` 单类全清、`DUNGEON_ALL_BONUS` 25 条全清 |
+| 纯函数 | `keyTierDef` / `dungeonTypeById` / `dungeonMobLevel`（`clamp(玩家+2, 该阶上下限)`）/ `dungeonAffixCount` / `rollDungeonAffixes` / `dungeonCodexId` / `dungeonBonusStats` / `dungeonCodexProgress` |
+
+#### 2. 运行时 · 新建 `src/dungeon.js`
+
+- **层 = 独立小图，不是一张图的三个区**。每层要自己的骨架（入口岔路 / 主厅侧室 / 首领场），
+  而一张图只有一种骨架；层间走地脉门 = 一次 `loadMap`（约 120ms），跟试炼换波次一个量级。
+- `loadLayer()` 运行时把 `dgn_<类型>_<层>` 写进 `MAPS` / `MAP_ZONES`，结构**和 `MAP_SPECS` 展开的
+  完全一致** —— `world.js` / `ui-minimap.js` / `spawnEnemies` 都不需要知道这是运行时图。
+- `DUNGEON_ATMOS` 按地貌取氛围，比野外暗一档（地下城本来就该更暗更闷）。
+- **首领血量以同阶小怪为锚**：`均血 × 14` / `均攻 × 3.2`，在 `spawnBoss` 里覆盖 `spawnEnemy`
+  按恒 4.5 倍算出来的值。这是唯一一处改 `spawnEnemy` 结果的合法场景 —— 同一个守卫要在 5 个阶
+  里出现，写死绝对值没法跟着阶走。
+- 词缀的怪物侧效果**一次性乘到已生成的怪身上**（`applyMobAffixes`），不改 `spawnEnemy`：
+  那条是世界图公用路径，为地下城改它会把词缀状态带进野外。
+- 死亡/退出分两段：`onPlayerDeath()` 只记账 + 打日志（死着的时候 `loadMap` 会让镜头卡在尸体上），
+  清理与换图放 `onRespawn()`（`Game.respawn()` 里 `dead` 已翻回 false）。
+
+#### 3. 接线
+
+| 位置 | 改动 |
+|---|---|
+| `index.html` | 两个 `<script>`（`data-dungeon.js` 紧跟 `data-trial.js`；`dungeon.js` 紧跟 `trial.js`）+ `#dgHud` DOM/CSS（与试炼同位置同骨架，只换配色 紫 → 青，两套 HUD 不会同时出现） |
+| `game.js` | `addKey` / `keyCount` 转发；钥匙常规供给（小怪 0.6% / 精英 10% / 首领必掉本阶，**跳过 `kmap.dungeon` 图**，否则「开地下城 → 地下城产钥匙」自循环）；`Dungeon.update/onKill/onBossDown`；`die` / `respawn` / `updateInteract` / `interact` / `openNPC` 四个分支；`damageEnemy` 加 `e.armorMul`；`loadSlot` 加 `dgn_` 前缀兜底（**必须先于**「未知图 → 村」，送回本卷营地） |
+| `core/save.js` | `_keys`（定长 5，`_int` 收敛 0~99）+ `_dungeonRec`（`cleared` / `runs` / `wins`），`pack`/`unpack` 双端接入 |
+| `items.js` | `dungeonBonusStats(p.dungeon)` 与 `codexBonusStats` 走**同一条并加通道** |
+| `data-monsters.js` | +4 只地下城专属怪（`shrouded` 裹尸 / `pitworm` 坑虫 / `broodmatron` 巢母 / `chainbound` 镣魂，带 `dungeon: '<tid>'`）；`BOSSES` +5 个 `dgb_*` 关卡守卫（`dungeon: true`，**不进任何 `MAPS[*].bosses`**）；`CODEX_REGIONS` 加第 6 区 `rift` |
+| `data-world.js` | 新 NPC `rift`（地脉守·幽提，`role: 'dungeon'`），5 座营地 `npcs` 各加一个 |
+| `world.js` | `buildNPC` 加 `dungeon` 角色配色 + 手持青灯 |
+| `data-core.js` | `BALANCE.keyDrop` 扩成 `{ actBoss: 0.08, actBossFinal: 0.15, mob: 0.006, elite: 0.10 }` |
+
+#### 4. 两个「0 被当成没传」的坑（本次真机才暴露）
+
+| 位置 | 症状 | 改法 |
+|---|---|---|
+| `data-maps.js` `buildZones` | `spec.spawnTotal \|\| suggestSpawnTotal(...)`：首领场传 `spawnTotal: 0`（0 是 falsy）→ 按公式刷了 **40 只杂兵**，而 `run.total` 记 1，清怪进度永远 0% | `undefined / null` 才走公式，`0` 是有效值 |
+| `game.js` `spawnEnemies` | 传承分支 `m.spawnCount \|\| 14`：首领场 `zoneSpawners` 为空 → 掉进旧图分支刷出 **14 只杂兵**，跟首领一起打玩家 | 同上，只有 `undefined / null` 回退 14 |
+
+> 两处都是「用 `||` 给可选参数兜底」的通病。**凡是「0 有意义」的数值参数，一律写
+> `=== undefined \|\| === null` 判断**，别用 `||`。
+
+#### 5. 回归
+
+| 项 | 结果 |
+|---|---|
+| `test-m5`（新增，纯 node + vm） | **89/89** —— 钥匙 5 阶（连续无空洞 / 词缀数 / 价格）· 三层 · 5 类怪池与守卫引用 · 词缀 200 轮抽取不重复不越阶 · 25 条图鉴加成键都是真属性键 · 纯函数钳制 · 存档往返与脏数据收敛 · `BALANCE`/NPC 接线 |
+| `dungeon-sim`（新增，无浏览器整局推演） | **59/59** —— 真实状态机跑穿三层：扣钥匙 / 开门阈值 / 门没开不能走 / 首领 `均血×14` / 结算（图鉴+装备+玄晶+金币+回营地+落盘）/ 死亡不换图 + 复活回营地 / `dgn_` 读档契约 |
+| `probe-dungeon`（新增，真机 headless） | **42/42** —— 装载 / 建档 / 地脉守对话 / 选阶选类型 / 三层推演 / HUD 文案（类型名·层数·阶名·击杀数）/ 首领走 `BOSSES.dgb_tomb` / 首领场只剩 3 个活物 / 结算产出 / HUD 收起 / 零 `pageerror` |
+| `test-m4` | 25/25（口径改为「76 野外 + 4 地下城 = 80」，`rift` 归区单独钉） |
+| `test-save` / `test-items` / `test-quest` / `quest-ref` / `zone-check` / `zone-density` | 全通过（`test-quest` 的营地 NPC 总数 7 → **8**） |
+| `smoke` 三职业 | `ERRORS none` |
 
 ### M3b 交付明细（已完成）
 
@@ -367,3 +436,14 @@ M6（60 级曲线）。
 | 2026-10-28 | `part1` 的加成 = 旧 forest + swamp + mine 三条**求和**，不重新发 | 老档迁移只搬 key 不发新奖；三区旧加成合起来正好是当前 part1 的三条，老玩家迁移前后收益分毫不差 |
 | 2026-10-28 | 卷末首领的次阶钥匙 **8%**（终局 15%），且 `Game.addKey` 不存在时**静默不出** | 首领可重复刷，低概率才形成刷子循环；钩子先空转，M5 落地时不用回来改掉落代码 |
 | 2026-10-28 | `m3-check` **不许和别的 puppeteer 脚本并行**跑 | 软件渲染下两个浏览器抢 CPU：帧率掉到地板以下、怪 AI 来不及跑，会误报「帧率 4.5 < 6」「视野外 0 只怪」（本次踩过） |
+| 2026-10-28 | 地下城的层 = **独立小图**，不是一张图的三个区 | 每层要自己的骨架（入口岔路 / 主厅侧室 / 首领场），一张图只有一种骨架；层间 `loadMap` 约 120ms，跟试炼换波次一个量级 |
+| 2026-10-28 | **地下城里的怪不掉钥匙** | 否则「钥匙开地下城、地下城再产钥匙」自循环，地下城变零成本刷装场（§8.1 要避免的正是这个）。次阶钥匙只来自通关结算 35% |
+| 2026-10-28 | 守卫首领的血量**运行时反解**（同阶小怪均血 × 14），不写绝对值 | 同一个守卫要在 5 个阶里出现，写死没法跟阶走；这也是唯一一处允许覆盖 `spawnEnemy` 结果的场景 |
+| 2026-10-28 | 词缀**进门时抽定并预告**，`preview` 先给一次拒绝机会（取消不扣钥匙） | 「这把不打了换一把」是刷子游戏的乐趣；钥匙在 `enter()` 才 `spendKey`，预告阶段纯读 |
+| 2026-10-28 | 死亡 = 失败，钥匙不返还；`onPlayerDeath` 只记账、`onRespawn` 才换图 | 死着的时候 `loadMap` 会让镜头卡在尸体上；死亡面板的「回城」才是真正的复活点 |
+| 2026-10-28 | 图鉴加第 6 区 `rift`，地下城专属怪**不摊进任何一卷** | 摊进去会让那卷的「全录」变成「必须去打地下城」，而地下城本来有自己的 25 条进度，等于罚两次 |
+| 2026-10-28 | 地下城专属怪只做 **4 只**（第 5 类「坠天」用现有妖灵池） | 为「5 类各一只」凑数会写出一只没机制的怪；妖灵池本来就有 `voidbeast` / `mirrortwin` / `voidmoth` 能撑起坠天 |
+| 2026-10-28 | `#dgHud` **复用试炼的位置与骨架，只换配色**（紫 → 青） | 两套 HUD 不会同时出现，位置冲突不是问题；换来的是肌肉记忆一致、CSS 少写一半 |
+| 2026-10-28 | **凡是「0 有意义」的数值参数，一律 `=== undefined \|\| === null` 判断，不用 `\|\|` 兜底** | 本次两个真机 bug 同源：`spawnTotal \|\| 公式` 与 `spawnCount \|\| 14` 都把 0 当成没传，首领场凭空多出 40 / 14 只杂兵 |
+| 2026-10-28 | 图鉴加成键必须是**真属性键**，`test-m5` 用 `BUFF_ADD` / `BUFF_MUL` 白名单钉死 | 写错的键会静默无效：面板看不见、战斗也不生效，是最典型的一类「改了没反应」 |
+| 2026-10-28 | `dungeon-sim`（假 Game 推演）与 `probe-dungeon`（真机）**两个都要** | 推演钉数字（开门阈值 / 首领倍率 / 结算），真机钉接不住的东西（HUD 的 DOM、`loadMap` 换图、词缀乘在活怪身上）。只有推演会漏掉上面那两个 `\|\|` 坑 |

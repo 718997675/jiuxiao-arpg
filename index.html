@@ -2189,6 +2189,32 @@
     padding:4px 0;cursor:pointer;color:#9a8fb0;background:none;border:1px solid rgba(168,138,216,.26);border-radius:2px}
   #trialHud .th-quit:hover{color:#e6d4ff;border-color:rgba(168,138,216,.7)}
 
+  /* ============================================================
+   * 地脉裂隙 · 地下城（M5）
+   * 与试炼同一个位置、同一个骨架，只换配色（紫 → 青）：
+   * 两套 HUD 不会同时出现，位置冲突不是问题，换来的是肌肉记忆一致。
+   * ============================================================ */
+  #dgHud{position:absolute;left:18px;top:96px;width:238px;display:none;pointer-events:auto;
+    background:linear-gradient(180deg,rgba(14,26,26,.94),rgba(6,10,10,.94));
+    border:1px solid rgba(79,168,152,.42);border-left:2px solid #4fa898;
+    padding:7px 10px 8px;box-shadow:0 6px 24px rgba(0,0,0,.7)}
+  #dgHud.on{display:block}
+  #dgHud .dh-top{display:flex;align-items:baseline;justify-content:space-between;gap:8px}
+  #dgHud .dh-lab{font-family:"STKaiti","KaiTi",serif;font-size:11px;letter-spacing:3px;color:#8fc8bc}
+  #dgHud .dh-name{font-family:"STKaiti","KaiTi",serif;font-size:19px;line-height:1;color:#d8f0e8;
+    text-shadow:0 0 14px rgba(79,168,152,.65)}
+  #dgHud .dh-layer{font-family:"STKaiti","KaiTi",serif;font-size:15px;color:#9fe0d0;font-variant-numeric:tabular-nums}
+  #dgHud .dh-layer small{font-size:10px;color:#6f9088;letter-spacing:1px;margin-left:1px}
+  #dgHud .dh-line{display:flex;justify-content:space-between;font-size:11px;color:#93aaa4;letter-spacing:.5px;margin-top:4px}
+  #dgHud .dh-line b{color:#ffd479;font-weight:500;font-variant-numeric:tabular-nums}
+  #dgHud .dh-affix{margin-top:4px;font-size:10px;line-height:1.35;color:#c9a8e0;letter-spacing:.5px;
+    max-height:24px;overflow:hidden}
+  #dgHud .dh-bar{height:3px;margin-top:6px;background:rgba(255,255,255,.07);overflow:hidden}
+  #dgHud .dh-bar > i{display:block;height:100%;width:0;background:linear-gradient(90deg,#2f6a5e,#7fe0c8);transition:width .2s}
+  #dgHud .dh-quit{margin-top:7px;width:100%;font-family:inherit;font-size:10.5px;letter-spacing:2px;
+    padding:4px 0;cursor:pointer;color:#7fa89e;background:none;border:1px solid rgba(79,168,152,.26);border-radius:2px}
+  #dgHud .dh-quit:hover{color:#d8f0e8;border-color:rgba(79,168,152,.7)}
+
   /* ---------- 每波开场大字 ---------- */
   #trialBanner{position:absolute;left:50%;top:30%;transform:translate(-50%,-50%);text-align:center;
     pointer-events:none;opacity:0;z-index:12}
@@ -2298,6 +2324,10 @@
   body.touch #trialHud{left:10px;top:78px;width:196px;padding:6px 8px}
   body.touch #trialHud .th-wave{font-size:18px}
   body.touch #trialHud .th-line{font-size:10px}
+  body.touch #dgHud{left:10px;top:78px;width:196px;padding:6px 8px}
+  body.touch #dgHud .dh-name{font-size:16px}
+  body.touch #dgHud .dh-layer{font-size:13px}
+  body.touch #dgHud .dh-line{font-size:10px}
   body.touch #trialBless{padding:12px}
   body.touch .tcard{width:min(46vw,220px);min-height:0}
   body.touch .tcard .tc-key{display:none}
@@ -2376,6 +2406,22 @@
     <div class="th-line"><span>已得祝福</span><b id="thBless">0</b></div>
     <div class="th-bar"><i id="thBar"></i></div>
     <button class="th-quit" onclick="Trial.quit()">退 出 试 炼</button>
+  </div>
+
+  <!-- 地脉裂隙 · 地下城左上角战况 -->
+  <div id="dgHud">
+    <div class="dh-top">
+      <span class="dh-lab">地 脉 裂 隙</span>
+      <span class="dh-layer"><span id="dgLayer">1/3</span><small>层</small></span>
+    </div>
+    <div class="dh-top" style="margin-top:2px">
+      <span class="dh-name" id="dgName">无名地缝</span>
+      <span class="dh-layer" style="font-size:11px"><span id="dgTier">一阶</span></span>
+    </div>
+    <div class="dh-line"><span id="dgState">清怪</span><b id="dgKill">0 / 0</b></div>
+    <div class="dh-affix" id="dgAffix">无词缀</div>
+    <div class="dh-bar"><i id="dgBar"></i></div>
+    <button class="dh-quit" onclick="Dungeon.quit()">退 出 地 脉</button>
   </div>
 
   <!-- 每波开场大字 -->
@@ -2802,6 +2848,8 @@
 <!-- M12 地图区域结构：world.js / game.js / ui.js 都依赖它，必须排在这三个之前 -->
 <script src="src/data/data-maps.js"></script>
 <script src="src/data/data-trial.js"></script>
+<!-- M5 地下城：钥匙阶 / 层 / 类型 / 词缀 / 地脉异闻，dungeon.js 全靠它 -->
+<script src="src/data/data-dungeon.js"></script>
 <!-- 逻辑层 -->
 <script src="src/weapons.js"></script>
 <script src="src/items.js"></script>
@@ -2817,6 +2865,7 @@
 <script src="src/quests.js"></script>
 <script src="src/ui-minimap.js"></script>
 <script src="src/trial.js"></script>
+<script src="src/dungeon.js"></script>
 <script src="src/mobile.js"></script>
 <script src="src/ui-save.js"></script>
 <script src="src/game.js"></script>

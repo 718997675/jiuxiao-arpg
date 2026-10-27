@@ -417,7 +417,7 @@ const BALANCE = {
    * 首领可重复刷（spawnBosses 不读 bossKilled），低概率才形成刷子循环。
    * 钥匙本体是 M5 的地下城系统：现在通过 Game.addKey 空钩子掉落，
    * 钩子落地前这里静默不产出，不影响任何现有流程。 */
-  keyDrop: { actBoss: 0.08, actBossFinal: 0.15 }
+  keyDrop: { actBoss: 0.08, actBossFinal: 0.15, mob: 0.006, elite: 0.10 }
 };
 
 /* 首领血量倍率：恒定 hpMul（见上方 boss 段说明）。

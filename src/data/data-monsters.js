@@ -1,8 +1,9 @@
 /* ============================================================
  * 数据层 · 怪物
- * 76 种普通怪（6 族群）+ 32 个 Boss
- * [M4] 新增 36 只野外怪见 MONSTERS 末尾的分章段落；
- *      地下城专属 4 只随 M5 一起进（届时 80）。
+ * 80 种普通怪（6 族群）+ 37 个 Boss（32 世界首领 + 5 地下城守卫）
+ * [M4] 36 只野外怪见 MONSTERS 末尾的分章段落；
+ * [M5] 4 只地下城专属怪在最末（`dungeon` 字段标类型），5 个关卡守卫
+ *      在 BOSSES 末尾（`dungeon: true`，不进任何 MAPS[*].bosses）。
  *
  * [S5] 40 怪的分工：
  *   · 原有 12 只全部保留 key（任务链 QUESTS 直接按 key 引用，不能改名）
@@ -626,6 +627,43 @@ const MONSTERS = {
     hp: 280, atk: 62, spd: 4.6, scale: 0.95, color: 0x6a5a9a, cloth: 0x2a2044,
     xp: 210, melee: true, range: 2.2, atkCd: 1.6, fly: true,
     ai: 'bomber', lore: '扑向光，也扑向你。'
+  },
+
+  /* ============================================================
+   * [M5] 地下城专属怪（4 只，图鉴 76 → 80）
+   *
+   * 分工（§8.2）：每类地下城在现有怪池之外再挂 1 只「只在这类里出现」的，
+   * 让「进的是哪个地宫」有实感。第 5 类「坠天」不挂新的 —— 妖灵池本来就有
+   * 10 只（虚蛾 / 镜身 / 陨星使…），再加一只只是凑数。
+   *
+   * 它们**不进任何野外图池**（`MAPS[*].spawns` 里没有），只在 dungeon.js
+   * 按类型现拼的怪池里出现；图鉴归区靠 `dungeon` 字段直接判「秘境」，
+   * 不参与「出场最多的卷」那套统计。数值贴同类地下城怪的中位。
+   * ============================================================ */
+
+  shrouded: {
+    name: '裹尸', model: 'zombie', family: 'undead', dungeon: 'tomb',
+    hp: 210, atk: 30, spd: 2.0, scale: 1.1, color: 0x8a8470, cloth: 0x4a4432,
+    xp: 78, melee: true, range: 3.0, atkCd: 2.4, armorHigh: true,
+    ai: 'coward', lore: '一层层裹上去的，不知道最里面还是不是人。'
+  },
+  pitworm: {
+    name: '坑虫', model: 'snake', family: 'beast', dungeon: 'well',
+    hp: 165, atk: 32, spd: 4.0, scale: 1.0, color: 0x9a7a52, cloth: 0x5a4428,
+    xp: 74, melee: true, range: 3.2, atkCd: 1.5, charge: true,
+    ai: 'flank', lore: '塌方之后才有的东西，只认土里的震动。'
+  },
+  broodmatron: {
+    name: '巢母', model: 'brood', family: 'plant', dungeon: 'den',
+    hp: 295, atk: 26, spd: 1.6, scale: 1.35, color: 0x7a5a3a, cloth: 0x3a2a1a,
+    xp: 96, melee: true, range: 3.6, atkCd: 2.6,
+    ai: 'summoner', lore: '她自己不动，但整个窟里的东西都听她的。'
+  },
+  chainbound: {
+    name: '镣魂', model: 'ghost', family: 'undead', dungeon: 'gaol',
+    hp: 178, atk: 34, spd: 2.8, scale: 1.05, color: 0x7a8a9a, cloth: 0x33404e,
+    xp: 82, ranged: true, range: 21, atkCd: 2.1, proj: { color: 0x9ac8e0, speed: 19 },
+    ai: 'kite', lore: '镣铐还挂在腕上，链子另一头早就没人了。'
   }
 };
 
@@ -897,6 +935,62 @@ const BOSSES = {
     melee: true, range: 5.6, atkCd: 1.9, all: true, family: 'spirit',
     patterns: ['slam', 'ringshot', 'charge', 'meteor', 'summon', 'curse'],
     lines: ['九霄之上，本无神佛。', '你不过是又一个妄念。', '来吧，让我看看你的道。']
+  },
+
+  /* ============================================================
+   * [M5] 地下城关卡守卫（5 只，**不属于世界首领**）
+   *
+   * 为什么不塞进「32 个世界首领」的口径（§8.2 的注）：
+   * 它们是地下城第 3 层的守卫，同一只要在 5 个阶里各出现一次，
+   * 而 `spawnEnemy` 的首领血量是「cfg.hp × 恒定 4.5」——写死绝对值
+   * 就没法跟着阶走。所以这里的 hp / atk 只是**占位**：
+   * dungeon.js 生成时会按「同阶小怪均血 × 14 / 均攻 × 3.2」反解后覆盖
+   * （和 trial.js 里 `b.hp = b.maxHp = avgHp * hpEq` 同一套做法）。
+   *
+   * `level: 36` 只是个经验基数（`e.cfg.level × BALANCE.xp.bossLv`），
+   * 不代表它固定 36 级 —— 实际等级由 `dungeonMobLevel()` 决定。
+   * 它们也不进任何 `MAPS[*].bosses`，所以野外永远不会刷出来。
+   * ============================================================ */
+
+  dgb_tomb: {
+    id: 'dgb_tomb', name: '骨将·白起', title: '尸冢 · 第三层', dungeon: true, level: 36,
+    hp: 12000, atk: 68, spd: 3.2, family: 'undead', model: 'brute',
+    scale: 2.05, color: 0xb8b0a0, cloth: 0x53504a, skin: 0xd8d0c0,
+    melee: true, range: 4.8, atkCd: 2.0, armorHigh: true,
+    patterns: ['slam', 'quake', 'ringshot'],
+    lines: ['坑杀四十万，还嫌不够。', '死人不会喊疼，你也不必。']
+  },
+  dgb_well: {
+    id: 'dgb_well', name: '矿主·塌', title: '塌井 · 第三层', dungeon: true, level: 36,
+    hp: 13500, atk: 72, spd: 2.6, family: 'stone', model: 'golem',
+    scale: 2.0, color: 0x7a6a58, cloth: 0x3a3028,
+    melee: true, range: 5.0, atkCd: 2.4, armorHigh: true,
+    patterns: ['quake', 'slam', 'rocks'],
+    lines: ['这条脉是我的，你们挖不得。', '塌下来，一起埋着。']
+  },
+  dgb_den: {
+    id: 'dgb_den', name: '獠王', title: '兽窟 · 第三层', dungeon: true, level: 36,
+    hp: 11000, atk: 76, spd: 4.2, family: 'beast', model: 'beast',
+    scale: 2.1, color: 0x8a5a3a, cloth: 0x3a2418,
+    melee: true, range: 4.2, atkCd: 1.5, charge: true,
+    patterns: ['charge', 'slam', 'summon'],
+    lines: ['这窟里的，都听我的。', '你身上有血味。']
+  },
+  dgb_gaol: {
+    id: 'dgb_gaol', name: '狱卒长·枷', title: '沉狱 · 第三层', dungeon: true, level: 36,
+    hp: 12500, atk: 74, spd: 3.0, family: 'undead', model: 'drowned',
+    scale: 2.0, color: 0x5a6a78, cloth: 0x28323c,
+    melee: true, range: 4.6, atkCd: 2.0,
+    patterns: ['ringshot', 'curse', 'slam'],
+    lines: ['水涨到哪儿，人就关到哪儿。', '放你出去，我就得进去。']
+  },
+  dgb_fall: {
+    id: 'dgb_fall', name: '堕天者', title: '坠天 · 第三层', dungeon: true, level: 36,
+    hp: 13000, atk: 80, spd: 3.6, family: 'spirit', model: 'demon',
+    scale: 2.0, color: 0x4a2a6a, cloth: 0x1e1030,
+    melee: true, range: 5.2, atkCd: 1.9, all: true,
+    patterns: ['slam', 'ringshot', 'meteor', 'charge'],
+    lines: ['我从上面掉下来，才知道下面也有人在爬。', '风推着我，也推着你。']
   }
 };
 
@@ -918,7 +1012,12 @@ const CODEX_REGIONS = [
   { id: 'part2', name: '卷二 · 血月焚天', level: 19, bonus: { crit: 4 }, bonusDesc: '暴击率 +4%' },
   { id: 'part3', name: '卷三 · 幽冥黄泉', level: 31, bonus: { dmgReduce: 3 }, bonusDesc: '伤害减免 +3%' },
   { id: 'part4', name: '卷四 · 剑冢天阙', level: 41, bonus: { skillDmg: 4 }, bonusDesc: '技能伤害 +4%' },
-  { id: 'part5', name: '卷五 · 九霄终焉', level: 51, bonus: { dmgAll: 5 }, bonusDesc: '所有伤害 +5%' }
+  { id: 'part5', name: '卷五 · 九霄终焉', level: 51, bonus: { dmgAll: 5 }, bonusDesc: '所有伤害 +5%' },
+  /* [M5] 第六区：地下城专属怪（4 只）。为什么不并进卷里 ——
+   * 它们只在地脉裂隙里出现，玩家第一次见到它们是在地下城，
+   * 归到任何一卷都会让那卷的「全录」变成「必须去打地下城」，
+   * 而地下城本来有自己的 25 条进度（DUNGEON_CODEX），不该重复罚一次。 */
+  { id: 'rift', name: '秘境 · 地脉裂隙', level: 20, bonus: { bossDmg: 6 }, bonusDesc: '对首领伤害 +6%' }
 ];
 
 /* 旧区 key → 新卷 key（只用于老档迁移，别的地方不要引用） */

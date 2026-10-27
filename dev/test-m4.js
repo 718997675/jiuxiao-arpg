@@ -9,6 +9,9 @@
  *   5. 卷末首领：actEnd 恰好 5 只、keyTier 对、终局 15%
  *   6. 老档迁移表：旧 5 区 key 全部有归宿
  *
+ * [M5] 地下城新增 4 只专属怪（dungeon 字段）与第 6 个图鉴区 rift：
+ *   本脚本只钉**野外**那 76 只（幽灵/归区/怪池），地下城部分交给 dev/test-m5.js。
+ *
  * 用法：node dev/test-m4.js（纯 node，不启浏览器）
  * ============================================================ */
 const fs = require('fs');
@@ -29,6 +32,10 @@ for (const f of ['src/data/data-core.js', 'src/data/data-world.js', 'src/data/da
 vm.runInContext(`
 window.__m4data = { MONSTERS, MAPS, MAP_SPECS, ACTS, CODEX_REGIONS, CODEX_REGION_LEGACY, BOSSES, BALANCE, MON_FAMILIES, MOB_AI_KINDS };
 function regionOf(kind) {
+  /* [M5] 地下城专属怪（带 dungeon 字段）只在地脉裂隙里出场，不进任何野外图池，
+   * 归区固定 rift —— 与 game.js 的 codexRegionOf 同一口径。 */
+  const mc = MONSTERS[kind];
+  if (mc && mc.dungeon) return 'rift';
   const cnt = {};
   for (const aid in ACTS) {
     const p = ACTS[aid].part;
@@ -55,7 +62,10 @@ const M4_NEW = ['foxfire', 'cliffram', 'stonecrow', 'mirehorror', 'leechqueen', 
 const { MONSTERS, MAPS, MAP_SPECS, ACTS, CODEX_REGIONS, CODEX_REGION_LEGACY, BOSSES, BALANCE, MON_FAMILIES, MOB_AI_KINDS } = D;
 
 console.log('\n【1】36 只新怪落表');
-ok('MONSTERS 总数 76', Object.keys(MONSTERS).length === 76, Object.keys(MONSTERS).length);
+/* [M5] 新增 4 只地下城专属怪 → 80。它们的归属由 test-m5 管，这里只钉野外那 76 只。 */
+const WILD = Object.keys(MONSTERS).filter(k => !MONSTERS[k].dungeon);
+ok('MONSTERS 总数 80（76 野外 + 4 地下城）', Object.keys(MONSTERS).length === 80, Object.keys(MONSTERS).length);
+ok('野外怪 76 只', WILD.length === 76, WILD.length);
 const missingNew = M4_NEW.filter(k => !MONSTERS[k]);
 ok('36 个新 key 全部存在', missingNew.length === 0, missingNew);
 const badField = M4_NEW.filter(k => {
@@ -71,7 +81,7 @@ console.log('\n【2】怪池引用完整');
 const badRef = [];
 for (const id in MAPS) for (const k of (MAPS[id].spawns || [])) if (!MONSTERS[k]) badRef.push(id + ':' + k);
 ok('所有图池引用的怪都存在', badRef.length === 0, badRef);
-const orphan = Object.keys(MONSTERS).filter(k =>
+const orphan = WILD.filter(k =>
   !Object.keys(MAPS).some(id => (MAPS[id].spawns || []).includes(k)));
 ok('每只怪都至少落进一张图的怪池', orphan.length === 0, orphan);
 /* 新怪必须落在本章的图里：foxfire 不能出现在卷三 */
@@ -101,13 +111,16 @@ ok('骨架图两份怪池一致', desync.length === 0, desync);
 console.log('\n【4】图鉴 5 大卷');
 const regionOf = ctx.window.__m4.regionOf;
 const uncovered = Object.keys(MONSTERS).filter(k => !regionOf(k));
-ok('76 只全部可归区', uncovered.length === 0, uncovered.slice(0, 5));
-const dist = { part1: 0, part2: 0, part3: 0, part4: 0, part5: 0 };
+ok('80 只全部可归区（含 4 只地下城怪 → rift）', uncovered.length === 0, uncovered.slice(0, 5));
+const dist = { part1: 0, part2: 0, part3: 0, part4: 0, part5: 0, rift: 0 };
 for (const k in MONSTERS) dist[regionOf(k)]++;
-ok('五个区都非空', Object.values(dist).every(n => n > 0), dist);
+ok('六个区都非空', Object.values(dist).every(n => n > 0), dist);
 ok('卷一不超过 32 只（归区策略没有退化回首扫）', dist.part1 <= 32, dist.part1);
-ok('CODEX_REGIONS 仍是 5 区且 id 是 part1~5',
-  CODEX_REGIONS.length === 5 && CODEX_REGIONS.every((r, i) => r.id === 'part' + (i + 1)));
+ok('rift 区恰好 4 只（M5 地下城专属怪）', dist.rift === 4, dist.rift);
+ok('CODEX_REGIONS 是 part1~5 + rift',
+  CODEX_REGIONS.length === 6
+  && CODEX_REGIONS.slice(0, 5).every((r, i) => r.id === 'part' + (i + 1))
+  && CODEX_REGIONS[5].id === 'rift');
 ok('每区都有加成与描述', CODEX_REGIONS.every(r => r.bonus && Object.keys(r.bonus).length && r.bonusDesc));
 
 console.log('\n【5】卷末首领');

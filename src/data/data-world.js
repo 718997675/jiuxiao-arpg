@@ -10,7 +10,7 @@ const MAPS = {
     id: 'village', name: '桃源村', safe: true, level: 1, camp: 'campA',
     ground: 'dirt', sky: 0x9fc7d9, fog: 0xa8c8d8, fogNear: 45, fogFar: 120,
     size: 70, ambient: 0xbfd9e6, sun: 0xffe6b8, sunI: 1.05, props: 'village',
-    npcs: ['elder', 'smith', 'herbalist', 'monk', 'alchemist', 'warden', 'steward', 'campA_side'],
+    npcs: ['elder', 'smith', 'herbalist', 'monk', 'alchemist', 'warden', 'steward', 'rift', 'campA_side'],
     spawns: [], bosses: [], portal: { x: 0, z: -18 }, music: 'calm'
   },
   forest: {
@@ -274,28 +274,28 @@ const MAPS = {
     id: 'campB', name: '玄铁关', safe: true, level: 19, camp: 'campB',
     ground: 'rock', sky: 0x4a3230, fog: 0x5a3a34, fogNear: 40, fogFar: 118,
     size: 78, ambient: 0xa87a68, sun: 0xff9a6a, sunI: 0.85, props: 'village',
-    npcs: ['smith', 'herbalist', 'monk', 'alchemist', 'steward', 'campB_main', 'campB_side'],
+    npcs: ['smith', 'herbalist', 'monk', 'alchemist', 'steward', 'rift', 'campB_main', 'campB_side'],
     spawns: [], bosses: [], portal: { x: 0, z: -18 }
   },
   campC: {
     id: 'campC', name: '忘川渡', safe: true, level: 31, camp: 'campC',
     ground: 'abyss', sky: 0x1e2438, fog: 0x28304a, fogNear: 38, fogFar: 112,
     size: 76, ambient: 0x7a86b8, sun: 0x9ab0ff, sunI: 0.7, props: 'village',
-    npcs: ['smith', 'herbalist', 'monk', 'alchemist', 'steward', 'campC_main', 'campC_side'],
+    npcs: ['smith', 'herbalist', 'monk', 'alchemist', 'steward', 'rift', 'campC_main', 'campC_side'],
     spawns: [], bosses: [], portal: { x: 0, z: -18 }
   },
   campD: {
     id: 'campD', name: '南天关', safe: true, level: 41, camp: 'campD',
     ground: 'heaven', sky: 0x3a4a6a, fog: 0x50628a, fogNear: 42, fogFar: 126,
     size: 80, ambient: 0xa8bcd8, sun: 0xfff0c8, sunI: 1.0, props: 'village',
-    npcs: ['smith', 'herbalist', 'monk', 'alchemist', 'steward', 'campD_main', 'campD_side'],
+    npcs: ['smith', 'herbalist', 'monk', 'alchemist', 'steward', 'rift', 'campD_main', 'campD_side'],
     spawns: [], bosses: [], portal: { x: 0, z: -18 }
   },
   campE: {
     id: 'campE', name: '九霄台', safe: true, level: 51, camp: 'campE',
     ground: 'trial', sky: 0x2a1e3e, fog: 0x38264e, fogNear: 40, fogFar: 120,
     size: 78, ambient: 0xb8a4dc, sun: 0xffd890, sunI: 1.05, props: 'village',
-    npcs: ['smith', 'herbalist', 'monk', 'alchemist', 'steward', 'campE_main', 'campE_side'],
+    npcs: ['smith', 'herbalist', 'monk', 'alchemist', 'steward', 'rift', 'campE_main', 'campE_side'],
     spawns: [], bosses: [], portal: { x: 0, z: -18 }
   },
   /* ---------------- 无尽试炼场（v2.0） ----------------
@@ -330,6 +330,15 @@ const NPCS = {
     id: 'steward', name: '仓管·玄贮', glyph: '贮', color: 0x7a9aa8, role: 'stash',
     lines: ['东西交给我，丢不了。三个身份共用一间库房，你换个人来也认得出。',
       '库里空着的时候最安静，满了就要收拾了。']
+  },
+  /* [M5] 地脉守：地下城的入口。五座营地共用同一个 id（和铁匠药师一样）——
+   * 同一张图上只会出现一个营地，所以「地脉裂隙」在哪儿都是同一个人守着。
+   * 位置在营地西侧偏后，和掌事、录事、仓库都不挨着，玩家绕一圈能看全。 */
+  rift: {
+    id: 'rift', name: '地脉守·幽提', glyph: '脉', color: 0x4fa898, role: 'dungeon',
+    lines: ['地底下有缝，缝里有东西在喘气。',
+      '钥匙在妖物身上。一阶对一卷，别拿三阶的钥匙去撬一阶的门 —— 撬不开，只会把门弄塌。',
+      '五道地缝，各有各的死法。进去之前先想好，走哪一道。']
   },
 
   /* ---------------- [M2] 营地任务发布者 ----------------

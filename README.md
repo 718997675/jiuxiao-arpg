@@ -479,11 +479,12 @@ src/data/data-mat-icons.js 17 枚材料 / 玄晶 / 丹药 / 凭证图标（32×3
 src/data/data-skills.js    36 个主动技能 × 3 变体与技能栏顺序
 src/data/data-talents.js   120 个天赋节点（9 职业系 + 通用系）· 按等级逐步解锁
 src/data/data-skill-icons.js  36 枚技能象形 SVG 图标
-src/data/data-monsters.js  76 种普通怪（6 族群）+ 32 个 Boss · 异兽志按卷分 5 大区
+src/data/data-monsters.js  80 种普通怪（6 族群）+ 37 个 Boss · 异兽志按卷分 5 大区 + 秘境
 src/data/data-world.js     地图、NPC、任务链
 src/data/data-maps.js      地图区域结构（zone 几何 / 连接 / 分区刷怪 / 首领落点 / 跨区寻路）
 src/data/data-fauna.js     族音色（9 族）/ 事件修饰 / 每图环境音与调式 / 录音回退清单
 src/data/data-trial.js     试炼配置、波次曲线、怪物 / 首领分池、40 条祝福、抽卡与掉落纯函数
+src/data/data-dungeon.js   地脉裂隙：5 阶钥匙 / 3 层 / 5 类地下城 / 10 条词缀 / 25 条地脉异闻
 src/items.js        随机装备生成、稀有度、套装、法器、属性汇总、提示框
 src/actors.js       低多边形人物/怪物建模、纸娃娃、程序化动作
 src/charforge.js    古风三职业角色生成器（骨架对齐 buildHumanoid，自带动作曲线）
@@ -492,6 +493,7 @@ src/audio.js        音频总线：族音色合成、空间化、声部预算、
 src/fx.js           粒子、投射物、预警圈、伤害数字、音效门面（转调 audio.js）
 src/world.js        地表贴图、地图搭建、植被建筑、NPC、传送阵
 src/trial.js        试炼状态机：起手 / 刷波 / 清场 / 翻牌 / 结算，祝福摊成 stats
+src/dungeon.js      地脉裂隙状态机：开门 / 建层 / 词缀 / 首领反解 / 地脉门 / 通关结算
 src/ui.js           主菜单八页签 / 背包四栏图标化 / 纸娃娃 / 扩容条 / 一键分解 / 套装图鉴 / 提示框 / 任务 / 对话 / 商店 / 传送 / 小地图 / 试炼 HUD 与三选一
 src/ui-forge.js     炼器台：锻造（胚装重铸）/ 符文镶嵌 / 取下 / 符文之语提示 / 单条与定向洗炼 / 装备强化 / 打孔
 src/ui-save.js      存档管理面板：新建 / 删除 / 导出 / 导入
