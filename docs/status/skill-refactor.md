@@ -3,12 +3,11 @@
 - 分支：`feat/skill-refactor`（优先级 **低**，排在大型扩展之后）
 - 计划文档：`docs/SKILL-REDESIGN-PLAN.md`（16 节）
 - 预览站：还没发（要发就 `./dev/publish-preview.sh feat/skill-refactor`）
-- 更新：2026-10-27 21:50 · P1a 对账完成（孤儿清零）
+- 更新：2026-10-27 22:05 · P1b 动作条收敛完成（8 → 5，左键 + 1~4）
 
-> 当前：**P0 完成 + P1a 对账完成**（239 条数据契约全绿）；
-> 战斗、存档、键位、动作条仍是老逻辑 —— 这是有意的，收敛放在 P1b，
-> 先把「12 个技能都有位接」这件事钉死，收敛才不会漏技能。
-> 下一步 P1b：`SKILL_BAR_SLOTS` 8 → 5 + 键位 1~4 + 老档迁移。
+> 当前：**P0 + P1a + P1b 完成**。动作条已是 5 格（左键 + 1~4）、格位 = 功能位、
+> 老档 8 格自动归位并补满、技能点一次性全退（拍板 #4）。
+> 战斗数值与等级台阶仍未接（P2）；技能树面板仍是旧的串行树（P1c）。
 
 ## 一句话现状
 
@@ -26,7 +25,7 @@ P1 起才动 `SKILL_BAR_SLOTS` 与面板的三列树。
 | P0a | 纯数据骨架：`SKILL_ARCHETYPE`（5 槽 × 职业）、`SKILL_TIERS`（1→10 台阶 + 分段倍率）、`SKILL_TREE.lineMeta` + 三线并行读取（`reqLv` / `needPts`）、`dev/test-skill-p0.js` | ✅ | `data-skills.js`、`data-skill-tree.js`、`dev/test-skill-p0.js` | 见 git log |
 | P0b | 面板/说明页只读展示新结构（既不动键位也不动战斗） | ✅ | `src/ui-skills.js`（`skArchHTML`）、`src/ui.js` 第七节 | 见 git log |
 | P1a | 对账：12 技能 × 3 职业全部有位接（孤儿清零），新增 `skillArchOrphans` / `skillArchSlotOf`。**不动任何行为** | ✅ | `data-skills.js`、`dev/test-skill-p0.js` | 见 git log |
-| P1b | 槽位收敛：`SKILL_BAR_SLOTS` 8 → 5，键位 1~8 改 1~4，老存档 8 格收敛 + 拍板 #4 全退点 | ⬜ | `data-skills.js`、`game.js`、`ui.js`、`mobile.js`、`core/save.js` | — |
+| P1b | 槽位收敛：`SKILL_BAR_SLOTS` 8 → 5，键位改 左键 + 1~4，格位 = 功能位（越位拦截），老档 8 格归位并补满，拍板 #4 一次性全退点 | ✅ | `data-skills.js`、`game.js`、`ui.js`、`mobile.js`、`core/save.js` | 见 git log |
 | P1c | 技能树面板从「串行树」改为「三列并行 + 等级锁」，删掉 `skillForkOf` 二选一 | ⬜ | `data-skill-tree.js`、`ui-skills.js`（`skTreeHTML`） | — |
 | P2 | 等级台阶：5 → 10 级，数量/形态台阶接进 `castSkill`，点数供给同步 | ⬜ | `src/game.js`、`src/skill-beh.js` | — |
 | P3 | 元素注入 + 反应表：伤害管线支持双元素、特效混色、词缀口径 | ⬜ | 战斗 + 词缀 + `src/fx.js` | — |
@@ -34,14 +33,15 @@ P1 起才动 `SKILL_BAR_SLOTS` 与面板的三列树。
 | P5 | 形态进化表现：5 槽 × 3 职业 × 3 段 = 45 套 | ⬜ | `src/fx.js`、模型 | — |
 | P6 | 平衡、洗点、老档兼容回归 | ⬜ | — | — |
 
-## 下一步（P1b，危险面最大，先读卡点 2）
+## 下一步（P1c：面板换三列并行）
 
-槽位真正收敛：**8 格 → 5 格**，键位改左键 + 1~4，老存档迁移。这一步会动到存档，别急：
+动作条已经收敛完，剩下的是**面板**：现在面板还在画旧的串行树（`spine` / `forks`）。
 
-1. ~~**先对账**~~：P1a 已完成，`skillArchOrphans(cls)` 三职业全为 0。
-2. `SKILL_BAR_SLOTS` 8 → 5，`bindInput` 的 1~8 改 1~4（左键已经是普攻）。
-3. `src/core/save.js`：老档 8 格收敛到 5 格 —— **先看 act 的 schema 落地没**（卡点 2），
-   并遵守拍板 #4：全退技能点 + 免费重投，已投点数一分不少。
+1. `skillLines()` 换掉 `skillTreeNodes()`，三列并行 + `reqLv` 等级锁 + 关键被动 `needPts` 软前置。
+2. `skillForkOf` 的二选一逻辑**一并删掉**（别留第二套真相，上一轮 `SKILL_SPECIALS` 就是这么烂掉的）。
+3. 面板底部的技能条已经按功能位显示（左键 / 1~4），不用再改。
+4. 验收：`node dev/test-skill-p1.js` 仍全绿 + 真机 `probe-skill-arch` 无报错 +
+   新增一条「三列并行 / 越位节点不可点」的断言。
 4. 面板：`skillLines()` 换掉 `skillTreeNodes()`，三列并行 + `reqLv` 等级锁 + 关键被动
    `needPts` 软前置；`skillForkOf` 的二选一逻辑一并删掉（别留第二套真相）。
 5. 验收：`node dev/test-skill-p0.js`、`dev/test-save.js`（老档迁移）、
@@ -73,6 +73,10 @@ P1 起才动 `SKILL_BAR_SLOTS` 与面板的三列树。
 | 2026-10-27 | 方案 §3.2 里法师 ① 的 `talisman` **归道士** | 五雷符本来就是道士技能；一个技能不能同时占两个位，否则 P1 收敛有歧义 |
 | 2026-10-27 | 5 个孤儿按「机制去哪」安置：`skysfall`+`execute` → 刀客 ②；`chain` → 法师 ①；`starfall` → 法师 ②；`revive` → 道士 ④ | 不按名字像谁分。天崩/陨星天火本来就是所在位的 9/10 台阶；雷弧链的跳 5 目标 = ① 的「自动索敌」；还魂是防御类增益归 ④ |
 | 2026-10-27 | 孤儿必须清零后才动槽位（`skillArchOrphans(cls) === []` 写进契约） | 否则收敛后会出现「树上还在、动作条放不上」的死技能 |
+| 2026-10-27 | **格位 = 功能位**：第 i 格只收第 i 个位的技能，越位由 `assignSkillBar` 打回 | 否则「① 基础攻击」这层定位是空的，玩家能把陨石塞进左键格；靠 UI 提醒不算数，必须在数据口拦 |
+| 2026-10-27 | 左键 = ① 号位：**能放就放技能，放不了（没蓝 / 冷却）退化普攻** | 直接接管左键会让「没蓝 = 哑火」；保留普攻兜底，按住连发的手感一直在 |
+| 2026-10-27 | 老档 8 格按功能位归位 + 空位按位补满（`barVer` 只跑一次） | 不补位的话老玩家会莫名少两三个技能；5 格档里手动腾空的格子不会被填回 |
+| 2026-10-27 | 手机宫格只画 ②③④⑤，① 合并进「攻」键 | 否则 5 格会出现两个「基础攻击」按钮 |
 
 ## 变更记录
 
@@ -132,3 +136,25 @@ P1 起才动 `SKILL_BAR_SLOTS` 与面板的三列树。
 - 契约加三条（每职业）：孤儿为 0、继承数 == 现有技能数、`skillArchSlotOf` 与 `inherit` 双向一致。
   239 通过 / 0 失败。
 - 未动：`SKILL_BAR_SLOTS` 仍 8、键位仍 1~8、存档零改动。
+
+### 2026-10-27 · P1b 动作条 8 → 5（左键 + 1~4）
+
+- `SKILL_BAR_SLOTS` 8 → 5，新增 `SKILL_BAR_KEYS = ['左键','1','2','3','4']`。
+- **格位 = 功能位**：`skillBarMigrate(arr, cls)`（数据层纯函数）把老 8 格按
+  `skillArchSlotOf` 归位；同格冲突先到先得，传世秘技（无功能位）第二遍塞剩余空格，
+  幂等。`Game.assignSkillBar` 用同一条规则拦越位，提示里写清「这是 贰 号位技能，只能放在 1 键」。
+- **左键 = ① 号位**：新增 `castable(id)`（与 `castSkill` 三道闸门同口径）与
+  `primaryAttack()` —— 能放就放，没蓝 / 冷却中退化普攻。右键与左键同义。
+- 键位：`bindInput` 里 `parseInt(k, 10)` 直接取下标（键 1 = bar[1] = ②）；键 5 起不再占位。
+- 存档：`SaveManager._bar(arr, cls)` 走同一个迁移函数；`normalizeProgress` 里
+  老档（`barVer !== 2`）补位一次，`barVer` 落盘后不再动 5 格档。
+- 拍板 #4：`skillRefundAll()` 一次性全退（lv 归 1 + 取向清空 + 被动清空，**变体保留**），
+  由 `s.skillReset` 保证只跑一次，退回点数记在 `s.skillResetRefund`。
+- UI：动作条格上标 `左键 / 1 / 2 / 3 / 4`；术法面板底部技能条按位标注（空位提示本位名字）；
+  手机宫格只画 ②③④⑤（① 合并进「攻」键）；说明页「怎么玩」「技能条」两行改成新键位口径。
+- `dev/test-skill-p1.js`（52 条）：常量 / 迁移（归位·幂等·同格冲突·秘技保留·脏值）/
+  全退（一分不少·变体保留·不可刷点）/ 接线（键 1 打 bar[1]、左键走 primaryAttack）。
+- `dev/probe-bar5.js`（30 条真机）：5 格 5 键、越位被打回、左键放技能 / 没蓝退普攻、
+  键 1 打 bar[1]、键 5 不占位、老 8 格档整形后 5 格且全满、全退生效、手机 4 键零重叠。
+- 验证：`test-skill-p0` 240/0 · `test-skill-p1` 52/0 · `test-items` 17/0 · `test-save` 79/0 ·
+  `probe-skill-arch` 29/0 · `probe-bar5` 30/0 · `test-s1` 通过 · `smoke` ERRORS none。

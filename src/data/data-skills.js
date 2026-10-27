@@ -392,15 +392,20 @@ const SKILL_ORDER = {
   taoist: ['talisman', 'summon', 'heal', 'poison', 'talismanarrow', 'antidote', 'taiji', 'whitetiger', 'swordrain', 'mastersigil', 'azuredragon', 'revive']
 };
 
-/* 技能条槽位数：8 格（V2 计划「技能栏 6 → 8」）。
- * 玩家在术法面板（K）里手动把已领悟技能放上去；PC 键 1-8，手机 4×2 宫格。 */
-const SKILL_BAR_SLOTS = 8;
+/* 技能条槽位数：5 格（P1 从 8 收敛，见 SKILL_ARCHETYPE）。
+ *
+ * 8 格 × 2 套 = 16 格 > 12 个技能，等于没有取舍，点也被摊薄；
+ * 收敛到 5 格（左键 + 1~4）之后每个位只养一个技能，才养得起来。
+ *
+ * 格的语义不再是「随便放」：第 i 格对应 SKILL_ARCHETYPE 的第 i 个功能位，
+ * 只能放本位继承的技能（见 skillBarMigrate / Game.assignSkillBar）。
+ * 传世授予的跨职业秘技没有功能位，允许放任意空格（见 skillArchSlotOf 返回 0）。 */
+const SKILL_BAR_SLOTS = 5;
+/* 每格的键位（只用于界面文案与探针断言；真正的绑定在 game.js bindInput） */
+const SKILL_BAR_KEYS = ['左键', '1', '2', '3', '4'];
 /* 快捷栏套数：2 套（甲 / 乙）。
- * 一套打 boss、一套刷图是 ARPG 的常规需求，8 格已经够宽，
- * 但「换 BD 要重排技能条」很烦，所以再给一套整栏。
- * 切换键：Shift（默认）/ 反引号 / V。
- * 原来只绑了反引号——中文输入法与部分键盘布局下它根本不触发，
- * 玩家等于没有换栏键；现在 Shift 是主键，反引号与 V 保底。见 game.js bindInput。 */
+ * 一套打 boss、一套刷图是 ARPG 的常规需求 —— 5 格固定位之后两套仍然有意义：
+ * 同一个位可以放本位里的不同技能（例：② 号位刷图用裂地震击、打 boss 用斩杀）。 */
 const SKILL_BAR_SETS = 2;
 const SKILL_BAR_SET_KEY = 'shift';          // 默认换栏键（与 e.key.toLowerCase() 比较）
 const SKILL_BAR_SET_LABEL = 'Shift';        // 界面上显示的名字
@@ -456,7 +461,7 @@ function mergeSkillMods() {
  *
  * 这一层只描述「一个职业拿哪 5 个技能、每个技能长到几级会变成什么样」，
  * 不参与任何结算 —— P0 阶段战斗与存档行为与之前完全一致
- * （castSkill 仍按 SKILL_ORDER + 8 格动作条走）。
+ * （castSkill 仍按 SKILL_ORDER + 动作条走；[P1] 动作条已收敛到 5 格）。
  *
  * 为什么要有它：
  *   8 格 × 2 套 = 16 格 > 12 技能，等于没有取舍；第 6 个之后左手按不到。
@@ -741,4 +746,36 @@ function skillArchSlotOf(cls, id) {
 function skillArchOrphans(cls) {
   const owned = skillArchInherit(cls);
   return (SKILL_ORDER[cls] || []).filter(id => owned.indexOf(id) < 0);
+}
+
+/* 老技能条 → 5 格技能条（P1 存档迁移的唯一口径，纯函数、node 可测）。
+ *
+ * 老档是 8 格随便放，新档是「第 i 格 = 第 i 个功能位」。迁移规则：
+ *   1. 本职业技能按 skillArchSlotOf 归位（quake 一律进 1 号位 = ② 号位…）；
+ *      同一格撞了两个技能时**保留老数组里靠前的那个**，后面的丢弃
+ *      （反正新口径下它本来也上不了场，留着是死数据）。
+ *   2. 传世授予的跨职业秘技没有功能位（返回 0），第二遍按先后顺序塞进剩余空格，
+ *      一件都不丢。
+ *   3. 幂等：把 5 格合法数组再迁一次，结果不变。
+ *
+ * 空位保持 null —— 自动补技能是 Game.skillBar(true) 的事，迁移不越权。
+ */
+function skillBarMigrate(arr, cls) {
+  const out = new Array(SKILL_BAR_SLOTS).fill(null);
+  if (!Array.isArray(arr) || !arr.length) return out;
+  const spare = [];
+  for (const raw of arr) {
+    const id = (typeof raw === 'string' && raw) ? raw : null;
+    if (!id || !SKILLS[id]) continue;
+    const no = skillArchSlotOf(cls, id);
+    if (!no) { spare.push(id); continue; }          // 秘技 / 未登记：第二遍处理
+    const at = no - 1;
+    if (out[at] === null) out[at] = id;             // 同格冲突：先到先得
+  }
+  for (const id of spare) {
+    const at = out.indexOf(null);
+    if (at < 0) break;
+    out[at] = id;
+  }
+  return out;
 }

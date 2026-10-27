@@ -53,10 +53,15 @@ const SaveManager = {
     } catch (e) { }
     return this._DEFAULT_SLOTS;
   },
-  /* 技能条整形：截到 SKILL_BAR_SLOTS 格、非字符串置 null、补满长度。
-   * 两套快捷栏共用；数据层没加载时退回 8 格常量。 */
-  _bar(arr) {
-    const n = (typeof SKILL_BAR_SLOTS === "number") ? SKILL_BAR_SLOTS : 8;
+  /* 技能条整形：[P1] 5 格 + 按功能位归位。
+   * 老档是 8 格随便放，`skillBarMigrate(arr, cls)` 负责「② 的技能进 1 键格」
+   * 这种重排（纯函数在数据层，node 可测），这里只在数据层没加载时退回截断。 */
+  _bar(arr, cls) {
+    const n = (typeof SKILL_BAR_SLOTS === "number") ? SKILL_BAR_SLOTS : 5;
+    if (typeof skillBarMigrate === 'function') {
+      if (!Array.isArray(arr)) return new Array(n).fill(null);
+      return skillBarMigrate(arr, cls);
+    }
     const out = Array.isArray(arr) ? arr.slice(0, n).map(v => (typeof v === 'string' && v) ? v : null) : [];
     while (out.length < n) out.push(null);
     return out;
@@ -239,10 +244,10 @@ const SaveManager = {
     d.attrAlloc = this._attrAlloc(d.attrAlloc);
     /* [试炼] 无尽试炼记录（最高波数 / 总轮数） */
     d.trial = this._trialRec(d.trial);
-    /* S4 技能：等级 / 变体 / 技能条 8 格 × 2 套配置 */
+    /* S4 技能：等级 / 变体 / 技能条 5 格 × 2 套配置（[P1] 原 8 格） */
     d.skills = this._obj(d.skills) || {};
-    d.skillbar = this._bar(d.skillbar);
-    d.skillbar2 = this._bar(d.skillbar2);
+    d.skillbar = this._bar(d.skillbar, d.cls);
+    d.skillbar2 = this._bar(d.skillbar2, d.cls);
     d.barSet = (d.barSet === 1) ? 1 : 0;
     if (d.mount === undefined) d.mount = null;
     d.settings = this._obj(d.settings) || {};
@@ -307,10 +312,10 @@ const SaveManager = {
       talentBonus: this._int(s.talentBonus, 0, 40, 0),
       attrAlloc: this._attrAlloc(s.attrAlloc),
       trial: this._trialRec(s.trial),
-      /* S4：技能等级 / 变体 / 技能条 8 格 × 2 套（id 或 null） */
+      /* S4：技能等级 / 变体 / 技能条 5 格 × 2 套（id 或 null） */
       skills: this._obj(s.skills) || {},
-      skillbar: this._bar(s.skillbar),
-      skillbar2: this._bar(s.skillbar2),
+      skillbar: this._bar(s.skillbar, s.cls),
+      skillbar2: this._bar(s.skillbar2, s.cls),
       barSet: (s.barSet === 1) ? 1 : 0,
       mount: s.mount === undefined ? null : s.mount,
       settings: this._obj(s.settings) || {}
@@ -336,8 +341,8 @@ const SaveManager = {
       attrAlloc: this._attrAlloc(doc.attrAlloc),
       trial: this._trialRec(doc.trial),
       skills: doc.skills || {},
-      skillbar: this._bar(doc.skillbar),
-      skillbar2: this._bar(doc.skillbar2),
+      skillbar: this._bar(doc.skillbar, doc.cls),
+      skillbar2: this._bar(doc.skillbar2, doc.cls),
       barSet: (doc.barSet === 1) ? 1 : 0,
       mount: doc.mount === undefined ? null : doc.mount,
       settings: doc.settings || {}

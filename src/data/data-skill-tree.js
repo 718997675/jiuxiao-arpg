@@ -1072,6 +1072,30 @@ function skillTreeRespecFee(count) {
  * 退光技能等级与取向（变体不花点、保留）、清空被动账本。
  * 直接改写传入的两个账本对象；金币与次数的落账由调用方做。
  * 返回 { ok, msg, cost, cleaned }。 */
+/* [P1] 8 格 → 5 格的一次性迁移：全退技能点（拍板 #4「已投点数一分不少」）。
+ *
+ * 与洗点的区别：**不收金币**。玩家没有主动要求重投，是规则改了；
+ * 收钱等于罚老玩家。返还是「lv 归 1 + 取向清空 + 被动清空」，
+ * 点数不用记账 —— `skillPoints()` 是派生的（等级 − 已投），
+ * lv 一回来，可用点自然涨回去。
+ *
+ * 变体（v / f）**保留**：它不花点，是玩法选择不是投资。
+ */
+function skillRefundAll(skillsState, passivesState) {
+  const sk = skillsState || {};
+  let refunded = 0;
+  for (const id in sk) {
+    const e = sk[id] || {};
+    refunded += Math.max(0, (e.lv || 1) - 1);
+    const keep = { lv: 1, v: e.v || 0 };
+    if (typeof e.f === 'number') keep.f = e.f;
+    sk[id] = keep;
+  }
+  const pas = passivesState || {};
+  for (const id in pas) { refunded += pas[id] || 0; delete pas[id]; }
+  return { refunded: refunded };
+}
+
 function skillTreeRespecApply(skillsState, passivesState, gold, count) {
   const sk = skillsState || {};
   let lvSpent = 0, picks = 0;

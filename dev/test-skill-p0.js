@@ -27,6 +27,7 @@ const SKILL_TIERS = pick('SKILL_TIERS');
 const SKILL_TREE = pick('SKILL_TREE');
 const SKILL_LV_MAX = pick('SKILL_LV_MAX');
 const SKILL_LV_STEP = pick('SKILL_LV_STEP');
+const SKILL_BAR_SLOTS = pick('SKILL_BAR_SLOTS');
 const skillLvMul = pick('skillLvMul');
 const skillArchOrphans = pick('skillArchOrphans');
 const skillArchSlotOf = pick('skillArchSlotOf');
@@ -230,16 +231,18 @@ ok(skillLineSpent('warrior', '守护', spent) === 0, '没投的线是 0 点');
 ok(skillLineSpent('warrior', '不存在', spent) === 0, '未知线返回 0');
 
 /* ---------------- 6. P0 不接线 ---------------- */
-console.log('六、P0 边界（战斗与存档不许变）');
-ok(SKILL_LV_MAX === 5, 'P0 期间 SKILL_LV_MAX 仍是 5', SKILL_LV_MAX);
-ok(near(SKILL_LV_STEP, 0.08), 'P0 期间 SKILL_LV_STEP 仍是 0.08', SKILL_LV_STEP);
-/* 结算侧（战斗 / 存档）不许读新数据；展示侧（面板 / 说明页）只许只读展示 */
+console.log('六、边界（P1 已放开技能条，关卡台阶仍未接）');
+ok(SKILL_LV_MAX === 5, 'SKILL_LV_MAX 仍是 5（P2 才升 10）', SKILL_LV_MAX);
+ok(near(SKILL_LV_STEP, 0.08), 'SKILL_LV_STEP 仍是 0.08（P2 才分段）', SKILL_LV_STEP);
+/* [P1] 边界变了：技能条**必须**读功能位数据（8→5 收敛 + 越位拦截 + 老档迁移），
+ * 但「等级台阶」仍只许展示 —— skillLvMul 不许进战斗，等 P2 接。 */
 const readSrc = f => fs.readFileSync(path.join(ROOT, f), 'utf8');
 const combatFiles = ['src/game.js', 'src/core/save.js'];
 const wired = combatFiles.filter(f => readSrc(f).indexOf('skillLvMul') >= 0);
-ok(wired.length === 0, 'P0 不许把 skillLvMul 接进战斗/存档（P2 才接）', wired.join(','));
-const archWired = combatFiles.filter(f => readSrc(f).indexOf('SKILL_ARCHETYPE') >= 0);
-ok(archWired.length === 0, 'P0 不许让战斗/存档读 SKILL_ARCHETYPE', archWired.join(','));
+ok(wired.length === 0, 'skillLvMul 还不许进战斗/存档（P2 才接）', wired.join(','));
+ok(SKILL_BAR_SLOTS === 5, '动作条必须收敛到 5 格', SKILL_BAR_SLOTS);
+const migrateWired = combatFiles.filter(f => readSrc(f).indexOf('skillBarMigrate') >= 0);
+ok(migrateWired.length === 2, '战斗与存档都要用 skillBarMigrate（格位 = 功能位）', migrateWired.join(','));
 
 /* 展示侧反过来必须真的读了，否则「说明页跟着数据变」只是句空话 */
 ok(readSrc('src/ui-skills.js').indexOf('SKILL_ARCHETYPE') >= 0, '术法面板要展示新版技能位');

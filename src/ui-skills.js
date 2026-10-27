@@ -15,7 +15,7 @@
  *   ┌ 标题 / 可用点数 / 缩放百分比 ────────────────┐
  *   │  树（左键加点 · 右键退点 · 滚轮缩放 · 拖拽平移）  说明卡（只读数，不放按钮）
  *   ├ 未确认条（加了点才出现）─────────────────────┤
- *   └ 技能条 8 格 · 甲乙两栏 ──────────────────────┘
+ *   └ 技能条 5 格 · 甲乙两栏 ──────────────────────┘
  *   右侧卡从「操作面板」降级成「说明书」：数值、描述、机制、分支，全是只读。
  * ============================================================ */
 
@@ -56,9 +56,9 @@ Object.assign(UI, {
    * [P0] 新版技能位预览（只展示）
    *
    * 技能系统正在从「12 技能平铺 + 8 格动作条」收敛到「5 个功能位（左键 + 1~4）」。
-   * P0 阶段只把新结构**摆出来给人看**，一行战斗代码都没接：
-   *   · 键位仍是 1~8，动作条仍是 SKILL_BAR_SLOTS 格
-   *   · 这里不绑任何事件，展开也只是读数据
+   * [P1b] 动作条**已经切到 5 格**（左键 + 1~4），这块预览现在与真实键位一致：
+   *   · 每一格只能放本位继承的技能（skillArchSlotOf 校验）
+   *   · 台阶数值仍只在展示层，战斗读级数的部分在 P2 接
    *
    * 文案全部来自 SKILL_ARCHETYPE / SKILL_TIERS，改数据表这里跟着变 ——
    * 面板里不许出现写死的技能名（本项目的固定规矩）。
@@ -92,11 +92,11 @@ Object.assign(UI, {
       </div>`;
     }).join('');
     const first = T.curve[0].pct;
-    return `<details class="sk-arch"><summary>新版技能位 · 5 格预览（P0 只展示：键位与动作条暂未切换）</summary>
+    return `<details class="sk-arch"><summary>技能位 · 5 格（左键 + 1~4，与当前动作条一致）</summary>
       <div class="sk-arch-grid">${cards}</div>
       <div class="sk-arch-tip">1→10 级：每级 +${first}%，Lv3 / Lv7 数量 +1，Lv5 / Lv9 进化，
         Lv10 终极形态；11→20 为精进层（来自装备词缀，不占技能点），共 ${skillLvMul(T.cap)} 倍。
-        台阶名：${T.visible.map(lv => lv + ' ' + stepName(lv)).join(' · ')}。当前动作条仍是 ${SKILL_BAR_SLOTS} 格</div>
+        台阶名：${T.visible.map(lv => lv + ' ' + stepName(lv)).join(' · ')}。动作条 ${SKILL_BAR_SLOTS} 格：左键 = ①，1~4 = ②③④⑤</div>
     </details>`;
   },
 
@@ -834,20 +834,24 @@ Object.assign(UI, {
 
   /* ---------------- 底部技能条 ----------------
    * 默认收起：它不是一个「要一直看」的东西，是要配的时候才用的东西。
-   * 点「技 能 条」或用鼠标把节点往下拖，才会展开 8 个格子。 */
+   * 点「技 能 条」或用鼠标把节点往下拖，才会展开 5 个格子。
+   * [P1] 每格 = 一个功能位：格上标的是键位（左键 / 1~4），
+   * 只能放本位继承的技能（Game.assignSkillBar 会把越位的打回来）。 */
   skBarHTML() {
     const bar = Game.skillBar();
     const setIdx = Game.barSet();
     const sel = this.skSel;
     const open = !!this.skBarOpen;
+    const keyOf = i => (typeof SKILL_BAR_KEYS !== 'undefined' && SKILL_BAR_KEYS[i]) || String(i + 1);
     const slots = bar.map((bid, i) => {
       const sk = bid ? SKILLS[bid] : null;
+      const meta = (typeof skillArchSlot === 'function') ? (skillArchSlot(Game.state.cls, i + 1) || {}) : {};
       return `<button class="sb-slot ${bid && bid === sel ? 'on' : ''} ${sk ? 'occ' : ''}" data-skbar="${i}"
-        title="${sk ? sk.name + ' · 右键腾空' : '空位 ' + (i + 1)}">
+        title="${sk ? sk.name + ' · ' + (meta.glyph || '') + ' 号位 · 右键腾空' : '空位 ' + keyOf(i) + '（' + (meta.glyph || i + 1) + ' 号位 · ' + (meta.name || '') + '）'}">
         ${sk ? skillIconSvg(bid, 22) : '<span class="sb-dot"></span>'}
-        <span class="sb-k">${i + 1}</span></button>`;
+        <span class="sb-k">${keyOf(i)}</span></button>`;
     }).join('');
-    /* 收起状态的小预览：8 个小图标，只表示「放了什么」，不可点 */
+    /* 收起状态的小预览：只表示「放了什么」，不可点 */
     const mini = bar.map(bid => `<i class="${bid ? 'on' : ''}">${bid ? skillIconSvg(bid, 13) : ''}</i>`).join('');
     /* 传世授予的秘技不在本职业树上（树上根本没这个节点），
      * 但它们是能上技能条的，所以展开时单独留一小排，点一下选中再点格子。 */

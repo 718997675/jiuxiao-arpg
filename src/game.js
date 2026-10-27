@@ -353,10 +353,11 @@ const Game = {
         e.preventDefault();
         return;
       }
-      /* [S4][M1] 技能条 8 格手动配置：键 1-8 依次施放当前快捷栏上的技能 */
-      if (k >= '1' && k <= String(SKILL_BAR_SLOTS)) {
+      /* [P1] 技能条 5 格：① 号位 = 左键（按住连发），键 1~4 = ②③④⑤。
+       * 注意索引：键 1 对应 bar[1]（② 号位），不再是 bar[0]。 */
+      if (k >= '1' && k <= String(SKILL_BAR_SLOTS - 1)) {
         const bar = this.skillBar();
-        const id = bar[parseInt(k) - 1];
+        const id = bar[parseInt(k, 10)];
         if (id) this.castSkill(id);
       }
       /* [M1] 两套快捷栏切换：默认 Shift，另有反引号与 V 保底。
@@ -406,7 +407,9 @@ const Game = {
         try { cv.requestPointerLock && cv.requestPointerLock(); } catch (err) { /* 被 iframe 权限挡掉就用普通鼠标移动 */ }
       }
       if (e.button === 0) { this.mouseDown = true; SFX.init(); }
-      if (e.button === 2) { const bar = this.skillBar(); const id = bar[0] || (SKILL_ORDER[this.state.cls] || [])[0]; if (id) this.castSkill(id); }
+      /* [P1] 右键与左键同义（都是 ① 号位 / 普攻）：5 格之后没有「右键放 1 号技能」
+       * 这一层了，保留右键攻击是为了照顾老习惯 */
+      if (e.button === 2) this.primaryAttack();
     });
     window.addEventListener('mouseup', e => { if (e.button === 0) this.mouseDown = false; });
     cv.addEventListener('contextmenu', e => e.preventDefault());
@@ -536,8 +539,10 @@ const Game = {
       attrAlloc: { str: 0, agi: 0, vit: 0, int: 0 },
       /* [S4] 技能：{ 技能id: { lv: 1-10, v: 0-2 变体 } } */
       skills: {},
-      /* [S4] 技能条：8 格 × 2 套手动配置（技能 id 或 null），新档只放已领悟的 */
-      skillbar: (SKILL_ORDER[cls] || []).filter(id => SKILLS[id] && SKILLS[id].unlock <= 1).slice(0, SKILL_BAR_SLOTS),
+      /* [S4] 技能条：5 格 × 2 套手动配置（技能 id 或 null），新档只放已领悟的。
+       * [P1] 格位 = 功能位（第 i 格只能放第 i 个位的技能），所以用迁移函数归位，
+       * 不能像以前那样「按表顺序截前 5 个」—— 那样会出现「② 号位的技能占了 ① 格」。 */
+      skillbar: skillBarMigrate((SKILL_ORDER[cls] || []).filter(id => SKILLS[id] && SKILLS[id].unlock <= 1), cls),
       skillbar2: [],
       barSet: 0,
       shop: null          // { at, items, rolls } —— 由 ensureShop/genShop 填充
@@ -1291,7 +1296,7 @@ const Game = {
   },
 
   /* ======================================================= */
-  /* [S4] 技能条：8 格 × 2 套手动配置                            */
+  /* [S4][P1] 技能条：5 格 × 2 套手动配置（格位 = 功能位）        */
   /* ======================================================= */
   /* 当前生效的那一套（0 / 1） */
   barSet() {
@@ -1322,16 +1327,29 @@ const Game = {
       seen[id] = true;
       out.push(id);
     }
-    if (fill) {
-      for (const id of order) {
-        if (out.indexOf(null) < 0) break;              // 满格
-        if (out.includes(id)) continue;
-        if (s.level < SKILLS[id].unlock) continue;
-        out[out.indexOf(null)] = id;                   // 填第一个空位
-      }
-    }
+    if (fill) this.fillBarByRole(out, s);
     s[key] = out;
     return s[key];
+  },
+
+  /* [P1] 按功能位补空位：第 i 格只收第 i 个位的技能。
+   * 老逻辑是「按表顺序填任意空位」，5 格固定位之后那样会填错位
+   * （把 ② 的震击塞进 ① 的连斩格），所以补位也必须认位次。
+   * 只补 null 格 —— 玩家手动腾出的空位（5 格档）不会被偷偷填回。 */
+  fillBarByRole(out, s) {
+    s = s || this.state;
+    if (!s || !Array.isArray(out)) return out;
+    const order = SKILL_ORDER[s.cls] || [];
+    for (const id of order) {
+      if (out.indexOf(null) < 0) break;              // 满格
+      if (out.includes(id)) continue;
+      if (s.level < SKILLS[id].unlock) continue;
+      if (!this.skillUnlocked(id)) continue;
+      const no = skillArchSlotOf(s.cls, id);
+      if (!no || out[no - 1] !== null) continue;     // 无位可归 / 本位已占
+      out[no - 1] = id;
+    }
+    return out;
   },
 
   /* 切换快捷栏（0 / 1）。两套各自独立，互不覆盖。 */
@@ -1349,7 +1367,9 @@ const Game = {
     return { ok: true, msg };
   },
 
-  /* 把技能放到第 slot 格（0-7）。已在条上时从原位移走（换位）。 */
+  /* 把技能放到第 slot 格（0~4）。已在条上时从原位移走（换位）。
+   * [P1] 格位 = 功能位：本职业技能只能进自己那个位（② 的震击只能进 1 键），
+   * 传世授予的跨职业秘技没有功能位，可以放任意空格。 */
   assignSkillBar(slot, id) {
     const s = this.state;
     if (!s) return { ok: false, msg: '尚未开局' };
@@ -1358,6 +1378,11 @@ const Game = {
     const sk = SKILLS[id];
     if (!sk || !this.barSkillOk(id)) return { ok: false, msg: '本职业没有这个技能，也没有传世授予它' };
     if (!this.skillUnlocked(id)) return { ok: false, msg: '尚未领悟「' + sk.name + '」（' + sk.unlock + ' 级）' };
+    const no = skillArchSlotOf(s.cls, id);
+    if (no && no - 1 !== slot) {
+      const meta = skillArchSlot(s.cls, no) || {};
+      return { ok: false, msg: '「' + sk.name + '」是 ' + meta.glyph + ' 号位技能，只能放在 ' + (meta.keybind || no) + ' 键' };
+    }
     const bar = this.skillBar();
     const from = bar.indexOf(id);
     if (from >= 0 && from !== slot) bar[from] = null;   // 换位：原格腾空
@@ -1388,25 +1413,24 @@ const Game = {
     if (!s.talents.spent || typeof s.talents.spent !== 'object') s.talents.spent = {};
     if (!Array.isArray(s.talents.presets) || s.talents.presets.length !== 3) s.talents.presets = [null, null, null];
     if (!s.skills || typeof s.skills !== 'object') s.skills = {};
-    /* 技能条：两套各自逐格校验（非法 / 重复的格子置空，位置不动），补满到 8 格 */
+    /* 技能条：两套各自归位到 5 格（[P1] 老档 8 格 → 5 格，按功能位重排）。
+     * skillBarMigrate 是纯函数（数据层，node 可测）：本职业技能按位归，
+     * 同格冲突先到先得，传世秘技第二遍塞剩余空格，幂等。 */
     const cleanBar = arr => {
       if (!Array.isArray(arr)) return null;
-      const seen = {};
-      /* 只做「存在 + 不重复」的清洗：跨职业秘技要在 recalc 之后才认得出来，
-       * 这里一刀切会把传世授予的技能洗掉。真正的合法性由 skillBar() 用
-       * barSkillOk() 判，非法格子会在下一次读取时置空。 */
-      const out = arr.slice(0, SKILL_BAR_SLOTS).map(id => {
-        if (!id || !SKILLS[id] || seen[id]) return null;
-        seen[id] = true;
-        return id;
-      });
-      while (out.length < SKILL_BAR_SLOTS) out.push(null);
-      return out;
+      return skillBarMigrate(arr, s.cls);
     };
     s.skillbar = cleanBar(s.skillbar);
     s.skillbar2 = cleanBar(s.skillbar2);
     /* 旧档只有一套栏（skillbar），第二套留空由玩家自己配 */
     if (!s.skillbar2) s.skillbar2 = new Array(SKILL_BAR_SLOTS).fill(null);
+    /* [P1] 老 8 格档：收敛到 5 格之后，本位还有已领悟技能的空格补上
+     * （与建档同一个补位口径）。只对 P1 之前写的档做一次 ——
+     * 5 格档里玩家手动腾空的格子不会被填回，barVer 落盘后就不再走这里。 */
+    if (s.barVer !== 2) {
+      s.barVer = 2;
+      if (Array.isArray(s.skillbar)) this.fillBarByRole(s.skillbar, s);
+    }
     s.barSet = (s.barSet === 1) ? 1 : 0;
     /* 已退出数据表的技能 / 天赋节点清掉，防存档里留死 id */
     for (const id in s.skills) if (!SKILLS[id]) delete s.skills[id];
@@ -1429,6 +1453,17 @@ const Game = {
         for (const id in p) if (TALENT_NODES[id]) out[id] = p[id];
         return out;
       });
+    }
+    /* [P1] 8 格 → 5 格的一次性迁移（拍板 #4）：全退技能点，免费重投。
+     * 只跑一次（s.skillReset = 1 写进存档），之后读档不再动。
+     * 变体保留 —— 它不花点，是玩法选择不是投资。 */
+    if (s.skillReset !== 1 && typeof skillRefundAll === 'function') {
+      if (!s.passives || typeof s.passives !== 'object') s.passives = {};
+      const r = skillRefundAll(s.skills, s.passives);
+      s.skillReset = 1;
+      s.skillResetRefund = Math.max(0, r.refunded | 0);
+      if (r.refunded > 0) s.skillResetNote = '技能重构：已退回 ' + r.refunded + ' 点技能点，免费重投';
+      this.behStack = {}; this._drainOn = null; this._follows = null;
     }
   },
 
@@ -2586,7 +2621,7 @@ const Game = {
     // 面向瞄准（攻击时）
     this.actor.moving = moving;
     this.actor.time = this.actor.time || 0;
-    if (this.mouseDown && this.atkCd <= 0) this.doBasicAttack();
+    if (this.mouseDown && this.atkCd <= 0) this.primaryAttack();
 
     // 攻击时朝向鼠标
     if (this.attacking > 0) {
@@ -2722,6 +2757,40 @@ const Game = {
         }
       });
     }
+  },
+
+  /* ---------------- [P1] 左键：① 号位 ----------------
+   * 5 格之后左键是「① 基础攻击」这个位：位上有技能就按冷却放，放不了就退化成
+   * 普通挥砍 / 弹道。这样不会出现「没蓝了左键变哑火」——按住连发的手感一直在。
+   *
+   * castable() 的三道闸门必须与 castSkill 的前三道**同口径**
+   * （领悟 / 冷却含连跃额度 / 资源含 cost 削减），否则会出现「能放却被跳过」
+   * 或者「判定能放、进去被打回」。dev/test-skill-p1.js 里钉了这条一致性。 */
+  castable(id) {
+    const s = this.state;
+    if (!s || this.dead || !this.running) return false;
+    const sk = SKILLS[id];
+    if (!sk) return false;
+    if (!this.skillUnlocked(id)) return false;
+    const rc0 = this._recharge && this._recharge[id];
+    if ((this.cooldowns[id] || 0) > 0.02 && !(rc0 && rc0.n > 0)) return false;
+    if (this._autoCast) return true;          // 常驻变体不收资源，castSkill 也不收
+    const smod = (typeof this.effSkillMods === 'function') ? this.effSkillMods(id) : null;
+    const cost = Math.max(1, Math.round(this.skillCost(sk) * (1 - (smod && smod.cost ? smod.cost : 0) / 100)));
+    return s.mp >= cost;
+  },
+
+  primaryAttack() {
+    const bar = this.skillBar();
+    const id = bar[0];
+    if (id && this.castable(id)) {
+      this.castSkill(id);
+      /* 施法本身有自己的冷却，这里再压一个短间隔，避免按住左键时
+       * 「技能刚放完、普攻立刻接上」看起来像双击 */
+      this.atkCd = Math.max(this.atkCd, 0.3);
+      return;
+    }
+    this.doBasicAttack();
   },
 
   enemiesInArc(origin, range, dir, arc) {

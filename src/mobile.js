@@ -166,10 +166,13 @@ const Mobile = {
     if (!this.on || !Game.state) return;
     const wrap = document.getElementById('mSkills');
     if (!wrap) return;
-    /* [S4] 技能条 8 格手动配置：宫格与 PC 动作条一致，空位是占位 */
+    /* [P1] 技能条 5 格：第 0 格是「① 基础攻击」，手机上就是右下那枚「攻」键，
+     * 所以宫格只画 1~4 格（②③④⑤）。8 格时代宫格与 PC 一一对应，现在要错开一格。 */
     const slots = Game.skillBar();
-    wrap.innerHTML = slots.map((id, i) => {
-      if (!id) return `<div class="mskill empty" data-slot="${i}"><span class="g">＋</span></div>`;
+    const keys = slots.slice(1);
+    wrap.innerHTML = keys.map((id, i) => {
+      const slot = i + 1;                      // 真实格位（data-slot 用绝对索引）
+      if (!id) return `<div class="mskill empty" data-slot="${slot}"><span class="g">＋</span></div>`;
       /* [M1] 与 PC 技能条一致：变体角标 Ⅰ/Ⅱ/Ⅲ */
       const vv = Game.skillVariant(id);
       const vb = `<span class="vb" style="${vv > 0 ? '' : 'display:none'}">${['Ⅰ', 'Ⅱ', 'Ⅲ'][vv] || ''}</span>`;
@@ -342,14 +345,15 @@ const Mobile = {
       atk.style.fontSize = 17 * u + 'px';
     }
 
-    // 技能：4 列 × 2 行宫格（8 格），紧贴普攻左上
+    // 技能：宫格只排 ②③④⑤（① 是普攻键），紧贴普攻左上
     /* ---- 右手区：普攻 → 功能键 → 技能宫格 ----
      * 以前宫格是「贴底右对齐」直接摆的：窄屏上它的左缘会压到摇杆上
      * （390×844 实测重叠 46×46 像素，320 宽更糟），功能键那一行也会压到摇杆顶部。
      * 现在改成先算三块矩形，再按「谁碰到摇杆就整块抬到摇杆上方」排，
-     * 列数随格数自动变（≤5 格一行排完，6 格 3×2，8 格 4×2），
+     * 列数随格数自动变（[P1] 现在是 4 格一行排完；旧版 8 格是 4×2），
      * 竖屏塞不下时先把格子缩到 34u，再不行才上移。 */
-    const slots = Math.max(1, SKILL_BAR_SLOTS | 0);
+    /* [P1] 宫格画的是 1~4 格（②③④⑤）—— 第 0 格是右下那枚「攻」键，别重复排 */
+    const slots = Math.max(1, (SKILL_BAR_SLOTS | 0) - 1);
     const cols = slots <= 5 ? slots : (slots <= 6 ? 3 : 4);
     const rows = Math.ceil(slots / cols);
     let cell = skS;

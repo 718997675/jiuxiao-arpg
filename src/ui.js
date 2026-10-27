@@ -591,7 +591,10 @@ const UI = {
         .join(' / ');
     };
     const pctOf = v => Math.round((v || 0) * 100) + '%';
-    const barSlots = (typeof SKILL_BAR_SLOTS === 'number') ? SKILL_BAR_SLOTS : 8;
+    const barSlots = (typeof SKILL_BAR_SLOTS === 'number') ? SKILL_BAR_SLOTS : 5;
+    const barKeys = (typeof SKILL_BAR_KEYS !== 'undefined') ? SKILL_BAR_KEYS : ['左键', '1', '2', '3', '4'];
+    /* 动作条键位：① 号位是左键，②~⑤ 是 1~4（[P1] 从 8 格收敛而来） */
+    const barKeyText = barKeys.slice(1).join(' / ');
     const barSets = (typeof SKILL_BAR_SETS === 'number') ? SKILL_BAR_SETS : 2;
     const lvStep = (typeof SKILL_LV_STEP === 'number') ? Math.round(SKILL_LV_STEP * 100) : 8;
     const lvMax = (typeof SKILL_LV_MAX === 'number') ? SKILL_LV_MAX : 5;
@@ -606,10 +609,10 @@ const UI = {
       row('视角', `设置（${K('O')}）→ 镜头 → <b>视角</b>可切四档：<b>火炬之光</b>（默认，机位更高更远、跟随更硬、出手不推镜）、` +
         `<b>默认俯视</b>（老版机位）、<b>暗黑4</b>（接近俯视）、<b>第一人称</b>（点画面锁鼠标、移动鼠标转身、Esc 解锁）。` +
         `同一页的<b>镜头震动</b>可关掉打击震屏，关掉后画面完全不晃`),
-      row('战斗', kcs([['左键', '普攻（按住连击）'], [`1-${barSlots}`, '技能条'], [SKILL_BAR_SET_LABEL, '切换快捷栏'], ['Z', '红药'], ['X', '蓝药'], ['9', '传送石']])),
+      row('战斗', kcs([['左键', '① 号位（基础攻击，按住连发）'], [barKeyText, '②③④⑤ 号位'], [SKILL_BAR_SET_LABEL, '切换快捷栏'], ['Z', '红药'], ['X', '蓝药'], ['9', '传送石']])),
       row('交互', kcs([['F', '交互 / 拾取'], ['Tab', '开关菜单'], ['Esc', '关闭面板']])),
       row('面板', kcs([['I', '行囊'], ['C', '道途'], ['T', '天赋'], ['K', '术法'], ['L', '山海志'], ['B', '异兽志'], ['R', '炼器台'], ['P', '存档'], ['O', '设置'], ['H', '说明']])),
-      row('手机', kcs([['左半屏', '拖动 = 摇杆'], ['右侧宫格', `技能条 4×2`], ['空白处', '拖动转视角'], ['双指', '捏合缩放']])),
+      row('手机', kcs([['左半屏', '拖动 = 摇杆'], ['右下宫格', `②~⑤ 四个技能键`], ['空白处', '拖动转视角'], ['双指', '捏合缩放']])),
       row('目标', `打怪 → 掉装备 → 换更强的 → 下更深的地图。角色不会掉等级，死亡只掉金币（新手难度不掉）。`),
       row('换栏', `技能条共 ${barSets} 套，按 ${K(SKILL_BAR_SET_LABEL)} 切一套（备用键 ${K('`')}${K('V')}）—— 一套打首领、一套刷图。动作条右端与术法面板底部都显示当前是哪一套，手机点技能宫格上方那枚小按钮`),
       /* 剑 / 盾两枚图标各占一块小牌：以前把图标直接塞进句子中间，换行时会把
@@ -794,7 +797,8 @@ const UI = {
       row('技能位（新版预览）', `从 12 技能平铺收敛到 <b>5 个功能位</b>（${slotLine}）：点数集中，每个技能才养得起来。` +
         `三职业内容各自独立，⑤ 号位不可互换 —— 刀客兵形（三种刀式 + 断岳斩，全程不产生任何独立单位）、` +
         `法师元素法相（只强化主元素）、道士限时召唤（技能产物，不是宠物）。` +
-        `<b>本版只展示：动作条仍是 ${barSlots} 格、键位仍是 1-${barSlots}</b>，切 5 格在 P1。${archHTML}`),
+        `<b>动作条已切到 ${barSlots} 格：左键 = ①，${barKeyText} = ②~⑤</b>；` +
+        `每格只能放本位技能（越位会被打回）。台阶数值仍只在展示层，战斗读级数在 P2。${archHTML}`),
       row('等级台阶（新版预览）', `1→10 级为圆满：${tierLine}；11→20 为精进层（来自装备词缀，不占技能点）。` +
         `伤害曲线分段：1~10 每级 ${TIERS.curve[0].pct}%、11~15 每级 ${TIERS.curve[1].pct}%、` +
         `16~20 每级 ${TIERS.curve[2].pct}%，20 级合计约 <b>${tierMul} 倍</b>` +
@@ -809,7 +813,7 @@ const UI = {
       row('变体形态', `共 ${mechN} / ${varN} 条改写战斗行为（聚怪、跟随、连跃、化龙、引导、灵兽同享等），其余为纯数值：范围 +70%、伤害 +130% 一类`),
       row('变体特效', `${fxStat.total} 条变体中有 ${fxStat.styled} 条附带专属特效，按行为归为 ${fxKinds} 类风格：${fxNames.join(' / ')}。施法时绘制一次专属光效，颜色与卡片风格标签、树上变体名一致。纯数值变体不附加光效`),
       row('推荐流派', `${bdN} 套模板（每职业 ${bdPerCls} 套）。术法面板顶部「推荐流派」按<b>当前存档</b>计算契合度最高的三套：核心技能等级 / 取向 / 变体 / 被动 / 属性 / 标签六项加权求和即契合度。该值表示与模板的接近程度，不作强度排名（未接入伤害模拟）。卡片内仅支持一键切换变体，技能点与被动需逐项分配`),
-      row('技能条', `${barSlots} 格 × ${barSets} 套，在术法面板详情卡底部点选格位配置；按 ${K(SKILL_BAR_SET_LABEL)} 切换栏位（首领 / 刷图各一套）`),
+      row('技能条', `${barSlots} 格 × ${barSets} 套（左键 + ${barKeyText}）。格位 = 功能位：① 基础攻击 / ② 中程爆发 / ③ 护身清场 / ④ 自身增益 / ⑤ 职业核心，**每格只能放本位的技能**。在术法面板详情卡底部点格位配置；按 ${K(SKILL_BAR_SET_LABEL)} 切换栏位（同一格换不同技能，首领 / 刷图各一套）`),
       row('秘技', `传世授予的技能（可跨职业）在面板内单独分组，带青色「秘」角标；卸下装备后失效，不占用技能点`),
       row('被动与关键被动', `主动对面的圆纹为被动（上限 ${pasMax} 级），六角纹为关键被动（限 1 点），共 ${pasN} 条（关键 ${pasKeyN} 条）。每个被动与同岔口的主动共享解锁等级，每级消耗 1 技能点：左键 +1 · 右键 −1，同样经过「未确认」条。已分配点数时边框点亮`),
       row('被动生效', `数值型直接计入面板属性（狂怒暴伤 / 铁骨护甲 / 破甲穿透 / 摧枯处决伤…）；条件型在战斗中结算（血性依据自身生命值、绝对零度依据目标冻结状态、剑魄依据本图累计消耗资源）；关键被动各自带触发（战意不灭 90 秒 / 涅槃 120 秒 / 雷神 6 秒落雷 / 天师护身符 / 九转还丹 60 秒 / 兽契提升灵兽上限，并使消散的灵兽有 30% 概率立即重新召唤）`),
@@ -1201,13 +1205,16 @@ const UI = {
   buildActionBar() {
     const s = Game.state;
     const bar = document.getElementById('actionbar');
-    /* [S4][M1] 技能条 8 格 × 2 套手动配置：空位是虚线占位，点它打开术法面板（K） */
+    /* [P1] 技能条 5 格 × 2 套：第 0 格 = ① 号位（左键），1~4 = ②③④⑤。 */
     const slots = Game.skillBar();
     const setIdx = Game.barSet();
+    const keyOf = i => (typeof SKILL_BAR_KEYS !== 'undefined' && SKILL_BAR_KEYS[i]) || String(i + 1);
+    const slotMeta = i => skillArchSlot(s.cls, i + 1) || {};
     let h = slots.map((id, i) => {
       if (!id) {
-        return `<div class="skill empty" data-slot="${i}" title="技能条 ${i + 1}：空位——打开术法面板（K）把技能放上来">
-          <span class="k">${i + 1}</span><div class="g">＋</div></div>`;
+        const sm = slotMeta(i);
+        return `<div class="skill empty" data-slot="${i}" title="技能条 ${keyOf(i)}（${sm.glyph || i + 1} 号位 · ${sm.name || '空位'}）：空位——打开术法面板（K）把本位技能放上来">
+          <span class="k">${keyOf(i)}</span><div class="g">＋</div></div>`;
       }
       const sk = SKILLS[id];
       const castLabel = sk.cast === 'ground' ? '指定位置' : sk.cast === 'dir' ? '指定方向' : sk.cast === 'enemy' ? '自动索敌' : '自身';
@@ -1218,7 +1225,7 @@ const UI = {
       const vName = (typeof skillFormName === 'function') ? skillFormName(id, vv) : '';
       const vBadge = `<span class="vb" style="${vv > 0 ? '' : 'display:none'}">${['Ⅰ', 'Ⅱ', 'Ⅲ'][vv] || ''}</span>`;
       return `<div class="skill" data-skill="${id}" title="${sk.name}${vName ? ' · ' + vName : ''} · ${castLabel}${rangeLabel}">
-        <span class="k">${i + 1}</span>${vBadge}<div class="g">${skillIconSvg(id, 26)}</div>
+        <span class="k">${keyOf(i)}</span>${vBadge}<div class="g">${skillIconSvg(id, 26)}</div>
         <span class="cost">${Game.skillCost(sk)}</span><div class="cd"></div></div>`;
     }).join('') +
       `<div class="barset" data-barset="1" title="切换快捷栏（${SKILL_BAR_SET_LABEL}，或 ${SKILL_BAR_SET_KEY_ALT}）· 共 ${SKILL_BAR_SETS} 套 · 当前第 ${setIdx + 1} 套">${barSetIcon(setIdx, 16)}<span class="bs-n">${setIdx + 1}/${SKILL_BAR_SETS}</span></div>` +

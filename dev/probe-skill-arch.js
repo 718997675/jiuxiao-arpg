@@ -76,7 +76,9 @@ const ok = (cond, msg, extra) => {
   ok(box.keys.join('/') === '左键/1/2/3/4', '键位必须是 左键 + 1~4', box.keys.join('/'));
   ok(box.slots[4] === '职业核心', '第 5 张卡是职业核心', box.slots[4]);
   ok(box.titles[4] === '兵形', '刀客 ⑤ 应该是兵形', box.titles[4]);
-  ok(/5 格预览/.test(box.summary), '折叠条上要写明这是预览', box.summary);
+  /* [P1b] 不再是「预览」了：动作条已经切到 5 格，标题必须写清真实键位 */
+  ok(/5 格/.test(box.summary) && /左键/.test(box.summary) && /1~4/.test(box.summary),
+    '折叠条要写明 5 格与真实键位（左键 + 1~4）', box.summary);
 
   /* 展开：5 张卡应在一行（桌面 1440），高度一致，不许叠在一起 */
   const layout = await p.evaluate(() => {
@@ -140,7 +142,7 @@ const ok = (cond, msg, extra) => {
     const txt = body ? body.textContent : '';
     return {
       tab: idx,
-      hasArch: txt.indexOf('新版预览') >= 0,
+      hasArch: txt.indexOf('技能位') >= 0,
       hasTier: txt.indexOf('等级台阶') >= 0,
       hasSlots: txt.indexOf('左键·基础攻击') >= 0,
       hasFifth: txt.indexOf('兵形') >= 0 && txt.indexOf('元素法相') >= 0 && txt.indexOf('召灵兽') >= 0,
@@ -150,7 +152,7 @@ const ok = (cond, msg, extra) => {
   });
   console.log('说明页:', JSON.stringify(help));
   ok(help.tab >= 0, '说明页里要能找到「术法」页签', help.tab);
-  ok(help.hasArch, '说明页要有「技能位（新版预览）」');
+  ok(help.hasArch, '说明页要有「技能位」一节');
   ok(help.hasTier, '说明页要有「等级台阶（新版预览）」');
   ok(help.hasSlots, '说明页要按数据列出 5 个键位');
   ok(help.hasFifth, '说明页要写出三职业的 ⑤ 号位');
