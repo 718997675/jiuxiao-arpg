@@ -1,0 +1,26 @@
+{
+  "kind": "sfx",
+  "name": "sfx-shield",
+  "sampleRate": 44100,
+  "seed": 20260927,
+  "style": null,
+  "mood": null,
+  "tempo": null,
+  "key": "A",
+  "scale": null,
+  "bars": 16,
+  "timeSignature": [
+    4,
+    4
+  ],
+  "loop": false,
+  "density": null,
+  "reverb": null,
+  "swing": null,
+  "saturation": 1.0,
+  "motif": null,
+  "properties": {},
+  "preset": "shield",
+  "duration": null,
+  "gain": 1.0
+}

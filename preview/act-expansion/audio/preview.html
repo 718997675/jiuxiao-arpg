@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>九霄山海录 · 音频素材试听</title>
+<style>
+  :root{
+    --bg:#0c0a08; --card:#17130e; --card2:#1f1a13; --line:#2c2418;
+    --gold:#c8a45c; --gold-dim:#8a7c66; --text:#e8dcc8; --sub:#9b8b73;
+    --red:#c0503c; --green:#4e8a5f;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; padding:0 0 60px;
+    background:radial-gradient(circle at 50% -10%, #1d1710 0%, var(--bg) 55%);
+    color:var(--text);
+    font-family:-apple-system,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  header{padding:44px 28px 26px;max-width:1080px;margin:0 auto;border-bottom:1px solid var(--line)}
+  h1{margin:0 0 10px;font-size:27px;letter-spacing:5px;font-weight:500;
+     background:linear-gradient(180deg,#f0e2c4,#c8a45c 70%);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .sub{margin:0;font-size:12.5px;color:var(--sub);letter-spacing:2px}
+  .sub em{color:var(--gold);font-style:normal}
+  main{max-width:1080px;margin:0 auto;padding:0 28px}
+  h2{font-size:13px;letter-spacing:4px;color:var(--gold);font-weight:500;margin:38px 0 16px;
+     padding-left:11px;border-left:2px solid var(--gold)}
+
+  /* BGM 卡片 */
+  .bmgs{display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:14px}
+  .bgm{background:linear-gradient(160deg,var(--card2),var(--card));border:1px solid var(--line);
+       border-radius:9px;padding:18px 18px 15px;transition:border-color .2s,transform .2s}
+  .bgm:hover{border-color:#4a3d26;transform:translateY(-2px)}
+  .bgm.on{border-color:var(--gold);box-shadow:0 0 0 1px rgba(200,164,92,.22),0 6px 24px -10px rgba(200,164,92,.4)}
+  .bgm .tag{font-size:10.5px;letter-spacing:2px;color:var(--gold-dim);margin-bottom:7px}
+  .bgm .nm{font-size:16px;letter-spacing:1px;margin-bottom:4px}
+  .bgm .meta{font-size:11px;color:var(--sub);line-height:1.7;margin-bottom:13px;
+             font-family:ui-monospace,Menlo,monospace}
+  .play{display:inline-flex;align-items:center;gap:8px;background:none;border:1px solid #463a24;
+        color:var(--gold);padding:7px 15px;border-radius:20px;font-size:12px;letter-spacing:2px;
+        cursor:pointer;font-family:inherit;transition:.15s}
+  .play:hover{background:rgba(200,164,92,.11);border-color:var(--gold)}
+  .bar{height:2px;background:#2a2318;border-radius:2px;margin-top:13px;overflow:hidden}
+  .bar i{display:block;height:100%;width:0;background:var(--gold);transition:width .18s linear}
+
+  /* 音效网格 */
+  .sfxs{display:grid;grid-template-columns:repeat(auto-fill,minmax(168px,1fr));gap:10px}
+  .sfx{background:var(--card);border:1px solid var(--line);border-radius:7px;padding:13px 14px;
+       cursor:pointer;transition:.15s;position:relative;overflow:hidden}
+  .sfx:hover{border-color:#4a3d26;background:var(--card2)}
+  .sfx.on{border-color:var(--gold);background:rgba(200,164,92,.09)}
+  .sfx .n{font-size:13px;letter-spacing:1px;margin-bottom:3px}
+  .sfx .u{font-size:10.5px;color:var(--sub)}
+  .sfx .d{position:absolute;top:12px;right:13px;font-size:10px;color:#6b5e49;
+          font-family:ui-monospace,Menlo,monospace}
+  .sfx .k{font-size:9.5px;color:#5e5342;font-family:ui-monospace,monospace;margin-top:7px}
+
+  footer{max-width:1080px;margin:44px auto 0;padding:22px 28px 0;border-top:1px solid var(--line);
+         font-size:11.5px;color:#6f6350;line-height:2}
+  footer b{color:var(--gold-dim);font-weight:500}
+  .gap{color:#b98a5a}
+</style>
+</head>
+<body>
+<header>
+  <h1>九霄山海录 · 音频素材</h1>
+  <p class="sub">三层 BGM + <em>12</em> 组音效　·　本地合成　·　全部通过体检（静音/削波/接缝/时长）</p>
+</header>
+
+<main>
+  <h2>背景音乐　三层 · 羽调五声（D 小调）· 无缝循环</h2>
+  <div class="bmgs" id="bmgs"></div>
+
+  <h2>音效　点击即播</h2>
+  <div class="sfxs" id="sfxs"></div>
+</main>
+
+<footer>
+  <b>配器</b>　刻意剔掉 saw_pad / square_lead / pulse_lead 这些带电感的波形 —— 古风的骨架是「拨弦讲故事 + 箫声铺底 + 编钟点题」，探索层故意不给鼓：沧桑感有一半来自留白，加了鼓就变成「热闹」。<br>
+  <b>怎么来的</b>　纯代码合成（振荡器 + 包络 + 滤波 + 混响），同 seed 逐字节可复现；原始 wav、spec 与体检报告在 <code>bgm/wav-src/</code>、<code>sfx/_meta/</code>，可拿 <code>.mid</code> 进 DAW 换音源重渲。<br>
+  <b>为什么是羽调不是宫调</b>　<span class="gap">工具箱的 major / majorPentatonic 分支和声生成有 bug</span>（会输出 Cm → Fm → B → E 这种不属于该调的和弦），宫调的「正大」这条路暂时走不通；羽调（小调五声）反而更贴「沧桑」。<br>
+  <b>首领层怎么改的</b>　第一版 70 BPM + 稀疏鼓，实测每秒只有 <span class="gap">1.0 次</span>打击 —— 比战斗层（1.3 次）还静，所以听着「和缓」。改法：速度 70 → 108、鼓换成专用「战鼓」型（定音鼓长衰减 + 通鼓滚动，一小节 7 击）、混响 0.48 → 0.24、低音换管风琴八度驱动。打击密度从 1.0 次/秒 提到 <span class="gap">6.2 次/秒</span>。压迫感靠「不给你喘气的空」，不是靠音量。<br>
+  <b>缺口</b>　<span class="gap">thunder / fire / ice / die / boss 登场</span> 这五个音效工具箱没有现成预设，需要单独做 —— 目前游戏里仍由实时合成顶着。<br>
+  <b>注意</b>　这是「结构正确的器乐骨架」，音色是合成音色，不是实录乐器。要商业级质感得进 DAW 换真音源。
+</footer>
+
+<script>
+const BGM = [
+  { id:'guofeng-explore', tag:'第 1 层 · 探索', nm:'九霄 · 行', time:'73.85 秒', bpm:'52 BPM',
+    inst:'古琴 / 筝 · 箫 · 编钟', note:'D 羽五声 · 无鼓，靠留白与混响' },
+  { id:'guofeng-combat',  tag:'第 2 层 · 战斗', nm:'九霄 · 战',   time:'41.74 秒', bpm:'92 BPM',
+    inst:'号角 · 筝的刮奏 · 低音拨弦 · 定音鼓', note:'D 小调 i-VI-III-VII · 悲壮不躁' },
+  { id:'guofeng-boss',    tag:'第 3 层 · 首领', nm:'九霄 · 劫', time:'53.33 秒', bpm:'108 BPM',
+    inst:'号角 · 筝的刮奏 · 管风琴低音 · 颤音弦乐 · 战鼓', note:'E 小调 + phrygian 旋律 · 每小节 7 击战鼓' }
+];
+
+const SFX = [
+  ['sfx-click',    '界面点击', 'ui 按钮',        '0.05s', 'click'],
+  ['sfx-blip',     '文字提示', '对话/提示',      '0.09s', 'blip'],
+  ['sfx-levelup',  '升级',     'levelup',        '1.30s', 'levelup'],
+  ['sfx-powerup',  '能力强化', 'cast / heal',    '0.85s', 'powerup'],
+  ['sfx-explosion','爆炸',     'explode',        '1.20s', 'explosion'],
+  ['sfx-whoosh',   '挥砍',     'swing',          '0.55s', 'whoosh'],
+  ['sfx-hit',      '命中受击', 'hit',            '0.26s', 'hit'],
+  ['sfx-coin',     '金币',     'coin',           '0.28s', 'coin'],
+  ['sfx-pickup',   '拾取',     'loot',           '0.18s', 'pickup'],
+  ['sfx-shield',   '护盾',     'heal / 护盾',    '0.60s', 'shield'],
+  ['sfx-land',     '落地',     '跳跃落地',       '0.22s', 'land'],
+  ['sfx-footstep', '脚步',     '移动',           '0.16s', 'footstep']
+];
+
+const bmgsEl = document.getElementById('bmgs');
+const playing = new Map();
+
+BGM.forEach(b => {
+  const el = document.createElement('div');
+  el.className = 'bgm';
+  el.innerHTML = `
+    <div class="tag">${b.tag}</div>
+    <div class="nm">${b.nm}</div>
+    <div class="meta">${b.time} · ${b.bpm}<br>${b.inst}<br>${b.note}</div>
+    <button class="play">▶ 试听</button>
+    <div class="bar"><i></i></div>`;
+  const audio = new Audio(`bgm/${b.id}.m4a`);
+  audio.loop = true;
+  const btn = el.querySelector('.play');
+  const fill = el.querySelector('.bar i');
+
+  audio.addEventListener('timeupdate', () => {
+    if (audio.duration) fill.style.width = (audio.currentTime / audio.duration * 100) + '%';
+  });
+  btn.addEventListener('click', () => {
+    if (!audio.paused) { audio.pause(); btn.textContent = '▶ 试听'; el.classList.remove('on'); fill.style.width = '0'; return; }
+    playing.forEach((a, e) => { a.pause(); e.classList.remove('on'); e.querySelector('.play').textContent = '▶ 试听'; e.querySelector('.bar i').style.width = '0'; });
+    playing.clear();
+    audio.currentTime = 0;
+    audio.play();
+    playing.set(audio, el);
+    btn.textContent = '■ 停止';
+    el.classList.add('on');
+  });
+  bmgsEl.appendChild(el);
+});
+
+let curSfx = null;
+const sfxsEl = document.getElementById('sfxs');
+SFX.forEach(([f, n, u, d, k]) => {
+  const el = document.createElement('div');
+  el.className = 'sfx';
+  el.innerHTML = `<div class="d">${d}</div><div class="n">${n}</div><div class="u">${u}</div><div class="k">${k}</div>`;
+  el.addEventListener('click', () => {
+    if (curSfx) { curSfx.pause(); document.querySelectorAll('.sfx.on').forEach(x => x.classList.remove('on')); }
+    curSfx = new Audio(`sfx/${f}.wav`);
+    curSfx.play();
+    el.classList.add('on');
+    curSfx.addEventListener('ended', () => el.classList.remove('on'));
+  });
+  sfxsEl.appendChild(el);
+});
+</script>
+</body>
+</html>

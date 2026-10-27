@@ -24,6 +24,65 @@
 - 旧的 `*.app.workbuddy.host/?sharecode=...` **已废弃**，不要再往里发。
 - Pages 有 CDN 缓存。脚本里都加了 `?t=<时间戳>` 绕缓存；人工验证没效果先强刷。
 
+### 2.1 分支预览（不影响正式站）
+
+**做法：`main` 的 `preview/<slug>/` 子目录。** 正式站根目录一个字节都不动。
+
+```bash
+./dev/publish-preview.sh                        # 当前分支 → preview/<分支名>/
+./dev/publish-preview.sh feat/act-expansion     # 指定分支
+./dev/publish-preview.sh --list                 # 看已有预览
+./dev/publish-preview.sh --rm act-expansion     # 下线
+./dev/publish-preview.sh feat/act-expansion --dry   # 只在本地生成，不提交
+node dev/preview-check.js --url <预览地址>       # 回归：能开局 + 资源不越界 + 存档隔离
+```
+
+- 地址形如 `https://718997675.github.io/jiuxiao-arpg/preview/act-expansion/`
+- **为什么是子目录而不是「分支自动发布」**：Pages 项目站点**只有一个发布源**（main 根），
+  没有任何设置能让分支 X 发布到子路径。子目录是唯一能做到「同域名、不同 path、不碰正式站」的办法。
+- **代价几乎为零**：副本与根目录文件内容相同，git 按 blob 去重，仓库不会真多 8MB。
+- **存档必须隔离**：预览站和正式站**同源**，不隔离的话在预览站玩一局会覆盖正式站进度。
+  `dev/preview-inject.js` 给副本的 `index.html` 注入 `localStorage` 前缀 `__pv:`，
+  并把 `<title>` 改成 `[预览] ...`。**别删这段注入**，也别忘了它只作用于副本。
+- 预览目录内容由脚本生成，**不要手改**；改了分支重新跑一遍脚本即可。
+
+### 2.2 多分支并行（换机器 / 换账号后怎么接着干）
+
+一条线一个分支，`main` 是正式线。**用户只要说「继续做 act 那条」就够了**，
+助手照下面的流程走，不用用户记命令。
+
+```bash
+./dev/branch.sh              # 看全貌：当前分支 / 每条线落后 main 多少 / 有没有预览站
+./dev/branch.sh act          # 切到名字含 act 的分支（模糊匹配，唯一命中才切）
+./dev/branch.sh main         # 切回正式线
+./dev/branch.sh --sync       # 把 main 合并进当前分支（分支放久了补工具/补修复）
+./dev/branch.sh --new fix/x  # 从当前分支拉一条新线
+```
+
+**切分支的硬规则**
+
+1. **先提交再切**。工作区有未提交改动时 `branch.sh` 会直接拦住 —— 否则改动会被带到另一条线上，
+   下次提交就混进错误的提交里。拦住了就 `./push.sh "…"` 或 `git stash`。
+2. **`preview/` 目录只属于 main**。切到别的分支时它会消失，这是正常的：预览站是 main 上的静态副本，
+   跟你在哪个分支无关。
+3. **分支要定期 `--sync`**。分支放久了会缺 main 上新加的东西（比如新脚本、数值修复），
+   表现就是「这条线上跑 `./dev/publish-preview.sh` 提示找不到文件」。
+4. **预览站永远从 main 发**：`./dev/publish-preview.sh <分支>` 内部会切到 main 提交，然后切回来。
+
+**换机器 / 换账号后的第一步**
+
+```bash
+git clone https://github.com/718997675/jiuxiao-arpg.git && cd jiuxiao-arpg
+git fetch origin                 # 分支都在远程，clone 完就全能看到
+./dev/branch.sh                  # 一眼看清有哪几条线、各自状态
+./dev/branch.sh act              # 切过去继续
+```
+
+**唯一不跟着走的是 `.workbuddy-ai/memory/`**：它在 `.git/info/exclude` 里，不进 git
+（仓库是公开的 Pages 站点，日志不能公开）。换机器后日志不会自动出现，所以：
+- 跨机器必须保留的信息，写进本文档（`AGENTS.md`），不要只写在日志里；
+- 新机器上照常往 `.workbuddy-ai/memory/YYYY-MM-DD.md` 追加，本地日志从当天开始即可。
+
 ## 3. 开发环境
 
 - 用户在 **Windows** 上开发。仓库早期在 macOS 写的，部分 `dev/*.js` 仍硬编码 macOS Chrome 路径。
@@ -60,6 +119,7 @@ node dev/smoke.js            # 三职业开局冒烟，零 pageerror 才算过
 node dev/mobile-layout.js    # 6 视口 × 10 页签：键位重叠/出屏/裁切/可滚性
 node dev/live-check.js       # 线上能否开局（推完 30~60s 后跑）
 node dev/mobile-layout.js --live   # 线上版布局回归
+node dev/preview-check.js --url <预览地址>   # 预览站：能开局 + 资源不越界 + 存档隔离
 ```
 
 ## 6. 踩过的坑（改之前先看一眼，能省几小时）
