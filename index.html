@@ -640,6 +640,33 @@
     color:#a8a090;letter-spacing:1px;margin-bottom:7px;flex:none}
   .sk-top b{color:#ffd479;font-size:14px;font-weight:600;font-variant-numeric:tabular-nums}
   .sk-top .dim{font-size:10px;color:#6a6458;letter-spacing:0}
+  /* [P0] 新版技能位预览：默认折叠的一排只读卡（不接管点击，切 5 格是 P1 的事） */
+  .sk-arch{flex:none;margin-bottom:7px;border:1px solid rgba(216,178,90,.14);
+    border-radius:4px;background:rgba(24,21,16,.5)}
+  .sk-arch>summary{cursor:pointer;list-style:none;padding:4px 9px;font-size:10.5px;
+    letter-spacing:.6px;color:#8f8879}
+  .sk-arch>summary::-webkit-details-marker{display:none}
+  .sk-arch>summary::before{content:'▸ ';color:#5c5648}
+  .sk-arch[open]>summary::before{content:'▾ '}
+  .sk-arch[open]>summary{color:#c9b98d;border-bottom:1px solid rgba(216,178,90,.12)}
+  .sk-arch-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:6px;padding:7px 9px 4px}
+  .sk-ac{min-width:0;border:1px solid rgba(216,178,90,.12);border-radius:3px;padding:4px 6px;
+    background:linear-gradient(180deg,#191612,#100e0b)}
+  .sk-ac-hd{display:flex;align-items:baseline;gap:4px;font-size:10.5px;color:#cbbf9e;
+    white-space:nowrap;overflow:hidden}
+  .sk-ac-hd b{color:#ffd479;font-size:12px;font-weight:600}
+  .sk-ac-key{font-size:9px;color:#0f0d0a;background:#a8945f;border-radius:2px;padding:0 3px}
+  .sk-ac-title{font-weight:600}
+  .sk-ac-slot{font-size:9px;color:#6f6a5c;margin-left:auto}
+  .sk-ac-steps{display:flex;flex-direction:column;gap:1px;margin:3px 0}
+  .sk-as{font-size:9.5px;color:#9a9382;line-height:1.35;white-space:nowrap;
+    overflow:hidden;text-overflow:ellipsis}
+  .sk-as i{font-style:normal;color:#5f5a4d;margin-right:3px;font-variant-numeric:tabular-nums}
+  .sk-as.k-count,.sk-as.k-evo1,.sk-as.k-evo2,.sk-as.k-final{color:#d9c48c}
+  .sk-ac-foot{font-size:9px;color:#6b6659;line-height:1.35;white-space:nowrap;
+    overflow:hidden;text-overflow:ellipsis}
+  .sk-arch-tip{padding:0 9px 6px;font-size:9.5px;color:#6f6a5c;line-height:1.5}
+  @media (max-width:820px){.sk-arch-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
   .sk-zoom{display:inline-flex;align-items:center;gap:3px;flex:none}
   .sk-zoom .vb{font-family:inherit;font-size:12px;line-height:1;cursor:pointer;padding:3px 8px;
     border:1px solid rgba(216,178,90,.26);border-radius:3px;color:#a89878;

@@ -52,6 +52,54 @@ Object.assign(UI, {
     if (p && p.classList.contains('open')) this.renderSkillPanel();
   },
 
+  /* ============================================================
+   * [P0] 新版技能位预览（只展示）
+   *
+   * 技能系统正在从「12 技能平铺 + 8 格动作条」收敛到「5 个功能位（左键 + 1~4）」。
+   * P0 阶段只把新结构**摆出来给人看**，一行战斗代码都没接：
+   *   · 键位仍是 1~8，动作条仍是 SKILL_BAR_SLOTS 格
+   *   · 这里不绑任何事件，展开也只是读数据
+   *
+   * 文案全部来自 SKILL_ARCHETYPE / SKILL_TIERS，改数据表这里跟着变 ——
+   * 面板里不许出现写死的技能名（本项目的固定规矩）。
+   * ============================================================ */
+  skArchHTML() {
+    if (typeof SKILL_ARCHETYPE === 'undefined' || typeof skillArchList !== 'function') return '';
+    const list = skillArchList(Game.state.cls);
+    if (!list.length) return '';
+    const T = SKILL_TIERS;
+    const stepName = lv => (skillTierStep(lv) || {}).name || '';
+    const cards = list.map(slot => {
+      const steps = T.visible.map(lv => {
+        const kind = (skillTierStep(lv) || {}).kind || 'num';
+        const txt = slot.tiers[lv] || '';
+        /* 卡窄，长文案会被省略号吃掉 —— 补 title 让悬停能看到全文 */
+        return `<span class="sk-as k-${kind}" title="Lv${lv} ${stepName(lv)}：${txt}"><i>${lv}</i>${txt}</span>`;
+      }).join('');
+      /* ⑤ 号位每种职业的“身份”写法不同：刀式 / 法相 / 召唤，全部从数据取 */
+      let extra = '';
+      if (slot.forms) extra = '刀式 ' + slot.forms.map(f => f.name).join(' / ');
+      else if (slot.finisher) extra = slot.finisher.name;
+      else if (slot.aura) extra = `主元素强化 ${slot.aura.durMin}~${slot.aura.durMax} 秒`;
+      else if (slot.unit) extra = '限时召唤';
+      const inherit = (slot.inherit || []).map(id => (SKILLS[id] || {}).name || id);
+      const foot = (inherit.length ? '现继承 ' + inherit.join(' / ') : '新做') + (extra ? ' · ' + extra : '');
+      return `<div class="sk-ac">
+        <div class="sk-ac-hd"><b>${slot.no}</b><span class="sk-ac-key">${slot.keybind}</span>
+          <span class="sk-ac-title">${slot.title}</span><span class="sk-ac-slot">${slot.name}</span></div>
+        <div class="sk-ac-steps">${steps}</div>
+        <div class="sk-ac-foot" title="${foot}">${foot}</div>
+      </div>`;
+    }).join('');
+    const first = T.curve[0].pct;
+    return `<details class="sk-arch"><summary>新版技能位 · 5 格预览（P0 只展示：键位与动作条暂未切换）</summary>
+      <div class="sk-arch-grid">${cards}</div>
+      <div class="sk-arch-tip">1→10 级：每级 +${first}%，Lv3 / Lv7 数量 +1，Lv5 / Lv9 进化，
+        Lv10 终极形态；11→20 为精进层（来自装备词缀，不占技能点），共 ${skillLvMul(T.cap)} 倍。
+        台阶名：${T.visible.map(lv => lv + ' ' + stepName(lv)).join(' · ')}。当前动作条仍是 ${SKILL_BAR_SLOTS} 格</div>
+    </details>`;
+  },
+
   renderSkillPanel() {
     const p = document.getElementById('skillPanel');
     if (!p || !Game.state) return;
@@ -96,6 +144,8 @@ Object.assign(UI, {
     </div>`;
 
     h += this.skBuilds ? this.skBuildsHTML() : '';
+    /* [P0] 新版技能位预览：只读，默认折叠，不接管任何点击 */
+    h += this.skArchHTML();
     /* 手机：树上换成 DOM 横向树（见 renderSkillTreeDOM），不再用缩放画布。
      * 外面的 .sk-body / .sk-left / .sk-right 结构不变，所以分栏 CSS 原样复用。 */
     const mt = (typeof MTREE !== 'undefined') && MTREE.isMobile();

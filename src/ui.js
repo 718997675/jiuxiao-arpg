@@ -776,8 +776,33 @@ const UI = {
       }
     }
     const pendAll = behPendNames.concat(pasPendNames);
+    /* [P0] 新版技能位 / 等级台阶：只展示。文案全部现读 SKILL_ARCHETYPE / SKILL_TIERS，
+     * 面板里那份预览用的是同一批数据 —— 改表两处一起变，不用维护第二份清单。 */
+    const ARCH = (typeof SKILL_ARCHETYPE !== 'undefined') ? SKILL_ARCHETYPE : null;
+    const TIERS = (typeof SKILL_TIERS !== 'undefined') ? SKILL_TIERS : null;
+    const archHTML = ARCH ? Object.keys(ARCH.classes).map(ck => {
+      const pack = ARCH.classes[ck];
+      const tags = pack.slots.map(sl => `<span class="hp-tag kc">${sl.no} ${sl.title}</span>`).join('');
+      return `<div class="hp-tags kcs"><b style="color:#e8d8b0;margin-right:4px">${pack.name}</b>${tags}</div>`;
+    }).join('') : '';
+    const slotLine = ARCH ? ARCH.slots.map(m => `${m.keybind}·${m.name}`).join(' / ') : '';
+    const tierLine = TIERS ? TIERS.steps
+      .filter(s => TIERS.visible.indexOf(s.lv) >= 0)
+      .map(s => `<b>Lv${s.lv}</b> ${s.name}`).join(' · ') : '';
+    const tierMul = (typeof skillLvMul === 'function' && TIERS) ? skillLvMul(TIERS.cap) : 2.02;
+    const archRows = (ARCH && TIERS) ? [
+      row('技能位（新版预览）', `从 12 技能平铺收敛到 <b>5 个功能位</b>（${slotLine}）：点数集中，每个技能才养得起来。` +
+        `三职业内容各自独立，⑤ 号位不可互换 —— 刀客兵形（三种刀式 + 断岳斩，全程不产生任何独立单位）、` +
+        `法师元素法相（只强化主元素）、道士限时召唤（技能产物，不是宠物）。` +
+        `<b>本版只展示：动作条仍是 ${barSlots} 格、键位仍是 1-${barSlots}</b>，切 5 格在 P1。${archHTML}`),
+      row('等级台阶（新版预览）', `1→10 级为圆满：${tierLine}；11→20 为精进层（来自装备词缀，不占技能点）。` +
+        `伤害曲线分段：1~10 每级 ${TIERS.curve[0].pct}%、11~15 每级 ${TIERS.curve[1].pct}%、` +
+        `16~20 每级 ${TIERS.curve[2].pct}%，20 级合计约 <b>${tierMul} 倍</b>` +
+        `（若全程按 8% 算会到 2.52 倍，再乘数量轴 DPS 会爆）。当前技能等级上限仍是 ${lvMax}`)
+    ] : [];
     H.push(sec('七 · 术法与变体', `${skillIds.length} 个技能 · ${coreN} 条精研 · ${pickN} 条取向 · ${varN} 个变体 · ${pasN} 条被动 · ${bdN} 套流派`, [
       row('技能', `三职业各 ${Math.round(skillIds.length / 3)} 个，按等级领悟。技能点每级 1 点，技能等级上限 ${lvMax}，每级 +${lvStep}% 伤害。详情卡的「升级」与「−1」同样先进入「未确认」条，确认后写入存档`),
+      ...archRows,
       row('精研', `每技能一条，等级达到 ${SKILL_TREE.pickAt} 后自动生效，不消耗技能点，效果随等级提升。改写对象为战斗行为：斩杀线、攻击段数、作用范围、附带的持续伤害`),
       row('取向', `技能等级达到 ${SKILL_TREE.pickAt} 后解锁，二选一，消耗 ${SKILL_TREE.branchCost.pick} 点。已选项可单独取消并返还点数，更换取向无需重置技能树`),
       row('变体', `每技能 3 条（Ⅰ / Ⅱ / Ⅲ），可随时切换，不消耗技能点。树上技能名下方的文字为当前变体名，<b>点击切换至下一条</b>（自动跳过不可用或前提不满足的条目）；说明书卡内三条条目亦可直接点选`),

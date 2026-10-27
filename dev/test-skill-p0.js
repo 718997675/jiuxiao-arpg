@@ -216,11 +216,19 @@ ok(skillLineSpent('warrior', '不存在', spent) === 0, '未知线返回 0');
 console.log('六、P0 边界（战斗与存档不许变）');
 ok(SKILL_LV_MAX === 5, 'P0 期间 SKILL_LV_MAX 仍是 5', SKILL_LV_MAX);
 ok(near(SKILL_LV_STEP, 0.08), 'P0 期间 SKILL_LV_STEP 仍是 0.08', SKILL_LV_STEP);
-const hotFiles = ['src/game.js', 'src/ui-skills.js', 'src/core/save.js'];
-const wired = hotFiles.filter(f => fs.readFileSync(path.join(ROOT, f), 'utf8').indexOf('skillLvMul') >= 0);
-ok(wired.length === 0, 'P0 不许把 skillLvMul 接进战斗/UI/存档（P2 才接）', wired.join(','));
-const archWired = hotFiles.filter(f => fs.readFileSync(path.join(ROOT, f), 'utf8').indexOf('SKILL_ARCHETYPE') >= 0);
-ok(archWired.length === 0, 'P0 不许让战斗代码读 SKILL_ARCHETYPE', archWired.join(','));
+/* 结算侧（战斗 / 存档）不许读新数据；展示侧（面板 / 说明页）只许只读展示 */
+const readSrc = f => fs.readFileSync(path.join(ROOT, f), 'utf8');
+const combatFiles = ['src/game.js', 'src/core/save.js'];
+const wired = combatFiles.filter(f => readSrc(f).indexOf('skillLvMul') >= 0);
+ok(wired.length === 0, 'P0 不许把 skillLvMul 接进战斗/存档（P2 才接）', wired.join(','));
+const archWired = combatFiles.filter(f => readSrc(f).indexOf('SKILL_ARCHETYPE') >= 0);
+ok(archWired.length === 0, 'P0 不许让战斗/存档读 SKILL_ARCHETYPE', archWired.join(','));
+
+/* 展示侧反过来必须真的读了，否则「说明页跟着数据变」只是句空话 */
+ok(readSrc('src/ui-skills.js').indexOf('SKILL_ARCHETYPE') >= 0, '术法面板要展示新版技能位');
+ok(readSrc('src/ui-skills.js').indexOf('skArchHTML') >= 0, '面板里那块预览必须存在');
+ok(readSrc('src/ui.js').indexOf('SKILL_ARCHETYPE') >= 0, '说明页要展示新版技能位');
+ok(readSrc('src/ui.js').indexOf('SKILL_TIERS') >= 0, '说明页要展示等级台阶');
 
 /* 旧接口必须还能用（P0 期间面板与战斗都还走它） */
 const oldForkCount = SKILL_TREE.layout.warrior.reduce((n, t) => n + t.forks.length, 0);
