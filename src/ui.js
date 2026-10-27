@@ -1402,7 +1402,7 @@ const UI = {
    * 按区域分页；击杀解锁；集齐一区给永久属性（走 Game.codexBonus）。
    * 未收录的条目只露「？」——留白比剧透更有收集欲。
    * ============================================================ */
-  codexRegion: 'forest',
+  codexRegion: 'part1',
 
   renderCodex() {
     if (!Game.state) return;

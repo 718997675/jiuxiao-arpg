@@ -1,6 +1,8 @@
 /* ============================================================
  * 数据层 · 怪物
- * 40 种普通怪（6 族群）+ 12 个 Boss
+ * 76 种普通怪（6 族群）+ 32 个 Boss
+ * [M4] 新增 36 只野外怪见 MONSTERS 末尾的分章段落；
+ *      地下城专属 4 只随 M5 一起进（届时 80）。
  *
  * [S5] 40 怪的分工：
  *   · 原有 12 只全部保留 key（任务链 QUESTS 直接按 key 引用，不能改名）
@@ -371,6 +373,259 @@ const MONSTERS = {
     hp: 380, atk: 44, spd: 1.8, scale: 1.2, color: 0x7aa88a, cloth: 0x3a5a4a,
     xp: 92, melee: true, range: 3.2, atkCd: 2.2, armorHigh: true,
     ai: 'coward', lore: '仙门用整块玉雕的守卫，碎了也会自己长回去。'
+  },
+
+  /* ============================================================
+   * [M4] 新增 36 只野外怪（计划书 §6.2 全量，地下城专属 4 只留给 M5）
+   *
+   * 分工（§6.1）：0 新模型 —— 全部复用既有 22 个程序化骨架，
+   * 只换色 / 换比例 / 换族群 / 换 AI。行为差异全部来自 8 种 AI 原型
+   * × 族群抗性的组合，不写任何新 AI。
+   *
+   * 数值口径：以「所在章现有怪池的均值」为锚（血量 / 攻击的都是
+   * 放大前的基准值，实际按地图等级放大），同 AI 的怪拉不开倍率；
+   * 石魔系血厚攻慢、兽系血薄速快、妖灵系血薄攻高，与老怪一致。
+   * key / 名 / 模型 / 族群 / AI 一律照计划书 §6.2 的表，不另起名。
+   * ============================================================ */
+
+  /* ---------------- 卷一 1-1 幽篁林 / 落霞坡 ---------------- */
+  foxfire: {
+    name: '狐火', model: 'lantern', family: 'spirit',
+    hp: 48, atk: 12, spd: 2.6, scale: 0.9, color: 0xff9a5a, cloth: 0x8a3a1a,
+    xp: 16, ranged: true, range: 12, atkCd: 2.1, proj: { color: 0xffb080, speed: 14 }, fly: true,
+    ai: 'kite', lore: '尾巴上的火不烫，烫的是它看你的眼神。'
+  },
+  cliffram: {
+    name: '崖羊', model: 'beast', family: 'beast',
+    hp: 72, atk: 11, spd: 4.4, scale: 1.05, color: 0x9a8468, cloth: 0x5a4a34,
+    xp: 17, melee: true, range: 2.2, atkCd: 1.3, charge: true,
+    ai: 'flank', lore: '从崖上直冲下来，撞上就是骨断。'
+  },
+  stonecrow: {
+    name: '石鸦', model: 'bat', family: 'stone',
+    hp: 55, atk: 12, spd: 4.4, scale: 0.85, color: 0x6a6a70, cloth: 0x3a3a40,
+    xp: 15, melee: true, range: 2.0, atkCd: 1.2, fly: true,
+    lore: '落在石碑上的鸦，本身就是碑。'
+  },
+
+  /* ---------------- 卷一 1-2 血月沼泽 / 沉骨滩 ---------------- */
+  mirehorror: {
+    name: '泥煞', model: 'drowned', family: 'undead',
+    hp: 118, atk: 16, spd: 2.6, scale: 1.05, color: 0x5a5a3a, cloth: 0x33331f,
+    xp: 27, melee: true, range: 2.4, atkCd: 2.0,
+    lore: '泥里伸出的手，抓谁是谁。'
+  },
+  leechqueen: {
+    name: '蛭母', model: 'spider', family: 'beast',
+    hp: 135, atk: 12, spd: 2.2, scale: 1.1, color: 0x6a3a4a, cloth: 0x3a1a26,
+    xp: 30, melee: true, range: 2.6, atkCd: 2.2, poison: true,
+    ai: 'summoner', lore: '一直在产卵，一直在爬。'
+  },
+  bonefisher: {
+    name: '骨钓翁', model: 'humanoid', family: 'undead',
+    hp: 92, atk: 18, spd: 2.6, scale: 1.0, color: 0xc8c0a8, cloth: 0x4a4436,
+    xp: 28, ranged: true, range: 14, atkCd: 2.2, proj: { color: 0xd8d2b8, speed: 15 },
+    lore: '钓的不是鱼，是过路人的魂。'
+  },
+
+  /* ---------------- 卷一 1-3 骨塔祭场 / 玄铁矿洞 / 铁山绝顶 ---------------- */
+  ironmaw: {
+    name: '铁颚虫', model: 'spider', family: 'beast',
+    hp: 175, atk: 24, spd: 3.2, scale: 1.1, color: 0x4a4a42, cloth: 0x26261f,
+    xp: 50, melee: true, range: 2.6, atkCd: 1.6,
+    lore: '颚能咬断铁镐，也咬断腿。'
+  },
+  cinderhand: {
+    name: '灰手', model: 'golem', family: 'stone',
+    hp: 200, atk: 26, spd: 2.4, scale: 1.2, color: 0x5a5248, cloth: 0x2e2a22,
+    xp: 52, melee: true, range: 2.8, atkCd: 2.2, fire: true,
+    ai: 'bomber', lore: '碰它一下，它就烧起来。'
+  },
+  forgemaster: {
+    name: '铸魂匠', model: 'humanoid', family: 'humanoid',
+    hp: 160, atk: 24, spd: 2.8, scale: 1.05, color: 0xb07a3a, cloth: 0x503014,
+    xp: 54, ranged: true, range: 13, atkCd: 2.3, proj: { color: 0xffb060, speed: 15 },
+    ai: 'healer', lore: '把活人烧成铁，再给铁安魂。'
+  },
+
+  /* ---------------- 卷二 2-1 寒潭水牢 / 冰魄湖 ---------------- */
+  frostwraith: {
+    name: '霜怨', model: 'ghost', family: 'undead',
+    hp: 95, atk: 22, spd: 3.6, scale: 0.95, color: 0xaad8e8, cloth: 0x3a5a6a,
+    xp: 62, ranged: true, range: 13, atkCd: 2.0, proj: { color: 0xbfe8ff, speed: 16 },
+    ai: 'kite', lore: '死在水里，冷到现在。'
+  },
+  iceveil: {
+    name: '冰帷', model: 'ghost', family: 'spirit',
+    hp: 85, atk: 24, spd: 2.4, scale: 1.0, color: 0x8ac8e0, cloth: 0x2a4a5e,
+    xp: 64, ranged: true, range: 15, atkCd: 2.4, proj: { color: 0xa8e0ff, speed: 14 },
+    lore: '一层薄冰后面，有张脸。'
+  },
+  frozenwidow: {
+    name: '冰寡妇', model: 'spider', family: 'beast',
+    hp: 150, atk: 22, spd: 3.0, scale: 1.05, color: 0x4a6a8a, cloth: 0x1e3448,
+    xp: 63, melee: true, range: 2.4, atkCd: 1.7, poison: true,
+    lore: '结的网冻成冰棱。'
+  },
+
+  /* ---------------- 卷二 2-2 熔脉深沟 / 灰烬荒原 ---------------- */
+  ashhound: {
+    name: '灰烬犬', model: 'wolf', family: 'beast',
+    hp: 150, atk: 28, spd: 4.6, scale: 1.0, color: 0x6a5a50, cloth: 0x33291f,
+    xp: 78, melee: true, range: 2.2, atkCd: 1.3, charge: true, fire: true,
+    ai: 'flank', lore: '从火场里跑出来的，毛还在烧。'
+  },
+  flamepriest: {
+    name: '拜火祭司', model: 'humanoid', family: 'humanoid',
+    hp: 165, atk: 27, spd: 2.8, scale: 1.0, color: 0xc06a2a, cloth: 0x5e2610,
+    xp: 80, ranged: true, range: 13, atkCd: 2.3, proj: { color: 0xffa050, speed: 15 },
+    ai: 'healer', lore: '一边烧人，一边替人祈祷。'
+  },
+  magmaworm: {
+    name: '熔脉虫', model: 'snake', family: 'stone',
+    hp: 215, atk: 26, spd: 2.8, scale: 1.1, color: 0x8a3a1a, cloth: 0x4a1608,
+    xp: 79, melee: true, range: 2.8, atkCd: 2.0, fire: true,
+    lore: '钻在地脉里，出来时带着岩浆。'
+  },
+
+  /* ---------------- 卷二 2-3 赤炎峡谷 / 焚天祭坛 ---------------- */
+  sootwraith: {
+    name: '焦魂', model: 'ghost', family: 'undead',
+    hp: 150, atk: 32, spd: 4.2, scale: 0.95, color: 0x4a4038, cloth: 0x221c16,
+    xp: 92, melee: true, range: 2.2, atkCd: 1.8, fire: true,
+    ai: 'bomber', lore: '烧死的人，最后都成了火星。'
+  },
+  emberhound: {
+    name: '炽鬃犬', model: 'wolf', family: 'beast',
+    hp: 165, atk: 33, spd: 4.7, scale: 1.05, color: 0x8a3a18, cloth: 0x4a1608,
+    xp: 94, melee: true, range: 2.2, atkCd: 1.3, charge: true, fire: true,
+    ai: 'flank', lore: '鬃毛是火，跑起来像一道地火。'
+  },
+  cinderlord: {
+    name: '烬主', model: 'brute', family: 'humanoid',
+    hp: 250, atk: 31, spd: 3.0, scale: 1.25, color: 0x5a4438, cloth: 0x2c2018,
+    xp: 96, melee: true, range: 3.0, atkCd: 2.0, fire: true, armorHigh: true,
+    lore: '焚天军里烧得最久的那一个。'
+  },
+
+  /* ---------------- 卷三 3-1 九幽地宫 / 白骨长廊 / 忘川河滩 ---------------- */
+  soulgaoler: {
+    name: '引魂卒', model: 'headless', family: 'undead',
+    hp: 280, atk: 38, spd: 3.2, scale: 1.2, color: 0x4a4a56, cloth: 0x22222a,
+    xp: 108, melee: true, range: 3.0, atkCd: 1.7, charge: true, armorHigh: true,
+    lore: '押着魂走，也顺手押你。'
+  },
+  papereffigy: {
+    name: '纸人', model: 'humanoid', family: 'spirit',
+    hp: 190, atk: 36, spd: 2.6, scale: 0.95, color: 0xe8e0d0, cloth: 0xb0a890,
+    xp: 106, ranged: true, range: 12, atkCd: 2.4, proj: { color: 0xf0e8d0, speed: 13 },
+    ai: 'summoner', lore: '烧给死人的，自己活了。'
+  },
+  wantern: {
+    name: '忘灯', model: 'lantern', family: 'spirit',
+    hp: 130, atk: 40, spd: 2.6, scale: 1.0, color: 0x8affd8, cloth: 0x1e4a3a,
+    xp: 110, ranged: true, range: 12, atkCd: 2.2, proj: { color: 0xa8ffd8, speed: 13 }, fly: true,
+    ai: 'kite', lore: '照亮的是忘川，不是路。'
+  },
+
+  /* ---------------- 卷三 3-2 九幽深渊 / 黄泉渡 ---------------- */
+  tidewretch: {
+    name: '潮尸', model: 'drowned', family: 'undead',
+    hp: 260, atk: 42, spd: 2.6, scale: 1.05, color: 0x3a5a5a, cloth: 0x1c302f,
+    xp: 124, melee: true, range: 2.4, atkCd: 2.0, poison: true,
+    lore: '泡了三百年，还在往岸上爬。'
+  },
+  scalekeeper: {
+    name: '业秤', model: 'statue', family: 'stone',
+    hp: 330, atk: 40, spd: 1.6, scale: 1.2, color: 0x8a7a4a, cloth: 0x403520,
+    xp: 126, ranged: true, range: 15, atkCd: 2.5, proj: { color: 0xd8c070, speed: 15 }, armorHigh: true,
+    lore: '称你的业，称完就动手。'
+  },
+  wraithlord: {
+    name: '怨主', model: 'ghost', family: 'spirit',
+    hp: 220, atk: 44, spd: 2.8, scale: 1.1, color: 0x5a4a7a, cloth: 0x241c3a,
+    xp: 128, ranged: true, range: 13, atkCd: 2.2, proj: { color: 0x9a7aff, speed: 15 },
+    ai: 'summoner', lore: '一个怨念，召一群怨念。'
+  },
+
+  /* ---------------- 卷四 4-1 天罡剑冢 / 万剑坑 / 剑冢绝巅 ---------------- */
+  swordhusk: {
+    name: '剑壳', model: 'statue', family: 'stone',
+    hp: 380, atk: 46, spd: 1.8, scale: 1.2, color: 0x8a8474, cloth: 0x403c30,
+    xp: 140, melee: true, range: 3.0, atkCd: 2.3, armorHigh: true,
+    lore: '剑冢里长出来的石头，会挥剑。'
+  },
+  bladewisp: {
+    name: '剑魄', model: 'ghost', family: 'spirit',
+    hp: 240, atk: 50, spd: 4.2, scale: 0.9, color: 0xb8c8e0, cloth: 0x3a4a66,
+    xp: 142, melee: true, range: 2.2, atkCd: 1.4,
+    ai: 'flank', lore: '剑断了，剑意没断。'
+  },
+  duelist: {
+    name: '剑奴', model: 'humanoid', family: 'humanoid',
+    hp: 300, atk: 48, spd: 3.6, scale: 1.05, color: 0xb0a080, cloth: 0x4c422a,
+    xp: 145, melee: true, range: 2.6, atkCd: 1.3,
+    ai: 'coward', lore: '打不过就跑，跑完回来再打。'
+  },
+
+  /* ---------------- 卷四 4-2 天阙残境 / 云海断桥 / 南天残门 ---------------- */
+  cloudserpent: {
+    name: '云蛟', model: 'snake', family: 'spirit',
+    hp: 300, atk: 52, spd: 4.0, scale: 1.15, color: 0x9ac8e8, cloth: 0x3a5a7a,
+    xp: 158, melee: true, range: 3.0, atkCd: 1.7, fly: true, charge: true,
+    ai: 'flank', lore: '在云里游，落下就是雨。'
+  },
+  thunderdrum: {
+    name: '雷鼓卫', model: 'golem', family: 'stone',
+    hp: 400, atk: 50, spd: 1.9, scale: 1.3, color: 0x6a7288, cloth: 0x303648,
+    xp: 156, melee: true, range: 3.2, atkCd: 2.4, armorHigh: true,
+    lore: '擂鼓的手，也是砸人的手。'
+  },
+  feathered: {
+    name: '羽化仙', model: 'crane', family: 'spirit',
+    hp: 260, atk: 54, spd: 3.6, scale: 1.1, color: 0xf0e8f8, cloth: 0x8a6ac0,
+    xp: 160, ranged: true, range: 15, atkCd: 2.0, proj: { color: 0xe8d8ff, speed: 18 }, fly: true,
+    ai: 'kite', lore: '羽化了，仙没成。'
+  },
+
+  /* ---------------- 卷五 5-1 玉京废墟 / 星陨台 / 无相幻境 / 镜渊 ---------------- */
+  jadepuppet: {
+    name: '玉偶', model: 'statue', family: 'stone',
+    hp: 430, atk: 56, spd: 1.9, scale: 1.15, color: 0x7aa88a, cloth: 0x365446,
+    xp: 182, melee: true, range: 2.8, atkCd: 2.1, armorHigh: true,
+    lore: '玉做的，碎了会自己长。'
+  },
+  starfaller: {
+    name: '星陨者', model: 'humanoid', family: 'spirit',
+    hp: 300, atk: 60, spd: 3.2, scale: 1.05, color: 0x8a7ab8, cloth: 0x33305a,
+    xp: 185, ranged: true, range: 15, atkCd: 2.0, proj: { color: 0xb0a0ff, speed: 17 },
+    lore: '从星上掉下来的，还在往下掉。'
+  },
+  silkweaver: {
+    name: '织星蛛', model: 'spider', family: 'beast',
+    hp: 360, atk: 54, spd: 2.8, scale: 1.15, color: 0x5a5a8a, cloth: 0x262646,
+    xp: 188, melee: true, range: 2.6, atkCd: 2.0,
+    ai: 'summoner', lore: '用星光结网。'
+  },
+
+  /* ---------------- 卷五 5-2 混沌海 ---------------- */
+  mirrortwin: {
+    name: '镜影', model: 'humanoid', family: 'spirit',
+    hp: 330, atk: 62, spd: 4.2, scale: 1.0, color: 0xa8b8d8, cloth: 0x4a5a7a,
+    xp: 205, melee: true, range: 2.4, atkCd: 1.4,
+    ai: 'flank', lore: '镜子里那个，先动的手。'
+  },
+  maskweaver: {
+    name: '画皮', model: 'fox', family: 'spirit',
+    hp: 300, atk: 64, spd: 3.8, scale: 1.0, color: 0xd8a8b8, cloth: 0x6a3a4a,
+    xp: 208, ranged: true, range: 12, atkCd: 2.0, proj: { color: 0xffc0d8, speed: 15 },
+    ai: 'coward', lore: '披着别人的脸，笑着退。'
+  },
+  voidmoth: {
+    name: '虚空蛾', model: 'bat', family: 'spirit',
+    hp: 280, atk: 62, spd: 4.6, scale: 0.95, color: 0x6a5a9a, cloth: 0x2a2044,
+    xp: 210, melee: true, range: 2.2, atkCd: 1.6, fly: true,
+    ai: 'bomber', lore: '扑向光，也扑向你。'
   }
 };
 
@@ -398,11 +653,18 @@ const BOSSES = {
     lines: ['碎骨！我要把你碎成骨！', '部族的勇士，都死在你的手里？']
   },
   golemking: {
-    id: 'golemking', name: '石甲巨魔', title: '玄铁山的守望者', map: 'swamp', level: 15, scale: 2.5,
-    hp: 6200, atk: 40, spd: 2.0, color: 0x6f675f, cloth: 0x3f3a34, model: 'golem', scale: 1.9,
+    id: 'golemking', name: '石甲巨魔', title: '卷一之终', map: 'ironpeak', level: 18, scale: 2.5,
+    /* [M4] 卷末强化：15/6200/40 → 18/9000/50。
+     * 血量按「老首领曲线外推 × 卷末 1.6」锚定（chief lv12 4200 → 每
+     * 级约 +490 → lv18 章节首领 ≈ 7100，卷末 ×1.26 收在 9000，实战
+     * ×4.5 后 ≈ 4 万，衔接 flameemperor 的 19000×4.5）；攻击走老曲线。
+     * map 字段是显示口径；实际挂载在 MAPS.bosses（swamp 老巢 + ironpeak
+     * 绝顶双驻扎，m1_3_1 / m1_3_4 两条主线各指一处，都不能拆）。 */
+    hp: 9000, atk: 50, spd: 2.0, color: 0x6f675f, cloth: 0x3f3a34, model: 'golem', scale: 1.9,
     melee: true, range: 5.0, atkCd: 2.6, armorHigh: true, family: 'stone',
+    actEnd: true, keyTier: 2,
     patterns: ['slam', 'rocks', 'quake'],
-    lines: ['石头……不会痛。', '你也会变成石头。']
+    lines: ['石头……不会痛。', '你也会变成石头。', '翻过这座山？先问过我的拳头。']
   },
   snakequeen: {
     id: 'snakequeen', name: '蛇姬·青鳞', title: '沼泽毒后', map: 'swamp', level: 16, scale: 2.0,
@@ -418,9 +680,13 @@ const BOSSES = {
     patterns: ['ringshot', 'curse', 'summon'],
     lines: ['生者，为何踏入死地？', '你的魂魄，我收下了。']
   },
+  /* [M4] 赤炎魔将挪回 2-1：主线 m2_1_1「冰火双魔」一直在寒潭水牢找它，
+   * 但它挂在玄铁矿洞（lv16）的 bosses 里 —— 图与任务对不上。
+   * 挪到 frost（lv20 图）并重定级 23→21，与冰魄妖后（24）组成同场双首领；
+   * 血量按老首领曲线同步重算（原 9600 是按 lv23 给的）。 */
   firegeneral: {
-    id: 'firegeneral', name: '赤炎魔将', title: '焚天军先锋', map: 'mine', level: 23, scale: 2.3,
-    hp: 9600, atk: 54, spd: 3.4, color: 0xa82c20, cloth: 0x551008, model: 'brute', scale: 1.9,
+    id: 'firegeneral', name: '赤炎魔将', title: '焚天军先锋', map: 'frost', level: 21, scale: 2.3,
+    hp: 8400, atk: 50, spd: 3.4, color: 0xa82c20, cloth: 0x551008, model: 'brute', scale: 1.9,
     melee: true, range: 4.6, atkCd: 1.8, fire: true, family: 'humanoid',
     patterns: ['slam', 'fireline', 'charge'],
     lines: ['焚尽！焚尽一切！', '你的血肉，会为我燃起。']
@@ -439,9 +705,13 @@ const BOSSES = {
     patterns: ['summon', 'poisonnova', 'charge'],
     lines: ['我的孩子们……饿了。', '别踩坏我的卵。']
   },
+  /* [M4] 冥河渡者降级为 3-1 的驻场首领：卷末位让给黄泉主宰（yellowspring，
+   * M3b 已按卷末血线立起）。重定级 30→32 对齐九幽地宫（lv32 图），
+   * 血量按 19000+(lv−30)×2400 的同一条线重算（lv32 → 23800，收 21000
+   * 留出与章节首领髓主 28600 的差距）。 */
   ferryman: {
-    id: 'ferryman', name: '冥河渡者', title: '忘川摆渡人', map: 'abyss', level: 30, scale: 2.3,
-    hp: 15500, atk: 70, spd: 2.8, color: 0x5b6b8a, cloth: 0x2a3244, model: 'golem', scale: 1.95,
+    id: 'ferryman', name: '冥河渡者', title: '忘川摆渡人', map: 'abyss', level: 32, scale: 2.3,
+    hp: 21000, atk: 88, spd: 2.8, color: 0x5b6b8a, cloth: 0x2a3244, model: 'golem', scale: 1.95,
     melee: true, range: 5.2, atkCd: 2.3, armorHigh: true, family: 'undead',
     patterns: ['quake', 'ringshot', 'curse'],
     lines: ['上船吧，船票是命。', '忘川水凉，别回头。']
@@ -486,6 +756,7 @@ const BOSSES = {
     id: 'flameemperor', name: '焚天炎帝', title: '卷二之终', map: 'flamealtar', level: 30, scale: 2.7,
     hp: 19000, atk: 84, spd: 3.2, color: 0xe04a14, cloth: 0x6e1a06, model: 'brute', scale: 2.0, skin: 0xc05020,
     melee: true, range: 5.0, atkCd: 1.8, fire: true, family: 'humanoid',
+    actEnd: true, keyTier: 3,
     patterns: ['slam', 'fireline', 'meteor', 'summon'],
     lines: ['焚天不是我的名号，是我的活。', '天要烧，我就替它烧。', '你烧不起来的，我教你。']
   },
@@ -536,6 +807,7 @@ const BOSSES = {
     id: 'yellowspring', name: '黄泉主宰', title: '渡口不渡人', map: 'yellowferry', level: 40, scale: 2.4,
     hp: 43000, atk: 110, spd: 2.8, color: 0x8a7a58, cloth: 0x3a3020, model: 'golem', scale: 2.1,
     melee: true, range: 5.2, atkCd: 2.2, armorHigh: true, family: 'undead',
+    actEnd: true, keyTier: 4,
     patterns: ['quake', 'ringshot', 'curse', 'slam'],
     lines: ['船早就不在了，你们还在等。', '黄泉不收钱，只收人。']
   },
@@ -571,6 +843,7 @@ const BOSSES = {
     id: 'heavenguard', name: '南天守门神', title: '门塌了，人还在', map: 'southgate', level: 50, scale: 2.6,
     hp: 67000, atk: 136, spd: 2.4, color: 0x9aaccc, cloth: 0x3a4a66, model: 'golem', scale: 2.4,
     melee: true, range: 5.4, atkCd: 2.5, armorHigh: true, family: 'stone',
+    actEnd: true, keyTier: 5,
     patterns: ['quake', 'slam', 'rocks', 'ringshot'],
     lines: ['门没了，守的还是门。', '南天不开。']
   },
@@ -613,6 +886,8 @@ const BOSSES = {
     id: 'chaosavatar', name: '混沌·无相天魔（真身）', title: '九霄终焉 · 真', map: 'chaossea', level: 60, scale: 3.0,
     hp: 91000, atk: 162, spd: 3.4, color: 0x5a2478, cloth: 0x220c30, model: 'demon', scale: 2.1, skin: 0x6a3a7a,
     melee: true, range: 5.6, atkCd: 1.8, all: true, family: 'spirit',
+    /* [M4] 终局：keyTier 仍是 5（没有六阶），final 把掉率抬到 15% */
+    actEnd: true, keyTier: 5, final: true,
     patterns: ['slam', 'ringshot', 'charge', 'meteor', 'summon', 'curse'],
     lines: ['天阙那一具，只是我伸出去的手。', '现在，你见到我了。', '九霄本来就没有底，你以为你站在上面？']
   },
@@ -625,13 +900,29 @@ const BOSSES = {
   }
 };
 
-/* ---------------- 图鉴分组（异兽志按区域翻页） ---------------- */
-/* bonus 是「集齐本区全部条目」的永久加成，写进 state.codex.regions，
- * computePlayerStats 里汇总，所以它必须是真的属性键（见 data-core STATS） */
+/* ---------------- 图鉴分组（异兽志按卷翻页，[M4] 改版） ---------------- */
+/* [M4] 原来 5 区 = 5 张老图，30 张图 / 76 只怪之后老口径收录不进去。
+ * 改成「按卷 5 大区」：一区 = 该卷全部图的怪池并集（归区逻辑见 game.js
+ * codexRegionOf —— 按 ACTS 顺序取第一个刷它的图所在卷）。
+ *
+ * 老档兼容：旧档 regions 里的 forest/swamp/mine/abyss/heaven 五个 key
+ * 按下表映射到新卷（game.js 载入时迁移），迁移后会对每卷重跑一次
+ * checkCodexRegion —— 老玩家已录的怪不会白录，缺的怪补录后自动补发加成。
+ *
+ * 加成口径：卷一合并了原来幽篁林 / 血月沼泽 / 玄铁矿洞三区的加成
+ * （对精英 +4% / 毒抗 +6% / 穿透 +5%）—— 一区的条目也变成了三倍多，
+ * 难度与收益一起涨；卷三 / 卷四分别继承九幽 / 天阙的原加成；
+ * 卷二 / 卷五是新补的档位。 */
 const CODEX_REGIONS = [
-  { id: 'forest', name: '幽篁林', level: 4, bonus: { eliteDmg: 4 }, bonusDesc: '对精英与首领伤害 +4%' },
-  { id: 'swamp', name: '血月沼泽', level: 12, bonus: { poisonRes: 6 }, bonusDesc: '毒抗 +6%' },
-  { id: 'mine', name: '玄铁矿洞', level: 20, bonus: { armorPen: 5 }, bonusDesc: '护甲穿透 +5%' },
-  { id: 'abyss', name: '九幽地宫', level: 28, bonus: { dmgReduce: 3 }, bonusDesc: '伤害减免 +3%' },
-  { id: 'heaven', name: '天阙残境', level: 35, bonus: { skillDmg: 4 }, bonusDesc: '技能伤害 +4%' }
+  { id: 'part1', name: '卷一 · 桃源残照', level: 1, bonus: { eliteDmg: 4, poisonRes: 6, armorPen: 5 }, bonusDesc: '对精英与首领伤害 +4% · 毒抗 +6% · 护甲穿透 +5%' },
+  { id: 'part2', name: '卷二 · 血月焚天', level: 19, bonus: { crit: 4 }, bonusDesc: '暴击率 +4%' },
+  { id: 'part3', name: '卷三 · 幽冥黄泉', level: 31, bonus: { dmgReduce: 3 }, bonusDesc: '伤害减免 +3%' },
+  { id: 'part4', name: '卷四 · 剑冢天阙', level: 41, bonus: { skillDmg: 4 }, bonusDesc: '技能伤害 +4%' },
+  { id: 'part5', name: '卷五 · 九霄终焉', level: 51, bonus: { dmgAll: 5 }, bonusDesc: '所有伤害 +5%' }
 ];
+
+/* 旧区 key → 新卷 key（只用于老档迁移，别的地方不要引用） */
+const CODEX_REGION_LEGACY = {
+  forest: 'part1', swamp: 'part1', mine: 'part1',
+  abyss: 'part3', heaven: 'part4'
+};

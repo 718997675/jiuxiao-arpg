@@ -5938,6 +5938,26 @@ const Game = {
     if (!s.codex || typeof s.codex !== 'object') s.codex = { mon: {}, regions: {} };
     if (!s.codex.mon || typeof s.codex.mon !== 'object') s.codex.mon = {};
     if (!s.codex.regions || typeof s.codex.regions !== 'object') s.codex.regions = {};
+    /* [M4] 图鉴从「5 张老图 = 5 区」改成「5 大卷 = 5 区」：老档 regions 里的
+     * 旧 key（forest/swamp/mine/abyss/heaven）一次性搬到新卷 key，然后对
+     * 每卷重跑一次全录检查 —— 已录的怪不丢；旧区全录但新区还缺新怪的，
+     * 等补录完自动补发加成。删掉旧 key，迁移天然幂等（第二次 moved=false）。 */
+    const LEGACY = (typeof CODEX_REGION_LEGACY !== 'undefined') ? CODEX_REGION_LEGACY : null;
+    if (LEGACY) {
+      let moved = false;
+      for (const old in LEGACY) {
+        if (s.codex.regions[old]) {
+          s.codex.regions[LEGACY[old]] = true;
+          delete s.codex.regions[old];
+          moved = true;
+        }
+      }
+      if (moved && typeof CODEX_REGIONS !== 'undefined') {
+        for (const def of CODEX_REGIONS) {
+          try { this.checkCodexRegion(def.id); } catch (err) { /* 面板未就绪时不弹提示 */ }
+        }
+      }
+    }
     return s.codex;
   },
 
@@ -5976,20 +5996,43 @@ const Game = {
     return e;
   },
 
-  /* 一只怪归哪个区：按 MAPS 的声明顺序取第一个刷它的图。
-   * 这样 golem / ghostfire 这类跨区怪只归一个区，不会让两个区都集不齐。 */
+  /* [M4] 一只怪归哪个区（= 哪一卷）：数它在该卷各图怪池里出现的次数，
+   * 归出场最多的那一卷；平局归早（低卷优先）。
+   *
+   * 为什么不用「首次出场」：老怪的怪池跨卷复用（yaoguai 从 1-3 一路
+   * 铺到 3-1），按首次出场会把 38 只都划给卷一、卷五只剩 6 只 ——
+   * 一区要刷 38 只才全录、五区白送。按最多出场是 31/14/13/9/9，
+   * 每卷的图鉴工作量跟游戏进度大致同步。
+   *
+   * 怪池统一声明在 MAPS[id].spawns，一处读全 —— 新图改池只动
+   * data-world.js 一份，这里自动跟上。结果进程内缓存（数据静态）。
+   * 每只怪只属于一个区，不会让两个区都集不齐。 */
   codexRegionOf(kind) {
-    for (const id in MAPS) {
-      const m = MAPS[id];
-      if (m.spawns && m.spawns.indexOf(kind) >= 0) return id;
+    if (typeof ACTS === 'undefined' || typeof MAPS === 'undefined') return null;
+    if (!this._codexRegionCache) this._codexRegionCache = {};
+    if (kind in this._codexRegionCache) return this._codexRegionCache[kind];
+    const cnt = {};
+    for (const aid in ACTS) {
+      const p = ACTS[aid].part;
+      for (const mi of (ACTS[aid].maps || [])) {
+        const m = MAPS[mi.id];
+        if (m && m.spawns && m.spawns.indexOf(kind) >= 0) cnt[p] = (cnt[p] || 0) + 1;
+      }
     }
-    return null;
+    let best = null, bestN = 0;
+    for (let p = 1; p <= 5; p++) {
+      if ((cnt[p] || 0) > bestN) { bestN = cnt[p]; best = 'part' + p; }
+    }
+    this._codexRegionCache[kind] = best;
+    return best;
   },
 
   codexRegionKinds(regionId) {
-    const m = MAPS[regionId];
-    if (!m || !m.spawns) return [];
-    return m.spawns.filter(k => this.codexRegionOf(k) === regionId);
+    const out = [];
+    for (const kind in MONSTERS) {
+      if (this.codexRegionOf(kind) === regionId) out.push(kind);
+    }
+    return out;
   },
 
   checkCodexRegion(regionId) {
@@ -6137,6 +6180,18 @@ const Game = {
      * 于是「想锻一把好刃」这件事天然被推去打硬仗，而不是刷小怪。 */
     for (const cm of this.rollCraftMats(e.boss ? 'boss' : (e.elite ? 'elite' : 'normal'), D.drop, seeker)) {
       this.spawnLoot(p, null, 0, { mat: cm });
+    }
+
+    /* [M4] 卷末首领的「次阶地下城钥匙」（计划书 §7.1）：8%，终局真身 15%。
+     * 本阶钥匙的必掉线不受影响（那在 §8.1 的小怪/精英/首领供给里，M5 落地）。
+     * Game.addKey 目前是 M5 预留的空钩子（QuestSys.turnIn 已在调）——
+     * 钩子落地前这一抽静默不出，不弹提示不掉道具，不影响现有流程。 */
+    const bcfg = e.boss ? e.cfg : null;
+    if (bcfg && bcfg.actEnd && typeof this.addKey === 'function') {
+      const KB = (typeof BALANCE !== 'undefined' && BALANCE.keyDrop) || { actBoss: 0.08, actBossFinal: 0.15 };
+      if (CHANCE(bcfg.final ? KB.actBossFinal : KB.actBoss)) {
+        this.addKey(Math.min(5, bcfg.keyTier || 1), 1);
+      }
     }
 
     // 击杀回复

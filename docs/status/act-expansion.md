@@ -3,10 +3,10 @@
 - 分支：`feat/act-expansion`（优先级 **高**，先于技能重构合入 main）
 - 计划文档：`docs/ACT-EXPANSION-PLAN.md`（15 节）
 - 预览站：<https://718997675.github.io/jiuxiao-arpg/preview/act-expansion/>
-- 更新：2026-10-28 00:20
+- 更新：2026-10-28 01:05
 
-> 当前：M3a + M3b 全部完成（8 种骨架 · 8 种地貌 · **30 张图全部落地**），
-> M3b 的四种新地貌又补了一轮配色与道具细节。下一步 M4。
+> 当前：M3a / M3b / **M4 全部完成**（30 张图 · 76 种怪 · 图鉴按卷分 5 大区 · 5 个卷末首领）。
+> 下一步 M5（地下城）。
 
 ## 一句话现状
 
@@ -17,7 +17,14 @@ M3 把「手写地图」变成了数据：8 种 zone 骨架（`ZONE_ARCHETYPES`�
 小地图是整图俯视 + 任务区虚线高亮。任务链从 40 条扩到 63 条（主线 39 / 支线 9 / 悬赏 15），
 主线从「竹林异动」一条链走到底到「混沌海」。首领新增 16 只（19 张新图各自有人坐镇）。
 
-**剩下的不是地图**：M4（图鉴扩展 / 卷末首领强化 / 剩余 24 只新怪）、M5（地下城）、M6（60 级曲线）。
+M4 把「怪」补齐了：`MONSTERS` 40 → **76**（计划书 §6.2 的 36 只野外新怪全量落地，
+**0 新模型**，全部复用既有 22 个程序化骨架，只换色 / 比例 / 族群 / AI），
+每张图的怪池从 5~6 种扩到 8~9 种。图鉴从「5 张老图 = 5 区」改成「**卷一~卷五**」，
+76 只按「出场最多的卷」归区（31/14/13/9/9），老档旧区 key 自动迁移、加成一分不少。
+5 个卷末首领就地取材（重定级 + 卷末血量线 + 次阶钥匙 8%/15% 掉率钩子）。
+
+**剩下的**：M5（地下城，接 `Game.addKey` 空钩子 + 补 4 只地下城专属怪 → 图鉴 80）、
+M6（60 级曲线）。
 
 ## 节点表
 
@@ -31,9 +38,103 @@ M3 把「手写地图」变成了数据：8 种 zone 骨架（`ZONE_ARCHETYPES`�
 | M2 | 任务系统：`quests.js`；任务板；任务区域；追踪三行 | ✅ | `src/quests.js`、`src/data/data-quests.js` | `da3dbf7` 前 |
 | M3a | 地图扩容第一批：8 种骨架、`ash` 地貌、4 张新图（卷二 2-2/2-3）、密度公式、小地图 | ✅ | `src/data/data-maps.js`、`src/ui-minimap.js` | `da3dbf7` |
 | M3b | 地图扩容第二批：4 种地貌（snow/bone/void/flood）、**19 张新图**、16 只新首领、23 条新任务 | ✅ | `src/data/data-maps.js`、`src/data/data-world.js`、`src/data/data-monsters.js`、`src/data/data-quests.js`、`src/world.js` | 本次 |
-| M4 | 怪物 / 首领：剩余 24 只新怪；图鉴扩到 80/24；5 个卷末首领强化 | ⬜ | `src/data/data-monsters.js` | — |
+| M4 | 怪物 / 首领：**36 只新怪**（全量，非 24）；图鉴改 5 大卷；5 个卷末首领强化 | ✅ | `src/data/data-monsters.js`、`src/data/data-world.js`、`src/data/data-maps.js`、`src/game.js`、`src/ui.js`、`src/data/data-core.js`、`dev/test-m4.js` | 本次 |
 | M5 | 地下城：`dungeon.js`；5 类 × 5 阶；词缀；图鉴加成；钥匙掉落 | ⬜ | 新建 `src/dungeon.js` | — |
 | M6 | 平衡 / 打磨：60 级曲线复算；基底 12 阶；传世补齐；性能实测；手机端回归 | ⬜ | `src/data/data-core.js` | — |
+
+### M4 交付明细（已完成）
+
+#### 1. 36 只新怪（`src/data/data-monsters.js`）
+
+| 卷 | 新怪（key） | 落点（章） |
+|---|---|---|
+| 一 · 9 只 | `foxfire` 狐火 / `cliffram` 崖羊 / `stonecrow` 石鸦 | 1-1 幽篁林 · 落霞坡 |
+| | `mirehorror` 泥魔 / `leechqueen` 蛭后 / `bonefisher` 捞骨人 | 1-2 血月沼泽 · 沉骨滩 |
+| | `ironmaw` 铁颚 / `cinderhand` 烬手 / `forgemaster` 铸主 | 1-3 骨塔祭场 · 玄铁矿洞 |
+| 二 · 9 只 | `frostwraith` 霜魇 / `iceveil` 冰帷 / `frozenwidow` 寒蛛 | 2-1 寒潭水牢 · 冰魄湖 |
+| | `ashhound` 灰犬 / `flamepriest` 炎祝 / `magmaworm` 熔脉虫 | 2-2 熔脉深沟 · 灰烬荒原 |
+| | `sootwraith` 煤魇 / `emberhound` 余烬犬 / `cinderlord` 烬王 | 2-3 赤炎峡谷 · 焚天祭坛 |
+| 三 · 6 只 | `soulgaoler` 囚魂吏 / `papereffigy` 纸俑 / `wantern` 灯翁 | 3-1 白骨长廊 · 3-2 忘川河滩 |
+| | `tidewretch` 潮鬼 / `scalekeeper` 鳞守 / `wraithlord` 魍魉主 | 3-3 九幽深渊 · 3-4 黄泉渡 |
+| 四 · 6 只 | `swordhusk` 剑壳 / `bladewisp` 刃魑 / `duelist` 剑客 | 4-1 天罡剑冢 · 4-3 剑冢绝巅 |
+| | `cloudserpent` 云螭 / `thunderdrum` 雷鼓 / `feathered` 羽民 | 5-1 云海断桥 · 5-2 南天残门 |
+| 五 · 6 只 | `jadepuppet` 玉傀 / `starfaller` 陨星使 / `silkweaver` 织天蛛 | 5-3 玉京废墟 · 5-4 星陨台 |
+| | `mirrortwin` 镜身 / `maskweaver` 织面者 / `voidmoth` 虚蛾 | 5-5 无相幻境 · 5-6 混沌海 |
+
+- **0 新模型**：全部复用既有 22 个程序化骨架（`lantern` / `beast` / `bat` / `golem` / `brute` /
+  `ghost` / `statue` / `humanoid` …），行为差异只来自 8 种 AI 原型 × 族群抗性的组合。
+- **数值口径**：以「所在章现有怪池的均值」为锚，血/攻都是放大前的基准值（实际按图等级放大）。
+  石系血厚攻慢、兽系血薄速快、妖灵系血薄攻高 —— 与老怪同一套手感，不另立一套曲线。
+  `dev/test-m4.js` 钉住 `xp` 落在 15~220（新怪不许落进老图专属段）。
+- **每只带 `lore`**：图鉴未收录只显示「？」，收录后显示这句。
+
+#### 2. 怪池接线（两份声明必须同步）
+
+| 位置 | 改动 |
+|---|---|
+| `data-world.js` 的 `MAPS[*].spawns` | 7 张手写老图 + 23 张骨架图，每图各补 3 只本章新怪；`spawnCount` 一个数没动（密度已验收） |
+| `data-maps.js` 的 `MAP_SPECS[*].kinds` | 23 张骨架图的 `kinds` 同步补齐 —— **两处必改，`test-m4` 第 3 段钉死**（长度相等 + 逐项包含） |
+| `data-maps.js` 的 `MAP_ZONES[*].spawns` | 7 张老图的**区级**怪池各补 1 只，让新怪出现在指定区而不是随机撒 |
+
+> 为什么老图要改两处（图级 `MAPS.spawns` + 区级 `MAP_ZONES.spawns`）：图级决定「这张图有什么怪」，
+> 区级决定「哪个区刷什么」。只改图级的话新怪会均匀撒满全图，任务点名的区反而刷不到。
+
+#### 3. 图鉴改 5 大卷（`CODEX_REGIONS` 换血）
+
+| 项 | 旧 | 新 |
+|---|---|---|
+| 分区 | 5 张老图 = 5 区（forest / swamp / mine / abyss / heaven） | **卷一~卷五**（part1~part5），每区 = 该卷所有图怪池的并集 |
+| 归区 | 按 `MAPS` 声明顺序取**第一个**刷它的图 | 数它在各卷怪池里出现的**次数**，归最多的那卷；平局归早 |
+| 收录口 | `codexRegionKinds(regionId)` 读 `MAPS[regionId].spawns`（新骨架图的 spawns 读不到） | 遍历 `MONSTERS` 全表按 `codexRegionOf` 过滤 |
+| 老档 | `state.codex.regions` 存 `forest: true` | `CODEX_REGION_LEGACY` 一次性搬到卷 key，删旧 key（幂等），再重跑全录检查 |
+
+- **为什么不用「首次出场」**：老怪池跨卷复用（`yaoguai` 从 1-3 一路铺到 3-1），按首次出场
+  卷一拿 38 只、卷五只剩 6 只 —— 一区要刷 38 只才全录、五区白送。按最多出场是 **31/14/13/9/9**，
+  每卷工作量跟游戏进度大致同步。
+- **加成不缩水**：`part1` 的加成 = 旧 forest+swamp+mine 三条之和（精英伤 4% / 毒抗 6% / 护甲穿透 5%），
+  老玩家迁移后拿到的和迁移前完全一致；`part3` = 旧 abyss（减伤 3%）、`part4` = 旧 heaven（技能伤 4%），
+  `part2` / `part5` 是新增的（暴击 4% / 全伤 5%）。
+- `codexRegionOf` 结果**进程内缓存**（`_codexRegionCache`）：数据静态，面板每次重渲染都全表扫一遍没必要。
+
+#### 4. 5 个卷末首领（就地取材，不推翻 M3 的布局）
+
+| 首领 | 卷 | 图 | lv | hp / atk | 处理 |
+|---|---|---|---|---|---|
+| `golemking` 石甲巨魔 | 一 | 铁山绝顶（+ 沼泽老巢双驻扎） | 15 → **18** | 6200/40 → **9000/50** | 重定级 + 卷末血量线；**不从 swamp 摘掉** —— `m1_3_1` 老档迁移仍指向沼泽那只 |
+| `flameemperor` 焚天炎帝 | 二 | 焚天祭坛 | 30 | 19000 不变 | 补 `actEnd` 标记 |
+| `yellowspring` 黄泉主宰 | 三 | 黄泉渡 | 40 | 不变 | 补 `actEnd` 标记 |
+| `heavenguard` 南天守门神 | 四 | 南天残门 | 50 | 不变 | 补 `actEnd` 标记 |
+| `chaosavatar` 混沌真身 | 五 | 混沌海 | 60 | 不变 | 补 `actEnd` + `final`（唯一的 15% 档） |
+
+- 计划书点名的 `firegeneral` 赤炎魔将 / `ferryman` 冥河渡者**不占卷末位**，改当章节首领：
+  `firegeneral` 23 → **21** 并从 `mine` 挪到 `frost`（`m2_1_1` 的任务图一直是寒潭水牢，
+  之前挂在矿洞 = 任务指过去打不到），`ferryman` 30 → **32** 留在九幽地宫对齐该图等级。
+- **钥匙钩子**：`BALANCE.keyDrop = { actBoss: 0.08, actBossFinal: 0.15 }`，`onEnemyDeath` 里
+  `bcfg.actEnd` 的怪按 `keyTier` 抽一次 `Game.addKey(tier, 1)`。**`Game.addKey` 目前不存在**，
+  所以这一抽静默不出 —— 钩子由 M5 落地，现有流程一点不受影响。
+- 为什么 8% 而不是必掉：首领可重复刷（`spawnBosses` 不读 `bossKilled`），低概率才形成刷子循环。
+
+#### 5. 回归
+
+| 项 | 结果 |
+|---|---|
+| `test-m4`（新增，纯 node） | **23/23** —— 36 只落表 / 字段健全 / 怪池引用完整 / 两份声明同步 / 图鉴 5 区全覆盖 / actEnd 5 只 / 迁移表合法 |
+| `test-save` / `test-quest` / `quest-ref` / `zone-check` / `zone-density` | 全通过 |
+| `smoke` 三职业 | `ERRORS none` |
+| `mobile-layout` 6 视口 | 60 项全通过（图鉴面板 2063px 高、页签 5 个不折行） |
+| `m3-check`（10 张抽样真机） | A/B/C 段全通过（37 只同屏、越界 0、小地图像素 77%）；**D 段帧率地板在当前机器状态下已无判定力**（见下） |
+| 浏览器专项 | 老档迁移幂等（`forest`/`abyss` → `part1`/`part3`、旧 key 消失）、图鉴 5 页签 / 31 张卡 / 归区正确、零 `pageerror` |
+
+> **`m3-check` 的 D 段（帧率地板 6 FPS）现在不具判定力**：本次三连跑对照 —— 干净 HEAD 基线
+> 1 项红（`bonestrand` 4.5）、本分支两次分别 4 项红（`ironpeak` / `flamealtar` / `abyssdeep` /
+> `chaossea`）与 2 项红（`bonestrand` 5.5 / `chaossea` 3.5）。**同一份代码两次跑失败项互相漂移**
+> （`chaossea` 5.0→3.5、`flamealtar` 5.5→9.0），且基线也红 —— 本机软件渲染目前整体就在 5~9 FPS
+> （台账早先记的是 10~24.5，机器状态已变）。B 段「视野外 0 只怪」是同一原因的连带：5 FPS 下
+> 1.8 秒只跑出 9 帧，远处的怪还没轮到 AI，`e.culled` 自然是 0。
+>
+> 两条由此得出的操作纪律：① **跑 `m3-check` 不许和别的 puppeteer 脚本并行**（两个浏览器抢 CPU
+> 必然假红，本次第一轮就是这么红的）；② 真要判定性能回归，得**同机交替跑基线**对照，
+> 不能只看绝对 FPS。
 
 ### M3b 交付明细（已完成）
 
@@ -258,3 +359,11 @@ M3 把「手写地图」变成了数据：8 种 zone 骨架（`ZONE_ARCHETYPES`�
 | 2026-10-27 | 62 米外怪 AI 每 3 帧一次，但**不补 dt** | debuff 计时器在插入点之前已按真实 dt 结算；`dt` 是形参，写 `dt +=` 会污染下一只怪 |
 | 2026-10-27 | 地面贴图按 type 缓存，**不随地图卸载 dispose** | 41 张图最多 12 种地貌，每张重画要 12~20ms；dispose 了第二次进同类型图会拿到已销毁的纹理（黑地面） |
 | 2026-10-27 | 新图首领**复用既有模型**换色，不建新模型 | §5.3 定的「新地貌不新模型」；造型工作留给美术，数据层先保证「走进祭坛有人」 |
+| 2026-10-28 | M4 新怪做 **36 只全量**，不是台账写的 24 只 | 24 是把 M3b 已加的 16 只首领误算进了新怪；计划书 §6.2 的 36 只一只都没落地，做一半反而要二次回炉改怪池 |
+| 2026-10-28 | 卷末首领**就地取材**：golemking 重定级，flameemperor/yellowspring/heavenguard/chaosavatar 原地补 `actEnd` | 计划书点名的 firegeneral/ferryman 与 M3 已放的首领撞位；推翻布局要连任务、图位、老档迁移一起改，收益只有「名字对得上」 |
+| 2026-10-28 | `golemking` **双驻扎**（沼泽老巢 + 铁山绝顶），不从 swamp 摘掉 | `m1_3_1` 老档迁移仍指向沼泽那只；摘掉等于让老档的任务目标凭空消失 |
+| 2026-10-28 | `firegeneral` 从 `mine` 挪到 `frost` | `m2_1_1` 的任务图一直是寒潭水牢，之前挂在矿洞 —— 任务指过去打不到（引用校验查不出，因为 boss 存在，只是不在这张图） |
+| 2026-10-28 | 图鉴从「5 张老图」改成「**5 大卷**」，归区按「出场最多的卷」，平局归早 | 旧口径读 `MAPS[id].spawns`，新骨架图和新怪根本收录不进去；按「首次出场」是 38/6 的畸形分布，按最多出场是 31/14/13/9/9 |
+| 2026-10-28 | `part1` 的加成 = 旧 forest + swamp + mine 三条**求和**，不重新发 | 老档迁移只搬 key 不发新奖；三区旧加成合起来正好是当前 part1 的三条，老玩家迁移前后收益分毫不差 |
+| 2026-10-28 | 卷末首领的次阶钥匙 **8%**（终局 15%），且 `Game.addKey` 不存在时**静默不出** | 首领可重复刷，低概率才形成刷子循环；钩子先空转，M5 落地时不用回来改掉落代码 |
+| 2026-10-28 | `m3-check` **不许和别的 puppeteer 脚本并行**跑 | 软件渲染下两个浏览器抢 CPU：帧率掉到地板以下、怪 AI 来不及跑，会误报「帧率 4.5 < 6」「视野外 0 只怪」（本次踩过） |

@@ -479,7 +479,7 @@ src/data/data-mat-icons.js 17 枚材料 / 玄晶 / 丹药 / 凭证图标（32×3
 src/data/data-skills.js    36 个主动技能 × 3 变体与技能栏顺序
 src/data/data-talents.js   120 个天赋节点（9 职业系 + 通用系）· 按等级逐步解锁
 src/data/data-skill-icons.js  36 枚技能象形 SVG 图标
-src/data/data-monsters.js  12 种怪 + 12 个 Boss
+src/data/data-monsters.js  76 种普通怪（6 族群）+ 32 个 Boss · 异兽志按卷分 5 大区
 src/data/data-world.js     地图、NPC、任务链
 src/data/data-maps.js      地图区域结构（zone 几何 / 连接 / 分区刷怪 / 首领落点 / 跨区寻路）
 src/data/data-fauna.js     族音色（9 族）/ 事件修饰 / 每图环境音与调式 / 录音回退清单
