@@ -155,6 +155,26 @@ function _makeGroundTexture(type) {
    * 「满地碎骨」，而不是底色。骨屑画成细长条（1×4~9px），
    * 圆点在这个尺寸下会被读成沙粒，和沙地彻底混掉。 */
   if (type === 'bone') {
+    /* 湿泥斑 + 白垩斑：**先铺这两层，再撒骨屑**。
+     * 只有骨屑的话地面仍然是一整片光滑的米黄 —— 俯视角下读成「沙漠」，
+     * 加骨道具也救不回来（骨和沙的明度差不够）。真正把「沙」拆掉的是
+     * 这一深一浅两种大斑：深斑 = 泡过水的泥，浅斑 = 干透的白垩。 */
+    for (let i = 0; i < 30; i++) {
+      g.globalAlpha = RND(0.14, 0.3);
+      g.fillStyle = i % 4 ? '#5d5747' : '#4e4a3c';
+      const x = Math.random() * S, y = Math.random() * S, rr = Math.random() * 54 + 14;
+      g.beginPath();
+      g.ellipse(x, y, rr * 1.5, rr * 0.8, RND(0, 3.14), 0, 7);
+      g.fill();
+    }
+    for (let i = 0; i < 16; i++) {
+      g.globalAlpha = RND(0.1, 0.22);
+      g.fillStyle = '#e6dfc8';
+      const x = Math.random() * S, y = Math.random() * S, rr = Math.random() * 40 + 12;
+      g.beginPath();
+      g.ellipse(x, y, rr * 1.4, rr * 0.7, RND(0, 3.14), 0, 7);
+      g.fill();
+    }
     for (let i = 0; i < 620; i++) {
       g.globalAlpha = RND(0.18, 0.5);
       g.strokeStyle = i % 4 ? '#efe9d8' : '#8b8272';
