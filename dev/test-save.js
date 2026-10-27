@@ -7,7 +7,7 @@
  *   2. 读旧档 → 存新档 → 再读（指纹一致）
  *   3. 导出 → 清空 localStorage → 导入（100% 还原）
  *   4. 原子写入：模拟 quota 满，原档必须完好
- *   5. 3 个角色位互不干扰
+ *   5. 满位隔离（SLOT_COUNT 个角色位互不干扰，再多建必须被拒）
  * ============================================================ */
 
 const fs = require('fs');
@@ -224,7 +224,7 @@ eq(SM.readSlot(1).char.gold, flat1.gold, '读回来仍是旧金币');
 eq(localStorage.getItem('jiuxiao_save_v2_s1.tmp'), null, '失败后临时键已被清理');
 ok(/回读不一致|写入/.test(SM.lastError), 'lastError 有可读原因：' + SM.lastError);
 
-section('七、3 个角色位互不干扰');
+section('七、' + SM.SLOT_COUNT + ' 个角色位互不干扰');
 localStorage.clear();
 SM._createdAt = {};
 const c1 = SM.createCharacter('warrior', '甲', 0);
@@ -232,10 +232,20 @@ const c2 = SM.createCharacter('mage', '乙', 0);
 const c3 = SM.createCharacter('taoist', '丙', 0);
 ok(c1.ok && c2.ok && c3.ok, '连建 3 个角色成功');
 eq([c1.slot, c2.slot, c3.slot].join(','), '1,2,3', '自动分配到 1/2/3 号位');
-const c4 = SM.createCharacter('mage', '丁', 0);
-eq(c4.ok, false, '第 4 个角色被拒绝（3 位已满）');
-eq(SM.listSlots().filter(s => !s.empty).length, 3, '三个位都有档');
-eq(SM.listSlots().map(s => s.meta.name).join(','), '甲,乙,丙', '角色名各自独立');
+/* [v1.13.1] 位数据 SLOT_COUNT 走，不再写死 3：一直建到满位，再建一个必须被拒 */
+let filled = 3, lastSlot = 3;
+while (filled < SM.SLOT_COUNT) {
+  const r = SM.createCharacter('mage', '填' + filled, 0);
+  if (!r.ok) break;
+  filled++; lastSlot = r.slot;
+}
+eq(filled, SM.SLOT_COUNT, `自动填充到第 ${SM.SLOT_COUNT} 位`);
+eq(lastSlot, SM.SLOT_COUNT, `最后一个落在第 ${SM.SLOT_COUNT} 位`);
+const c4 = SM.createCharacter('mage', '溢', 0);
+eq(c4.ok, false, `第 ${SM.SLOT_COUNT + 1} 个角色被拒绝（${SM.SLOT_COUNT} 位已满）`);
+eq(SM.listSlots().filter(s => !s.empty).length, SM.SLOT_COUNT, `${SM.SLOT_COUNT} 个位都有档`);
+/* 空位的 meta 是 null，只比对前三个有名有姓的 */
+eq(SM.listSlots().slice(0, 3).map(s => s.meta.name).join(','), '甲,乙,丙', '角色名各自独立');
 
 SM.save(Object.assign(SM.load(2), { gold: 8888 }), 2);
 eq(SM.readSlot(2).char.gold, 8888, '2 号位写入 8888');
@@ -243,7 +253,7 @@ eq(SM.readSlot(1).char.gold, 120, '1 号位金币不受影响（初始 120）');
 
 ok(SM.deleteSlot(2), '删除 2 号位');
 ok(!SM.peek(2), '2 号位已空');
-eq(SM.listSlots().filter(s => !s.empty).length, 2, '剩 2 个角色');
+eq(SM.listSlots().filter(s => !s.empty).length, SM.SLOT_COUNT - 1, `剩 ${SM.SLOT_COUNT - 1} 个角色`);
 
 section('八、异常输入不该崩');
 const bad1 = SM.importText('', 1); ok(!bad1.ok, '空文本被拒');

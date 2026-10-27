@@ -33,7 +33,7 @@ const section = t => console.log('\n' + t);
   if (!fs.existsSync(SHOTS)) fs.mkdirSync(SHOTS);
   const errs = [];
   const browser = await puppeteer.launch({
-    executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+    executablePath: require('./_chrome'),
     headless: 'new',
     args: ['--no-sandbox', '--enable-webgl', '--use-gl=angle', '--window-size=1440,900']
   });
@@ -119,13 +119,14 @@ const section = t => console.log('\n' + t);
     return {
       open: p.classList.contains('open'),
       cards: document.querySelectorAll('#savePanel .scard').length,
+      slotCount: SaveManager.SLOT_COUNT,
       inView: r.left >= 0 && r.top >= 0 && r.right <= innerWidth + 1 && r.bottom <= innerHeight + 1,
       overflowX: p.scrollWidth - p.clientWidth,
       text: document.getElementById('slotList').innerText.replace(/\s+/g, ' ')
     };
   });
   ok(p1.open, '面板已打开');
-  eq(p1.cards, 3, '三个角色位卡片');
+  eq(p1.cards, p1.slotCount, `角色位卡片 ${p1.slotCount} 张`);
   ok(p1.inView, '面板完整在视口内');
   ok(p1.overflowX <= 1, '无横向溢出', p1.overflowX);
   ok(p1.text.includes('青崖客') && p1.text.includes('17 级'), '卡片显示角色名与等级');
@@ -283,29 +284,41 @@ const section = t => console.log('\n' + t);
     await wait(450);
     const lay = await page.evaluate(() => {
       const p = document.getElementById('savePanel');
-      const r = p.getBoundingClientRect();
+      /* 游戏内存档是主菜单的一页（.embed），此时它按内容撑高、由菜单统一滚，
+       * 所以「是否完整可见」要看外层菜单面板；标题界面才是独立弹窗。
+       * 角色位 3 → 10 之后卡片多了 7 张，独立弹窗的限高也会生效，两种情况都得能滚。 */
+      const mp = document.getElementById('menuPanel');
+      const embedded = p.classList.contains('embed') && mp && mp.classList.contains('open');
+      const host = embedded ? mp : p;
+      const r = host.getBoundingClientRect();
       const bad = [];
       document.querySelectorAll('#savePanel .scard, #savePanel .btn, #savePanel #newName').forEach(el => {
         const b = el.getBoundingClientRect();
         if (b.right > innerWidth + 1 || b.left < -1) bad.push(el.className + ':' + Math.round(b.left) + '~' + Math.round(b.right));
       });
       const pb = p.querySelector('.pb');
+      const body = document.getElementById('menuBody');
+      const scroller = embedded ? body : pb;
       return {
+        embedded,
         inView: r.top >= -1 && r.bottom <= innerHeight + 2 && r.left >= -1 && r.right <= innerWidth + 2,
         top: Math.round(r.top), bottom: Math.round(r.bottom), h: Math.round(r.height), ih: innerHeight,
         overflowX: document.documentElement.scrollWidth - innerWidth,
         panelOverflowX: p.scrollWidth - p.clientWidth,
         outOfView: bad,
         cards: document.querySelectorAll('#savePanel .scard').length,
+        slotCount: SaveManager.SLOT_COUNT,
         touchCls: document.body.classList.contains('touch'),
-        scrollable: pb.scrollHeight - pb.clientHeight
+        scrollable: scroller.scrollHeight - scroller.clientHeight
       };
     });
     ok(lay.inView, `[${vp.name}] 面板完整可见`, lay);
+    /* 卡片多了必然要滚：要么菜单体在滚，要么面板自己滚，二者有一个能滚就算过关 */
+    ok(lay.scrollable > 0 || lay.inView, `[${vp.name}] 内容装不下时可滚`, lay.scrollable);
     ok(lay.panelOverflowX <= 1, `[${vp.name}] 面板无横向溢出`, lay.panelOverflowX);
     ok(lay.overflowX <= 0, `[${vp.name}] 页面无横向滚动`, lay.overflowX);
     ok(lay.outOfView.length === 0, `[${vp.name}] 卡片/按钮都在视口内`, lay.outOfView);
-    eq(lay.cards, 3, `[${vp.name}] 三张卡片都在`);
+    eq(lay.cards, lay.slotCount, `[${vp.name}] ${lay.slotCount} 张角色位卡片都在`);
     if (vp.touch) ok(lay.touchCls, `[${vp.name}] 走触屏布局`);
     await page.screenshot({ path: path.join(SHOTS, `s0-04-save-${tag}.png`) });
     await page.evaluate(() => SaveUI.close());
