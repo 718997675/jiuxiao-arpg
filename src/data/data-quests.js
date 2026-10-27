@@ -61,7 +61,19 @@ const QUESTS = {
     brief: '血蝠魔君以人血养翼，若不除之，血月将临。',
     objectives: [{ type: 'boss', target: 'batking', count: 1, label: '击败血蝠魔君' }],
     rewards: { xp: 1200, gold: 650, ilvl: 11, rarity: 'rare', skill: 'frostnova' },
-    next: null, require: 'm1_1_3'
+    next: 'm1_1_5', require: 'm1_1_3'
+  },
+  /* [M3b] 落霞坡。插在 q4 与 q5 之间 —— 主线是单链（同时只能接 1 条），
+   * 新图只能「插进链里」，不能另起一条并行的线。
+   * 插进来只改 require 链，不动任何 legacy 任务的 objectives，
+   * 老档迁移照旧（migrate 只认 objectives 结构）。 */
+  m1_1_5: {
+    id: 'm1_1_5', part: 1, act: '1-1', kind: 'main',
+    name: '晚照之坡', giver: 'campA_main', map: 'sunset', zone: 't3',
+    brief: '落霞坡的晚霞红得不对劲。村民说那是妖血染的 —— 三层坡地，越往上越红。',
+    objectives: [{ type: 'killAny', count: 14, label: '肃清落霞坡的妖物' }],
+    rewards: { xp: 900, gold: 480, ilvl: 8, rarity: 'magic' },
+    next: null, require: 'm1_1_4'
   },
 
   /* ---------------- 1-2 血月压境（血月沼泽 lv8） ---------------- */
@@ -71,7 +83,7 @@ const QUESTS = {
     brief: '血月沼泽的半兽人部族正在堆骨为塔。去沼泽斩杀 12 只怪物，遏止它们的血祭。',
     objectives: [{ type: 'killAny', count: 12, label: '肃清血月沼泽的妖物' }],
     rewards: { xp: 1600, gold: 800, ilvl: 13, rarity: 'rare', talent: 2 },
-    next: 'm1_2_2', require: 'm1_1_4'
+    next: 'm1_2_2', require: 'm1_1_5'
   },
   m1_2_2: {
     id: 'm1_2_2', legacyId: 'q6', part: 1, act: '1-2', kind: 'main',
@@ -87,10 +99,29 @@ const QUESTS = {
     brief: '蛇姬·青鳞在毒潭东岸蜕皮，蜕一次，沼泽的毒就浓一分。趁它虚弱时动手。',
     objectives: [{ type: 'kill', target: 'scorpion', count: 10, label: '清剿毒潭的蝎群' }],
     rewards: { xp: 3000, gold: 1300, ilvl: 16, rarity: 'set' },
-    next: null, require: 'm1_2_2'
+    next: 'm1_2_4', require: 'm1_2_2'
+  },
+  /* [M3b] 沉骨滩：1-2 的图位补上了真实地图。骨滩是「岛 + 窄桥」结构，
+   * 目标写成 killAny 而不是指定怪 —— 桥窄，玩家在桥上打什么都算数。 */
+  m1_2_4: {
+    id: 'm1_2_4', part: 1, act: '1-2', kind: 'main',
+    name: '沉骨滩', giver: 'campA_main', map: 'bonestrand', zone: 'isleN',
+    brief: '沼泽往北是一片骨滩，骨头堆成了岛。踩上去会响 —— 不是踩碎的声音，是挪动的声音。',
+    objectives: [{ type: 'killAny', count: 15, label: '肃清沉骨滩的妖物' }],
+    rewards: { xp: 3600, gold: 1500, ilvl: 18, rarity: 'rare' },
+    next: null, require: 'm1_2_3'
   },
 
-  /* ---------------- 1-3 铁山无声（玄铁矿洞 lv16） ---------------- */
+  /* ---------------- 1-3 铁山无声（骨塔祭场 lv13 / 玄铁矿洞 lv16） ---------------- */
+  /* [M3b] 骨塔祭场：1-3 的第一张图，所以插在 q7 之前。 */
+  m1_3_0: {
+    id: 'm1_3_0', part: 1, act: '1-3', kind: 'main',
+    name: '骨塔', giver: 'campA_main', map: 'bonetower', zone: 'sanctum',
+    brief: '一座用骨头垒起来的塔，塔里有人在念经。念的是往生咒，可塔下的骨头一件都没少。',
+    objectives: [{ type: 'boss', target: 'boneabbot', count: 1, label: '击败骨塔主持' }],
+    rewards: { xp: 4200, gold: 1700, ilvl: 19, rarity: 'rare', skill: 'poison' },
+    next: null, require: 'm1_2_4'
+  },
   m1_3_1: {
     id: 'm1_3_1', legacyId: 'q7', part: 1, act: '1-3', kind: 'main',
     name: '石甲与毒鳞', giver: 'campA_main', map: 'swamp', zone: 'sanctum',
@@ -100,7 +131,7 @@ const QUESTS = {
       { type: 'boss', target: 'snakequeen', count: 1, label: '击败蛇姬·青鳞' }
     ],
     rewards: { xp: 3600, gold: 1500, ilvl: 17, rarity: 'set', skill: 'summon' },
-    next: 'm1_3_2', require: 'm1_2_3'
+    next: 'm1_3_2', require: 'm1_3_0'
   },
   m1_3_2: {
     id: 'm1_3_2', legacyId: 'q8', part: 1, act: '1-3', kind: 'main',
@@ -112,14 +143,27 @@ const QUESTS = {
   },
   m1_3_3: {
     id: 'm1_3_3', part: 1, act: '1-3', kind: 'main',
-    name: '铁山绝顶', giver: 'campA_main', map: 'mine', zone: 'hall',
+    /* [M3b] 原来叫「铁山绝顶」，但玩的还是玄铁矿洞 —— 现在真有铁山绝顶这张图了，
+     * 名字必须让出来，否则追踪条上会出现两条同名任务。 */
+    name: '矿洞尽头的门', giver: 'campA_main', map: 'mine', zone: 'hall',
     brief: '矿洞最深处还有一道门，门后是卷二的第一口冷气。把这里的矿工魂送走，再往北走。',
     objectives: [
       { type: 'kill', target: 'minerghost', count: 8, label: '超度矿工亡魂' },
       { type: 'reach', zone: 'sanctum', count: 1, label: '抵达幽魂祭坛' }
     ],
     rewards: { xp: 6800, gold: 2600, ilvl: 23, rarity: 'rare', talent: 2 },
-    next: null, require: 'm1_3_2'
+    next: 'm1_3_4', require: 'm1_3_2'
+  },
+  /* [M3b] 铁山绝顶：卷一真正的收尾（计划书 §3 的 1-3 卷末首领就是石甲巨魔）。
+   * 首任用 golemking —— 老档里 q7 已经在沼泽打过一次，但首领是按图刷新的，
+   * 在铁山绝顶再打一次是「追到它的老巢」，叙事上反而更顺。 */
+  m1_3_4: {
+    id: 'm1_3_4', part: 1, act: '1-3', kind: 'main',
+    name: '铁山绝顶', giver: 'campA_main', map: 'ironpeak', zone: 'sanctum',
+    brief: '雪线以上没有路，只有踩出来的坑。石甲巨魔就蹲在最高处，等了很多年。',
+    objectives: [{ type: 'boss', target: 'golemking', count: 1, label: '击败石甲巨魔' }],
+    rewards: { xp: 8600, gold: 3200, ilvl: 25, rarity: 'legendary', skill: 'avatar', talent: 2 },
+    next: null, require: 'm1_3_3'
   },
 
   /* ==========================================================
@@ -136,7 +180,7 @@ const QUESTS = {
       { type: 'boss', target: 'icequeen', count: 1, label: '击败冰魄妖后' }
     ],
     rewards: { xp: 7600, gold: 2800, ilvl: 25, rarity: 'legendary', skill: 'chain' },
-    next: 'm2_1_2', require: 'm1_3_3'
+    next: 'm2_1_2', require: 'm1_3_4'
   },
   m2_1_2: {
     id: 'm2_1_2', part: 2, act: '2-1', kind: 'main',
@@ -215,11 +259,139 @@ const QUESTS = {
       { type: 'boss', target: 'swordlord', count: 1, label: '击败天罡剑魂' }
     ],
     rewards: { xp: 12000, gold: 4200, ilvl: 30, rarity: 'legendary', skill: 'iceshield' },
-    next: null, require: 'm2_3_2'
+    next: 'm3_1_2', require: 'm2_3_2'
+  },
+  /* ---------------- [M3b] 卷三后半 + 卷四 + 卷五：19 张新图的主线 ----------------
+   * 主线是单链（同时只能接 1 条），所以新图只能「插进链里」。
+   * 每张图一条，首领图的 objective 是 boss，普通图是 killAny ——
+   * killAny 而不是指定怪：这些图每张 5 种怪，指定某一种会让玩家在一张
+   * 16000㎡ 的图上找那 8 只，体验很差（M2 的 2-2/2-3 已经踩过这个坑）。 */
+  m3_1_2: {
+    id: 'm3_1_2', part: 3, act: '3-1', kind: 'main',
+    name: '白骨长廊', giver: 'campC_main', map: 'bonehall', zone: 'sanctum',
+    brief: '长廊是环形的。你走了很久，回到大殿的时候，柱子上的骨头多了一具。',
+    objectives: [{ type: 'boss', target: 'marrowlord', count: 1, label: '击败髓主' }],
+    rewards: { xp: 13000, gold: 4600, ilvl: 31, rarity: 'legendary', talent: 2 },
+    next: 'm3_1_3', require: 'm3_1_1'
+  },
+  m3_1_3: {
+    id: 'm3_1_3', part: 3, act: '3-1', kind: 'main',
+    name: '忘川河滩', giver: 'campC_main', map: 'forgetshore', zone: 'nave',
+    brief: '河水很浅，只到脚踝。可走过去的人，没有一个回头看。',
+    objectives: [{ type: 'boss', target: 'riverwraith', count: 1, label: '击败忘川怨魂' }],
+    rewards: { xp: 13500, gold: 4800, ilvl: 32, rarity: 'legendary', skill: 'revive' },
+    next: 'm3_2_1', require: 'm3_1_2'
+  },
+  m3_2_1: {
+    id: 'm3_2_1', part: 3, act: '3-2', kind: 'main',
+    name: '九幽深渊', giver: 'campC_main', map: 'abyssdeep', zone: 'sanctum',
+    brief: '深渊没有底。你往下看的时候，深渊也在数你有几根骨头。',
+    objectives: [{ type: 'boss', target: 'abysswyrm', count: 1, label: '击败深渊古蟒' }],
+    rewards: { xp: 14500, gold: 5100, ilvl: 34, rarity: 'legendary', talent: 2 },
+    next: 'm3_2_2', require: 'm3_1_3'
+  },
+  m3_2_2: {
+    id: 'm3_2_2', part: 3, act: '3-2', kind: 'main',
+    name: '黄泉渡', giver: 'campC_main', map: 'yellowferry', zone: 'sanctum',
+    brief: '渡口没有船，只有一块碑，上面写着「不渡」。',
+    objectives: [{ type: 'boss', target: 'yellowspring', count: 1, label: '击败黄泉主宰' }],
+    rewards: { xp: 16000, gold: 5600, ilvl: 37, rarity: 'legendary', skill: 'avatar', talent: 3 },
+    next: 'm4_1_1', require: 'm3_2_1'
   },
 
   /* ==========================================================
-   * 卷五 · 九霄终焉（51–60）
+   * 卷四 · 剑冢天阙（41–50）
+   * ========================================================== */
+  m4_1_1: {
+    id: 'm4_1_1', part: 4, act: '4-1', kind: 'main',
+    name: '天罡剑冢', giver: 'campD_main', map: 'swordtomb', zone: 'sanctum',
+    brief: '冢里埋的不是人，是剑。守灵替它们记着名字，一个都没忘。',
+    objectives: [{ type: 'boss', target: 'swordguardian', count: 1, label: '击败剑冢守灵' }],
+    rewards: { xp: 17200, gold: 6000, ilvl: 38, rarity: 'legendary', talent: 2 },
+    next: 'm4_1_2', require: 'm3_2_2'
+  },
+  m4_1_2: {
+    id: 'm4_1_2', part: 4, act: '4-1', kind: 'main',
+    name: '万剑坑', giver: 'campD_main', map: 'swordpit', zone: 'sanctum',
+    brief: '坑是被剑砸出来的。坑底插着一柄，没人拔得出来 —— 也没人拔得动。',
+    objectives: [{ type: 'boss', target: 'bladelord', count: 1, label: '击败万剑之君' }],
+    rewards: { xp: 18400, gold: 6400, ilvl: 40, rarity: 'legendary', skill: 'swordrain' },
+    next: 'm4_1_3', require: 'm4_1_1'
+  },
+  m4_1_3: {
+    id: 'm4_1_3', part: 4, act: '4-1', kind: 'main',
+    name: '剑冢绝巅', giver: 'campD_main', map: 'swordapex', zone: 'sanctum',
+    brief: '雪线之上站着一个人。他没拔剑，你就已经输了半招。',
+    objectives: [{ type: 'boss', target: 'swordemperor', count: 1, label: '击败剑帝' }],
+    rewards: { xp: 19000, gold: 6600, ilvl: 40, rarity: 'legendary', talent: 3 },
+    next: 'm4_2_1', require: 'm4_1_2'
+  },
+  m4_2_1: {
+    id: 'm4_2_1', part: 4, act: '4-2', kind: 'main',
+    name: '云海断桥', giver: 'campD_main', map: 'cloudbridge', zone: 'sanctum',
+    brief: '两座云台之间只剩半截桥。桥是对面那个人拆的，他还在那头站着。',
+    objectives: [{ type: 'boss', target: 'cloudwarden', count: 1, label: '击败云海守将' }],
+    rewards: { xp: 21000, gold: 7300, ilvl: 43, rarity: 'legendary', skill: 'judgement' },
+    next: 'm4_2_2', require: 'm4_1_3'
+  },
+  m4_2_2: {
+    id: 'm4_2_2', part: 4, act: '4-2', kind: 'main',
+    name: '南天残门', giver: 'campD_main', map: 'southgate', zone: 'sanctum',
+    brief: '门塌了一半，守门神还站在原地。他说南天不开，就真的不开。',
+    objectives: [{ type: 'boss', target: 'heavenguard', count: 1, label: '击败南天守门神' }],
+    rewards: { xp: 21500, gold: 7500, ilvl: 44, rarity: 'legendary', skill: 'avatar', talent: 3 },
+    next: 'm5_1_1', require: 'm4_2_1'
+  },
+
+  /* ==========================================================
+   * 卷五 · 无相镜渊（51–60）
+   * ========================================================== */
+  m5_1_1: {
+    id: 'm5_1_1', part: 5, act: '5-1', kind: 'main',
+    name: '玉京废墟', giver: 'campE_main', map: 'jadecapital', zone: 'sanctum',
+    brief: '玉京塌了，可大殿上还坐着一位。他坐得很端正，像是怕你看出什么。',
+    objectives: [{ type: 'boss', target: 'jadeemperor', count: 1, label: '击败玉京残帝' }],
+    rewards: { xp: 23000, gold: 8100, ilvl: 45, rarity: 'legendary', talent: 2 },
+    next: 'm5_1_2', require: 'm4_2_2'
+  },
+  m5_1_2: {
+    id: 'm5_1_2', part: 5, act: '5-1', kind: 'main',
+    name: '星陨台', giver: 'campE_main', map: 'starfall', zone: 'sanctum',
+    brief: '台上的坑一个比一个大。最大的那个坑里，站着一个抬头看天的人。',
+    objectives: [{ type: 'boss', target: 'starlord', count: 1, label: '击败陨星之主' }],
+    rewards: { xp: 24500, gold: 8600, ilvl: 46, rarity: 'legendary', skill: 'meteor' },
+    next: 'm5_1_3', require: 'm5_1_1'
+  },
+  m5_1_3: {
+    id: 'm5_1_3', part: 5, act: '5-1', kind: 'main',
+    name: '无相幻境', giver: 'campE_main', map: 'mirrorrealm', zone: 'sanctum',
+    brief: '幻境里什么都是熟的：这条路你走过，这间厅你站过，对面那个人 —— 也是你。',
+    objectives: [{ type: 'boss', target: 'mirrordemon', count: 1, label: '击败无相天魔' }],
+    rewards: { xp: 26000, gold: 9100, ilvl: 47, rarity: 'legendary', talent: 3 },
+    next: 'm5_1_4', require: 'm5_1_2'
+  },
+  m5_1_4: {
+    id: 'm5_1_4', part: 5, act: '5-1', kind: 'main',
+    name: '镜渊', giver: 'campE_main', map: 'mirrorabyss', zone: 'sanctum',
+    brief: '渊底是一面镜子。你往下看，镜子里的人抬头看你 —— 他比你早到一步。',
+    objectives: [{ type: 'boss', target: 'mirrorlord', count: 1, label: '击败镜渊之主' }],
+    rewards: { xp: 27000, gold: 9500, ilvl: 48, rarity: 'legendary', skill: 'thundercloud' },
+    next: 'm5_1_5', require: 'm5_1_3'
+  },
+  m5_1_5: {
+    id: 'm5_1_5', part: 5, act: '5-1', kind: 'main',
+    name: '九霄之巅', giver: 'campE_main', map: 'nineapex', zone: 'sanctum',
+    brief: '再往上就没有天了。神将站在最后一级台阶上，替天守着最后一道门。',
+    objectives: [{ type: 'boss', target: 'nineheaven', count: 1, label: '击败九霄神将' }],
+    rewards: { xp: 28000, gold: 9800, ilvl: 48, rarity: 'legendary', skill: 'pyroclasm', talent: 3 },
+    next: null, require: 'm5_1_4'
+  },
+
+  /* ==========================================================
+   * 卷五 · 终焉之门（59–60）
+   * m5_2_1 是 q11（老档要认 legacyId），所以它的 objectives 一个字都不能动 ——
+   * 它在天阙残境打的是「无相天魔伸出来的那只手」，真身在混沌海，就是 m5_2_2。
+   * 这样既保住了老档，又给了终局一个「追进去」的落点。
    * ========================================================== */
   m5_2_1: {
     id: 'm5_2_1', legacyId: 'q11', part: 5, act: '5-2', kind: 'main',
@@ -227,7 +399,17 @@ const QUESTS = {
     brief: '混沌无相天魔吞尽九霄灵气，天阙已残。此战，为苍生，也为你自己。',
     objectives: [{ type: 'boss', target: 'chaos', count: 1, label: '击败混沌·无相天魔' }],
     rewards: { xp: 30000, gold: 12000, ilvl: 40, rarity: 'legendary', skill: 'avatar', talent: 3 },
-    next: null, require: 'm3_1_1'
+    next: 'm5_2_2', require: 'm5_1_5'
+  },
+  /* [M3b] 混沌海：全作最后一张图，也是最后一个任务。
+   * 击败的是 chaosavatar（真身），不是天阙里那具分身。 */
+  m5_2_2: {
+    id: 'm5_2_2', part: 5, act: '5-2', kind: 'main',
+    name: '混沌海', giver: 'campE_main', map: 'chaossea', zone: 'nave',
+    brief: '天阙那一具，只是他伸出去的手。手断了，他还在。海面上一块一块的岛，都是他吞下去的东西。',
+    objectives: [{ type: 'boss', target: 'chaosavatar', count: 1, label: '击败混沌·无相天魔（真身）' }],
+    rewards: { xp: 40000, gold: 18000, ilvl: 52, rarity: 'legendary', skill: 'avatar', talent: 5 },
+    next: null, require: 'm5_2_1'
   },
 
   /* ==========================================================
@@ -279,6 +461,46 @@ const QUESTS = {
     objectives: [{ type: 'kill', target: 'toad', count: 8, label: '清掉冰下的蟾群' }],
     rewards: { xp: 7000, gold: 2400, ilvl: 24, rarity: 'rare' },
     repeat: false, require: 's2_1_1'
+  },
+
+  /* ---------------- [M3b] 新图支线：一卷一条 ----------------
+   * require 全部写 null 而不是串成链 —— 支线同时只能接 2 条，
+   * 串成链会让「接了 s1_1_2 就接不了别的」，玩家反而更受限制。
+   * 能不能接由「图开没开」决定（questMapOpen），等级门槛已经在图上了。 */
+  s1_1_2: {
+    id: 's1_1_2', part: 1, act: '1-1', kind: 'side',
+    name: '坡上的灯', giver: 'campA_side', map: 'sunset', zone: 't3',
+    brief: '落霞坡顶上有盏灯，天一黑就亮。录事说那是引路的，可坡上根本没有路。',
+    objectives: [{ type: 'kill', target: 'lantern', count: 10, label: '熄灭坡上的引路灯' }],
+    rewards: { xp: 800, gold: 420, ilvl: 8, rarity: 'magic' },
+    repeat: false, require: null
+  },
+  s3_1_2: {
+    id: 's3_1_2', part: 3, act: '3-1', kind: 'side',
+    name: '忘川的鞋', giver: 'campC_side', map: 'forgetshore', zone: 'isleN',
+    brief: '河滩上摆着一双鞋，鞋尖朝着来路。录事说，那是他自己很多年前脱下的。',
+    objectives: [
+      { type: 'reach', zone: 'isleN', count: 1, label: '走到忘川北滩' },
+      { type: 'kill', target: 'drowned', count: 8, label: '送走河里的溺者' }
+    ],
+    rewards: { xp: 13000, gold: 4600, ilvl: 32, rarity: 'rare' },
+    repeat: false, require: null
+  },
+  s4_1_2: {
+    id: 's4_1_2', part: 4, act: '4-1', kind: 'side',
+    name: '剑冢的名单', giver: 'campD_side', map: 'swordtomb', zone: 'hub',
+    brief: '守灵手里有一卷名单，写满了名字。最后一行是空的 —— 他说那是留给你的。',
+    objectives: [{ type: 'kill', target: 'swordwraith', count: 10, label: '收走游荡的剑魂' }],
+    rewards: { xp: 17000, gold: 5900, ilvl: 38, rarity: 'rare' },
+    repeat: false, require: null
+  },
+  s5_1_1: {
+    id: 's5_1_1', part: 5, act: '5-1', kind: 'side',
+    name: '镜子里的人', giver: 'campE_side', map: 'mirrorrealm', zone: 'hall',
+    brief: '幻境里有个和你一模一样的人，他也在打怪，也在找路。你们迟早要碰面。',
+    objectives: [{ type: 'killAny', count: 15, label: '清掉幻境里的影子' }],
+    rewards: { xp: 25000, gold: 8800, ilvl: 46, rarity: 'rare' },
+    repeat: false, require: null
   },
 
   /* ==========================================================

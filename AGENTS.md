@@ -141,6 +141,7 @@ git fetch origin                 # 分支都在远程，clone 完就全能看到
 | 山河图（传送面板） | `src/ui.js` 的 `openTravel`/`renderWorldMap` + `index.html` 的 `.wm-*` |
 | 小地图 | `src/ui-minimap.js`（`Minimap.draw`）。`ui.js` 的 `drawMinimap` 只是转发，别再往那边写 |
 | zone 拓扑 / 骨架 / 刷怪分配 | `src/data/data-maps.js` 的 `ZONE_ARCHETYPES` + `MAP_SPECS` + `buildZones`/`suggestSpawnTotal` |
+| 地貌（地表贴图 + 道具撒点） | `src/world.js`：`_makeGroundTexture` 的 `conf` 表 + 裂缝/雪粒/水纹分支；`buildMap` 里 `cfg.props` 的 `else if` 链 |
 | 首领落点 | `src/data/data-maps.js` 的 `bossPosOf(mapId, bossId, idx)`。**不要再往 `MAP_BOSS_POS` 里加坐标**，那是老图的表 |
 
 ## 5. 回归脚本（改完必跑）
@@ -148,9 +149,10 @@ git fetch origin                 # 分支都在远程，clone 完就全能看到
 ```bash
 node dev/smoke.js            # 三职业开局冒烟，零 pageerror 才算过
 node dev/test-quest.js       # 任务系统：接取/进度/复命/任务区域/悬赏板/老档迁移/UI 接线（44 项）
+node dev/quest-ref.js        # 任务表引用完整性：map/zone/boss/monster/skill/next/require + 主线链可走通
 node dev/zone-check.js       # 区域数据：越界/连通/重叠/落点/刷怪（纯 node，不启浏览器）
 node dev/zone-density.js     # 面积/密度：§5.1 的 16000~24000㎡、380~450㎡/只、40~56 只、max/min≤1.6
-node dev/m3-check.js         # M3 新图实测：落点/首领/小地图绘制/37 只怪帧率
+node dev/m3-check.js         # 全部骨架图的数据层 + 10 张抽样实测（落点/首领/小地图/37 只怪帧率）
 node dev/mobile-layout.js    # 6 视口 × 10 页签：键位重叠/出屏/裁切/可滚性
 node dev/live-check.js       # 线上能否开局（推完 30~60s 后跑）
 node dev/mobile-layout.js --live   # 线上版布局回归
@@ -226,6 +228,20 @@ node dev/preview-check.js --url <预览地址>   # 预览站：能开局 + 资�
   按区顺序刷会把截断全落在最后几个区（后殿 + 首领场），北半边变空图。
 - **62 米外的怪 AI 每 3 帧才走一次**（`updateEnemies` 里的 `aiSkip`）。加这个分支时**不要动 `dt`**，
   它是形参，改了会污染下一只怪；debuff 计时器在插入点之前就已结算，不需要补帧。
+- **`isles` 是唯一一个首领区不叫 `sanctum` 的骨架**（它叫 `nave` / 祭岛）。任务、传送、调试里
+  按 id 找首领区在 isles 图上会静默失效 —— 一律用 `zones.find(z => z.kind === 'boss')`。
+- **改了骨架的区数/形状，必须重测 `ARCHETYPE_COVERAGE`**。它直接决定 `suggestSpawnTotal` 的推导值；
+  M3b 给 twin 补了两个区（10 → 12），覆盖率从 0.1963 涨到 0.2128，忘了改的话新 twin 图会稀 8%。
+- **`MAPS[id].portal` 必须落在入口 zone 内**，而 `twin` 的 `gate` 偏在 `x = −0.26R` ——
+  所以 `cloudbridge` 的 `portal.x` 是 `−37` 而不是 0。`zone-check` 会逐张校验这一条。
+- **回归脚本里的等级要给够**。卷四/卷五的图 `unlock` 是 48~59，脚本写 `level = 40` 时
+  `travelTo` 会**静默失败**（玩家留在上一张图，不抛异常），后面的断言全部拿错图的数据去比，
+  报出来是「出生点不在任何 zone 内」这种看不懂的错。`m3-check` 现在有一条 `mapId === mid` 的总闸。
+- **地貌道具是 `cfg.props` 上的一条 `else if` 链**（`village`/`bamboo`/`swamp`/`mine`/`abyss`/
+  `heaven`/`snow`/`bone`/`void`/`flood`/`trial`）。加新地貌 = `_makeGroundTexture` 的 `conf` 表一行 +
+  `BORDER_COL` 一行 + 这里一条分支，**不要新开贴图生成函数**（缓存按 type 做，已经够用）。
+- **道具几何优先用「固定尺寸 + `scale`」**。`boxGeo/sphGeo/coneGeo/cylGeo` 都按参数做缓存键，
+  写成 `sphGeo(RND(0.9,1.3), 6)` 会让缓存无限增长；`scale.set(...)` 不占缓存。
 
 ### 任务系统（M2 之后）
 

@@ -489,6 +489,133 @@ const BOSSES = {
     patterns: ['slam', 'fireline', 'meteor', 'summon'],
     lines: ['焚天不是我的名号，是我的活。', '天要烧，我就替它烧。', '你烧不起来的，我教你。']
   },
+  /* ---------------- 卷一 ~ 卷五 新图首领（M3b） ----------------
+   * 19 张新图各自的首领。模型全部复用（§5.3「新地貌不新模型」），
+   * 只换色、换技能组合、换台词 —— 造型工作留给美术，数据层先把
+   * 「走进祭坛有人」跑通。
+   *
+   * 数值口径（三条线，改之前先对齐）：
+   *   atk = 105 + (level − 38) × 2.6     以 chaos（lv38 / 105）为锚点
+   *   hp  = 19000 + (level − 30) × 2400  以 flameemperor（lv30 / 19000）为锚点
+   *         lv ≤ 20 的走老首领曲线（chief lv12 4200 / golemking lv15 6200）
+   *   hp 随等级**线性**而不是指数：指数在 lv60 会到 63 万，玩家 60 级的
+   *   DPS 撑不住；线性到 lv60 是 9.1 万，配合装备成长刚好打 40~70 秒。
+   *
+   * 为什么要新建而不是沿用老首领：`bossHpScale(lv)` 只按等级放大伤害，
+   * 血量不跟着涨。lv57 的图里放一只 lv30 的冥河渡者，会被玩家一个技能秒掉，
+   * 首领战直接不存在。 */
+  boneabbot: {
+    id: 'boneabbot', name: '骨塔主持', title: '把骨头念成经的人', map: 'bonetower', level: 13, scale: 2.0,
+    hp: 5200, atk: 40, spd: 3.0, color: 0xb0a488, cloth: 0x4a4234, model: 'humanoid', scale: 1.9,
+    melee: false, ranged: true, range: 14, atkCd: 2.1, family: 'undead',
+    patterns: ['curse', 'summon', 'ringshot'],
+    lines: ['这塔里的每一块骨头，都念过一遍经。', '你也留下来听吧。']
+  },
+  marrowlord: {
+    id: 'marrowlord', name: '髓主', title: '白骨长廊的尽头', map: 'bonehall', level: 34, scale: 2.3,
+    hp: 28600, atk: 95, spd: 2.6, color: 0xc8bca0, cloth: 0x3a3328, model: 'golem', scale: 1.95,
+    melee: true, range: 5.0, atkCd: 2.4, armorHigh: true, family: 'undead',
+    patterns: ['quake', 'slam', 'rocks'],
+    lines: ['长廊很长，走到头就是我的骨髓。', '你的骨头，比上一批硬。']
+  },
+  riverwraith: {
+    id: 'riverwraith', name: '忘川怨魂', title: '河滩上不肯走的人', map: 'forgetshore', level: 35, scale: 2.1,
+    hp: 31000, atk: 97, spd: 3.4, color: 0x6a8a9a, cloth: 0x22303a, model: 'ghost', scale: 1.9,
+    melee: false, ranged: true, range: 16, atkCd: 1.9, family: 'spirit',
+    patterns: ['ringshot', 'curse', 'poisonnova'],
+    lines: ['我还没喝那碗汤。', '你替我喝了吧。']
+  },
+  abysswyrm: {
+    id: 'abysswyrm', name: '深渊古蟒', title: '九幽之下最老的东西', map: 'abyssdeep', level: 37, scale: 2.5,
+    hp: 35800, atk: 102, spd: 3.8, color: 0x3a2a52, cloth: 0x1a1226, model: 'snake', scale: 2.3,
+    melee: true, range: 5.4, atkCd: 1.8, poison: true, family: 'beast',
+    patterns: ['charge', 'slam', 'poisonnova'],
+    lines: ['深渊不是坑，是嘴。', '我在这里，比九幽还早。']
+  },
+  yellowspring: {
+    id: 'yellowspring', name: '黄泉主宰', title: '渡口不渡人', map: 'yellowferry', level: 40, scale: 2.4,
+    hp: 43000, atk: 110, spd: 2.8, color: 0x8a7a58, cloth: 0x3a3020, model: 'golem', scale: 2.1,
+    melee: true, range: 5.2, atkCd: 2.2, armorHigh: true, family: 'undead',
+    patterns: ['quake', 'ringshot', 'curse', 'slam'],
+    lines: ['船早就不在了，你们还在等。', '黄泉不收钱，只收人。']
+  },
+  swordguardian: {
+    id: 'swordguardian', name: '剑冢守灵', title: '替万人守剑的人', map: 'swordtomb', level: 42, scale: 2.2,
+    hp: 47800, atk: 115, spd: 3.8, color: 0xb8ac88, cloth: 0x50462a, model: 'humanoid', scale: 2.1,
+    melee: true, range: 4.0, atkCd: 1.4, family: 'spirit',
+    patterns: ['swordrain', 'charge', 'slam'],
+    lines: ['这里的每一把剑，都有名字。', '你没有。']
+  },
+  bladelord: {
+    id: 'bladelord', name: '万剑之君', title: '坑底那一柄没人拔得出的剑', map: 'swordpit', level: 44, scale: 2.3,
+    hp: 52600, atk: 121, spd: 3.6, color: 0xa89a72, cloth: 0x443c22, model: 'humanoid', scale: 2.1,
+    melee: true, range: 4.2, atkCd: 1.3, family: 'spirit',
+    patterns: ['swordrain', 'ringshot', 'charge'],
+    lines: ['万剑归我，我归坑。', '拔出来试试。']
+  },
+  swordemperor: {
+    id: 'swordemperor', name: '剑帝', title: '剑冢绝巅的那道背影', map: 'swordapex', level: 45, scale: 2.6,
+    hp: 55000, atk: 123, spd: 4.0, color: 0xd8c8a0, cloth: 0x6a5c30, model: 'humanoid', scale: 2.5,
+    melee: true, range: 4.4, atkCd: 1.2, family: 'spirit',
+    patterns: ['swordrain', 'charge', 'slam', 'summon'],
+    lines: ['剑不是兵器，是墓志。', '你的墓志，我来写。']
+  },
+  cloudwarden: {
+    id: 'cloudwarden', name: '云海守将', title: '断桥另一头的人', map: 'cloudbridge', level: 49, scale: 2.4,
+    hp: 64600, atk: 134, spd: 3.2, color: 0x8a9ab8, cloth: 0x36425a, model: 'brute', scale: 2.2, skin: 0xa8b8d0,
+    melee: true, range: 4.8, atkCd: 1.9, family: 'humanoid',
+    patterns: ['slam', 'charge', 'ringshot'],
+    lines: ['桥是我拆的。', '过不去的，就不该过去。']
+  },
+  heavenguard: {
+    id: 'heavenguard', name: '南天守门神', title: '门塌了，人还在', map: 'southgate', level: 50, scale: 2.6,
+    hp: 67000, atk: 136, spd: 2.4, color: 0x9aaccc, cloth: 0x3a4a66, model: 'golem', scale: 2.4,
+    melee: true, range: 5.4, atkCd: 2.5, armorHigh: true, family: 'stone',
+    patterns: ['quake', 'slam', 'rocks', 'ringshot'],
+    lines: ['门没了，守的还是门。', '南天不开。']
+  },
+  jadeemperor: {
+    id: 'jadeemperor', name: '玉京残帝', title: '废墟里还坐得端端正正的那位', map: 'jadecapital', level: 52, scale: 2.5,
+    hp: 71800, atk: 141, spd: 3.2, color: 0x6a9a8a, cloth: 0x1e3a34, model: 'demon', scale: 2.3,
+    melee: true, range: 5.0, atkCd: 1.9, family: 'spirit',
+    patterns: ['slam', 'ringshot', 'curse', 'summon'],
+    lines: ['玉京塌了，朕还在。', '跪吧，跪着死体面些。']
+  },
+  starlord: {
+    id: 'starlord', name: '陨星之主', title: '把星星拽下来的人', map: 'starfall', level: 54, scale: 2.5,
+    hp: 76600, atk: 147, spd: 3.4, color: 0x7a6ab0, cloth: 0x2a2044, model: 'demon', scale: 2.4,
+    melee: false, ranged: true, range: 17, atkCd: 1.8, family: 'spirit',
+    patterns: ['meteor', 'ringshot', 'charge'],
+    lines: ['台上那些坑，都是我砸的。', '天上还有的是。']
+  },
+  mirrordemon: {
+    id: 'mirrordemon', name: '无相天魔', title: '幻境里的那个你', map: 'mirrorrealm', level: 56, scale: 2.6,
+    hp: 81400, atk: 152, spd: 3.6, color: 0x8a7ac0, cloth: 0x2e2450, model: 'demon', scale: 2.5,
+    melee: true, range: 5.2, atkCd: 1.8, family: 'spirit',
+    patterns: ['slam', 'ringshot', 'curse', 'summon'],
+    lines: ['我就是你，只是没输过。', '照照镜子吧。']
+  },
+  mirrorlord: {
+    id: 'mirrorlord', name: '镜渊之主', title: '渊底那面镜子', map: 'mirrorabyss', level: 57, scale: 2.6,
+    hp: 83800, atk: 154, spd: 3.4, color: 0x6a5aa8, cloth: 0x1e1840, model: 'demon', scale: 2.5,
+    melee: false, ranged: true, range: 16, atkCd: 1.7, family: 'spirit',
+    patterns: ['ringshot', 'charge', 'curse', 'meteor'],
+    lines: ['往下看，看到的都是真的。', '镜子里那个，才是本尊。']
+  },
+  nineheaven: {
+    id: 'nineheaven', name: '九霄神将', title: '最后一层天的人', map: 'nineapex', level: 58, scale: 2.7,
+    hp: 86200, atk: 157, spd: 3.8, color: 0xd8c890, cloth: 0x6a5a2a, model: 'brute', scale: 2.6, skin: 0xe0c8a0,
+    melee: true, range: 5.0, atkCd: 1.8, family: 'humanoid',
+    patterns: ['slam', 'charge', 'meteor', 'summon'],
+    lines: ['九霄之上，没有更高的地方了。', '上去，就得踩着神过。']
+  },
+  chaosavatar: {
+    id: 'chaosavatar', name: '混沌·无相天魔（真身）', title: '九霄终焉 · 真', map: 'chaossea', level: 60, scale: 3.0,
+    hp: 91000, atk: 162, spd: 3.4, color: 0x5a2478, cloth: 0x220c30, model: 'demon', scale: 2.1, skin: 0x6a3a7a,
+    melee: true, range: 5.6, atkCd: 1.8, all: true, family: 'spirit',
+    patterns: ['slam', 'ringshot', 'charge', 'meteor', 'summon', 'curse'],
+    lines: ['天阙那一具，只是我伸出去的手。', '现在，你见到我了。', '九霄本来就没有底，你以为你站在上面？']
+  },
   chaos: {
     id: 'chaos', name: '混沌·无相天魔', title: '九霄终焉', map: 'heaven', level: 38, scale: 3.0,
     hp: 42000, atk: 105, spd: 3.4, color: 0x5a2478, cloth: 0x220c30, model: 'demon', scale: 2.1, skin: 0x6a3a7a,

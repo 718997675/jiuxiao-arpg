@@ -3,20 +3,20 @@
 - 分支：`feat/act-expansion`（优先级 **高**，先于技能重构合入 main）
 - 计划文档：`docs/ACT-EXPANSION-PLAN.md`（15 节）
 - 预览站：<https://718997675.github.io/jiuxiao-arpg/preview/act-expansion/>
-- 更新：2026-10-27 22:40
+- 更新：2026-10-27 23:20
 
-> 当前：M3 第一批已完成（8 种骨架 · 4 张新图 · 小地图 · 密度公式），下一步 M3 第二批（21 张图 + 4 种地貌）
+> 当前：M3a + M3b 全部完成（8 种骨架 · 8 种地貌 · **30 张图全部落地**）。下一步 M4。
 
 ## 一句话现状
 
-M3 第一批把「手写地图」这件事变成了数据：8 种 zone 骨架（`ZONE_ARCHETYPES`）+ 一张图一行
-`MAP_SPECS`，坐标 / 刷怪分配 / 首领落点全部自动展开。卷二 2-2、2-3 的 4 张图已上线
-（熔脉深沟 / 灰烬荒原 / 赤炎峡谷 / 焚天祭坛，size 290~300，每张 16,000~17,000㎡、40~43 只怪），
-面积与密度都实测落在 §5.1 的区间里（396~407㎡/只）。小地图重做成整图俯视 + 任务区虚线高亮。
-任务链随之打通到卷二末：新增 5 条主线，总数 35 → 40。
+M3 把「手写地图」变成了数据：8 种 zone 骨架（`ZONE_ARCHETYPES`）+ 一张图一行 `MAP_SPECS`，
+坐标 / 刷怪分配 / 首领落点全部自动展开。**30 个图位全部填满**（原来 11 张，新增 19 张），
+`id: null` 归零；每张 16,000~18,700㎡、40~46 只怪、密度 391~409㎡/只、max/min ≤1.33，
+全部实测落在 §5.1 的区间里。地貌从 4 种扩到 8 种（新增 snow / bone / void / flood），
+小地图是整图俯视 + 任务区虚线高亮。任务链从 40 条扩到 63 条（主线 39 / 支线 9 / 悬赏 15），
+主线从「竹林异动」一条链走到底到「混沌海」。首领新增 16 只（19 张新图各自有人坐镇）。
 
-**19 个图位仍是 `id: null`**（卷二 0、卷三 2、卷四 3、卷五 6，加上卷一的落霞坡等），
-剩下 21 张新图 + 4 种地貌（snow/bone/void/flood）是 M3 第二批。
+**剩下的不是地图**：M4（图鉴扩展 / 卷末首领强化 / 剩余 24 只新怪）、M5（地下城）、M6（60 级曲线）。
 
 ## 节点表
 
@@ -27,12 +27,26 @@ M3 第一批把「手写地图」这件事变成了数据：8 种 zone 骨架（
 | D0 | 需求与结构设计（三层世界 + 营地任务网 + 地下城） | ✅ | `docs/ACT-EXPANSION-PLAN.md` | `045540c` |
 | M0 | 地基：schema v3 + 老档迁移；`PARTS/ACTS/CAMPS` 数据；世界地图三层 UI | ✅ | `src/data/data-world.js`、`src/core/save.js`、`src/ui.js` | `7314c40` |
 | M1 | 卷 / 营地 / 传送：5 营地、路标石、章间出口门 | ✅ | `src/data/data-world.js`、`src/world.js`、`src/game.js`、`src/ui.js` | `3284cf1` + `8e1f816` |
-| M2 | 任务系统：`quests.js`；任务板；任务区域；追踪三行 | ✅ | `src/quests.js`、`src/data/data-quests.js` | 本次 |
-| M3a | 地图扩容第一批：8 种骨架、`ash` 地貌、4 张新图（卷二 2-2/2-3）、密度公式、小地图 | ✅ | `src/data/data-maps.js`、`src/ui-minimap.js` | 本次 |
-| M3b | 地图扩容第二批：4 种地貌（snow/bone/void/flood）、21 张新图 | ⬜ | `src/data/data-maps.js` | — |
-| M4 | 怪物 / 首领：40 新怪 + 12 新首领；图鉴扩到 80/24；5 个卷末首领强化 | ⬜ | `src/data/data-monsters.js` | — |
+| M2 | 任务系统：`quests.js`；任务板；任务区域；追踪三行 | ✅ | `src/quests.js`、`src/data/data-quests.js` | `da3dbf7` 前 |
+| M3a | 地图扩容第一批：8 种骨架、`ash` 地貌、4 张新图（卷二 2-2/2-3）、密度公式、小地图 | ✅ | `src/data/data-maps.js`、`src/ui-minimap.js` | `da3dbf7` |
+| M3b | 地图扩容第二批：4 种地貌（snow/bone/void/flood）、**19 张新图**、16 只新首领、23 条新任务 | ✅ | `src/data/data-maps.js`、`src/data/data-world.js`、`src/data/data-monsters.js`、`src/data/data-quests.js`、`src/world.js` | 本次 |
+| M4 | 怪物 / 首领：剩余 24 只新怪；图鉴扩到 80/24；5 个卷末首领强化 | ⬜ | `src/data/data-monsters.js` | — |
 | M5 | 地下城：`dungeon.js`；5 类 × 5 阶；词缀；图鉴加成；钥匙掉落 | ⬜ | 新建 `src/dungeon.js` | — |
 | M6 | 平衡 / 打磨：60 级曲线复算；基底 12 阶；传世补齐；性能实测；手机端回归 | ⬜ | `src/data/data-core.js` | — |
+
+### M3b 交付明细（已完成）
+
+| 子项 | 落地内容 | 回归 |
+|---|---|---|
+| 4 种地貌 | `snow`（雪原）/ `bone`（白骨）/ `void`（虚空）/ `flood`（浅水）。每种 = `makeGroundTexture` 的 `conf` 表一行 + 专属细节（雪面亮点与雪堆 / 水纹）+ `BORDER_COL` 边界色 + `cfg.props` 一条分支（雪松冰柱 / 骨柱肋骨拱鬼火 / 黑曜石柱星屑 / 水洼枯木芦苇） | `smoke` 三职业 ERRORS none |
+| 19 张新图 | 卷一 4（落霞坡 / 沉骨滩 / 骨塔祭场 / 铁山绝顶）、卷三 4、卷四 5、卷五 6。`MAP_SPECS` 一条 6 行，尺寸 294~306（isles/twin 覆盖率低所以更大） | `zone-check` 30 张图全通过 |
+| 面积/密度 | 16,019~18,669㎡ · 40~46 只 · 391~409㎡/只 · max/min ≤1.33，全部达标 | `zone-density` 骨架图全绿 |
+| 骨架补强 | `twin` 只有 10 区（<§5.1 的 12），补「西深层 / 东深层」两个区；`ARCHETYPE_COVERAGE.twin` 0.1963 → 0.2128 并重测 | `zone-check` / `zone-density` |
+| 首领 | 新增 16 只（`boneabbot` 13 / `marrowlord` 34 / `riverwraith` 35 / `abysswyrm` 37 / `yellowspring` 40 / `swordguardian` 42 / `bladelord` 44 / `swordemperor` 45 / `cloudwarden` 49 / `heavenguard` 50 / `jadeemperor` 52 / `starlord` 54 / `mirrordemon` 56 / `mirrorlord` 57 / `nineheaven` 58 / `chaosavatar` 60）。数值两条线：`atk = 105 + (lv−38)×2.6`、`hp = 19000 + (lv−30)×2400` | `m3-check` A 段逐张查 BOSSES |
+| 任务 | 63 条（主线 39 / 支线 9 / 悬赏 15）。19 条新图主线**插进单链**（改 `require` 不改 legacy objectives），4 条新支线 `require: null` | `test-quest` 44/44 · `quest-ref` 全绿 |
+| 任务引用探针 | 新建 `dev/quest-ref.js`：map / zone / boss / monster / skill / next / require 七类引用 + 主线链可走通。**它抓到了 isles 图首领区叫 `nave` 不叫 `sanctum` 这个坑** | 63 条任务 0 错误 |
+| m3-check 扩容 | A 段改为跑全部 `MAP_SPECS`（23 张）；B/C/D 抽 10 张覆盖 4 种新地貌 + 8 种骨架；新增 `mapId === mid` 总闸（`travelTo` 因等级被拦时不抛异常，旧版会拿错图数据去比） | `m3-check` 全通过 |
+| 老图不动 | 7 张手写图坐标一个像素没改；`MAP_BOSS_POS` 老表照旧生效（新首领不在表里，自动走 `bossPosOf` 推导） | 老图首领落点不变 |
 
 ### M2 交付明细（已完成）
 

@@ -25,7 +25,18 @@ const exe = [
   '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
 ].find(f => fs.existsSync(f));
 
-const NEW_MAPS = ['magmagully', 'ashfield', 'flamecanyon', 'flamealtar'];
+/* A 段覆盖**全部**骨架图（MAP_SPECS 有多少跑多少）——
+ * 数据层的错（首领不存在、区数不对）不需要进图就能查，跑全量成本很低。
+ *
+ * B/C/D 段要真的 travelTo + 等 1 秒，23 张全跑一遍两分钟以上，所以只抽 10 张：
+ * 4 种新地貌（snow / bone / void / flood）各至少 1 张，
+ * 8 种骨架（cross / spiral / canyon / radial / ring / twin / isles / terrace）全覆盖。 */
+const DEEP = [
+  /* M3a 的 4 张（回归基线，别删） */
+  'magmagully', 'ashfield', 'flamecanyon', 'flamealtar',
+  /* M3b：snow / bone / flood / void + twin / isles / terrace */
+  'ironpeak', 'bonestrand', 'forgetshore', 'abyssdeep', 'cloudbridge', 'chaossea'
+];
 const fails = [];
 const ok = (cond, msg) => { if (!cond) fails.push(msg); return cond; };
 
@@ -46,11 +57,12 @@ const ok = (cond, msg) => { if (!cond) fails.push(msg); return cond; };
   await wait(1400);
   await page.click('#startBtn').catch(() => {});
   await wait(300);
-  await page.evaluate(() => { Game.startNew('warrior', '刀'); Game.state.level = 40; Game.recalc(); });
+  await page.evaluate(() => { Game.startNew('warrior', '刀'); /* [M3b] 必须给到 60：卷四/卷五的图 unlock 是 48~59，40 级进不去，travelTo 会静默失败 —— 后面所有断言都会拿「上一张图」的数据去比 */ Game.state.level = 60; Game.recalc(); });
   await wait(1200);
 
   /* ---------- A. 数据层 ---------- */
   console.log('【A】数据层');
+  const ALL_SPEC = await page.evaluate(() => Object.keys(MAP_SPECS));
   const api = await page.evaluate((ids) => {
     const out = {};
     for (const id of ids) {
@@ -65,26 +77,31 @@ const ok = (cond, msg) => { if (!cond) fails.push(msg); return cond; };
       } : null;
     }
     return { maps: out, hasMinimap: typeof Minimap !== 'undefined', hasQuest: typeof QuestSys !== 'undefined' };
-  }, NEW_MAPS);
+  }, ALL_SPEC);
 
   ok(api.hasMinimap, 'A: Minimap 模块没挂到全局（ui-minimap.js 没引入？）');
   ok(api.hasQuest, 'A: QuestSys 未定义');
-  for (const id of NEW_MAPS) {
+  for (const id of ALL_SPEC) {
     const r = api.maps[id];
     if (!ok(r, `A: MAPS 里没有 ${id}`)) continue;
     console.log(`  ${id.padEnd(12)} ${r.name}  lv${r.level}  size ${r.size}  ${r.zones} 区  ground=${r.ground}  首领=${r.boss || '无'}`);
-    ok(r.zones === 12, `A: ${id} 应有 12 个 zone，实际 ${r.zones}`);
+    /* §5.1：12~16 区。isles 是 14、twin 是 12、cross 是 13 —— 不能写死 12 */
+    ok(r.zones >= 12 && r.zones <= 16, `A: ${id} 有 ${r.zones} 个 zone，超出 §5.1 的 12~16`);
     ok(r.bossOk, `A: ${id} 的首领 ${r.boss} 在 BOSSES 里不存在`);
     ok(r.size >= 285, `A: ${id} size ${r.size} < 285，面积/密度不可能同时达标`);
   }
 
   /* ---------- B. 落点 ---------- */
   console.log('\n【B】落点合法性');
-  for (const mid of NEW_MAPS) {
+  for (const mid of DEEP) {
     const r = await page.evaluate(async (mid) => {
-      Game.state.level = 40; Game.recalc();
+      /* [M3b] 必须给到 60：卷四/卷五的图 unlock 是 48~59，40 级进不去，travelTo 会静默失败 —— 后面所有断言都会拿「上一张图」的数据去比 */ Game.state.level = 60; Game.recalc();
       Game.travelTo(mid);
-      await new Promise(res => setTimeout(res, 1100));
+      /* 等 1.8 秒而不是 1.1 秒：loadMap 本身有 120ms 延迟，之后还要建 zone 地面、
+       * 撒道具、刷 40+ 只怪。size 306 的云海断桥实测要 1.5 秒以上才跑起来第一帧 AI，
+       * 等太短时 `e.culled` 全是 undefined（AI 一帧都没跑），
+       * 会误报「视野外只有 0 只怪，AI 降频没有作用对象」。 */
+      await new Promise(res => setTimeout(res, 1800));
       const inside = (x, z) => zonesContain(mid, x, z);
       const pp = Game.playerGroup.position;
       let badE = 0, nB = 0, badB = 0, bossZone = '-', culled = 0, skipping = 0;
@@ -102,11 +119,16 @@ const ok = (cond, msg) => { if (!cond) fails.push(msg); return cond; };
       const pz = zoneAt(mid, pp.x, pp.z);
       return {
         n: Game.enemies.length, badE, nB, badB, bossZone, culled, skipping,
+        /* 这一条是 B 段的总闸：travelTo 因为等级/门禁失败时不会抛异常，
+         * 玩家留在上一张图，后面每一条断言都会拿错图的数据去比，
+         * 表现成「出生点不在任何 zone 内 / 11 只怪越界」这种看不懂的错。 */
+        mapId: Game.state.mapId,
         playerIn: inside(pp.x, pp.z),
         playerZone: pz ? pz.name : '-',
         waystone: !!(Game.world && Game.world.waystone)
       };
     }, mid);
+    ok(r.mapId === mid, `B: 没能进入 ${mid}（当前还在 ${r.mapId}）—— 等级或门禁挡住了`);
     console.log(`  怪 ${String(r.n).padStart(2)} 只 · 越界 ${r.badE} · 首领 ${r.nB} 只@${r.bossZone} · 出生点[${r.playerZone}] · 视野外 ${r.culled} 只（降频中 ${r.skipping}）· 路标石 ${r.waystone ? '有' : '无'}`);
     ok(r.playerIn, `B: ${mid} 出生点不在任何 zone 内`);
     ok(r.badE === 0, `B: ${mid} 有 ${r.badE} 只怪刷在 zone 外`);
@@ -117,16 +139,13 @@ const ok = (cond, msg) => { if (!cond) fails.push(msg); return cond; };
     /* 大图的意义就在这：出生点附近只占一小块，大半怪在 62 米外。
      * 如果这里一直是 0，说明 AI 降频（§5.4）根本没有生效对象。 */
     ok(r.culled >= 3, `B: ${mid} 视野外只有 ${r.culled} 只怪，AI 降频没有作用对象`);
-    /* 大图的意义就在这：出生点附近只占一小块，大半怪在 62 米外。
-     * 如果这里一直是 0，说明 AI 降频（§5.4）根本没有生效对象。 */
-    ok(r.culled >= 3, `B: ${mid} 视野外只有 ${r.culled} 只怪，AI 降频没有作用对象`);
   }
 
   /* ---------- C. 小地图 ---------- */
   console.log('\n【C】小地图绘制');
-  for (const mid of NEW_MAPS) {
+  for (const mid of DEEP) {
     const r = await page.evaluate(async (mid) => {
-      Game.state.level = 40; Game.recalc();
+      /* [M3b] 必须给到 60：卷四/卷五的图 unlock 是 48~59，40 级进不去，travelTo 会静默失败 —— 后面所有断言都会拿「上一张图」的数据去比 */ Game.state.level = 60; Game.recalc();
       Game.travelTo(mid);
       await new Promise(res => setTimeout(res, 900));
       const cv = document.getElementById('minimap');
@@ -168,7 +187,7 @@ const ok = (cond, msg) => { if (!cond) fails.push(msg); return cond; };
   console.log('\n【D】37 只怪同屏帧率（软件渲染，仅看相对开销）');
 
   const measureFps = async (mid, mobs) => await page.evaluate(async (mid, mobs) => {
-    Game.state.level = 40; Game.recalc();
+    /* [M3b] 必须给到 60：卷四/卷五的图 unlock 是 48~59，40 级进不去，travelTo 会静默失败 —— 后面所有断言都会拿「上一张图」的数据去比 */ Game.state.level = 60; Game.recalc();
     Game.travelTo(mid);
     await new Promise(res => setTimeout(res, 1500));
     Game.state.hp = 1e9;
@@ -200,7 +219,7 @@ const ok = (cond, msg) => { if (!cond) fails.push(msg); return cond; };
   await measureFps('abyss', 12);
   console.log('  （已热身）');
 
-  for (const mid of NEW_MAPS) {
+  for (const mid of DEEP) {
     const r = await measureFps(mid, 37);
     console.log(`  ${mid.padEnd(12)} ${String(r.n).padStart(2)} 只 · ${r.fps.toFixed(1)} FPS（冷 ${r.cold.toFixed(1)} / 热 ${r.warm.toFixed(1)}）`);
     ok(r.fps >= 6, `D: ${mid} 只有 ${r.fps.toFixed(1)} FPS，低于软件渲染地板 6`);
