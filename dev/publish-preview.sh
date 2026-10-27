@@ -145,7 +145,7 @@ fi
 for f in index.html src/game.js lib/three.min.js; do
   [ -f "$OUT/$f" ] || { git checkout "$CUR" >/dev/null 2>&1; die "导出不完整：缺 $f"; }
 done
-ok "已导出 $OUT（$(du -sh "$OUT" 2>/dev/null | cut -f1)）"
+ok "已导出 ${OUT}（$(du -sh "$OUT" 2>/dev/null | cut -f1)）"
 
 # 5. 注入：标题前缀 + 存档隔离
 NODE=$(command -v node || true)
