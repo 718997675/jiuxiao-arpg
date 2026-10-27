@@ -83,6 +83,29 @@ git fetch origin                 # 分支都在远程，clone 完就全能看到
 - 跨机器必须保留的信息，写进本文档（`AGENTS.md`），不要只写在日志里；
 - 新机器上照常往 `.workbuddy-ai/memory/YYYY-MM-DD.md` 追加，本地日志从当天开始即可。
 
+### 2.3 三条线：main / act-expansion / skill-refactor
+
+| 分支 | 定位 | 优先级 | 合并方向 |
+|---|---|---|---|
+| `main` | 正式线，线上地址就是它 | — | 只接收合并 |
+| `feat/act-expansion` | 大型扩展：5 卷 12 章 30 图 + 营地任务网 + 地下城 | **高** | → `main` |
+| `feat/skill-refactor` | 技能重构：三职业独立体系 + 元素混搭 + 20 级成长 | 低 | → `main` |
+
+**四条硬规矩**
+
+1. **两条功能线各自从 `main` 同步，绝不互相 merge。**
+   交叉合并会把另一条线没做完的东西带进来，出问题极难定位是哪儿来的。
+2. **合并顺序按优先级**：`act` 先合，`skill` 后合。
+   `skill` 合的时候必须基于「已经包含 act 的 main」重新对一遍，不能拿老 main 当基准。
+3. **合 main 前的固定动作**：`./dev/branch.sh --sync` → `node dev/smoke.js` + `node dev/mobile-layout.js`
+   → `./dev/publish-preview.sh <分支>` 看预览站 → 才合。
+4. **一次只在一个分支上改。** 切分支前工作区必须干净（`branch.sh` 会拦），
+   否则未提交的改动会被带到另一条线上，下次提交就混进错误的提交里。
+
+> 历史分支（`dev-v2` / `dev-v3` / `feat/art-modeling` / `feat/skill-refactor`(旧) / `fix/hpbar-and-difficulty`
+> / `fix/mobile-input-bugs`，共 6 条，2026-10-27 清理）已全部删除。它们都是 v1.0.x 时代的旧线，
+> 与现在的代码差了 20+ 个提交，没有合并价值。
+
 ## 3. 开发环境
 
 - 用户在 **Windows** 上开发。仓库早期在 macOS 写的，部分 `dev/*.js` 仍硬编码 macOS Chrome 路径。
