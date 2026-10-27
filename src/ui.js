@@ -3477,7 +3477,7 @@ const UI = {
     if (foot) {
       const free = Math.max(0, cap - all.length);
       const extra = rows.length !== all.length ? ` · 筛出 <b>${rows.length}</b> 件` : '';
-      foot.innerHTML = `<b>仓库跨角色共享</b>，三个角色位读同一份，换号不丢东西 · 剩 <b>${free}</b> 格${extra}<br>
+      foot.innerHTML = `<b>仓库跨角色共享</b>，所有角色位读同一份，换号不丢东西 · 剩 <b>${free}</b> 格${extra}<br>
         左键行囊物品＝存入 · 左键仓库物品＝取回 · 「整理」按 部位 → 品质 → 等级 排序`;
     }
 

@@ -37,7 +37,7 @@ async function boot(page) {
     icons: typeof ITEM_ICONS === 'object' ? Object.keys(ITEM_ICONS).length : -1
   }));
   // 进入游戏，验证挥砍与血条
-  // V2 起最多 3 个角色位，三个页面共用一个 localStorage，测前先清干净
+  // 角色位（SaveManager.SLOT_COUNT 个）共用一个 localStorage，测前先清干净
   await pc.evaluate(() => { try { localStorage.clear(); } catch (e) {} });
   await pc.reload({ waitUntil: "load" });
   await wait(1000);
@@ -87,7 +87,7 @@ async function boot(page) {
   await m.setUserAgent('Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1');
   await m.goto(URL, { waitUntil: 'networkidle2', timeout: 60000 });
   await wait(1200);
-  // V2 起最多 3 个角色位，三个页面共用一个 localStorage，测前先清干净
+  // 角色位（SaveManager.SLOT_COUNT 个）共用一个 localStorage，测前先清干净
   await m.evaluate(() => { try { localStorage.clear(); } catch (e) {} });
   await m.reload({ waitUntil: "load" });
   await wait(1000);
@@ -118,7 +118,7 @@ async function boot(page) {
   await p.setUserAgent('Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1');
   await p.goto(URL, { waitUntil: 'networkidle2', timeout: 60000 });
   await wait(1200);
-  // V2 起最多 3 个角色位，三个页面共用一个 localStorage，测前先清干净
+  // 角色位（SaveManager.SLOT_COUNT 个）共用一个 localStorage，测前先清干净
   await p.evaluate(() => { try { localStorage.clear(); } catch (e) {} });
   await p.reload({ waitUntil: "load" });
   await wait(1000);

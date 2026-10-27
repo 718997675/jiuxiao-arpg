@@ -1,7 +1,7 @@
 /* ============================================================
  * SaveManager —— 存档系统 v2（S0「存档地基」）
  *
- * · 3 个本地角色位（jiuxiao_save_v2_s1 / s2 / s3）
+ * · 10 个本地角色位（jiuxiao_save_v2_s1 … s10，数量见 SLOT_COUNT）
  * · schemaVersion = 2，doc 结构见下方 pack()
  * · migrate()：V1 单档（扁平 JSON）→ V2 doc，字段 1:1 搬迁，不改数值
  * · export() / import()：JSON 文本 + 文件
@@ -23,7 +23,10 @@
 
 const SaveManager = {
   SCHEMA: 2,
-  SLOT_COUNT: 3,
+  /* [v1.13.1] 角色位 3 → 10。所有取位、遍历、校验都读这个常量，
+   * 所以改这一处就够；UI 那边只有中文数字表要跟着补。
+   * 存档键是 jiuxiao_save_v2_s{N}，旧的 1~3 号位原样不动。 */
+  SLOT_COUNT: 10,
 
   LEGACY_KEY: 'jiuxiao_save_v1',
   BACKUP_KEY: 'jiuxiao_save_v1.bak',
@@ -506,7 +509,7 @@ const SaveManager = {
     if (!n) {
       for (let i = 1; i <= this.SLOT_COUNT; i++) { if (!this.peek(i)) { n = i; break; } }
     }
-    if (!n) return { ok: false, error: '三个角色位都满了，先删除一个再建。' };
+    if (!n) return { ok: false, error: `${this.SLOT_COUNT} 个角色位都满了，先删除一个再建。` };
     if (slot && this.peek(n)) {
       // 明确指定了已有角色的位：当作覆盖，但仍然先备份旧档
       const old = this._raw(n);

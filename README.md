@@ -80,7 +80,7 @@ python3 -m http.server 8000
 # 打开 http://localhost:8000
 ```
 
-进度自动保存在浏览器 `localStorage`（三个角色位 `jiuxiao_save_v2_s1/s2/s3`，V1 旧档会自动迁移），标题界面可「继续前世」。
+进度自动保存在浏览器 `localStorage`（**十个角色位** `jiuxiao_save_v2_s1` ~ `s10`，V1 旧档会自动迁移），标题界面可「继续前世」。
 
 ---
 
@@ -443,7 +443,7 @@ node dev/m12-diag.js mine # 卡墙诊断：打印区域图与卡住样本
 
 仓库**不在菜单里**，在村里的「仓管·玄贮」身上。走到他面前按 <kbd>F</kbd> 打开。
 
-- **跨角色共享**：数据存在独立 key `jiuxiao_stash_v1`，不随角色档走。三个角色位读同一份，删角色不会连仓库一起删。
+- **跨角色共享**：数据存在独立 key `jiuxiao_stash_v1`，不随角色档走。所有角色位读同一份，删角色不会连仓库一起删。
 - **材料仓也在这里**：玄晶 / 符文 / 匠材原先挂在角色档的 `state.stash.mats`，M6 起一并提升为跨角色。换号后锻造台不会变成空的。
 - **容量 60 格起**，每 20 格一档，纯金币计价（2,000 → 100,000），六档到 200 格。仓库是长期资产，用金币比用玄晶更好规划。
 - **一键整理**：部位 → 品质（高在前）→ 物品等级（高在前）→ 评分兜底。同部位必然连续，点两次结果一样。
@@ -467,7 +467,7 @@ index.html          界面 / 样式 / HUD / 面板
 lib/three.min.js    three.js r128（本地，无需联网）
 src/core/boot.js    崩溃兜底：出错时给出可见提示，而不是一片黑
 src/core/store.js   底层存储驱动（localStorage + 内存兜底）
-src/core/save.js    SaveManager：3 角色位 / schema v2 / 迁移器 / 导入导出 / 原子写入
+src/core/save.js    SaveManager：10 角色位（SLOT_COUNT）/ schema v2 / 迁移器 / 导入导出 / 原子写入
 src/core/settings.js  设置面板：画质 / 倍率 / 阴影 / 粒子 / 怪数 / 帧数（独立 key，自动 + 手动档位）
 src/data/data-core.js      职业、稀有度、属性、数学工具
 src/data/data-icons.js     程序化图标 path（符文等，M11 规范）
@@ -508,10 +508,10 @@ shots/              实机截图
 
 ## 四之二、存档系统（V2 / S0）
 
-存档在 v2 起是**三个本地角色位**，结构为分层 doc：
+存档在 v2 起是**十个本地角色位**（`SaveManager.SLOT_COUNT`），结构为分层 doc：
 
 ```
-jiuxiao_save_v2_s1 / s2 / s3   三个角色位
+jiuxiao_save_v2_s1 … s10      十个角色位（SLOT_COUNT 控制上限）
 jiuxiao_active_slot            当前角色位
 jiuxiao_save_v1                V1 旧档（迁移后保留，不删）
 jiuxiao_save_v1.bak            V1 旧档原始备份（迁移前写入，只写不覆盖有效备份）
@@ -529,7 +529,9 @@ doc 结构：`{ v:2, meta, char, world, stash, codex, talents, mount, settings }
 自检脚本：
 
 ```bash
-node dev/test-save.js           # 离线：迁移/往返/导入导出/原子写/quota 满/3 位隔离
+node dev/test-save.js           # 离线：迁移/往返/导入导出/原子写/quota 满/满位隔离
+node dev/save-slots.js          # 浏览器：角色位 10 / 面板卡片 / 第 10 位建档读回
+node dev/live-slots.js          # 线上：SLOT_COUNT / 面板 10 张卡片 / 标题文案
 node dev/test-save-browser.js   # 浏览器：真实 localStorage + 三端布局 + 控制台 0 error
 ```
 

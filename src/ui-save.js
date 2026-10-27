@@ -1,5 +1,5 @@
 /* ============================================================
- * 存档管理面板：3 角色位 / 新建 / 删除 / 导出 / 导入
+ * 存档管理面板：多角色位（SaveManager.SLOT_COUNT）/ 新建 / 删除 / 导出 / 导入
  * 入口：开始界面「存档」按钮、游戏内右侧「存档」按钮、快捷键 P
  * ============================================================ */
 
@@ -167,7 +167,9 @@ const SaveUI = {
     const list = SaveManager.listSlots();
     const active = SaveManager.activeSlot();
     const inGame = (typeof Game !== 'undefined' && Game.running && Game.state);
-    const CN = ['', '壹', '贰', '叁'];
+    /* 角色位序号用中文数字，10 位到「拾」。
+     * 用数组而不是查表函数：位数跟 SLOT_COUNT 绑定，一眼能看出够不够。 */
+    const CN = ['', '壹', '贰', '叁', '肆', '伍', '陆', '柒', '捌', '玖', '拾'];
     const MAPNAME = id => {
       try { return (MAPS[id] && MAPS[id].name) || id || '—'; } catch (e) { return id || '—'; }
     };

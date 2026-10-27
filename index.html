@@ -1501,7 +1501,10 @@
 
   /* ---------- 存档管理 ---------- */
   /* 可能从开始界面打开，所以要压过 #start 的 z-index:60 */
-  #savePanel{left:50%;top:50%;transform:translate(-50%,-50%);width:640px;max-height:88vh;overflow:hidden;z-index:70}
+  /* [v1.13.1] 角色位 3 → 10：面板加宽一点，空位卡片压扁成一行。
+   * 10 张等高卡片会撑到 600px 以上，把「新建 / 导入导出」全推到折叠线外；
+   * 空位本来也没什么信息，压成 34px 一条就够。 */
+  #savePanel{left:50%;top:50%;transform:translate(-50%,-50%);width:700px;max-height:88vh;overflow:hidden;z-index:70}
   #savePanel .pb{max-height:calc(88vh - 47px);overflow-y:auto}
   /* 面板打开时冻结开始界面的按钮，避免隔着面板误点「踏入山海」 */
   body.ui-open #start,body.ui-open #start *{pointer-events:none!important}
@@ -1509,7 +1512,15 @@
   .scard{display:flex;gap:11px;align-items:center;padding:9px 11px;border:1px solid rgba(255,255,255,.09);
     background:linear-gradient(100deg,rgba(40,34,24,.5),rgba(8,8,12,.55));position:relative}
   .scard.active{border-color:rgba(216,178,90,.5);box-shadow:inset 0 0 22px rgba(216,178,90,.07)}
-  .scard.empty{border-style:dashed;opacity:.75}
+  .scard.empty{border-style:dashed;opacity:.75;padding:5px 10px;gap:9px}
+  .scard.empty .sidx{width:24px;height:24px;font-size:12px}
+  /* 空位只剩「空位 + 以此位新建」两个元素，中间那段没必要撑满：
+   * 让 sinfo 按内容宽收缩，窄屏（手机 390px）才不会把按钮挤到第二行、白占一倍高度 */
+  .scard.empty .sinfo{flex:0 1 auto}
+  .scard.empty .sacts{margin-left:auto}
+  .scard.empty .sname{font-size:11.5px;color:#9a9488;letter-spacing:2px}
+  .scard.empty .smeta{display:none}
+  .scard.empty .sacts .btn{padding:3px 9px;font-size:10px;letter-spacing:0}
   .sidx{width:32px;height:44px;flex:none;display:flex;align-items:center;justify-content:center;
     font-family:"STKaiti","KaiTi",serif;font-size:21px;color:#b8a078;border:1px solid rgba(216,178,90,.22);background:rgba(0,0,0,.4)}
   .scard.active .sidx{color:#f0d8a0;border-color:rgba(216,178,90,.55)}
@@ -2058,6 +2069,11 @@
     body.touch .scard{flex-wrap:wrap;gap:8px;padding:8px 10px}
     body.touch .sacts{width:100%;justify-content:flex-end}
     body.touch .sinfo{width:calc(100% - 44px)}
+    /* 空位例外：没有属性/时间那两行，按钮跟着挤到第二行就是白占一倍高度。
+     * 10 个角色位里常年有 9 个是空位，压成一行能少滚 300 多像素。 */
+    body.touch .scard.empty{flex-wrap:nowrap;padding:5px 10px}
+    body.touch .scard.empty .sacts{width:auto;margin-left:auto}
+    body.touch .scard.empty .sinfo{width:auto;flex:0 1 auto}
     /* 设置项：窄屏上把标签挪到上一行，选项均分整宽，
      * 否则 6 个选项会被挤成两行、面板高度直接翻倍 */
     body.touch .setrow{flex-direction:column;align-items:stretch;gap:6px;padding:8px 0}
@@ -2698,7 +2714,7 @@
   </div>
   <div class="tips" id="startTips">
     进入游戏后按 <b>H</b> 打开「说明」：全部键位、装备 / 传世 / 天赋 / 术法机制都在里面<br>
-    拾取装备可穿戴，纸娃娃实时变化 · 符文镶入孔位可成符文之语 · 玄晶可洗练词缀 · 三个角色位，可导出备份
+    拾取装备可穿戴，纸娃娃实时变化 · 符文镶入孔位可成符文之语 · 玄晶可洗练词缀 · 十个角色位，可导出备份
   </div>
 </div>
 
