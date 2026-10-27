@@ -422,10 +422,21 @@ function normalizeItem(item) {
   return item;
 }
 
-/* [M1] 基底 5 档 → 8 档：每 5 级一换皮（ilvl 1-40 → 0..7）。
- * 顶档数值与旧版顶档一致（不抬上限），只是中间多垫了地煞 / 天罡 / 仙品三层，
- * 让中期每 5 级都有「换一层皮」的期待。 */
-const BASE_TIERS = 8;
+/* 装备等级硬上限。**唯一口径**：rollItem 的入参整形、试炼掉落、
+ * 法器池上限全部读它。60 = 角色等级上限（PARTS 等级的末端图 chaossea）。
+ * 改这个数必须同时确认 BASE_TIERS × TIER_LEVELS ≥ ILVL_MAX（底下有推导）。 */
+const ILVL_MAX = 60;
+
+/* [M1] 基底 5 档 → 8 档：每 5 级一换皮。
+ * [M6] 8 档 → 12 档：等级上限 40 → 60（计划书 §10.3），ilvl 1-60 → 0..11。
+ * 顶档仍是「同一档里数值最高」，只是多垫了玄天 / 太虚 / 混元 / 无极四层。
+ *
+ * 为什么 8~11 档的主数值只微涨（护甲 ×1.05、武器 ×1.09）而不是照前 8 档的 ×1.4：
+ * 基础数值的公式是 `base × (1 + ilvl × k)`，ilvl 从 40 涨到 60 时
+ * 那个系数本身就从 6.2 倍涨到 8.8 倍（护甲 k=0.13）/ 5 倍涨到 7 倍（武器 k=0.10）。
+ * 两条乘性成长叠加才是真正的成长曲线，档位再翻一倍会直接失控。
+ * 验算：dev/balance-report.js 的「装备成长」一节 + dev/test-items.js 的单调性断言。 */
+const BASE_TIERS = 12;
 const TIER_LEVELS = 5;
 function tierIndex(ilvl) {
   return CLAMP(Math.floor((ilvl - 1) / TIER_LEVELS), 0, BASE_TIERS - 1);
@@ -583,7 +594,8 @@ function baseTierFor(slot, ilvl) {
  * 于是数值曲线天然是连续的（下一档 A 变体 vs 这一档 A 变体）。
  *
  * baseTier / baseVar 在 rollItem 时落库；旧档没有这两个字段时按 ilvl 反推。 */
-const BASE_TIER_NAME = ['凡兵', '精铁', '玄铁', '地煞', '天罡', '仙品', '神兵', '太初'];
+const BASE_TIER_NAME = ['凡兵', '精铁', '玄铁', '地煞', '天罡', '仙品', '神兵', '太初',
+  '玄天', '太虚', '混元', '无极'];
 
 function itemBaseList(item) {
   if (!item) return null;
@@ -618,7 +630,7 @@ function upgradeTierInfo(item) {
   /* [UNIQUE-1] 传世不在八阶体系里，给它留一条独立说明，
    * 否则玩家会以为「打到了好东西却升不了」是 bug */
   if (item.tierless || item.rarity === 'unique') {
-    return { ok: false, msg: '传世装备不属于八阶基底体系，不参与升阶 —— 它的强度来自固定词条、独有特性与专属技能。' };
+    return { ok: false, msg: '传世装备不属于基底阶体系，不参与升阶 —— 它的强度来自固定词条、独有特性与专属技能。' };
   }
   const list = itemBaseList(item);
   if (!list || !list.length) return { ok: false, msg: '这件装备没有基底阶（法器不能升阶）。' };
@@ -676,7 +688,7 @@ function upgradeItemBaseTier(item) {
 
 /* 生成一件装备 */
 function rollItem(ilvl, opts = {}) {
-  ilvl = CLAMP(Math.round(ilvl), 1, 40);
+  ilvl = CLAMP(Math.round(ilvl), 1, ILVL_MAX);
   let slot = opts.slot || PICK(['helm', 'chest', 'shoulders', 'cloak', 'gloves', 'boots', 'belt', 'amulet', 'ring', 'weapon', 'offhand']);
   /* 默认职业池读注册表：写死三个职业的话，新加的职业永远掉不到自己用的武器 */
   let cls = opts.cls || PICK((typeof classPackIds === 'function') ? classPackIds() : ['warrior', 'mage', 'taoist']);
@@ -1510,7 +1522,7 @@ function itemTooltip(item, opts = {}) {
   h += `<div class="tt-sub">${r.name} · ${SLOT_NAME[item.slot] || item.kind}${item.setName ? ' · ' + item.setName + '套装' : ''}</div>`;
   /* [UNIQUE-1] 传世不在八阶体系里：明确写一行，免得玩家拿它去炼器台找不到「升阶」 */
   if (item.rarity === 'unique' || item.tierless) {
-    h += `<div class="tt-tierless">传世名器 · 不入八阶 · 不可升阶</div>`;
+    h += `<div class="tt-tierless">传世名器 · 不入基底阶 · 不可升阶</div>`;
   }
   h += `</div></div>`;
   /* v1.3.0：兵器握持标签。双手会白纸黑字写清楚「占用副手位」，

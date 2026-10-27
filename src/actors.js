@@ -1064,17 +1064,26 @@ function applyPaperDoll(p) {
  * （tierIndex 返回 5/6/7）拿到 metal=undefined → palette 是 undefined
  * → `palette[0]` 抛 TypeError，一穿上就崩；而且读档走 applyDoll 是同一个
  * 函数，所以崩过一次之后连存档都进不去（东西没坏，是渲染崩）。
- * 名字对应八阶：凡兵 / 精铁 / 玄铁 / 地煞 / 天罡 / 仙品 / 神兵 / 太初。 */
-const TIER_METAL = ['cloth', 'leather', 'iron', 'darkiron', 'steel', 'jade', 'gold', 'dragon'];
+ * 名字对应十二阶：凡兵 / 精铁 / 玄铁 / 地煞 / 天罡 / 仙品 / 神兵 / 太初 /
+ *                玄天 / 太虚 / 混元 / 无极。
+ * dev/test-m6.js 会断言 TIER_METAL.length === BASE_TIERS —— 扩档漏改会立刻红。 */
+const TIER_METAL = ['cloth', 'leather', 'iron', 'darkiron', 'steel', 'jade', 'gold', 'dragon',
+  'star', 'voidsteel', 'primal', 'chaos'];
 const METAL_PALETTE = {
-  cloth:    [0x6b5a4a, 0x4a3c30, 0.05],
-  leather:  [0x7a5a3a, 0x533c26, 0.1],
-  iron:     [0x8a8f96, 0x5a6068, 0.65],
-  darkiron: [0x4a5058, 0x30343a, 0.8],
-  steel:    [0x7d8a99, 0x4c5764, 0.7],
-  jade:     [0x86a394, 0x4c6b5c, 0.6],
-  gold:     [0xb69a5a, 0x6f5c33, 0.72],
-  dragon:   [0x6a7a5a, 0x3a4530, 0.75]
+  cloth:     [0x6b5a4a, 0x4a3c30, 0.05],
+  leather:   [0x7a5a3a, 0x533c26, 0.1],
+  iron:      [0x8a8f96, 0x5a6068, 0.65],
+  darkiron:  [0x4a5058, 0x30343a, 0.8],
+  steel:     [0x7d8a99, 0x4c5764, 0.7],
+  jade:      [0x86a394, 0x4c6b5c, 0.6],
+  gold:      [0xb69a5a, 0x6f5c33, 0.72],
+  dragon:    [0x6a7a5a, 0x3a4530, 0.75],
+  /* 8~11 阶：颜色往「冷银 → 暗紫 → 赤金 → 灰白」走，
+   * 与品质光效叠加后仍能分辨出高低（越往后越不吃高光、越吃自发光） */
+  star:      [0x9fb4cf, 0x5a6c85, 0.86],
+  voidsteel: [0x6a6a8c, 0x39395a, 0.9],
+  primal:    [0xc0a070, 0x7a6038, 0.95],
+  chaos:     [0xd8d4e0, 0x807c92, 1.0]
 };
 
 function itemVisualColor(item) {

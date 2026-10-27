@@ -87,14 +87,34 @@ const UNIQUE_TRAITS = {
 
   /* —— 项链 / 戒指 —— */
   seeker:      { name: '寻宝', desc: '符文与玄晶掉落提升，拾取范围扩大。', flags: ['seeker'] },
-  samsara:     { name: '轮回', desc: '所有技能伤害 +10%，冷却 -6%。', stats: { skillDmg: 10, cdr: 6 } }
+  samsara:     { name: '轮回', desc: '所有技能伤害 +10%，冷却 -6%。', stats: { skillDmg: 10, cdr: 6 } },
+
+  /* ---- [M6] 终局八件（ilvl 44~60）----
+   * 前 20 件的 ilvl 都 ≤ 26，40 级以后就没有「可追的红装」了。
+   * 这 8 条特性全部走真实生效点：4 条 stats、3 条 flags、1 条混用。
+   * flags 选的是**已有实现但此前没有传世在用**的（浴血 / 玄冰 / 天师），
+   * 于是这 8 件不是「数值更大的旧件」，而是补上了三条一直空着的机制线。 */
+  wujifeng:    { name: '无极锋', desc: '无视 20% 护甲，对精英与首领伤害 +25%。', stats: { armorPen: 20, eliteDmg: 25 } },
+  taixuyin:    { name: '太虚引', desc: '所有技能伤害 +16%，冷却 -10%。', stats: { skillDmg: 16, cdr: 10 } },
+  hunyuanli:   { name: '混元力', desc: '生命低于 50% 时造成的伤害 +25%（浴血），全伤 +10%。', flags: ['lowHpFury'], stats: { dmgAll: 10 } },
+  xingmang:    { name: '星芒', desc: '对被减速 / 冻结的目标伤害 +25%（玄冰）。', flags: ['deepfreeze'] },
+  guixu:       { name: '归墟', desc: '对中毒 / 燃烧的目标伤害 +40%（天师）。', flags: ['runeburn'] },
+  fanyu:       { name: '返虚', desc: '灵力上限 +18%，回复 +12/秒，消耗 -12%。', stats: { mpPct: 18, mpReg: 12, costReduce: 12 } },
+  dinghai:     { name: '定海', desc: '生命上限 +16%，受到的伤害 -9%。', stats: { hpPct: 16, dmgReduce: 9 } },
+  jiuxiao:     { name: '九霄', desc: '经验 +20%，奇遇机缘 +40%。', stats: { expGain: 20, magicFind: 40 } }
 };
 
 /* ---------------- 唯一装备目录 ----------------
- * 20 件：武器 3 / 副手 3 / 头盔 2 / 战甲 2 / 护肩 2 / 护手 2 / 战靴 2 / 腰带 2 / 项链 1 / 戒指 1
+ * 28 件（M6 之前 20 件）：
+ *   武器 6（3 职业 × 早期 / 终局各一把） / 副手 3 / 头盔 3 / 战甲 3 / 护肩 2 /
+ *   护手 2 / 战靴 3 / 腰带 2 / 项链 2 / 戒指 2
  * 每件至少带 1 条独占特性，且必定带一条技能效果：
  *   职业专属的 6 件（3 武器 + 3 副手）→ 强化本职业某个具体技能
- *   通用 14 件 → 授予跨职业秘技（grant）或全局强化（'*'）
+ *   通用 22 件 → 授予跨职业秘技（grant）或全局强化（'*'）
+ *
+ * ilvl 分两段：早期 8~26（卷一到卷三）、终局 44~60（卷四到卷五）。
+ * 中间 26~44 留空是刻意的 —— 那一段玩家正在靠基底阶与套装爬坡，
+ * 传世在这时候掉会直接盖过它们的意义。
  */
 const UNIQUE_ITEMS = [
   /* ---------- 武器 ---------- */
@@ -253,5 +273,67 @@ const UNIQUE_ITEMS = [
     stats: { crit: [6, 10], critDmg: [25, 45], lifesteal: [4, 7] },
     traits: ['samsara'],
     skill: { grant: 'revive', name: '轮回', desc: '死过一次的人，才戴得住它。' }
+  },
+
+  /* ---------- [M6] 终局八件：ilvl 44~60 ----------
+   * 老 20 件的 ilvl 上限是 26（计划书写 40，实际更低），
+   * 卷四卷五的玩家在掉落池里根本摸不到传世 —— 这一段是空的。
+   * 八件覆盖 7 个部位（武器三职业各一把），每件一条独占特性，
+   * 固定词条按「该部位最缺的那一项」给，不做全面小加成。 */
+  {
+    id: 'wuji_blade', name: '无极·斩天', slot: 'weapon', cls: 'warrior', ilvl: 48, shape: 'glaive',
+    lore: '斩下去的时候，天没有响，是天才发现自己已经断了。',
+    stats: { atkPct: [18, 26], critDmg: [40, 65], armorPen: [10, 18] },
+    traits: ['wujifeng'],
+    skill: { id: 'swordarray', name: '斩天式', dmg: 55, count: 2, desc: '强化【万剑归宗】：伤害 +55%，剑数 +2。' }
+  },
+  {
+    id: 'taixu_staff', name: '太虚·焚世杖', slot: 'weapon', cls: 'mage', ilvl: 48, shape: 'staff',
+    lore: '杖头那一点火，是从一个已经被烧掉的世界里带出来的。',
+    stats: { atkPct: [16, 24], skillDmg: [22, 34], fireDmg: [14, 22] },
+    traits: ['taixuyin'],
+    skill: { id: 'meteor', name: '焚世', dmg: 50, radius: 22, desc: '强化【天陨】：伤害 +50%，范围 +22%。' }
+  },
+  {
+    id: 'hunyuan_sword', name: '混元·雷殛剑', slot: 'weapon', cls: 'taoist', ilvl: 48, shape: 'sword',
+    lore: '剑身不导电，雷只走剑脊上那道刻痕。',
+    stats: { int: [14, 22], skillDmg: [20, 32], lightningDmg: [14, 22] },
+    traits: ['hunyuanli'],
+    skill: { id: 'thundercloud', name: '雷殛', dmg: 48, dur: 30, desc: '强化【雷云诀】：伤害 +48%，持续 +30%。' }
+  },
+  {
+    id: 'xingmang_crown', name: '星芒·天极冠', slot: 'helm', ilvl: 44,
+    lore: '冠上一颗星熄了，抬头看天，天上就少了一颗。',
+    stats: { int: [14, 22], crit: [7, 12], cdr: [8, 14] },
+    traits: ['xingmang'],
+    skill: { id: '*', name: '星极', dmg: 12, cd: 8, desc: '强化所有技能：伤害 +12%，冷却 -8%。' }
+  },
+  {
+    id: 'guixu_armor', name: '归墟·不灭衣', slot: 'chest', ilvl: 52,
+    lore: '衣上有八千道裂口，没有一道是新的。',
+    stats: { def: [120, 190], hpPct: [12, 20], dmgReduce: [5, 9] },
+    traits: ['guixu'],
+    skill: { grant: 'avatar', name: '归墟不灭', desc: '墟里没有活人，所以也没有人能死。' }
+  },
+  {
+    id: 'fanyu_boots', name: '返虚·蹑空履', slot: 'boots', ilvl: 50,
+    lore: '踩下去的地方会短暂地「不存在」一下。',
+    stats: { moveSpd: [12, 18], dodge: [8, 13], ccResist: [16, 26] },
+    traits: ['fanyu'],
+    skill: { id: '*', name: '返虚', radius: 12, dur: 25, desc: '强化所有技能：范围 +12%，持续时间 +25%。' }
+  },
+  {
+    id: 'dinghai_bead', name: '定海·九霄珠', slot: 'amulet', ilvl: 56,
+    lore: '珠子沉在海里，海就不敢起浪。',
+    stats: { hpPct: [14, 22], allRes: [12, 20], mpReg: [8, 14] },
+    traits: ['dinghai'],
+    skill: { id: 'heal', name: '定海潮生', dmg: 60, cd: 18, desc: '强化【回春咒】：治疗量 +60%，冷却 -18%。' }
+  },
+  {
+    id: 'wuji_ring', name: '无极·归一戒', slot: 'ring', ilvl: 60,
+    lore: '环上没有接口。有人说它就是「一直」本身。',
+    stats: { crit: [8, 14], critDmg: [40, 70], skillLv: [1, 1] },
+    traits: ['jiuxiao'],
+    skill: { grant: 'mastersigil', name: '归一', desc: '万法归一，一归无极。' }
   }
 ];

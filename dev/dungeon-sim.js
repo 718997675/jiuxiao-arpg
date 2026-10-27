@@ -185,7 +185,13 @@ eq('第 2 层图 id', state.mapId, 'dgn_tomb_2');
 eq('第 2 层刷怪 18 只', S.zoneSpawnTotal('dgn_tomb_2'), 18);
 eq('第 2 层 kill 计数已归零', Dungeon.run.kills, 0);
 eq('第 2 层阈值 80%', Dungeon.progress().need, 0.80);
-ok('换层会重刷怪（enemies 数量回到 18）', Game.enemies.length === 18, Game.enemies.length);
+/* 「回响」词缀会按 ×2.5 的口径额外补精英（Dungeon.applyMobAffixes），
+ * 所以实际数量可能是 18，也可能是 20（+2）。写死 18 会 20% 概率假红 ——
+ * 这里钉的是「换层一定重刷」而不是「恰好 18 只」：
+ * 只要落回 [18, 18 + ceil(18×0.1)] 就说明旧的怪被清干净了。 */
+eq('第 2 层基础刷怪数 = 18', S.zoneSpawnTotal('dgn_tomb_2'), 18);
+ok('换层会重刷怪（数量回到 18~20）',
+  Game.enemies.length >= 18 && Game.enemies.length <= 20, Game.enemies.length);
 for (let i = 0; i < 15; i++) { Game.enemies.pop(); Dungeon.onKill({}); }
 eq('清 15/18 → 83% → 门开', Dungeon.progress().open, true);
 Dungeon.usePortal();

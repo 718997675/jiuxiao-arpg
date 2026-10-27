@@ -471,7 +471,7 @@ src/core/save.js    SaveManager：10 角色位（SLOT_COUNT）/ schema v2 / 迁�
 src/core/settings.js  设置面板：画质 / 倍率 / 阴影 / 粒子 / 怪数 / 帧数（独立 key，自动 + 手动档位）
 src/data/data-core.js      职业、稀有度、属性、数学工具
 src/data/data-icons.js     程序化图标 path（符文等，M11 规范）
-src/data/data-items.js     装备槽位、基底、词缀、套装、握持与格子档位、行囊扩容档位、符文 / 符文之语 / 玄晶分级 / 炼器配置（含打孔）
+src/data/data-items.js     装备槽位、基底（12 阶 × 13 槽 × 3 变体）、词缀、套装、握持与格子档位、行囊扩容档位、符文 / 符文之语 / 玄晶分级 / 炼器配置（含打孔）
 src/data/data-relics.js    30 件法器目录：介绍、来历、固定属性、术法修正、附带术法、掉落池
 src/data/data-relic-icons.js  30 枚法器器物图标 + 法阵外圈
 src/data/data-craft.js     匠材九种、5 档锻造配方、成品品质表、需求纯函数（craftRecipeFor / craftInfo）
@@ -485,6 +485,7 @@ src/data/data-maps.js      地图区域结构（zone 几何 / 连接 / 分区刷
 src/data/data-fauna.js     族音色（9 族）/ 事件修饰 / 每图环境音与调式 / 录音回退清单
 src/data/data-trial.js     试炼配置、波次曲线、怪物 / 首领分池、40 条祝福、抽卡与掉落纯函数
 src/data/data-dungeon.js   地脉裂隙：5 阶钥匙 / 3 层 / 5 类地下城 / 10 条词缀 / 25 条地脉异闻
+src/data/data-uniques.js   28 件传世（ilvl 8~26 早期 · 44~60 终局）+ 35 条独占特性
 src/items.js        随机装备生成、稀有度、套装、法器、属性汇总、提示框
 src/actors.js       低多边形人物/怪物建模、纸娃娃、程序化动作
 src/charforge.js    古风三职业角色生成器（骨架对齐 buildHumanoid，自带动作曲线）

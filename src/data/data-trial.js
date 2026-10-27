@@ -291,7 +291,9 @@ function trialRollBlessings(n, wave, owned) {
   return out;
 }
 
-/* 波次奖励装备的等级：保证「穿得上」——玩家的等级门槛是 reqLv = ilvl - 1 */
+/* 波次奖励装备的等级：保证「穿得上」——玩家的等级门槛是 reqLv = ilvl - 1。
+ * [M6] 上限跟 ILVL_MAX 走（等级上限 60 后试炼也要能出 60 级装）。 */
 function trialDropIlvl(playerLevel, fortuneStacks) {
-  return CLAMP(Math.round((playerLevel || 1) + TRIAL_CFG.dropIlvlGap + (fortuneStacks || 0) * 2), 1, 40);
+  const cap = (typeof ILVL_MAX === 'number') ? ILVL_MAX : 60;
+  return CLAMP(Math.round((playerLevel || 1) + TRIAL_CFG.dropIlvlGap + (fortuneStacks || 0) * 2), 1, cap);
 }

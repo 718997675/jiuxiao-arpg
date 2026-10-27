@@ -6163,7 +6163,12 @@ const Game = {
      * 高档图的怪一只给几百点，一小时能从 1 级推到通关。 */
     const XB = (typeof BALANCE !== 'undefined' ? BALANCE.xp : { mobLv: 0.12, bossLv: 30 });
     const baseXp = e.boss ? (e.cfg.level * XB.bossLv) : (e.cfg.xp || 12) * (1 + e.level * XB.mobLv);
-    const xp = Math.round(baseXp * (e.elite ? 2 : 1) * D.xp);
+    /* [M6] 地脉里经验 ×1.8（BALANCE.dungeon.xpMul，计划书 §10.2）：
+     * 钥匙是消耗品，进去这一趟必须比在野外刷同样时间更划算，
+     * 否则没人会去用掉它。首领不吃这个倍率 —— 它自己那条 bossLv 已经很高。 */
+    const dgXp = (typeof Dungeon !== 'undefined' && Dungeon.active && !e.boss
+      && typeof BALANCE !== 'undefined' && BALANCE.dungeon) ? (BALANCE.dungeon.xpMul || 1) : 1;
+    const xp = Math.round(baseXp * (e.elite ? 2 : 1) * D.xp * dgXp);
     this.gainXp(xp);
 
     // 金币
