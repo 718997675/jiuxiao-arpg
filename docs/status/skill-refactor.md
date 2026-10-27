@@ -3,7 +3,7 @@
 - 分支：`feat/skill-refactor`（优先级 **低**，排在大型扩展之后）
 - 计划文档：`docs/SKILL-REDESIGN-PLAN.md`（16 节）
 - 预览站：暂不发（2026-10-27 用户口径：本地验证即可，别再折腾线上）
-- 更新：2026-10-28 01:12 · P2b 数量台阶收口 + 进化台阶**头两个位**（2/15 位 · 6/45 条）
+- 更新：2026-10-28 02:40 · P2b 进化台阶 **5/15 位**（15/45 条）· A 档做完一半
 
 > 当前：**P0 + P1a + P1b + P1c + P1d + P2a 完成，P2b 进行中**。动作条 5 格、格位 = 功能位；
 > 技能树已按「三线并行」结算 —— 没有必点主干、没有主动↔被动二选一，
@@ -11,10 +11,10 @@
 > 面板一条线一列、列内按等级门槛递增，被动小一圈挂在主动右边；
 > **等级上限已是 10，伤害走 skillLvMul 分段曲线（10 级 1.72 倍 / 20 级 2.02 倍），
 > 技能点供给 = 等级 × 1.5（40 级 60 点）**。
-> 台阶也接进战斗了：Lv3 / Lv7 走 `smod.count`（多发带 0.85^n 递减）——**9 个技能全接**；
-> Lv5 / Lv9 / Lv10 走行为键，**目前只接了 2 个位**（刀客 ① 旋风斩、法师 ① 火球），
-> 15 个位 × 3 级 = 45 条里完成 **6 条**。剩下 13 个位仍是文案，
-> 面板上带「待」角标 —— **别把「P2b 完成」读成 45 条都做了**。
+> 台阶也接进战斗了：Lv3 / Lv7 走 `smod.count`（多发带 0.85^n 递减）——**10 个技能全接**
+> （毒雾是这一批补进来的）；Lv5 / Lv9 / Lv10 走行为键，**已接 5 个位**
+> （刀客 ①②、法师 ①、道士 ①②），15 个位 × 3 级 = 45 条里完成 **15 条**。
+> 剩下 10 个位仍是文案，面板上带「待」角标 —— **别把「P2b 完成」读成 45 条都做了**。
 
 ## 一句话现状
 
@@ -36,7 +36,7 @@ P1 起才动 `SKILL_BAR_SLOTS` 与面板的三列树。
 | P1c | **取消二选一**：三线并行结算（等级门 `reqLv` + 关键被动软前置 `needPts`），`levelUpSkill` / `levelUpPassive` 的 fork 拦截整块删除，面板去掉「或/锁」标记与互斥虚线，说明页同步 | ✅ | `data-skill-tree.js`、`game.js`、`skill-passive.js`、`ui-skills.js`、`ui.js`、`index.html` | `dev/test-skill-p1c.js` 353 · `dev/probe-skill-p1c.js` 23 |
 | P1d | 面板**视觉**重排：一条线一列、列内按 `reqLv` 递增，被动小一圈挂在主动右边，只留同线淡引导线；手机上三条线分页签、一页一列 | ✅ | `ui-skills.js`（`skTreeLayout` / `skTreeHTML` / `renderSkillTreeDOM` / `skTreeTabsHTML`）、`index.html`（SKG + 被动腰围）、`ui.js`（说明页「技能树布局」） | `dev/probe-skill-p1d.js` 36 |
 | P2a | **等级上限 5 → 10** + 分段曲线真的进战斗（`skillLvMul` 取代旧「每级固定 8%」）+ 点数供给 等级 × 1.5；面板 10 格 / 满级金环 / 洗点全额退回 | ✅ | `data-skills.js`（`SKILL_LV_MAX` / `SKILL_POINT_RATE` / `skillPointPool`）、`data-skill-tree.js`（`lvMax` 同源）、`game.js`（`castSkill` / `skillPoints`）、`ui-skills.js`、`ui.js`、`index.html` | `dev/test-skill-p2.js` 41 · `dev/probe-skill-p2.js` 26 |
-| P2b | **数量 / 形态台阶接进 `castSkill`**。①数量：Lv3 / Lv7 各 +1，接 `smod.count`（9 处技能消费），第 n 发 ×0.85^n 防三倍伤害。②进化：新建 `SKILL_TIER_EVO`（挂**技能 id** 不挂技能位），合并顺序 **台阶最前 → 精研 / 取向 / 变体覆盖同名键**（花点的选择必须盖过等级送的）。**已接 6 条（2/15 位）**：旋风斩 Lv5 原地余震 / Lv9 吸怪 / Lv10 回怒 ×2、火球 Lv5 爆炸 +50% + 命中点火海 / Lv9 环绕 / Lv10 自动索敌；`aftershock` 复用旧行为通道，`firePatch` / `rageMul` / `autoTarget` 三个新键在 `SKILL_BEH` 登记。**⚠ 只接了 2/15 个位（6/45 条），剩 13 位仍是文案** | 🟡 | `data-skills.js`（`SKILL_TIER_EVO` / `skillTierEvo` / `skillTierMods` / `skillTierBeh`）、`skill-beh.js`（`branchBeh` 台阶排最前）、`game.js`（autoTarget / rageMul / firePatch 三处消费）、`ui.js`（说明页「进化台阶」读数现算）、`ui-skills.js` | `dev/test-skill-p2b.js` 160 · `dev/probe-skill-p2b.js` 50 |
+| P2b | **数量 / 形态台阶接进 `castSkill`**。①数量：Lv3 / Lv7 各 +1，接 `smod.count`（9 处技能消费），第 n 发 ×0.85^n 防三倍伤害。②进化：新建 `SKILL_TIER_EVO`（挂**技能 id** 不挂技能位），合并顺序 **台阶最前 → 精研 / 取向 / 变体覆盖同名键**（花点的选择必须盖过等级送的）。**已接 6 条（2/15 位）**：旋风斩 Lv5 原地余震 / Lv9 吸怪 / Lv10 回怒 ×2、火球 Lv5 爆炸 +50% + 命中点火海 / Lv9 环绕 / Lv10 自动索敌；`aftershock` 复用旧行为通道，`firePatch` / `rageMul` / `autoTarget` 三个新键在 `SKILL_BEH` 登记。**⚠ 只接了 2/15 个位（6/45 条），剩 13 位仍是文案** | 🟡 | `data-skills.js`（`SKILL_TIER_EVO` / `skillTierEvo` / `skillTierMods` / `skillTierBeh`）、`skill-beh.js`（`branchBeh` 台阶排最前）、`game.js`（autoTarget / rageMul / firePatch 三处消费）、`ui.js`（说明页「进化台阶」读数现算）、`ui-skills.js` | `dev/test-skill-p2b.js` 198 · `dev/probe-skill-p2b.js` 76 |
 | P2c | 精通层 11~20：光效随等级变亮、Lv15 精通小质变（统一三选一模板），不新增形态 | ⬜ | `src/fx.js`、`skill-beh.js` | — |
 | P3 | 元素注入 + 反应表：伤害管线支持双元素、特效混色、词缀口径 | ⬜ | 战斗 + 词缀 + `src/fx.js` | — |
 | P4 | 三职业独立 ⑤ 号位：刀客兵形/刃势、法师法相、道士召唤 | ⬜ | `src/fx.js`、`src/charforge.js` | — |
@@ -59,23 +59,34 @@ P1 起才动 `SKILL_BAR_SLOTS` 与面板的三列树。
 5. **`autoTarget` 必须在 switch 之前挪 aim，且要同时改 `dir`**。各技能 case 直接读 `aim`；
    而投射物技能读的是 `dir`，只挪落点的话弹道还朝老方向飞。
 6. **`rageMul` 不复用 `ragePerHit`**。后者是「每命中一个 +N」，与「回流」双重计时会变成回怒三四倍。
+7. **台阶不许和精研 / 变体撞同一个键**。撞了就是「点了没反应」：火球 Lv5 原写 `burnPct`
+   （精研「燎原」已占）、地裂 Lv5 原写「持续 2 秒」（精研「余震」3 级自动给）、
+   毒雾 Lv10 原本照抄变体「尸毒」。三处都已改成别的东西或加参数（`firePatch` /
+   `aftershockStun` / `spreadRad`）。
+8. **「飞出去再炸」的技能必须绕开通用 hit 通道**。通用通道以**准星**为圆心，而符会追到
+   怪身上，两者恒不重合 —— 拿准星当圆心等于在半空里劈雷。符箓的三条台阶因此走
+   hook（`chainHit` / `zoneHit` / `seek`），由 talisman 的 `onHit` 消费。
+   地裂反过来：它是「落点为中心」的地面技能，通用通道正好用对。
+9. **带预算的新机制都要记账**。`seek` 用 `proj.seekUsed` 数改追次数（不数就是一符清场），
+   `poison` 的多个雾团各自维护半径与定时器（共用一个 `radNow` 会让三团胀成一团大的）。
+10. **探针三条新坑**（都写进 `probe-skill-p2b.js` 注释了）：
+    ① 假怪的 `stun` 是 `undefined` 时 `Math.max(undefined, 1.6)` 直接 NaN，读数全废；
+    ② 余震有 2 跳，只等 1.2 秒的话第二跳会落在 `damageEnemy` 复原之后，
+      真 `damageEnemy` 去摸没有 `cfg` 的假怪 → 帧异常 `reading 'armorHigh'`；
+    ③ 默认变体就是 0 号（毒雾 = 尸毒、地裂 = 三连震），不显式切走会把台阶量成假的。
 
-## P2b 剩余：13 个位的进化台阶（39 条）
+## P2b 剩余：10 个位的进化台阶（30 条）
 
-已接的只有刀客 ①（旋风斩）与法师 ①（火球）—— 这两个位能先做，是因为它们的
-台阶效果**全部落在现成的行为键上**。剩下的按「要不要新写相位」分两档：
+已接 5 个位：刀客 ①②、法师 ①、道士 ①②。剩下的按「要不要新写相位」分两档：
 
 **A 档 · 复用现成键（可以直接接着做）**
 
 | 位 | Lv5 / Lv9 / Lv10 文案 | 可用的键 |
 |---|---|---|
-| 刀客 ② 裂地震击 | 地裂持续 2 秒 / 范围扩大 / 眩晕 1.5 秒 | `aftershock` / `mods.radius` / `stun` |
 | 刀客 ③ 剑阵 | 跟随 / 内减伤 / 内自动反击 | `follow`（case 消费）/ `drPct` / `counter`（hook，目前只认格挡） |
 | 刀客 ④ 血怒 | 期间吸血 / 击杀延长 / 免控 | **吸血要新写**（无 lifesteal 键）/ `killExtend` / `noSlow` |
 | 法师 ③ 火墙 | 持续火环 / 跟随 / 结束爆炸 | `zone` / `follow` / `endBurst`（case 消费） |
 | 法师 ④ 护盾 | 反伤 / 爆发 / 破碎冰冻 | `reflect` / **新写「护盾到期炸」** / `breakNova`（hook 已有） |
-| 道士 ① 符箓 | 雷符连锁 / 雷符阵 / 自动追踪 | `chain` / `zone` / `autoTarget` |
-| 道士 ② 毒雾 | 蔓延 / 跟随 / 尸毒 | `zone` / `follow` / `spread`（hook 已有） |
 | 道士 ③ 太极 | 推开 / 内减伤 / 内回血 | `knock` / `drPct` / `hotPct` |
 | 道士 ④ 回春 | 持续回复 / 瞬驱 / 低于 30% 自动触发 | `hotPct` / `cleanse` / `autoTrigger`（hook 已有） |
 
