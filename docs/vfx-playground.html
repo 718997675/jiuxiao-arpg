@@ -6691,6 +6691,151 @@ function extraRing(c, r, op){
     onPulse(){ hitArea(pos, r*0.9, 7, { color:'#cfe6ff' }); } });
 }
 
+/* ---------------- 职业核心连携（方案 §9.3） ----------------
+   三条都是「技能之间互相给对方上视觉」，不属于任何单个技能：
+   刀①②③ 命中攒刃势 → 满 5 层巨刀虚影下劈；
+   法⑤ 开启后 ①②③ 施放时法相手掌发一枚光点飞向落点；
+   道② 毒雾还在场时，① 符命中带毒目标 → 绿烟爆开 + 绿色符钉插在怪身上。
+   挂钩点在 playSkill（v2 分支之后），本体与台阶 hook 都不知道它存在。 */
+
+/* --- 刀 · 刃势 --- */
+let bladeStack = 0, _bladeUpd = null;
+const _bladeOrbs = [];
+function bladeStackAdd(){
+  if(bladeStack >= 5) return;          // 满层等巨刀劈完清零，期间不再攒
+  bladeStack++;
+  if(_bladeUpd) return;
+  _bladeUpd = addUpdate({ rot: 0, update(dt){
+    this.rot += dt*(1.1 + bladeStack*0.35);   // 层数越高转得越急
+    /* 刀纹数量必须严格等于层数 —— 多一道少一道都读不出"攒了几层"；
+       角度按 i/n 均分（rot 全局累加），层数变化时自动重排，不会挤在一起 */
+    while(_bladeOrbs.length < bladeStack){
+      const b = billMesh(TEX.blade, C(0xfff0c0), .85);
+      b.scale.set(.30, .95, 1);
+      _bladeOrbs.push(b);
+    }
+    while(_bladeOrbs.length > bladeStack) scene.remove(_bladeOrbs.pop());
+    if(bladeStack <= 0){
+      while(_bladeOrbs.length) scene.remove(_bladeOrbs.pop());
+      _bladeUpd = null; this.dead = true; return;
+    }
+    const n = _bladeOrbs.length;
+    _bladeOrbs.forEach((b, i)=>{
+      const a = this.rot + i/n*Math.PI*2;
+      b.position.set(P.pos.x + Math.cos(a)*1.35,
+        1.05 + Math.sin(this.rot*3 + i*2.1)*0.07,
+        P.pos.z + Math.sin(a)*1.35);
+      b.material.opacity = .55 + .3*Math.sin(this.rot*5 + i*2.1);
+    });
+  }});
+}
+function giantCleave(){
+  /* 巨刀虚影：比断岳斩（台阶 Lv5 那道）**更大**且更慢 ——
+     0.18s 落、4.2 码下落、4.6 码冲击环。快了会和 Lv5 那道混在一起。 */
+  const a = P.face;
+  const t = new THREE.Vector3(P.pos.x + Math.sin(a)*2.4, 0, P.pos.z + Math.cos(a)*2.4);
+  const b = billMesh(TEX.blade, C(0xfff0c0), 1);
+  b.scale.set(1.5, 5.4, 1);
+  let bt = 0;
+  addUpdate({ update(dt){ bt += dt; const k = Math.min(1, bt/0.22);
+    b.position.set(t.x, 4.8 - k*4.4, t.z);
+    b.quaternion.copy(camera.quaternion); b.rotateZ(0.32);
+    if(k >= 1){ scene.remove(b); this.dead = true; } }});
+  delay(0.24, ()=>{
+    FX.decal(t, 'crack', 4.2, 6, 0x2a1e14);
+    FX.shock(t, 4.6, { color: C(0xfff0c0), dur: 0.55 });
+    FX.burst(t, { n: 34, speed: 9, life: .9, size: .46, up: .7, grav: 5, tex:'smoke' });
+    hitArea(t, 3.8, 60, { kb: 0.3, from: t, critChance: 0.3 });
+    flashAt(t, 3.0, '255,244,214', 0.5);
+    hitstop(0.08); shake(0.4, 0.5);
+    toast('刃势满层 · 巨刀虚影');
+  });
+  delay(0.7, ()=>{ bladeStack = 0; });   // 劈完才清层，不然刀纹在刀落之前就散了
+}
+
+/* --- 法 · 法相 --- */
+let avatarUntil = -9;
+function palmBolt(c){
+  /* 光点从**背后手掌位置**（身后 0.9、高 1.7）飞向落点 ——
+     从角色正面飞就成了"自己施法"，画不出"法相在帮你施法" */
+  const a = P.face;
+  const from = new THREE.Vector3(P.pos.x - Math.sin(a)*0.9, 1.7, P.pos.z - Math.cos(a)*0.9);
+  const to = new THREE.Vector3(c.tx, 0.9, c.tz);
+  const rib = new Ribbon({ width: .18, color: C(E().glow), life: .45, segs: 12 });
+  let t = 0;
+  addUpdate({ update(dt){ t += dt; const k = Math.min(1, t/0.38);
+    const p = from.clone().lerp(to, k);
+    p.y = 1.7 + Math.sin(k*Math.PI)*0.9;       // 拱一道弧，直线读不出"抛"
+    rib.push(p); rib.update(dt);
+    if(k >= 1){
+      FX.burst(to, { n: 10, speed: 3, life: .4, size: .22 });
+      rib.destroy(); this.dead = true;
+    } }});
+}
+
+/* --- 道 · 符毒 --- */
+let poisonUntil = -9, pinCount = 0, _pinAt = -9, _pinsUpd = null;
+const _pins = [];
+function talismanHitPoisoned(c){
+  if(now > poisonUntil) return;          // 毒雾不在场 = 目标不带毒，不触发
+  /* 绿烟：符纸**烧尽**的那一下，颜色必须绿 —— 橙烟读成"纸烧着了" */
+  const t = new THREE.Vector3(c.tx, 0.6, c.tz);
+  FX.burst(t, { n: 16, speed: 3.6, life: .7, size: .36, up: .9, grav: -.5,
+    tex:'smoke', noMix: true });
+  pinCount = Math.min(5, pinCount + 1);
+  _pinAt = now;
+  /* 找落点最近的怪把钉插上去；找不到怪就插在落点 —— 钉还是要出现，
+     否则"层数在涨"这件事没有任何证据 */
+  const e = enemies.filter(x=>x && x.deadT<=0)
+    .map(x=>({ x, d: Math.hypot(x.pos.x-c.tx, x.pos.z-c.tz) }))
+    .filter(o=>o.d < 3.2).sort((a,b)=>a.d-b.d)[0];
+  const m = billMesh(TEX.paper, C(0x7fe0a0), .95);
+  m.userData.noBB = true;
+  m.scale.set(.20, .55, 1);
+  m.userData.slot = pinCount - 1;
+  m.userData.e = e ? e.x : null;
+  m.userData.ox = (e ? (Math.random()-.5) : 0);
+  m.userData.oz = (e ? (Math.random()-.5) : 0);
+  _pins.push(m);
+  if(_pinsUpd) return;
+  _pinsUpd = addUpdate({ update(dt){
+    this.t = (this.t||0) + dt;
+    if(now - _pinAt > 2.6) pinCount = 0;    // 2.6 秒没续上就掉层
+    while(_pins.length > pinCount) scene.remove(_pins.pop());
+    _pins.forEach((p, i)=>{
+      const a = (p.userData.slot)/5*Math.PI*2;
+      const r = .55;
+      let x = c.tx, z = c.tz;
+      if(p.userData.e && p.userData.e.deadT <= 0){
+        x = p.userData.e.pos.x; z = p.userData.e.pos.z;
+      }
+      p.position.set(x + Math.cos(a)*r + p.userData.ox, .9, z + Math.sin(a)*r + p.userData.oz);
+      p.rotation.set(Math.PI/2*0.0 + 0.35, 0, a);   // 斜插
+      p.material.opacity = .9 - i*0.06;
+    });
+    if(_pins.length === 0 && pinCount === 0 && this.t > 0.5){
+      _pinsUpd = null; this.dead = true;
+    }
+  }});
+}
+
+/* 连携总入口：cast → playSkill(v2) 后调用 */
+function comboApply(key, c){
+  /* 刀 · 刃势：①②③ 命中攒层（延时 0.35 = 命中那一下，不是起手） */
+  if(key === 'whirl' || key === 'quake' || key === 'swords'){
+    delay(0.35, ()=>{ bladeStackAdd(); if(bladeStack === 5) delay(0.2, giantCleave); });
+  }
+  /* 法 · 法相：⑤ 开启记 8 秒窗；期间 ①②③ 施放 → 手掌光点 */
+  if(key === 'avatar') avatarUntil = now + 8;
+  else if(now < avatarUntil &&
+          (key === 'missile' || key === 'meteor' || key === 'firewall')){
+    delay(0.15, ()=> palmBolt(c));
+  }
+  /* 道 · 符毒：毒雾施放记 5.5 秒毒窗；① 符命中 → 绿烟 + 符钉 */
+  if(key === 'poison') poisonUntil = now + 5.5;
+  if(key === 'talisman') delay(0.32, ()=> talismanHitPoisoned(c));
+}
+
 /* 按当前档位把台阶效果叠上去；旧实现不接（对比才有意义） */
 function tierApply(key, c){
   const pack = TIER_HOOK[key];
@@ -6702,8 +6847,12 @@ function tierApply(key, c){
 
 function playSkill(key, c){
   const s = SKILLS[key];
-  if(mode === 'v2') s.v2(c); else (s.legacy || legacyFallback)(c);
-  if(mode === 'v2') tierApply(key, c);
+  if(mode === 'v2'){
+    s.v2(c);
+    tierApply(key, c);
+    comboApply(key, c);        // 职业连携：本体和台阶都不知道它存在
+  }
+  else (s.legacy || legacyFallback)(c);
 }
 
 let now = 0;

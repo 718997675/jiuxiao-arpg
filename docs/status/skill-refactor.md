@@ -161,10 +161,13 @@ P1 起才动 `SKILL_BAR_SLOTS` 与面板的三列树。
 
 ### 接着做的顺序（下次开工照这个走）
 
-1. ~~把台阶演示的「未接」补齐~~ **已完成（本轮）**：15 位全接，
+1. ~~把台阶演示的「未接」补齐~~ **已完成**：15 位全接，
    台阶小工具集齐（`fireLine` / `iceShellAt` / `iceSpikes` / `meteorLite` /
    `extraField` / `beastAt` / `suckBlood` / `guardRing(hex,sc)`）。
-2. **职业核心连携 3 条**（方案 §9.3）全没做：刃势刀纹合成巨刀 / 法相伸手点光 / 符毒绿符钉。
+2. ~~职业核心连携 3 条~~ **已完成（试验台）**：刃势攒层 → 满层巨刀虚影下劈 /
+   法相手掌光点飞向落点 / 符毒绿烟 + 绿符钉插怪。入口 `comboApply(key, c)`，
+   挂在 `playSkill` 的 v2 分支里 —— 本体与台阶 hook 都不知道它存在。
+   连放演示用 `node /tmp/combo.js '[[名,[["技能",间隔],...],尾延时]]'`。
 3. **法师 ⑤ 元素法相**：整只技能在游戏里还没实现（`SKILL_ARCHETYPE.isNew`），试验台只有表现层。
 4. **三段式分级（方案 §5 轻/中/重：顿帧·震屏·闪白·贴花）**现在是各技能自己写，没统一。
 5. **移植进游戏（0%）**：`src/fx.js` 里 `FX.spr/bolt/decal/geyser/ribbon/vortex/field/suck/spinBlades`
