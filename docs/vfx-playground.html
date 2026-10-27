@@ -103,8 +103,8 @@ button{font-family:inherit;color:inherit;background:none;border:none;cursor:poin
 #barAll .slot.sm.del{opacity:.32;filter:grayscale(1)}
 #barAll .slot.sm.del .nm{text-decoration:line-through}
 #barAllTip{text-align:center;font-size:9.5px;letter-spacing:.08em;color:#5a564c;margin-top:5px}
-#beastTip{font-size:9.5px;letter-spacing:.08em;color:#5a564c;margin-top:6px;line-height:1.7}
-#beastTip b{color:#a08a5e;font-weight:400}
+#beastTip,#mixTip{font-size:9.5px;letter-spacing:.08em;color:#5a564c;margin-top:6px;line-height:1.7}
+#beastTip b,#mixTip b{color:#a08a5e;font-weight:400}
 @media (max-width:760px){
   #barAll .slot.sm{width:38px;height:38px}
   #barAll .slot.sm svg{width:19px;height:19px}
@@ -276,6 +276,13 @@ button{font-family:inherit;color:inherit;background:none;border:none;cursor:poin
   <div class="sec">
     <div class="sec-t">元素材质（只管色，不管形）</div>
     <div class="seg" id="segElem"></div>
+  </div>
+
+  <div class="sec">
+    <div class="sec-t">混合元素（副元素 30% 强度）</div>
+    <div class="seg" id="segElem2"></div>
+    <div id="mixTip">主元素决定色阶与贴图；副元素只<b>换掉约三分之一粒子</b>的颜色与贴图，
+      并在弧外面<b>裹一层 30% 的副色</b>。选成同一个元素等于不混。</div>
   </div>
 
   <div class="sec">
@@ -840,6 +847,68 @@ TEX.blade = cv(64,256,(g,w,h)=>{
   g.fillRect(x-4,h*0.9,8,h*0.1);
 });
 
+
+/* 斧（旋风斩用）：画布上缘 = 半径外侧（axon 贴图 +Y 朝外），画布左右 = 切向。
+   单边斧：柄沿半径朝内，月牙刃甩向切向，刃口落在最外侧那条弧上。
+   加法混合下"暗"等于不存在，所以层次只能靠 alpha：柄 .45 / 刃身 .52 /
+   刃口 1.0 三档 —— 只有拉开这三档，转起来才看得出来是哪一边在切，
+   否则整体糊成一块亮板（第一版就是这样，像几把锅铲）。 */
+TEX.axe = cv(128,256,(g,w,h)=>{
+  g.clearRect(0,0,w,h);
+  const cx = w*0.60;
+
+  // 柄：越靠刃座越细，柄首一头略粗
+  g.fillStyle = 'rgba(255,255,255,.45)';
+  g.beginPath();
+  g.moveTo(cx-8, h*0.94);
+  g.lineTo(cx+8, h*0.94);
+  g.lineTo(cx+5, h*0.30);
+  g.lineTo(cx-5, h*0.30);
+  g.closePath(); g.fill();
+  // 缠绳：三道凹槽（destination-out 挖掉，加法混合里读作暗纹）
+  g.globalCompositeOperation = 'destination-out';
+  for(let i=0;i<3;i++) g.fillRect(cx-9, h*(0.52+i*0.11), 18, h*0.024);
+  g.globalCompositeOperation = 'source-over';
+  // 柄首配重
+  g.fillStyle = 'rgba(255,255,255,.62)';
+  g.beginPath(); g.arc(cx, h*0.925, 9, 0, 6.284); g.fill();
+
+  // 刃身（月牙，单边）
+  g.fillStyle = 'rgba(255,255,255,.52)';
+  g.beginPath();
+  g.moveTo(cx-3, h*0.315);
+  g.quadraticCurveTo(cx-42, h*0.44, cx-57, h*0.265);   // 下缘：从刃座甩到远端
+  g.quadraticCurveTo(cx-68, h*0.145, cx-44, h*0.055);  // 刃口弧：最外侧一条
+  g.quadraticCurveTo(cx-24, h*0.085, cx-3, h*0.145);   // 上缘：收回刃座
+  g.closePath(); g.fill();
+
+  // 刃口高光：只描最外那条弧，宽而亮 —— 这是"在切"的唯一线索
+  g.strokeStyle = 'rgba(255,255,255,1)';
+  g.lineWidth = 6; g.lineCap = 'round';
+  g.beginPath();
+  g.moveTo(cx-57, h*0.265);
+  g.quadraticCurveTo(cx-68, h*0.145, cx-44, h*0.055);
+  g.stroke();
+  // 刃背一小段冷光，勾出斧头厚度
+  g.strokeStyle = 'rgba(255,255,255,.55)';
+  g.lineWidth = 2.4;
+  g.beginPath();
+  g.moveTo(cx-3, h*0.315);
+  g.quadraticCurveTo(cx-42, h*0.44, cx-57, h*0.265);
+  g.stroke();
+
+  // 刃座套箍
+  g.fillStyle = 'rgba(255,255,255,.85)';
+  g.fillRect(cx-9, h*0.275, 18, h*0.05);
+  // 反侧小勾刃（让剪影不是一个光秃秃的月牙）
+  g.fillStyle = 'rgba(255,255,255,.38)';
+  g.beginPath();
+  g.moveTo(cx+5, h*0.145);
+  g.quadraticCurveTo(cx+26, h*0.10, cx+22, h*0.215);
+  g.quadraticCurveTo(cx+16, h*0.29, cx+5, h*0.27);
+  g.closePath(); g.fill();
+});
+
 // 符纸
 TEX.paper = cv(96,192,(g,w,h)=>{
   g.fillStyle='rgba(255,240,205,.9)'; g.fillRect(0,0,w,h);
@@ -891,6 +960,29 @@ TEX.frost = cv(256,256,(g,w,h)=>{
     for(let s=0;s<5;s++){ const st=w*0.08; x+=Math.cos(a)*st; y+=Math.sin(a)*st; a+=(Math.random()-0.5)*0.9;
       g.lineTo(x,y); g.moveTo(x,y); g.lineTo(x+Math.cos(a+1.1)*st*0.5,y+Math.sin(a+1.1)*st*0.5); g.moveTo(x,y); }
     g.stroke();
+  }
+});
+
+/* 腐蚀斑（毒）：以前 `ELEMS.poison.decal = 'acid'` 是个**空指针** ——
+   TEX.acid 根本没定义，`FX.decal` 里 `TEX[texName] || TEX.scorch` 一直兜底成焦痕，
+   所以中毒的地面看起来跟被火烧过一样。这里补上：
+   主体是叠圆形成的不规则暗斑（不能用正圆，正圆会被读成"光环"），
+   中心压暗表示蚀穿，边缘一圈小亮点表示还在冒泡。 */
+TEX.acid = cv(256,256,(g,w,h)=>{
+  g.clearRect(0,0,w,h);
+  const c = w/2;
+  g.fillStyle = 'rgba(120,180,90,.30)';
+  for(let i=0;i<9;i++){
+    const a = Math.random()*7, r = Math.random()*w*0.16;
+    g.beginPath();
+    g.arc(c + Math.cos(a)*r, c + Math.sin(a)*r, w*(0.10 + Math.random()*0.11), 0, 7);
+    g.fill();
+  }
+  radial(g,w,h,[[0,'rgba(26,44,18,.55)'],[.5,'rgba(60,110,50,.28)'],[1,'rgba(90,160,80,0)']]);
+  for(let i=0;i<26;i++){
+    const a = Math.random()*7, r = w*(0.20 + Math.random()*0.24);
+    g.fillStyle = 'rgba(200,255,150,' + (0.25 + Math.random()*0.45).toFixed(2) + ')';
+    g.beginPath(); g.arc(c + Math.cos(a)*r, c + Math.sin(a)*r, 1.5 + Math.random()*2.6, 0, 7); g.fill();
   }
 });
 
@@ -1274,7 +1366,16 @@ const ELEMS = {
 const _cc = {};
 function C(hex){ if(!_cc[hex]) _cc[hex] = new THREE.Color(hex); return _cc[hex]; }
 let curElem = 'phys';
+/* 副元素：主元素负责色阶与贴图，副元素只按 30% 强度叠一层。
+   与方案 §8 的「主 70% / 副 30%」一致 —— 玩法上是附加，不是转换；
+   表现上因此不能是"两套特效各画一遍"，只能是"同一套配方换一部分材质"。 */
+let curElem2 = null;
 function E(){ return ELEMS[curElem] || ELEMS.phys; }
+function E2(){
+  if(!curElem2 || curElem2 === curElem) return null;
+  return ELEMS[curElem2] || null;
+}
+const MIX = { count: 0.34, alpha: 0.30 };   // 副元素占多少粒子 / 叠多亮
 
 /* =====================================================================
    6. FXKit v2 —— 本次方案里的 11 个原语
@@ -1299,6 +1400,7 @@ FX.spr = function(x, y, z, o = {}){
 
 FX.burst = function(pos, o = {}){
   const e = E();
+  const e2 = E2();
   const n = Math.round((o.n || 14) * Q());
   const tex = o.tex || e.tex;
   const sp = o.speed || 4, up = o.up || 1.2, size = o.size || 0.3, life = o.life || 0.6;
@@ -1307,12 +1409,19 @@ FX.burst = function(pos, o = {}){
     const a = Math.random()*Math.PI*2, k = Math.random();
     const v = sp * (0.35 + k*0.9);
     const useGlow = Math.random() < 0.45;
+    /* 混元素：约 1/3 的粒子换成副元素的贴图与颜色。
+       不是"再画一簇"—— 两簇各飞各的会变成两层互不相干的烟花；
+       同一簇里换掉一部分，才读成"这团火里裹着雷"。 */
+    const mix2 = e2 && Math.random() < MIX.count;
+    const src = mix2 ? e2 : e;
+    const useGlow2 = mix2 ? (Math.random() < 0.35) : useGlow;
+    const cc = useGlow2 ? C(src.glow) : C(src.core);
     FX.spr(pos.x + Math.cos(a)*0.1, pos.y + Math.random()*0.35, pos.z + Math.sin(a)*0.1, {
-      tex, life: life*(0.6+Math.random()*0.8),
+      tex: mix2 ? src.tex : (o.tex || src.tex), life: life*(0.6+Math.random()*0.8),
       vx: Math.cos(a)*v, vy: (Math.random()*0.9+0.15)*up*v*0.5, vz: Math.sin(a)*v,
-      s0: size*(0.5+Math.random()*0.9), s1: 0.02, grav: o.grav != null ? o.grav : e.grav,
+      s0: size*(0.5+Math.random()*0.9), s1: 0.02, grav: o.grav != null ? o.grav : src.grav,
       drag: o.drag != null ? o.drag : 1.4,
-      r: useGlow?glow.r:core.r, g: useGlow?glow.g:core.g, b: useGlow?glow.b:core.b,
+      r: cc.r, g: cc.g, b: cc.b,
       rotV: (Math.random()-.5)*8
     });
   }
@@ -1328,8 +1437,15 @@ for(let i=0;i<DECAL.max;i++){
 FX.decal = function(pos, texName, size = 2, life = 4, tint = 0xffffff){
   const d = DECAL.list[DECAL.i++ % DECAL.max];
   const m = d.m;
-  m.material.map = TEX[texName] || TEX.scorch;
+  /* 混元素：三成的残留贴花换成**副元素的贴图**，颜色再往副色偏 35%。
+     不是"再贴一张"—— 贴花池只有 18 个位，多贴一张会挤掉别的残留；
+     而且地上同时烧黑又结霜，读起来是"两个技能打在了同一点"，
+     换成副色才读得出"这一发是火里带冰的"。 */
+  const e2 = E2();
+  const use2 = e2 && e2.decal && Math.random() < MIX.count;
+  m.material.map = TEX[use2 ? e2.decal : texName] || TEX.scorch;
   m.material.color.set(tint);
+  if(use2) m.material.color.lerp(C(e2.glow), 0.35);
   m.material.needsUpdate = true;
   m.position.set(pos.x, 0.015 + Math.random()*0.004, pos.z);
   m.rotation.z = Math.random()*7;
@@ -1353,6 +1469,20 @@ FX.shock = function(pos, r = 3, o = {}){
     ring.material.opacity = (1-k) * 0.85;
     if(k >= 1){ scene.remove(ring); this.dead = true; }
   }});
+  /* 混元素：主环外面再套一圈**更小**的副色环。
+     为什么小一圈：同尺寸两环叠在一起会被加法混合加成第三种颜色（橙 + 青 = 白），
+     小一圈才是"外圈主色、内圈副色"这个能看懂的结构。 */
+  const _e2s = E2();
+  if(_e2s){
+    const ring2 = flatMesh(TEX.shock, C(_e2s.glow), THREE.AdditiveBlending, 0);
+    ring2.position.set(pos.x, 0.031, pos.z);
+    addUpdate({ t:0, update(dt){
+      this.t += dt; const k = this.t/dur;
+      ring2.scale.setScalar(0.2 + k * r * 1.42);
+      ring2.material.opacity = (1-k) * MIX.alpha;
+      if(k >= 1){ scene.remove(ring2); this.dead = true; }
+    }});
+  }
   // 竖直气浪
   if(Q() > 0.6){
     const geo = new THREE.CylinderGeometry(1, 1, 1, 28, 1, true);
@@ -1440,6 +1570,18 @@ FX.arc = function(center, opt = {}){
   const innerMat = arcMaterial(C(E().core), 0.9);
   const [mOut, mIn] = mkArc(innerMat, outerMat);
 
+  /* 混元素：主弧外面再套一层更宽、更淡的副色弧。
+     为什么不是"一道弧里一半火一半雷"—— 弧是一个完整图形，
+     劈成两半会读成"做坏了"；外面裹一圈副色，才是"火焰外缘有雷弧"。 */
+  const e2 = E2();
+  let mixMat = null, mMix = null;
+  if(e2){
+    mixMat = arcMaterial(C(e2.glow), MIX.alpha);
+    mMix = new THREE.Mesh(arcGeometry(inner*0.98, r*1.08, span*1.02), mixMat);
+    mMix.position.z = -0.008;
+    tiltG.add(mMix);
+  }
+
   const sweepFrom = opt.from != null ? opt.from : 0;
   const sweepTo = opt.to != null ? opt.to : 0;
   const spin = opt.spin || 0;
@@ -1455,12 +1597,14 @@ FX.arc = function(center, opt = {}){
     const fade = 1 - Math.pow(k, 1.6);
     outerMat.opacity = fade * (opt.opacity || 0.95);
     innerMat.opacity = fade * 0.85;
+    if(mixMat) mixMat.opacity = fade * MIX.alpha;
     // 前 80% 时间轻微外扩
     const sc = 1 + k*0.12;
     tiltG.scale.setScalar(sc);
     if(k >= 1){
       scene.remove(spinG);
       outerMat.dispose(); innerMat.dispose();
+      if(mixMat) mixMat.dispose();
       this.dead = true;
     }
   }});
@@ -1613,6 +1757,491 @@ class Bolt {
   }
   dispose(){ scene.remove(this.mesh); this.geo.dispose(); this.mat.dispose(); }
 }
+/* ---- 斧头实体几何（旋风斩专用，模块级缓存，三把共用一个） ----
+ * 为什么不用贴图：第一版是 128×256 的程序化斧头贴图，加法混合 + 51° 俯角下
+ * 月牙被采样糊成一坨，读起来是"几块圆的亮片"—— 剪影交给位图采样永远不可靠
+ * （分辨率、过滤、缩放、混合模式任何一个都会把它糊掉）。
+ * 这里改成 THREE.Shape 挤出实体：轮廓由顶点决定，怎么转都是斧头。
+ *
+ * 局部坐标系（躺平之前）：
+ *   +Y = 半径外侧（刀刃所在的一端，柄尾在 -Y）
+ *   +X = 切向（转动的前进方向，刀刃向这一侧甩）
+ *   +Z = 厚度（放平后朝上）
+ * 单刃斧的关键是**不对称**：右侧一条大弧刃口，左侧一条近似直线的窄斧背。
+ * 左右对称的月牙不管怎么调都会读成"月亮/圆盘"，这是剪影问题不是参数问题。
+ */
+let _axeHeadGeo = null, _axeHaftGeo = null;
+function _polyShape(pts){
+  const s = new THREE.Shape();
+  s.moveTo(pts[0][0], pts[0][1]);
+  for(let i=1;i<pts.length;i++) s.lineTo(pts[i][0], pts[i][1]);
+  s.closePath();
+  return s;
+}
+/* 斧头：**全直线，一个弧都不许有**。
+ * 三条边必须是正的直线（斧背 / 顶边 / 底边），右边接一个梯形刃 ——
+ * 刃口是"一小段直面 + 上下两个尖角"，那才是"刃"；
+ * 之前用 quadraticCurveTo 绕一圈，四条边没有一条是直的，
+ * 所以不管怎么调都读成"锅铲/圆片"。曲线换直线，形状立刻就硬了。
+ *
+ * 比例也是硬要求：**头要"高"不要"宽"**。
+ * 斧头躺平后，径向（+Y，也就是柄的方向）在 51° 俯角下会被压掉约 22%，
+ * 所以竖向必须事先做高 —— 头 0.70 高 / 0.41 深，压完还剩 1.3:1，
+ * 才不会被看成一块方的纸片（第一版 0.55×0.68 压完基本就是正方形）。 */
+/* 斧头：**全直线 + 扇形（斧背窄、刃口张开）**。
+ * 三条边必须是正的直线（斧背 / 上下缘），右边接一个外凸的刃：
+ * 刃口是"一小段直面 + 上下两个尖角"，那才是"刃"。
+ *
+ * 两条都是硬要求，违反任何一条就变回"锅铲"：
+ *  1. **不对称**：斧背几乎贴着柄（x=-0.06），刃口甩到 x=0.46 ——
+ *     头在柄的一侧，不是在柄中间。居中装就一定是铲子。
+ *  2. **扇形**：斧背那头只有 0.34 高，刃口那头张到 0.78 高。
+ *     等宽的长方形不管加多少尖角都还是一块板。
+ * 另外竖向要预先做高：躺平后径向在 51° 俯角下被压掉约 22%。 */
+/* ── 斧头轮廓（唯一旋钮，改这里就能调形） ────────────────────────
+ * 局部坐标：+Y = 半径外侧（刃口一端）、+X = 切向、+Z = 厚度（躺平后朝上）。
+ * 三条经验，都是试错换来的，别再犯：
+ *  1. **必须有台阶**：斧眼（+ 0.045 那段）窄、刃口那一段突然跳宽。
+ *     平滑外张的扇形 = 锅铲；左右对称的扇面 = 蘑菇锤。那个"突然变宽"
+ *     才是斧头卡在柄上的样子。
+ *  2. **方角**：斧踵 heel / 斧趾 toe 要真尖，中间那条竖边接近直线。
+ *     全用 quadraticCurveTo 绕一圈，四条边没一条是直的，怎么调都是圆的。
+ *  3. **竖向预先做高**：躺平后径向在 51° 俯角下会被压掉约 22%。 */
+const AXE_HEAD = [
+  [-0.075, -0.100],  // 斧背底角
+  [ 0.045, -0.100],  // 斧眼底边（窄矩形段）
+  [ 0.045, -0.270],  // ★台阶：向下突然跳出去
+  [ 0.230, -0.320],  // 斧踵 heel（刃口下端尖角）
+  [ 0.270, -0.130],  // 刃口下段
+  [ 0.280,  0.060],  // 刃口中段（直面 = 真正的刃）
+  [ 0.270,  0.250],  // 刃口上段
+  [ 0.230,  0.380],  // 斧趾 toe（刃口上端尖角）
+  [ 0.045,  0.330],  // ★台阶：向上收回
+  [ 0.045,  0.100],  // 斧眼顶边（窄矩形段）
+  [-0.075,  0.100]   // 斧背顶角
+];
+const AXE_HAFT = [
+  [-0.062, -1.150],  // 柄首配重（比柄粗一圈，方块）
+  [ 0.062, -1.150],
+  [ 0.062, -1.080],
+  [ 0.040, -1.060],
+  [ 0.040, -0.060],  // 伸进斧眼里，交代"柄是穿过去的"
+  [-0.040, -0.060],
+  [-0.040, -1.060],
+  [-0.062, -1.080]
+];
+function axeHeadGeo(){
+  if(_axeHeadGeo) return _axeHeadGeo;
+  const g = new THREE.ExtrudeGeometry(_polyShape(AXE_HEAD), {
+    depth: 0.085, bevelEnabled: false
+  });
+  g.translate(0, 0, -0.0425);
+  _axeHeadGeo = g;
+  return g;
+}
+/* 柄单独挤出、比斧头薄一半：俯角下能看见"斧头厚、柄细"这个落差，
+ * 一块等厚的板无论轮廓多准都还是板。 */
+function axeHaftGeo(){
+  if(_axeHaftGeo) return _axeHaftGeo;
+  const g = new THREE.ExtrudeGeometry(_polyShape(AXE_HAFT), {
+    depth: 0.060, bevelEnabled: false
+  });
+  g.translate(0, 0, -0.030);
+  _axeHaftGeo = g;
+  return g;
+}
+/* 斧颊：把整块轮廓朝形心缩 0.62 得到的"内面"。
+ * 斧头躺平时我们看到的是它那个又大又平的**颊面**，一整块同色就必然读成纸板；
+ * 缩一圈压暗盖上去，就有了"外圈亮边 → 中间浅边 → 中心暗面"的层次，
+ * 眼睛会把它读成一块中间鼓、边上薄下去的钢。 */
+let _axeCheekGeo = null;
+function axeCheekGeo(){
+  if(_axeCheekGeo) return _axeCheekGeo;
+  const cx = 0.11, cy = 0.02, k = 0.62;
+  const pts = AXE_HEAD.map(p=>[cx+(p[0]-cx)*k, cy+(p[1]-cy)*k]);
+  const g = new THREE.ShapeGeometry(_polyShape(pts));
+  g.translate(0, 0, 0.0435);
+  _axeCheekGeo = g;
+  return g;
+}
+
+/* 刃口亮带：沿刃口那条折线（踵 → 下段 → 上段 → 趾）取点，
+ * 每点朝形心内缩一条宽度，缝成一个多边形。
+ * 用折线而不是重采样贝塞尔 —— 刃口本身已经是直的了，重采样只会把它
+ * 又磨圆回去。加法混合里"亮"是唯一读得出的信息，刃口必须比斧身更白更实。 */
+let _axeEdgeGeo = null;
+function axeEdgeGeo(){
+  if(_axeEdgeGeo) return _axeEdgeGeo;
+  const pts = [AXE_HEAD[3], AXE_HEAD[4], AXE_HEAD[5], AXE_HEAD[6], AXE_HEAD[7]];
+  const cx = 0.13, cy = 0.02, wid = 0.062;   // 形心 + 带子宽度
+  const out = [], inn = [];
+  pts.forEach(p=>{
+    out.push(p);
+    const dx = cx-p[0], dy = cy-p[1], L = Math.hypot(dx,dy) || 1;
+    inn.push([p[0]+dx/L*wid, p[1]+dy/L*wid]);
+  });
+  const s = new THREE.Shape();
+  s.moveTo(out[0][0], out[0][1]);
+  for(let i=1;i<out.length;i++) s.lineTo(out[i][0], out[i][1]);
+  for(let i=inn.length-1;i>=0;i--) s.lineTo(inn[i][0], inn[i][1]);
+  s.closePath();
+  const g = new THREE.ShapeGeometry(s);
+  g.translate(0, 0, 0.050);                  // 贴在斧头朝上的那一面
+  _axeEdgeGeo = g;
+  return g;
+}
+
+/* ---- 平转的斧头（暗黑三旋风斩那种） ----
+ * 旧版画的是三道"倾斜 35° 的刀气弧"：弧本身躺在地上、又各自斜着抬起来，
+ * 读起来是"地上有三片斜光"，完全不像"武器在平着转"。
+ * 现在真的把武器放上去转：N 把斧头在**同一个水平面**上绕人转圈，
+ * 每把后面拖一条水平尾焰，脚下再给一圈旋转气流。
+ *
+ * 三条硬规矩：
+ *   1. 所有东西都在同一高度（y≈1.0），一个都不许倾斜 —— 一旦给了 inclination，
+ *      立刻变回"斜着转"；
+ *   2. 绕 Y 的旋转一律交给**父级 Group**，斧头的朝向只用一个轴（rotation.y），
+ *      尾焰的"放平 + 平面内转"用**祖-孙两级**（flat 负责放平、mesh 负责转），
+ *      同一个 mesh 上既 rotation.x 又 rotation.z 会互相干扰（欧拉角顺序）；
+ *   3. 尾焰是**水平扇形**（arcGeometry 放平），不是 Ribbon —— Ribbon 的宽边
+ *      永远朝相机，转起来会变成一条竖直飘带，反而看不出"平"。
+ */
+FX.spinBlades = function(center, o = {}){
+  const R = o.r || 1.85;
+  const life = o.life || 0.95;
+  const n = o.n || 3;
+  const y = o.y != null ? o.y : 1.0;
+  const spd = o.spin || 13;
+  const col = o.color != null ? o.color : C(E().glow);
+  const core = C(E().core);
+
+  const grp = new THREE.Group();
+  grp.position.set(center.x, y, center.z);
+  scene.add(grp);
+
+  const mats = [], parts = [];
+  for(let i=0;i<n;i++){
+    const piv = new THREE.Group();
+    piv.rotation.y = i/n * Math.PI * 2;
+    grp.add(piv);
+
+    /* 斧头**躺平**：刀面与地面平行，刃朝外（径向），柄朝内。
+       holder 这一级只干一件事：把"面朝上"这个姿态一次性定死
+       （欧拉 XYZ：先 Rz 把局部 +Y 转到 +X，再 Rx 整片放平），
+       之后斧身、刃口亮带都挂在 holder 下、自己不再带任何倾角。 */
+    /* 材质这一层是"像不像武器"的另一半。
+       加法混合的斧头不管轮廓多准，最终都是一个发光色块 —— 光晕会把
+       形状糊圆（第一版就是这个毛病）。所以斧身改成**不透明金属**：
+       加法混合只留给刃口和尾焰，实体剪影才是"真家伙"的观感。 */
+    const steel = C(col).clone().lerp(new THREE.Color(0xa9a293), 0.62);
+    // 配色策略：**面压到很暗、侧壁给到很亮**。
+    // 俯角下只能看见远侧那条侧壁，它正好是沿斧头轮廓的一整圈亮边；
+    // 暗面 + 亮边 = 一块有厚度的黑钢，形状靠对比度读出来。
+    // 反过来（面亮、边黑）就得到一块发白、没有厚度的纸片 —— 前两版都死在这。
+    const am = new THREE.MeshBasicMaterial({ color: steel.clone().multiplyScalar(0.62),
+      transparent: true, opacity: 0.97, depthWrite: false, blending: THREE.NormalBlending,
+      side: THREE.DoubleSide, fog: false });
+    const amS = new THREE.MeshBasicMaterial({ color: steel.clone().multiplyScalar(1.30),
+      transparent: true, opacity: 0.97, depthWrite: false, blending: THREE.NormalBlending,
+      side: THREE.DoubleSide, fog: false });
+    const cm = new THREE.MeshBasicMaterial({ color: steel.clone().multiplyScalar(0.30),
+      transparent: true, opacity: 0.97, depthWrite: false, blending: THREE.NormalBlending,
+      side: THREE.DoubleSide, fog: false });
+    // 柄比斧头暗一档：木柄 vs 钢刃，靠明度差分开，侧壁同样给亮（体积感）
+    const hm = new THREE.MeshBasicMaterial({ color: steel.clone().multiplyScalar(0.30),
+      transparent: true, opacity: 0.97, depthWrite: false, blending: THREE.NormalBlending,
+      side: THREE.DoubleSide, fog: false });
+    const hmS = new THREE.MeshBasicMaterial({ color: steel.clone().multiplyScalar(0.95),
+      transparent: true, opacity: 0.97, depthWrite: false, blending: THREE.NormalBlending,
+      side: THREE.DoubleSide, fog: false });
+    const em = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true,
+      opacity: 1, depthWrite: false, blending: THREE.AdditiveBlending,
+      side: THREE.DoubleSide, fog: false });
+
+    const holder = new THREE.Group();
+    holder.rotation.set(-Math.PI/2, 0, -Math.PI/2);
+    holder.position.set(R, 0, 0);
+    piv.add(holder);
+
+    // ExtrudeGeometry 自带两个 group：0 = 正反大面，1 = 侧壁。
+    // 大面亮、侧壁压很暗 —— 侧壁从 51° 俯角看正好是斧头的一圈轮廓边，
+    // 压暗之后剪影变成"亮面 + 黑边框"，比任何贴图高光都更像一块有厚度的钢。
+    const ax = new THREE.Mesh(axeHeadGeo(), [am, amS]);
+    ax.renderOrder = 5;
+    holder.add(ax);
+
+    const cheek = new THREE.Mesh(axeCheekGeo(), cm);
+    cheek.renderOrder = 5;
+    holder.add(cheek);
+
+    const haft = new THREE.Mesh(axeHaftGeo(), [hm, hmS]);
+    haft.renderOrder = 5;
+    holder.add(haft);
+
+    const edge = new THREE.Mesh(axeEdgeGeo(), em);
+    edge.renderOrder = 6;
+    holder.add(edge);
+    mats.push(am, amS, cm, hm, hmS, em);
+
+    /* 尾焰：水平扇形。祖级放平（rotation.x=-90°），子级在平面内转 */
+    const span = 1.35;
+    const tm = arcMaterial(col, 0.5);
+    const flat = new THREE.Group();
+    flat.rotation.x = -Math.PI/2;
+    piv.add(flat);
+    const tr = new THREE.Mesh(arcGeometry(R*0.66, R*1.18, span, 26), tm);
+    tr.rotation.z = -span*0.5;          // 让扇形的前缘正好落在斧头脚下
+    flat.add(tr); mats.push(tm);
+
+    /* 混元素：尾焰外面再裹一层更宽的副色扇形。
+       斧头本体不混（它是"武器"，颜色跟着材质走就好），
+       混的是它扫出来的那道风 —— 那才是元素效果该出现的地方。 */
+    const mixE2 = E2();
+    let tm2 = null, tr2 = null;
+    if(mixE2){
+      tm2 = arcMaterial(C(mixE2.glow), MIX.alpha);
+      tr2 = new THREE.Mesh(arcGeometry(R*0.60, R*1.30, span*1.06, 26), tm2);
+      tr2.rotation.z = -span*0.5;
+      flat.add(tr2); mats.push(tm2);
+    }
+
+    parts.push({ piv, holder, ax, cheek, haft, am, amS, cm, hm, hmS, em, tr, tm, tr2, tm2 });
+  }
+
+  /* 脚下气流盘：一圈很淡的旋转环，给"转"一个底盘（否则斧头像悬空） */
+  const dm = new THREE.MeshBasicMaterial({ map: TEX.ring, color: col, transparent: true,
+    opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false });
+  const disc = new THREE.Mesh(_plane, dm);
+  disc.rotation.x = -Math.PI/2;
+  disc.position.y = -y + 0.05;
+  disc.scale.setScalar(R*2.5);
+  grp.add(disc); mats.push(dm);
+
+  let t = 0;
+  const startRot = Math.random()*7;
+  grp.rotation.y = startRot;
+
+  addUpdate({ update(dt){
+    t += dt;
+    const k = Math.min(1, t/life);
+    const inK = Math.min(1, t/0.08);
+    const outK = k > 0.62 ? Math.max(0, 1-(k-0.62)/0.38) : 1;
+
+    /* 起转要"甩"起来：前 80ms 慢，之后全速。匀速转像风扇，没有重量 */
+    grp.rotation.y += dt * spd * (0.35 + 0.65*inK);
+
+    parts.forEach((p, i)=>{
+      const ph = Math.sin(t*24 + i*2.1);
+      // 斧身几乎不闪（一块金属不会自己呼吸），只做结尾淡出；
+      // 闪烁全部交给刃口和尾焰 —— 亮的东西才闪，实体只负责"在"。
+      p.am.opacity  = 0.97 * outK;
+      p.amS.opacity = 0.97 * outK;
+      p.cm.opacity  = 0.97 * outK;
+      p.hm.opacity  = 0.97 * outK;
+      p.hmS.opacity = 0.97 * outK;
+      p.em.opacity  = (0.55 + 0.45*ph) * outK;
+      p.tm.opacity = (0.50 + 0.16*ph) * outK * inK;
+      if(p.tm2) p.tm2.opacity = (MIX.alpha + 0.10*ph) * outK * inK;
+      // 躺平之后只剩一点点高度浮动，避免三把斧头像贴在同一个玻璃板上。
+      // holder 的世界 +Y 就是"上"，所以浮动写在 y 上，不要去碰 ax 的局部轴。
+      p.holder.position.y = Math.sin(t*9 + i*2.1) * 0.05;
+    });
+    dm.opacity = 0.16 * outK * inK;
+
+    /* 刃尖火星：沿圆周甩出去，方向跟着转速走 */
+    if(Math.random() < dt*55*Q()){
+      const a = grp.rotation.y + Math.random()*Math.PI*2;
+      const tx = center.x + Math.cos(a)*R, tz = center.z + Math.sin(a)*R;
+      FX.spr(tx, y + (Math.random()-0.5)*1.3, tz, {
+        tex: 'spark', life: 0.28 + Math.random()*0.2, s0: 0.20, s1: 0,
+        a0: 0.85 * outK,
+        vx: -Math.sin(a)*spd*0.12, vy: 0.4 + Math.random()*0.6, vz: Math.cos(a)*spd*0.12,
+        grav: 2.2, drag: 0.6,
+        r: core.r, g: core.g, b: core.b
+      });
+    }
+
+    if(k >= 1){
+      scene.remove(grp);
+      mats.forEach(m=>m.dispose());
+      this.dead = true;
+    }
+  }});
+  return grp;
+};
+
+/* ---------- 元素反应（混元素的"事件"，不是持续混色） ----------
+ * 混色只解决"这团火里有没有雷"，解决不了"两种元素碰到一起会怎样"。
+ * 反应必须是一次性的画面事件，而且不能都用"一圈粒子"——
+ * 蒸汽是白汽团、等离子是电弧球、感电是冰壳爬电、焚毒是绿火包橙芯，
+ * 四种形状互不相同，玩家才记得住。
+ * 只在四种组合上做：其余的混就只是混色，硬凑反而分不清。
+ */
+const REACT_FX = {
+  'fire|ice': { name: '蒸汽爆裂', run(p){
+    FX.shock(p, 3.2, { color: 0xdfefff, dur: 0.5 });
+    for(let i=0;i<Math.round(34*Q());i++){
+      const a = Math.random()*7, r = Math.random()*1.6;
+      FX.spr(p.x+Math.cos(a)*r, 0.2+Math.random()*1.2, p.z+Math.sin(a)*r, {
+        tex: 'smoke', life: 0.9+Math.random()*0.6, s0: 0.40, s1: 1.7, a0: 0.35,
+        vy: 1.1+Math.random(), grav: -0.8, drag: 0.7, r: .90, g: .94, b: 1
+      });
+    }
+  } },
+  'fire|thunder': { name: '等离子', run(p){
+    const c = new THREE.Vector3(p.x, 1.1, p.z);
+    // 六条电弧从外圈跳进球心：球是"结果"，弧是"过程"
+    for(let i=0;i<6;i++){
+      const a = i/6*Math.PI*2;
+      FX.bolt(new THREE.Vector3(c.x+Math.cos(a)*1.0, c.y+Math.sin(a*2)*0.65, c.z+Math.sin(a)*1.0), c,
+        { color: 0xc8a8ff, core: 0xffffff, branch: 1, width: 0.06, life: 0.24, seg: 10, chaos: 0.7 });
+    }
+    FX.shock(p, 2.4, { color: 0xc8a8ff, dur: 0.35 });
+    FX.burst(c, { n: 24, speed: 5, life: .5, size: .30, coreHex: 0xe8d8ff, glowHex: 0xa878ff });
+  } },
+  'ice|thunder': { name: '感电冻结', run(p){
+    for(let i=0;i<Math.round(20*Q());i++){
+      const a = Math.random()*7;
+      FX.spr(p.x+Math.cos(a)*1.2, 0.3+Math.random()*1.6, p.z+Math.sin(a)*1.2, {
+        tex: 'shard', life: .7, s0: .30, s1: .05, a0: .9,
+        vx: Math.cos(a)*1.2, vy: .6, vz: Math.sin(a)*1.2, grav: 1.4, rotV: 3,
+        r: .86, g: .96, b: 1
+      });
+    }
+    const c = new THREE.Vector3(p.x, 1.0, p.z);
+    for(let i=0;i<4;i++){
+      const a = Math.random()*7;
+      FX.bolt(new THREE.Vector3(c.x+Math.cos(a)*1.6, c.y+0.8, c.z+Math.sin(a)*1.6), c,
+        { color: 0x9ae8ff, core: 0xffffff, branch: 2, width: 0.07, life: 0.20, seg: 10, chaos: 0.9 });
+    }
+  } },
+  'fire|poison': { name: '焚毒', run(p){
+    FX.geyser(p, { h: 2.8, life: .8, tex: 'flame', color: 0x7fbf5a, noMix: true });
+    for(let i=0;i<Math.round(30*Q());i++){
+      const a = Math.random()*7, r = Math.random()*0.7;
+      const green = i % 2 === 0;
+      FX.spr(p.x+Math.cos(a)*r, 0.2, p.z+Math.sin(a)*r, {
+        tex: 'flame', life: 1.0, s0: .80, s1: .20, a0: .8,
+        vy: 2.0+Math.random()*1.4, grav: -1.6, drag: .5,
+        r: green ? .3 : 1, g: green ? 1 : .5, b: green ? .15 : .1
+      });
+    }
+  } },
+
+  /* ---- 冰 + 毒：腐霜 ---- 白霜上晕开绿斑，雾**贴地爬**而不是上升 */
+  'ice|poison': { name: '腐霜', run(p){
+    FX.decal(p, 'frost', 3.6, 5, 0xdfefff);
+    FX.decal(p, 'acid', 2.6, 5, 0x9fe07a);
+    FX.shock(p, 2.6, { color: 0xbfe8c0, dur: 0.45 });
+    for(let i=0;i<Math.round(22*Q());i++){
+      const a = Math.random()*7, r = 0.4 + Math.random()*1.8;
+      FX.spr(p.x+Math.cos(a)*r, 0.15+Math.random()*0.5, p.z+Math.sin(a)*r, {
+        tex: 'smoke', life: 1.2, s0: .30, s1: 1.1, a0: .28,
+        vx: Math.cos(a)*0.6, vy: 0.15, vz: Math.sin(a)*0.6, grav: 0.35, drag: 1.2,
+        r: .62, g: .90, b: .60
+      });
+    }
+  } },
+
+  /* ---- 雷 + 毒：腐蚀链 ---- 电弧是**绿的**（不是紫的），每个落点炸一小团毒沫。
+     紫色雷谁都认得出是雷，这里要的是"这条链是毒的"，所以连白芯都偏黄绿。 */
+  'poison|thunder': { name: '腐蚀链', run(p){
+    const pts = [];
+    for(let i=0;i<3;i++){
+      const a = Math.random()*7, r = 1.2 + Math.random()*1.6;
+      pts.push(new THREE.Vector3(p.x+Math.cos(a)*r, 0.5+Math.random()*0.9, p.z+Math.sin(a)*r));
+    }
+    let from = new THREE.Vector3(p.x, 1.2, p.z);
+    pts.forEach(q=>{
+      FX.bolt(from, q, { color: 0x9fe07a, core: 0xeaffd8, glow: 0x4f8a3a,
+        branch: 1, width: 0.06, life: 0.26, seg: 10, chaos: 0.9 });
+      from = q;
+    });
+    pts.forEach(q=>{
+      FX.spr(q.x, q.y, q.z, { tex:'smoke', life:.7, s0:.28, s1:1.0, a0:.4,
+        grav: -0.4, drag: 1.4, r:.55, g:.85, b:.45 });
+    });
+    FX.shock(p, 2.0, { color: 0x9fe07a, dur: 0.32 });
+  } },
+
+  /* ---- 火 + 圣：净化烈焰 ---- 金色火柱，火舌透白，落点留金色光**
+     （和"焚毒"的区别：焚毒是绿火包橙芯、矮而散；这个是金火柱、高而直。） */
+  'fire|holy': { name: '净化烈焰', run(p){
+    FX.geyser(p, { h: 3.8, w: 1.15, opacity: .9, life: .95, tex: 'flame', color: 0xffe9a0, noMix: true });
+    FX.shock(p, 2.9, { color: 0xfff2b0, dur: 0.5 });
+    for(let i=0;i<Math.round(18*Q());i++){
+      const a = Math.random()*7, r = Math.random()*0.9;
+      FX.spr(p.x+Math.cos(a)*r, 0.2, p.z+Math.sin(a)*r, {
+        tex: 'spark', life: 1.1, s0: .22, s1: .02, a0: .9,
+        vy: 3.2+Math.random()*1.8, grav: -1.2, drag: .4,
+        r: 1, g: .95, b: .70
+      });
+    }
+  } },
+
+  /* ---- 冰 + 圣：圣霜 ---- 金色光环 + 冰晶镀金边（shard 走金色而不是青色） */
+  'holy|ice': { name: '圣霜', run(p){
+    FX.shock(p, 2.8, { color: 0xfff2b0, dur: 0.5 });
+    FX.decal(p, 'frost', 3.0, 4.5, 0xfff6d8);
+    for(let i=0;i<Math.round(24*Q());i++){
+      const a = Math.random()*7;
+      FX.spr(p.x+Math.cos(a)*1.1, 0.3+Math.random()*1.2, p.z+Math.sin(a)*1.1, {
+        tex: 'shard', life: .8, s0: .30, s1: .04, a0: .9,
+        vx: Math.cos(a)*1.5, vy: .9, vz: Math.sin(a)*1.5, grav: 1.1, rotV: 2.5,
+        r: 1, g: .97, b: .82
+      });
+    }
+  } },
+
+  /* ---- 雷 + 圣：天罚 ---- 一根**金色粗雷柱从天上贯到地面**，地上留裂纹。
+     天罚的辨识点是"自上而下的一根"，不是"围着中心炸一圈"，所以 bolt 必须从 y=7 起。 */
+  'holy|thunder': { name: '天罚', run(p){
+    const top = new THREE.Vector3(p.x, 7.2, p.z);
+    const bot = new THREE.Vector3(p.x, 0.05, p.z);
+    FX.bolt(top, bot, { color: 0xffe066, core: 0xffffff, glow: 0xfff2b0,
+      branch: 3, width: 0.16, life: 0.42, seg: 14, chaos: 0.55 });
+    FX.geyser(p, { h: 3.0, w: .8, opacity: .55, life: .7, tex: 'beam', color: 0xffe066, noMix: true });
+    FX.shock(p, 3.4, { color: 0xfff2b0, dur: 0.55 });
+    FX.decal(p, 'crack', 3.2, 5, 0xffe9a0);
+  } },
+
+  /* ---- 毒 + 圣：解毒雾 ---- 毒雾被**抽走**：绿粒子向内收、金光升起。
+     方向是关键：其它反应都是往外炸，只有这个是"往里收"，眼睛一眼能分出"净化"。 */
+  'holy|poison': { name: '解毒雾', run(p){
+    FX.shock(p, 2.4, { color: 0xfff2b0, dur: 0.4 });
+    for(let i=0;i<Math.round(26*Q());i++){
+      const a = Math.random()*7, r = 2.0 + Math.random()*0.8;
+      const sp = 1.6 + Math.random()*1.0;
+      FX.spr(p.x+Math.cos(a)*r, 0.3+Math.random()*1.4, p.z+Math.sin(a)*r, {
+        tex: 'smoke', life: .65, s0: .45, s1: .05, a0: .5,
+        vx: -Math.cos(a)*sp, vy: .25, vz: -Math.sin(a)*sp, grav: -0.3, drag: .2,
+        r: .55, g: .82, b: .48
+      });
+    }
+    for(let i=0;i<Math.round(12*Q());i++){
+      const a = Math.random()*7, r = Math.random()*0.8;
+      FX.spr(p.x+Math.cos(a)*r, 0.2, p.z+Math.sin(a)*r, {
+        tex: 'spark', life: 1.0, s0: .18, s1: .02, a0: .85,
+        vy: 2.4+Math.random()*1.2, grav: -1.0, drag: .5, r: 1, g: .96, b: .72
+      });
+    }
+    FX.decal(p, 'acid', 2.2, 3.5, 0x8fd06a);
+  } }
+};
+
+/* 反应表按"两个元素名排序后拼接"索引 —— 火+冰 与 冰+火 必须是同一条，
+   所以要排序，不能按调用顺序。返回名字（没配上返回 null，调用方不必判断）。
+   注意：这里只画表现、不改任何数值，命中判定与本函数无关。 */
+FX.react = function(pos, a, b){
+  if(!a || !b || a === b) return null;
+  const k = [a, b].sort().join('|');
+  const r = REACT_FX[k];
+  if(!r) return null;
+  toast('元素反应 · ' + r.name);
+  r.run(new THREE.Vector3(pos.x, 0, pos.z));
+  return r.name;
+};
+
 FX.bolt = function(a, b, o = {}){
   const life = o.life || 0.18;
   const w0 = o.width || 0.09;
@@ -1708,78 +2337,363 @@ FX.vortex = function(pos, o = {}){
   }});
 };
 
-// ---- 领域（地面纹 + 边界墙 + 体积柱 + 脉冲） ----
+/* ---- 吸怪场（横扫吸怪 / 变体聚怪） ----
+ * 旧版只有一个"往外扩"的 ring：环在变大、怪在靠近，两个方向相反，
+ * 眼睛读不出"吸"。真实感来自三件事，缺一件都像位置瞬移：
+ *   1. 外圈粒子沿螺旋收进中心（角度在转、半径在减），不是一条条径向直线；
+ *   2. 每只被吸的怪身上持续抽出一条气射向中心 —— 怪在动，气跟着动，
+ *      这才读得出"是被拽着走"；
+ *   3. 中心的涡核 + 内缩环，给一个"吸到哪儿去了"的落点。
+ * 只画表现：位移仍由技能自己改 e.pos，这个函数一个坐标都不改。
+ */
+FX.suck = function(center, o = {}){
+  const R = o.r || 4;
+  const dur = o.dur || 2;
+  const col = o.color != null ? o.color : C(E().glow);
+  const core = C(E().core);
+  const c = new THREE.Vector3(center.x, 0, center.z);
+  const targets = o.targets || (typeof enemies !== 'undefined' ? enemies : []);
+  let t = 0, acc = 0, strawAcc = 0;
+
+  /* 内缩环：环要往里收。外扩环在"吸"这个语义下是错的 —— 那是冲击波 */
+  const ring = flatMesh(TEX.ring, col, THREE.AdditiveBlending, 0);
+  ring.position.set(c.x, 0.04, c.z);
+
+  /* 涡核：一小片翻卷的雾，原地自转。没有它，粒子飞进中心就凭空消失了 */
+  const eye = billMesh(TEX.smoke, core, 0);
+  eye.position.set(c.x, 0.55, c.z);
+  eye.scale.setScalar(R*0.55);
+  eye.userData.noBB = true;
+
+  addUpdate({ update(dt){
+    t += dt;
+    const k = Math.min(1, t/dur);
+    const inK = Math.min(1, t/0.25);
+    const outK = k > 0.85 ? Math.max(0, 1-(k-0.85)/0.15) : 1;
+    const e = 1 - Math.pow(1-inK, 3);
+
+    /* 1) 外圈螺旋吸入：切向速度负责"旋"，径向速度负责"吸" */
+    acc += dt;
+    /* 慢一点、密一点：内速 5 的话粒子 0.4 秒就飞完，眨一下眼什么都没了；
+       2.6 + 切向 2.2 才会"绕着往里走"，螺旋才看得出来 */
+    const rate = 0.005 / Math.max(0.4, Q());
+    while(acc > rate){
+      acc -= rate;
+      /* 角度不能纯随机 —— 随机撒点只会得到"一圈乱飞的光点"，
+         看不出在"转"。四条臂 + 全局相位，粒子落在四条一起旋转的射线上，
+         整簇才读成漩涡。 */
+      const phase = t * 1.9;
+      const arm = Math.floor(Math.random()*4) * (Math.PI/2);
+      const a = phase + arm + (Math.random()-0.5)*0.20;
+      const rr = R*(0.82 + Math.random()*0.26);
+      const inSp = 2.6 + Math.random()*1.2, tanSp = 2.2;
+      FX.spr(c.x + Math.cos(a)*rr, 0.15 + Math.random()*1.5, c.z + Math.sin(a)*rr, {
+        tex: 'soft', life: 0.85 + Math.random()*0.35,
+        s0: 0.62, s1: 0.10, a0: 0.7 * e * outK,
+        vx: -Math.cos(a)*inSp - Math.sin(a)*tanSp,
+        vz: -Math.sin(a)*inSp + Math.cos(a)*tanSp,
+        vy: 0.15, grav: 0.2, drag: 0,
+        r: core.r, g: core.g, b: core.b
+      });
+    }
+
+    /* 2) 每只被吸的怪：从身上抽一条气射向中心。怪走一步、气跟一步 */
+    strawAcc += dt;
+    if(strawAcc > 0.09){
+      strawAcc = 0;
+      targets.forEach(en=>{
+        if(!en || en.deadT > 0) return;
+        const d = Math.hypot(en.pos.x - c.x, en.pos.z - c.z);
+        if(d > R*1.05 || d < 0.35) return;      // 太远没吸到、太近已经撞脸
+        const n = Q() > 0.5 ? 2 : 1;
+        for(let i=0;i<n;i++){
+          const sx = en.pos.x + (Math.random()-0.5)*0.5;
+          const sz = en.pos.z + (Math.random()-0.5)*0.5;
+          const ux = (c.x - sx)/d, uz = (c.z - sz)/d;
+          const sp = 4.0 + Math.random()*1.6;
+          FX.spr(sx, 0.45 + Math.random()*1.0, sz, {
+            tex: 'soft', life: 0.55 + Math.random()*0.2,
+            s0: 0.34, s1: 0.06, a0: 0.8 * outK,
+            vx: ux*sp, vy: 0.2 + Math.random()*0.5, vz: uz*sp, grav: 0.1, drag: 0,
+            r: core.r, g: core.g, b: core.b
+          });
+        }
+      });
+    }
+
+    /* 3) 涡核 + 内缩环 */
+    const rk = Math.min(1, t/0.55);
+    ring.scale.setScalar(R*1.05 * (1 - rk*0.9));
+    ring.material.opacity = 0.7 * (1-rk) * outK;
+    eye.quaternion.copy(camera.quaternion);
+    eye.rotateZ(-t*3.4);
+    eye.scale.setScalar(R*0.55 * (1 + Math.sin(t*6)*0.06));
+    eye.material.opacity = 0.32 * e * outK;
+
+    if(k >= 1){
+      scene.remove(ring); scene.remove(eye);
+      this.dead = true;
+    }
+  }});
+};
+
+/* ---- 领域：四种剪影，不是四种颜色 ----
+ *
+ * 旧版所有领域共用同一副骨架（地面圆盘 + 圆柱 + 环墙），只换颜色与贴图 ——
+ * 灰度截图里太极 / 毒雾 / 剑阵 / 法阵读起来是同一个东西。
+ * 现在按 kind 分开：
+ *
+ *   sigil   法阵：地纹 + 中央光柱 + 环墙 + 脉冲      （天师符 / 召唤阵）
+ *   taiji   太极：双鱼地纹 + 两股反向螺旋气旋，没有柱  （太极玄阵）
+ *   mist    雾  ：没有边界、没有柱，只有翻滚的雾团     （蚀骨毒雾）
+ *   blades  剑阵：淡地纹 + 环绕剑影 + 拖尾            （剑阵）
+ *
+ * 外轮廓分别是「圆 + 柱」「双螺旋」「不规则的团」「轨道」，遮住颜色也分得开。
+ * 地纹亮度一律压到 0.85 以下：太极原稿白得压过整个场景，纹路反而看不见。
+ */
 FX.field = function(pos, o = {}){
+  const kind = o.kind || 'sigil';
   const R = o.r || 3.2;
   const life = o.life || 4.5;
-  const texName = o.tex || 'sigil';
   const col = o.color != null ? o.color : C(E().glow);
+  const colCore = C(E().core);
+  const mixE = E2();
   const sigMax = o.opacity != null ? o.opacity : 0.85;
-  const wallMax = o.wall != null ? o.wall : 0.20;
   const spin = o.spin != null ? o.spin : 0.22;
+
   const grp = new THREE.Group();
   grp.position.set(pos.x, 0, pos.z);
   scene.add(grp);
 
-  // 地面法阵
-  const sig = new THREE.Mesh(_plane, new THREE.MeshBasicMaterial({ map: TEX[texName], color: col,
-    transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, fog: false }));
-  sig.rotation.x = -Math.PI/2; sig.position.y = 0.02;
-  sig.scale.setScalar(R*2);
-  grp.add(sig);
+  const mats = [];        // 统一回收的材质
+  const geos = [];
 
-  // 体积柱
-  const colGeo = new THREE.CylinderGeometry(R*0.92, R*0.92, 2.6, 32, 1, true);
-  const colMat = new THREE.MeshBasicMaterial({ map: TEX.beam, color: col, transparent: true,
-    opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false });
-  const colMesh = new THREE.Mesh(colGeo, colMat);
-  colMesh.position.y = 1.3; colMesh.rotation.y = Math.PI/2;
-  grp.add(colMesh);
+  /* 地纹：雾不画 —— 带着一圈清晰圆边的"雾"，读起来是一张绿饼 */
+  let sig = null;
+  if(kind !== 'mist'){
+    const texName = o.tex || (kind === 'taiji' ? 'taiji' : 'sigil');
+    const base = kind === 'taiji'  ? sigMax * 0.46
+               : kind === 'blades' ? sigMax * 0.26
+               : sigMax;
+    const mat = new THREE.MeshBasicMaterial({ map: TEX[texName], color: col,
+      transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, fog: false });
+    sig = new THREE.Mesh(_plane, mat);
+    sig.rotation.x = -Math.PI/2; sig.position.y = 0.02;
+    sig.scale.setScalar(R*2);
+    sig.userData.base = base;
+    grp.add(sig); mats.push(mat);
+  }
 
-  // 边界墙（两层反向旋转）
-  const wallGeo = new THREE.CylinderGeometry(R, R, 1.5, 40, 1, true);
-  const walls = [];
-  [1,-1].forEach((s)=>{
-    const m = new THREE.Mesh(wallGeo, new THREE.MeshBasicMaterial({ map: TEX.beam, color: col,
-      transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending,
-      side: THREE.DoubleSide, fog: false }));
-    m.position.y = 0.55; m.rotation.y = Math.PI/2;
-    m.userData.s = s;
-    grp.add(m); walls.push(m);
-  });
+  /* 柱与环墙只属于法阵。太极换成气旋，雾什么都不长 */
+  let colMesh = null, walls = [];
+  if(kind === 'sigil'){
+    const colGeo = new THREE.CylinderGeometry(R*0.92, R*0.92, 2.6, 32, 1, true);
+    const colMat = new THREE.MeshBasicMaterial({ map: TEX.beam, color: col, transparent: true,
+      opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false });
+    colMesh = new THREE.Mesh(colGeo, colMat);
+    colMesh.position.y = 1.3; colMesh.rotation.y = Math.PI/2;
+    grp.add(colMesh);
+    mats.push(colMat); geos.push(colGeo);
 
-  let t = 0, pulseT = 0;
+    const wallGeo = new THREE.CylinderGeometry(R, R, 1.5, 40, 1, true);
+    geos.push(wallGeo);
+    [1,-1].forEach(sgn=>{
+      const wm = new THREE.MeshBasicMaterial({ map: TEX.beam, color: col, transparent: true,
+        opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false });
+      const m = new THREE.Mesh(wallGeo, wm);
+      m.position.y = 0.55; m.rotation.y = Math.PI/2;
+      m.userData.s = sgn;
+      grp.add(m); walls.push(m); mats.push(wm);
+    });
+  }
+
+  /* 太极的体积感：两根气旋柱，长在两个鱼眼上、跟着双鱼一起转。
+     单靠撒粒子做螺旋，在 51° 俯角下会投影成中心一坨白雾 —— 粒子太细，
+     而"两根柱"是实打实的竖直物体，俯视时最占屏幕的正是竖直方向。 */
+  let taijiCols = [];
+  if(kind === 'taiji'){
+    for(let i=0;i<2;i++){
+      const geo = new THREE.CylinderGeometry(R*0.30, R*0.18, 2.9, 18, 1, true);
+      const mat = new THREE.MeshBasicMaterial({ map: TEX.beam, color: i ? col : colCore,
+        transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending,
+        side: THREE.DoubleSide, fog: false });
+      const m = new THREE.Mesh(geo, mat);
+      m.position.y = 1.45;
+      grp.add(m); taijiCols.push(m); mats.push(mat); geos.push(geo);
+    }
+  }
+
+  /* 雾片：NormalBlending。加色混合的雾会变成一团荧光绿，反而更像光效 */
+  const puffs = [];
+  if(kind === 'mist'){
+    const n = Q() > 0.5 ? 9 : 5;
+    for(let i=0;i<n;i++){
+      const a = Math.random()*Math.PI*2;
+      const rr = Math.sqrt(Math.random()) * R * 0.82;
+      const s0 = R * (0.55 + Math.random()*0.55);
+      const m = billMesh(TEX.smoke, col, 0, THREE.NormalBlending);
+      m.position.set(pos.x + Math.cos(a)*rr, 0.15 + Math.random()*0.3, pos.z + Math.sin(a)*rr);
+      m.scale.set(s0, s0*0.78, 1);
+      m.renderOrder = 6;
+      m.userData = { s0, ph: Math.random()*7, ox: Math.cos(a)*rr, oz: Math.sin(a)*rr,
+                     noBB: true, ry: Math.random()*7 };
+      puffs.push(m); mats.push(m.material);
+    }
+  }
+
+  /* 剑影：剑得是"立着的剑"，不是贴地的弧 —— 贴地弧就是刀气，会跟旋风斩撞 */
+  const swords = [];
+  if(kind === 'blades'){
+    const n = Q() > 0.55 ? 4 : 2;
+    for(let i=0;i<n;i++){
+      const mat = new THREE.MeshBasicMaterial({ map: TEX.blade, color: col, transparent: true,
+        opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending,
+        side: THREE.DoubleSide, fog: false });
+      const m = new THREE.Mesh(_plane, mat);
+      m.userData.noBB = true;
+      m.renderOrder = 5;
+      scene.add(m); mats.push(mat);
+      swords.push({ m, a: i/n*Math.PI*2, r: R*0.74 + (i%2)*0.3,
+                    rib: new Ribbon({ width: 0.5, color: colCore, life: 0.34, segs: 12 }) });
+    }
+  }
+
+  let t = 0, pulseT = 0, spiralAcc = 0, bubbleAcc = 0;
+  const camQ = camera.quaternion;
+
   addUpdate({ update(dt){
-    t += dt; pulseT += dt;
+    t += dt;
     const k = Math.min(1, t/life);
-    // 入场
     const inK = Math.min(1, t/0.35);
-    const outK = k > 0.85 ? 1 - (k-0.85)/0.15 : 1;
-    const e = 1 - Math.pow(1-inK, 3);
-    sig.material.opacity = sigMax * e * outK;
-    sig.scale.setScalar(R*2 * (0.55 + e*0.45));
-    sig.rotation.z += dt * spin;
-    colMat.opacity = 0.06 * e * outK * (0.8 + 0.2*Math.sin(t*3));
-    colMesh.rotation.y += dt * 0.35;
+    const e = 1 - Math.pow(1-inK, 3);                       // 入场缓出
+    const outK = k > 0.85 ? Math.max(0, 1 - (k-0.85)/0.15) : 1;
+
+    if(sig){
+      sig.material.opacity = sig.userData.base * e * outK;
+      sig.scale.setScalar(R*2 * (0.55 + e*0.45));
+      sig.rotation.z += dt * spin;
+    }
+    if(colMesh){
+      colMesh.material.opacity = 0.06 * e * outK * (0.8 + 0.2*Math.sin(t*3));
+      colMesh.rotation.y += dt * 0.35;
+    }
+    const wallMax = o.wall != null ? o.wall : 0.2;
     walls.forEach(w=>{
       w.material.opacity = wallMax * e * outK * (0.75 + 0.25*Math.sin(t*5 + w.userData.s));
       w.rotation.y += dt * 0.55 * w.userData.s;
     });
-    // 边界升起的粒子
-    if(Math.random() < dt*40 * Q()){
-      const a = Math.random()*Math.PI*2;
-      FX.spr(pos.x + Math.cos(a)*R, 0.05, pos.z + Math.sin(a)*R, {
-        tex:'spark', life: 0.9, s0: 0.16, s1: 0, vy: 1.4, a0: 0.8, grav: -0.4,
-        r: col.r, g: col.g, b: col.b
+
+    /* 太极：两根气旋柱长在鱼眼上，跟双鱼图同速公转（sig 的 spin 就是它）。
+       柱里再撒细粒子，让气流是"活的"而不是两根玻璃管。 */
+    if(kind === 'taiji'){
+      const eyeA = sig ? sig.rotation.z : t*spin;
+      taijiCols.forEach((m, i)=>{
+        const a = eyeA + i*Math.PI;
+        m.position.x = Math.cos(a) * R * 0.50;
+        m.position.z = Math.sin(a) * R * 0.50;
+        m.rotation.y += dt * (i ? -2.2 : 2.2);
+        m.material.opacity = (i ? 0.26 : 0.34) * e * outK * (0.8 + 0.2*Math.sin(t*4 + i*2));
+      });
+      spiralAcc += dt;
+      const rate = 0.016 / Math.max(0.4, Q());
+      while(spiralAcc > rate){
+        spiralAcc -= rate;
+        for(let i=0;i<2;i++){
+          const a = eyeA + i*Math.PI + (Math.random()-0.5)*0.9;
+          const rr = R * 0.50 + (Math.random()-0.5)*R*0.36;
+          const y = 0.1 + Math.random()*2.8;
+          const c = i ? col : colCore;
+          FX.spr(pos.x + Math.cos(a)*rr, y, pos.z + Math.sin(a)*rr, {
+            tex: i ? 'smoke' : 'soft', life: 0.6 + Math.random()*0.4,
+            s0: 0.22 + Math.random()*0.2, s1: 0.04, a0: (i ? 0.30 : 0.45) * outK,
+            vx: -Math.sin(a)*(i?-1:1)*0.9, vy: 1.4 + Math.random()*0.7,
+            vz: Math.cos(a)*(i?-1:1)*0.9, grav: -0.3, drag: 0.5,
+            r: c.r, g: c.g, b: c.b
+          });
+        }
+      }
+    }
+
+    /* 雾：只在原地翻滚 + 缓慢鼓泡。没有边界线、没有柱，所以它是一团"气" */
+    if(kind === 'mist'){
+      puffs.forEach((m, i)=>{
+        const ud = m.userData;
+        ud.ry += dt * 0.3;
+        m.quaternion.copy(camQ);
+        m.rotateZ(ud.ry);
+        const br = 1 + Math.sin(t*0.9 + ud.ph)*0.10;
+        m.scale.set(ud.s0*br, ud.s0*0.78*br, 1);
+        m.position.x = pos.x + ud.ox + Math.sin(t*0.5 + ud.ph)*0.22;
+        m.position.z = pos.z + ud.oz + Math.cos(t*0.43 + ud.ph)*0.22;
+        m.position.y = 0.16 + Math.sin(t*0.6 + ud.ph)*0.10;
+        m.material.opacity = 0.30 * e * outK * (0.72 + 0.28*Math.sin(t*1.3 + ud.ph));
+      });
+      bubbleAcc += dt;
+      while(bubbleAcc > 0.07){
+        bubbleAcc -= 0.07;
+        const a = Math.random()*Math.PI*2, rr = Math.sqrt(Math.random())*R*0.78;
+        FX.spr(pos.x + Math.cos(a)*rr, 0.1, pos.z + Math.sin(a)*rr, {
+          tex: 'smoke', life: 0.9 + Math.random()*0.6, s0: 0.28, s1: 0.95, a0: 0.2,
+          vy: 0.32 + Math.random()*0.22, grav: -0.22, drag: 0.85,
+          r: col.r, g: col.g, b: col.b
+        });
+      }
+    }
+
+    /* 剑阵：椭圆轨道，剑身朝切线方向立起来 */
+    if(kind === 'blades'){
+      swords.forEach((s, i)=>{
+        s.a += dt * 2.2;
+        const x = pos.x + Math.cos(s.a) * s.r;
+        const z = pos.z + Math.sin(s.a) * s.r * 0.78;
+        const y = 0.95 + Math.sin(s.a*2 + i) * 0.22;
+        s.m.position.set(x, y, z);
+        s.m.quaternion.copy(camQ);
+        s.m.rotateZ(-s.a + Math.PI/2);
+        s.m.scale.set(0.55, 1.55, 1);
+        s.m.material.opacity = 0.85 * outK;
+        s.rib.push(_tmpA.set(x, y + 0.5, z));
+        s.rib.update(dt);
+        if(Math.random() < dt*6){
+          FX.spr(x, y+0.7, z, { tex:'spark', life:.25, s0:.13, s1:0, a0:.7, grav:0,
+            r: colCore.r, g: colCore.g, b: colCore.b });
+        }
       });
     }
-    // 脉冲
+
+    /* 边界升起的气流：法阵与太极有，雾没有（雾的边界不该被画出来） */
+    if(kind !== 'mist' && kind !== 'blades' && Math.random() < dt*36*Q()){
+      const a = Math.random()*Math.PI*2;
+      /* 边界气流也吃混色：整圈都同色的话，副元素只在地面纹路上才看得见 */
+      const mixed = mixE && Math.random() < MIX.count;
+      const mc = mixed ? C(mixE.glow) : col;
+      FX.spr(pos.x + Math.cos(a)*R, 0.05, pos.z + Math.sin(a)*R, {
+        tex: mixed ? mixE.tex : 'spark', life: 0.9, s0: 0.15, s1: 0, vy: 1.4, a0: 0.75, grav: -0.4,
+        r: mc.r, g: mc.g, b: mc.b
+      });
+    }
+
+    /* 脉冲：雾不画环（一团雾冒出个圆环就露馅了），只让雾整体鼓一下 */
+    pulseT += dt;
     if(pulseT > (o.pulse || 1.6)){
       pulseT = 0;
-      FX.shock(pos, R*1.02, { color: col, dur: 0.55 });
+      if(kind === 'mist'){
+        FX.spr(pos.x, 0.4, pos.z, { tex:'smoke', life:.8, s0:.5, s1:1.6, a0:.2,
+          grav:-.2, r: col.r, g: col.g, b: col.b });
+      } else {
+        FX.shock(pos, R*1.02, { color: col, dur: 0.55 });
+      }
       if(o.onPulse) o.onPulse();
     }
-    if(k >= 1){ scene.remove(grp); colGeo.dispose(); wallGeo.dispose(); this.dead = true; }
+
+    if(k >= 1){
+      scene.remove(grp);
+      mats.forEach(m=>m.dispose());
+      geos.forEach(g=>g.dispose());
+      puffs.forEach(m=>scene.remove(m));
+      swords.forEach(s=>{ scene.remove(s.m); s.rib.destroy(); });
+      this.dead = true;
+    }
   }});
   return grp;
 };
@@ -1809,6 +2723,22 @@ FX.geyser = function(pos, o = {}){
   flash.position.set(pos.x, 0.04, pos.z);
   flash.scale.setScalar(2.2);
 
+  /* 混元素：柱子里再插一片**副色细柱**（更窄、转 45°，30% 强度）。
+     不放进 `planes` 数组 —— 那一组的 opacity 每帧被 maxOp * fade 覆写，
+     副色要按 MIX.alpha 单独算，混在一起就分不开了。
+     `o.noMix` 给元素反应自己用：反应已经是"两种元素调好的配色"，
+     再叠一层副色会把金火柱调脏。 */
+  const e2 = E2();
+  let mixP = null;
+  if(e2 && !o.noMix){
+    mixP = new THREE.Mesh(_plane, new THREE.MeshBasicMaterial({
+      map: TEX[texName], color: C(e2.glow), transparent: true, opacity: 0,
+      depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false }));
+    mixP.position.y = h*0.5;
+    mixP.rotation.y = Math.PI/4;
+    grp.add(mixP);
+  }
+
   let t = 0;
   addUpdate({ update(dt){
     t += dt;
@@ -1820,6 +2750,11 @@ FX.geyser = function(pos, o = {}){
       p.position.y = h*grow*0.5;
       p.material.opacity = maxOp * fade;
     });
+    if(mixP){
+      mixP.scale.set((0.9 + k*0.7) * wScale * 0.66, h*grow, 1);
+      mixP.position.y = h*grow*0.5;
+      mixP.material.opacity = MIX.alpha * fade;
+    }
     flash.material.opacity = 0.85 * (1-k);
     flash.scale.setScalar(2.2 + k*1.6);
     if(k >= 1){ scene.remove(grp); scene.remove(flash); this.dead = true; }
@@ -1987,6 +2922,14 @@ FX.projectile = function(o){
   core.scale.setScalar(o.size || 0.9);
   const glow = billMesh(TEX.soft, o.glow != null ? o.glow : C(E().glow), .55);
   glow.scale.setScalar((o.size || 0.9) * 2.1);
+  /* 混元素：飞行体里再套一层**更小**的副色光晕。
+     夹在主光晕里面（不是外面）—— 外面那圈要留给主元素，否则整个球会被副色吃掉。 */
+  const _e2p = E2();
+  let glow2 = null;
+  if(_e2p){
+    glow2 = billMesh(TEX.soft, C(_e2p.glow), MIX.alpha);
+    glow2.scale.setScalar((o.size || 0.9) * 1.5);
+  }
   const pts = [];
   const rib = new Ribbon({ width: o.trailWidth || 0.55, color: o.color != null ? o.color : C(E().core), life: 0.5, segs: 16 });
   let t = 0;
@@ -1999,6 +2942,7 @@ FX.projectile = function(o){
     const p = _tmpA.copy(from).lerp(to, k);
     p.y += Math.sin(k*Math.PI) * (o.arc || 0.9);
     core.position.copy(p); glow.position.copy(p);
+    if(glow2) glow2.position.copy(p);
     core.scale.setScalar((o.size||0.9) * (1 + Math.sin(t*30)*0.08));
     rib.push(p);
     rib.update(dt);
@@ -2009,6 +2953,7 @@ FX.projectile = function(o){
     }
     if(k >= 1){
       scene.remove(core); scene.remove(glow);
+      if(glow2) scene.remove(glow2);
       rib.destroy();
       if(o.onHit) o.onHit(to);
       this.dead = true;
@@ -2625,44 +3570,52 @@ const SKILLS = {
 /* ---------------- 刀客 ---------------- */
 whirl: {
   cls:'blade', slot:'①', name:'旋风斩', sil:'旋转', cd:0.85,
-  note:'角色周围两到四道<b>倾斜 35° 的刀气</b>绕圈，脚下<b>螺旋气流</b>往上卷；命中时向中心拉出流线，视觉上能看出“吸”。旧版只是外扩一个躺平的圈。',
+  note:'暗黑三那种：<b>几把斧头在同一个水平面上平着转</b>，每把后面拖一条<b>水平尾焰</b>，' +
+        '脚下再给一圈旋转气流。全部同一个高度、一个都不许倾斜 —— 一旦给了倾角，' +
+        '立刻变回"地上三片斜光"。' +
+        '<b>吸怪</b>也不是"命中时拉一把"：外圈粒子<b>螺旋收进中心</b>、每只被吸的怪身上' +
+        '<b>持续抽出一条气</b>、地面环<b>往里缩</b>，怪一段一段被拽过来。',
   v2(c){
     spinPlayer(0.95, 14);
     swingArm();
     lunge(0.5);
-    // 双刀气，父级绕 Y 转
-    [0, Math.PI*2/3, Math.PI*4/3].forEach((off, i)=>{
-      FX.arc(new THREE.Vector3(c.x,0,c.z), {
-        r: 2.0, inner: 1.28, span: 1.32, tilt: 0.62, y: 0.85 + i*0.12,
-        spin: 13, yaw: off, life: 0.95, color: C(E().glow), opacity: 0.8
+    /* 暗黑三那种：几把斧头在**同一个水平面**上平着转。
+       旧版是三道"倾斜 35° 的刀气弧" —— 弧躺在地上又各自斜着抬起来，
+       看着像三片斜光，不像武器在转。 */
+    FX.spinBlades(new THREE.Vector3(c.x,0,c.z), {
+      r: 1.85, n: 3, life: 1.0, y: 1.0, spin: 13, color: C(E().glow)
+    });
+    // 半圈后的补刀：转速回落的一层残影，让"连续转"成立
+    delay(0.34, ()=>{
+      FX.spinBlades(new THREE.Vector3(P.pos.x,0,P.pos.z), {
+        r: 2.1, n: 2, life: 0.6, y: 0.95, spin: 11, color: C(E().glow)
       });
     });
-    // 三道低频残影
-    for(let i=0;i<2;i++){
-      delay(0.1 + i*0.16, ()=>{
-        FX.arc(new THREE.Vector3(P.pos.x,0,P.pos.z), {
-          r: 2.3, inner: 1.3, span: 1.4, tilt: 0.62, y: 0.7, spin: 12,
-          yaw: Math.random()*7, life: 0.4, opacity: 0.4, color: C(E().glow)
+    FX.vortex(new THREE.Vector3(c.x,0,c.z), { life: 1.1, r: 1.9, h: 2.6, color: C(E().glow) });
+    FX.shock(new THREE.Vector3(c.x,0,c.z), 1.5, { color: C(E().glow), dur: 0.34 });
+
+    /* 吸怪（Lv9 台阶）：持续 1.7 秒的抽气场，不是一个瞬间。
+       旧实现是命中时每只怪撒 7 颗向心火星 —— 300ms 就没了，而怪是"啪"地
+       出现在新位置，中间那段位移没有任何交代。
+       FX.suck 画视觉（螺旋吸入 / 从怪身上抽气 / 内缩环），
+       位移按 0.4 秒一拍地收，每一拍都有粒子跟着怪走。 */
+    const C0 = new THREE.Vector3(c.x, 0, c.z);
+    FX.suck(C0, { r: 4.2, dur: 1.7, color: C(E().glow) });
+    for(let i=0;i<4;i++){
+      delay(0.1 + i*0.4, ()=>{
+        enemies.forEach(e=>{
+          if(!e || e.deadT > 0) return;
+          const d = Math.hypot(e.pos.x - C0.x, e.pos.z - C0.z);
+          if(d > 4.2 || d < 1.1) return;
+          const step = Math.min(d*0.34, d - 1.5);
+          e.pos.x += (C0.x - e.pos.x)/d * step;
+          e.pos.z += (C0.z - e.pos.z)/d * step;
         });
       });
     }
-    FX.vortex(new THREE.Vector3(c.x,0,c.z), { life: 1.1, r: 1.9, h: 2.6, color: C(E().glow) });
-    FX.shock(new THREE.Vector3(c.x,0,c.z), 1.5, { color: C(E().glow), dur: 0.34 });
-    // 命中 + 向心流线（“吸怪”的视觉）
+    // 命中
     seq([[0.14, ()=>{
-      const hits = hitArea(c.aim, 2.7, 26, { kb: 0.1, from: c.aim, color:'#ffe6b0' });
-      hits.forEach(e=>{
-        for(let i=0;i<7;i++){
-          const a = Math.random()*7;
-          const sx = e.pos.x + Math.cos(a)*0.9, sz = e.pos.z + Math.sin(a)*0.9;
-          FX.spr(sx, 0.5 + Math.random()*0.8, sz, {
-            tex:'spark', life: .28, s0: .26, s1: 0, a0: .9, grav: 0,
-            vx: (c.x - sx)*5.5, vy: .6, vz: (c.z - sz)*5.5,
-            r: 1, g: .93, b: .78
-          });
-        }
-        FX.burst(new THREE.Vector3(e.pos.x, .8, e.pos.z), { n: 6, speed: 3, life: .3, size: .2 });
-      });
+      hitArea(c.aim, 2.7, 26, { kb: 0.1, from: c.aim, color:'#ffe6b0' });
       hitstop(0.045); shake(0.14);
     }]]);
   },
@@ -2719,41 +3672,25 @@ swords: {
   cls:'blade', slot:'③', name:'剑阵', sil:'环绕轨道', cd:2.4,
   note:'2~4 把半透明<b>剑影沿椭圆轨道绕身</b>，每把剑带短拖尾，剑尖有火花。剑是有高度、有轨道的，所以和“贴地刀气”完全区分得开。',
   v2(c){
-    const cnt = 4;
-    const blades = [];
-    for(let i=0;i<cnt;i++){
-      const m = billMesh(TEX.blade, C(E().glow), 1);
-      m.scale.set(0.62, 1.7, 1);
-      m.userData.noBB = true;
-      blades.push({ m, a: i/cnt*Math.PI*2, r: 2.0 + (i%2)*0.35, rib: new Ribbon({ width: 0.55, color: C(E().core), life: 0.38, segs: 14 }) });
-    }
-    let t = 0;
+    /* 剑阵交给 FX.field(kind:'blades') 统一管：
+       它自带淡地纹 + 椭圆轨道上的剑影 + 每把剑的拖尾，
+       和太极（圆）、毒雾（团）、火墙（线）是同一套骨架的四种外形。
+       旧版自己 new 四把剑、外面什么都不长，看起来是"四条白光在绕人"。 */
+    const pos = new THREE.Vector3(c.x, 0, c.z);
     const life = 2.6;
+    FX.field(pos, { kind:'blades', r: 2.9, life, color: C(E().glow), pulse: 1.3,
+      onPulse(){ hitArea(pos, 3.2, 9, { color:'#cfe6ff' }); } });
+    /* 剑还会"割"—— 每 0.45 秒补一次小判定，跟剑绕圈的节奏对上，
+       只有脉冲的话 1.3 秒才打一下，手感会变成"站着等" */
+    let t = 0;
     addUpdate({ update(dt){
       t += dt;
-      const fade = t > life-0.4 ? Math.max(0, (life-t)/0.4) : 1;
-      blades.forEach((b, i)=>{
-        b.a += dt * 2.6;
-        const x = c.x + Math.cos(b.a) * b.r, z = c.z + Math.sin(b.a) * b.r * 0.8;
-        const y = 0.95 + Math.sin(b.a*2 + i) * 0.25;
-        b.m.position.set(x, y, z);
-        b.m.quaternion.copy(camera.quaternion);
-        b.m.rotateZ(-b.a + Math.PI/2);
-        b.m.material.opacity = 0.9 * fade;
-        b.rib.push(new THREE.Vector3(x, y + 0.55, z));
-        b.rib.update(dt);
-        if(Math.random() < dt*8) FX.spr(x, y+0.7, z, { tex:'spark', life:.25, s0:.14, s1:0, a0:.7, grav:0, vy:.4 });
-      });
-      if(Math.random() < dt*3){
-        hitArea(c.aim, 3.4, 9, { color:'#cfe6ff' });
-      }
-      if(t >= life){
-        blades.forEach(b=>{ scene.remove(b.m); b.rib.destroy(); });
-        this.dead = true;
+      if(t < life - 0.3 && Math.random() < dt*2.2){
+        hitArea(pos, 3.4, 6, { color:'#cfe6ff' });
       }
     }});
     seq([[0.12, ()=>{
-      FX.shock(new THREE.Vector3(c.x,0,c.z), 2.2, { color: C(E().glow), dur: 0.4 });
+      FX.shock(pos, 2.2, { color: C(E().glow), dur: 0.4 });
       FX.burst(new THREE.Vector3(c.x,1.2,c.z), { n: 16, speed: 5, life: .5, size: .25 });
     }]]);
     addBuff('swordArray', 3);
@@ -3309,7 +4246,7 @@ taiji: {
   note:'地面<b>双鱼图旋转</b>（不是纯色圆），边界升起一圈符文墙，每 1.6 秒一次脉冲。领域四件套：地面纹 / 边界墙 / 体积柱 / 脉冲。',
   v2(c){
     const pos = new THREE.Vector3(c.tx, 0, c.tz);
-    FX.field(pos, { r: 3.4, life: 6, tex: 'taiji', color: C(0xbfe6ff), pulse: 1.6,
+    FX.field(pos, { kind:'taiji', r: 3.4, life: 6, color: C(0xbfe6ff), pulse: 1.6,
       opacity: 0.66, wall: 0.14, spin: 0.42,
       onPulse(){ hitArea(pos, 3.4, 12, { color:'#bfe6ff' }); } });
     // 额外一层阴阳升腾
@@ -4355,7 +5292,7 @@ poison: {
   note:'一片<b>绿色毒雾留在原地</b>，持续冒泡、缓慢翻滚。它是"气团"，没有边界线，和法阵的清晰边框正相反。',
   v2(c){
     const pos = new THREE.Vector3(c.tx, 0, c.tz);
-    FX.field(pos, { r: 3.0, life: 4.5, tex: 'soft', color: C(0x7fbf5a), pulse: 1.0,
+    FX.field(pos, { kind:'mist', r: 3.0, life: 4.5, color: C(0x7fbf5a), pulse: 1.0,
       opacity: 0.30, wall: 0.06, spin: 0.16,
       onPulse(){ hitArea(pos, 3.0, 10, { color:'#7fbf5a' }); } });
     let t = 0;
@@ -4575,6 +5512,7 @@ function aimPoint(){
 }
 
 let now = 0;
+let _reactAt = -9;          // 上一次反应的时刻（秒），用于限流
 const CD_SWEEP = {};
 function cast(key){
   const s = SKILLS[key]; if(!s) return;
@@ -4597,6 +5535,21 @@ function cast(key){
   const ctx = ctxOf(aim);
   if(mode === 'v2') s.v2(ctx); else (s.legacy || legacyFallback)(ctx);
   if(el) el.scrollIntoView;
+
+  /* ---- 元素反应：技能命中时把"主元素 × 副元素"交给 FX.react ----
+   * 位置用 aim（这一发打向哪儿），不用玩家脚下 —— 反应要发生在命中的地方。
+   * 延时 0.42s 落在技能中段：起手那一下已经有 burst 了，两个叠在一起会糊。
+   * 限流 0.9s：连点同一个键时不该每次都炸，否则反应变成背景噪音。
+   * 只有四种组合接了反应（火冰 / 火雷 / 冰雷 / 火毒），其余组合
+   * REACT_FX 里没有键，静默跳过 —— 这时混元素仍然只有混色，是设计如此。 */
+  if(curElem2 && curElem2 !== curElem){
+    const rk = [curElem, curElem2].sort().join('|');
+    if(REACT_FX[rk] && now - _reactAt > 0.9){
+      _reactAt = now;
+      const rp = aim.clone();
+      seq([[0.42, ()=>FX.react(rp, curElem, curElem2)]]);
+    }
+  }
 }
 
 function syncPanel(){
@@ -4976,9 +5929,29 @@ Object.keys(ELEMS).forEach(k=>{
       x.style.color = on ? '#0a0a0a' : '';
     });
     FX.enchant(true, C(ELEMS[k].glow));
+    if(typeof renderElem2 === 'function') renderElem2();   // 主副撞色时高亮要跟着变
   };
   segElem.appendChild(b);
 });
+
+/* 副元素：同一套按钮逻辑，但"无"是一个合法选项（= 不混） */
+const segElem2 = document.getElementById('segElem2');
+function renderElem2(){
+  segElem2.innerHTML = '';
+  const list = [['', '无'], ...Object.keys(ELEMS).map(k=>[k, ELEMS[k].name])];
+  list.forEach(([k, nm])=>{
+    const b = document.createElement('button');
+    b.dataset.v = k;
+    b.textContent = nm;
+    const on = (curElem2 || '') === k;
+    b.classList.toggle('on', on);
+    b.style.background = on ? (k ? '#' + ELEMS[k].glow.toString(16).padStart(6,'0') : 'rgba(255,255,255,.10)') : 'rgba(255,255,255,.02)';
+    b.style.color = on && k ? '#0a0a0a' : '';
+    b.onclick = ()=>{ curElem2 = k || null; renderElem2(); toast(k ? ('混合：' + (ELEMS[curElem].name) + ' + ' + nm) : '不再混元素'); };
+    segElem2.appendChild(b);
+  });
+}
+renderElem2();
 
 document.getElementById('segCam').addEventListener('click', e=>{
   const b = e.target.closest('button'); if(!b) return;
@@ -5094,6 +6067,9 @@ if(qs.get('old') === '1'){
   document.getElementById('optOld').checked = true;
 }
 if(qs.get('elem') && ELEMS[qs.get('elem')]){ curElem = qs.get('elem'); FX.enchant(true, C(ELEMS[curElem].glow)); }
+/* 混元素也能从 URL 进来：?elem=fire&elem2=thunder（截图/回归用） */
+if(qs.get('elem2') && ELEMS[qs.get('elem2')]) curElem2 = qs.get('elem2');
+if(typeof renderElem2 === 'function') renderElem2();
 if(qs.get('speed')) TIME.scale = parseFloat(qs.get('speed'));
 if(qs.get('q')) quality = parseFloat(qs.get('q'));
 if(qs.get('start') === '1'){
