@@ -24,6 +24,28 @@
 - 旧的 `*.app.workbuddy.host/?sharecode=...` **已废弃**，不要再往里发。
 - Pages 有 CDN 缓存。脚本里都加了 `?t=<时间戳>` 绕缓存；人工验证没效果先强刷。
 
+### 2.1 分支预览（不影响正式站）
+
+**做法：`main` 的 `preview/<slug>/` 子目录。** 正式站根目录一个字节都不动。
+
+```bash
+./dev/publish-preview.sh                        # 当前分支 → preview/<分支名>/
+./dev/publish-preview.sh feat/act-expansion     # 指定分支
+./dev/publish-preview.sh --list                 # 看已有预览
+./dev/publish-preview.sh --rm act-expansion     # 下线
+./dev/publish-preview.sh feat/act-expansion --dry   # 只在本地生成，不提交
+node dev/preview-check.js --url <预览地址>       # 回归：能开局 + 资源不越界 + 存档隔离
+```
+
+- 地址形如 `https://718997675.github.io/jiuxiao-arpg/preview/act-expansion/`
+- **为什么是子目录而不是「分支自动发布」**：Pages 项目站点**只有一个发布源**（main 根），
+  没有任何设置能让分支 X 发布到子路径。子目录是唯一能做到「同域名、不同 path、不碰正式站」的办法。
+- **代价几乎为零**：副本与根目录文件内容相同，git 按 blob 去重，仓库不会真多 8MB。
+- **存档必须隔离**：预览站和正式站**同源**，不隔离的话在预览站玩一局会覆盖正式站进度。
+  `dev/preview-inject.js` 给副本的 `index.html` 注入 `localStorage` 前缀 `__pv:`，
+  并把 `<title>` 改成 `[预览] ...`。**别删这段注入**，也别忘了它只作用于副本。
+- 预览目录内容由脚本生成，**不要手改**；改了分支重新跑一遍脚本即可。
+
 ## 3. 开发环境
 
 - 用户在 **Windows** 上开发。仓库早期在 macOS 写的，部分 `dev/*.js` 仍硬编码 macOS Chrome 路径。
@@ -60,6 +82,7 @@ node dev/smoke.js            # 三职业开局冒烟，零 pageerror 才算过
 node dev/mobile-layout.js    # 6 视口 × 10 页签：键位重叠/出屏/裁切/可滚性
 node dev/live-check.js       # 线上能否开局（推完 30~60s 后跑）
 node dev/mobile-layout.js --live   # 线上版布局回归
+node dev/preview-check.js --url <预览地址>   # 预览站：能开局 + 资源不越界 + 存档隔离
 ```
 
 ## 6. 踩过的坑（改之前先看一眼，能省几小时）

@@ -23,8 +23,8 @@ if (argv[0] === '--url' && argv[1]) URL = argv[1];
 else if (argv[0] && argv[0] !== '--url') URL = 'http://127.0.0.1:8765/preview/' + argv[0] + '/';
 const IS_LOCAL = /127\.0\.0\.1|localhost/.test(URL);
 if (!URL.includes('?')) URL += '?t=' + Date.now();
-// 同源的正式站根地址，用来做存档隔离的黑盒对照
-const ROOT_URL = IS_LOCAL ? URL.replace(/\/preview\/.*$/, '/') : null;
+// 同源的正式站根地址，用来做存档隔离的黑盒对照（预览站与正式站同源，这正是要防的）
+const ROOT_URL = /\/preview\/[^/]+\/?/.test(URL) ? URL.replace(/\/preview\/.*$/, '/') : null;
 
 (async () => {
   const browser = await puppeteer.launch({
@@ -59,14 +59,22 @@ const ROOT_URL = IS_LOCAL ? URL.replace(/\/preview\/.*$/, '/') : null;
   await page.mouse.click(box.x, box.y);
   await wait(2500);
 
-  const before = await page.evaluate(() => (typeof Game !== 'undefined' && Game.playerGroup)
+  const readPos = () => page.evaluate(() => (typeof Game !== 'undefined' && Game.playerGroup)
     ? [+Game.playerGroup.position.x.toFixed(1), +Game.playerGroup.position.z.toFixed(1)] : null);
+  const before = await readPos();
+
   // headless 下 page.keyboard 常因页面没焦点而丢事件，直接驱动 Game.keys 更稳。
   // 键盘映射本身由 dev/smoke.js 覆盖，这里只验「站点能跑、人物能动」。
+  // 线上首次加载有 CDN 延迟，开局头一两秒可能还锁着输入 —— 轮询最多 6 秒，别用固定等待。
   await page.evaluate(() => { if (typeof Game !== 'undefined' && Game.keys) Game.keys['w'] = true; });
-  await wait(700);
+  let after = before, moved = false;
+  for (let i = 0; i < 30 && !moved; i++) {
+    await wait(200);
+    after = await readPos();
+    if (before && after && (Math.abs(after[0] - before[0]) + Math.abs(after[1] - before[1]) > 0.2)) moved = true;
+  }
   await page.evaluate(() => { if (typeof Game !== 'undefined' && Game.keys) Game.keys['w'] = false; });
-  await wait(400);
+  await wait(300);
 
   const st = await page.evaluate(() => {
     // 资源来源：本地脚本/音频/模型是否都落在预览目录下
@@ -91,8 +99,7 @@ const ROOT_URL = IS_LOCAL ? URL.replace(/\/preview\/.*$/, '/') : null;
     };
   });
 
-  const moved = before && st.pos ? (Math.abs(st.pos[0] - before[0]) + Math.abs(st.pos[1] - before[1]) > 0.2) : false;
-  console.log('AFTER START:', JSON.stringify({ hasGame: st.hasGame, running: st.running, map: st.map, lvl: st.lvl, pos: st.pos, moved, fatal: st.fatal }));
+  console.log('AFTER START:', JSON.stringify({ hasGame: st.hasGame, running: st.running, map: st.map, lvl: st.lvl, from: before, pos: st.pos, moved, fatal: st.fatal }));
   console.log('RESOURCES:', st.resTotal, '个本地资源，越界', st.resOutside.length, st.resOutside.length ? JSON.stringify(st.resOutside) : '');
 
   // ---------- 存档隔离（黑盒：预览写 → 正式站读） ----------
