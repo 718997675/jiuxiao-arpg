@@ -334,6 +334,21 @@ const SKILL_BEH = {
   } },
   afterDebuff: { ph: 'self', label: '之后削弱', run() { /* 由 afterBuff 一并消费 */ } },
 
+  /* [P2b] 命中点火海（台阶专用）：在**命中点**留一片火，而不是在「落点」。
+   * 火球是 dir 施法，落点恒在射程尽头（16 码），行为层那套「以落点为圆心」
+   * 的近似对它等于永远打空 —— 所以这一条由 fireball case 的 onHit 消费。 */
+  firePatch: { ph: 'hook', label: '命中火海', run() { /* 由 fireball case 的 onHit 消费 */ } },
+
+  /* [P2b] 回怒倍率（台阶专用）：whirl case 那一发固定回 8 点，这里给倍数。
+   * 不复用 ragePerHit —— 那是「每命中一个 +N」，两套口径叠在一起会重复计。 */
+  rageMul: { ph: 'hit', label: '回怒倍率', run() { /* 由 whirl case 消费 */ } },
+
+  /* [P2b] 自动索敌（台阶专用）：不瞄准也能打。
+   * castSkill 在 resolveCast 之后消费：值 = 搜索半径，范围内找最近的敌人
+   * 把 aim 挪过去。放在 castSkill 而不是 handler 里，是因为落点必须在
+   * 进入 switch 之前定死（各技能 case 都读 aim），handler 阶段已经晚了。 */
+  autoTarget: { ph: 'hook', label: '自动索敌', run() { /* 由 castSkill 消费 */ } },
+
   /* 落点改自身：在 castSkill 里、switch 之前就消费掉了（`aim = pp`），
    * 这里只做登记 —— 技能 case 不用各自判断 */
   selfCast: { ph: 'self', label: '自身施法', run() { /* 由 castSkill 消费 */ } },
@@ -1026,20 +1041,29 @@ Object.assign(Game, {
     return mergeSkillMods.apply(null, parts);
   },
 
-  /* 分支带来的行为修正：精研 + 取向 + 变体（第三层） */
+  /* 分支带来的行为修正：台阶（等级送）+ 精研 + 取向 + 变体（第三层） */
   branchBeh(id) {
     const e = this.skillState()[id];
     const lv = (e && e.lv) || 1;
     const br = skillBranches(id);
-    if (!br) return null;
     const parts = [];
-    if (skillBranchCoreOn(lv) && br.core) parts.push(br.core.beh);
-    const p = this.branchPick(id);
-    if (p >= 0 && br.pick[p]) parts.push(br.pick[p].beh);
-    /* 变体只在整只技能切到 form 通道时才叠（否则仍走旧 variants） */
-    if (this.hasSkillForm(id) && br.form.length) {
-      const fo = br.form[this.skillForm(id)];
-      if (fo) parts.push(fo.beh);
+    /* [P2b] 台阶行为排最前：它是等级白送的「基底形态」，
+     * 精研 / 取向 / 变体会依次覆盖同名键 —— 玩家花点选的东西必须盖过它。
+     * 反过来（台阶放后面）就是「选了疾风变体，参数被台阶换回默认值」，
+     * 选项被吃掉，比没做还糟。 */
+    const tbh = (typeof skillTierBeh === 'function')
+      ? skillTierBeh(id, (typeof this.skillLevel === 'function') ? this.skillLevel(id) : lv)
+      : null;
+    if (tbh) parts.push(tbh);
+    if (br) {
+      if (skillBranchCoreOn(lv) && br.core) parts.push(br.core.beh);
+      const p = this.branchPick(id);
+      if (p >= 0 && br.pick[p]) parts.push(br.pick[p].beh);
+      /* 变体只在整只技能切到 form 通道时才叠（否则仍走旧 variants） */
+      if (this.hasSkillForm(id) && br.form.length) {
+        const fo = br.form[this.skillForm(id)];
+        if (fo) parts.push(fo.beh);
+      }
     }
     const out = {};
     let any = false;

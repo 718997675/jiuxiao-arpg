@@ -3,15 +3,17 @@
 - 分支：`feat/skill-refactor`（优先级 **低**，排在大型扩展之后）
 - 计划文档：`docs/SKILL-REDESIGN-PLAN.md`（16 节）
 - 预览站：暂不发（2026-10-27 用户口径：本地验证即可，别再折腾线上）
-- 更新：2026-10-28 00:05 · P2a 等级上限 5 → 10 + 分段曲线接线 + 点数供给 ×1.5
+- 更新：2026-10-28 01:00 · P2b 收口（数量台阶 Lv3/Lv7 + 进化台阶 Lv5/Lv9/Lv10 首批 4 条）
 
-> 当前：**P0 + P1a + P1b + P1c + P1d + P2a 完成**。动作条 5 格、格位 = 功能位；
+> 当前：**P0 + P1a + P1b + P1c + P1d + P2a + P2b 完成**。动作条 5 格、格位 = 功能位；
 > 技能树已按「三线并行」结算 —— 没有必点主干、没有主动↔被动二选一，
 > 只有角色等级门与关键被动的「该线 ≥5 点」软前置；
 > 面板一条线一列、列内按等级门槛递增，被动小一圈挂在主动右边；
 > **等级上限已是 10，伤害走 skillLvMul 分段曲线（10 级 1.72 倍 / 20 级 2.02 倍），
 > 技能点供给 = 等级 × 1.5（40 级 60 点）**。
-> 还没接的是「数量 / 形态台阶」（Lv3 / Lv7 多发、Lv5 / Lv9 / Lv10 进化）—— P2b。
+> 台阶也接进战斗了：Lv3 / Lv7 走 `smod.count`（多发带 0.85^n 递减），
+> Lv5 / Lv9 / Lv10 走行为键（已接旋风斩余震 / 旋风斩吸怪 / 回怒翻倍 /
+> 火球火海 + 半径 / 飞弹自动索敌），**没实装的位置面板照旧带「待」角标**。
 
 ## 一句话现状
 
@@ -33,32 +35,47 @@ P1 起才动 `SKILL_BAR_SLOTS` 与面板的三列树。
 | P1c | **取消二选一**：三线并行结算（等级门 `reqLv` + 关键被动软前置 `needPts`），`levelUpSkill` / `levelUpPassive` 的 fork 拦截整块删除，面板去掉「或/锁」标记与互斥虚线，说明页同步 | ✅ | `data-skill-tree.js`、`game.js`、`skill-passive.js`、`ui-skills.js`、`ui.js`、`index.html` | `dev/test-skill-p1c.js` 353 · `dev/probe-skill-p1c.js` 23 |
 | P1d | 面板**视觉**重排：一条线一列、列内按 `reqLv` 递增，被动小一圈挂在主动右边，只留同线淡引导线；手机上三条线分页签、一页一列 | ✅ | `ui-skills.js`（`skTreeLayout` / `skTreeHTML` / `renderSkillTreeDOM` / `skTreeTabsHTML`）、`index.html`（SKG + 被动腰围）、`ui.js`（说明页「技能树布局」） | `dev/probe-skill-p1d.js` 36 |
 | P2a | **等级上限 5 → 10** + 分段曲线真的进战斗（`skillLvMul` 取代旧「每级固定 8%」）+ 点数供给 等级 × 1.5；面板 10 格 / 满级金环 / 洗点全额退回 | ✅ | `data-skills.js`（`SKILL_LV_MAX` / `SKILL_POINT_RATE` / `skillPointPool`）、`data-skill-tree.js`（`lvMax` 同源）、`game.js`（`castSkill` / `skillPoints`）、`ui-skills.js`、`ui.js`、`index.html` | `dev/test-skill-p2.js` 41 · `dev/probe-skill-p2.js` 26 |
-| P2b | **数量 / 形态台阶接进 `castSkill`**：Lv3 / Lv7 多发（`smod.count`）、Lv5 / Lv9 / Lv10 进化（每个技能位一条行为分支），台阶文案与实装对齐 | ⬜ | `skill-beh.js`、`game.js`、`data-skills.js`（`SKILL_TIER_FX`） | — |
+| P2b | **数量 / 形态台阶接进 `castSkill`**。①数量：Lv3 / Lv7 各 +1，接 `smod.count`（9 处技能消费），第 n 发 ×0.85^n 防三倍伤害。②进化：新建 `SKILL_TIER_EVO`（挂**技能 id** 不挂技能位），合并顺序 **台阶最前 → 精研 / 取向 / 变体覆盖同名键**（花点的选择必须盖过等级送的）。已接 4 条：旋风斩 Lv5 原地余震 / Lv9 吸怪 / Lv10 回怒 ×2、火球 Lv5 爆炸 +50% + 命中点火海、飞弹 Lv10 自动索敌；`aftershock` 复用旧行为通道，`firePatch` / `rageMul` / `autoTarget` 三个新键在 `SKILL_BEH` 登记 | ✅ | `data-skills.js`（`SKILL_TIER_EVO` / `skillTierEvo` / `skillTierMods` / `skillTierBeh`）、`skill-beh.js`（`branchBeh` 台阶排最前）、`game.js`（autoTarget / rageMul / firePatch 三处消费）、`ui.js`（说明页「进化台阶」读数现算）、`ui-skills.js` | `dev/test-skill-p2b.js` 160 · `dev/probe-skill-p2b.js` 50 |
 | P2c | 精通层 11~20：光效随等级变亮、Lv15 精通小质变（统一三选一模板），不新增形态 | ⬜ | `src/fx.js`、`skill-beh.js` | — |
 | P3 | 元素注入 + 反应表：伤害管线支持双元素、特效混色、词缀口径 | ⬜ | 战斗 + 词缀 + `src/fx.js` | — |
 | P4 | 三职业独立 ⑤ 号位：刀客兵形/刃势、法师法相、道士召唤 | ⬜ | `src/fx.js`、`src/charforge.js` | — |
 | P5 | 形态进化表现：5 槽 × 3 职业 × 3 段 = 45 套 | ⬜ | `src/fx.js`、模型 | — |
 | P6 | 平衡、洗点、老档兼容回归 | ⬜ | — | — |
 
-## 下一步（P2b：数量 / 形态台阶接进战斗）
+## P2b 收口要点（留给以后吵架用）
 
-P2a 已经把「等级 → 数值」接通（10 级 1.72 倍），但**台阶文案还是只写在数据里**：
-`slot.tiers` 写着 Lv3 双发、Lv7 三连斩、Lv5 旋风斩可移动 —— 战斗目前一个都没实现。
+1. **进化台阶挂技能 id，不挂技能位**。刀客 ② 里躺着 `quake` / `leap` / `thrust` / `execute` /
+   `skysfall` 五个技能，而「地裂持续 2 秒」只该长在 `quake` 上 —— 挂位上等于一接全接。
+2. **合并顺序：台阶最前，精研 / 取向 / 变体依次覆盖**。台阶是等级白送的基底形态，
+   玩家花点选的东西必须盖过它。反过来就是「选了疾风变体，`move` 被台阶换回默认值」，
+   选项当场被吃掉。契约钉住 `parts.push(tbh)` 必须在 `push(br.core.beh)` 之前。
+3. **Lv5 旋风斩没用 `move`，改用了 `aftershock`**。变体 Ⅰ「疾风」本来就带 `move`，
+   而它是默认变体（没选过也是 0 号）—— 台阶用同一个键，默认配置下永远看不到区别。
+   面板文案同步从「旋风斩可移动」（空话，引擎本来就没有施法锁定）改成「横扫后原地余震 2 秒」。
+4. **火球火海必须写在命中点**。行为层的 `c.center` 是「落点」，而 dir 施法的落点恒在射程
+   尽头（16 码）—— 拿它点火等于在空气里烧，玩家什么都看不到。所以 `firePatch` 由
+   fireball case 的 `onHit` 消费，不走通用落点那套。
+5. **`autoTarget` 必须在 switch 之前挪 aim，且要同时改 `dir`**。各技能 case 直接读 `aim`；
+   而投射物技能读的是 `dir`，只挪落点的话弹道还朝老方向飞。
+6. **`rageMul` 不复用 `ragePerHit`**。后者是「每命中一个 +N」，与「回流」双重计时会变成回怒三四倍。
 
-做的时候按这个顺序，别一次全铺：
+## 下一步：特效（P2c 之前先做表现层）
 
-1. **数量台阶先做**（Lv3 / Lv7 各 +1）：通道现成，`smod.count` 已经被 9 处技能消费
-   （`whirl` 之外的连发 / 多片 / 多落点 / 多数符）。新增 `SKILL_TIER_FX` 只在
-   3 / 7 两级给 `count`，接进 `effSkillMods`，**不碰 `castSkill` 的 switch**。
-   注意「单发递减」：第 n 发 ×0.85^n，否则 3 发直接三倍伤害（方案 §13）。
-2. **进化台阶（5 / 9 / 10）逐个技能做**，一个技能一个 commit。第一批挑已有 beh 的
-   （旋风斩跟随 / 火球爆炸 / 白虎扑咬），能复用 `skill-beh.js` 的通道。
-   没有 beh 通道的（`quake` 地裂持续、`warcry` 免疫控制）要新写相位，单独排。
-3. **台阶文案与实装必须同步**：`slot.tiers` 写了什么就实现什么，实现不了就把文案改掉。
-   说明页与面板都读这张表，改文案不用改 UI —— 但**改了不实现就是骗人**。
+下一段做 **`docs/SKILL-VFX-PLAN.md` 的 V1/V2 表现层**，分三块推进（用户 2026-10-28 口径）：
 
-验收：`dev/test-skill-p2b.js`（新增，按技能断言 count / beh 是否在对应等级生效）+
-`probe-skill-p2.js` 扩一节「3 级真的打两发」。
+1. **领域特效** —— 现在五个领域（太极 / 火墙 / 毒雾 / 雷云 / 剑阵）都是 `FX.area` 的
+   一个圆片 + 一个边沿环，只换颜色，剪影完全一样。要按方案 §5 的 `field()` 四件套做
+   （地面符文纹 / 边界粒子墙 / 中央半透明柱 / 脉冲环），**且四者剪影必须互不相同**。
+2. **变体特效** —— 重点是**吸怪（聚怪）要有真实感**：现在数值上把怪拉近，视觉上没有任何
+   交代。方案 §7 第 5 条：命中瞬间小冲击 + 每命中一个向中心拉的流线（`spr` 流线），
+   让人一眼看出「被吸过来」。其余变体特效按 `data-form-fx.js` 的 11 种风格逐个看效果优化。
+3. **元素混合特效** —— 双元素命中时混色 + 反应（P3 的表现层前置），走同一套解释器。
+
+原则（沿用方案 §13 的两条硬约束）：① 两套特效系统必须合并成同一解释器
+`FX2.play(recipe, ctx)`，`FORM_FX` 作为子集保留 key，别改一处忘一处；
+② 所有新原语要有 `field` / `zone` 的 fallback，手机端预算不能超（同屏粒子 / drawcall 上限）。
+
+验收：`dev/probe-vfx-*.js` 真机截图对剪影 + 全技能冒烟零报错 + 手机 380px 不溢出。
 
 ## P2a 的两个取舍（留给以后吵架用）
 

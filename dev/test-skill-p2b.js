@@ -35,7 +35,13 @@ const skillTierCount = pick('skillTierCount');
 const skillCountDmgPct = pick('skillCountDmgPct');
 const skillTierMods = pick('skillTierMods');
 const skillArchList = pick('skillArchList');
+const skillArchSlot = pick('skillArchSlot');
+const skillArchSlotOf = pick('skillArchSlotOf');
 const skillSlotTierDone = pick('skillSlotTierDone');
+const SKILL_TIER_EVO = pick('SKILL_TIER_EVO');
+const skillTierEvoList = pick('skillTierEvoList');
+const skillTierEvo = pick('skillTierEvo');
+const skillTierBeh = pick('skillTierBeh');
 const SKILL_TIERS = pick('SKILL_TIERS');
 
 let pass = 0, fail = 0;
@@ -248,15 +254,19 @@ console.log('六、文案与实装对齐');
   ok(empty.length === 0, '已实装的台阶必须有文案（面板要能读到）', empty);
 }
 {
-  /* 反过来：进化台阶（5 / 9 / 10）现在全都没接 —— 面板必须标「待」。
-   * 哪天接了，这条会变红提醒把它从「待」里挪出来。 */
-  let doneEvo = [];
+  /* 进化台阶：登记了 = 已实装、没登记 = 面板标「待」。**两个方向都查** ——
+   * 只查「没登记的不许实装」会让实装之后仍然标「待」，面板反过来骗人。 */
+  let bad = [];
   for (const cls of CLASSES) {
     for (const slot of skillArchList(cls)) {
-      for (const lv of [5, 9, 10]) if (skillSlotTierDone(cls, slot.no, lv)) doneEvo.push(cls + slot.no + ' Lv' + lv);
+      for (const lv of [5, 9, 10]) {
+        const done = skillSlotTierDone(cls, slot.no, lv);
+        const has = (slot.inherit || []).some(id => !!SKILL_TIER_EVO[id] && !!SKILL_TIER_EVO[id][lv]);
+        if (done !== has) bad.push(cls + slot.no + ' Lv' + lv + ' done=' + done + ' has=' + has);
+      }
     }
   }
-  ok(doneEvo.length === 0, 'P2b 第一批只做数量台阶：进化台阶应全部仍为「待实装」', doneEvo.slice(0, 5));
+  ok(bad.length === 0, '每位每级：面板「待」状态 == evo 表是否登记（双向）', bad.slice(0, 6));
   /* 台阶表本身要有这些等级，否则面板画不出「待」 */
   ok(SKILL_TIERS.visible.join(',') === '1,3,5,7,9,10', '可见台阶仍是 1/3/5/7/9/10', SKILL_TIERS.visible);
 }
@@ -268,6 +278,86 @@ console.log('六、文案与实装对齐');
     '台阶数据只有一张表（数量台阶走 SKILL_TIER_COUNT，不再另开 SKILL_TIER_FX）');
   ok(typeof SKILL_ARCHETYPE.classes.warrior.slots[0].tiers === 'object',
     '技能位文案表仍是唯一来源（面板 / 说明页都读它）');
+}
+
+/* ============================================================
+ * 七、进化台阶（Lv5 / Lv9 / Lv10）
+ *
+ * 这一节的判据只有一句：**文案 == 实装**。
+ *   · evo 表里登记了什么，面板就该不带「待」；
+ *   · 面板上写了什么，evo 表里的 label 就必须逐字相同；
+ *   · evo 里用到的 beh 键必须在 skill-beh.js 里登记过（没登记 = 静默失效）。
+ * ============================================================ */
+console.log('七、进化台阶（Lv5 / Lv9 / Lv10）');
+const behSrc = readSrc('src/skill-beh.js');
+{
+  const ids = Object.keys(SKILL_TIER_EVO);
+  ok(ids.length >= 2, '至少接了两个技能的进化台阶', ids);
+  for (const id of ids) {
+    ok(!!SKILLS[id], id + ' 是真实技能');
+    const lvs = Object.keys(SKILL_TIER_EVO[id]).map(Number).sort((a, z) => a - z);
+    ok(lvs.every(l => [5, 9, 10].includes(l)), id + ' 只登记 5 / 9 / 10（4/6/8 是纯数值）', lvs);
+    for (const lv of lvs) {
+      const e = SKILL_TIER_EVO[id][lv];
+      ok(!!e.label && e.label.length > 1, id + ' Lv' + lv + ' 有 label（面板要对账）');
+      ok(!!(e.mods || e.beh), id + ' Lv' + lv + ' 至少给 mods 或 beh（空条目等于没做）');
+    }
+    /* 文案逐字一致：面板读 slot.tiers，实装看 evo 表 —— 两处不同步就是骗人 */
+    for (const cls of CLASSES) {
+      const no = skillArchSlotOf(cls, id);
+      if (!no) continue;
+      const slot = skillArchSlot(cls, no);
+      for (const lv of lvs) {
+        ok((slot.tiers || {})[lv] === SKILL_TIER_EVO[id][lv].label,
+          id + ' Lv' + lv + '：面板文案 == evo label', { tiers: (slot.tiers || {})[lv], label: SKILL_TIER_EVO[id][lv].label });
+      }
+    }
+  }
+
+  /* 累积语义：10 级同时拥有 5 / 9 / 10 三层，精进层不掉台阶 */
+  ok(skillTierEvoList('whirl', 4).length === 0, 'Lv4 还没到第一个进化台阶');
+  ok(skillTierEvoList('whirl', 5).join(',') === '5', 'Lv5 只有 5');
+  ok(skillTierEvoList('whirl', 9).join(',') === '5,9', 'Lv9 累积 5 + 9');
+  ok(skillTierEvoList('whirl', 10).join(',') === '5,9,10', 'Lv10 三层全有');
+  ok(skillTierEvoList('whirl', 20).join(',') === '5,9,10', '精进层（11~20）不再加，也不掉');
+  ok(skillTierEvo('whirl', 1) === null, 'Lv1 没有进化台阶（null，不是空对象）');
+
+  /* 两条轴叠加：数量台阶与形态台阶互不吃 */
+  ok(skillTierEvo('whirl', 10).beh.passive === 1, 'Lv10 的「可常驻」进了行为层');
+  ok(skillTierMods('fireball', 5).radius === 50, '火球 Lv5 给爆炸半径 +50%');
+  ok(skillTierMods('fireball', 5).count === 1,
+    'Lv5 仍带 Lv3 给的 +1 发（数量台阶不会到 5 级就消失）', skillTierMods('fireball', 5));
+  ok(!('radius' in (skillTierMods('fireball', 3) || {})),
+    'Lv3 还没到形态台阶，不该有半径修正');
+  ok(skillTierMods('fireball', 10).count === 2 && skillTierMods('fireball', 10).radius === 50,
+    'Lv10 同时带 3 发与爆炸半径（数量轴 × 形态轴）', skillTierMods('fireball', 10));
+  ok(skillTierBeh('whirl', 5) && skillTierBeh('whirl', 5).aftershock === 2, 'skillTierBeh 只取行为层');
+
+  /* 行为键必须在 skill-beh.js 登记过，否则静默 plain（同变体特效那条教训） */
+  const known = new Set();
+  {
+    const re = /^ {2}([A-Za-z0-9_]+): \{ ph:/gm;
+    let m; while ((m = re.exec(behSrc))) known.add(m[1]);
+  }
+  ok(known.size > 50, '从 skill-beh.js 里抓到行为表（>50 键）', known.size);
+  const badKeys = [];
+  for (const id of ids) {
+    for (const lv of Object.keys(SKILL_TIER_EVO[id])) {
+      const beh = (SKILL_TIER_EVO[id][lv] || {}).beh || {};
+      for (const k in beh) if (!known.has(k)) badKeys.push(id + ' Lv' + lv + ' ' + k);
+    }
+  }
+  ok(badKeys.length === 0, 'evo 用到的行为键都已在 SKILL_BEH 登记（否则静默失效）', badKeys);
+  for (const k of ['rageMul', 'autoTarget']) ok(known.has(k), '新键 ' + k + ' 已登记');
+
+  /* 接线：台阶必须排在最前（花点的选择要能覆盖等级送的） */
+  const tbAt = behSrc.indexOf('parts.push(tbh)');
+  ok(behSrc.indexOf('skillTierBeh(') >= 0, 'branchBeh 必须把台阶行为并进来');
+  ok(tbAt > 0, '台阶用 parts.push(tbh) 进合并队列');
+  ok(tbAt < behSrc.indexOf('br.core.beh'), '台阶排在精研之前（否则变体选了会被台阶换回去）');
+  ok(/if \(bBeh && bBeh\.autoTarget/.test(game), 'castSkill 必须消费 autoTarget（自动索敌）');
+  ok(game.indexOf('nearestEnemy(aim, bBeh.autoTarget)') >= 0, '自动索敌真的去找最近的敌人');
+  ok(/s\.mp \+ 8 \* \(\(bBeh && bBeh\.rageMul\) \|\| 1\)/.test(game), 'whirl 回怒必须乘 rageMul');
 }
 
 /* ---------------- 汇总 ---------------- */

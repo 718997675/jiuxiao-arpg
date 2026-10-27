@@ -530,8 +530,10 @@ const SKILL_ARCHETYPE = {
         {
           no: 1, title: '连斩', inherit: ['whirl'],
           tiers: {
-            1: '单发横扫', 3: '双发', 5: '旋风斩可移动', 7: '三连斩',
-            9: '旋风斩吸怪', 10: '命中回怒翻倍，可常驻'
+            /* 5 / 9 / 10 的文案与 SKILL_TIER_EVO.whirl 的 label 逐字一致（契约对账）。
+               原稿写「可移动」是空话 —— 这个引擎本来就没有施法锁定。 */
+            1: '单发横扫', 3: '双发', 5: '横扫后原地余震 2 秒', 7: '三连斩',
+            9: '横扫吸怪', 10: '命中回怒翻倍，可常驻'
           }
         },
         {
@@ -584,7 +586,9 @@ const SKILL_ARCHETYPE = {
              正好是 ① 的 9/10 台阶「环绕 / 自动索敌」要的机制。 */
           no: 1, title: '元素飞弹', inherit: ['fireball', 'iceshard', 'chain'],
           tiers: {
-            1: '单发火球', 3: '双发', 5: '火球命中爆炸', 7: '三连发',
+            /* 5 原本写「火球命中爆炸」—— 那是 1 级就有的现状，不是台阶。
+               改成爆炸更大 + 附带灼烧，才是这一级真正多出来的东西。 */
+            1: '单发火球', 3: '双发', 5: '爆炸范围 +50%，爆炸处留火海', 7: '三连发',
             9: '环绕火球', 10: '飞弹自动索敌'
           }
         },
@@ -814,12 +818,100 @@ function skillCountDmgPct(id, extra) {
   return Math.round((per - 1) * 1000) / 10;
 }
 
+/* ============================================================
+ * 进化台阶（P2b 第二批 · Lv5 / Lv9 / Lv10）
+ *
+ * 数量台阶只改「几发」，进化台阶改「这一发是什么样」。所以它必须
+ * 挂在**具体技能 id** 上，不能挂技能位 —— 刀客 ② 里躺着 quake / leap /
+ * thrust / execute / skysfall 五个技能，而「地裂持续 2 秒」只该长在 quake 上。
+ *
+ * 字段：
+ *   label  = 面板台阶文案的「回读」（契约拿它跟 slot.tiers 对账，不许各说各话）
+ *   mods   = 六通道修正，与装备 / 分支 / 变体走同一个 merge（game.js effSkillMods）
+ *   beh    = 行为键，走 skill-beh.js 的同一套 handler（登记了才允许投点/生效）
+ *
+ * 合并顺序在 Game.branchBeh 里：**台阶最前**，精研 / 取向 / 变体依次覆盖同名键。
+ * 台阶是「等级送的」，玩家主动选的东西应该盖过它 —— 反过来的话，选「疾风」
+ * 变体的玩家会发现台阶把 rotate 参数换回了默认值，等于选项被吃了。
+ *
+ * 只登记「真的接进战斗」的条目：没实现的台阶保持不登记，面板照旧标「待」。
+ * ============================================================ */
+const SKILL_TIER_EVO = {
+  /* ---------------- 刀客 ① 连斩（旋风斩） ---------------- */
+  whirl: {
+    /* 不用 move：变体 Ⅰ「疾风」本来就带 move，而它是**默认变体**（没选过也是 0 号）。
+       台阶再用同一个键，玩家在默认配置下永远看不到区别 —— 等于没做。
+       改用余震：横扫之后原地再震 2 秒，与多段、吸怪都不抢键。 */
+    5: { label: '横扫后原地余震 2 秒', beh: { aftershock: 2, aftershockPct: 30 } },
+    9: { label: '横扫吸怪', beh: { gather: 3.4, gatherDur: 2, gatherEvery: 0.5 } },
+    /* 回怒翻倍：whirl case 那一发固定回 8 点（Lv10 前就是这么写的），
+       这里给它乘 2 —— 用 rageMul 而不是再塞一个 ragePerHit，避免和「回流」重复计。 */
+    10: { label: '命中回怒翻倍，可常驻', beh: { rageMul: 2, passive: 1 } }
+  },
+
+  /* ---------------- 法师 ① 元素飞弹（火球） ---------------- */
+  fireball: {
+    /* 火球 Lv1 本来就命中爆炸，「爆炸」不是台阶 —— 台阶给的是更大的爆炸
+       和爆炸处留下的火海。为什么不用 burnPct：精研「燎原」已经占了 burnPct
+       25，同名键按「分支覆盖台阶」的规则会把 35 顶回去，等于白写。
+       用 case 消费的 firePatch：命中点真的生成一片火，看得见也打得到。 */
+    5: { label: '爆炸范围 +50%，爆炸处留火海',
+      mods: { radius: 50 }, beh: { firePatch: 1 } },
+    9: { label: '环绕火球', beh: { orbit: 5 } },
+    10: { label: '飞弹自动索敌', beh: { autoTarget: 12 } }
+  }
+};
+
+/* 该技能在 lv 级累积解锁的台阶等级（Lv10 同时拥有 5 / 9 / 10 三层 ——
+ * 文案是递进的：「剑阵内减伤」到 10 级当然还在，只是又多了自动反击）。 */
+function skillTierEvoList(id, lv) {
+  const pack = SKILL_TIER_EVO[id];
+  if (!pack) return [];
+  const n = Math.round(Number(lv) || 1);
+  return Object.keys(pack).map(Number).filter(k => n >= k).sort((a, z) => a - z);
+}
+
+/* 累积后的 mods / beh；什么都没给返回 null（不是空对象，调用方靠 null 短路） */
+function skillTierEvo(id, lv) {
+  const pack = SKILL_TIER_EVO[id];
+  if (!pack) return null;
+  const out = { mods: null, beh: null, lvs: [] };
+  for (const k of skillTierEvoList(id, lv)) {
+    const e = pack[k];
+    if (!e) continue;
+    out.lvs.push(k);
+    if (e.mods) {
+      out.mods = out.mods || {};
+      for (const ch in e.mods) out.mods[ch] = (out.mods[ch] || 0) + e.mods[ch];
+    }
+    if (e.beh) {
+      out.beh = out.beh || {};
+      for (const key in e.beh) out.beh[key] = e.beh[key];
+    }
+  }
+  return (out.mods || out.beh) ? out : null;
+}
+
+/* 只取行为层（Game.branchBeh 合并用） */
+function skillTierBeh(id, lv) {
+  const e = skillTierEvo(id, lv);
+  return (e && e.beh) ? e.beh : null;
+}
+
 /* 台阶修正（与 branchMods / formMods 同类的六通道修正）。
- * 目前只有 3 / 7 级给东西；5 / 9 / 10 的进化台阶逐技能接。 */
+ * 3 / 7 级给「几发」，5 / 9 / 10 级看 SKILL_TIER_EVO 登记了什么。 */
 function skillTierMods(id, lv) {
+  const out = {};
   const extra = skillTierCount(id, lv);
-  if (!extra) return null;
-  return { count: extra, dmg: skillCountDmgPct(id, extra) };
+  if (extra) {
+    out.count = extra;
+    out.dmg = skillCountDmgPct(id, extra);
+  }
+  const evo = skillTierEvo(id, lv);
+  if (evo && evo.mods) {
+    for (const ch in evo.mods) out[ch] = (out[ch] || 0) + evo.mods[ch];
+  }
+  return Object.keys(out).length ? out : null;
 }
 
 /* 一个职业的 5 个技能位（含槽位元数据）；未知职业返回 [] */
@@ -840,20 +932,23 @@ function skillArchSlot(cls, no) {
 /* 台阶实装状态：面板据此把台阶标成「已生效 / 待实装」，别让文案自己吹。
  *
  * 判据不是手写清单，而是「这个位里真有技能走得到那条通道」：
- *   Lv1       —— 基础形态，永远成立
- *   Lv3 / Lv7 —— 位内至少一个技能真的消费 count 通道（否则「双发」只是文案）
- *   Lv5 / Lv9 / Lv10 —— 进化台阶逐技能接（P2b 第二段），现在一律未接
+ *   Lv1              —— 基础形态，永远成立
+ *   Lv3 / Lv7        —— 位内至少一个技能真的消费 count 通道（否则「双发」只是文案）
+ *   Lv5 / Lv9 / Lv10 —— 位内至少一个技能在 SKILL_TIER_EVO 里登记了这一级
  *
- * 改文案时不用动这里：文案说「双发」而位里没有 count 技能，契约会直接红。 */
+ * 改文案时不用动这里：文案说「双发」而位里没有 count 技能、或说「环绕」
+ * 而 evo 表里没这一级，契约会直接红。 */
 function skillSlotTierDone(cls, no, lv) {
   const slot = skillArchSlot(cls, no);
   if (!slot) return false;
   const n = Math.round(Number(lv) || 0);
   if (n === 1) return true;
-  if (n === 3 || n === 7) {
-    return (slot.inherit || []).some(id => skillCountCapable(id));
-  }
-  return false;
+  const own = slot.inherit || [];
+  if (n === 3 || n === 7) return own.some(id => skillCountCapable(id));
+  return own.some(id => {
+    const pack = SKILL_TIER_EVO[id];
+    return !!(pack && pack[n]);
+  });
 }
 
 /* 某职业 5 个位继承的全部现有技能 id（去重）—— P1 收敛时用它核对覆盖率 */

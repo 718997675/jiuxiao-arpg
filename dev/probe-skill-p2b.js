@@ -67,7 +67,10 @@ const ok = (c, m, d) => {
       const pp = Game.playerGroup.position;
       const out = [];
       for (let i = 0; i < n; i++) {
-        out.push({ pos: new THREE.Vector3(pp.x + 0.6 + i * 0.3, 0, pp.z), radius: 0.5, dead: false, hp: 1e9, id: i });
+        /* anim.time / spd 是帧循环要读的 —— 少一个字段，
+         * 探针在 await 期间就会收到「reading 'time'」的帧异常。 */
+        out.push({ pos: new THREE.Vector3(pp.x + 0.6 + i * 0.3, 0, pp.z), radius: 0.5,
+          dead: false, hp: 1e9, maxHp: 1e9, id: i, anim: { time: 0 }, spd: 0, atkCd: 999 });
       }
       Game.enemies = out;
       return out;
@@ -230,8 +233,8 @@ const ok = (c, m, d) => {
   });
   ok(panel.perCard.length === 5, '5 张技能位卡都在', panel.perCard.length);
   ok(panel.perCard.every(c => c.total === 6), '每张卡 6 个台阶（1/3/5/7/9/10）', panel.perCard.map(c => c.total));
-  ok(panel.perCard[0].todoLv.join(',') === '5,9,10',
-    '刀客 ① 只有进化台阶带「待」（3 / 7 已实装）', panel.perCard[0].todoLv);
+  ok(panel.perCard[0].todoLv.join(',') === '',
+    '刀客 ① 三个进化台阶都已接（不再带「待」）', panel.perCard[0].todoLv);
   ok(panel.perCard[1].todoLv.join(',') === '3,5,7,9,10',
     '刀客 ② 的 3 / 7 也带「待」（位内没有吃 count 通道的技能）', panel.perCard[1].todoLv);
   ok(panel.perCard.every(c => c.badge === c.todoLv.length), '每个「待」台阶都带角标（不只是压暗）',
@@ -250,8 +253,22 @@ const ok = (c, m, d) => {
     const steps = [...c.querySelectorAll('.sk-as')];
     return steps.filter(s => s.classList.contains('todo')).map(s => (s.querySelector('i') || {}).textContent);
   });
-  ok(magePanel.join(',') === '5,9,10',
-    '法师 ① 的 Lv3 / Lv7 不带「待」（双发 / 三连发已实装）', magePanel);
+  ok(magePanel.join(',') === '',
+    '法师 ① 全部台阶已接（数量 + 进化）', magePanel);
+
+  const taoPanel = await p.evaluate(() => {
+    Game.state.cls = 'taoist';
+    Game.state.skills = {};
+    Game.recalc();
+    UI.renderSkillPanel();
+    const open = document.querySelector('#skList .sk-arch');
+    if (open) open.setAttribute('open', '');
+    const c = document.querySelector('#skList .sk-ac');
+    const steps = [...c.querySelectorAll('.sk-as')];
+    return steps.filter(s => s.classList.contains('todo')).map(s => (s.querySelector('i') || {}).textContent);
+  });
+  ok(taoPanel.join(',') === '5,9,10',
+    '道士 ① 的进化台阶仍带「待」（这一批还没接）', taoPanel);
 
   /* ---------------- 6. 卡上预览与战斗同口径 ---------------- */
   console.log('六、预览与战斗同口径');
@@ -298,6 +315,167 @@ const ok = (c, m, d) => {
   ok(/0\.85/.test(codex), '说明页写着递减系数 0.85', codex.slice(0, 120));
   ok(/1\.85/.test(codex) && /2\.57/.test(codex), '说明页写着 1.85 / 2.57 倍', codex.slice(0, 200));
   ok(/上限\s*8/.test(codex), '说明页写着额外发数上限 8', codex.slice(0, 260));
+
+  /* ---------------- 9. 进化台阶真的生效 ---------------- */
+  console.log('九、进化台阶（Lv5 / Lv9 / Lv10）');
+  const evo = await p.evaluate(async () => {
+    const wait = ms => new Promise(r => setTimeout(r, ms));
+    /* 假敌人没有 actor / bar，帧循环一跑就报「reading 'time'」——
+     * 这一节只量技能行为，不需要怪物 AI，整段把 updateEnemies 停掉。 */
+    const savedUE = Game.updateEnemies;
+    Game.updateEnemies = () => { };
+    const setup = (id, lv, n, form) => {
+      /* mapGen++：`c.later` 只在同图内执行。不换图的话，上一个测试留下的
+       * 旋转 / 环绕 / 吸怪定时器会打进下一个测试的计数器里（实测把「补一段」
+       * 量成了 9 段）。换图是唯一能一次性作废旧定时器的开关。 */
+      Game.mapGen = (Game.mapGen || 0) + 1;
+      Game.state.skills = { [id]: { lv: lv } };
+      /* 变体不传就用默认 0 号。刀客 ① 的 0 号是「疾风」，自带 move 补段 ——
+       * 所以量台阶时显式切 1 号「不竭」：不打伤害也不位移，最干净。 */
+      if (form != null) Game.state.skills[id].f = form;
+      Game.state.stats.skillMods = {};
+      window.__mkClean();
+      window.__mkEnemies(n);
+      Game.recalc();
+      /* 装备 / 命格加成是 recalc **算出来**的（stats.skillLv / skillRank）——
+       * 必须放在 recalc 之后再清。清早了会被重算回来，于是「Lv2」量到的是
+       * 5 级（带台阶），第一次跑就是这么红的。 */
+      Game.state.stats.skillLv = 0;
+      Game.state.stats.skillRank = {};
+      return Game.enemies;
+    };
+    const out = {};
+
+    /* --- whirl Lv5：一发变一段（0.5 秒后跟着人再扫一次） --- */
+    const spinRun = async (lv) => {
+      setup('whirl', lv, 1, 1);
+      let n = 0;
+      const oldHit = Game.damageEnemy;
+      Game.damageEnemy = () => { n++; };
+      Game.castSkill('whirl');
+      const first = n;
+      await wait(1300);          // 余震是「每秒一跳」，700ms 只能看到 0
+      Game.damageEnemy = oldHit;
+      return { first, after: n };
+    };
+    out.w2 = await spinRun(2);
+    out.w5 = await spinRun(5);
+
+    /* --- whirl Lv9：吸怪（3.2 码外的怪被拉近） --- */
+    const gatherRun = async (lv) => {
+      const es = setup('whirl', lv, 1, 1);
+      const pp = Game.playerGroup.position;
+      es[0].pos.set(pp.x + 3.2, 0, pp.z);
+      const before = Math.hypot(es[0].pos.x - pp.x, es[0].pos.z - pp.z);
+      const oldHit = Game.damageEnemy;
+      Game.damageEnemy = () => { };
+      Game.castSkill('whirl');
+      await wait(80);
+      Game.damageEnemy = oldHit;
+      return { before, after: Math.hypot(es[0].pos.x - pp.x, es[0].pos.z - pp.z) };
+    };
+    out.g8 = await gatherRun(8);
+    out.g9 = await gatherRun(9);
+
+    /* --- whirl Lv10：回怒翻倍（同步读，避开每秒自然回蓝） --- */
+    const rageRun = (lv) => {
+      setup('whirl', lv, 1, 1);
+      Game.state.stats.mpMax = 9999;
+      Game.state.mp = 200;
+      const before = Game.state.mp;
+      const oldHit = Game.damageEnemy;
+      Game.damageEnemy = () => { };
+      Game.castSkill('whirl');
+      const delta = Game.state.mp - before;
+      Game.damageEnemy = oldHit;
+      return { delta };
+    };
+    out.r9 = rageRun(9);
+    out.r10 = rageRun(10);
+
+    /* --- fireball Lv5：爆炸半径 +50%、爆炸处留火海 --- */
+    const fbRun = (lv) => {
+      const es = setup('fireball', lv, 1);
+      const pp = Game.playerGroup.position;
+      es[0].pos.set(pp.x + 2, 0, pp.z);
+      Game.aimPoint = new THREE.Vector3(pp.x + 2, 0, pp.z);
+      Game.aimDir = new THREE.Vector3(1, 0, 0);
+      let rad = 0, patch = 0;
+      const oldExp = Game.explodeAt, oldProj = FX.projectile, oldHit = Game.damageEnemy;
+      const oldPatch = Game.createFirePatch;
+      /* 直接触发 onHit：不走真弹道，免得量到的是飞行时间 */
+      FX.projectile = (o) => { o.onHit(es[0], { pos: es[0].pos.clone(), dmg: 1 }); return { update() { }, dispose() { } }; };
+      Game.explodeAt = (c, r) => { rad = Math.max(rad, r); };
+      Game.createFirePatch = () => { patch++; };
+      Game.damageEnemy = () => { };
+      Game.castSkill('fireball');
+      FX.projectile = oldProj; Game.explodeAt = oldExp; Game.damageEnemy = oldHit;
+      Game.createFirePatch = oldPatch;
+      return { rad, patch };
+    };
+    out.f4 = fbRun(4);
+    out.f5 = fbRun(5);
+
+    /* --- fireball Lv9：环绕火球（0.5 秒后绕自己补伤害） --- */
+    const orbitRun = async (lv) => {
+      setup('fireball', lv, 1);
+      let n = 0;
+      const oldHit = Game.damageEnemy, oldProj = FX.projectile;
+      /* 把弹道吃掉：否则 700ms 里量到的是「火球飞到怪身上」，
+       * 跟环绕没有半点关系（Lv8 也能量出 5 次）。 */
+      FX.projectile = () => ({ update() { }, dispose() { } });
+      Game.damageEnemy = () => { n++; };
+      Game.castSkill('fireball');
+      const first = n;
+      await wait(700);
+      FX.projectile = oldProj;
+      Game.damageEnemy = oldHit;
+      return { first, after: n };
+    };
+    out.o8 = await orbitRun(8);
+    out.o9 = await orbitRun(9);
+
+    /* --- fireball Lv10：自动索敌（瞄空地也朝最近目标出手） --- */
+    const aimRun = (lv) => {
+      const es = setup('fireball', lv, 1);
+      const pp = Game.playerGroup.position;
+      es[0].pos.set(pp.x, 0, pp.z - 3);                              // 目标在 −z
+      Game.aimPoint = new THREE.Vector3(pp.x + 6, 0, pp.z + 6);       // 玩家瞄在 +z 空地
+      Game.aimDir = new THREE.Vector3(0.7, 0, 0.7).normalize();
+      let dz = null;
+      const oldProj = FX.projectile, oldHit = Game.damageEnemy;
+      FX.projectile = (o) => { dz = o.dir.z; return { update() { }, dispose() { } }; };
+      Game.damageEnemy = () => { };
+      Game.castSkill('fireball');
+      FX.projectile = oldProj; Game.damageEnemy = oldHit;
+      return { dz };
+    };
+    out.a9 = aimRun(9);
+    out.a10 = aimRun(10);
+
+    /* --- 变体覆盖台阶：Lv9 台阶 gather 3.4，变体「聚怪」gather 4 —— 变体必须赢 --- */
+    {
+      setup('whirl', 9, 1, 2);
+      const beh = Game.branchBeh('whirl');
+      out.ovr = { gather: beh && beh.gather, every: beh && beh.gatherEvery };
+    }
+    Game.updateEnemies = savedUE;
+    return out;
+  });
+  ok(evo.w2.after === evo.w2.first, 'Lv2 旋风斩只打一次（没有补段）', evo.w2);
+  ok(evo.w2.first === 1, 'Lv2 只有 1 段（数量台阶从 3 级才起）', evo.w2);
+  ok(evo.w5.after > evo.w5.first, 'Lv5 旋风斩 0.5 秒后真的补了一段', evo.w5);
+  ok(evo.g8.after > 3.0, 'Lv8 不吸怪（怪还在 3.2 码外）', evo.g8);
+  ok(evo.g9.after < evo.g9.before - 0.4, 'Lv9 把 3.2 码外的怪拉近了', evo.g9);
+  ok(evo.r10.delta - evo.r9.delta === 8, 'Lv10 回怒从 8 点变 16 点（翻倍）', { r9: evo.r9, r10: evo.r10 });
+  ok(evo.f5.rad > evo.f4.rad * 1.3, 'Lv5 爆炸半径明显变大（+50%）', { f4: evo.f4.rad, f5: evo.f5.rad });
+  ok(evo.f5.patch > 0 && evo.f4.patch === 0, 'Lv5 爆炸处留火海（Lv4 不留）', { f4: evo.f4.patch, f5: evo.f5.patch });
+  ok(evo.o8.after === evo.o8.first, 'Lv8 火球没有环绕段', evo.o8);
+  ok(evo.o9.after > evo.o9.first, 'Lv9 火球放完还会绕着自己补伤害', evo.o9);
+  ok(evo.a9.dz > 0.3, 'Lv9 瞄哪打哪（朝 +z 飞）', evo.a9);
+  ok(evo.a10.dz < -0.5, 'Lv10 自动索敌（改朝 −z 的敌人飞）', evo.a10);
+  ok(evo.ovr.gather === 4,
+    '变体「聚怪」覆盖台阶参数（4 码而不是台阶的 3.4）', evo.ovr);
 
   /* ---------------- 8. 零报错 ---------------- */
   console.log('八、控制台');

@@ -3084,6 +3084,19 @@ const Game = {
      * 追地（裂地）/ 冰环（霜星）/ 定向（炎爆）共用这一处 ——
      * 各技能 case 不用各自判断，也不会漏掉某一处 aim 引用。 */
     if (bBeh && bBeh.selfCast) aim = pp.clone();
+    /* [P2b] 自动索敌（台阶）：不瞄准也能打 —— 把落点强制指向最近的敌人。
+     * 必须在 switch 之前定死：各技能 case 都直接读 aim，handler 阶段已经晚了。
+     * 自身施法类不需要索敌（落点已经钉在脚下）。 */
+    if (bBeh && bBeh.autoTarget && !bBeh.selfCast) {
+      const tgt = this.nearestEnemy(aim, bBeh.autoTarget) || this.nearestEnemy(pp, bBeh.autoTarget);
+      if (tgt) {
+        aim = new THREE.Vector3(tgt.pos.x, 0, tgt.pos.z);
+        /* 投射物类技能读的是 dir 而不是 aim（火球 / 符都用 dir 出手）——
+         * 只挪落点的话，弹道还是朝原来那个方向飞，玩家一点区别都看不到。 */
+        const nd = new THREE.Vector3(aim.x - pp.x, 0, aim.z - pp.z);
+        if (nd.lengthSq() > 1e-4) dir.copy(nd.normalize());
+      }
+    }
     this.showCastGuide(sk, pp, aim, dir);
     const dmgOf = mult => {
       const { dmg, crit } = this.rollDamage(st.atk * mult);
@@ -3118,7 +3131,10 @@ const Game = {
         FX.ring(pp, rad, 0xffd8a0, 0.4);
         FX.spark(new THREE.Vector3(pp.x, 1, pp.z), 0xffd8a0, 18);
         this.shake = 0.25; this.hitstop = 60;
-        s.mp = Math.min(st.mpMax, s.mp + 8);
+        /* [P2b] 台阶 Lv10「命中回怒翻倍」：基数 8 点乘 rageMul。
+         * 用倍率而不是再加一条 ragePerHit —— 后者是「每命中一个 +N」，
+         * 与「回流」双重计时会变成回怒三四倍。 */
+        s.mp = Math.min(st.mpMax, s.mp + 8 * ((bBeh && bBeh.rageMul) || 1));
         if (hits.length > 1) UI.log(`旋风斩命中 ${hits.length} 名敌人`, 'good');
         break;
       }
@@ -3369,6 +3385,10 @@ const Game = {
             onHit: (e, proj) => {
               this.explodeAt(proj.pos.clone(), radius, st.atk * 1.9 * spow, 0xff7a30);
               if (st.flags.firetrail) this.createFirePatch(proj.pos.clone(), radius);
+              /* [P2b] 台阶 Lv5「爆炸处留火海」：必须写在命中点。
+               * 行为层的 c.center 是「落点」，而 dir 施法的落点恒在射程尽头，
+               * 拿它点火等于在 16 码外的空气里烧 —— 玩家什么都看不到。 */
+              if (bBeh && bBeh.firePatch) this.createFirePatch(proj.pos.clone(), radius);
             }
           });
         }
