@@ -34,6 +34,9 @@ SITE="https://${OWNER}.github.io/${REPO}"
 
 slug_of() { printf '%s' "$1" | sed -E 's#^(feat|fix|docs|exp|preview|chore)/##' | sed -E 's#[^A-Za-z0-9._-]#-#g'; }
 
+# 某分支对应的预览站是否已发布（查 main 的树，不看工作区 —— 别的分支上预览目录本来就不存在）
+has_preview() { git cat-file -e "main:preview/$(slug_of "$1")" 2>/dev/null; }
+
 # 工作区是否干净（preview/ 是发布产物，不算脏）
 dirty() { git status --porcelain -- . ':(exclude)preview' ':(exclude)preview/**' 2>/dev/null; }
 
@@ -41,10 +44,14 @@ dirty() { git status --porcelain -- . ':(exclude)preview' ':(exclude)preview/**'
 # 用 -/+ 而不是中文：终端里中文占 2 列但 printf 按 1 字符算，会把后面几列顶歪
 ahead_behind() {
   if [ "$1" = main ]; then echo "0"; return; fi
-  local n
+  local n a b2
   n=$(git rev-list --left-right --count "main...$1" 2>/dev/null || echo "")
   if [ -z "$n" ]; then echo "?"; return; fi
-  printf -- '-%s / +%s' "$(echo "$n" | cut -f1)" "$(echo "$n" | cut -f2)"
+  a=$(echo "$n" | cut -f1); b2=$(echo "$n" | cut -f2)
+  if [ "$a" = 0 ] && [ "$b2" = 0 ]; then echo "0"; return; fi
+  if [ "$a" = 0 ]; then printf '+%s' "$b2"; return; fi
+  if [ "$b2" = 0 ]; then printf -- '-%s' "$a"; return; fi
+  printf -- '-%s / +%s' "$a" "$b2"
 }
 
 CUR=$(git rev-parse --abbrev-ref HEAD)
@@ -72,7 +79,7 @@ show_status() {
       mark="${G}*${N}"
     else
       slug=$(slug_of "$b")
-      if [ -d "preview/$slug" ]; then pv="preview/$slug/"
+      if has_preview "$b"; then pv="preview/$slug/"
       else pv="(未发布)"; fi
     fi
     # 提交信息放最后一列：中文占 2 列宽，放前面会把所有列顶歪
@@ -81,18 +88,22 @@ show_status() {
   done
   echo "  ${DIM}（vs main：-N 落后 N 个提交，+N 领先；ROOT = 正式站 $SITE/）${N}"
 
-  # 只在远程、本地还没有的分支（别的机器/别人推的）
-  local remote_only
+  # 只在远程、本地还没有的分支（别的机器 / 别的账号推的）
+  local remote_only extra=""
   remote_only=$(git for-each-ref --format='%(refname:short)' refs/remotes/origin \
-    | sed 's#^origin/##' | grep -v '^HEAD$' || true)
-  local extra=""
+    | sed 's#^origin/##' | grep -v '^HEAD$' | grep -v '^origin$' | sort || true)
   for b in $remote_only; do
     git rev-parse --verify --quiet "refs/heads/$b" >/dev/null || extra="$extra $b"
   done
   if [ -n "$extra" ]; then
     echo
-    echo "  ${DIM}只在远程（切过去会自动建本地分支）：${N}"
-    for b in $extra; do echo "    $b"; done
+    echo "  ${B}只在远程${N} ${DIM}（切过去会自动建本地分支并跟踪）${N}"
+    for b in $extra; do
+      local ab log
+      ab=$(ahead_behind "origin/$b")
+      log=$(git log -1 --format='%h %s' "origin/$b")
+      printf '    %-28s %-11s %s\n' "$b" "$ab" "$log"
+    done
   fi
 
   echo
@@ -115,7 +126,11 @@ case "${1:-}" in
     git fetch origin --quiet 2>/dev/null || warn "fetch 失败，用本地 main 同步"
     if git merge main --no-edit >/dev/null 2>&1; then
       ok "$CUR 已合并 main（$(ahead_behind "$CUR")）"
-      echo "${DIM}  推送：git push origin $CUR${N}"
+      if git push origin "$CUR" 2>&1 | tail -1; then
+        ok "已推送 $CUR"
+      else
+        warn "推送失败，稍后手动 git push origin $CUR"
+      fi
     else
       die "合并有冲突，手工解决后再提交（git status 看冲突文件）"
     fi
@@ -184,11 +199,16 @@ if [ "$TARGET" != main ]; then
   BEHIND=$(git rev-list --count "$TARGET..main" 2>/dev/null || echo 0)
   if [ "${BEHIND:-0}" -gt 0 ]; then
     warn "这条线落后 main $BEHIND 个提交（可能缺新工具/新修复）"
-    echo "${DIM}  补齐：./dev/branch.sh --sync${N}"
+    if git cat-file -e "$TARGET:dev/branch.sh" 2>/dev/null; then
+      echo "${DIM}  补齐：./dev/branch.sh --sync${N}"
+    else
+      # 这条线老到连本脚本都还没有，只能手工合并
+      echo "${DIM}  补齐：git merge main --no-edit && git push origin $TARGET${N}"
+    fi
   fi
   SLUG=$(slug_of "$TARGET")
   echo
-  if [ -d "preview/$SLUG" ]; then
+  if has_preview "$TARGET"; then
     echo "  预览站 ${C}$SITE/preview/$SLUG/${N}"
     echo "${DIM}  发布/更新：./dev/publish-preview.sh $TARGET${N}"
   else
