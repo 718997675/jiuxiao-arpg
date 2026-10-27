@@ -5557,8 +5557,10 @@ function aimPoint(){
       本体只在两处读 tierOn()：whirl 的吸怪、poison 的雾半径 ——
       这两件事本来就是"技能自己的形状变大了"，塞进 hook 会变成叠两团。
    2. 档位是**累积**的（Lv10 = 5 + 9 + 10 一起叠），和游戏里一致。
-   3. 只演真接了的六位（刀①②③ / 法① / 道①②）；其余位在清单里标「未接」，
-      不编假效果 —— 编出来就等于把"还没做"藏起来了。
+      → 但数量轴必须让位：Lv7 解锁时 Lv3 那份还在，双段会变成 4 段。
+        用 tierBelow(hi) 把低档整个关掉，由最高那一档一次出齐。
+   3. 15 个位全接了。剩下的空白只有 3 处「纯数值」档（b1 Lv10 回怒 /
+      m1 Lv10 索敌 / m5 Lv7 法相延长），清单里照实标「数值」，不编假光效。
    ===================================================================== */
 const TIER_LVS = [1, 3, 5, 7, 9, 10];
 
@@ -5566,12 +5568,17 @@ const TIER_LVS = [1, 3, 5, 7, 9, 10];
    反过来（默认 Lv1）会让"以前能看到的吸怪突然没了"，像功能回退。 */
 let tierLv = 10;
 const tierOn = (lv) => tierLv >= lv;
+/* 数量轴的档位会**同时**被调用（tierApply 累加所有已解锁档）：
+   Lv7 解锁时，Lv3 那份也还在。所以数量型台阶必须让低档在更高档解锁时
+   **整个让位**，由最高那一档一次出齐 ——
+   否则「双段」在 Lv7 会变成 本体 + Lv3 一份 + Lv7 两份 = 4 段。 */
+const tierBelow = (hi) => tierLv < hi;
 
 /* 技能 → 技能位。文案逐字抄 src/data/data-skills.js 的
    SKILL_ARCHETYPE.classes[].slots[].tiers，一个标点都没改。 */
 const TIER_SLOT = {
-  whirl:'b1', quake:'b2', swords:'b3', bloodrage:'b4', stance:'b5', avatar:'b5',
-  missile:'m1', meteor:'m2', firewall:'m3', iceshield:'m4',
+  whirl:'b1', quake:'b2', swords:'b3', bloodrage:'b4', stance:'b5',
+  missile:'m1', meteor:'m2', firewall:'m3', iceshield:'m4', avatar:'m5',
   talisman:'t1', poison:'t2', taiji:'t3', heal:'t4', summon:'t5'
 };
 const TIER_TEXT = {
@@ -5584,6 +5591,7 @@ const TIER_TEXT = {
   m2:{1:'单体陨石',3:'溅射',5:'双陨',7:'三连落',9:'陨石雨',10:'陨石雨持续 8 秒'},
   m3:{1:'单段火墙',3:'双段',5:'持续火环',7:'三段',9:'火墙跟随',10:'火墙结束爆炸'},
   m4:{1:'单体护盾',3:'队友共享',5:'护盾反伤',7:'护盾强化',9:'护盾爆发',10:'护盾破碎时冰冻周围'},
+  m5:{1:'火法相',3:'元素切换',5:'法相期间全技能灼烧',7:'法相延长',9:'法相结束新星',10:'法相期间免疫打断'},
   t1:{1:'单张雷符',3:'双符',5:'雷符连锁',7:'三符',9:'雷符阵',10:'雷符自动追踪'},
   t2:{1:'单团毒雾',3:'双团',5:'毒雾蔓延',7:'三团',9:'毒雾跟随',10:'毒雾内敌人死亡爆毒'},
   t3:{1:'单圈太极',3:'双圈',5:'太极推开敌人',7:'三圈',9:'太极内减伤',10:'太极内每秒回血'},
@@ -5595,12 +5603,21 @@ const TIER_TEXT = {
    num 数量（多一发）/ fx 机制（多一层结构）/ sim 只改数值（画面为示意）/
    todo 还没接 —— 面板照实标，别让文案自己吹 */
 const TIER_KIND = {
-  b1:{1:'base',3:'num',5:'fx',7:'num',9:'fx',10:'sim'},
-  b2:{1:'base',3:'num',5:'fx',7:'num',9:'fx',10:'fx'},
-  b3:{1:'base',3:'todo',5:'fx',7:'todo',9:'fx',10:'fx'},
-  m1:{1:'base',3:'num',5:'fx',7:'num',9:'fx',10:'sim'},
-  t1:{1:'base',3:'num',5:'fx',7:'num',9:'fx',10:'fx'},
-  t2:{1:'base',3:'num',5:'fx',7:'num',9:'fx',10:'fx'}
+  b1:{1:'base',3:'num',5:'fx', 7:'num',9:'fx',10:'sim'},
+  b2:{1:'base',3:'num',5:'fx', 7:'num',9:'fx',10:'fx'},
+  b3:{1:'base',3:'num',5:'fx', 7:'num',9:'fx',10:'fx'},
+  b4:{1:'base',3:'num',5:'fx', 7:'fx', 9:'fx',10:'fx'},
+  b5:{1:'base',3:'fx', 5:'fx', 7:'fx', 9:'fx',10:'fx'},
+  m1:{1:'base',3:'num',5:'fx', 7:'num',9:'fx',10:'sim'},
+  m2:{1:'base',3:'fx', 5:'num',7:'num',9:'num',10:'num'},
+  m3:{1:'base',3:'num',5:'fx', 7:'num',9:'fx',10:'fx'},
+  m4:{1:'base',3:'num',5:'fx', 7:'fx', 9:'fx',10:'fx'},
+  m5:{1:'base',3:'fx', 5:'fx', 7:'sim',9:'fx',10:'fx'},
+  t1:{1:'base',3:'num',5:'fx', 7:'num',9:'fx',10:'fx'},
+  t2:{1:'base',3:'num',5:'fx', 7:'num',9:'fx',10:'fx'},
+  t3:{1:'base',3:'num',5:'fx', 7:'num',9:'fx',10:'fx'},
+  t4:{1:'base',3:'num',5:'fx', 7:'fx', 9:'fx',10:'fx'},
+  t5:{1:'base',3:'num',5:'fx', 7:'fx', 9:'fx',10:'fx'}
 };
 const KIND_LABEL = { base:'基础', num:'数量', fx:'机制', sim:'数值', todo:'未接' };
 
@@ -5667,24 +5684,190 @@ function orbitOrbs(dur = 3){
   }});
 }
 
-/* 跟随玩家的护罩环：位置每帧同步 —— 写死一次位置的话，人一走环就留在地上 */
-function guardRing(dur = 2.6){
-  const ring = flatMesh(TEX.ring, C(0xffd27a), THREE.AdditiveBlending, 0);
+/* 跟随玩家的护罩环：位置每帧同步 —— 写死一次位置的话，人一走环就留在地上。
+   「免控 / 免疫打断 / 阵内减伤」这类档位都用它，它们都是"身上一直有个罩"，
+   只是颜色不同：刀是暗金、法是青、道是金。 */
+function guardRing(dur = 2.6, hex = 0xffd27a, sc = 2.5){
+  const cc = C(hex), rr = sc*0.96;
+  const ring = flatMesh(TEX.ring, cc, THREE.AdditiveBlending, 0);
   ring.position.set(P.pos.x, 0.06, P.pos.z);
   let t = 0;
   addUpdate({ update(dt){
     t += dt;
     const k = t/dur;
     ring.position.set(P.pos.x, 0.06, P.pos.z);
-    ring.scale.setScalar(2.5 + Math.sin(t*4)*0.1);
+    ring.scale.setScalar(sc + Math.sin(t*4)*0.1);
     ring.material.opacity = (k > 0.85 ? Math.max(0, 1-(k-0.85)/0.15) : 1) * (0.32 + 0.14*Math.sin(t*6));
     if(Math.random() < dt*14){
       const a = Math.random()*7;
-      FX.spr(P.pos.x + Math.cos(a)*2.4, 0.1, P.pos.z + Math.sin(a)*2.4,
-        { tex:'spark', life:.5, s0:.16, s1:0, a0:.7, vy:1.1, grav:-.5, r:1, g:.85, b:.55 });
+      FX.spr(P.pos.x + Math.cos(a)*rr, 0.1, P.pos.z + Math.sin(a)*rr,
+        { tex:'spark', life:.5, s0:.16, s1:0, a0:.7, vy:1.1, grav:-.5,
+          r: cc.r, g: cc.g, b: cc.b });
     }
     if(k >= 1){ scene.remove(ring); this.dead = true; }
   }});
+}
+
+/* 冰壳（简版，给"第二个人"用）：本体那颗是 ShaderMaterial 的菲涅耳壳，
+   这里只做线框 + 一层淡面。**线框才是"壳"的读法** —— 纯淡面在加法混合里
+   只是一个发光的球。 */
+function iceShellAt(pos, sc = 1, life = 6, hex = 0x9ae8ff){
+  const col = C(hex);
+  const shell = new THREE.Mesh(new THREE.IcosahedronGeometry(1.05*sc, 1),
+    new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0,
+      blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }));
+  const wire = new THREE.Mesh(new THREE.IcosahedronGeometry(1.06*sc, 1),
+    new THREE.MeshBasicMaterial({ color: col, wireframe: true, transparent: true,
+      opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false }));
+  shell.position.set(pos.x, 0.82*sc, pos.z);
+  wire.position.copy(shell.position);
+  scene.add(shell); scene.add(wire);
+  addUpdate({ update(dt){
+    this.t = (this.t || 0) + dt;
+    const t = this.t;
+    const inK = Math.min(1, t/0.3);
+    const outK = t > life-0.4 ? Math.max(0, (life-t)/0.4) : 1;
+    shell.material.opacity = 0.16*inK*outK;
+    wire.material.opacity = 0.5*inK*outK;
+    wire.rotation.y += dt*0.3; shell.rotation.y -= dt*0.2;
+    if(t >= life){
+      FX.burst(new THREE.Vector3(pos.x, .8*sc, pos.z),
+        { n: 18, speed: 5, life: .7, size: .3*sc, tex:'shard', grav: 2.2, drag: 1.2 });
+      scene.remove(shell); scene.remove(wire); this.dead = true;
+    }
+  }});
+}
+
+/* 冰锥朝外扎一圈：护盾反伤 / 破碎冰冻共用。
+   锥尖**朝外**（朝内读成"被吸进来"，正好相反）。 */
+function iceSpikes(pos, hex = 0xd8f6ff, n = 8){
+  for(let i=0;i<n;i++){
+    const a = i/n*Math.PI*2;
+    FX.spr(pos.x + Math.cos(a)*0.6, 0.7, pos.z + Math.sin(a)*0.6, {
+      tex:'shard', life:.5, s0:.34, s1:.12, a0:.95,
+      vx: Math.cos(a)*6.5, vy:.6, vz: Math.sin(a)*6.5, grav: 1.6, rotV: 3,
+      r:.75, g:.92, b:1 });
+  }
+  FX.shock(new THREE.Vector3(pos.x,0,pos.z), 2.0, { color: C(hex), dur: 0.32 });
+}
+
+/* 一段火墙：把本体那排 7 片火舌抽出来参数化，位置自己给。
+   本体是内联的，台阶要在**别的坐标**再排一段（双段 / 三段 / 跟随），
+   不能直接复用 —— 但也不许另写一套，否则两段的形态不一样。 */
+function fireLine(x, z, dir, dur = 3.1, sc = 1){
+  const perx = Math.cos(dir), perz = -Math.sin(dir);
+  const n = 7, flames = [];
+  for(let i=0;i<n;i++){
+    const off = (i - (n-1)/2) * 1.02 * sc;
+    const px = x + perx*off, pz = z + perz*off;
+    const hk = (1 - Math.pow(Math.abs(i-(n-1)/2)/((n-1)/2), 2)*0.22) * (0.86 + Math.random()*0.28);
+    const m = billMesh(TEX.flame, 0xffa052, 0.85);
+    m.position.set(px, 0.05, pz);
+    m.userData = { phase:Math.random()*7, hk, sw:(0.86+Math.random()*0.40)*sc,
+                   face: Math.random()<0.5?-1:1, yo:(Math.random()-0.5)*0.18,
+                   ox: perx*off, oz: perz*off };   // 「跟随」档位要整体挪，得记住偏移
+    flames.push(m);
+  }
+  let t = 0;
+  addUpdate({ update(dt){
+    t += dt;
+    const g = 1 - Math.pow(1 - Math.min(1, t/0.22), 2);
+    const fade = t > dur-0.5 ? Math.max(0, (dur-t)/0.5) : 1;
+    flames.forEach((m, i)=>{
+      const sw = m.userData.sw, hk = m.userData.hk;
+      const sx = (1.95*sw) + Math.sin(t*9 + m.userData.phase)*0.14;
+      m.scale.set(sx*(m.userData.face||1), (3.15*hk)*g*(0.94+Math.sin(t*13+i)*0.06), 1);
+      m.material.opacity = 0.60*fade*(0.86+Math.sin(t*17+i*2)*0.14);
+      m.position.y = m.scale.y*0.5 - 0.05 + (m.userData.yo||0);
+      if(Math.random() < dt*6) FX.spr(m.position.x + (Math.random()-.5)*1.4,
+        0.1 + Math.random()*1.2, m.position.z + (Math.random()-.5)*0.4,
+        { tex:'ember', life:.7, s0:.22, s1:0, a0:.8, vy:1.8, grav:-1.2 });
+    });
+    if(t >= dur){ flames.forEach(m=>scene.remove(m)); this.dead = true; }
+  }});
+  return { pos: new THREE.Vector3(x, 0, z), dur, flames,
+    move(nx, nz){ flames.forEach(m=>{ m.position.x = nx + m.userData.ox;
+      m.position.z = nz + m.userData.oz; }); },
+    hurt(){ hitArea(new THREE.Vector3(x,0,z), 3.0*sc, 8, { color:'#ffb060' }); } };
+}
+
+/* 小陨石：陨石雨要落 5 颗，每颗都走本体那套（64+34+18 颗粒子 + 震屏 0.5）
+   会直接把画面糊掉。所以雨滴用轻量版：**省掉预警圈和震屏**，
+   只留火线 + 小蘑菇 —— 落点是雨，不是五颗主陨石。 */
+function meteorLite(x, z, dmg = 30){
+  const target = new THREE.Vector3(x, 0, z);
+  const rock = billMesh(TEX.soft, 0xffb060, 1);
+  const trail = new Ribbon({ width: 0.7, color: 0xff7a3c, life: 0.4, segs: 12 });
+  const start = target.clone().add(new THREE.Vector3(-0.8, 6.2, -1.4));
+  let t = 0; const dur = 0.5;
+  addUpdate({ update(dt){
+    t += dt;
+    const k = Math.min(1, t/dur), e = k*k;
+    const p = _tmpA.copy(start).lerp(new THREE.Vector3(target.x, 0.3, target.z), e);
+    rock.position.copy(p); rock.scale.setScalar(1.5 - k*0.5);
+    trail.push(p.clone()); trail.update(dt);
+    if(Math.random() < dt*30) FX.spr(p.x, p.y, p.z,
+      { tex:'ember', life:.4, s0:.4, s1:.1, a0:.8, grav:-1, vy:1.4 });
+    if(k >= 1){
+      scene.remove(rock); trail.destroy();
+      FX.shock(target, 3.0, { color: 0xffc070, dur: 0.45 });
+      FX.geyser(target, { h: 2.8, w: 1.4, opacity: .34, life: .55, tex:'smoke', color: 0xffa050, noMix: true });
+      FX.burst(target, { n: 22, speed: 7, life: .8, size: .4, up: .8, grav: -0.3, tex:'ember' });
+      FX.burst(target, { n: 12, speed: 4.5, life: 1.0, size: .7, up: .2, grav: 1.2, tex:'smoke' });
+      hitArea(target, 2.4, dmg, { critChance: 0.15 });
+      this.dead = true;
+    }
+  }});
+}
+
+/* 通用外圈：在外围再套一层 field。
+   剑阵 / 太极都要"多一圈"，写两遍就会两边长得不一样。 */
+function extraField(c, r, op, kind){
+  const pos = new THREE.Vector3(c.x, 0, c.z);
+  FX.field(pos, { kind: kind || 'sigil', r, life: 2.4, color: C(E().glow),
+    pulse: 1.4, opacity: op, wall: 0.05, spin: -0.3 });
+}
+
+/* 灵兽（召灵兽台阶用）：本体出的是狼，台阶要能出别的兽。
+   颜色决定身份：褐=狼、白=虎、青=龙。三兽同场时位置必须错开，
+   站一起会叠成一坨毛。 */
+function beastAt(x, z, body, glow, delayT = 0){
+  delay(delayT, ()=>{
+    const pos = new THREE.Vector3(x, 0, z);
+    const beast = makeSpiritBeast({ body, glow });
+    beast.position.set(x, -0.55, z);
+    beast.rotation.y = P.face;
+    scene.add(beast);
+    FX.shock(pos, 2.0, { color: C(glow), dur: 0.4 });
+    let t = 0;
+    addUpdate({ update(dt){
+      t += dt;
+      const rise = Math.min(1, t/0.45);
+      beast.position.y = -0.55 + rise*0.55;
+      beast.rotation.y = P.face + Math.sin(t*1.6)*0.06;
+      if(t > 5.5){ scene.remove(beast); this.dead = true; }
+    }});
+  });
+}
+
+/* 吸血：血从怪身上**飞回玩家**。
+   方向必须是向心（vx 指向玩家），向外飞就成了献血。 */
+function suckBlood(n = 3){
+  const list = enemies.filter(e=>e && e.deadT<=0)
+    .map(e=>({ e, d: Math.hypot(e.pos.x-P.pos.x, e.pos.z-P.pos.z) }))
+    .filter(o=>o.d < 7).sort((a,b)=>a.d-b.d).slice(0, n);
+  list.forEach(o=>{
+    const fx = P.pos.x - o.e.pos.x, fz = P.pos.z - o.e.pos.z;
+    const L = Math.hypot(fx, fz) || 1;
+    for(let i=0;i<4;i++){
+      FX.spr(o.e.pos.x, 0.7 + Math.random()*0.5, o.e.pos.z, {
+        tex:'ember', life:.42, s0:.22, s1:.05, a0:.9,
+        vx: fx/L*(7+Math.random()*3), vy: 1.2, vz: fz/L*(7+Math.random()*3),
+        grav: -1.5, drag: 0.4, r:1, g:.16, b:.16 });
+    }
+    hitEnemy(o.e, 6, { color:'#ff5a4a' });
+  });
+  if(list.length) playerHP = Math.min(1000, playerHP + list.length*18);
 }
 
 /* 雷符连锁：落点再往邻近两只怪各跳一道雷（游戏里 chainHit=2） */
@@ -5962,6 +6145,522 @@ const TIER_HOOK = {
         });
         if(t > 4.2) this.dead = true;
       }});
+    }
+  },
+
+  /* 刀④ 血怒 */
+  bloodrage: {
+    /* 队友共享：两侧各一份小血雾。**位置必须离玩家 3 码以上** ——
+       挨着放会并成一团更大的雾，读成"自己变强了"而不是"多一个人"。 */
+    3: (c)=>{
+      [-1, 1].forEach(s=>{
+        const px = c.x + Math.cos(c.dir)*s*3.2, pz = c.z - Math.sin(c.dir)*s*3.2;
+        let t = 0;
+        addUpdate({ update(dt){
+          t += dt;
+          if(t < 0.9){
+            for(let i=0;i<Math.round(2*Q());i++){
+              const a = Math.random()*7, r = Math.random()*0.6;
+              FX.spr(px + Math.cos(a)*r, 0.03 + Math.random()*0.2, pz + Math.sin(a)*r,
+                { tex:'smoke', life:1.0, s0:.26, s1:.8, a0:.22, vy: 1.3, grav: -1.2,
+                  drag:.6, r:.8, g:.1, b:.1 });
+            }
+          }
+          if(t > 1.4) this.dead = true;
+        }});
+        delay(0.1, ()=> FX.shock(new THREE.Vector3(px,0,pz), 1.2,
+          { color: C(E().glow), dur: 0.28 }));
+      });
+    },
+    /* 吸血：血从怪身上**飞回玩家**。方向必须是向心，向外飞就成了献血 */
+    5: (c)=>{ for(let i=0;i<5;i++) delay(1.0 + i*0.5, ()=> suckBlood(3)); },
+    /* 范围扩大：心跳环外面再套一圈更大的。本体那两道环是 1.9 缩放写死的 */
+    7: (c)=>{
+      delay(0.05, ()=>{
+        const ring = flatMesh(TEX.shock, C(0xff3b30), THREE.AdditiveBlending, 0);
+        ring.position.set(c.x, 0.05, c.z);
+        addUpdate({ t:0, update(dt){ this.t += dt; const k = Math.min(1, this.t/0.6);
+          ring.scale.setScalar(1.0 + k*3.6);
+          ring.material.opacity = (1-k)*0.4;
+          if(k>=1){ scene.remove(ring); this.dead = true; } }});
+      });
+    },
+    /* 击杀延长：12 秒 buff 快到时又跳一次心跳 —— "延长"在画面上就是"还没停" */
+    9: (c)=>{
+      [10.2, 13.4].forEach(d=> delay(d, ()=>{
+        FX.shock(new THREE.Vector3(P.pos.x,0,P.pos.z), 2.4,
+          { color: C(0xff3b30), dur: 0.4 });
+        FX.burst(new THREE.Vector3(P.pos.x, .5, P.pos.z),
+          { n: 12, speed: 4, life: .5, size: .28, grav: -2 });
+        toast('血怒 · 击杀延长');
+      }));
+    },
+    /* 免控：常驻暗金护体环 */
+    10: (c)=>{ guardRing(5.0, 0xffb060, 2.0); }
+  },
+
+  /* 刀⑤ 兵形 */
+  stance: {
+    /* 解锁镇岳式：再来一式。stanceIdx 是自递增的，重放就自动换到下一式，
+       所以"解锁"这件事在画面上真的成立 —— 不是画个 UI 勾。 */
+    3: (c)=>{ delay(0.34, ()=> reCast('stance', c)); },
+    /* 刃势满层 · 断岳斩：一道巨型下劈。和三式那三道弧的差别必须是
+       **竖直下劈 vs 水平横扫**，否则只是"更大一点的斩锋"。 */
+    5: (c)=>{
+      delay(0.68, ()=>{
+        const t = new THREE.Vector3(c.tx, 0, c.tz);
+        const b = billMesh(TEX.blade, C(0xfff0c0), 1);
+        b.userData.noBB = true; b.scale.set(0.9, 3.4, 1);
+        let bt = 0;
+        addUpdate({ update(dt){ bt += dt; const k = Math.min(1, bt/0.16);
+          b.position.set(t.x, 3.6 - k*3.2, t.z);
+          b.quaternion.copy(camera.quaternion); b.rotateZ(0.12);
+          if(k >= 1){ scene.remove(b); this.dead = true; } }});
+        FX.decal(t, 'crack', 3.2, 5, 0x2a1e14);
+        FX.shock(t, 3.4, { color: C(0xfff0c0), dur: 0.5 });
+        FX.burst(t, { n: 26, speed: 8, life: .8, size: .4, up: .6, grav: 5, tex:'smoke' });
+        hitArea(t, 3.0, 46, { kb: 0.25, from: t, critChance: 0.25 });
+        flashAt(t, 2.2, '255,240,200', 0.4);
+        hitstop(0.07); shake(0.34, 0.42);
+        toast('兵形 · 断岳斩');
+      });
+    },
+    /* 摧城式：三式连放。式是轮换的，所以这里就是"三种刀气各出一道" */
+    7: (c)=>{ delay(0.34, ()=> reCast('stance', c));
+              delay(0.68, ()=> reCast('stance', c)); },
+    /* 保留刃势：切式瞬间刀纹**不消失** —— 画面就是一道留得比平时久得多的残影 */
+    9: (c)=>{
+      delay(0.30, ()=>{
+        FX.arc(new THREE.Vector3(c.x,0,c.z), { r: 2.6, inner: 1.9, span: 1.15,
+          tilt: 0.45, y: 1.0, from: -0.9, to: 0.9, life: 0.9,
+          color: C(0xfff0c0), opacity: 0.4 });
+        toast('兵形 · 刃势保留');
+      });
+    },
+    /* 剑神降世：常驻 6 秒慢转刀光（和 Lv1 那道一次性弧完全不同节奏） */
+    10: (c)=>{
+      FX.spinBlades(new THREE.Vector3(P.pos.x, 0, P.pos.z),
+        { r: 1.5, n: 4, life: 6.0, y: 0.85, spin: 3.0, color: C(0xffe0a0) });
+      guardRing(6.0, 0xffe0a0, 2.2);
+      toast('兵形 · 剑神降世');
+    }
+  },
+
+  /* 道③ 太极玄阵 */
+  taiji: {
+    /* 双圈：外面再套一圈。外圈用 sigil（有边界墙），
+       两个 taiji 双鱼叠在一起会糊成一团黑白浆糊。 */
+    3: (c)=>{ if(tierBelow(7)) delay(0.08, ()=> extraField(c, 5.2, 0.45)); },
+    /* 推开：三拍向外推。方向必须是**离心的** ——
+       向内收是吸怪，那是刀① 的活，撞了就分不清谁是谁。 */
+    5: (c)=>{
+      const pos = new THREE.Vector3(c.tx, 0, c.tz);
+      for(let i=0;i<3;i++){
+        delay(0.7 + i*0.75, ()=>{
+          FX.shock(pos, 3.4 + i*0.5, { color: C(0xbfe6ff), dur: 0.5 });
+          hitArea(pos, 3.4, 6, { kb: 0.55, from: pos, color:'#bfe6ff' })
+            .forEach(e=>{ e.knock = 0.5; });
+        });
+      }
+    },
+    7: (c)=>{ if(tierBelow(7)) return;
+              delay(0.08, ()=> extraField(c, 5.2, 0.45));
+              delay(0.16, ()=> extraField(c, 6.8, 0.32)); },
+    /* 内减伤：脚下护罩环（跟着人走 —— 太极阵不跟人走，两件事分开） */
+    9: (c)=>{ guardRing(5.5, 0xbfe6ff, 3.0); },
+    /* 内回血：金色光尘从脚下升起，每秒回 60。回血在画面上必须"看得到东西在上升"，
+       不然和 Lv5 推开一样是"阵里有动静"，分不出来。 */
+    10: (c)=>{
+      let t = 0, acc = 0;
+      addUpdate({ update(dt){
+        t += dt; acc += dt;
+        if(t < 6){
+          for(let i=0;i<Math.round(2*Q());i++){
+            const a = Math.random()*7, r = Math.random()*3.0;
+            FX.spr(c.tx + Math.cos(a)*r, 0.05, c.tz + Math.sin(a)*r, {
+              tex:'spark', life:1.2, s0:.2, s1:0, a0:.7, vy: 1.1, grav: -.5,
+              r:1, g:.92, b:.6 });
+          }
+        }
+        if(acc > 1 && t < 6){ acc = 0; playerHP = Math.min(1000, playerHP + 60); }
+        if(t > 6) this.dead = true;
+      }});
+      toast('太极 · 阵内回血');
+    }
+  },
+
+  /* 道④ 回春 */
+  heal: {
+    /* 队友共享：两侧各一股小金尘（和血怒 Lv3 同构，颜色是唯一区别） */
+    3: (c)=>{
+      [-1, 1].forEach(s=>{
+        const px = c.x + Math.cos(c.dir)*s*3.0, pz = c.z - Math.sin(c.dir)*s*3.0;
+        let t = 0;
+        addUpdate({ update(dt){
+          t += dt;
+          if(t < 1.0){
+            for(let i=0;i<Math.round(2*Q());i++){
+              const a = Math.random()*7, r = Math.random()*0.6;
+              FX.spr(px + Math.cos(a)*r, 0.02 + Math.random()*0.2, pz + Math.sin(a)*r,
+                { tex:'spark', life:1.1, s0:.2, s1:0, a0:.8, vy: 1.4, grav:-.5,
+                  r:1, g:.84, b:.48 });
+            }
+          }
+          if(t > 1.6) this.dead = true;
+        }});
+      });
+    },
+    /* 持续回复增强：光尘从 1.5 秒拉到 3 秒。加量不加浓度 ——
+       浓度翻倍会变成一团金雾，看不出是"更久"。 */
+    5: (c)=>{
+      let t = 0;
+      addUpdate({ update(dt){
+        t += dt;
+        if(t < 3.0){
+          for(let i=0;i<Math.round(2*Q());i++){
+            const a = Math.random()*7, r = Math.random()*1.15;
+            FX.spr(c.x + Math.cos(a)*r, 0.02 + Math.random()*0.25, c.z + Math.sin(a)*r,
+              { tex:'spark', life:1.3, s0:.22, s1:0, a0:.9, vy: 1.4, grav:-.5,
+                r:1, g:.84, b:.48 });
+          }
+        } else this.dead = true;
+      }});
+    },
+    /* 范围扩大：三圈上浮的环半径翻倍。环是"回复到了多大范围"的直接证据 */
+    7: (c)=>{
+      [0, .18, .36].forEach(d=> delay(d, ()=>{
+        const ring = flatMesh(TEX.ring, C(0xffe9a8), THREE.AdditiveBlending, 0);
+        ring.position.set(c.x, 0.05, c.z);
+        addUpdate({ t:0, update(dt){ this.t += dt; const k = Math.min(1, this.t/1.4);
+          ring.position.y = 0.05 + k*2.0;
+          ring.scale.setScalar(1.8 + Math.sin(k*Math.PI)*3.4);
+          ring.material.opacity = Math.sin(k*Math.PI)*0.4;
+          if(k>=1){ scene.remove(ring); this.dead = true; } }});
+      }));
+    },
+    /* 瞬间驱散：一圈白光**向外**推开。向外 = 把脏东西赶走，
+       （解毒那个"由外向内收"是相反方向，别撞） */
+    9: (c)=>{
+      delay(0.12, ()=>{
+        FX.shock(new THREE.Vector3(c.x,0,c.z), 3.6, { color: C(0xffffff), dur: 0.42 });
+        for(let i=0;i<18;i++){
+          const a = i/18*7;
+          FX.spr(c.x + Math.cos(a)*0.8, 0.5, c.z + Math.sin(a)*0.8,
+            { tex:'spark', life:.45, s0:.24, s1:.04, a0:.9,
+              vx: Math.cos(a)*7, vy: .6, vz: Math.sin(a)*7, grav: 0.6,
+              r:1, g:1, b:.92 });
+        }
+        flashAt(new THREE.Vector3(c.x, 1.0, c.z), 2.0, '255,255,245', 0.3);
+        toast('回春 · 瞬间驱散');
+      });
+    },
+    /* 低于 30% 自动触发：施法后 1 秒检查血量，低了就自己再来一次 */
+    10: (c)=>{
+      delay(1.0, ()=>{
+        if(playerHP >= 300) return;
+        let t = 0;
+        addUpdate({ update(dt){
+          t += dt;
+          if(t < 1.2){
+            for(let i=0;i<Math.round(3*Q());i++){
+              const a = Math.random()*7, r = Math.random()*1.15;
+              FX.spr(c.x + Math.cos(a)*r, 0.02 + Math.random()*0.25, c.z + Math.sin(a)*r,
+                { tex:'spark', life:1.2, s0:.26, s1:0, a0:.95, vy: 1.7, grav:-.6,
+                  r:1, g:.88, b:.55 });
+            }
+          } else this.dead = true;
+        }});
+        playerHP = Math.min(1000, playerHP + 260);
+        FX.shock(new THREE.Vector3(c.x,0,c.z), 2.2, { color: C(0xffe9a8), dur: 0.4 });
+        toast('回春 · 低血自动触发');
+      });
+    }
+  },
+
+  /* 法② 陨石 */
+  meteor: {
+    /* 溅射：落地后外扩一圈**更淡**的环 + 贴地碎石。不是再砸一颗 */
+    3: (c)=>{
+      const t = new THREE.Vector3(c.tx, 0, c.tz);
+      delay(0.78, ()=>{
+        FX.shock(t, 6.2, { color: C(0xffc070), dur: 0.6 });
+        FX.burst(t, { n: 22, speed: 9, life: .7, size: .3, up: .5, grav: 5.5, tex:'smoke' });
+        for(let i=0;i<12;i++){
+          const a = Math.random()*7, r = 3.2 + Math.random()*2.2;
+          FX.spr(t.x + Math.cos(a)*r, 0.05, t.z + Math.sin(a)*r,
+            { tex:'shard', life:.5, s0:.24, s1:.4, a0:.8, vy: 2.6, grav: 8,
+              rotV: (Math.random()-.5)*3, r:.9, g:.7, b:.5 });
+        }
+      });
+    },
+    /* 双陨 / 三连落：真陨石（带预警圈）。落点错开 3.4 码 ——
+       同一坐标落两颗，第二颗会被第一颗的蘑菇云吃掉。 */
+    5: (c)=>{ if(tierBelow(9)) delay(0.55, ()=>{
+      const cc = shiftCtx(c, 1);
+      cc.tx += Math.cos(c.dir)*3.4; cc.tz += -Math.sin(c.dir)*3.4;
+      cc.aim = new THREE.Vector3(cc.tx, 0, cc.tz);
+      reCast('meteor', cc);
+    }); },
+    7: (c)=>{ if(tierBelow(9)) delay(1.05, ()=>{
+      const cc = shiftCtx(c, -1);
+      cc.tx += Math.cos(c.dir)*-3.4; cc.tz += -Math.sin(c.dir)*-3.4;
+      cc.aim = new THREE.Vector3(cc.tx, 0, cc.tz);
+      reCast('meteor', cc);
+    }); },
+    /* 陨石雨：5 颗**小**陨石，散布在 6 码内。真陨石每颗 116 颗粒子，
+       五颗下去满屏是火，看不出"雨"，只看出"卡"。 */
+    9: (c)=>{
+      if(tierBelow(9)) return;
+      for(let i=0;i<5;i++){
+        const a = Math.random()*7, r = Math.random()*6;
+        delay(0.5 + i*0.42, ()=> meteorLite(c.tx + Math.cos(a)*r, c.tz + Math.sin(a)*r, 34));
+      }
+    },
+    /* 持续 8 秒：4 秒后再来一阵。第一批就是 Lv9 那阵，不重复发 */
+    10: (c)=>{
+      if(tierBelow(10)) return;
+      for(let i=0;i<5;i++){
+        const a = Math.random()*7, r = Math.random()*6;
+        delay(4.4 + i*0.42, ()=> meteorLite(c.tx + Math.cos(a)*r, c.tz + Math.sin(a)*r, 34));
+      }
+      toast('陨石 · 持续 8 秒');
+    }
+  },
+
+  /* 法③ 火墙 */
+  firewall: {
+    /* 双段 / 三段：段是沿施法方向**往前推**的，不是左右摊开。
+       「一排火舌往前再排一排」才读得出纵深。 */
+    3: (c)=>{ if(tierBelow(7)){
+      const f = c.dir;
+      fireLine(c.x + Math.sin(f)*4.9, c.z + Math.cos(f)*4.9, f, 3.1);
+    } },
+    7: (c)=>{ if(tierBelow(7)) return;
+      const f = c.dir;
+      fireLine(c.x + Math.sin(f)*4.9, c.z + Math.cos(f)*4.9, f, 3.1);
+      fireLine(c.x + Math.sin(f)*7.7, c.z + Math.cos(f)*7.7, f, 3.1);
+    },
+    /* 持续火环：墙灭了之后原地留一片火。
+       「持续」在画面上就是"别的东西都散了它还烧着" */
+    5: (c)=>{
+      delay(0.3, ()=>{
+        const cx = c.x + Math.sin(c.dir)*2.1, cz = c.z + Math.cos(c.dir)*2.1;
+        let t = 0;
+        addUpdate({ update(dt){
+          t += dt;
+          if(t < 3.4){
+            for(let i=0;i<Math.round(2*Q());i++){
+              const a = Math.random()*7, r = Math.random()*2.4;
+              FX.spr(cx + Math.cos(a)*r*0.4, 0.05, cz + Math.sin(a)*r,
+                { tex:'flame', life:.6, s0:.4, s1:.8, a0:.4,
+                  vy: 1.1, grav: -.4, drag: 1.1, r:1, g:.45, b:.15 });
+            }
+          } else this.dead = true;
+        }});
+      });
+    },
+    /* 跟随：整段墙跟着人挪。位置每帧重算 ——
+       只挪一次的话，人一走墙就孤零零留在原地 */
+    9: (c)=>{
+      const w = fireLine(P.pos.x + Math.sin(c.dir)*2.1, P.pos.z + Math.cos(c.dir)*2.1,
+        c.dir, 3.1);
+      let t = 0, acc = 0;
+      addUpdate({ update(dt){
+        t += dt; acc += dt;
+        w.move(P.pos.x + Math.sin(P.face)*2.1, P.pos.z + Math.cos(P.face)*2.1);
+        if(acc > 0.35 && t < 3.0){ acc = 0;
+          hitArea(new THREE.Vector3(P.pos.x, 0, P.pos.z), 3.2, 8, { color:'#ffb060' }); }
+        if(t > 3.2) this.dead = true;
+      }});
+    },
+    /* 结束爆炸：整条墙在最后一刻一起炸。
+       这是唯一"墙会消失"的档位 —— 不炸的墙是慢慢淡出，炸的是**没了** */
+    10: (c)=>{
+      delay(3.05, ()=>{
+        const cx = c.x + Math.sin(c.dir)*2.1, cz = c.z + Math.cos(c.dir)*2.1;
+        const t = new THREE.Vector3(cx, 0, cz);
+        FX.shock(t, 5.4, { color: C(0xffa052), dur: 0.6 });
+        FX.geyser(t, { h: 3.4, w: 4.6, opacity: .4, life: .6, tex:'flame', color: 0xff9a4c });
+        FX.burst(t, { n: 40, speed: 9, life: .9, size: .5, up: 1.0, grav: -0.4, tex:'ember' });
+        hitArea(t, 4.4, 52, { kb: 0.2, from: t, critChance: 0.2 });
+        flashAt(t, 2.8, '255,180,110', 0.45);
+        hitstop(0.05); shake(0.3, 0.42);
+        toast('火墙 · 结束爆炸');
+      });
+    }
+  },
+
+  /* 法④ 玄冰护盾 */
+  iceshield: {
+    /* 队友共享：侧后方开一个**小一号**的壳。和玩家那个并列，
+       不叠在同一个位置 —— 叠一起就成了"更厚的壳"，不是"多一个人" */
+    3: (c)=>{
+      const px = c.x + Math.cos(c.dir)*3.0, pz = c.z - Math.sin(c.dir)*3.0;
+      iceShellAt(new THREE.Vector3(px, 0, pz), 0.66, 6);
+    },
+    /* 反伤：壳外定时向外扎冰锥。锥尖**朝外**（朝内是被吸进来） */
+    5: (c)=>{
+      for(let i=0;i<5;i++) delay(0.9 + i*0.8, ()=>{
+        iceSpikes(new THREE.Vector3(P.pos.x, 0, P.pos.z), 0xd8f6ff, 10);
+        hitArea(new THREE.Vector3(P.pos.x,0,P.pos.z), 2.6, 7, { color:'#bfe4ff' });
+      });
+    },
+    /* 强化：壳外面再套一层更大的。两层线框 = 厚度 */
+    7: (c)=>{
+      const m = new THREE.Mesh(new THREE.IcosahedronGeometry(1.38, 1),
+        new THREE.MeshBasicMaterial({ color: C(0x9ae8ff), wireframe: true, transparent: true,
+          opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false }));
+      scene.add(m);
+      let t = 0;
+      addUpdate({ update(dt){
+        t += dt;
+        m.position.set(P.pos.x, 0.82, P.pos.z);
+        m.rotation.y += dt*0.22;
+        m.material.opacity = 0.30 * Math.min(1, t/0.4)
+          * (t > 5.6 ? Math.max(0, (6-t)/0.4) : 1);
+        if(t > 6){ scene.remove(m); this.dead = true; }
+      }});
+    },
+    /* 爆发：壳不破，向外炸一圈冰。和"破盾"的分界是**壳还在** */
+    9: (c)=>{
+      delay(2.4, ()=>{
+        FX.shock(new THREE.Vector3(P.pos.x,0,P.pos.z), 4.0, { color: C(0xd8f6ff), dur: 0.5 });
+        FX.burst(new THREE.Vector3(P.pos.x, .8, P.pos.z),
+          { n: 40, speed: 9, life: .9, size: .4, tex:'shard', grav: 2, drag: 1.1 });
+        hitArea(new THREE.Vector3(P.pos.x,0,P.pos.z), 4.0, 26, { kb: 0.3, color:'#bfe4ff' });
+        hitstop(0.04); shake(0.2, 0.3);
+        toast('玄冰护盾 · 爆发');
+      });
+    },
+    /* 破碎时冰冻：破壳那一瞬间地面结冰 + 冰锥立起。
+       冻在地上（shard 朝上、贴地）和 Lv5 反伤（朝外飞）方向相反，别混 */
+    10: (c)=>{
+      delay(5.62, ()=>{
+        const t = new THREE.Vector3(P.pos.x, 0, P.pos.z);
+        FX.decal(t, 'frost', 4.2, 5, 0x9ae8ff);
+        FX.shock(t, 3.6, { color: C(0xd8f6ff), dur: 0.5 });
+        for(let i=0;i<14;i++){
+          const a = i/14*7, r = 1.0 + Math.random()*2.4;
+          FX.spr(t.x + Math.cos(a)*r, 0.05, t.z + Math.sin(a)*r,
+            { tex:'shard', life:.7, s0:.2, s1:.42, a0:.9, vy: 2.2, grav: 4,
+              rotV: (Math.random()-.5)*2, r:.7, g:.9, b:1 });
+        }
+        hitArea(t, 3.6, 18, { color:'#bfe4ff', slow: 0.5 });
+        toast('玄冰护盾 · 破碎冰冻');
+      });
+    }
+  },
+
+  /* 法⑤ 元素法相 */
+  avatar: {
+    /* 元素切换：法相中途换一次元素色。
+       画面就是"光环颜色整个变掉"—— 不变色等于没切 */
+    3: (c)=>{
+      delay(3.6, ()=>{
+        FX.shock(new THREE.Vector3(P.pos.x,0,P.pos.z), 3.2,
+          { color: C(E().glow), dur: 0.45 });
+        FX.burst(new THREE.Vector3(P.pos.x, 1.0, P.pos.z),
+          { n: 26, speed: 5.5, life: .8, size: .34 });
+        flashAt(new THREE.Vector3(P.pos.x, 1.2, P.pos.z), 2.2, '255,240,210', 0.3);
+        toast('法相 · 元素切换');
+      });
+    },
+    /* 全技能灼烧：法相期间点着的怪身上一直冒火。
+       三团火是"点着了"，不是"又放了三个技能" */
+    5: (c)=>{
+      for(let i=0;i<3;i++) delay(1.4 + i*1.6, ()=>{
+        const list = enemies.filter(e=>e && e.deadT<=0)
+          .map(e=>({ e, d: Math.hypot(e.pos.x-P.pos.x, e.pos.z-P.pos.z) }))
+          .filter(o=>o.d < 8).sort((a,b)=>a.d-b.d).slice(0, 2);
+        list.forEach(o=>{
+          const at = new THREE.Vector3(o.e.pos.x, 0.1, o.e.pos.z);
+          FX.burst(at, { n: 12, speed: 2.6, life: .6, size: .3, up: 1.2,
+            grav: -1.2, tex:'flame', noMix: true });
+          hitEnemy(o.e, 9, { color:'#ffa050' });
+        });
+      });
+    },
+    /* 7 级「法相延长」是纯时长，画面上没有任何可加的东西 —— 这条不接，
+       清单里照实标「数值」，不编一段假光效。 */
+    /* 结束新星：8 秒打完向外一圈大冲击。法相是"贴身佛光"，
+       散场必须是**向外扩**，和它贴身收着的样子相反 */
+    9: (c)=>{
+      delay(7.95, ()=>{
+        const t = new THREE.Vector3(P.pos.x, 0, P.pos.z);
+        FX.shock(t, 5.6, { color: C(E().glow), dur: 0.65 });
+        FX.burst(t, { n: 46, speed: 10, life: 1.0, size: .44, up: .9, grav: 0.4 });
+        hitArea(t, 5.0, 44, { kb: 0.25, from: t });
+        flashAt(t, 3.0, '255,235,200', 0.45);
+        hitstop(0.05); shake(0.3, 0.4);
+        toast('法相 · 结束新星');
+      });
+    },
+    /* 免疫打断：常驻青金护体环 */
+    10: (c)=>{ guardRing(8.0, 0xbfe6ff, 2.2); }
+  },
+
+  /* 道⑤ 召灵兽 */
+  summon: {
+    /* 双狼：第二只狼。位置错开 2.4 码 —— 两只站一起会叠成一坨毛 */
+    3: (c)=>{
+      beastAt(c.x + Math.cos(c.dir)*2.4, c.z - Math.sin(c.dir)*2.4, 0xd8b078, 0xff9a3a, 0.9);
+    },
+    /* 白虎：新兽种用**颜色**区分（白 vs 褐），不是换个模型 ——
+       模型只有一个，硬凑三套模型是白费工。落地带一次范围冲击。 */
+    5: (c)=>{
+      beastAt(c.x - Math.cos(c.dir)*2.6, c.z + Math.sin(c.dir)*2.6, 0xf2f0ea, 0xffd27a, 1.3);
+      delay(1.75, ()=>{
+        const t = new THREE.Vector3(P.pos.x + Math.sin(P.face)*2.2, 0, P.pos.z + Math.cos(P.face)*2.2);
+        FX.shock(t, 3.4, { color: C(0xffe6b0), dur: 0.5 });
+        FX.burst(t, { n: 26, speed: 7, life: .8, size: .4, up: .8, grav: 3.2, tex:'smoke' });
+        hitArea(t, 3.2, 30, { kb: 0.3, from: new THREE.Vector3(P.pos.x,0,P.pos.z) });
+        shake(0.18, 0.32);
+        toast('白虎 · 范围扑击');
+      });
+    },
+    /* 7 级「虎 + 狼」的兽数已由 Lv3 / Lv5 出齐，这里只补虎的扑击频率 ——
+       不重复加兽，否则 Lv10 场上会有四只狼虎挤成一团。 */
+    7: (c)=>{
+      delay(2.6, ()=>{
+        const t = new THREE.Vector3(P.pos.x + Math.sin(P.face)*2.2, 0, P.pos.z + Math.cos(P.face)*2.2);
+        FX.shock(t, 3.0, { color: C(0xffe6b0), dur: 0.4 });
+        hitArea(t, 3.0, 22, { kb: 0.25 });
+      });
+    },
+    /* 青龙：青色 + 常驻光环。光环跟着兽，不是铺在地上 ——
+       铺地上的环会被当成法阵，那是道士 ⑦ 号位的形状。 */
+    9: (c)=>{
+      beastAt(c.x + Math.sin(c.dir)*3.2, c.z + Math.cos(c.dir)*3.2, 0x9fe6d8, 0x8ff0ff, 1.7);
+      delay(2.2, ()=>{
+        const halo = flatMesh(TEX.ring, C(0x8ff0ff), THREE.AdditiveBlending, 0);
+        let t = 0;
+        addUpdate({ update(dt){
+          t += dt;
+          const bx = c.x + Math.sin(c.dir)*3.2 + Math.sin(t*0.8)*0.3;
+          const bz = c.z + Math.cos(c.dir)*3.2 + Math.cos(t*0.8)*0.3;
+          halo.position.set(bx, 0.06, bz);
+          halo.scale.setScalar(2.6 + Math.sin(t*3)*0.12);
+          halo.material.opacity = 0.34 + 0.12*Math.sin(t*4);
+          if(t > 4){ scene.remove(halo); this.dead = true; }
+        }});
+        toast('青龙 · 光环');
+      });
+    },
+    /* 四象：三兽已经在场（狼狼虎龙），这里补"四象"的地面阵 ——
+       再多加一只兽只会更挤，阵能把它们**框成一个整体** */
+    10: (c)=>{
+      delay(2.4, ()=>{
+        const pos = new THREE.Vector3(c.x, 0, c.z);
+        FX.field(pos, { kind:'sigil', r: 4.6, life: 4, color: C(0xffe0a0), pulse: 1.2,
+          opacity: 0.5, wall: 0.12, spin: 0.24 });
+        for(let i=0;i<4;i++){
+          const a = i/4*Math.PI*2 + Math.PI/4;
+          delay(i*0.12, ()=> FX.spr(pos.x + Math.cos(a)*4.6, 0.1, pos.z + Math.sin(a)*4.6,
+            { tex:'sigil', life:1.2, s0:.3, s1:.7, a0:.7, vy:.6, grav:-.2,
+              r:1, g:.88, b:.6 }));
+        }
+        toast('四象召唤');
+      });
     }
   }
 };
