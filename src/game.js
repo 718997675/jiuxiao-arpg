@@ -1678,6 +1678,14 @@ const Game = {
     const zs = (typeof zoneSpawners === 'function') ? zoneSpawners(this.state.mapId) : null;
     if (zs && zs.length) {
       const sp = this.playerGroup.position;
+      /* [M3] 轮转刷怪：所有区一只一只轮着刷，而不是「一个区刷完再刷下一个」。
+       *
+       * 为什么必须改：同屏怪数有硬上限（PC 36 / 触屏 28），
+       * 而 §5.1 要求单图 40~56 只 —— 超出上限的部分一定会被 spawnEnemy 丢掉。
+       * 按区顺序刷的话，被丢掉的永远是最后几个区（后殿道 + 首领场），
+       * 玩家一路打过去会发现北半边是空的，正好是 §5.1 要解决的「大而空」。
+       * 轮转之后每个区都按同一比例被截断，地图密度是均匀的。 */
+      const queues = [];
       for (const z of zs) {
         /* [M2] 任务区域：数量 ×1.4（上限 +6），目标怪权重 ×3。
          * 复命 / 放弃后 QuestSys.activeZones 立刻不再返回这个区，
@@ -1685,7 +1693,15 @@ const Game = {
         const qb = (typeof QuestSys !== 'undefined') ? QuestSys.zoneBoost(this.state.mapId, z.id) : null;
         const base = z.spawns.count || 0;
         const n = qb ? Math.min(Math.round(base * qb.mult), base + qb.extra) : base;
-        for (let i = 0; i < n; i++) {
+        if (n > 0) queues.push({ z: z, left: n, qb: qb });
+      }
+      let total = 0;
+      for (const q of queues) total += q.left;
+      while (total > 0) {
+        for (const q of queues) {
+          if (q.left <= 0) continue;
+          q.left--; total--;
+          const z = q.z, qb = q.qb;
           /* 权重 ×3 用「75% 概率直接取目标怪」近似：目标怪通常是 2~3 种之一，
            * 1/3 × 3 = 1 的权重比，换算是成立的，且比写一套加权抽样便宜。 */
           const kind = (qb && qb.kinds && qb.kinds.length && Math.random() < 0.75)
@@ -1697,8 +1713,8 @@ const Game = {
            * 连试 8 次都找不到远处的位置就跳过这只（宁可少刷也不刷脸）。 */
           let p = null;
           for (let k = 0; k < 8; k++) {
-            const q = randomPointInZone(z, 2.6);
-            if (Math.hypot(q.x - sp.x, q.z - sp.z) >= SPAWN_SAFE) { p = q; break; }
+            const q2 = randomPointInZone(z, 2.6);
+            if (Math.hypot(q2.x - sp.x, q2.z - sp.z) >= SPAWN_SAFE) { p = q2; break; }
           }
           if (!p) continue;
           this.spawnEnemy(kind, p.x, p.z, CHANCE(D.elite));
@@ -1940,17 +1956,27 @@ const Game = {
   spawnBosses() {
     const m = MAPS[this.state.mapId];
     if (!m.bosses || !m.bosses.length) return;
-    for (const bid of m.bosses) {
-      const pos = BOSS_POS[bid] || [0, -30];
-      const b = this.spawnEnemy(null, pos[0], pos[1], false, BOSSES[bid].level, bid);
+    /* [M3] 落点走 bossPosOf(mapId, bid, idx)，不再直读老表。
+     * 老表只有 12 条坐标，且都是按老图（size 130~140）摆的；
+     * 新图 size 290~300、sanctum 位置完全不同，直接套老坐标会把首领
+     * 丢到祭坛外（zone-check 会报「落点在 sanctum 外」）。
+     * bossPosOf 的顺序是「本图覆盖 → 老坐标（若仍落在本图 sanctum 内）→ 按圆心推导」，
+     * 所以老图手感一个像素都没变。 */
+    m.bosses.forEach((bid, idx) => {
+      const cfg = BOSSES[bid];
+      if (!cfg) return;
+      const pos = (typeof bossPosOf === 'function')
+        ? bossPosOf(this.state.mapId, bid, idx)
+        : (BOSS_POS[bid] || [0, -30]);
+      const b = this.spawnEnemy(null, pos[0], pos[1], false, cfg.level, bid);
       if (b) {
-        b.dmg = BOSSES[bid].atk * (1 + BOSSES[bid].level * 0.09);
+        b.dmg = cfg.atk * (1 + cfg.level * 0.09);
         b.patternCd = RND(2.5, 4.5);
         /* [M12] 拴绳锚点：玩家跑出祭坛之后首领要回位，
          * 而不是顶着祭坛的硬墙原地抖（区域化之前圆环是软的，看不出来）。 */
         b.anchor = { x: pos[0], z: pos[1] };
       }
-    }
+    });
   },
 
   /* 用本帧最终相机姿态校正所有血条朝向（详见 animate 里的说明） */
@@ -4646,6 +4672,30 @@ const Game = {
         a.group.traverse(o => { if (o.isMesh) o.castShadow = wantShadow; });
       }
       const spd = e.spd * (1 - e.slow) * (e.boss ? (1 + e.phase * 0.12) : 1);
+
+      /* [M3 · §5.4] 远处怪的 AI 降频。
+       *
+       * MOB_CULL_DIST（62 米）之外已经 group.visible=false，看不见了，
+       * 但下面整段 AI 照跑，还带 updateActorAnim 的骨骼动画。
+       * M3 之前一张图 10~12 只怪、size 130，62 米外基本没几只；
+       * M3 之后 37~43 只撒在 ±140 米上，**常态就有十几只在视野外空转**。
+       *
+       * 处理：不可见 + 没仇恨 + 非首领 → 每 3 帧才走一次 AI。
+       *   - 必须有 !e.aggro：被激怒的怪会从 62 米外追过来，降频会让它卡顿。
+       *   - 必须有 !e.boss：首领的 phase / 技能节奏对帧敏感。
+       *   - **不需要补 dt**：中毒 / 流血 / 眩晕 / 各类 debuff 的计时器
+       *     在插入点**之前**就已经按真实 dt 结算过了（见上面的 4611~4647 行），
+       *     这里跳过的只有「移动 + 挥刀 + 骨骼动画」，而 62 米外的怪既不挥刀
+       *     也不可见，少算两帧的 atkCd 没有可观测影响。
+       *   - 也绝不能写成 `dt += ...`：dt 是 updateEnemies 的形参，
+       *     改它会把多出来的时间带给下一只怪，一帧之内越滚越大。 */
+      if (culled && !e.boss && !e.aggro) {
+        e.aiSkip = (e.aiSkip || 0) + 1;
+        if (e.aiSkip % 3 !== 0) {
+          a.moving = false;
+          continue;
+        }
+      }
 
       if (e.boss && !e.active) {
         if (d < 17) {

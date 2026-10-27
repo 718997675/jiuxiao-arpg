@@ -152,7 +152,54 @@ const QUESTS = {
     brief: '冰魄湖冻住了水面，却没冻住湖底的东西。万毒蛛母在冰下织了一张比湖还大的网。',
     objectives: [{ type: 'boss', target: 'spidermother', count: 1, label: '击败万毒蛛母' }],
     rewards: { xp: 11000, gold: 3800, ilvl: 29, rarity: 'legendary', talent: 2 },
-    next: null, require: 'm2_1_2'
+    next: 'm2_2_1', require: 'm2_1_2'
+  },
+
+  /* ---------------- 2-2 熔脉深处（熔脉深沟 lv24 / 灰烬荒原 lv26） ----------------
+   * [M3] 这一段是「补图之后任务立刻可接」的验证样本：
+   * 地图 4 张一落地，这 5 条主线不需要改任何框架代码就自动出现在玄铁关掌事手上，
+   * 因为 questMapOpen() 只判断「目标图存不存在」。 */
+  m2_2_1: {
+    id: 'm2_2_1', part: 2, act: '2-2', kind: 'main',
+    name: '井底的呼吸', giver: 'campB_main', map: 'magmagully', zone: 'hub',
+    brief: '熔脉深沟的井底有东西在呼吸，一下一下，和地火一个节奏。先下去看看是什么。',
+    objectives: [{ type: 'kill', target: 'magma', count: 14, label: '清掉井底大厅的熔岩怪' }],
+    rewards: { xp: 12800, gold: 4200, ilvl: 31, rarity: 'rare' },
+    next: 'm2_2_2', require: 'm2_1_3'
+  },
+  m2_2_2: {
+    id: 'm2_2_2', part: 2, act: '2-2', kind: 'main',
+    name: '灰烬上的脚印', giver: 'campB_main', map: 'ashfield', zone: 'c4',
+    brief: '荒原上只有一个人的脚印，绕了一圈又一圈，最后停在谷底。那东西还在走。',
+    objectives: [{ type: 'boss', target: 'ashwarden', count: 1, label: '击败灰烬守望者' }],
+    rewards: { xp: 14600, gold: 4800, ilvl: 33, rarity: 'legendary', talent: 1 },
+    next: 'm2_2_3', require: 'm2_2_1'
+  },
+  m2_2_3: {
+    id: 'm2_2_3', part: 2, act: '2-2', kind: 'main',
+    name: '熔心', giver: 'campB_main', map: 'magmagully', zone: 'sanctum',
+    brief: '深井尽头是一颗还在跳的心。熔脉之主守着它，三百年没让它凉过。',
+    objectives: [{ type: 'boss', target: 'magmalord', count: 1, label: '击败熔脉之主·赤髓' }],
+    rewards: { xp: 16400, gold: 5400, ilvl: 35, rarity: 'legendary', skill: 'pyroclasm' },
+    next: 'm2_3_1', require: 'm2_2_2'
+  },
+
+  /* ---------------- 2-3 焚天焦土（赤炎峡谷 lv28 / 焚天祭坛 lv30） ---------------- */
+  m2_3_1: {
+    id: 'm2_3_1', part: 2, act: '2-3', kind: 'main',
+    name: '峡谷里的火不肯散', giver: 'campB_main', map: 'flamecanyon', zone: 'sanctum',
+    brief: '赤炎峡谷的风是烫的，火却烧不起来 —— 因为烧的不是柴，是不肯走的怨。',
+    objectives: [{ type: 'boss', target: 'flamewraith', count: 1, label: '击败焚风怨灵' }],
+    rewards: { xp: 18200, gold: 6000, ilvl: 37, rarity: 'legendary' },
+    next: 'm2_3_2', require: 'm2_2_3'
+  },
+  m2_3_2: {
+    id: 'm2_3_2', part: 2, act: '2-3', kind: 'main',
+    name: '焚天', giver: 'campB_main', map: 'flamealtar', zone: 'sanctum',
+    brief: '祭坛上那个人说，焚天不是名号，是他的活。你若拦他，就连你一起烧。',
+    objectives: [{ type: 'boss', target: 'flameemperor', count: 1, label: '击败焚天炎帝' }],
+    rewards: { xp: 21000, gold: 7200, ilvl: 40, rarity: 'legendary', skill: 'avatar', talent: 2 },
+    next: null, require: 'm2_3_1'
   },
 
   /* ==========================================================
@@ -168,7 +215,7 @@ const QUESTS = {
       { type: 'boss', target: 'swordlord', count: 1, label: '击败天罡剑魂' }
     ],
     rewards: { xp: 12000, gold: 4200, ilvl: 30, rarity: 'legendary', skill: 'iceshield' },
-    next: null, require: 'm2_1_3'
+    next: null, require: 'm2_3_2'
   },
 
   /* ==========================================================

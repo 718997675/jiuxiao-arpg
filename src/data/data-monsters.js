@@ -453,6 +453,42 @@ const BOSSES = {
     patterns: ['swordrain', 'charge', 'slam'],
     lines: ['剑，即是道。', '接我这一剑。']
   },
+  /* ---------------- 卷二 · 血月焚天（M3） ----------------
+   * 2-2 / 2-3 四张新图各自的首领。
+   *
+   * 模型全部复用既有骨架、只换色与技能组合 —— 这是 §5.3 定下的原则
+   * 「新地貌不新模型」：造型工作留给美术，数据层先把「走进祭坛有人」跑通。
+   * 等级严格对齐 ACTS：2-2 是 23~26，2-3 是 27~30。
+   * 血量按「同等级老首领 × 1.15」给，因为新图的可走面积是老图的 3 倍，
+   * 战斗场地更大、走位更久，血太薄会被直接跳过机制。 */
+  magmalord: {
+    id: 'magmalord', name: '熔脉之主·赤髓', title: '深井尽头的火', map: 'magmagully', level: 24, scale: 2.2,
+    hp: 11200, atk: 60, spd: 2.8, color: 0xb03a18, cloth: 0x5a1408, model: 'golem', scale: 1.9,
+    melee: true, range: 4.8, atkCd: 2.1, fire: true, family: 'stone',
+    patterns: ['slam', 'fireline', 'meteor'],
+    lines: ['这口井，烧了三百年。', '你也想变成炉渣吗？']
+  },
+  ashwarden: {
+    id: 'ashwarden', name: '灰烬守望者', title: '荒原上最后一尊像', map: 'ashfield', level: 26, scale: 2.3,
+    hp: 12800, atk: 66, spd: 2.4, color: 0x6a6058, cloth: 0x2e2a26, model: 'golem', scale: 1.95,
+    melee: true, range: 5.0, atkCd: 2.4, armorHigh: true, family: 'stone',
+    patterns: ['quake', 'rocks', 'slam'],
+    lines: ['灰会记住每一个脚印。', '风停了，你也该停了。']
+  },
+  flamewraith: {
+    id: 'flamewraith', name: '焚风怨灵', title: '峡谷里不肯散的火', map: 'flamecanyon', level: 28, scale: 2.1,
+    hp: 14200, atk: 72, spd: 3.6, color: 0xd8622a, cloth: 0x6a2410, model: 'ghost', scale: 1.9,
+    melee: false, ranged: true, range: 15, atkCd: 1.9, fire: true, family: 'spirit',
+    patterns: ['ringshot', 'fireline', 'curse'],
+    lines: ['烧过了，就不冷了。', '风带我走，火留我下来。']
+  },
+  flameemperor: {
+    id: 'flameemperor', name: '焚天炎帝', title: '卷二之终', map: 'flamealtar', level: 30, scale: 2.7,
+    hp: 19000, atk: 84, spd: 3.2, color: 0xe04a14, cloth: 0x6e1a06, model: 'brute', scale: 2.0, skin: 0xc05020,
+    melee: true, range: 5.0, atkCd: 1.8, fire: true, family: 'humanoid',
+    patterns: ['slam', 'fireline', 'meteor', 'summon'],
+    lines: ['焚天不是我的名号，是我的活。', '天要烧，我就替它烧。', '你烧不起来的，我教你。']
+  },
   chaos: {
     id: 'chaos', name: '混沌·无相天魔', title: '九霄终焉', map: 'heaven', level: 38, scale: 3.0,
     hp: 42000, atk: 105, spd: 3.4, color: 0x5a2478, cloth: 0x220c30, model: 'demon', scale: 2.1, skin: 0x6a3a7a,

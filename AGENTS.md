@@ -139,6 +139,9 @@ git fetch origin                 # 分支都在远程，clone 完就全能看到
 | 任务运行时（接取/进度/复命/任务区域/迁移） | `src/quests.js`（`QuestSys`）。`game.js` 里的 `acceptQuest`/`questReady`/`turnInQuest`/`onKill` 只是转发，别再往里写业务 |
 | 营地场景 / 路标石 / 章间出口门 | `src/world.js`（`buildMap` 末尾建 `waystone`/`gate`）+ `src/game.js`（`travelTo` 门禁、`updateInteract`/`interact`） |
 | 山河图（传送面板） | `src/ui.js` 的 `openTravel`/`renderWorldMap` + `index.html` 的 `.wm-*` |
+| 小地图 | `src/ui-minimap.js`（`Minimap.draw`）。`ui.js` 的 `drawMinimap` 只是转发，别再往那边写 |
+| zone 拓扑 / 骨架 / 刷怪分配 | `src/data/data-maps.js` 的 `ZONE_ARCHETYPES` + `MAP_SPECS` + `buildZones`/`suggestSpawnTotal` |
+| 首领落点 | `src/data/data-maps.js` 的 `bossPosOf(mapId, bossId, idx)`。**不要再往 `MAP_BOSS_POS` 里加坐标**，那是老图的表 |
 
 ## 5. 回归脚本（改完必跑）
 
@@ -146,6 +149,8 @@ git fetch origin                 # 分支都在远程，clone 完就全能看到
 node dev/smoke.js            # 三职业开局冒烟，零 pageerror 才算过
 node dev/test-quest.js       # 任务系统：接取/进度/复命/任务区域/悬赏板/老档迁移/UI 接线（44 项）
 node dev/zone-check.js       # 区域数据：越界/连通/重叠/落点/刷怪（纯 node，不启浏览器）
+node dev/zone-density.js     # 面积/密度：§5.1 的 16000~24000㎡、380~450㎡/只、40~56 只、max/min≤1.6
+node dev/m3-check.js         # M3 新图实测：落点/首领/小地图绘制/37 只怪帧率
 node dev/mobile-layout.js    # 6 视口 × 10 页签：键位重叠/出屏/裁切/可滚性
 node dev/live-check.js       # 线上能否开局（推完 30~60s 后跑）
 node dev/mobile-layout.js --live   # 线上版布局回归
@@ -206,6 +211,22 @@ node dev/preview-check.js --url <预览地址>   # 预览站：能开局 + 资�
 - 营地**故意没有 elder**：q1~q11 整条链挂在桃源村村长身上，营地再摆一个 elder 会让任务对话指错地方。
   M2 起改成「一营一个掌事 + 一个录事」，桃源村掌事仍是老村长（`NPC_ALIAS` 别名）。
 
+### 地图骨架（M3 之后）
+
+- **新图不要手写 zone 坐标**。在 `MAP_SPECS` 里写 `{ archetype, size, ground, kinds, names }` 一行即可，
+  坐标由 `buildZones` 按 `R = size × 0.47` 展开。手写 12 个区 = 手写 40 个数字，25 张就是 1000 个。
+- **骨架坐标一律用 R 为单位**，不要写米。写米的话换 size 就有一半区越界。
+- **相邻区必须「有面积地重叠」**，不能相切。这一批 8 个骨架里有 4 个（canyon/terrace/twin/ring）
+  第一版全部踩了相切：矩形边对边摆，探针立刻报「不可达」。经验值：重叠 ≥ 0.05R 才安全。
+- **刷怪数不手填**。`suggestSpawnTotal()` 从 `ARCHETYPE_COVERAGE` 反推，因为每种骨架的可走覆盖率
+  差很多（cross 23.5% / twin 19.6%），同一张 size 下差 3000㎡；手填同一个数必然一半偏密一半偏稀。
+- **`size` 不要低于 285**。§5.1 的「面积 ≥16000㎡」和「密度 380~450㎡/只」在更小的尺寸下数学上互斥
+  （骨架只覆盖 21%）。`node dev/zone-density.js --advise` 会给每种骨架算出合法区间。
+- **刷怪要轮转，不能按区顺序刷**。同屏上限 PC 36 / 触屏 28，而一张图 40~56 只 ——
+  按区顺序刷会把截断全落在最后几个区（后殿 + 首领场），北半边变空图。
+- **62 米外的怪 AI 每 3 帧才走一次**（`updateEnemies` 里的 `aiSkip`）。加这个分支时**不要动 `dt`**，
+  它是形参，改了会污染下一只怪；debuff 计时器在插入点之前就已结算，不需要补帧。
+
 ### 任务系统（M2 之后）
 
 - **任务只记「目标图 + 区域」**，图没做出来就由 `questMapOpen` 过滤掉。M3 补图不用回来改任务表。
@@ -222,8 +243,10 @@ node dev/preview-check.js --url <预览地址>   # 预览站：能开局 + 资�
 
 - 线上版本：见 `git log -1`。
 - **进行中**：大地图扩展 `feat/act-expansion` —— M0（三层结构 + schema v3）、M1（5 营地 + 路标石 +
-  章间出口门）、M2（任务系统：35 条任务 + 任务区域 + 悬赏板 + 老档迁移）已完成，
-  下一步 M3 地图扩容。进度与卡点看 `docs/status/act-expansion.md`。
+  章间出口门）、M2（任务系统 + 任务区域 + 悬赏板 + 老档迁移）已完成。
+  **M3 第一批已落地**：8 种 zone 骨架 + 4 张新图（卷二 2-2/2-3）+ 灰烬地貌 + 小地图 + 密度公式 +
+  40 条任务（新增 2-2/2-3 五条主线）。剩余：5 种地貌只做了 `ash`（还差 snow/bone/void/flood）、
+  21 张新图。进度与卡点看 `docs/status/act-expansion.md`。
   方案在 `docs/ACT-EXPANSION-PLAN.md`；§14 的 7~10 项仍未拍板，但都不挡 M3。
 - **暂停中**：技能系统重构（12 技能 → 4~5 个功能位 + 元素混搭 + 发射数量成长）。
   完整方案在 `docs/SKILL-REDESIGN-PLAN.md`，用户已拍板 10 项决策，**等他说开工**。

@@ -69,6 +69,46 @@ const MAPS = {
     spawns: ['drowned', 'toad', 'bogwitch', 'brood', 'spider', 'wasp'], spawnCount: 12,
     bosses: ['spidermother'], portal: { x: 0, z: 55.1 }, unlock: 21
   },
+  /* ---------------- 卷二 · 血月焚天 2-2 / 2-3（M3 第一批） ----------------
+   * 这 4 张是骨架系统（data-maps.js 的 ZONE_ARCHETYPES）的第一批使用者：
+   * 这里只声明「用哪种骨架 + 多大」，zone 坐标、刷怪分配、首领落点全部自动展开。
+   *
+   * 几个数字的来由，改之前先看 data-maps.js 的注释：
+   *   size 290~300 —— 低于 285 时 §5.1 的「可走面积 ≥16000㎡」与
+   *                   「密度 380~450㎡/只」在数学上无法同时成立
+   *   spawnCount   —— 与 buildZones 推导出的数量一致（zone-check 会核对），
+   *                   只作为 UI/调试的显示值，实际刷怪走 zone
+   *   fogFar       —— §5.1 要求 170~210；地图大了雾距不跟上的话，
+   *                   玩家会看到远处是一片纯色背景
+   *   portal       —— 必须落在入口 zone 内（zone-check 逐张校验） */
+  magmagully: {
+    id: 'magmagully', name: '熔脉深沟', safe: false, level: 24,
+    ground: 'rock', sky: 0x2e1a14, fog: 0x3a2018, fogNear: 52, fogFar: 178,
+    size: 290, ambient: 0x9a6a58, sun: 0xff8a4a, sunI: 0.8, props: 'mine',
+    spawns: ['magma', 'ironbeetle', 'golem', 'runesmith', 'ghostfire'], spawnCount: 40,
+    bosses: ['magmalord'], portal: { x: 0, z: 75 }, unlock: 23
+  },
+  ashfield: {
+    id: 'ashfield', name: '灰烬荒原', safe: false, level: 26,
+    ground: 'ash', sky: 0x3a2e26, fog: 0x46362a, fogNear: 56, fogFar: 186,
+    size: 295, ambient: 0xa8846a, sun: 0xffb070, sunI: 0.86, props: 'mine',
+    spawns: ['magma', 'ghostfire', 'ironbeetle', 'runesmith', 'golem'], spawnCount: 42,
+    bosses: ['ashwarden'], portal: { x: 0, z: 77.6 }, unlock: 25
+  },
+  flamecanyon: {
+    id: 'flamecanyon', name: '赤炎峡谷', safe: false, level: 28,
+    ground: 'ash', sky: 0x40180e, fog: 0x4e2010, fogNear: 58, fogFar: 194,
+    size: 300, ambient: 0xb06a4a, sun: 0xff9a50, sunI: 0.9, props: 'mine',
+    spawns: ['magma', 'ghostfire', 'runesmith', 'golem', 'statue'], spawnCount: 43,
+    bosses: ['flamewraith'], portal: { x: 0, z: 79 }, unlock: 27
+  },
+  flamealtar: {
+    id: 'flamealtar', name: '焚天祭坛', safe: false, level: 30,
+    ground: 'ash', sky: 0x50140a, fog: 0x5e1c0c, fogNear: 60, fogFar: 190,
+    size: 295, ambient: 0xc07a52, sun: 0xffb060, sunI: 0.95, props: 'heaven',
+    spawns: ['magma', 'ghostfire', 'statue', 'runesmith', 'golem'], spawnCount: 42,
+    bosses: ['flameemperor'], portal: { x: 0, z: 58.2 }, unlock: 29
+  },
   /* ---------------- 营地 B~E（M1） ----------------
    * 复用村的布局（props: 'village'），只换地面纹理与色调 ——
    * M1 的验收口径是「进得去、出得来、传得动」，专属场景留给 M3。
@@ -276,13 +316,13 @@ const ACTS = {
   },
   '2-2': {
     id: '2-2', part: 2, no: 2, name: '熔脉深处', from: 23, to: 26,
-    maps: [{ id: null, name: '熔脉深沟', lv: 24 }, { id: null, name: '灰烬荒原', lv: 26 }],
-    boss: null, sub: null
+    maps: [{ id: 'magmagully', name: '熔脉深沟', lv: 24 }, { id: 'ashfield', name: '灰烬荒原', lv: 26 }],
+    boss: 'magmalord', sub: 'ashwarden'
   },
   '2-3': {
     id: '2-3', part: 2, no: 3, name: '焚天焦土', from: 27, to: 30,
-    maps: [{ id: null, name: '赤炎峡谷', lv: 28 }, { id: null, name: '焚天祭坛', lv: 30 }],
-    boss: 'firegeneral', sub: null
+    maps: [{ id: 'flamecanyon', name: '赤炎峡谷', lv: 28 }, { id: 'flamealtar', name: '焚天祭坛', lv: 30 }],
+    boss: 'flamewraith', sub: 'flameemperor'
   },
   '3-1': {
     id: '3-1', part: 3, no: 1, name: '九幽地宫', from: 31, to: 35,

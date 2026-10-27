@@ -2,7 +2,27 @@
  * 世界构建：地表贴图 / 地图场景 / 植被建筑 / NPC / 传送阵
  * ============================================================ */
 
+/* [M3 · §5.4] 贴图缓存。
+ *
+ * 原来每进一张图就重新生成一张 512×512 的 canvas：9000 次 arc + 60 个
+ * 多边斑，实测 12~20ms。现在地图从 8 张涨到 41 张，来回传送一次就重画一次，
+ * 手机上能明显看到「传送卡一下」。
+ * 同一 type 的贴图完全一样（种子是 Math.random，但视觉上是同一张），
+ * 所以按 type 缓存、多张图共用一张 —— 41 张图实际只会生成 ≤12 张。
+ *
+ * 注意：缓存的是 CanvasTexture，被多个 map 共用。THREE 的纹理可以安全
+ * 被多个材质引用，只要不 dispose。地图卸载时**不能** dispose 地面贴图，
+ * 否则第二次进同一 type 的图会拿到已销毁的纹理（黑地面）。 */
+const _groundTexCache = {};
 function makeGroundTexture(type) {
+  const key = type || 'dirt';
+  if (_groundTexCache[key]) return _groundTexCache[key];
+  const tex = _makeGroundTexture(key);
+  _groundTexCache[key] = tex;
+  return tex;
+}
+
+function _makeGroundTexture(type) {
   const S = 512;
   const c = document.createElement('canvas');
   c.width = c.height = S;
@@ -18,6 +38,10 @@ function makeGroundTexture(type) {
      * 比 heaven 更冷更亮 —— 天阙是「仙石」，冰面要有反光感，
      * 所以最亮的一档拉到接近白，暗部压到蓝灰，一眼看出是冻住的。 */
     ice: ['#7d94a8', '#6d8498', '#9db6c8', '#5f7688'],
+    /* [M3] 火山灰：卷二 2-3 焚天焦土。
+     * 比 rock 暖、比 swamp 干 —— 三档灰 + 一档焦黑，
+     * 底色不压太暗，否则配合 ash 地面的低雾距会糊成一片黑。 */
+    ash: ['#4a4038', '#3a322c', '#5c5046', '#2a2420'],
     /* 试炼场：冷紫黑石，比九幽再「干净」一点 —— 这里是擂台，不是废墟 */
     trial: ['#3c3452', '#332c46', '#4a4064', '#2a2440']
   }[type] || ['#7a6a48'];
@@ -41,10 +65,11 @@ function makeGroundTexture(type) {
     }
     g.closePath(); g.fill();
   }
-  if (type === 'rock' || type === 'abyss') {
-    g.globalAlpha = 0.5;
-    g.strokeStyle = type === 'abyss' ? '#5a3a7a' : '#2a2a30';
-    for (let i = 0; i < 9; i++) {
+  if (type === 'rock' || type === 'abyss' || type === 'ash') {
+    g.globalAlpha = type === 'ash' ? 0.4 : 0.5;
+    /* ash 的裂缝用暗红而不是黑：那是「底下还没凉透」的唯一暗示 */
+    g.strokeStyle = type === 'abyss' ? '#5a3a7a' : (type === 'ash' ? '#7a2a12' : '#2a2a30');
+    for (let i = 0; i < (type === 'ash' ? 14 : 9); i++) {
       g.beginPath(); g.lineWidth = Math.random() * 1.6 + 0.4;
       let x = Math.random() * S, y = Math.random() * S;
       g.moveTo(x, y);
