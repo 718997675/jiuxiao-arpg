@@ -730,6 +730,98 @@ function skillTierStep(lv) {
   return SKILL_TIERS.steps.find(s => s.lv === n) || null;
 }
 
+/* ============================================================
+ * 数量台阶（P2b · Lv3 / Lv7 各 +1 发）
+ *
+ * 方案 §5.1 写着「Lv3 1 发→2 发、Lv7 2 发→3 发」。通道是现成的 ——
+ * `smod.count` 早就被 castSkill 里那些「连发 / 多片 / 多落点 / 多数符」的
+ * case 消费掉了，所以这一层**只负责「几级给几发」与「多发怎么不失控」**，
+ * 不新增任何战斗机制。
+ *
+ * ⚠ 只给「真的会读 count 通道」的技能：不读通道的近战 / 增益 / 召唤
+ * 挂上 +1 也只是一句空话。所以先列能力表，`dev/test-skill-p2b.js`
+ * 会拿它和 game.js 的 case 块逐条对账，两边不一致就变红。
+ * ============================================================ */
+
+/* 等级 → 额外发数。1 / 3 / 7 是台阶，2 / 4 / 6 是纯数值，不进这张表 */
+const SKILL_TIER_COUNT = { 3: 1, 7: 1 };
+
+/* 额外发数上限（方案 §13：「count 总量上限 8」）。
+ * 台阶 + 装备 + 天赋 + 变体四个来源在 castSkill 里相加后统一截断，
+ * 不截的话「星阙 +8 颗」再叠台阶会变成一整屏陨石。 */
+const SKILL_COUNT_CAP = 8;
+
+/* 每个消费 count 通道的技能「原本几发」。这些数字**必须**与 game.js 里
+ * `N + sextra` 的字面量一致（契约逐条比），不在这里凭空发明。 */
+const SKILL_COUNT_BASE = {
+  whirl: 1,          // 一次横扫；台阶让它变成 2 段 / 3 段
+  fireball: 1,
+  frostnova: 1,
+  chain: 5,          // 基础 5 跳
+  iceshard: 3,       // 三枚扇形
+  starfall: 16,      // 一场雨 16 颗
+  talisman: 1,       // 一张符（先打最近目标，多余的分配给别的怪）
+  talismanarrow: 3,
+  swordrain: 22      // 万剑 22 道
+};
+
+/* 多发递减系数：第 n 发 ×0.85^n（方案 §13）。
+ * 3 发直接三倍伤害是「数量轴」最容易炸的地方；乘上系数后
+ * 1→2→3 发的总伤是 1.85 / 2.57 倍，而不是 2 / 3 倍。 */
+const SKILL_COUNT_DECAY = 0.85;
+
+function skillCountBase(id) {
+  return SKILL_COUNT_BASE[id] || 0;
+}
+
+/* 基数上限的读取口（战斗与契约共用；数据表缺失时按 8 兜底） */
+function skillCountCap() {
+  return SKILL_COUNT_CAP;
+}
+
+/* 这个技能会不会读 count 通道（false 的技能不配拿数量台阶） */
+function skillCountCapable(id) {
+  return skillCountBase(id) > 0;
+}
+
+/* 台阶给多少发（只看技能等级，不看装备 / 天赋 / 变体 ——
+ * 装备那部分照旧走 stats.skillMods → smod.count，两条来源在 castSkill 相加） */
+function skillTierCount(id, lv) {
+  if (!skillCountCapable(id)) return 0;
+  const n = Math.round(Number(lv) || 1);
+  let extra = 0;
+  for (const k in SKILL_TIER_COUNT) if (n >= Number(k)) extra += SKILL_TIER_COUNT[k];
+  return Math.min(extra, SKILL_COUNT_CAP);
+}
+
+/* 多发折算成「单发伤害修正（%）」。
+ *
+ * 为什么不按发序逐发递减：castSkill 里消费 count 的 case 各自循环，
+ * 逐发递减要改七八处（而 starfall / swordrain 的弹道甚至不走 spow），
+ * 改漏一处就是「面板说减了、打出来没减」。
+ * 这里把 Σ0.85^i 折成整轮统一的单发系数 —— **总伤与逐发递减完全相等**，
+ * 只用一个 dmg 修正表达，而 dmg 修正本来就是面板预览 / 装备 / 战斗共用的口径。
+ *
+ * 基础发数越大，这个修正越接近 0（万剑 22 道 +2 道只 −1.8%），
+ * 所以「本来就是弹幕」的技能不会被这条规则误伤。 */
+function skillCountDmgPct(id, extra) {
+  const base = skillCountBase(id);
+  const k = Math.max(0, Math.round(Number(extra) || 0));
+  if (!base || !k) return 0;
+  let total = base;
+  for (let i = 1; i <= k; i++) total += Math.pow(SKILL_COUNT_DECAY, i);
+  const per = total / (base + k);
+  return Math.round((per - 1) * 1000) / 10;
+}
+
+/* 台阶修正（与 branchMods / formMods 同类的六通道修正）。
+ * 目前只有 3 / 7 级给东西；5 / 9 / 10 的进化台阶逐技能接。 */
+function skillTierMods(id, lv) {
+  const extra = skillTierCount(id, lv);
+  if (!extra) return null;
+  return { count: extra, dmg: skillCountDmgPct(id, extra) };
+}
+
 /* 一个职业的 5 个技能位（含槽位元数据）；未知职业返回 [] */
 function skillArchList(cls) {
   const pack = SKILL_ARCHETYPE.classes[cls];
@@ -743,6 +835,25 @@ function skillArchList(cls) {
 /* 单个技能位；越界返回 null */
 function skillArchSlot(cls, no) {
   return skillArchList(cls).find(s => s.no === no) || null;
+}
+
+/* 台阶实装状态：面板据此把台阶标成「已生效 / 待实装」，别让文案自己吹。
+ *
+ * 判据不是手写清单，而是「这个位里真有技能走得到那条通道」：
+ *   Lv1       —— 基础形态，永远成立
+ *   Lv3 / Lv7 —— 位内至少一个技能真的消费 count 通道（否则「双发」只是文案）
+ *   Lv5 / Lv9 / Lv10 —— 进化台阶逐技能接（P2b 第二段），现在一律未接
+ *
+ * 改文案时不用动这里：文案说「双发」而位里没有 count 技能，契约会直接红。 */
+function skillSlotTierDone(cls, no, lv) {
+  const slot = skillArchSlot(cls, no);
+  if (!slot) return false;
+  const n = Math.round(Number(lv) || 0);
+  if (n === 1) return true;
+  if (n === 3 || n === 7) {
+    return (slot.inherit || []).some(id => skillCountCapable(id));
+  }
+  return false;
 }
 
 /* 某职业 5 个位继承的全部现有技能 id（去重）—— P1 收敛时用它核对覆盖率 */

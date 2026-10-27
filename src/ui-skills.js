@@ -82,8 +82,15 @@ Object.assign(UI, {
       const steps = T.visible.map(lv => {
         const kind = (skillTierStep(lv) || {}).kind || 'num';
         const txt = slot.tiers[lv] || '';
+        /* [P2b] 台阶实装状态：文案写了但战斗没接的，必须当场标出来 ——
+         * 面板上写着「三连斩」实际只打一下，比不写更伤玩家。
+         * 判据在读数据层（skillSlotTierDone），不是这张卡里手写名单。 */
+        const done = (typeof skillSlotTierDone === 'function')
+          ? skillSlotTierDone(slot.cls, slot.no, lv) : true;
         /* 卡窄，长文案会被省略号吃掉 —— 补 title 让悬停能看到全文 */
-        return `<span class="sk-as k-${kind}" title="Lv${lv} ${stepName(lv)}：${txt}"><i>${lv}</i>${txt}</span>`;
+        const tip = `Lv${lv} ${stepName(lv)}：${txt}${done ? '' : '（本段尚未实装）'}`;
+        return `<span class="sk-as k-${kind}${done ? '' : ' todo'}" title="${tip}">`
+          + `<i>${lv}</i>${txt}${done ? '' : '<u>待</u>'}</span>`;
       }).join('');
       /* ⑤ 号位每种职业的“身份”写法不同：刀式 / 法相 / 召唤，全部从数据取 */
       let extra = '';
@@ -101,11 +108,19 @@ Object.assign(UI, {
       </div>`;
     }).join('');
     const first = T.curve[0].pct;
+    /* 数量台阶的读数全部现算：写死「1.85 倍」迟早在改系数后变成假话 */
+    const DECAY = (typeof SKILL_COUNT_DECAY === 'number') ? SKILL_COUNT_DECAY : 0.85;
+    const c3 = 1 + DECAY;
+    const c7 = c3 + DECAY * DECAY;
+    const dec = Math.round(DECAY * 100);
     return `<details class="sk-arch"><summary>技能位 · 5 格（左键 + 1~4，与当前动作条一致）</summary>
       <div class="sk-arch-grid">${cards}</div>
-      <div class="sk-arch-tip">1→10 级：每级 +${first}%，Lv3 / Lv7 数量 +1，Lv5 / Lv9 进化，
+      <div class="sk-arch-tip">1→10 级：每级 +${first}%，Lv3 / Lv7 数量 +1（第 n 发 ×${dec}%，总伤
+        ${c3.toFixed(2)} / ${c7.toFixed(2)} 倍，不是 2 / 3 倍），Lv5 / Lv9 进化，
         Lv10 终极形态；11→20 为精进层（来自装备词缀，不占技能点），共 ${skillLvMul(T.cap)} 倍。
-        台阶名：${T.visible.map(lv => lv + ' ' + stepName(lv)).join(' · ')}。动作条 ${SKILL_BAR_SLOTS} 格：左键 = ①，1~4 = ②③④⑤</div>
+        台阶名：${T.visible.map(lv => lv + ' ' + stepName(lv)).join(' · ')}。
+        动作条 ${SKILL_BAR_SLOTS} 格：左键 = ①，1~4 = ②③④⑤。
+        <b>带「待」的台阶目前只有文案，战斗尚未接入</b>（Lv3 / Lv7 已接：位内有连发 / 多片 / 多数符类技能才给）。</div>
     </details>`;
   },
 
@@ -587,12 +602,12 @@ Object.assign(UI, {
     const view = this.skillFormView(id);
     const locked = !Game.skillUnlocked(id);
     const isGrant = (SKILL_ORDER[s.cls] || []).indexOf(id) < 0;
-    /* 预览伤害：攻击力 × 倍率 ×（变体 + 等级 + 分支）。
+    /* 预览伤害：攻击力 × 倍率 ×（变体 + 等级 + 分支 + 台阶）。
      * 必须与 Game.effSkillMods(id) 同口径 —— 卡上算一套、施法算另一套，
-     * 玩家就会遇到「面板说 +30%，打出来没变」。 */
-    const smod = mergeSkillMods(Game.skillMod(id),
-      (typeof Game.branchMods === 'function' ? Game.branchMods(id) : null),
-      (typeof Game.formMods === 'function' ? Game.formMods(id) : null));
+     * 玩家就会遇到「面板说 +30%，打出来没变」。
+     * [P2b] 这里不再自己 merge 三份修正，直接调战斗那个函数：
+     * 台阶修正加进 effSkillMods 之后，凡是「自己拼一遍」的写法都会漏一层。 */
+    const smod = (typeof Game.effSkillMods === 'function') ? Game.effSkillMods(id) : null;
     /* [P2] 等级倍率必须与 castSkill 同口径（skillLvMul 分段曲线） */
     const lvMul = (typeof skillLvMul === 'function') ? skillLvMul(lv) : 1;
     const spow = (smod ? 1 + (smod.dmg || 0) / 100 : 1) * lvMul;

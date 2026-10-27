@@ -112,6 +112,12 @@ const ok = (c, m, d) => { if (c) { pass++; console.log('  ✓', m); } else { fai
   /* ---------------- 4. 真打出来的伤害按 skillLvMul ---------------- */
   console.log('四、战斗结算（真调 castSkill）');
   const dmg = await p.evaluate(() => {
+    /* [P2b] 这里只量「等级曲线」这一条轴，所以把变体与台阶两层临时摘掉：
+     * 旋风斩的变体 Ⅰ 自带 dmg −15%、Lv3 起台阶又带 count 与递减，
+     * 一起算进来量到的就是乘积，看不出 skillLvMul 有没有被战斗读到。
+     * 台阶那一轴由 dev/probe-skill-p2b.js 单独证。 */
+    const oldEff = Game.effSkillMods;
+    Game.effSkillMods = (id) => Game.skillMod(id);
     /* 干净环境：满资源、无冷却、非自动施放 */
     const mk = (lv) => {
       Game.state.skills = { whirl: { lv: lv } };

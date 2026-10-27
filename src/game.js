@@ -2940,9 +2940,15 @@ const Game = {
   effSkillMods(id) {
     const sk = SKILLS[id];
     if (!sk) return null;
+    /* [P2b] 台阶修正：数量台阶（Lv3 / Lv7 各 +1 发）与它的单发递减。
+     * 与装备 / 分支 / 变体走同一个 merge —— 面板预览读的也是这个函数，
+     * 所以不会出现「卡上写三发、打出来一发」。 */
+    const tierMods = (typeof skillTierMods === 'function')
+      ? skillTierMods(id, this.skillLevel(id)) : null;
     return mergeSkillMods(this.skillMod(id),
       (typeof this.branchMods === 'function' ? this.branchMods(id) : null),
-      (typeof this.formMods === 'function' ? this.formMods(id) : null));
+      (typeof this.formMods === 'function' ? this.formMods(id) : null),
+      tierMods);
   },
 
   /* 技能落点：ground / enemy 自动夹在施法距离内，dir 用当前朝向，self 以自身为中心 */
@@ -3012,7 +3018,11 @@ const Game = {
     const autoCast = !!this._autoCast;
     let spow = (smod ? 1 + (smod.dmg || 0) / 100 : 1) * lvMul * (autoCast ? 0.5 : 1);
     const srad = smod ? 1 + (smod.radius || 0) / 100 : 1;
-    const sextra = smod ? (smod.count || 0) : 0;
+    /* [P2b] 数量来源汇总（台阶 + 装备 + 天赋 + 取向 + 变体），上限读 skillCountCap()。
+     * 负数要留着：取向「聚雷」就是 count −1（少跳一次换伤害），
+     * 所以只截上界，不夹到 0。 */
+    const cntCap = (typeof skillCountCap === 'function') ? skillCountCap() : 8;
+    const sextra = smod ? Math.min(cntCap, smod.count || 0) : 0;
     /* v1.1.9：技能持续时长修正（青符 4 件：毒雾 +3 秒） */
     const sdur = smod ? (smod.dur || 0) : 0;
     /* [S1] 技能消耗降低；传世还能再减该技能的消耗。
@@ -3092,9 +3102,18 @@ const Game = {
         const formOptW = (typeof this.formOpt === 'function') ? this.formOpt(id) : null;
         const knockW = (formOptW && formOptW.beh && formOptW.beh.gather) ? 0 : 1.2;
         const hits = this.enemies.filter(e => !e.dead && DIST2D(e.pos, pp) < rad + e.radius);
-        for (const e of hits) {
-          const { dmg, crit } = this.rollDamage(st.atk * mult * spow);
-          this.damageEnemy(e, dmg, crit, { knock: knockW });
+        /* [P2b] 数量台阶：Lv3「双发」/ Lv7「三连斩」= 一次施法扫 passes 段。
+         * 段与段之间不隔帧（隔帧要挂定时器，还得判怪是否已死），
+         * 单发递减已经折进 spow（skillCountDmgPct），所以每段用同一个 spow ——
+         * 总伤与「第 n 段 ×0.85^n」完全相等。
+         * 多段时每段画一圈略大的光环，「打了两下」在画面上要看得出来。 */
+        const passes = 1 + Math.max(0, sextra);
+        for (let ps = 0; ps < passes; ps++) {
+          for (const e of hits) {
+            const { dmg, crit } = this.rollDamage(st.atk * mult * spow);
+            this.damageEnemy(e, dmg, crit, { knock: knockW });
+          }
+          if (passes > 1) FX.ring(pp, rad * (1 + 0.07 * ps), 0xffd8a0, 0.3, 0.1 + 0.05 * ps);
         }
         FX.ring(pp, rad, 0xffd8a0, 0.4);
         FX.spark(new THREE.Vector3(pp.x, 1, pp.z), 0xffd8a0, 18);

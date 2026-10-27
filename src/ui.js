@@ -802,6 +802,12 @@ const UI = {
       .filter(s => TIERS.visible.indexOf(s.lv) >= 0)
       .map(s => `<b>Lv${s.lv}</b> ${s.name}`).join(' · ') : '';
     const tierMul = (typeof skillLvMul === 'function' && TIERS) ? skillLvMul(TIERS.cap) : 2.02;
+    /* [P2b] 数量台阶读数：系数与上限都现读数据表，别写死「1.85 倍 / 上限 8」 */
+    const cntDec = (typeof SKILL_COUNT_DECAY === 'number') ? SKILL_COUNT_DECAY : 0.85;
+    const cntCap = (typeof skillCountCap === 'function') ? skillCountCap() : 8;
+    const cnt3 = (1 + cntDec).toFixed(2);
+    const cnt7 = (1 + cntDec + cntDec * cntDec).toFixed(2);
+    const cntSkills = (typeof SKILL_COUNT_BASE === 'object') ? Object.keys(SKILL_COUNT_BASE).length : 9;
     const pointPool = (typeof skillPointPool === 'function') ? skillPointPool(40) : 60;
     /* 曲线读数兜底：数据表缺失时说明页不许整块崩（宁可按旧数字写） */
     const CV = (TIERS && TIERS.curve) || [{ pct: 8 }, { pct: 4 }, { pct: 2 }];
@@ -815,7 +821,12 @@ const UI = {
         `伤害曲线分段：1~10 每级 ${CV[0].pct}%、11~15 每级 ${CV[1].pct}%、` +
         `16~20 每级 ${CV[2].pct}%，20 级合计约 <b>${tierMul} 倍</b>` +
         `（若全程按 8% 算会到 2.52 倍，再乘数量轴 DPS 会爆）。` +
-        `技能等级上限 <b>${lvMax}</b>，点满一个技能 ${lvMax - 1} 点；40 级共 <b>${pointPool}</b> 点技能点`)
+        `技能等级上限 <b>${lvMax}</b>，点满一个技能 ${lvMax - 1} 点；40 级共 <b>${pointPool}</b> 点技能点`),
+      row('数量台阶', `Lv3 / Lv7 各 <b>+1 发</b>，<b>已接进战斗</b>：目前 ${cntSkills} 个技能吃这条通道` +
+        `（连发 / 多片 / 多落点 / 多数符 / 多段横扫）。多发不是白给 —— 第 n 发 ×${cntDec}，` +
+        `所以 1→2→3 发的总伤是 <b>${cnt3} / ${cnt7} 倍</b>，不是 2 / 3 倍；` +
+        `额外发数上限 <b>${cntCap}</b>（台阶 + 装备 + 天赋 + 变体相加后截断）。` +
+        `Lv5 / Lv9 / Lv10 的进化台阶<b>逐技能接</b>：面板台阶上带「待」字的，就是本段只有文案、战斗还没接的部分`)
     ] : [];
     H.push(sec('七 · 术法与变体', `${skillIds.length} 个技能 · ${coreN} 条精研 · ${pickN} 条取向 · ${varN} 个变体 · ${pasN} 条被动 · ${bdN} 套流派`, [
       row('技能', `三职业各 ${Math.round(skillIds.length / 3)} 个，按等级领悟。技能点 = 角色等级 × 1.5（40 级 ${pointPool} 点），升级 1 级花 1 点；技能等级上限 ${lvMax}，伤害按分段曲线走（1~10 每级 ${CV[0].pct}%、11~15 ${CV[1].pct}%、16~20 ${CV[2].pct}%）。详情卡的「升级」与「−1」同样先进入「未确认」条，确认后写入存档`),
