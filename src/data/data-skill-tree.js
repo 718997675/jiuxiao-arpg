@@ -44,6 +44,23 @@ const SKILL_TREE = {
   respecFees: [800, 2400, 6000, 15000, 35000],
 
   /* ---------------------------------------------------------- */
+  /* 三线并行（P0 新增，P1 才切面板）                             */
+  /*                                                             */
+  /* 旧模型是「spine 必点 + forks 主动/被动二选一」：早期点错一条   */
+  /* 线整条构筑就锁死。新模型三条线同时开放，只有两种门：          */
+  /*   · reqLv   角色等级门槛（到级就亮，不要求先点同线任何节点）   */
+  /*   · needPts 该线已投入点数（只给关键被动用，软前置，5 点）     */
+  /*                                                             */
+  /* 数值不手写：reqLv 默认取同节点主动技能的 unlock（单一事实来源  */
+  /* 还是 SKILLS），需要特殊门槛时在 layout 条目上写 reqLv 覆盖。   */
+  /* 这样加技能不用同步改两处，也不会出现「面板写 Lv15、实际 Lv14」。*/
+  /* ---------------------------------------------------------- */
+  lineMeta: {
+    softNeedPts: 5,          // 关键被动的软前置：该线已投 ≥5 点
+    reqLvFrom: 'skill.unlock' // reqLv 的默认来源
+  },
+
+  /* ---------------------------------------------------------- */
   /* 一、标签（装备词缀按标签生效，BD 的另一半）                  */
   /* ---------------------------------------------------------- */
   tagKinds: {
@@ -845,6 +862,103 @@ function skillPassiveInfo(id) {
     }
   }
   return null;
+}
+
+/* ============================================================
+ * 三线并行读取（P0）
+ *
+ * 和下面的旧接口并存，互不影响：
+ *   skillTreeNodes / skillForkOf  → 旧「串行 + 二选一」，战斗与面板还在用
+ *   skillLines / skillNodeGate    → 新「三线并行 + 等级门」，P1 才切面板
+ *
+ * 新接口**故意不返回**「上一个节点是谁」：并行模型里没有硬前置，
+ * 只有 reqLv（角色等级）与 needPts（该线已投入点数）两种门。
+ * ============================================================ */
+
+/* 一个节点（第 ti 条线的第 row 行）的完整信息 */
+function skillLineNodes(cls, ti) {
+  const lay = SKILL_TREE.layout[cls];
+  if (!lay || !lay[ti]) return [];
+  const tree = lay[ti];
+  const soft = (SKILL_TREE.lineMeta && SKILL_TREE.lineMeta.softNeedPts) || 5;
+  const out = [];
+
+  const push = (entry, id, kind, row, col, fallbackLv) => {
+    const sp = SKILLS[id] || {};
+    const def = kind === 'active' ? {} : (SKILL_TREE.passives[id] || {});
+    const isKey = kind === 'key';
+    const auto = kind === 'active' ? sp.unlock : fallbackLv;
+    const reqLv = (entry && Number(entry.reqLv)) || Number(auto) || 1;
+    const needPts = (entry && typeof entry.needPts === 'number')
+      ? entry.needPts
+      : (isKey ? soft : 0);
+    out.push({
+      id: id, cls: cls, line: tree.name, lineIdx: ti, kind: kind,
+      name: kind === 'active' ? (sp.name || id) : (def.name || id),
+      reqLv: reqLv, needPts: needPts, col: col, row: row,
+      max: kind === 'active' ? SKILL_TREE.lvMax : (def.max || 1)
+    });
+  };
+
+  /* 旧 spine 保留成「该线第 0 行的节点」，但不再必点 */
+  if (tree.spine) {
+    push({ reqLv: tree.spineReqLv }, tree.spine, 'active', 0, ti * 2, 1);
+  }
+  tree.forks.forEach((f, fi) => {
+    const act = SKILLS[f.active] || {};
+    push(f, f.active, 'active', fi + 1, ti * 2, act.unlock);
+    const kind = (SKILL_TREE.passives[f.passive] || {}).key ? 'key' : 'passive';
+    push(f, f.passive, kind, fi + 1, ti * 2 + 1, act.unlock);
+  });
+  return out;
+}
+
+/* 某职业的三条线（每条 = { name, idx, nodes }） */
+function skillLines(cls) {
+  const lay = SKILL_TREE.layout[cls];
+  if (!lay) return [];
+  return lay.map((tree, ti) => ({
+    name: tree.name,
+    idx: ti,
+    nodes: skillLineNodes(cls, ti)
+  }));
+}
+
+/* 任意节点 id（主动 / 被动 / 关键被动）→ 它在哪条线的第几行；找不到返回 null */
+function skillLineNodeInfo(id) {
+  for (const cls in SKILL_TREE.layout) {
+    const lay = SKILL_TREE.layout[cls];
+    for (let ti = 0; ti < lay.length; ti++) {
+      const hit = skillLineNodes(cls, ti).find(n => n.id === id);
+      if (hit) return hit;
+    }
+  }
+  return null;
+}
+
+/* 某条线已投入的点数。spent = { 节点id: 已投点数 }（主动的 lv-1 与被动 lv 都由调用方折算好） */
+function skillLineSpent(cls, lineName, spent) {
+  const line = skillLines(cls).find(l => l.name === lineName);
+  if (!line || !spent) return 0;
+  let n = 0;
+  for (const node of line.nodes) n += Math.max(0, Number(spent[node.id]) || 0);
+  return n;
+}
+
+/* 门槛判定：只看「角色等级」与「该线已投入点数」，没有任何硬前置 */
+function skillNodeGate(id, opts) {
+  const info = skillLineNodeInfo(id);
+  if (!info) return null;
+  const o = opts || {};
+  const level = Math.max(1, Math.round(Number(o.level) || 1));
+  const linePts = Math.max(0, Number(o.linePts) || 0);
+  const levelOK = level >= info.reqLv;
+  const ptsOK = linePts >= info.needPts;
+  return {
+    id: id, reqLv: info.reqLv, needPts: info.needPts,
+    level: level, linePts: linePts,
+    levelOK: levelOK, ptsOK: ptsOK, ok: levelOK && ptsOK
+  };
 }
 
 /* 把某个技能的「满配花费」算出来：等级 4 点 + 取向 1 + 变体 1 = 6 */

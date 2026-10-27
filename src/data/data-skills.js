@@ -450,3 +450,266 @@ function mergeSkillMods() {
  * 旧 SKILLS[id].variants 只作为「老档 e.v 索引的含义」保留，
  * 不再参与任何数值或机制结算（见 skillFormIdx 的回落）。
  * ============================================================ */
+
+/* ============================================================
+ * 技能位（P0 · 5 个功能位 × 三职业独立内容）
+ *
+ * 这一层只描述「一个职业拿哪 5 个技能、每个技能长到几级会变成什么样」，
+ * 不参与任何结算 —— P0 阶段战斗与存档行为与之前完全一致
+ * （castSkill 仍按 SKILL_ORDER + 8 格动作条走）。
+ *
+ * 为什么要有它：
+ *   8 格 × 2 套 = 16 格 > 12 技能，等于没有取舍；第 6 个之后左手按不到。
+ *   收敛到 5 格（左键 + 1~4）之后点数集中，每个技能才养得起来。
+ *
+ * 字段：
+ *   slots[].elem = 该位能不能注入元素。④ 是增益槽，注入「火/冰」没有语义，
+ *                 所以 ④ 恒为 false，只选增益类型（进攻 / 防御 / 治疗）。
+ *   classes[cls].slots[].inherit = 从现有 SKILLS 里继承哪些 id（P1 收敛时对账用）
+ *   classes[cls].slots[].tiers   = 1→10 的可见台阶文案，键只有 1/3/5/7/9/10
+ *                                  （2/4/6/8 是纯数值，没有专属文案）
+ *
+ * 与方案的一处偏差（有意）：docs/SKILL-REDESIGN-PLAN.md §3.2 把 `talisman`
+ * 列进了法师 ① 号位，但 `talisman`（五雷符）是道士技能 —— 法师 ① 收
+ * `fireball` / `iceshard`，「符」整个留给道士。
+ * ============================================================ */
+const SKILL_ARCHETYPE = {
+  /* 槽位元数据：键位、定位、冷却量级、元素开关 */
+  slots: [
+    { no: 1, key: 'basic', name: '基础攻击', glyph: '壹', keybind: '左键', role: '填充 · 单体/小范围', cdMin: 0, cdMax: 2, elem: true },
+    { no: 2, key: 'burst', name: '中程爆发', glyph: '贰', keybind: '1', role: '高伤 · 突进 · 指定位置', cdMin: 6, cdMax: 12, elem: true },
+    { no: 3, key: 'guard', name: '护身清场', glyph: '叁', keybind: '2', role: '贴身范围 · 控场', cdMin: 4, cdMax: 10, elem: true },
+    { no: 4, key: 'buff', name: '自身增益', glyph: '肆', keybind: '3', role: '爆发窗口 · 防御 · 治疗', cdMin: 16, cdMax: 30, elem: false },
+    { no: 5, key: 'core', name: '职业核心', glyph: '伍', keybind: '4', role: '职业 identity', cdMin: 20, cdMax: 45, elem: true }
+  ],
+  /* ④ 号位不带元素，改为选增益类型（拍板 #2） */
+  buffKinds: [
+    { key: 'atk', name: '进攻', desc: '伤害 / 攻速 / 暴击窗口' },
+    { key: 'def', name: '防御', desc: '减伤 / 护盾 / 格挡' },
+    { key: 'heal', name: '治疗', desc: '回血 / 驱散 / 续航' }
+  ],
+  classes: {
+    /* ============ 刀客 · 近战 / 怒气 / 兵形 ============ */
+    warrior: {
+      name: '刀客', elem: 'phys', resource: '怒气',
+      slots: [
+        {
+          no: 1, title: '连斩', inherit: ['whirl'],
+          tiers: {
+            1: '单发横扫', 3: '双发', 5: '旋风斩可移动', 7: '三连斩',
+            9: '旋风斩吸怪', 10: '命中回怒翻倍，可常驻'
+          }
+        },
+        {
+          no: 2, title: '裂地震击', inherit: ['quake', 'leap', 'thrust'],
+          tiers: {
+            1: '单体震击', 3: '溅射', 5: '地裂持续 2 秒', 7: '三连震',
+            9: '地裂范围扩大', 10: '眩晕 1.5 秒'
+          }
+        },
+        {
+          no: 3, title: '剑阵', inherit: ['swordarray', 'riposte'],
+          tiers: {
+            1: '单圈剑鸣', 3: '双圈', 5: '剑阵跟随移动', 7: '三圈',
+            9: '剑阵内减伤', 10: '剑阵内自动反击'
+          }
+        },
+        {
+          no: 4, title: '血怒', inherit: ['bloodrage', 'warcry', 'shieldwall'],
+          tiers: {
+            1: '单体增益', 3: '队友共享', 5: '增益期间吸血', 7: '范围扩大',
+            9: '击杀延长', 10: '增益期间免疫控制'
+          }
+        },
+        {
+          no: 5, title: '兵形', inherit: ['avatar'], unit: false,
+          /* 刀客 ⑤ 不产生任何独立单位（拍板 #6）：只有刀式与终结技 */
+          forms: [
+            { name: '斩锋式', desc: '伤害 +15%、攻速 +10%' },
+            { name: '镇岳式', desc: '减伤 20%、格挡 +15%' },
+            { name: '摧城式', desc: '无视 30% 护甲，对护甲目标 +20%' }
+          ],
+          finisher: { name: '断岳斩', desc: '前 4 个技能命中积「刃势」，满层释放高伤破甲' },
+          ultimate: { name: '剑神降世', desc: '12 秒全强化状态（改造自 avatar，不召唤单位）' },
+          tiers: {
+            1: '斩锋式', 3: '解锁镇岳式', 5: '刃势满层 · 断岳斩', 7: '解锁摧城式',
+            9: '切换刀式保留刃势', 10: '剑神降世（12 秒全强化）'
+          }
+        }
+      ]
+    },
+
+    /* ============ 法师 · 远程 / 元素 / 法相 ============ */
+    mage: {
+      name: '法师', elem: 'fire', resource: '灵力',
+      slots: [
+        {
+          no: 1, title: '元素飞弹', inherit: ['fireball', 'iceshard'],
+          tiers: {
+            1: '单发火球', 3: '双发', 5: '火球命中爆炸', 7: '三连发',
+            9: '环绕火球', 10: '飞弹自动索敌'
+          }
+        },
+        {
+          no: 2, title: '陨石', inherit: ['meteor', 'judgement', 'blizzard'],
+          tiers: {
+            1: '单体陨石', 3: '溅射', 5: '双陨', 7: '三连落',
+            9: '陨石雨', 10: '陨石雨持续 8 秒'
+          }
+        },
+        {
+          no: 3, title: '火墙', inherit: ['firewall', 'frostnova', 'thundercloud'],
+          tiers: {
+            1: '单段火墙', 3: '双段', 5: '持续火环', 7: '三段',
+            9: '火墙跟随', 10: '火墙结束爆炸'
+          }
+        },
+        {
+          no: 4, title: '护盾', inherit: ['iceshield', 'pyroclasm'],
+          tiers: {
+            1: '单体护盾', 3: '队友共享', 5: '护盾反伤', 7: '护盾强化',
+            9: '护盾爆发', 10: '护盾破碎时冰冻周围'
+          }
+        },
+        {
+          no: 5, title: '元素法相', inherit: [], unit: false, isNew: true,
+          /* 只强化主元素（默认口径）：全场技能附带主元素效果，不是召唤物 */
+          aura: { durMin: 10, durMax: 15, mainElemOnly: true },
+          tiers: {
+            1: '火法相', 3: '元素切换', 5: '法相期间全技能灼烧', 7: '法相延长',
+            9: '法相结束新星', 10: '法相期间免疫打断'
+          }
+        }
+      ]
+    },
+
+    /* ============ 道士 · 持续伤害 / 增益 / 召唤 ============ */
+    taoist: {
+      name: '道士', elem: 'sigil', resource: '灵力',
+      slots: [
+        {
+          no: 1, title: '符箓', inherit: ['talisman'],
+          tiers: {
+            1: '单张雷符', 3: '双符', 5: '雷符连锁', 7: '三符',
+            9: '雷符阵', 10: '雷符自动追踪'
+          }
+        },
+        {
+          no: 2, title: '毒雾', inherit: ['talismanarrow', 'swordrain', 'poison'],
+          tiers: {
+            1: '单团毒雾', 3: '双团', 5: '毒雾蔓延', 7: '三团',
+            9: '毒雾跟随', 10: '毒雾内敌人死亡爆毒'
+          }
+        },
+        {
+          no: 3, title: '太极', inherit: ['taiji', 'mastersigil'],
+          tiers: {
+            1: '单圈太极', 3: '双圈', 5: '太极推开敌人', 7: '三圈',
+            9: '太极内减伤', 10: '太极内每秒回血'
+          }
+        },
+        {
+          no: 4, title: '回春', inherit: ['heal', 'antidote'],
+          tiers: {
+            1: '单体治疗', 3: '队友共享', 5: '治疗持续回复增强', 7: '范围扩大',
+            9: '瞬间驱散', 10: '低于 30% 生命自动触发'
+          }
+        },
+        {
+          no: 5, title: '召灵兽', inherit: ['summon', 'whitetiger', 'azuredragon'], unit: true,
+          /* 技能产物：限时、随技能等级变化，不是宠物（本仓库没有宠物系统） */
+          note: '限时召唤物，属技能产物；宠物系统未实现，不在本计划内',
+          tiers: {
+            1: '灵狼', 3: '双狼', 5: '白虎（范围攻击）', 7: '虎 + 狼',
+            9: '青龙（范围 + 光环）', 10: '四象召唤（三兽同场）'
+          }
+        }
+      ]
+    }
+  }
+};
+
+/* ============================================================
+ * 等级台阶（P0 · 基础 1→10，词条推到 20）
+ *
+ * 每两级必须有一次「看得见」的变化（数量 / 形态），纯数值等级不超过 2 级。
+ * 11~20 是**精通层**：只做数值与光效，不再新增形态台阶（内容量会爆炸）。
+ *
+ * 曲线是分段的（拍板 #3）：1~10 每级 8%、11~15 每级 4%、16~20 每级 2%
+ * → 20 级约 2.02 倍。原来单一 SKILL_LV_STEP=0.08 全程 8% 会到 2.52 倍，
+ * 再乘数量轴 DPS 会到 7~12 倍。
+ *
+ * 【P0 只提供函数，不接线】：`skillLvMul()` 现在没有任何调用点，
+ * 战斗仍按 SKILL_LV_STEP 算（P2 才切），test-skill-p0 会钉住这一点。
+ * ============================================================ */
+const SKILL_TIERS = {
+  baseMax: 10,     // 玩家投入能到的等级
+  cap: 20,         // 加上词条/套装后的有效等级上限
+  masteryAt: 15,   // 精通层的小质变点
+  /* 基础 10 级的台阶；kind: base / num / count / evo1 / evo2 / final */
+  steps: [
+    { lv: 1, kind: 'base', name: '基础形态', note: '学会' },
+    { lv: 2, kind: 'num', name: '数值 +', note: '过渡' },
+    { lv: 3, kind: 'count', name: '数量 +1', note: '1 发 → 2 发' },
+    { lv: 4, kind: 'num', name: '数值 +', note: '过渡' },
+    { lv: 5, kind: 'evo1', name: '进化 Ⅰ', note: '改变一个核心行为' },
+    { lv: 6, kind: 'num', name: '数值 +', note: '过渡' },
+    { lv: 7, kind: 'count', name: '数量 +1', note: '2 → 3 发' },
+    { lv: 8, kind: 'num', name: '数值 +', note: '过渡' },
+    { lv: 9, kind: 'evo2', name: '进化 Ⅱ', note: '形态再次变化' },
+    { lv: 10, kind: 'final', name: '终极形态', note: '解锁常驻被动 / 新行为' }
+  ],
+  /* 有专属文案的台阶（其余是纯数值） */
+  visible: [1, 3, 5, 7, 9, 10],
+  curve: [
+    { from: 1, to: 10, pct: 8 },
+    { from: 11, to: 15, pct: 4 },
+    { from: 16, to: 20, pct: 2 }
+  ],
+  /* UI 标签：1~10 圆满，11~20 精进 */
+  labels: { base: '圆满', mastery: '精进', masteryTip: '来自装备 / 词缀，不占技能点' }
+};
+
+/* 某等级的总伤害倍率（1 级 = 1.0）。战斗与面板共用同一个函数（P2 接线）。 */
+function skillLvMul(lv) {
+  const T = SKILL_TIERS;
+  const n = Math.max(1, Math.min(T.cap, Math.round(Number(lv) || 1)));
+  let mul = 1;
+  for (const seg of T.curve) {
+    /* 升级增量发生在「超过 1 级」的每一级上：1 级本身不加成 */
+    const lo = Math.max(seg.from, 2);
+    const hi = Math.min(n, seg.to);
+    if (hi >= lo) mul += (hi - lo + 1) * seg.pct / 100;
+  }
+  return Math.round(mul * 10000) / 10000;
+}
+
+/* 某等级对应的台阶（1~10 返回台阶对象；11+ 返回 null，属精通层） */
+function skillTierStep(lv) {
+  const n = Math.round(Number(lv) || 0);
+  return SKILL_TIERS.steps.find(s => s.lv === n) || null;
+}
+
+/* 一个职业的 5 个技能位（含槽位元数据）；未知职业返回 [] */
+function skillArchList(cls) {
+  const pack = SKILL_ARCHETYPE.classes[cls];
+  if (!pack) return [];
+  return pack.slots.map(s => {
+    const meta = SKILL_ARCHETYPE.slots.find(m => m.no === s.no) || {};
+    return Object.assign({ cls: cls, clsName: pack.name }, meta, s);
+  });
+}
+
+/* 单个技能位；越界返回 null */
+function skillArchSlot(cls, no) {
+  return skillArchList(cls).find(s => s.no === no) || null;
+}
+
+/* 某职业 5 个位继承的全部现有技能 id（去重）—— P1 收敛时用它核对覆盖率 */
+function skillArchInherit(cls) {
+  const out = [];
+  for (const s of skillArchList(cls)) {
+    for (const id of (s.inherit || [])) if (out.indexOf(id) < 0) out.push(id);
+  }
+  return out;
+}

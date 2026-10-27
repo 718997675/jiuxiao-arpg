@@ -3,15 +3,16 @@
 - 分支：`feat/skill-refactor`（优先级 **低**，排在大型扩展之后）
 - 计划文档：`docs/SKILL-REDESIGN-PLAN.md`（16 节）
 - 预览站：还没发（要发就 `./dev/publish-preview.sh feat/skill-refactor`）
-- 更新：2026-10-27 16:55 · `3f8dbd1`
+- 更新：2026-10-27 21:20 · P0 数据骨架落地
 
-> 当前：方案与 10 项决策已定，代码一行未动；排期在大型扩展之后
+> 当前：**P0 数据层完成**（5 槽 × 三职业、1→10 台阶、三线并行字段，226 条契约全绿）；
+> 面板展示还没做，战斗仍走老逻辑 —— 这是有意的，P0 要能单独验证不影响手感。
 
 ## 一句话现状
 
-方案已定稿（5 个功能位 × 三职业独立内容、元素自选可混搭、1→10 基础 + 词条推到 20、
-技能树改三线并行），**10 项决策已全部拍板**，但**代码一行未动**。
-按 `AGENTS.md` §2.3，这条线优先级低于大型扩展，等 act 先合入 main 再开工。
+新版重构（5 个功能位、三线并行、1→10 台阶、元素自选）**数据已落地、玩法未切**。
+老的一轮（36 技能 × 3 变体 / `SKILL_TREE.branches`）**跑得好好的，一点没动**，两套数据并存。
+P1 起才动 `SKILL_BAR_SLOTS` 与面板。
 
 ## 节点表
 
@@ -20,32 +21,36 @@
 | # | 节点 | 状态 | 产物 | 提交 |
 |---|---|---|---|---|
 | D0 | 方案 + 10 项决策拍板 | ✅ | `docs/SKILL-REDESIGN-PLAN.md` | `c938dd7` |
-| P0 | 纯数据骨架：`SKILL_ARCHETYPE`（5 槽 × 职业）、1→10 台阶表、`SKILL_TREE.layout` 三列并行字段（`reqLv` / `needPts`）；面板先展示，战斗仍走老逻辑 | ⬜ | `src/data/data-skills.js`、`data-skill-tree.js` | — |
-| P1 | 槽位收敛：8 → 5，键位改左键 + 1~4，老存档迁移；技能树面板改三列并行 + 等级锁 | ⬜ | `src/ui-skills.js`、`src/mobile.js` | — |
+| P0a | 纯数据骨架：`SKILL_ARCHETYPE`（5 槽 × 职业）、`SKILL_TIERS`（1→10 台阶 + 分段倍率）、`SKILL_TREE.lineMeta` + 三线并行读取（`reqLv` / `needPts`）、`dev/test-skill-p0.js` | ✅ | `data-skills.js`、`data-skill-tree.js`、`dev/test-skill-p0.js` | 见 git log |
+| P0b | 面板/说明页只读展示新结构（既不动键位也不动战斗） | ⬜ | `src/ui-skills.js` 或说明页 | — |
+| P1 | 槽位收敛：8 → 5，键位改左键 + 1~4，老存档迁移；技能树面板从「串行树」改为「三列并行 + 等级锁」 | ⬜ | `SKILL_BAR_SLOTS`、`SKILL_TREE.layout`、save、mobile、UI | — |
 | P2 | 等级台阶：5 → 10 级，数量/形态台阶接进 `castSkill`，点数供给同步 | ⬜ | `src/game.js`、`src/skill-beh.js` | — |
 | P3 | 元素注入 + 反应表：伤害管线支持双元素、特效混色、词缀口径 | ⬜ | 战斗 + 词缀 + `src/fx.js` | — |
 | P4 | 三职业独立 ⑤ 号位：刀客兵形/刃势、法师法相、道士召唤 | ⬜ | `src/fx.js`、`src/charforge.js` | — |
-| P5 | 形态进化表现：5 槽 × 3 职业 × 3 段 = 45 套（先缩放/换色/粒子顶） | ⬜ | `src/fx.js`、模型 | — |
+| P5 | 形态进化表现：5 槽 × 3 职业 × 3 段 = 45 套 | ⬜ | `src/fx.js`、模型 | — |
 | P6 | 平衡、洗点、老档兼容回归 | ⬜ | — | — |
 
-## 下一步（可直接开工）
+## 下一步（P0b，可直接开工）
 
-**P0 是纯数据层，不动战斗逻辑，风险最低，适合第一个晚上做：**
+面板/说明页**只读展示**新结构，一行战斗代码都不碰：
 
-1. `src/data/data-skills.js` 加 `SKILL_ARCHETYPE`：5 个功能位（基础发射 / 远程范围 / 自身范围 /
-   自身增益 / 召唤或形态），每个职业各一套内容，三者 ⑤ 号位不可互换。
-2. 写三职业 1→10 台阶表（Lv3 / Lv5 / Lv7 / Lv9 / Lv10 五个可见台阶）。
-3. `SKILL_TREE.layout` 加 `reqLv` / `needPts` 字段，取消 `spine` 必点与 `forks` 二选一。
-4. 面板只做「展示新结构」，战斗仍走老逻辑 —— 这样 P0 可以单独上线验证，不影响手感。
+1. 技能面板（K）顶部加一行「5 个功能位」摘要：槽名 + 键位 + 当前继承技能，点开看 10 级台阶表。
+2. 说明页加一节「技能位与台阶」，内容全部按 `SKILL_ARCHETYPE` / `SKILL_TIERS` 实时生成
+   （本项目的固定要求：说明页不写死文案）。
+3. 台阶表用 `skillTierStep()` 取，倍率用 `skillLvMul()` 预览 —— 只显示，不影响结算。
+4. 验收：`node dev/test-skill-p0.js` 仍全绿（第六条会盯着你别提前接线），
+   真机点开面板无报错。
 
 ## 卡点
 
-1. **优先级**：`AGENTS.md` §2.3 规定 act 先合 main，skill 后合。所以这条线**暂时不排开工**，
-   除非用户明确说「先做技能」。
-2. **`src/core/save.js` 三方争用**：main 的 M7（建档/读档 2.0）、act 的 `world.act`、
-   本计划的技能点/元素字段，都要改 `normalizeDoc`。**谁先改谁定规矩**，最好等 act 的 schema v3 落地后再动。
-3. **宠物系统不在本计划内**：仓库里目前没有任何宠物文件（无 `pet.js` / `data-pets.js`），
-   本计划不创建它，只保证召唤物与将来的宠物可区分。
+1. **优先级**：`AGENTS.md` §2.3 规定 act 先合 main，skill 后合。用户 2026-10-27 明确
+   「开始技能重构」，故本条线已开工，但**发版仍排 act 之后**。
+2. **`src/core/save.js` 三方争用**：main 的 M7、act 的 `world.act`、本计划的技能点/元素字段
+   都要改 `normalizeDoc`。P0 刻意不碰存档，P1 动 8→5 槽之前先看 act 的 schema 落没落地。
+3. **宠物系统不在本计划内**：仓库里没有任何宠物文件，本计划不创建它。
+4. **两套数据并存**：`SKILL_TREE.layout` 的 `spine`/`forks` 与新的 `skillLines()` 同时存在。
+   P0/P0b 期间面板仍读旧的；P1 切面板时**必须把旧读取口一起收掉**，别留成
+   「改了没反应」的第二套真相（上一轮 `SKILL_SPECIALS` 就是这么烂掉的）。
 
 ## 决策记录
 
@@ -59,3 +64,26 @@
 | 2026-10-27 | ④ 增益槽不提供元素注入入口 | 增益槽注入元素没有语义 |
 | 2026-10-27 | 刀客 ⑤ 改「兵形/刃势」，不产生独立单位 | 避免和道士召唤、将来的宠物系统撞车 |
 | 2026-10-27 | 老档迁移：全退技能点 + 免费重投 + 一次免费元素重选 | 已投点数一分不少，避免老玩家吃亏 |
+| 2026-10-27 | 方案 §3.2 里法师 ① 的 `talisman` **归道士** | 五雷符本来就是道士技能；一个技能不能同时占两个位，否则 P1 收敛有歧义 |
+
+## 变更记录
+
+### 2026-10-27 · P0a 数据骨架
+
+- `src/data/data-skills.js` 尾部新增三块：
+  - `SKILL_ARCHETYPE`：5 个功能位元数据（键位 / 冷却量级 / 元素开关）+ 三职业各 5 位内容
+    （标题、`inherit` 现有技能、1/3/5/7/9/10 六段台阶文案）。刀客 ⑤ 带三种刀式 + 断岳斩 + 剑神降世；
+    法师 ⑤ 是主元素法相（`mainElemOnly`）；道士 ⑤ 标注「技能产物，非宠物」。
+  - `SKILL_TIERS`：10 级台阶表 + 分段曲线（8/4/2%）+ 圆满/精进标签。
+  - `skillLvMul(lv)` / `skillTierStep(lv)` / `skillArchList(cls)` / `skillArchSlot(cls,no)` /
+    `skillArchInherit(cls)`。
+- `src/data/data-skill-tree.js`：
+  - `SKILL_TREE.lineMeta = { softNeedPts: 5, reqLvFrom: 'skill.unlock' }`。
+  - 三线并行读取：`skillLineNodes` / `skillLines` / `skillLineNodeInfo` / `skillLineSpent` / `skillNodeGate`。
+    **`reqLv` 默认取主动技能的 `unlock`**（单一事实来源），需要特殊门槛才在 layout 条目上写 `reqLv` 覆盖。
+  - 新接口故意不返回「上一个节点」，并行模型里不存在硬前置。
+- `dev/test-skill-p0.js`：226 条契约。含反向断言「`skillLvMul` 不许出现在 game.js / ui-skills.js / save.js」，
+  P2 接线时这条会主动变红提醒改注释。
+- 未接线：`SKILL_LV_MAX` 仍 5、`SKILL_LV_STEP` 仍 0.08、`SKILL_BAR_SLOTS` 仍 8，战斗零改动。
+- 验证：`node dev/test-skill-p0.js` 226/0 · `node dev/test-items.js` 17/0 ·
+  `node dev/test-save.js` 79/0 · `node dev/smoke.js` 三职业各 265 次施法、`ERRORS none`。
