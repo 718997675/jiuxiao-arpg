@@ -22,7 +22,7 @@ M0 的三层结构已经能落地跑：5 座营地全部有真实地图（campB~
 |---|---|---|---|---|
 | D0 | 需求与结构设计（三层世界 + 营地任务网 + 地下城） | ✅ | `docs/ACT-EXPANSION-PLAN.md` | `045540c` |
 | M0 | 地基：schema v3 + 老档迁移；`PARTS/ACTS/CAMPS` 数据；世界地图三层 UI | ✅ | `src/data/data-world.js`、`src/core/save.js`、`src/ui.js` | `7314c40` |
-| M1 | 卷 / 营地 / 传送：5 营地、路标石、章间出口门 | ✅ | `src/data/data-world.js`、`src/world.js`、`src/game.js`、`src/ui.js` | `3284cf1` + 本次 |
+| M1 | 卷 / 营地 / 传送：5 营地、路标石、章间出口门 | ✅ | `src/data/data-world.js`、`src/world.js`、`src/game.js`、`src/ui.js` | `3284cf1` + `8e1f816` |
 | M2 | 任务系统：`quests.js`；主线 42 + 支线 40；任务板；任务区域；追踪三行 | ⬜ | 新建 `src/quests.js` | — |
 | M3 | 地图扩容：8 种骨架、5 种新地貌、25 张新图、密度公式、小地图 | ⬜ | `src/data/data-maps.js` | — |
 | M4 | 怪物 / 首领：40 新怪 + 12 新首领；图鉴扩到 80/24；5 个卷末首领强化 | ⬜ | `src/data/data-monsters.js` | — |
