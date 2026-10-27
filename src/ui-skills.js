@@ -96,12 +96,26 @@ Object.assign(UI, {
     </div>`;
 
     h += this.skBuilds ? this.skBuildsHTML() : '';
-    h += '<div class="sk-body"><div class="sk-left">' + this.skTreeHTML() + '</div>';
+    /* 手机：树上换成 DOM 横向树（见 renderSkillTreeDOM），不再用缩放画布。
+     * 外面的 .sk-body / .sk-left / .sk-right 结构不变，所以分栏 CSS 原样复用。 */
+    const mt = (typeof MTREE !== 'undefined') && MTREE.isMobile();
+    h += '<div class="sk-body"><div class="sk-left">'
+      + (mt ? '<div class="sk-mt" id="skTree"></div>' : this.skTreeHTML()) + '</div>';
     h += this.skCardHTML(this.skShown()) + '</div>';
     h += this.skBarHTML();
 
+    /* 重画会换掉整个 #skList，#skTree 是新元素 —— 横向滚动位置要手动接上，
+     * 否则每点一个节点就弹回最左边，第三列之后根本没法看 */
+    const oldTree = document.getElementById('skTree');
+    if (oldTree) this._skTreeScroll = oldTree.scrollLeft;
+
     const list = document.getElementById('skList');
     list.innerHTML = h;
+    if (mt) {
+      this.renderSkillTreeDOM();
+      const nt = document.getElementById('skTree');
+      if (nt && this._skTreeScroll) nt.scrollLeft = this._skTreeScroll;
+    }
 
     /* ---------------- BD 推荐：开关与「切变体」 ---------------- */
     const bdBtn = list.querySelector('#skBuilds');
@@ -457,6 +471,20 @@ Object.assign(UI, {
 
   /* ---------------- 右侧说明书 ----------------
    * 只读：数值 / 描述 / 机制 / 分支。操作全在树上，这里不放按钮。 */
+  /* 手机上说明书卡里的 ＋1 / −1 大按钮。
+   * 触屏没有右键，原来那对 ± 只有 26px 见方、还挂在树上节点下方 ——
+   * 点十次中三次。PC 上不渲染（右键更顺手，也不占卡片高度）。
+   * 沿用 data-sklv / data-sklvd，绑定逻辑与树上那对是同一份。 */
+  skActsHTML(id, kind, lv, max, dis) {
+    if (!(typeof MTREE !== 'undefined' && MTREE.isMobile())) return '';
+    const canUp = !dis && lv < max && Game.skillPoints() > 0;
+    const canDown = !dis && lv > (kind === 'active' ? 1 : 0);
+    return `<div class="sd-acts">
+      <button class="btn" data-sklv="${id}"${canUp ? '' : ' disabled'}>＋ 1 级</button>
+      <button class="btn" data-sklvd="${id}"${canDown ? '' : ' disabled'}>− 1 级</button>
+    </div>`;
+  },
+
   skCardHTML(id) {
     const s = Game.state;
     const sk = SKILLS[id];
@@ -608,6 +636,7 @@ Object.assign(UI, {
         <span class="sk-lvt">投入 <b>${inv}</b>/${SKILL_LV_MAX}${lvBonus ? ' · 装备 +' + lvBonus : ''}</span></div>
       ${branch}
       <div class="sd-hintline">${locked ? '领悟后可分配技能点' : '左键加 1 级 · 右键减 1 级 · 节点标记选择分支'}${inv > 1 ? ' · 已分配 ' + (inv - 1) + ' 点' : ''}</div>
+      ${this.skActsHTML(id, 'active', inv, SKILL_LV_MAX, locked)}
     </div>`;
   },
 
@@ -633,6 +662,7 @@ Object.assign(UI, {
       <div class="sd-lv"><div class="sk-pips">${pips}</div><span class="sk-lvt"><b>${lv}</b>/${max}</span></div>
       <div class="sd-meta">${stLine}</div>
       <div class="sd-hintline">${na ? '尚未实现 · 暂不可分配' : locked ? '解锁后左键加 1 级 · 右键减 1 级' : '左键加 1 级 · 右键减 1 级 · 经过「未确认」条'}</div>
+      ${this.skActsHTML(id, 'passive', lv, max, locked || na)}
     </div>`;
   },
 
@@ -962,6 +992,99 @@ Object.assign(UI, {
 
     h += '</div></div></div>';
     return h;
+  },
+
+  /* ---------------- 手机上的术法树：3 列 × N 行的横向树 ----------------
+   * 原来的大画布要「双指捏合 + 单指平移」才看得全，节点下的 ＋/− 又只有 26px，
+   * 玩家反馈「操作比较麻烦」。这里改成固定的三列：
+   *   第 0 列 = 本系主干（脊）· 第 1 列 = 各岔口的主动 · 第 2 列 = 对应被动
+   * 岔口按行往下排，同一行左右相邻的主动/被动就是「或」的关系（虚线）。
+   * 一屏能看全，点一下选中，加减在下方说明书卡里。 */
+  renderSkillTreeDOM() {
+    const host = document.getElementById('skTree');
+    if (!host || !Game.state) return;
+    const cls = Game.state.cls;
+    const lay = (typeof SKILL_TREE !== 'undefined' && SKILL_TREE.layout && SKILL_TREE.layout[cls]) || [];
+    if (!lay.length) { host.innerHTML = '<div class="vhint">这个职业还没有技能树</div>'; return; }
+
+    const trees = lay.map(t => t.name);
+    if (this.skTreeTab == null || trees.indexOf(this.skTreeTab) < 0) this.skTreeTab = trees[0];
+    const cur = lay.find(t => t.name === this.skTreeTab) || lay[0];
+    const nodes = skillTreeNodes(cls);
+    const byId = {};
+    nodes.forEach(n => { byId[n.id] = n; });
+
+    const N = cur.forks.length;
+    const midRow = Math.floor((N - 1) / 2);
+    const list = [];
+    if (byId[cur.spine]) {
+      const sp = byId[cur.spine];
+      list.push({ id: sp.id, kind: sp.kind || 'active', col: 0, row: midRow, req: [] });
+    }
+    cur.forks.forEach((f, i) => {
+      const a = byId[f.active], p = byId[f.passive];
+      if (a) list.push({ id: a.id, kind: 'active', col: 1, row: i, req: cur.spine ? [cur.spine] : [] });
+      /* 被动挂在同岔口的主动右边：树上那根虚线就是「或」的意思，这里也一样 */
+      if (p) list.push({
+        id: p.id, kind: byId[p.id] ? (byId[p.id].kind || 'passive') : 'passive',
+        col: 2, row: i, req: a ? [a.id] : (cur.spine ? [cur.spine] : [])
+      });
+    });
+
+    const lvOf = n => n.kind === 'active'
+      ? Game.skillLevel(n.id)
+      : (Game.passiveLv ? Game.passiveLv(n.id) : 0);
+    const invOf = n => n.kind === 'active' ? (((Game.skillState()[n.id] || {}).lv) || 1) : lvOf(n);
+    const maxOf = n => n.kind === 'active' ? SKILL_LV_MAX
+      : (((SKILL_TREE.passives || {})[n.id] || {}).max || 1);
+    const lockOf = n => n.kind === 'active'
+      ? !Game.skillUnlocked(n.id)
+      : !(Game.passiveUnlocked && Game.passiveUnlocked(n.id));
+    const onBar = Game.skillBar();
+    const tIcon = (body, size) =>
+      `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor"
+        stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${body || ''}</svg>`;
+
+    MTREE.render(host, {
+      nodes: list,
+      sel: this.skShown(),
+      resetScroll: this._skTreeShown !== cur.name,
+      rowH: 74,
+      cls: n => {
+        const out = [];
+        if (lockOf(n)) out.push('locked');
+        const lv = invOf(n), max = maxOf(n);
+        if (lv >= max) out.push('max');
+        else if (lv > 0) out.push('own');
+        if (n.kind !== 'active') out.push('pas');
+        if (n.kind === 'active' && onBar.indexOf(n.id) >= 0) out.push('onbar');
+        return out.join(' ');
+      },
+      tile: n => {
+        const def = n.kind === 'active' ? (SKILLS[n.id] || {}) : ((SKILL_TREE.passives || {})[n.id] || {});
+        const lv = invOf(n), max = maxOf(n);
+        const ico = n.kind === 'active'
+          ? (typeof skillIconSvg === 'function' ? skillIconSvg(n.id, 24) : '')
+          : tIcon(SKILL_TREE.icons[n.kind === 'key' ? 'key' : 'passive'], 22);
+        const badge = lockOf(n) ? (def.unlock || 1) + '级'
+          : (n.kind === 'active' ? lv : (lv > 0 ? lv : max));
+        return `<span class="mt-ico">${ico}</span>`
+          + `<b class="mt-nm">${def.name || ''}</b>`
+          + `<span class="mt-lv">${badge}</span>`;
+      },
+      /* 主动 → 同岔口被动那根画成虚线，和画布上的「或」保持一致 */
+      edgeCls: (a, b) => {
+        const nb = list.find(x => x.id === b);
+        return (nb && nb.col === 2) ? 'alt' : '';
+      },
+      onPick: id => {
+        this.skSel = id;
+        this.skHover = null;
+        try { SFX.ui(); } catch (e) { }
+        this.renderSkillPanel();
+      }
+    });
+    this._skTreeShown = cur.name;
   },
 
   /* 节点的分支浮层：精研 / 取向 / 变体三段。

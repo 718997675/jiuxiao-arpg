@@ -1894,10 +1894,97 @@ const UI = {
     if (dft) dft.innerHTML = this.draftBarHTML('talent');
     this.renderTalentPresets();
     this.renderSynergyNote();
-    /* 顺序要紧：先定画布位图尺寸（改 width/height 会清空画布），再画。
+    /* 手机上换「横向树 + 说明书卡」，轮盘整个收起来（见 renderTalentTree）。
+     * 顺序要紧：先定画布位图尺寸（改 width/height 会清空画布），再画。
      * v1.6.0 起天赋页被搬进菜单，首帧只渲染这一次，反着来就会是一片空白。 */
-    this.bindTalentCanvas();
-    this.drawTalentCanvas();
+    const domMode = (typeof MTREE !== 'undefined') && MTREE.isMobile();
+    p.classList.toggle('tree-dom', domMode);
+    if (domMode) {
+      this.renderTalentTree();
+    } else {
+      this.bindTalentCanvas();
+      this.drawTalentCanvas();
+    }
+  },
+
+  /* ---------------- 天赋：手机上的横向树 ----------------
+   * 轮盘在触屏上三条都踩坑：节点说明靠 mousemove 悬停（触屏没有）、
+   * 节点直径 30px 点不准、整张 canvas 又不能滚。改成
+   * 「列 = 依赖深度、从左往右长」的横向树，横向滚动，点一下选中，
+   * 下方卡片里 ＋1 / −1（仍走草稿确认，不直接落盘）。 */
+  renderTalentTree() {
+    const host = document.getElementById('tlTree');
+    if (!host || !Game.state) return;
+    const trees = talentTrees(Game.state.cls);
+    const tree = trees.find(t => t.id === this.tlTree) || trees[0];
+    const sp = Game.talentState().spent;
+    const nodes = tree.nodes.map(n => ({ id: n.id, req: n.req || [], tier: n.tier }));
+    /* 选中的节点必须属于当前系：换系之后不能还挂着上一系的卡片 */
+    if (this.tlSel && !tree.nodes.some(n => n.id === this.tlSel)) this.tlSel = null;
+
+    MTREE.render(host, {
+      nodes,
+      sel: this.tlSel,
+      resetScroll: this._tlTreeShown !== tree.id,
+      cls: n => {
+        const e = Game.talentNodeOf(n.id);
+        const rank = sp[n.id] || 0;
+        const max = e ? (e.node.max || 1) : 1;
+        const out = [];
+        if (e && Game.state.level < (e.unlock || 1)) out.push('locked');
+        if (n.tier === 3) out.push('t3');
+        if (n.tier === 2) out.push('t2');
+        if (rank >= max) out.push('max');
+        else if (rank > 0) out.push('own');
+        return out.join(' ');
+      },
+      tile: n => {
+        const e = Game.talentNodeOf(n.id);
+        const node = (e && e.node) || {};
+        const rank = sp[n.id] || 0;
+        const max = node.max || 1;
+        const hidden = node.cond && !Game.synergyUnlocked(n.id);
+        const nm = hidden ? '？' : (node.name || '');
+        const lv = hidden ? '' : (max > 1 ? rank + '/' + max : (rank ? '✓' : ''));
+        const pct = max > 1 ? Math.round(rank / max * 100) : (rank ? 100 : 0);
+        return `<b class="mt-nm">${nm}</b><span class="mt-lv">${lv}</span>`
+          + (max > 1 ? `<span class="mt-bar"><i style="width:${pct}%"></i></span>` : '');
+      },
+      onPick: id => { this.tlSel = id; SFX.ui(); this.renderTalentTree(); }
+    });
+    this._tlTreeShown = tree.id;
+    this.renderTalentCard();
+  },
+
+  /* 横向树下面那张说明书卡：复用 PC 的 talentTipHtml（口径只有一份），
+   * 再加一对大按钮。手机上没有 Shift，退点也只能靠按钮。 */
+  renderTalentCard() {
+    const el = document.getElementById('tlCard');
+    if (!el) return;
+    const id = this.tlSel;
+    if (!id) {
+      el.innerHTML = '<div class="tl-empty">点上面任意一个节点，这里会显示它的说明与加减按钮<br>'
+        + '<span style="color:#5e594e">金边 = 已投入 · 青边 = 已点满 · 灰 = 等级未到</span></div>';
+      return;
+    }
+    const e = Game.talentNodeOf(id);
+    if (!e) { el.innerHTML = ''; return; }
+    const n = e.node;
+    const rank = Game.talentState().spent[id] || 0;
+    const max = n.max || 1;
+    const locked = Game.state.level < (e.unlock || 1);
+    const hidden = n.cond && !Game.synergyUnlocked(id);
+    const canUp = !hidden && !locked && rank < max && Game.canAllocTalent(id);
+    const canDown = rank > 0;
+    el.innerHTML = this.talentTipHtml(id)
+      + `<div class="tl-acts">
+        <button class="btn" data-tlstep="1"${canUp ? '' : ' disabled'}>＋ 1 级</button>
+        <button class="btn" data-tlstep="-1"${canDown ? '' : ' disabled'}>− 1 级</button>
+      </div>`;
+    el.querySelectorAll('[data-tlstep]').forEach(b => b.addEventListener('click', () => {
+      const up = b.dataset.tlstep === '1';
+      if (this.talentStep(id, up)) this.renderTalentTree();
+    }));
   },
 
   /* [B4+] 协同页签的详细说明。
@@ -2099,9 +2186,11 @@ const UI = {
     const sp = Game.talentState().spent;
     const rank = sp[id] || 0;
     const tierTxt = n.tier === 3 ? '大节点 · 通玄' : n.tier === 2 ? '中节点 · 机变' : '小节点 · 常驻';
+    /* 手机上卡片里就是按钮，别提「左键」；PC 上才需要点明操作方式 */
+    const touchUI = (typeof MTREE !== 'undefined') && MTREE.isMobile();
     let status, ok = true;
     if (rank >= n.max) status = '已点满 ' + rank + '/' + n.max;
-    else if (Game.canAllocTalent(id)) status = '可点（左键）· 当前 ' + rank + '/' + n.max;
+    else if (Game.canAllocTalent(id)) status = (touchUI ? '可点 · 当前 ' : '可点（左键）· 当前 ') + rank + '/' + n.max;
     else {
       ok = false;
       if (Game.state.level < (e.unlock || 1)) status = '需 ' + e.unlock + ' 级解锁（当前 ' + Game.state.level + ' 级）';

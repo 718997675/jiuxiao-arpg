@@ -496,6 +496,69 @@
   .tl-fbtn{display:flex;gap:8px;align-items:center}
   #tlMinus:disabled{opacity:.35;cursor:default}
 
+  /* ================= 移动端横向树（天赋 / 术法共用） =================
+   * 由 src/ui-mtree.js 生成：.mt-canvas 是一块固定尺寸的绝对定位画布，
+   * 外层 .tl-mtree / .sk-mt 负责横向滚动。节点是 66px 的大格子，
+   * 点一下选中，下方说明书卡里加减 —— 不靠悬停、不靠捏合。 */
+  .mt-canvas{position:relative;margin:0 auto}
+  .mt-lines{position:absolute;left:0;top:0;pointer-events:none;overflow:visible}
+  .mt-lines path{fill:none;stroke:rgba(216,178,90,.3);stroke-width:1.6;
+    stroke-linejoin:round;stroke-linecap:round}
+  /* 「或」关系：术法树里同岔口的主动 → 被动，和画布上的虚线口径一致 */
+  .mt-lines path.alt{stroke:rgba(143,208,255,.42);stroke-dasharray:4 4}
+  .mt-nd{position:absolute;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    gap:1px;padding:3px 2px;font-family:inherit;cursor:pointer;overflow:hidden;
+    background:radial-gradient(ellipse at 50% 26%,rgba(64,54,34,.6),rgba(12,11,9,.86) 82%);
+    border:1px solid rgba(216,178,90,.32);border-radius:5px;color:#d8cfbc;
+    -webkit-tap-highlight-color:transparent;transition:border-color .12s,box-shadow .12s}
+  .mt-nd:active{transform:scale(.96)}
+  .mt-nd.sel{border-color:#ffd479;box-shadow:0 0 0 1px rgba(255,212,121,.45),0 0 14px rgba(255,212,121,.22)}
+  .mt-nd.locked{opacity:.46;filter:grayscale(.65)}
+  .mt-nd.t2{border-color:rgba(143,208,255,.45)}
+  .mt-nd.t3{border-color:rgba(224,66,74,.6);box-shadow:inset 0 0 12px rgba(224,66,74,.16)}
+  .mt-nd.max{border-color:rgba(127,224,208,.75)}
+  .mt-nd.own{border-color:rgba(216,178,90,.7)}
+  .mt-nd .mt-ico{display:flex;align-items:center;justify-content:center;height:26px}
+  .mt-nd .mt-ico svg{width:26px;height:26px}
+  .mt-nd .mt-nm{font-size:10.5px;letter-spacing:0;line-height:1.15;max-width:100%;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:center}
+  .mt-nd .mt-lv{font-size:9px;line-height:1.1;color:#ffd479;font-variant-numeric:tabular-nums}
+  .mt-nd.locked .mt-lv{color:#a0826a}
+  .mt-nd .mt-bar{position:absolute;left:4px;right:4px;bottom:3px;height:2px;border-radius:1px;
+    background:rgba(255,255,255,.09);overflow:hidden}
+  .mt-nd .mt-bar i{display:block;height:100%;background:linear-gradient(90deg,#c9a86a,#ffe9a8)}
+
+  /* 横向滚动条（iOS 上不可见，桌面窄窗口能看见，方便拖）。
+   * 两个方向都留：树可能又长又高，竖着也得能拖，不能只给横的。 */
+  .tl-mtree,.sk-mt{overflow:auto;-webkit-overflow-scrolling:touch;
+    overscroll-behavior:contain;touch-action:pan-x pan-y;padding-bottom:2px}
+  .tl-mtree::-webkit-scrollbar,.sk-mt::-webkit-scrollbar{height:4px;width:4px}
+  .tl-mtree::-webkit-scrollbar-thumb,.sk-mt::-webkit-scrollbar-thumb{
+    background:rgba(216,178,90,.4);border-radius:2px}
+
+  /* 天赋：手机上换成横向树 + 说明书卡，轮盘整个收起来 */
+  #talentPanel .tl-mtree,#talentPanel .tl-card{display:none}
+  #talentPanel.tree-dom .tl-main{display:none}
+  #talentPanel.tree-dom .tl-mtree{display:block;margin-top:6px;flex:none;max-height:44vh}
+  #talentPanel.tree-dom .tl-card{display:block}
+  .tl-card{margin-top:8px;padding:9px 11px;border:1px solid rgba(216,178,90,.22);
+    background:linear-gradient(180deg,rgba(30,26,18,.72),rgba(14,12,9,.86));
+    flex:none;max-height:34vh;overflow-y:auto;-webkit-overflow-scrolling:touch}
+  .tl-card .tt-n{font-size:13px;letter-spacing:1px;margin-bottom:2px}
+  .tl-card .tt-r{font-size:10px;color:#8a8474;margin-bottom:4px}
+  .tl-card .tt-d{font-size:11.5px;color:#b8b0a0;line-height:1.65}
+  .tl-card .tt-c{font-size:11px;margin-top:5px}
+  .tl-card .tl-acts{display:flex;gap:8px;margin-top:9px;position:sticky;bottom:-1px;
+    padding:8px 0 1px;background:#12100c}
+  .tl-card .tl-acts .btn{flex:1;padding:8px 0;font-size:12px;letter-spacing:2px}
+  .tl-card .tl-acts .btn:disabled{opacity:.35}
+  .tl-card .tl-empty{font-size:11.5px;color:#7a7466;line-height:1.7;text-align:center;padding:6px 0}
+  /* 未确认条：手机上钉在面板底部。不钉的话点完「＋1 级」看不到「确认」，
+   * 玩家以为没生效就走了，加的点全卡在草稿里。 */
+  #talentPanel.tree-dom #tlDraft{position:sticky;bottom:0;z-index:20}
+  #talentPanel.tree-dom #tlDraft .dbar{margin-top:0;background:#14110c;
+    border-color:rgba(216,178,90,.5);box-shadow:0 -8px 18px rgba(0,0,0,.55)}
+
   /* 技能 SVG 图标：颜色继承容器，尺寸由使用处控制 */
   .skicon{display:block;flex:none}
   .skill .g svg{width:27px;height:27px}
@@ -771,6 +834,12 @@
   .sk-top .sk-spent{font-size:10px;color:#7a7466;letter-spacing:0;margin-left:2px}
   .sk-right .sd-branch .dim2{font-size:9px;color:#5e5648;margin-top:6px}
   .sk-right .sd-hintline{margin-top:9px;font-size:9.5px;color:#6a6458;letter-spacing:0}
+  /* 手机上才有的加减按钮（PC 直接点节点/右键，不需要这对按钮）。
+   * 钉在卡片底部：卡长的时候按钮会被推到滚动区外，主操作必须随手能点到。 */
+  .sk-right .sd-acts{display:flex;gap:8px;margin-top:10px;padding:9px 0 1px;position:sticky;bottom:-1px;
+    border-top:1px solid rgba(216,178,90,.14);background:#131109}
+  .sk-right .sd-acts .btn{flex:1;padding:9px 0;font-size:12.5px;letter-spacing:1px}
+  .sk-right .sd-acts .btn:disabled{opacity:.35;cursor:default}
 
   /* 窄屏 / 手机：改成「上树下卡」的上下分栏，各自独立滚动。
    * 之前是树按内容撑高、整页一条滚动条 —— 树一放大（157%）就把说明书卡
@@ -781,13 +850,19 @@
     .sk-top .dim{display:none}
     .sk-list{display:flex;flex-direction:column;overflow:hidden}
     .sk-body{display:flex;flex-direction:column;flex:1;min-height:0;gap:7px;align-items:stretch}
-    .sk-left{flex:1 1 62%;min-height:0;display:flex;flex-direction:column}
+    /* 树矮的时候（3 个岔口就是一屏）左栏别硬撑满 62%，把空出来的高度
+     * 让给下面的说明书卡；树高的时候最多占 62%，自己在框里滚。
+     * 不收缩（flex-shrink 0）是关键：否则长卡片会反过来把树压扁。 */
+    .sk-left{flex:0 0 auto;min-height:0;max-height:62%;display:flex;flex-direction:column}
     /* 树自己内滚：手势在 JS 里接管（touch-action:none），浏览器不参与 */
     .skt-stage{display:block;flex:1;min-height:0;overflow:hidden}
-    /* 卡片固定占下面 38%，长卡（旋风斩那种带精研/取向/变体）在自己框里滚。
-     * 不按内容高度走 —— 那会让长卡把树挤没，短卡又白占地方，两头不讨好。 */
-    .sk-right{flex:1 1 38%;min-height:0;width:auto;max-height:none;overflow-y:auto;
+    /* 手机横向树：撑满左栏，两个方向都能滚（树又长又高时竖着也得拖） */
+    .sk-mt{flex:1 1 auto;min-height:0}
+    /* 卡片吃掉剩下的高度，长卡（旋风斩那种带精研/取向/变体）在自己框里滚。 */
+    .sk-right{flex:1 1 auto;min-height:0;width:auto;max-height:none;overflow-y:auto;
       -webkit-overflow-scrolling:touch;margin-top:0}
+    /* 手机上不缩放，缩放控件收起来 */
+    .sk-zoom{display:none}
     .sk-bar{position:relative;flex:none;z-index:9;margin-top:0;padding:8px 0 4px;
       background:linear-gradient(180deg,rgba(20,17,12,.92),rgba(14,12,9,.99))}
     .sk-bar .sb-hint{display:none}
@@ -2297,6 +2372,9 @@
       <canvas id="tlCanvas" width="660" height="440"></canvas>
       <div class="tl-tip" id="tlTip" style="display:none"></div>
     </div>
+    <!-- 手机：横向树 + 节点说明书（PC 上用上面那张轮盘，这两个不显示） -->
+    <div class="tl-mtree" id="tlTree"></div>
+    <div class="tl-card" id="tlCard"></div>
     <div class="tl-syn" id="tlSyn"></div>
     <div class="tl-foot">
       <div class="tl-presets" id="tlPresets"></div>
@@ -2559,6 +2637,7 @@
 <script src="src/audio.js"></script>
 <script src="src/fx.js"></script>
 <script src="src/world.js"></script>
+<script src="src/ui-mtree.js"></script>
 <script src="src/ui.js"></script>
 <script src="src/ui-skills.js"></script>
 <script src="src/ui-forge.js"></script>
