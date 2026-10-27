@@ -10,7 +10,7 @@ const MAPS = {
     id: 'village', name: '桃源村', safe: true, level: 1, camp: 'campA',
     ground: 'dirt', sky: 0x9fc7d9, fog: 0xa8c8d8, fogNear: 45, fogFar: 120,
     size: 70, ambient: 0xbfd9e6, sun: 0xffe6b8, sunI: 1.05, props: 'village',
-    npcs: ['elder', 'smith', 'herbalist', 'monk', 'alchemist', 'warden', 'steward'],
+    npcs: ['elder', 'smith', 'herbalist', 'monk', 'alchemist', 'warden', 'steward', 'campA_side'],
     spawns: [], bosses: [], portal: { x: 0, z: -18 }, music: 'calm'
   },
   forest: {
@@ -48,6 +48,27 @@ const MAPS = {
     spawns: ['bloodlord', 'ghostfire', 'golem', 'yaoguai', 'fallen', 'voidbeast', 'swordwraith', 'thunderbird', 'jadeguard'], spawnCount: 12,
     bosses: ['chaos'], portal: { x: 0, z: 53.7 }, unlock: 32
   },
+  /* ---------------- 卷二 · 血月焚天（M2 前置） ----------------
+   * M1 收尾时卷二整卷 6 个图位全是 id: null —— 任务链写出来无处可落，
+   * 测试只能靠改等级硬跳，验不出真问题。所以 M2 开工前先把 2-1 的两张补上。
+   *
+   * 只做「新地貌 + 换皮」：8 区拓扑照抄九幽地宫，专属场景与骨架留给 M3。
+   * ground: 'ice' 是本次新增的地貌（world.js makeGroundTexture），
+   * 让卷二一眼看出「这是另一个世界」，而不是又一张玄铁矿洞。 */
+  frost: {
+    id: 'frost', name: '寒潭水牢', safe: false, level: 20,
+    ground: 'ice', sky: 0x2a3e52, fog: 0x3a5468, fogNear: 33, fogFar: 108,
+    size: 130, ambient: 0x8aa8c0, sun: 0xbcdcff, sunI: 0.75, props: 'mine',
+    spawns: ['drowned', 'bogwitch', 'toad', 'ghost', 'snake', 'zombie'], spawnCount: 12,
+    bosses: ['icequeen'], portal: { x: 0, z: 52.2 }, unlock: 19
+  },
+  icelake: {
+    id: 'icelake', name: '冰魄湖', safe: false, level: 22,
+    ground: 'ice', sky: 0x3a5570, fog: 0x4a6a88, fogNear: 38, fogFar: 120,
+    size: 140, ambient: 0x9ac0d8, sun: 0xd8f0ff, sunI: 0.85, props: 'swamp',
+    spawns: ['drowned', 'toad', 'bogwitch', 'brood', 'spider', 'wasp'], spawnCount: 12,
+    bosses: ['spidermother'], portal: { x: 0, z: 55.1 }, unlock: 21
+  },
   /* ---------------- 营地 B~E（M1） ----------------
    * 复用村的布局（props: 'village'），只换地面纹理与色调 ——
    * M1 的验收口径是「进得去、出得来、传得动」，专属场景留给 M3。
@@ -60,28 +81,28 @@ const MAPS = {
     id: 'campB', name: '玄铁关', safe: true, level: 19, camp: 'campB',
     ground: 'rock', sky: 0x4a3230, fog: 0x5a3a34, fogNear: 40, fogFar: 118,
     size: 78, ambient: 0xa87a68, sun: 0xff9a6a, sunI: 0.85, props: 'village',
-    npcs: ['smith', 'herbalist', 'monk', 'alchemist', 'steward'],
+    npcs: ['smith', 'herbalist', 'monk', 'alchemist', 'steward', 'campB_main', 'campB_side'],
     spawns: [], bosses: [], portal: { x: 0, z: -18 }
   },
   campC: {
     id: 'campC', name: '忘川渡', safe: true, level: 31, camp: 'campC',
     ground: 'abyss', sky: 0x1e2438, fog: 0x28304a, fogNear: 38, fogFar: 112,
     size: 76, ambient: 0x7a86b8, sun: 0x9ab0ff, sunI: 0.7, props: 'village',
-    npcs: ['smith', 'herbalist', 'monk', 'alchemist', 'steward'],
+    npcs: ['smith', 'herbalist', 'monk', 'alchemist', 'steward', 'campC_main', 'campC_side'],
     spawns: [], bosses: [], portal: { x: 0, z: -18 }
   },
   campD: {
     id: 'campD', name: '南天关', safe: true, level: 41, camp: 'campD',
     ground: 'heaven', sky: 0x3a4a6a, fog: 0x50628a, fogNear: 42, fogFar: 126,
     size: 80, ambient: 0xa8bcd8, sun: 0xfff0c8, sunI: 1.0, props: 'village',
-    npcs: ['smith', 'herbalist', 'monk', 'alchemist', 'steward'],
+    npcs: ['smith', 'herbalist', 'monk', 'alchemist', 'steward', 'campD_main', 'campD_side'],
     spawns: [], bosses: [], portal: { x: 0, z: -18 }
   },
   campE: {
     id: 'campE', name: '九霄台', safe: true, level: 51, camp: 'campE',
     ground: 'trial', sky: 0x2a1e3e, fog: 0x38264e, fogNear: 40, fogFar: 120,
     size: 78, ambient: 0xb8a4dc, sun: 0xffd890, sunI: 1.05, props: 'village',
-    npcs: ['smith', 'herbalist', 'monk', 'alchemist', 'steward'],
+    npcs: ['smith', 'herbalist', 'monk', 'alchemist', 'steward', 'campE_main', 'campE_side'],
     spawns: [], bosses: [], portal: { x: 0, z: -18 }
   },
   /* ---------------- 无尽试炼场（v2.0） ----------------
@@ -116,88 +137,76 @@ const NPCS = {
     id: 'steward', name: '仓管·玄贮', glyph: '贮', color: 0x7a9aa8, role: 'stash',
     lines: ['东西交给我，丢不了。三个身份共用一间库房，你换个人来也认得出。',
       '库里空着的时候最安静，满了就要收拾了。']
+  },
+
+  /* ---------------- [M2] 营地任务发布者 ----------------
+   * 一营一个「掌事」（发主线）+ 一个「录事」（发支线）。
+   * 桃源村的掌事仍然是老村长（campA_main = elder 的别名），
+   * 这样老档里 q1~q11 那条链的对话人不变，玩家的记忆不断。
+   *
+   * 为什么每营都要有自己的发布者：卷一的主线全挂在村长身上，
+   * 玩家到了卷二营地还是得跑回桃源村接任务 —— 一条动线跑三卷，
+   * 这不是「史诗感」，是「跑腿」。 */
+  campB_main: {
+    id: 'campB_main', name: '关隘掌事·铁成', glyph: '掌', color: 0xc09868, role: 'quest',
+    lines: ['铁关之外，血月照了三十年。', '你从桃源来？那一路的妖气，我隔着关墙都闻得到。']
+  },
+  campC_main: {
+    id: 'campC_main', name: '忘川掌事·渡厄', glyph: '掌', color: 0x8a9ac8, role: 'quest',
+    lines: ['忘川无渡，白骨为舟。', '生者至此，皆须留名 —— 你的名字，我记下了。']
+  },
+  campD_main: {
+    id: 'campD_main', name: '南天掌事·守阙', glyph: '掌', color: 0xb0bcd8, role: 'quest',
+    lines: ['万剑归冢，天阙断阙。', '这里的每一块砖，都压着一个不肯走的剑魂。']
+  },
+  campE_main: {
+    id: 'campE_main', name: '九霄掌事·观澜', glyph: '掌', color: 0xd8b86a, role: 'quest',
+    lines: ['走到九霄台的人，前面就没有路了。', '不是没有路，是路要自己踏出来。']
+  },
+  campA_side: {
+    id: 'campA_side', name: '录事·青简', glyph: '录', color: 0x9aa87a, role: 'quest',
+    lines: ['村里的大小事，我都记在简上。', '有些事不算大事，但总得有人去。']
+  },
+  campB_side: {
+    id: 'campB_side', name: '录事·墨关', glyph: '录', color: 0xa89a7a, role: 'quest',
+    lines: ['关里的账，一半是粮，一半是命。', '帮个忙？不白帮。']
+  },
+  campC_side: {
+    id: 'campC_side', name: '录事·纸灯', glyph: '录', color: 0x8a9ab8, role: 'quest',
+    lines: ['黄泉路上也要点灯，不然找不到回来的道。', '我这灯，缺个提灯的人。']
+  },
+  campD_side: {
+    id: 'campD_side', name: '录事·拾遗', glyph: '录', color: 0xa8b0c0, role: 'quest',
+    lines: ['剑冢里的东西，捡回来都算遗物。', '遗物要归位，不然夜里会响。']
+  },
+  campE_side: {
+    id: 'campE_side', name: '录事·末页', glyph: '录', color: 0xc8b078, role: 'quest',
+    lines: ['这本册子只剩最后一页了。', '写完这一页，就没有下一页了。']
   }
 };
 
-/* ---------------- 任务链 ---------------- */
-const QUESTS = {
-  q1: {
-    id: 'q1', name: '竹林异动', giver: 'elder', map: 'village',
-    brief: '村外幽篁林妖气渐浓，半兽人已经下山掠村。去幽篁林斩杀 8 只半兽人。',
-    objectives: [{ type: 'kill', target: 'halfork', count: 8, label: '斩杀半兽人战士' }],
-    rewards: { xp: 260, gold: 180, ilvl: 5, rarity: 'magic' }, next: 'q2'
-  },
-  q2: {
-    id: 'q2', name: '血翼之夜', giver: 'elder', map: 'village',
-    brief: '血蝠成群，夜里连牲口都被吸干了血。去幽篁林讨伐 10 只血蝠。',
-    objectives: [{ type: 'kill', target: 'bat', count: 10, label: '猎杀血蝠' }],
-    rewards: { xp: 420, gold: 260, ilvl: 7, rarity: 'magic' }, next: 'q3'
-  },
-  q3: {
-    id: 'q3', name: '巨木妖王', giver: 'elder', map: 'village',
-    brief: '幽篁林深处，千年妖木已成王。斩了它，竹林才能安息。',
-    objectives: [{ type: 'boss', target: 'treeking', count: 1, label: '击败巨木妖王' }],
-    rewards: { xp: 900, gold: 500, ilvl: 9, rarity: 'rare', skill: 'thrust', talent: 2 }, next: 'q4'
-  },
-  q4: {
-    id: 'q4', name: '嗜血长翼', giver: 'elder', map: 'village',
-    brief: '血蝠魔君以人血养翼，若不除之，血月将临。',
-    objectives: [{ type: 'boss', target: 'batking', count: 1, label: '击败血蝠魔君' }],
-    rewards: { xp: 1200, gold: 650, ilvl: 11, rarity: 'rare', skill: 'frostnova' }, next: 'q5'
-  },
-  q5: {
-    id: 'q5', name: '沼泽的骨堆', giver: 'elder', map: 'village',
-    brief: '血月沼泽的半兽人部族正在堆骨为塔。去沼泽斩杀 12 只怪物，遏止它们的血祭。',
-    objectives: [{ type: 'killAny', count: 12, label: '肃清血月沼泽的妖物' }],
-    rewards: { xp: 1600, gold: 800, ilvl: 13, rarity: 'rare', talent: 2 }, next: 'q6'
-  },
-  q6: {
-    id: 'q6', name: '碎骨酋长', giver: 'elder', map: 'village',
-    brief: '半兽人酋长·碎骨以活人祭旗，此獠不除，沼泽永无宁日。',
-    objectives: [{ type: 'boss', target: 'chief', count: 1, label: '击败半兽人酋长·碎骨' }],
-    rewards: { xp: 2400, gold: 1100, ilvl: 15, rarity: 'set', skill: 'warcry' }, next: 'q7'
-  },
-  q7: {
-    id: 'q7', name: '石甲与毒鳞', giver: 'elder', map: 'village',
-    brief: '石甲巨魔与蛇姬·青鳞盘踞沼泽深处，二者皆除，方解此患。',
-    objectives: [
-      { type: 'boss', target: 'golemking', count: 1, label: '击败石甲巨魔' },
-      { type: 'boss', target: 'snakequeen', count: 1, label: '击败蛇姬·青鳞' }
-    ],
-    rewards: { xp: 3600, gold: 1500, ilvl: 17, rarity: 'set', skill: 'summon' }, next: 'q8'
-  },
-  q8: {
-    id: 'q8', name: '矿洞的低语', giver: 'elder', map: 'village',
-    brief: '玄铁矿洞传出诵经声，幽魂道尊正在收割矿工的魂魄。',
-    objectives: [{ type: 'boss', target: 'ghostlord', count: 1, label: '击败幽魂道尊' }],
-    rewards: { xp: 5200, gold: 2000, ilvl: 21, rarity: 'set', skill: 'heal', talent: 3 }, next: 'q9'
-  },
-  q9: {
-    id: 'q9', name: '冰火双魔', giver: 'elder', map: 'village',
-    brief: '赤炎魔将与冰魄妖后同源于一处天火，一焚一冻。斩其一，另一必至。',
-    objectives: [
-      { type: 'boss', target: 'firegeneral', count: 1, label: '击败赤炎魔将' },
-      { type: 'boss', target: 'icequeen', count: 1, label: '击败冰魄妖后' }
-    ],
-    rewards: { xp: 7600, gold: 2800, ilvl: 25, rarity: 'legendary', skill: 'chain' }, next: 'q10'
-  },
-  q10: {
-    id: 'q10', name: '九幽之门', giver: 'elder', map: 'village',
-    brief: '九幽地宫的门开了。蛛母、渡者、剑魂，都在门的另一侧等你。',
-    objectives: [
-      { type: 'boss', target: 'spidermother', count: 1, label: '击败万毒蛛母' },
-      { type: 'boss', target: 'ferryman', count: 1, label: '击败冥河渡者' },
-      { type: 'boss', target: 'swordlord', count: 1, label: '击败天罡剑魂' }
-    ],
-    rewards: { xp: 12000, gold: 4200, ilvl: 30, rarity: 'legendary', skill: 'iceshield' }, next: 'q11'
-  },
-  q11: {
-    id: 'q11', name: '九霄终焉', giver: 'elder', map: 'village',
-    brief: '混沌无相天魔吞尽九霄灵气，天阙已残。此战，为苍生，也为你自己。',
-    objectives: [{ type: 'boss', target: 'chaos', count: 1, label: '击败混沌·无相天魔' }],
-    rewards: { xp: 30000, gold: 12000, ilvl: 40, rarity: 'legendary', skill: 'avatar', talent: 3 }, next: null
-  }
-};
+/* 桃源村的掌事就是老村长 —— 别名，不新建 NPC。
+ * 任务数据里统一写 campA_main，读的时候经 NPC_ALIAS 落到 elder 身上。 */
+const NPC_ALIAS = { campA_main: 'elder' };
+
+/* 反查表：elder → campA_main。挂任务标记、开对话都要用。
+ * 单向别名会让「谁是这个 NPC 对应的发布者」没法算，所以两张表都留着。 */
+const NPC_GIVER = {};
+for (const k in NPC_ALIAS) NPC_GIVER[NPC_ALIAS[k]] = k;
+
+/** NPC id → 任务发布者 id（elder → campA_main；其余原样返回） */
+function giverOfNpc(npcId) { return NPC_GIVER[npcId] || npcId; }
+
+/** 发布者 id → 属于第几卷（campB_main → 2；任务板按卷分） */
+function partOfGiver(giverId) {
+  const m = /^camp([A-E])_/.exec(giverId || '');
+  if (m) return 'ABCDE'.indexOf(m[1]) + 1;
+  return 1;
+}
+
+/* ---------------- 任务链 ----------------
+ * [M2] 已迁到 src/data/data-quests.js（任务与地图解耦）。
+ * 这里只留一行说明，避免以后有人以为任务数据还在本文件里找。 */
 
 /* ============================================================
  * 世界结构 · M0 地基
@@ -262,7 +271,7 @@ const ACTS = {
   },
   '2-1': {
     id: '2-1', part: 2, no: 1, name: '寒潭照骨', from: 19, to: 22,
-    maps: [{ id: null, name: '寒潭水牢', lv: 20 }, { id: null, name: '冰魄湖', lv: 22 }],
+    maps: [{ id: 'frost', name: '寒潭水牢', lv: 20 }, { id: 'icelake', name: '冰魄湖', lv: 22 }],
     boss: 'icequeen', sub: 'spidermother'
   },
   '2-2': {

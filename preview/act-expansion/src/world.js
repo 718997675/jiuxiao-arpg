@@ -14,6 +14,10 @@ function makeGroundTexture(type) {
     rock: ['#4a4a52', '#3c3c44', '#565660', '#30303a'],
     abyss: ['#221c2a', '#1a1422', '#2c2236', '#140f1c'],
     heaven: ['#a8b8cc', '#96a8bc', '#bccadd', '#8a9cae'],
+    /* [M2] 冰封地貌：卷二寒潭水牢 / 冰魄湖。
+     * 比 heaven 更冷更亮 —— 天阙是「仙石」，冰面要有反光感，
+     * 所以最亮的一档拉到接近白，暗部压到蓝灰，一眼看出是冻住的。 */
+    ice: ['#7d94a8', '#6d8498', '#9db6c8', '#5f7688'],
     /* 试炼场：冷紫黑石，比九幽再「干净」一点 —— 这里是擂台，不是废墟 */
     trial: ['#3c3452', '#332c46', '#4a4064', '#2a2440']
   }[type] || ['#7a6a48'];
@@ -474,7 +478,9 @@ function buildMap(mapId) {
 
   // 边界
   const R = cfg.size * 0.5;
-  const borderM = M(cfg.ground === 'heaven' ? 0x8a9ab0 : (cfg.ground === 'abyss' ? 0x2b2038 : 0x3a3a40), { rough: 1 });
+  const borderM = M(cfg.ground === 'heaven' ? 0x8a9ab0
+    : (cfg.ground === 'abyss' ? 0x2b2038
+      : (cfg.ground === 'ice' ? 0x8fa8bc : 0x3a3a40)), { rough: 1 });
   if (zones) {
     /* 区域化：墙沿区域外轮廓长出来，走廊口自动留空 */
     buildZoneWalls(mapId, root, borderM);

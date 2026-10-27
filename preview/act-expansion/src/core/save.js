@@ -259,11 +259,15 @@ const SaveManager = {
 
     const q = this._obj(w.quests);
     if (!q) {
-      w.quests = { active: [], done: [], next: 'q1', announced: {} };
+      w.quests = { active: [], done: [], next: null, announced: {}, board: { cd: {}, count: {} } };
     } else {
       if (!Array.isArray(q.active)) q.active = [];
       if (!Array.isArray(q.done)) q.done = [];
       const ann = this._obj(q.announced) || (q.announced = {});
+      /* [M2] 悬赏板：cd 是按任务 id 记的到期时间戳，count 是完成次数 */
+      const qb = this._obj(q.board) || (q.board = {});
+      qb.cd = this._obj(qb.cd) || (qb.cd = {});
+      qb.count = this._obj(qb.count) || (qb.count = {});
       // 未接任务时 next 指向下一个可接任务；全部做完是 null
       if (q.next === undefined) q.next = 'q1';
       q.active = q.active.filter(a => a && typeof a === 'object' && a.id).map(a => {
@@ -341,7 +345,7 @@ const SaveManager = {
       world: {
         mapId: s.mapId || 'village',
         playerPos: { x: this._num((s.playerPos || {}).x, 0), z: this._num((s.playerPos || {}).z, 6) },
-        quests: this._obj(s.quests) || { active: [], done: [], next: 'q1', announced: {} },
+        quests: this._obj(s.quests) || { active: [], done: [], next: null, announced: {}, board: { cd: {}, count: {} } },
         /* M0：卷 / 章 / 营地 / 大传送门 / 已抵达的图（具体整形在 normalizeDoc 里） */
         part: s.part,
         act: s.act,
@@ -598,7 +602,7 @@ const SaveManager = {
       potions: { hp: 4, mp: 3 }, teleportStones: 0, hp: 100, mp: 50,
       equipment: { helm: null, chest: eq.chest, shoulders: null, cloak: null, gloves: null, boots: null, belt: null, amulet: null, ring1: null, ring2: null, weapon: eq.weapon, offhand: null, relic: null, fate: null },
       inventory: [], maxInv: 40,
-      quests: { active: [], done: [], next: 'q1', announced: {} },
+      quests: { active: [], done: [], next: null, announced: {}, board: { cd: {}, count: {} } },
       mapId: 'village', playerPos: { x: 0, z: 10 },
       /* [M0] 世界结构（新档默认停在卷一第 1 章，只到过桃源村） */
       part: 1, act: '1-1', camps: ['campA'], portals: ['portalA'], mapsSeen: ['village'],
