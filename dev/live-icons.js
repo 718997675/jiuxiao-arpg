@@ -2,7 +2,7 @@ const puppeteer = require('puppeteer-core');
 const wait = ms => new Promise(r => setTimeout(r, ms));
 const URL = 'https://718997675.github.io/jiuxiao-arpg/?t=' + Date.now();
 (async () => {
-  const b = await puppeteer.launch({ executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: 'new', args: ['--no-sandbox', '--enable-webgl', '--use-gl=angle'] });
+  const b = await puppeteer.launch({ executablePath: require('./_chrome'), headless: 'new', args: ['--no-sandbox', '--enable-webgl', '--use-gl=angle'] });
   const p = await b.newPage();
   await p.setViewport({ width: 1280, height: 800, deviceScaleFactor: 1.5 });
   const errs = [];

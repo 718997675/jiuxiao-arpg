@@ -6,11 +6,7 @@ const puppeteer = require('puppeteer-core');
 const path = require('path');
 const fs = require('fs');
 const wait = ms => new Promise(r => setTimeout(r, ms));
-const exe = [
-  'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',
-  'C:/Program Files/Microsoft/Edge/Application/msedge.exe',
-  'C:/Program Files/Google/Chrome/Application/chrome.exe'
-].find(f => fs.existsSync(f));
+const exe = require('./_chrome');
 const URL = 'https://718997675.github.io/jiuxiao-arpg/?t=' + Date.now();
 
 const fails = [];

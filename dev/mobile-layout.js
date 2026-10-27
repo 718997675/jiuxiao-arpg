@@ -1,5 +1,7 @@
 /* 移动端布局回归：键位重叠 / 出屏 / 面板裁切 / 面板可滚性
- * 用法：node dev/mobile-layout.js
+ * 用法：
+ *   node dev/mobile-layout.js           本地 index.html，6 视口全跑
+ *   node dev/mobile-layout.js --live    线上 GitHub Pages，只跑 2 个代表视口
  * 判定口径：
  *   · 键位重叠   —— 任意两个可交互控件（摇杆/普攻/技能格/功能键）矩形相交 > 2px 即报
  *   · 出屏       —— 控件矩形越过可视区边界 1px 即报
@@ -9,17 +11,19 @@
  */
 const puppeteer = require('puppeteer-core');
 const path = require('path');
-const fs = require('fs');
 const wait = ms => new Promise(r => setTimeout(r, ms));
 
-const EXE = [
-  'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',
-  'C:/Program Files/Microsoft/Edge/Application/msedge.exe',
-  'C:/Program Files/Google/Chrome/Application/chrome.exe',
-  '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
-].find(f => fs.existsSync(f));
+const EXE = require('./_chrome');
 
-const VIEWPORTS = [
+const LIVE = process.argv.includes('--live');
+const BASE = LIVE
+  ? 'https://718997675.github.io/jiuxiao-arpg/?t=' + Date.now() + '&mobile=1'
+  : 'file://' + path.resolve(__dirname, '..', 'index.html') + '?mobile=1';
+
+const VIEWPORTS = LIVE ? [
+  { name: 'iPhone12-竖', w: 390, h: 844 },
+  { name: 'iPhone12-横', w: 844, h: 390 }
+] : [
   { name: 'iPhone12-竖', w: 390, h: 844 },
   { name: 'iPhone12-横', w: 844, h: 390 },
   { name: 'iPhoneSE-竖', w: 375, h: 667 },
@@ -37,13 +41,14 @@ const TABS = ['bag', 'talent', 'stat', 'quest', 'codex', 'forge', 'save', 'set',
   });
 
   let fail = 0;
+  console.log(LIVE ? '目标：线上 ' + BASE.split('?')[0] : '目标：本地 index.html');
 
   for (const vp of VIEWPORTS) {
     const page = await browser.newPage();
     await page.setViewport({ width: vp.w, height: vp.h, deviceScaleFactor: 1, isMobile: true, hasTouch: true });
     const errs = [];
     page.on('pageerror', e => errs.push('pageerror: ' + e.message));
-    await page.goto('file://' + path.resolve(__dirname, '..', 'index.html') + '?mobile=1', { waitUntil: 'load' });
+    await page.goto(BASE, { waitUntil: 'load', timeout: 45000 });
     await page.evaluate(() => { try { localStorage.clear(); } catch (e) { } });
     await page.reload({ waitUntil: 'load' });
     await wait(1200);

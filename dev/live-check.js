@@ -4,7 +4,7 @@ const URL = 'https://718997675.github.io/jiuxiao-arpg/?t=' + Date.now();
 
 (async () => {
   const browser = await puppeteer.launch({
-    executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+    executablePath: require('./_chrome'),
     headless: 'new',
     args: ['--no-sandbox', '--enable-webgl', '--use-gl=angle', '--window-size=1440,900']
   });

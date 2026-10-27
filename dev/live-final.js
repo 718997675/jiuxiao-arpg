@@ -16,7 +16,7 @@ async function boot(page) {
 
 (async () => {
   const b = await puppeteer.launch({
-    executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+    executablePath: require('./_chrome'),
     headless: 'new',
     args: ['--no-sandbox', '--enable-webgl', '--use-gl=angle']
   });
