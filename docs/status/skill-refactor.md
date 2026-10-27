@@ -2,12 +2,13 @@
 
 - 分支：`feat/skill-refactor`（优先级 **低**，排在大型扩展之后）
 - 计划文档：`docs/SKILL-REDESIGN-PLAN.md`（16 节）
-- 预览站：还没发（要发就 `./dev/publish-preview.sh feat/skill-refactor`）
-- 更新：2026-10-27 22:05 · P1b 动作条收敛完成（8 → 5，左键 + 1~4）
+- 预览站：暂不发（2026-10-27 用户口径：本地验证即可，别再折腾线上）
+- 更新：2026-10-27 22:35 · P1c 二选一取消（三线并行 + 等级门 + 软前置）
 
-> 当前：**P0 + P1a + P1b 完成**。动作条已是 5 格（左键 + 1~4）、格位 = 功能位、
-> 老档 8 格自动归位并补满、技能点一次性全退（拍板 #4）。
-> 战斗数值与等级台阶仍未接（P2）；技能树面板仍是旧的串行树（P1c）。
+> 当前：**P0 + P1a + P1b + P1c 完成**。动作条 5 格、格位 = 功能位；
+> 技能树已按「三线并行」结算 —— 没有必点主干、没有主动↔被动二选一，
+> 只有角色等级门与关键被动的「该线 ≥5 点」软前置。
+> 面板视觉仍是 3 组 × 2 子列（P1d 才重排成纵向三列）；战斗数值与 1→10 台阶仍未接（P2）。
 
 ## 一句话现状
 
@@ -26,26 +27,27 @@ P1 起才动 `SKILL_BAR_SLOTS` 与面板的三列树。
 | P0b | 面板/说明页只读展示新结构（既不动键位也不动战斗） | ✅ | `src/ui-skills.js`（`skArchHTML`）、`src/ui.js` 第七节 | 见 git log |
 | P1a | 对账：12 技能 × 3 职业全部有位接（孤儿清零），新增 `skillArchOrphans` / `skillArchSlotOf`。**不动任何行为** | ✅ | `data-skills.js`、`dev/test-skill-p0.js` | 见 git log |
 | P1b | 槽位收敛：`SKILL_BAR_SLOTS` 8 → 5，键位改 左键 + 1~4，格位 = 功能位（越位拦截），老档 8 格归位并补满，拍板 #4 一次性全退点 | ✅ | `data-skills.js`、`game.js`、`ui.js`、`mobile.js`、`core/save.js` | 见 git log |
-| P1c | 技能树面板从「串行树」改为「三列并行 + 等级锁」，删掉 `skillForkOf` 二选一 | ⬜ | `data-skill-tree.js`、`ui-skills.js`（`skTreeHTML`） | — |
+| P1c | **取消二选一**：三线并行结算（等级门 `reqLv` + 关键被动软前置 `needPts`），`levelUpSkill` / `levelUpPassive` 的 fork 拦截整块删除，面板去掉「或/锁」标记与互斥虚线，说明页同步 | ✅ | `data-skill-tree.js`、`game.js`、`skill-passive.js`、`ui-skills.js`、`ui.js`、`index.html` | `dev/test-skill-p1c.js` 353 · `dev/probe-skill-p1c.js` 23 |
+| P1d | 面板**视觉**重排：从 3 组 × 2 子列改成「三列纵向、每列按 reqLv 递增」，只画同线淡色引导线（P1c 只动了语义，坐标没动） | ⬜ | `ui-skills.js`（`skTreeHTML`）、`index.html`（SKG 常量） | — |
 | P2 | 等级台阶：5 → 10 级，数量/形态台阶接进 `castSkill`，点数供给同步 | ⬜ | `src/game.js`、`src/skill-beh.js` | — |
 | P3 | 元素注入 + 反应表：伤害管线支持双元素、特效混色、词缀口径 | ⬜ | 战斗 + 词缀 + `src/fx.js` | — |
 | P4 | 三职业独立 ⑤ 号位：刀客兵形/刃势、法师法相、道士召唤 | ⬜ | `src/fx.js`、`src/charforge.js` | — |
 | P5 | 形态进化表现：5 槽 × 3 职业 × 3 段 = 45 套 | ⬜ | `src/fx.js`、模型 | — |
 | P6 | 平衡、洗点、老档兼容回归 | ⬜ | — | — |
 
-## 下一步（P1c：面板换三列并行）
+## 下一步（P1d：面板视觉重排成纵向三列）
 
-动作条已经收敛完，剩下的是**面板**：现在面板还在画旧的串行树（`spine` / `forks`）。
+P1c 只把**语义**换成了三线并行，坐标还是旧的「3 组 × 2 子列（主动 | 被动）」。
+方案 §3.3 要求「三列并行排布，每列从上到下按等级门槛递增」，所以要动视觉：
 
-1. `skillLines()` 换掉 `skillTreeNodes()`，三列并行 + `reqLv` 等级锁 + 关键被动 `needPts` 软前置。
-2. `skillForkOf` 的二选一逻辑**一并删掉**（别留第二套真相，上一轮 `SKILL_SPECIALS` 就是这么烂掉的）。
-3. 面板底部的技能条已经按功能位显示（左键 / 1~4），不用再改。
-4. 验收：`node dev/test-skill-p1.js` 仍全绿 + 真机 `probe-skill-arch` 无报错 +
-   新增一条「三列并行 / 越位节点不可点」的断言。
-4. 面板：`skillLines()` 换掉 `skillTreeNodes()`，三列并行 + `reqLv` 等级锁 + 关键被动
-   `needPts` 软前置；`skillForkOf` 的二选一逻辑一并删掉（别留第二套真相）。
-5. 验收：`node dev/test-skill-p0.js`、`dev/test-save.js`（老档迁移）、
-   真机 `dev/probe-skill-arch.js` + 新增一条「8 格老档 → 5 格」的迁移探针。
+1. `skTreeHTML` 的 `xOf(col)`：从 `col = ti*2 + sub` 改成 `col = ti`（每条线一列），
+   列内节点按 `reqLv` 升序**重新编 row**（不再沿用 forks 的下标）。
+2. 主动与被动在同一列会重叠 —— 二选一取消后它们不再需要左右并排，
+   改用「同列上下、被动用圆纹+淡底区分」或「同格双联」二选一，做之前先看真机密度。
+3. 连线只保留「同线竖向淡引导线」（`skillNodeMeta` 里已有 `lineIdx`，按它分组）。
+4. 手机端 `renderSkillTreeDOM` 的三列布局（spine | 主动 | 被动）**与并行模型不符**，
+   一并改成「三条线分页签、每页一条纵列」。
+5. 验收：`dev/probe-skill-p1c.js` 23 条仍全绿 + 新增「同列节点零重叠 / 节点顺序按 reqLv」断言。
 
 ## 卡点
 
@@ -158,3 +160,33 @@ P1 起才动 `SKILL_BAR_SLOTS` 与面板的三列树。
   键 1 打 bar[1]、键 5 不占位、老 8 格档整形后 5 格且全满、全退生效、手机 4 键零重叠。
 - 验证：`test-skill-p0` 240/0 · `test-skill-p1` 52/0 · `test-items` 17/0 · `test-save` 79/0 ·
   `probe-skill-arch` 29/0 · `probe-bar5` 30/0 · `test-s1` 通过 · `smoke` ERRORS none。
+
+### 2026-10-27 · P1c 取消二选一（三线并行落地）
+
+**这一节只动「语义」，不动坐标** —— 面板还是 3 组 × 2 子列，重排留给 P1d。
+
+- 数据层新增 `skillSpentMap(skills, passives)`：主动 `lv-1`（领悟白送的 1 级不算投入，
+  与旧岔口锁口径一致）、被动 `lv`、同 id 取大。纯函数，node 可单测。
+- `Game.lineSpent(lineName)` + `Game.skillGate(id)`：结算与面板共用一套判定，
+  返回 `{ reqLv, needPts, level, linePts, levelOK, ptsOK, ok }`。
+- **删掉两处 fork 拦截**：`levelUpSkill`（主动）与 `levelUpPassive`（被动）里的
+  `skillForkOf` 二选一判断整块移除。主动侧改用 `skillGate` 的等级门；
+  被动侧加 `ptsOK` 软前置（只有关键被动 `needPts=5`，普通被动是 0）。
+- 面板：`.fklock`（互斥红）与「或 / 锁」标记、主动↔被动虚线全部删除；
+  新增 `.pts`（软前置，琥珀色）+ 关键被动上方 `线2/5` 小标（说清「这条线还差几点」）。
+  手机端 `edgeCls` 不再按「被动列」画虚线（原来用线型暗示互斥）。
+- 说明页：删掉「岔口锁」整行，换成「技能树投资」（三线并行 + 两道门 + 取舍口径）；
+  「被动与关键被动」补软前置说明；线名与阈值都按 `SKILL_TREE` 实时取，不写死。
+- 契约 `dev/test-skill-p1c.js`（353 条）：账本折算 / 线内点数只算本线 / 等级门边界 /
+  软前置两侧边界 / **同岔口主动与被动同时可点** / 源码里不许再有 `skillForkOf` 拦截 /
+  面板不许再出现 `fklock`、`fk-dash`、`skt-or lock`。
+- 真机 `dev/probe-skill-p1c.js`（23 条）：第 3 岔口主动 + 被动都能加点（旧模型这里必拦）/
+  软前置 0 点被拦且提示「本线已投入」/ 投到 8 点放行 / 1 级时 20 个节点被等级锁 /
+  软前置标记数与被软锁节点数一致 / 说明页四句话都在 / 零报错。
+- 全量回归：`test-skill-p0` 240 · `test-skill-p1` 52 · `test-skill-p1c` 353 ·
+  `test-items` 17 · `test-save` 79 · `test-save-browser` 80 · `test-s1` 通过 ·
+  `probe-skill-arch` 29 · `probe-bar5` 30 · `probe-skill-p1c` 23 · `smoke` ERRORS none。
+
+**踩坑**：截图里看到关键被动上方标着 `0/5` 以为 `lineSpent` 算错了，
+实际是「没投点的那两条线」在正确报警，投满的狂战线没有标记 —— 虚惊一场。
+顺手把标记从 `0/5` 改成 `线0/5` 并补 `title`，否则玩家不知道这个分数是什么。

@@ -800,11 +800,16 @@
   .skt-or{position:absolute;font-size:9px;color:#5e5648;letter-spacing:1px}
   .skt-or i{display:inline-block;padding:1px 4px;border:1px solid rgba(216,178,90,.2);
     border-radius:2px;background:#12100d;font-style:normal}
-  /* 岔口锁：互斥岔口的标记与被锁节点的样子（对面投了点，这边先退才能投） */
-  .skt-or.lock i{color:#e08a72;border-color:rgba(214,106,86,.4)}
-  .skt-nd.fklock .box{opacity:.55;filter:saturate(.5)}
-  .skt-nd.fklock .nm{color:#c98268}
-  .skt-nd.fklock{cursor:not-allowed}
+  /* [P1c] 三线并行后没有「二选一」，原来的 .fklock（红）退役：
+   *   .pts  软前置锁 —— 等级够了，但关键被动要「这条线已投入 N 点」。
+   *         用琥珀色而不是红色：这不是互斥，是「再练练这条线」。 */
+  .skt-or.soft i{color:#c9a468;border-color:rgba(216,178,90,.34);font-variant-numeric:tabular-nums}
+  .skt-nd.pts .box{opacity:.66;filter:saturate(.75)}
+  .skt-nd.pts .nm{color:#c9a468}
+  .skt-nd.pts{cursor:not-allowed}
+  /* 手机端同一套语义 */
+  .mt-nd.pts{opacity:.7}
+  .mt-nd.pts .mt-nm{color:#c9a468}
 
   /* 选中节点下方浮出的 ＋ / −：触屏没有右键，这是唯一路径；PC 上也留着好点。
    * 节点下多了「变体名」一行，所以间距从 19px 收到 2px —— 否则会压到下一行节点上。 */

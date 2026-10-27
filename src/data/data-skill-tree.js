@@ -945,6 +945,27 @@ function skillLineSpent(cls, lineName, spent) {
   return n;
 }
 
+/* 把存档账本折算成 skillLineSpent 要的 spent 形状。
+ *
+ *   主动：lv - 1（领悟白送的 1 级不算「投入」，与旧岔口锁的口径一致）
+ *   被动：lv 本身（被动没有白送等级）
+ *
+ * 为什么不在 skillLineSpent 里直接读存档：那一层是纯函数，node 里能单测，
+ * 不该知道 s.skills / s.passives 长什么样。
+ */
+function skillSpentMap(skillsState, passiveState) {
+  const out = {};
+  for (const id in (skillsState || {})) {
+    out[id] = Math.max(0, Number(((skillsState[id] || {}).lv) || 1) - 1);
+  }
+  for (const id in (passiveState || {})) {
+    const v = Math.max(0, Number(passiveState[id]) || 0);
+    /* 同一 id 不会既是主动又是被动；真撞了取大的，别互相覆盖成 0 */
+    out[id] = Math.max(out[id] || 0, v);
+  }
+  return out;
+}
+
 /* 门槛判定：只看「角色等级」与「该线已投入点数」，没有任何硬前置 */
 function skillNodeGate(id, opts) {
   const info = skillLineNodeInfo(id);

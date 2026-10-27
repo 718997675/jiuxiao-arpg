@@ -888,13 +888,11 @@ Object.assign(UI, {
     if (!lay.length) return '<div class="skt-stage"><div class="vhint">这个职业还没有技能树</div></div>';
 
     const nodes = skillTreeNodes(cls);
-    const forks = skillTreeForks(cls);
     const trees = lay.map(t => t.name);
     const mob = (typeof IS_TOUCH !== 'undefined' && IS_TOUCH) || window.innerWidth < 780;
     if (this.skTreeTab == null || trees.indexOf(this.skTreeTab) < 0) this.skTreeTab = trees[0];
     const shown = mob ? [this.skTreeTab] : trees;
     const list = nodes.filter(n => shown.indexOf(n.tree) >= 0);
-    const forkList = forks.filter(f => shown.indexOf(f.tree) >= 0);
     const z = Math.max(0.45, Math.min(2, this.skZoom || 1));
 
     const xOf = col => {
@@ -913,7 +911,8 @@ Object.assign(UI, {
     const byId = {};
     list.forEach(n => byId[n.id] = n);
 
-    /* 连线：竖脊 + 到主动的横枝 + 主动↔被动的虚线（虚线 = 二选一） */
+    /* 连线：竖脊 + 到主动的横枝（同线引导）。[P1c] 主动 ↔ 被动那条虚线已删 ——
+     * 它原本表示「二选一」，三线并行后同一岔口两边都能点，再画就是误导。 */
     let wire = `<svg class="skt-wire" width="${W}" height="${H}">`;
     for (const t of lay) {
       if (shown.indexOf(t.name) < 0) continue;
@@ -922,14 +921,10 @@ Object.assign(UI, {
       const spX = xOf(sp.col) + SKG.node / 2;
       wire += `<path d="M${spX} ${yOf(sp.row) + SKG.node}V${yOf(t.forks.length) + SKG.node / 2}" stroke="rgba(216,178,90,.36)" stroke-width="1.5" fill="none"/>`;
       for (const f of t.forks) {
-        const a = byId[f.active], p = byId[f.passive];
-        if (!a || !p) continue;
+        const a = byId[f.active];
+        if (!a) continue;
         const ay = yOf(a.row) + SKG.node / 2;
         wire += `<path d="M${spX} ${ay}H${xOf(a.col)}" stroke="rgba(216,178,90,.36)" stroke-width="1.5" fill="none"/>`;
-        /* 岔口锁：第 3 个岔口起二选一，虚线换成警示色提醒「这边锁那边」 */
-        const fi = t.forks.indexOf(f);
-        const flocked = (fi + 1) >= (SKILL_TREE.forkLockAt || 3);
-        wire += `<path class="fk-dash" d="M${xOf(a.col) + SKG.node} ${ay}H${xOf(p.col)}" stroke="${flocked ? 'rgba(214,106,86,.55)' : 'rgba(216,178,90,.26)'}" stroke-width="1.3" stroke-dasharray="3 4" fill="none"/>`;
       }
     }
     wire += '</svg>';
@@ -967,9 +962,15 @@ Object.assign(UI, {
       const kind = n.kind === 'active' ? 'act' : (n.kind === 'key' ? 'key' : 'pas');
       /* [P2] 被动也走真投点：门槛 = 同岔口主动的领悟等级，账本在 s.passives */
       const isPas = n.kind !== 'active';
-      const locked = isPas
-        ? !(Game.passiveUnlocked && Game.passiveUnlocked(n.id))
-        : !Game.skillUnlocked(n.id);
+      /* [P1c] 三线并行：两种「点不了」分开显示 ——
+       *   locked  等级不够（角标直接写要求等级）
+       *   ptsLock 等级够了，但关键被动要「该线已投入 N 点」（软前置）
+       * 不再有「岔口二选一」，同一岔口的主动与被动都能点。 */
+      const gate = (typeof Game.skillGate === 'function') ? Game.skillGate(n.id) : null;
+      const locked = gate ? !gate.levelOK
+        : (isPas ? !(Game.passiveUnlocked && Game.passiveUnlocked(n.id)) : !Game.skillUnlocked(n.id));
+      const ptsLock = !!(gate && gate.levelOK && !gate.ptsOK);
+      const reqLv = gate ? gate.reqLv : n.unlock;
       const sel = n.id === this.skShown();
       const slot = n.kind === 'active' ? onBar.indexOf(n.id) : -1;
       const lv = n.kind === 'active' ? Game.skillLevel(n.id) : (Game.passiveLv ? Game.passiveLv(n.id) : 0);
@@ -1012,8 +1013,8 @@ Object.assign(UI, {
         ? skillIconSvg(n.id, 26)
         : tIcon(SKILL_TREE.icons[n.kind === 'key' ? 'key' : 'passive'], n.kind === 'key' ? 24 : 25);
       const badge = n.kind === 'active'
-        ? (locked ? n.unlock + '级' : lv)
-        : (locked ? n.unlock + '级' : (lv > 0 ? lv : n.max));
+        ? (locked ? reqLv + '级' : lv)
+        : (locked ? reqLv + '级' : (lv > 0 ? lv : n.max));
       /* 等阶比已投高 = 身上有「+技能等级」的加成，角标说清楚，
        * 不然玩家会拿这个数字去对分支门槛（门槛看的是已投） */
       const badgeTip = (n.kind === 'active' && lv > invLv)
@@ -1022,22 +1023,13 @@ Object.assign(UI, {
         ? `data-skpick="${n.id}"`
         : `data-sktpas="${n.id}" data-sktname="${n.name}"`;
 
-      /* [P2] 岔口锁：第 3 个岔口起主动 ↔ 被动二选一 —— 对面投过点就打被锁标记 */
-      let fkLockNm = null;
-      if (typeof skillForkOf === 'function') {
-        const fk = skillForkOf(n.id);
-        if (fk && fk.lock) {
-          const otherInv = fk.side === 'active'
-            ? (Game.passiveLv ? Game.passiveLv(fk.other) > 0 : false)
-            : ((Game.skillState()[fk.other] || {}).lv || 1) > 1;
-          if (otherInv) {
-            const od = fk.side === 'active' ? SKILL_TREE.passives[fk.other] : SKILLS[fk.other];
-            fkLockNm = (od && od.name) || fk.other;
-          }
-        }
-      }
+      /* [P1c] 软前置提示（关键被动专有）：只说「这条线还差几点」，
+       * 不指向任何具体节点 —— 并行模型里没有「必须先点谁」这回事。 */
+      const ptsTip = ptsLock
+        ? `该线已投入 ${gate.linePts} / ${gate.needPts} 点（软前置：先把这条线练起来，点哪个节点都算）`
+        : '';
 
-      h += `<div class="skt-nd ${kind}${locked ? ' locked' : ''}${sel ? ' sel' : ''}${full ? ' max' : ''}${isPas && lv > 0 ? ' own' : ''}${fkLockNm ? ' fklock' : ''}" ${attr}${fkLockNm ? ` title="岔口二选一：「${fkLockNm}」已分配点数，需先退还"` : ''}
+      h += `<div class="skt-nd ${kind}${locked ? ' locked' : ''}${ptsLock ? ' pts' : ''}${sel ? ' sel' : ''}${full ? ' max' : ''}${isPas && lv > 0 ? ' own' : ''}" ${attr}${ptsTip ? ` title="${ptsTip}"` : ''}
         style="left:${x}px;top:${y}px">
         <div class="box">${inner}<span class="bg"${badgeTip ? ` title="${badgeTip}"` : ''}>${badge}</span>${slot >= 0 ? `<span class="skt-slot">${slot + 1}</span>` : ''}</div>
         <div class="nm">${n.name}</div>${vnmDiv}${marks}`;
@@ -1053,14 +1045,14 @@ Object.assign(UI, {
       h += '</div>';
     }
 
-    /* 「或」标记：压在两节点之间的虚线上方；互斥岔口（第 3 个起）显示「锁」 */
-    for (const f of forkList) {
-      const a = byId[f.active], p = byId[f.passive];
-      if (!a || !p) continue;
-      const x = (xOf(a.col) + SKG.node + xOf(p.col)) / 2 - 9;
-      const y = yOf(a.row) + SKG.node / 2 - 19;
-      const flo = f.row >= (SKILL_TREE.forkLockAt || 3);
-      h += `<div class="skt-or${flo ? ' lock' : ''}" style="left:${x}px;top:${y}px"><i>${flo ? '锁' : '或'}</i></div>`;
+    /* [P1c] 「或 / 锁」标记整块删掉：三线并行后同一岔口的主动与被动
+     * 可以都点，没有二选一可标。这里只在关键被动旁边标一个「软」，
+     * 提示它要「这条线练够 N 点」（不指向任何具体节点）。 */
+    for (const n of list) {
+      if (n.kind !== 'key') continue;
+      const g = (typeof Game.skillGate === 'function') ? Game.skillGate(n.id) : null;
+      if (!g || g.ptsOK) continue;
+      h += `<div class="skt-or soft" style="left:${xOf(n.col) + SKG.node / 2 - 12}px;top:${yOf(n.row) - 15}px" title="关键被动软前置：该线已投入 ${g.linePts} / ${g.needPts} 点"><i>线${g.linePts}/${g.needPts}</i></div>`;
     }
 
     /* 分支浮层：就地展开在节点旁，不跳右侧 */
@@ -1120,9 +1112,19 @@ Object.assign(UI, {
     const invOf = n => n.kind === 'active' ? (((Game.skillState()[n.id] || {}).lv) || 1) : lvOf(n);
     const maxOf = n => n.kind === 'active' ? SKILL_LV_MAX
       : (((SKILL_TREE.passives || {})[n.id] || {}).max || 1);
-    const lockOf = n => n.kind === 'active'
-      ? !Game.skillUnlocked(n.id)
-      : !(Game.passiveUnlocked && Game.passiveUnlocked(n.id));
+    /* [P1c] 三线并行：锁定只看角色等级；关键被动的「该线 N 点」另算软前置 */
+    const gateOf = n => (typeof Game.skillGate === 'function') ? Game.skillGate(n.id) : null;
+    const lockOf = n => {
+      const g = gateOf(n);
+      if (g) return !g.levelOK;
+      return n.kind === 'active'
+        ? !Game.skillUnlocked(n.id)
+        : !(Game.passiveUnlocked && Game.passiveUnlocked(n.id));
+    };
+    const ptsLockOf = n => {
+      const g = gateOf(n);
+      return !!(g && g.levelOK && !g.ptsOK);
+    };
     const onBar = Game.skillBar();
     const tIcon = (body, size) =>
       `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor"
@@ -1136,6 +1138,7 @@ Object.assign(UI, {
       cls: n => {
         const out = [];
         if (lockOf(n)) out.push('locked');
+        if (ptsLockOf(n)) out.push('pts');
         const lv = invOf(n), max = maxOf(n);
         if (lv >= max) out.push('max');
         else if (lv > 0) out.push('own');
@@ -1149,17 +1152,16 @@ Object.assign(UI, {
         const ico = n.kind === 'active'
           ? (typeof skillIconSvg === 'function' ? skillIconSvg(n.id, 24) : '')
           : tIcon(SKILL_TREE.icons[n.kind === 'key' ? 'key' : 'passive'], 22);
-        const badge = lockOf(n) ? (def.unlock || 1) + '级'
+        const g = gateOf(n);
+        const badge = lockOf(n) ? ((g ? g.reqLv : def.unlock) || 1) + '级'
           : (n.kind === 'active' ? lv : (lv > 0 ? lv : max));
         return `<span class="mt-ico">${ico}</span>`
           + `<b class="mt-nm">${def.name || ''}</b>`
           + `<span class="mt-lv">${badge}</span>`;
       },
-      /* 主动 → 同岔口被动那根画成虚线，和画布上的「或」保持一致 */
-      edgeCls: (a, b) => {
-        const nb = list.find(x => x.id === b);
-        return (nb && nb.col === 2) ? 'alt' : '';
-      },
+      /* [P1c] 主动 → 同岔口被动原来是虚线（表示「或」）；三线并行后两边都能点，
+       * 边一律画成普通引导线，不再用线型暗示互斥。 */
+      edgeCls: () => '',
       onPick: id => {
         this.skSel = id;
         this.skHover = null;

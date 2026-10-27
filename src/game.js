@@ -1220,6 +1220,35 @@ const Game = {
   },
 
   /* ======================================================= */
+  /* [P1c] 三线并行：等级门 + 线内软前置                       */
+  /*                                                        */
+  /* 旧模型是「第 3 个岔口起 主动 ↔ 被动 二选一」，点错一条线  */
+  /* 构筑就锁死。现在改成暗黑 4 式：                          */
+  /*   · 三条线同时开放，没有必点主干                        */
+  /*   · 每个节点只看「角色等级」（reqLv）                    */
+  /*   · 关键被动额外要「该线已投入 ≥ N 点」（needPts，软前置）*/
+  /*   · 同岔口的主动与被动可以都点，不再互斥                 */
+  /* 唯一稀缺的是技能点，取舍变成「点多少」而不是「点哪条」。 */
+  /* ======================================================= */
+
+  /* 某条线已投入的点数（主动 lv-1 + 被动 lv） */
+  lineSpent(lineName) {
+    const s = this.state;
+    if (!s || typeof skillLineSpent !== 'function') return 0;
+    return skillLineSpent(s.cls, lineName, skillSpentMap(this.skillState(), s.passives || {}));
+  },
+
+  /* 节点门槛：{ reqLv, needPts, level, linePts, levelOK, ptsOK, ok }；
+   * 不在树上的节点返回 null（传世秘技等，它们本来就不受树约束）。 */
+  skillGate(id) {
+    const s = this.state;
+    if (!s || typeof skillNodeGate !== 'function') return null;
+    const info = (typeof skillLineNodeInfo === 'function') ? skillLineNodeInfo(id) : null;
+    if (!info) return null;
+    return skillNodeGate(id, { level: s.level, linePts: this.lineSpent(info.line) });
+  },
+
+  /* ======================================================= */
   /* [P2] 技能树洗点：一键退光等级 / 取向 / 被动，阶梯收金币      */
   /* ======================================================= */
   /* 当前这一洗要多少金币（每洗一次往后走一档，3.5 万封顶） */
@@ -1252,14 +1281,11 @@ const Game = {
     const s = this.state;
     if (!s || !SKILLS[id]) return { ok: false, msg: '技能不存在' };
     if (!this.skillUnlocked(id)) return { ok: false, msg: '尚未领悟' };
-    /* [P2] 岔口锁：第 3 个岔口起主动 ↔ 被动二选一，对面投过点就拦
-     *（对面只是「领悟送的 1 级」不算投入，账本与装备解耦的道理同前） */
-    if (typeof skillForkOf === 'function') {
-      const fk = skillForkOf(id);
-      if (fk && fk.lock && fk.side === 'active' && this.passiveLv(fk.other) > 0) {
-        const nm = (SKILL_TREE.passives[fk.other] || {}).name || fk.other;
-        return { ok: false, msg: '此岔口二选一：「' + nm + '」已投点，先退掉它再升这边' };
-      }
+    /* [P1c] 三线并行：原来的「第 3 个岔口起主动 ↔ 被动二选一」已删除。
+     * 现在只剩等级门（reqLv 默认取技能领悟等级，layout 可覆盖成更高）。 */
+    const gate = this.skillGate(id);
+    if (gate && !gate.levelOK) {
+      return { ok: false, msg: '「' + SKILLS[id].name + '」需 ' + gate.reqLv + ' 级（当前 ' + gate.level + ' 级）' };
     }
     const sk = this.skillState();
     const cur = (sk[id] && sk[id].lv) || 1;

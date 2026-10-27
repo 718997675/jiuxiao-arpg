@@ -120,15 +120,15 @@ Object.assign(Game, {
     if (!def) return { ok: false, msg: '被动不存在' };
     if (!this.passiveImplemented(id)) return { ok: false, msg: '「' + def.name + '」的增益尚未接入' };
     if (!this.passiveUnlocked(id)) return { ok: false, msg: def.name + ' 需 ' + this.passiveUnlockLv(id) + ' 级' };
-    /* [P2] 岔口锁：第 3 个岔口起主动 ↔ 被动二选一，对面投过点就拦
-     *（主动「投入」= 花过点 lv > 1，领悟送的 1 级不算） */
-    if (typeof skillForkOf === 'function') {
-      const fk = skillForkOf(id);
-      if (fk && fk.lock && fk.side === 'passive'
-        && ((this.skillState()[fk.active] || {}).lv || 1) > 1) {
-        const nm = (SKILLS[fk.active] || {}).name || fk.active;
-        return { ok: false, msg: '该岔口为二选一：「' + nm + '」已分配点数，需先退还' };
-      }
+    /* [P1c] 三线并行：原来「第 3 个岔口起主动 ↔ 被动二选一」已删除。
+     * 两道门变成：角色等级（reqLv）+ 该线已投入点数（needPts，只给关键被动）。
+     * 软前置的意思是「这条线你得真练过」，不是「必须先点某个节点」。 */
+    const gate = (typeof this.skillGate === 'function') ? this.skillGate(id) : null;
+    if (gate && !gate.levelOK) {
+      return { ok: false, msg: '「' + def.name + '」需 ' + gate.reqLv + ' 级（当前 ' + gate.level + ' 级）' };
+    }
+    if (gate && !gate.ptsOK) {
+      return { ok: false, msg: '「' + def.name + '」需本线已投入 ' + gate.needPts + ' 点（现 ' + gate.linePts + ' 点）' };
     }
     const ps = this.passiveState();
     const cur = ps[id] || 0;
