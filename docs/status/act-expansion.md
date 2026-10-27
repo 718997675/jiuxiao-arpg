@@ -40,7 +40,7 @@ M0 的三层结构已经能落地跑：5 座营地全部有真实地图（campB~
 | 路标石 | 野图传送阵旁立碑（`px+7`），交互回本卷营地；安全区与试炼场不放 | 森林/沼泽/九幽均有；站碑边提示「路标石 · 回忘川渡」，按 F 落到 campC |
 | 章间出口门 | `isChapterTail` + `nextChapterMap` 两个纯函数；`world.js` 用传送阵同款门（0.72 缩放）挂在「本章最后一张已开放图」，直通下一章第一张已开放图 | 森林→沼泽（act 1-2）、沼泽→玄铁矿洞；矿洞/地宫/天阙无下一章图 → 不出门 |
 | 山河图 | 卷头加「营地」独立行：已抵达显示「回营地」按钮，未抵达显示「未抵达」，当前所在显示「当前所在」 | 320/375/414/768/1280 五视口 0 溢出、按钮不出屏 |
-| 回归 | `smoke` ERRORS none（三职业）· `test-save` 79/79 · `mobile-layout` 全部通过 | — |
+| 回归 | `smoke` ERRORS none（三职业）· `test-save` 79/79 · `mobile-layout` 全部通过 · 预览站 `preview-check` PASS + 线上 M1 专项校验通过 | 预览 <https://718997675.github.io/jiuxiao-arpg/preview/act-expansion/> |
 
 ### M0 交付明细（已完成，验收口径见 §12）
 
