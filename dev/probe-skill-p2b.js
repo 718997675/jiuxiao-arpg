@@ -94,7 +94,11 @@ const ok = (c, m, d) => {
       Game.rollDamage = oldRoll;
       return { n: hits.length, total: hits.reduce((a, x) => a + x, 0), one: hits[0] || 0 };
     };
-    return { lv1: run(1), lv2: run(2), lv3: run(3), lv7: run(7), lv10: run(10) };
+    const r = { lv1: run(1), lv2: run(2), lv3: run(3), lv7: run(7), lv10: run(10) };
+    /* 假怪没有 actor / cfg，留到下一段 evaluate 之间就会被帧循环摸到
+     * （「reading 'time'」「reading 'armorHigh'」）—— 每次量完就清场。 */
+    Game.enemies = [];
+    return r;
   });
   ok(whirl.lv1.n === 1, 'Lv1 只扫 1 段', whirl.lv1.n);
   ok(whirl.lv2.n === 1, 'Lv2 仍是 1 段（纯数值台阶）', whirl.lv2.n);
@@ -132,6 +136,7 @@ const ok = (c, m, d) => {
     };
     const r1 = run(1), r3 = run(3), r7 = run(7);
     Game.effSkillMods = oldEff;
+    Game.enemies = [];
     return { r1, r3, r7 };
   });
   const ratio = (a, b2) => a.total / b2.total;
@@ -171,6 +176,7 @@ const ok = (c, m, d) => {
       talOneTarget: run('talisman', 7, 1)
     };
     Game.effSkillMods = oldEff;
+    Game.enemies = [];
     return out;
   });
   ok(shots.fb1 === 1, '火球 Lv1 发 1 枚', shots.fb1);
@@ -197,12 +203,14 @@ const ok = (c, m, d) => {
       Game.state.stats.skillMods = {};
       return n;
     };
-    return {
+    const o = {
       lv1Real: run({}, 1),                 // 真实通道：变体 Ⅰ（连环）本来就带 count
       plus20: run({ fireball: { count: 20 } }, 7),
       cap: skillCountCap(),
       mods: Game.effSkillMods ? 'ok' : 'missing'
     };
+    Game.enemies = [];
+    return o;
   });
   ok(stack.cap === 8, '上限常量 = 8', stack.cap);
   ok(stack.lv1Real >= 1, 'Lv1 真实通道下发的枚数 ≥ 1（变体自带 count 时更多）', stack.lv1Real);
@@ -267,8 +275,8 @@ const ok = (c, m, d) => {
     const steps = [...c.querySelectorAll('.sk-as')];
     return steps.filter(s => s.classList.contains('todo')).map(s => (s.querySelector('i') || {}).textContent);
   });
-  ok(taoPanel.join(',') === '5,9,10',
-    '道士 ① 的进化台阶仍带「待」（这一批还没接）', taoPanel);
+  ok(taoPanel.join(',') === '',
+    '道士 ① 全部台阶已接（数量 + 进化）', taoPanel);
 
   /* ---------------- 6. 卡上预览与战斗同口径 ---------------- */
   console.log('六、预览与战斗同口径');
@@ -459,6 +467,76 @@ const ok = (c, m, d) => {
       const beh = Game.branchBeh('whirl');
       out.ovr = { gather: beh && beh.gather, every: beh && beh.gatherEvery };
     }
+
+    /* ---------------- 道士 ① 符箓：三条台阶都在「落雷点」 ----------------
+     * 这一节的核心不是「有没有效果」，而是「效果落在哪」：
+     * 走通用 hit 通道会以准星为圆心，而符会追到怪身上 —— 两者恒不重合，
+     * 于是「连锁」会连到一屏之外的空气里。所以这里显式制造
+     * 「准星在 +x 12 码、怪在脚边」的错位场景。 */
+    const talRun = (lv, n) => {
+      const es = setup('talisman', lv, n);
+      const pp = Game.playerGroup.position;
+      /* 准星故意打到 12 码外：如果连锁拿准星当圆心，一个都跳不到 */
+      Game.aimPoint = new THREE.Vector3(pp.x + 12, 0, pp.z);
+      Game.aimDir = new THREE.Vector3(1, 0, 0);
+      const hits = [];
+      let zones = 0, zoneRad = 0, zoneDur = 0;
+      const oldProj = FX.projectile, oldHit = Game.damageEnemy, oldRoll = Game.rollDamage;
+      const oldSig = Game.createSigilField;
+      /* 只留台阶这一层：变体 Ⅰ「双符」自带 count +1，不掐掉的话
+       * 「Lv4 打几张」量到的是 2 张，连锁的基线全错位。 */
+      const oldEff = Game.effSkillMods;
+      Game.effSkillMods = (id) => skillTierMods(id, Game.skillLevel(id));
+      Game.createSigilField = (pos, r, dmg, dur) => { zones++; zoneRad = Math.max(zoneRad, r); zoneDur = dur; };
+      FX.projectile = (o) => {
+        o.onHit(es[0], { pos: es[0].pos.clone(), hitSet: null, seekUsed: 0 });
+        return { update() { }, dispose() { } };
+      };
+      Game.damageEnemy = (en, dmg) => { hits.push({ id: en.id, dmg }); };
+      Game.rollDamage = (base) => ({ dmg: base, crit: false });
+      Game.castSkill('talisman');
+      FX.projectile = oldProj; Game.damageEnemy = oldHit; Game.rollDamage = oldRoll;
+      Game.createSigilField = oldSig;
+      Game.effSkillMods = oldEff;
+      return { n: hits.length, ids: hits.map(h => h.id), dmg: hits.map(h => Math.round(h.dmg)), zones, zoneRad, zoneDur };
+    };
+    out.tl2 = talRun(2, 3);
+    out.tl5 = talRun(5, 3);
+    out.tl8 = talRun(8, 3);
+    out.tl9 = talRun(9, 3);
+
+    /* --- 符箓 Lv10：命中后改追下一个目标（有预算，不会无限连） --- */
+    const seekRun = (lv) => {
+      const es = setup('talisman', lv, 2);
+      const pp = Game.playerGroup.position;
+      Game.aimPoint = new THREE.Vector3(es[0].pos.x, 0, es[0].pos.z);
+      Game.aimDir = new THREE.Vector3(1, 0, 0);
+      const bases = [];
+      let cap = null;
+      const oldProj = FX.projectile, oldHit = Game.damageEnemy, oldRoll = Game.rollDamage;
+      const oldSig = Game.createSigilField;
+      const oldEff = Game.effSkillMods;
+      Game.effSkillMods = (id) => skillTierMods(id, Game.skillLevel(id));
+      Game.createSigilField = () => { };
+      FX.projectile = (o) => { cap = o; return { update() { }, dispose() { } }; };
+      Game.damageEnemy = () => { };
+      Game.rollDamage = (base) => { bases.push(base); return { dmg: base, crit: false }; };
+      Game.castSkill('talisman');
+      const proj = { pos: es[0].pos.clone(), hitSet: new Set(), seekUsed: 0 };
+      cap.onHit(es[0], proj);
+      const a1 = { pierce: !!proj.pierce, homingX: proj.homing ? Math.round(proj.homing.x * 100) / 100 : null, used: proj.seekUsed || 0 };
+      cap.onHit(es[1], proj);
+      const a2 = { used: proj.seekUsed || 0 };
+      FX.projectile = oldProj; Game.damageEnemy = oldHit; Game.rollDamage = oldRoll;
+      Game.createSigilField = oldSig; Game.effSkillMods = oldEff;
+      return { a1, a2, bases: bases.map(b => Math.round(b * 100) / 100), ex: Math.round(es[1].pos.x * 100) / 100 };
+    };
+    out.sk9 = seekRun(9);
+    out.sk10 = seekRun(10);
+
+    /* 假怪没有 actor / armorHigh，帧循环一恢复就会摸到它们（实测报
+     * 「reading 'time'」与「reading 'armorHigh'」）。量完清场再恢复。 */
+    Game.enemies = [];
     Game.updateEnemies = savedUE;
     return out;
   });
@@ -476,6 +554,24 @@ const ok = (c, m, d) => {
   ok(evo.a10.dz < -0.5, 'Lv10 自动索敌（改朝 −z 的敌人飞）', evo.a10);
   ok(evo.ovr.gather === 4,
     '变体「聚怪」覆盖台阶参数（4 码而不是台阶的 3.4）', evo.ovr);
+  /* --- 道士 ① 符箓 --- */
+  ok(evo.tl2.n === 1, 'Lv2 符箓只打中一张（没有连锁）', evo.tl2.n);
+  /* Lv5 有两张符（Lv3 的数量台阶），每张各自「1 主 + 2 连锁」 */
+  ok(evo.tl5.n === 6, 'Lv5 雷符连锁：2 张符 ×（主目标 + 2 连锁）', evo.tl5);
+  ok(evo.tl5.ids.join(',') === '0,1,2,0,1,2', '连锁跳到的是**身边**的怪，不是准星 12 码外的空气', evo.tl5.ids);
+  ok(Math.abs(evo.tl5.dmg[1] / evo.tl5.dmg[0] - 0.6) < 0.02,
+    '连锁第一跳是 60% 伤害', { base: evo.tl5.dmg[0], c1: evo.tl5.dmg[1] });
+  ok(evo.tl5.dmg[2] < evo.tl5.dmg[1], '连锁第二跳继续递减（0.85^n，不是都打满）', evo.tl5.dmg);
+  ok(evo.tl8.zones === 0 && evo.tl9.zones >= 1,
+    'Lv9 才铺符阵（Lv8 一张都不铺）', { tl8: evo.tl8.zones, tl9: evo.tl9.zones });
+  ok(evo.tl9.zoneDur === 2 && evo.tl9.zoneRad > 3,
+    '符阵落在命中点、持续 2 秒、半径跟范围修正走', { rad: evo.tl9.zoneRad, dur: evo.tl9.zoneDur });
+  ok(evo.sk9.a1.pierce === false, 'Lv9 符打完就消失（不会自己追下一个）', evo.sk9.a1);
+  ok(evo.sk10.a1.pierce === true && Math.abs(evo.sk10.a1.homingX - evo.sk10.ex) < 0.01,
+    'Lv10 命中后自动改追第二个目标', evo.sk10.a1);
+  ok(evo.sk10.a2.used === 2, '改追有预算（追 2 次就停，不会一符清场）', evo.sk10.a2);
+  ok(evo.sk10.bases.some(b => Math.abs(b / evo.sk10.bases[0] - 0.7) < 0.02),
+    '改追那一下按 70% 结算（不是白送一次全额）', evo.sk10.bases);
 
   /* ---------------- 8. 零报错 ---------------- */
   console.log('八、控制台');

@@ -349,6 +349,21 @@ const SKILL_BEH = {
    * 进入 switch 之前定死（各技能 case 都读 aim），handler 阶段已经晚了。 */
   autoTarget: { ph: 'hook', label: '自动索敌', run() { /* 由 castSkill 消费 */ } },
 
+  /* [P2b] 命中点连锁（台阶专用）：符箓这类**飞出去再炸**的技能，连锁必须从
+   * 落雷点起跳。走 hit 通道会在施法那一瞬间就结算 —— 符还在飞、闪电先到了，
+   * 画面上是「凭空劈了三下」，而且伤害还吃不到「符打中了谁」。
+   * 所以做成 hook：由 talisman case 的 onHit 消费，值 = 跳几个目标。 */
+  chainHit: { ph: 'hook', label: '命中连锁', run() { /* 由 talisman case 的 onHit 消费 */ } },
+
+  /* [P2b] 命中点符阵（台阶专用）：同上，阵落在落雷点而不是准星。
+   * 由 talisman case 调 Game.createSigilField 铺，值 = 持续秒数。 */
+  zoneHit: { ph: 'hook', label: '命中符阵', run() { /* 由 talisman case 消费 */ } },
+
+  /* [P2b] 命中后改追（台阶专用）：符咒打完一个目标自动锁下一个，
+   * 最多改追 N 次（proj.seekUsed 计数，防止无限连）。
+   * 为什么不复用 autoTarget：那个改的是「出手时瞄谁」，这个是「打完还追谁」。 */
+  seek: { ph: 'hook', label: '命中追击', run() { /* 由 talisman case 消费 */ } },
+
   /* 落点改自身：在 castSkill 里、switch 之前就消费掉了（`aim = pp`），
    * 这里只做登记 —— 技能 case 不用各自判断 */
   selfCast: { ph: 'self', label: '自身施法', run() { /* 由 castSkill 消费 */ } },
@@ -374,6 +389,14 @@ const SKILL_BEH = {
 
   /* 余震伤害：与 aftershock 一并消费 */
   aftershockPct: { ph: 'hit', label: '余震伤害', run() { } },
+
+  /* [P2b] 命中连锁 / 命中符阵 / 命中追击 的数值参数：
+   * 与 chainHit / zoneHit / seek 一并消费，单独出现没有意义。
+   * 连锁伤害**不能**复用 chainPct —— 那个 handler 一出现就会拿 aim 当圆心
+   * 跑一遍通用连锁，等于把「命中点连锁」偷偷换回去了。 */
+  chainHitPct: { ph: 'hit', label: '命中连锁伤害', run() { /* 由 talisman case 消费 */ } },
+  zonePct: { ph: 'hit', label: '符阵伤害', run() { /* 由 talisman case 消费 */ } },
+  seekPct: { ph: 'hit', label: '追击伤害', run() { /* 由 talisman case 消费 */ } },
 
   /* 标签：让这发技能在装备词缀眼里算某个标签（例如「算作雷系」）。
    * 目前只记录在施法上下文里，词缀系统还没按它分流；

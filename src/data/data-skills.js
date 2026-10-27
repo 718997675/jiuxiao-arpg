@@ -859,6 +859,19 @@ const SKILL_TIER_EVO = {
       mods: { radius: 50 }, beh: { firePatch: 1 } },
     9: { label: '环绕火球', beh: { orbit: 5 } },
     10: { label: '飞弹自动索敌', beh: { autoTarget: 12 } }
+  },
+
+  /* ---------------- 道士 ① 符箓（五雷符） ----------------
+   * 符箓是「飞出去再炸」的技能，所以三条台阶全部落在**落雷点**：
+   *   Lv5 连锁 / Lv9 符阵 走 hook（chainHit / zoneHit），不走通用 hit 通道 ——
+   *       通用通道以「落点（准星）」为圆心，而符会追到怪身上，两者恒不重合，
+   *       拿准星当圆心等于在半空里劈雷。
+   *   Lv10 改追：命中后再锁下一个目标，符肉眼可见地拐弯（seek）。
+   * 三个键都由 talisman case 的 onHit 消费，见 game.js。 */
+  talisman: {
+    5: { label: '雷符连锁', beh: { chainHit: 2, chainHitPct: 60 } },
+    9: { label: '雷符阵', beh: { zoneHit: 2, zonePct: 10 } },
+    10: { label: '雷符自动追踪', beh: { seek: 2, seekPct: 70 } }
   }
 };
 

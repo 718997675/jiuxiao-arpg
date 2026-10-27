@@ -3776,6 +3776,17 @@ const Game = {
          * 原实现是一条 beam，同一帧生成又消失，画面上只闪一下，
          * 玩家根本看不出技能放没放出去，也没有飞行时间带来的节奏感。
          * 现在是一枚会拐弯追踪的符咒，命中瞬间才落雷。 */
+        /* [P2b] 台阶（Lv5 连锁 / Lv9 符阵 / Lv10 改追）全部在**落雷点**结算，
+         * 所以在这里一次取出、交给下面的 onHit —— 三个键在 skill-beh.js 里
+         * 登记成 hook（ph:'hook'），通用 hit 通道不会碰它们。
+         * 为什么不能走通用通道：那条以「落点（准星）」为圆心，而符会追到怪
+         * 身上，两者恒不重合 —— 拿准星当圆心等于在半空里劈雷。 */
+        const talChain = Math.max(0, Math.round((bBeh && bBeh.chainHit) || 0));
+        const talChainPct = ((bBeh && bBeh.chainHitPct) || 60) / 100;
+        const talZone = Math.max(0, Math.round((bBeh && bBeh.zoneHit) || 0));
+        const talZonePct = ((bBeh && bBeh.zonePct) || 15) / 100;
+        const talSeek = Math.max(0, Math.round((bBeh && bBeh.seek) || 0));
+        const talSeekPct = ((bBeh && bBeh.seekPct) || 70) / 100;
         for (const target of tgts) {
           const start = new THREE.Vector3(pp.x + RND(-0.3, 0.3), 1.5, pp.z + RND(-0.3, 0.3));
           const tdir = target
@@ -3786,7 +3797,10 @@ const Game = {
             team: 'player', style: 'talisman', life: 2.0, trail: true, tag: 'proj',
             homing: target ? target.pos : null, homeTurn: 9,
             onHit: (e, proj) => {
-              const { dmg, crit } = this.rollDamage(st.atk * 1.7 * spow);
+              /* [P2b] 改追（Lv10）打出去的那一发按 seekPct 结算 —— 白送一次
+               * 全额的话，「追 2 次」等于 +140% 伤害，比 Lv5 / Lv9 加起来还猛。 */
+              const seekMul = (proj && proj.seekUsed) ? talSeekPct : 1;
+              const { dmg, crit } = this.rollDamage(st.atk * 1.7 * spow * seekMul);
               this.damageEnemy(e, dmg, crit, { tag: 'proj' });
               // 符纸炸开 → 天雷落地
               FX.beam(new THREE.Vector3(e.pos.x, 4.2, e.pos.z), new THREE.Vector3(e.pos.x, 0.9, e.pos.z), 0x9affd0, 0.16);
@@ -3794,6 +3808,53 @@ const Game = {
               FX.burst(new THREE.Vector3(e.pos.x, 1.2, e.pos.z), 0x9affd0, 12, { speed: 4, size: 0.1, life: 0.4, additive: true });
               SFX.thunder();
               this.shake = Math.max(this.shake, 0.12);
+              /* [P2b] Lv5 雷符连锁：从落雷点继续跳，最多 talChain 个。
+               * 伤害按 0.85^n 递减 —— 与数量台阶同一个口径，
+               * 不递减的话「连锁 2 个」等于白送 120% 伤害。 */
+              if (talChain) {
+                const done = new Set([e.id]);
+                let from = new THREE.Vector3(e.pos.x, 1.2, e.pos.z);
+                let cur = e;
+                for (let j = 0; j < talChain; j++) {
+                  let nxt = null, bd = 7;
+                  for (const o of this.enemies) {
+                    if (o.dead || done.has(o.id)) continue;
+                    const d = DIST2D(o.pos, cur.pos);
+                    if (d < bd) { bd = d; nxt = o; }
+                  }
+                  if (!nxt) break;
+                  done.add(nxt.id);
+                  const to = new THREE.Vector3(nxt.pos.x, 1.2, nxt.pos.z);
+                  FX.beam(from, to, 0x9affd0, 0.18, 0.9);
+                  FX.flashCircle(to, 1.2, 0x9affd0, 0.18);
+                  const r2 = this.rollDamage(st.atk * 1.7 * spow * talChainPct * Math.pow(0.85, j));
+                  this.damageEnemy(nxt, r2.dmg, r2.crit, { tag: 'proj' });
+                  from = to; cur = nxt;
+                }
+              }
+              /* [P2b] Lv9 雷符阵：在落雷点铺一片会跳电的符阵（不是准星） */
+              if (talZone) {
+                this.createSigilField(new THREE.Vector3(e.pos.x, 0, e.pos.z),
+                  3.4 * srad, st.atk * 1.7 * spow * talZonePct, talZone);
+              }
+              /* [P2b] Lv10 改追：命中后自动锁下一个目标，最多 talSeek 次。
+               * 用 proj.seekUsed 记账 —— 不记账的话每次命中都会再追一次，
+               * 一符清场（「穿透」那个 special 没有上限，这里必须有）。 */
+              if (talSeek && proj && (proj.seekUsed || 0) < talSeek) {
+                let nxt = null, bd = 10;
+                for (const o of this.enemies) {
+                  if (o.dead || o === e) continue;
+                  if (proj.hitSet && proj.hitSet.has(o.id)) continue;
+                  const d = DIST2D(o.pos, e.pos);
+                  if (d < bd) { bd = d; nxt = o; }
+                }
+                if (nxt) {
+                  proj.seekUsed = (proj.seekUsed || 0) + 1;
+                  proj.pierce = true;
+                  proj.homing = nxt.pos;
+                  FX.text(new THREE.Vector3(e.pos.x, 2.2, e.pos.z), '追符', 'info', { life: 0.6 });
+                }
+              }
               /* [S3] 符箓系大节点·天师：五雷符穿透，命中后飞向附近下一个目标 */
               if (st.specials && st.specials.talismanPierce) {
                 let next = null, bd = 14;
@@ -4374,6 +4435,33 @@ const Game = {
       }
       if (ticks > 3) clearInterval(iv);
     }, 900);
+  },
+
+  /* [P2b] 雷符阵（符箓 Lv9）：落雷点留一片每 0.5 秒跳一次电的符阵。
+   *
+   * 为什么不复用 createFirePatch：那个是「火」，每跳 0.45 倍攻击、0.9 秒
+   * 一跳、带灼烧语义；符阵是「雷」，跳得密（0.5 秒）但每跳更轻。
+   * 两者合一个函数只会变成「加一堆 if 的火」，以后改火就误伤雷。
+   *
+   * dmg 是**每跳**伤害（调用方已经乘好百分比），dur 是秒。 */
+  createSigilField(pos, rad, dmg, dur) {
+    if (!this.state || typeof FX === 'undefined') return;
+    const gen = this.mapGen;
+    FX.area(pos, rad, 0x9affd0, dur, { opacity: 0.16 });
+    FX.ring(pos, rad * 1.05, 0x9affd0, dur, 0.22);
+    let ticks = 0;
+    const step = 500;
+    const iv = setInterval(() => {
+      if (this.mapGen !== gen || this.dead) { clearInterval(iv); return; }
+      ticks++;
+      FX.ring(pos, rad, 0x9affd0, 0.3, 0.16);
+      for (const e of this.enemies) {
+        if (e.dead || DIST2D(e.pos, pos) >= rad + e.radius) continue;
+        const { dmg: d, crit } = this.rollDamage(dmg);
+        this.damageEnemy(e, d, crit, { silent: true, tag: 'dot' });
+      }
+      if (ticks >= Math.round(dur * 1000 / step)) clearInterval(iv);
+    }, step);
   },
 
   nearestEnemy(pos, range) {
