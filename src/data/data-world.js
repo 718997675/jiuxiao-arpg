@@ -10,7 +10,7 @@ const MAPS = {
     id: 'village', name: '桃源村', safe: true, level: 1,
     ground: 'dirt', sky: 0x9fc7d9, fog: 0xa8c8d8, fogNear: 45, fogFar: 120,
     size: 70, ambient: 0xbfd9e6, sun: 0xffe6b8, sunI: 1.05, props: 'village',
-    npcs: ['elder', 'smith', 'herbalist', 'monk', 'alchemist', 'warden'],
+    npcs: ['elder', 'smith', 'herbalist', 'monk', 'alchemist', 'warden', 'steward'],
     spawns: [], bosses: [], portal: { x: 0, z: -18 }, music: 'calm'
   },
   forest: {
@@ -72,6 +72,14 @@ const NPCS = {
   warden: {
     id: 'warden', name: '试炼使者·无咎', glyph: '试', color: 0xa88ad8, role: 'trial',
     lines: ['台上无岁月，只有一波接一波。', '试炼场不问你从哪来，只问你能站到第几波。', '死了不丢东西，丢的是那一口不甘心。']
+  },
+  /* [M6] 仓管：储物箱的入口。和试炼使者同理 —— 仓库放在村里而不是菜单里，
+   * 玩家是「走过去、把东西交给他」，存取本身就有了一趟路的分量；
+   * 也顺手给村庄多一个可去的地方，而不是全靠快捷键开面板。 */
+  steward: {
+    id: 'steward', name: '仓管·玄贮', glyph: '贮', color: 0x7a9aa8, role: 'stash',
+    lines: ['东西交给我，丢不了。三个身份共用一间库房，你换个人来也认得出。',
+      '库里空着的时候最安静，满了就要收拾了。']
   }
 };
 

@@ -32,6 +32,7 @@ const VIEWPORTS = LIVE ? [
   { name: '窄屏-竖', w: 320, h: 568 }
 ];
 
+/* [M6] 仓库不在菜单里（走村里的仓管 NPC），所以不列在这里 */
 const TABS = ['bag', 'talent', 'stat', 'quest', 'codex', 'forge', 'save', 'set', 'help', 'skill'];
 
 (async () => {

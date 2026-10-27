@@ -179,6 +179,11 @@ const Game = {
     try {
       if (typeof Settings !== 'undefined') Settings.load();
     } catch (e) { console.error('[设置] 读取失败', e); }
+    /* [M6] 仓库是独立 key，跨角色共享。必须在任何一次 mats() 调用之前读进来，
+     * 否则第一次 matCount 会拿到空对象，材料角标先闪一下 0 再跳回来。 */
+    try {
+      if (typeof StashStore !== 'undefined') StashStore.load();
+    } catch (e) { console.error('[仓库] 读取失败', e); }
     this.mobCap = (typeof Settings !== 'undefined' && Settings.d)
       ? Settings.resolve(0).mobCap
       : (IS_TOUCH ? MOB_CAP_TOUCH : MOB_CAP_PC);
@@ -546,14 +551,13 @@ const Game = {
   },
 
   /* ---------------- 材料（S2：玄晶 / 符文） ----------------
-   * 统一放在 state.stash.mats，和 S6 的账号仓库材料仓同一处；
-   * 键：xuanjing、rune_<id>。旧档没有 stash 时在这里补。 */
+   * [M6] 材料仓已提升为**跨角色共享**：存在 StashStore（独立 key），
+   * 不再挂 state.stash。所有材料读写都过这一个入口，所以换存储时
+   * 调用方一行都不用改。
+   * 键：xuanjing / crystal1~4 / rune_<id> / craft_<id>。 */
   mats() {
-    const s = this.state;
-    if (!s) return {};
-    if (!s.stash || typeof s.stash !== 'object') s.stash = { items: [], mats: {} };
-    if (!s.stash.mats || typeof s.stash.mats !== 'object') s.stash.mats = {};
-    return s.stash.mats;
+    if (typeof StashStore === 'undefined') return {};
+    return StashStore.get().mats;
   },
 
   matCount(key) {
@@ -643,16 +647,226 @@ const Game = {
     return { ok: true, msg, cap: n.cap, tier: info.tier + 1 };
   },
 
+  /* ======================================================= */
+  /* [M6] 仓库（储物箱）—— 跨角色共享                          */
+  /* ======================================================= */
+  /* 数据全在 StashStore（独立 key），这里只做业务规则：
+   * 容量校验、排序、扩容扣费、套装登记。UI 只调这几个方法，
+   * 不直接碰 StashStore，免得两处各写一套容量判断。 */
+
+  stashData() {
+    return (typeof StashStore !== 'undefined') ? StashStore.get() : { items: [], mats: {}, sets: {}, cap: 60 };
+  },
+
+  stashItems() { return this.stashData().items || []; },
+
+  stashCap() {
+    const d = this.stashData();
+    const base = (typeof STASH_BASE_CAP === 'number') ? STASH_BASE_CAP : 60;
+    return Math.max(base, Math.round(Number(d.cap) || base));
+  },
+
+  stashCount() { return this.stashItems().length; },
+
+  stashFree() { return Math.max(0, this.stashCap() - this.stashCount()); },
+
+  /* 存入：行囊第 idx 格 → 仓库。
+   * 仓库满了就**拒绝**，不静默丢弃 —— 玩家点了没反应比丢东西好。 */
+  stashPut(idx) {
+    const s = this.state;
+    if (!s) return { ok: false, msg: '尚未开局。' };
+    const it = s.inventory[idx];
+    if (!it) return { ok: false, msg: '这一格没有东西。' };
+    if (this.stashFree() <= 0) return { ok: false, msg: `仓库已满（${this.stashCap()} 格），先扩容。` };
+    s.inventory.splice(idx, 1);
+    this.stashItems().push(it);
+    StashStore.save();
+    return { ok: true, msg: `${it.name || '装备'} 已存入仓库。` };
+  },
+
+  /* 取回：仓库第 idx 件 → 行囊。行囊满则拒绝。 */
+  stashTake(idx) {
+    const s = this.state;
+    if (!s) return { ok: false, msg: '尚未开局。' };
+    const d = this.stashData();
+    const it = d.items[idx];
+    if (!it) return { ok: false, msg: '仓库这一格是空的。' };
+    if (s.inventory.length >= this.bagCap()) return { ok: false, msg: `行囊已满（${this.bagCap()} 格），先腾地方。` };
+    d.items.splice(idx, 1);
+    s.inventory.push(it);
+    StashStore.save();
+    return { ok: true, msg: `${it.name || '装备'} 已取回行囊。` };
+  },
+
+  /* 一键整理：部位 → 稀有度（高在前）→ 物品等级（高在前）。
+   * 同部位同品质再按评分兜底，保证「点两次结果一样」，玩家不会觉得按钮坏了。 */
+  stashSort() {
+    const d = this.stashData();
+    const rk = Object.keys(RARITY);
+    const slotIdx = (it) => {
+      const i = SLOT_ORDER.indexOf(it.slot === 'ring' ? 'ring1' : it.slot);
+      return i < 0 ? 99 : i;
+    };
+    const score = (it) => (typeof itemScore === 'function' ? itemScore(it) : 0);
+    d.items.sort((a, b) => {
+      const sa = slotIdx(a), sb = slotIdx(b);
+      if (sa !== sb) return sa - sb;
+      const ra = rk.indexOf(a.rarity), rb = rk.indexOf(b.rarity);
+      if (ra !== rb) return rb - ra;
+      const la = Number(a.ilvl) || 0, lb = Number(b.ilvl) || 0;
+      if (la !== lb) return lb - la;
+      return score(b) - score(a);
+    });
+    StashStore.save();
+    return { ok: true, count: d.items.length };
+  },
+
+  /* 扩容读数：与 bagUpgradeInfo 同形状，UI 可以共用一套渲染 */
+  stashUpgradeInfo() {
+    const cap = this.stashCap();
+    const tier = (typeof stashTierOf === 'function') ? stashTierOf(cap) : 0;
+    const maxTier = (typeof STASH_UPGRADES !== 'undefined') ? STASH_UPGRADES.length : 0;
+    const next = (typeof stashNextUpgrade === 'function') ? stashNextUpgrade(cap) : null;
+    const gold = (this.state && this.state.gold) || 0;
+    const lack = [];
+    if (next && gold < next.gold) lack.push(`${next.gold - gold} 金`);
+    return {
+      cap, tier, maxTier, next, gold,
+      can: !!next && lack.length === 0,
+      lack,
+      /* 已满时给一句人话，UI 直接显示，不用自己拼 */
+      full: !next
+    };
+  },
+
+  /* 仓库扩容：只吃金币。仓库是跨角色资产，用金币计价更好规划；
+   * 行囊那套「玄晶 + 金币」是随身空间，两者定位不同。 */
+  upgradeStash() {
+    const s = this.state;
+    if (!s) return { ok: false, msg: '尚未开局。' };
+    const info = this.stashUpgradeInfo();
+    if (!info.next) return { ok: false, msg: `仓库已扩至极限（${info.cap} 格）。` };
+    if (!info.can) return { ok: false, msg: '金币不足：还差 ' + info.lack.join('、') + '。' };
+    const n = info.next;
+    s.gold = Math.max(0, (s.gold || 0) - n.gold);
+    this.stashData().cap = n.cap;
+    StashStore.save();
+    const msg = `仓库扩容至 ${n.cap} 格（第 ${info.tier + 1} / ${info.maxTier} 次）。`;
+    if (typeof UI !== 'undefined' && UI.log) UI.log(msg, 'good');
+    return { ok: true, msg, cap: n.cap, tier: info.tier + 1 };
+  },
+
+  /* ---------------- 套装收藏柜 ----------------
+   * 「集齐了就登记，随时能取出来，不占格子」。
+   * 判定用的是「行囊 + 仓库」里的实物，不含身上穿着的 ——
+   * 正穿着的那套应该继续穿着，不该被收藏柜抽走。
+   * 登记后实物整体搬进 sets[id].pieces，词条/孔位/符文原样保留，
+   * 取出时逐件放回行囊，不是重新生成一件（否则洗过的词缀会丢）。 */
+
+  /* 某套装当前集齐情况：{ setId, have:[slot...], miss:[slot...], ok, inUse } */
+  setCollectInfo(setId) {
+    const set = SETS[setId];
+    if (!set) return null;
+    const s = this.state;
+    const pool = [];
+    if (s) {
+      (s.inventory || []).forEach(it => pool.push(it));
+      /* 身上穿的单独记：用来提示「这套你正穿着」 */
+      for (const k in (s.equipment || {})) if (s.equipment[k]) pool.push(s.equipment[k]);
+    }
+    this.stashItems().forEach(it => pool.push(it));
+
+    const have = [], miss = [];
+    for (const slot of set.slots) {
+      const hit = pool.some(it => it && it.setId === setId && it.slot === slot);
+      (hit ? have : miss).push(slot);
+    }
+    /* 已登记过的不能再登记 */
+    const registered = !!(this.stashData().sets && this.stashData().sets[setId]);
+    return {
+      setId, name: set.name, color: set.color, total: set.slots.length,
+      have, miss, ok: miss.length === 0, registered
+    };
+  },
+
+  /* 全部套装的收集状态（UI 列表用） */
+  setCollectList() {
+    const out = [];
+    for (const id in SETS) {
+      const info = this.setCollectInfo(id);
+      if (info) out.push(info);
+    }
+    return out;
+  },
+
+  /* 登记：把该套装的全部实物从行囊/仓库移进收藏柜 */
+  setRegister(setId) {
+    const s = this.state;
+    if (!s) return { ok: false, msg: '尚未开局。' };
+    const info = this.setCollectInfo(setId);
+    if (!info) return { ok: false, msg: '没有这套。' };
+    if (info.registered) return { ok: false, msg: `${info.name} 已经登记过了。` };
+    if (!info.ok) {
+      const missName = info.miss.map(sl => (SLOTS[sl] || {}).name || sl).join('、');
+      return { ok: false, msg: `还差 ${missName}，集齐才能登记。` };
+    }
+    const set = SETS[setId];
+    const pieces = [];
+    /* 先从仓库抽，再从行囊抽 —— 顺序无所谓，但必须两边都抽干净，
+     * 否则会出现「登记了但行囊里还剩一件」的重复资产。 */
+    const d = this.stashData();
+    for (const slot of set.slots) {
+      let taken = null;
+      let i = d.items.findIndex(it => it && it.setId === setId && it.slot === slot);
+      if (i >= 0) { taken = d.items.splice(i, 1)[0]; }
+      if (!taken) {
+        i = s.inventory.findIndex(it => it && it.setId === setId && it.slot === slot);
+        if (i >= 0) taken = s.inventory.splice(i, 1)[0];
+      }
+      if (taken) pieces.push(taken);
+    }
+    if (!pieces.length) return { ok: false, msg: '没有可登记的部件（可能都穿在身上）。' };
+    d.sets = d.sets || {};
+    d.sets[setId] = { at: Date.now(), pieces };
+    StashStore.save();
+    const msg = `【${set.name}】已登记进收藏柜（${pieces.length} 件），随时可取。`;
+    if (typeof UI !== 'undefined' && UI.log) UI.log(msg, 'good');
+    return { ok: true, msg, count: pieces.length };
+  },
+
+  /* 取出：收藏柜 → 行囊。行囊空位不够就拒绝并说明差几格。 */
+  setWithdraw(setId) {
+    const s = this.state;
+    if (!s) return { ok: false, msg: '尚未开局。' };
+    const d = this.stashData();
+    const rec = d.sets && d.sets[setId];
+    if (!rec || !rec.pieces || !rec.pieces.length) return { ok: false, msg: '收藏柜里没有这一套。' };
+    const free = this.bagCap() - s.inventory.length;
+    if (free < rec.pieces.length) {
+      return { ok: false, msg: `行囊还差 ${rec.pieces.length - free} 格，先腾地方再取。` };
+    }
+    for (const it of rec.pieces) s.inventory.push(it);
+    const n = rec.pieces.length;
+    delete d.sets[setId];
+    StashStore.save();
+    const set = SETS[setId];
+    const msg = `【${set ? set.name : setId}】${n} 件已取回行囊。`;
+    if (typeof UI !== 'undefined' && UI.log) UI.log(msg, 'good');
+    return { ok: true, msg, count: n };
+  },
+
   /* 读档 / 导入后统一整形：旧物品补 sockets=0，非法符文清空 */
   normalizePlayerItems(s) {
     if (!s) return;
-    if (!s.stash || typeof s.stash !== 'object') s.stash = { items: [], mats: {} };
-    if (!s.stash.mats || typeof s.stash.mats !== 'object') s.stash.mats = {};
-    if (!Array.isArray(s.stash.items)) s.stash.items = [];
     const eq = s.equipment || (s.equipment = {});
     for (const k in eq) if (eq[k]) eq[k] = normalizeItem(eq[k]);
     if (Array.isArray(s.inventory)) s.inventory = s.inventory.map(normalizeItem).filter(Boolean);
-    s.stash.items = s.stash.items.map(normalizeItem).filter(Boolean);
+    /* [M6] 仓库已提升为跨角色共享（StashStore 独立 key）。
+     * 老档里遗留的 state.stash 在这里一次性搬进仓库，搬完清空 ——
+     * 不搬的话老玩家会发现材料与仓库存货全没了；
+     * 不清空的话每读一次档就重复计一遍。 */
+    if (typeof StashStore !== 'undefined') StashStore.absorb(s.stash);
+    s.stash = { items: [], mats: {} };
     /* [v1.8.5] 旧档没有加点字段：补一份全零，可分配点数按等级自动补算 */
     if (!s.attrAlloc || typeof s.attrAlloc !== 'object') s.attrAlloc = { str: 0, agi: 0, vit: 0, int: 0 };
     for (const k of ATTR_KEYS) s.attrAlloc[k] = Math.max(0, Math.round(Number(s.attrAlloc[k]) || 0));
@@ -1391,10 +1605,14 @@ const Game = {
   },
 
   spawnNPCs() {
-    const pos = { elder: [-7, 2], smith: [7, 7], herbalist: [-10, 14], monk: [9, 15], alchemist: [2, 18], warden: [-6, 20] };
+    /* [M6] 仓管放在村尾右侧（与左侧的试炼使者一左一右），
+     * 新人从传送阵一路走过来会先见到铁匠药师，最后才见到仓库 —— 顺序合理。 */
+    const pos = { elder: [-7, 2], smith: [7, 7], herbalist: [-10, 14], monk: [9, 15], alchemist: [2, 18], warden: [-6, 20], steward: [9, 22] };
     for (const id of MAPS.village.npcs) {
       const a = buildNPC(id);
-      const [x, z] = pos[id];
+      /* 位置表漏写就退回原点，别让整张图的 NPC 因为一个坐标缺失全部不生成 */
+      const p2 = pos[id] || [0, 0];
+      const x = p2[0], z = p2[1];
       a.group.position.set(x, 0, z);
       a.group.rotation.y = Math.atan2(-x, -(z - 6));
       this.scene.add(a.group);
@@ -6065,6 +6283,10 @@ const Game = {
       ]);
     } else if (id === 'warden') {
       UI.openTrialPanel();
+    } else if (id === 'stash' || id === 'steward') {
+      /* [M6] 仓库：直接开面板，不套一层对话。
+       * 存取是高频动作，每次都要点「打开库房」会烦；台词放在面板顶部一行。 */
+      UI.openStash();
     }
   },
 
@@ -7088,6 +7310,11 @@ const Game = {
     } catch (e) { ok = false; }
     finally { if (undo) undo(); }
     this.lastSave = this.time;
+    /* [M6] 仓库是独立 key，必须和角色档一起落盘。
+     * 漏了这一步的表现是：材料捡了、东西存了，重开网页全没了 —— 而角色等级还在。 */
+    if (typeof StashStore !== 'undefined') {
+      try { StashStore.save(); } catch (e) { ok = false; }
+    }
     if (!ok) {
       UI.log('存档写入失败（可能空间不足），请导出备份。', 'bad');
       if (typeof SaveManager !== 'undefined') console.warn('[存档]', SaveManager.lastError);

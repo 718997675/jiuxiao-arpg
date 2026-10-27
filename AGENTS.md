@@ -1,0 +1,121 @@
+# AGENTS.md — 九霄·山海录 交接文档
+
+> 给 AI 助手 / 新加入的开发者看。读完这一份就能接着干。
+> 更细的逐日开发日志在 `.workbuddy-ai/memory/YYYY-MM-DD.md`（**不进 git**，见文末）。
+
+---
+
+## 1. 项目速览
+
+纯静态 3D 中式暗黑 ARPG。**无构建、无依赖、无后端、无素材** —— 贴图是 Canvas 程序化生成，
+角色是几何体拼的，音效是 WebAudio 现场合成。`file://` 双击能玩。
+
+- 入口：`index.html`（所有 CSS 内联在 `<style>`，脚本用 `<script src>` 顺序加载）
+- 源码：`src/` 约 2.3 万行，29 个 JS 文件
+- 第三方：`lib/three.min.js`（r128，唯一依赖）
+
+## 2. 部署（用户明确指定，不要改）
+
+**唯一正式地址：<https://718997675.github.io/jiuxiao-arpg/>**
+
+- GitHub Pages 从 `main` 分支**根目录**发布，**推 main 即上线**，30~60 秒生效。
+- 仓库没有 `dist/`，根目录就是站点根目录。**`.nojekyll` 必须保留**（否则 `_` 开头的文件会被吞）。
+- 发布：`./push.sh "提交信息"` → 语法检查 → `git add -A` → commit → `git push origin HEAD`
+- 旧的 `*.app.workbuddy.host/?sharecode=...` **已废弃**，不要再往里发。
+- Pages 有 CDN 缓存。脚本里都加了 `?t=<时间戳>` 绕缓存；人工验证没效果先强刷。
+
+## 3. 开发环境
+
+- 用户在 **Windows** 上开发。仓库早期在 macOS 写的，部分 `dev/*.js` 仍硬编码 macOS Chrome 路径。
+- **新增脚本用 `require('./_chrome')`** 取浏览器路径（`dev/_chrome.js` 跨平台探测）。
+- 跑 puppeteer 脚本必须带环境变量：
+  ```
+  NODE_PATH=C:/Users/Administrator/.workbuddy-ai/binaries/node/workspace/node_modules
+  ```
+- headless 启动参数固定：`--no-sandbox --enable-unsafe-swiftshader --use-gl=angle --use-angle=swiftshader`
+- 本地临时起 HTTP 服务（测 http 语义时用）：`python -m http.server 8765 --bind 127.0.0.1`
+
+## 4. 改动入口速查
+
+| 要改什么 | 动哪里 |
+|---|---|
+| 数值平衡（伤害/经验/掉落/移速…） | `src/data/data-core.js` 的 `BALANCE` |
+| 属性封顶（暴击率、冷却缩减 = 100%） | `src/items.js` 的 `STAT_CAPS` |
+| 主菜单 / 行囊 / 天赋 / 设置 UI | `src/ui.js` |
+| 术法（技能树、变体） | `src/ui-skills.js` |
+| 技能实际行为 / 被动 | `src/skill-beh.js` / `src/skill-passive.js` |
+| 手机端摇杆、键位、面板滚动 | `src/mobile.js` + `index.html` 的 `@media` |
+| 手机横向树排版 | `src/ui-mtree.js` |
+| 存档 / 设置持久化 | `src/core/save.js` / `src/core/settings.js` |
+| 仓库（储物箱）/ 材料仓 / 套装收藏柜 | `src/core/stash.js`（存储）+ `src/game.js` 的 `stashXxx` / `setXxx`（业务）+ `src/ui.js` 的 `renderStash`（面板）。**入口是村里的仓管 NPC，不是菜单** |
+| 崩溃兜底、错误页 | `src/core/boot.js` |
+| 角色纸娃娃建模 | `src/charforge.js` / `src/skel.js` |
+| 地图生成 | `src/world.js` |
+| 试炼模式 | `src/trial.js` |
+
+## 5. 回归脚本（改完必跑）
+
+```bash
+node dev/smoke.js            # 三职业开局冒烟，零 pageerror 才算过
+node dev/mobile-layout.js    # 6 视口 × 10 页签：键位重叠/出屏/裁切/可滚性
+node dev/live-check.js       # 线上能否开局（推完 30~60s 后跑）
+node dev/mobile-layout.js --live   # 线上版布局回归
+```
+
+## 6. 踩过的坑（改之前先看一眼，能省几小时）
+
+### 移动端
+
+- **`touchmove` 无条件 `preventDefault()` 会让所有面板滚不动**。`mobile.js` 里按落点分流：
+  `e.target.closest('.panel.open, #dialog, .dlg-box, #setCodexPanel.open')` 命中就放行，
+  否则才拦（防页面整体橡皮筋）。双指时一律拦。
+- **`flex-shrink` 必须是 0**：术法页左栏 `.sk-left{flex:0 0 auto;max-height:62%}`。
+  写成 `flex:1 1 ...` 时，长说明书卡会反过来把技能树压成一条缝。
+- **`scrollTop` 还原要放在树渲染之后**。先还原的话左栏还没被内容撑起来、容器是"满高"的，
+  `scrollTop=150` 会被夹成 25。
+- 手机 vs PC 的分流条件是 `MTREE.isMobile()`（触屏 或 `innerWidth < 900`）。
+  走手机分支时给面板挂 `tree-dom` 类，PC 的轮盘 canvas 一行不动。
+- `100vh` 在 iOS Safari 上不准（地址栏）。用 `--app-h/--app-oy/--app-ox` CSS 变量，
+  由 `visualViewport` 写入。
+
+### 布局 / CSS
+
+- `.vb` 是**各容器内单独定义**的，全局没有。新按钮请用全局 `.btn`，否则退化成原生白按钮。
+- sticky 按钮行要**实底背景**，渐变半透明会让背后文字透上来。
+
+### 横向树（`src/ui-mtree.js`）
+
+- 列 = 依赖深度，取**最长路径**（不是最短，否则支线会跟主干挤到同一列）。
+- 超过 `maxCols`(6) 列就**蛇形折行**（奇数段反向）。不反向的话换行那根线会横穿整屏。
+- 无依赖节点（协同系 8 枚隐藏星位）必须走网格密排，否则排成一条 90×664 的竖线。
+- 坑：`Object.assign({}, G, cfg)` 会把 `G.tile`（数字 66）覆盖成 `tile` 回调 → 坐标全 NaN。
+  只白名单拷贝 `tile/colW/rowH/paint/maxCols` 这几个数字字段。
+
+### 错误兜底（`src/core/boot.js`）
+
+- `Script error.`（无文件名无行号）= 跨域脚本错误。本站脚本全部同源（无 CDN/Worker/eval），
+  这类错误只可能来自**浏览器自己注入的脚本** —— 典型是 iOS Safari 点「分享」按钮、
+  生成「添加到主屏幕」快照。**只记控制台，不出错误页**（限定 http/https；
+  `file://` 下照常报，免得本地调试被静默吞掉）。
+- 游戏已在跑（`Game.running && Game.state`）时出错 → 只弹 toast（同一条 5 秒去重），继续玩。
+  只有还没开局才出全屏错误页。
+- `webglcontextlost` **不要立刻判死刑**。Safari 弹分享面板 / 切 App 经常丢一次上下文，
+  关掉后自己就回来。给 4 秒宽限，`webglcontextrestored` 到达就收起错误页。
+
+## 7. 当前状态
+
+- 线上版本：见 `git log -1`。
+- **暂停中**：技能系统重构（12 技能 → 4~5 个功能位 + 元素混搭 + 发射数量成长）。
+  完整方案在 `docs/SKILL-REDESIGN-PLAN.md`，用户已拍板 10 项决策，**等他说开工**。
+  不要主动实施。
+- **待拍板**：大地图扩展（12 章 / 80 怪 / 24 首领 / 12 营地 + 任务网 / 5 类地下城 × 5 阶钥匙）。
+  方案在 `docs/ACT-EXPANSION-PLAN.md`（2026-10-27 草案，**未动代码**）。
+  §14 有 10 项待拍板，**拍板前不要开工**。
+
+## 8. 记忆与日志
+
+- 详细逐日开发日志：`.workbuddy-ai/memory/YYYY-MM-DD.md`（append-only）。
+- 长期项目约定：`.workbuddy-ai/memory/MEMORY.md`。
+- **这个目录在 `.git/info/exclude` 里，不进 git**（仓库是公开的 Pages 站点）。
+  换电脑 / 重新 clone 后日志不会跟过来 —— 本文档（`AGENTS.md`）就是精简版兜底，
+  保持它的时效性。如果日志里出现了必须跨机器保留的东西，搬到本文档里。

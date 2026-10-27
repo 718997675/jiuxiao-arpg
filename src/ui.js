@@ -174,6 +174,84 @@ const UI = {
       });
     }
 
+    /* ---------- [M6] 仓库（储物箱） ----------
+     * 静态按钮只绑一次（容器不随渲染重建），动态列表一律事件委托。
+     * 物品格子本身不在这里绑：走全局的 [data-ref] 那条路，
+     * 前缀 sbag: / stash: 各自分流到存入 / 取回。 */
+    const stSort = document.getElementById('stashSortBtn');
+    if (stSort) stSort.addEventListener('click', () => {
+      const r = Game.stashSort();
+      SFX.ui();
+      if (r && r.ok) this.toast(`整理完毕，共 ${r.count} 件`);
+      this.renderStash();
+    });
+    const stUp = document.getElementById('stashUpBtn');
+    if (stUp) stUp.addEventListener('click', () => {
+      this.stashUpOpen = !this.stashUpOpen;
+      SFX.ui();
+      this.renderStash();
+    });
+    const stPutAll = document.getElementById('stashPutAllBtn');
+    if (stPutAll) stPutAll.addEventListener('click', () => {
+      const s = Game.state;
+      if (!s || !s.inventory.length) { this.toast('行囊里没有可存的东西'); return; }
+      if (Game.stashFree() <= 0) { this.toast(`仓库已满（${Game.stashCap()} 格），先扩容`); return; }
+      /* 从后往前存：splice 会改变下标，正序存会漏掉后面的。
+       * 只存到仓库满为止，不静默丢弃。 */
+      let n = 0;
+      for (let i = s.inventory.length - 1; i >= 0 && Game.stashFree() > 0; i--) {
+        if (Game.stashPut(i).ok) n++;
+      }
+      SFX.ui();
+      this.toast(n ? `${n} 件已存入仓库` : '仓库已满，一件也没存进去');
+      this.renderStash();
+    });
+    const stCats = document.getElementById('stashCats');
+    if (stCats) stCats.addEventListener('click', e => {
+      const b = e.target.closest('[data-scat]');
+      if (!b) return;
+      this.stashFilter.cat = b.dataset.scat;
+      SFX.ui();
+      this.renderStash();
+    });
+    const stFit = document.getElementById('stashOnlyFit');
+    if (stFit) stFit.addEventListener('click', () => {
+      this.stashFilter.fit = !this.stashFilter.fit;
+      SFX.ui();
+      this.renderStash();
+    });
+    const stSearch = document.getElementById('stashSearch');
+    if (stSearch) stSearch.addEventListener('input', () => {
+      this.stashFilter.q = stSearch.value || '';
+      this.renderStash();
+      /* 重绘会把焦点留在原 input 上（容器没换），但光标位置会回到末尾，
+       * 打字时感觉不到差异；不重新 focus 是为了避免手机上弹出键盘又收起。 */
+    });
+    const stUpBar = document.getElementById('stashUpBar');
+    if (stUpBar) stUpBar.addEventListener('click', e => {
+      if (!e.target.closest('[data-stashupgo]')) return;
+      const r = Game.upgradeStash();
+      if (r.ok) { SFX.ui(); this.stashUpOpen = false; this.toast(r.msg); }
+      else this.toast(r.msg || '扩容失败');
+      this.renderStash();
+    });
+    const stSets = document.getElementById('stashSets');
+    if (stSets) stSets.addEventListener('click', e => {
+      const inB = e.target.closest('[data-setin]');
+      const outB = e.target.closest('[data-setout]');
+      if (inB) {
+        const r = Game.setRegister(inB.dataset.setin);
+        if (r.ok) SFX.ui();
+        this.toast(r.msg || (r.ok ? '已登记' : '登记失败'));
+        this.renderStash();
+      } else if (outB) {
+        const r = Game.setWithdraw(outB.dataset.setout);
+        if (r.ok) SFX.ui();
+        this.toast(r.msg || (r.ok ? '已取出' : '取出失败'));
+        this.renderStash();
+      }
+    });
+
     /* 一键分解（v1.1.4）：展开确认条 → 预估产出 → 确认/取消 */
     const dj = document.getElementById('invDecomposeBtn');
     if (dj) dj.addEventListener('click', () => {
@@ -242,11 +320,17 @@ const UI = {
       const item = this.itemFromRef(el.dataset.ref);
       if (!item) return;
       this.hoverRef = el.dataset.ref;
-      /* 背包里的物品才做「与已穿装备对比」；已穿的那件自己跟自己比没有意义 */
-      const isInv = el.dataset.ref.startsWith('inv:');
+      /* 背包里的物品才做「与已穿装备对比」；已穿的那件自己跟自己比没有意义。
+       * [M6] 仓库里的也对比 —— 从仓库取回之前正是最该看差值的时候。 */
+      const kind = el.dataset.ref.split(':')[0];
+      const isInv = kind === 'inv';
+      let hint;
+      if (kind === 'sbag') hint = '左键存入仓库';
+      else if (kind === 'stash') hint = '左键取回行囊';
+      else hint = isInv ? '左键装备 / Shift+左键出售' : '左键卸下';
       this.tooltipEl.innerHTML = itemTooltip(item, {
-        hint: isInv ? '左键装备 / Shift+左键出售' : '左键卸下',
-        compareTo: isInv ? this.equippedFor(item) : null
+        hint,
+        compareTo: (isInv || kind === 'sbag' || kind === 'stash') ? this.equippedFor(item) : null
       });
       this.tooltipEl.style.display = 'block';
       this.moveTooltip(e);
@@ -321,6 +405,17 @@ const UI = {
         else Game.equipFromInv(i);
       } else if (ref.startsWith('eq:')) {
         Game.unequip(ref.split(':')[1]);
+      } else if (ref.startsWith('sbag:')) {
+        /* 仓库面板左列：站着仓库前，点一下想的是「收起来」而不是「穿上」 */
+        const r = Game.stashPut(parseInt(ref.split(':')[1]));
+        if (!r.ok) this.toast(r.msg);
+        else SFX.ui();
+        this.renderStash();
+      } else if (ref.startsWith('stash:')) {
+        const r = Game.stashTake(parseInt(ref.split(':')[1]));
+        if (!r.ok) this.toast(r.msg);
+        else SFX.ui();
+        this.renderStash();
       }
       this.tooltipEl.style.display = 'none';
     });
@@ -958,25 +1053,33 @@ const UI = {
     const ref = el.dataset.ref;
     const item = this.itemFromRef(ref);
     if (!item) return;
-    const isInv = ref.startsWith('inv:');
+    const kind = ref.split(':')[0];
+    const isInv = kind === 'inv';
+    /* [M6] 仓库面板里点格子 = 存入 / 取回，不出「穿戴 / 出售」——
+     * 站在仓库前的动作是搬东西，不是换装。 */
+    let acts;
+    if (kind === 'sbag') acts = '<button class="btn primary" data-act="put">存 入 仓 库</button>';
+    else if (kind === 'stash') acts = '<button class="btn primary" data-act="take">取 回 行 囊</button>';
+    else if (isInv) acts = '<button class="btn primary" data-act="equip">穿 戴</button><button class="btn" data-act="sell">出 售</button>';
+    else acts = '<button class="btn primary" data-act="unequip">卸 下</button>';
     this.tooltipEl.innerHTML = itemTooltip(item, {
       hint: '',
-      compareTo: isInv ? this.equippedFor(item) : null
-    }) +
-      `<div class="tt-act">
-         <button class="btn primary" data-act="${isInv ? 'equip' : 'unequip'}">${isInv ? '穿 戴' : '卸 下'}</button>
-         ${isInv ? '<button class="btn" data-act="sell">出 售</button>' : ''}
-       </div>`;
+      compareTo: (isInv || kind === 'sbag' || kind === 'stash') ? this.equippedFor(item) : null
+    }) + `<div class="tt-act">${acts}</div>`;
     this.tooltipEl.style.display = 'block';
 
     this.tooltipEl.querySelectorAll('.tt-act .btn').forEach(b => {
       b.addEventListener('pointerdown', ev => {
         ev.preventDefault(); ev.stopPropagation();
         const act = b.dataset.act;
-        if (act === 'equip') Game.equipFromInv(parseInt(ref.split(':')[1]));
+        const idx = parseInt(ref.split(':')[1]);
+        if (act === 'equip') Game.equipFromInv(idx);
         else if (act === 'unequip') Game.unequip(ref.split(':')[1]);
-        else if (act === 'sell') Game.sellItem(parseInt(ref.split(':')[1]));
+        else if (act === 'sell') Game.sellItem(idx);
+        else if (act === 'put') { const r = Game.stashPut(idx); if (!r.ok) this.toast(r.msg); }
+        else if (act === 'take') { const r = Game.stashTake(idx); if (!r.ok) this.toast(r.msg); }
         this.hideTooltip();
+        if (act === 'put' || act === 'take') this.renderStash();
       });
     });
 
@@ -994,6 +1097,13 @@ const UI = {
     const [kind, val] = ref.split(':');
     if (kind === 'inv') return Game.state.inventory[parseInt(val)] || null;
     if (kind === 'eq') return Game.state.equipment[val] || null;
+    /* [M6] 仓库面板两列各自一套前缀：
+     *   sbag:  面板左列的行囊格（点了是「存入」，不是「穿戴」）
+     *   stash: 面板右列的仓库格（点了是「取回」）
+     * 不复用 inv: 是因为同一个 ref 在背包面板和仓库面板的语义相反，
+     * 靠「当前开的是哪个面板」来分流太脆 —— 面板搬 DOM 时容易判错。 */
+    if (kind === 'sbag') return Game.state.inventory[parseInt(val)] || null;
+    if (kind === 'stash') return (Game.stashItems() || [])[parseInt(val)] || null;
     return null;
   },
 
@@ -1202,6 +1312,8 @@ const UI = {
    * 不必为「嵌入模式」重写一遍渲染。 */
   MENU_TABS: [
     { id: 'bag', name: '行 囊', key: 'I', panel: 'invPanel', render: 'renderInventory' },
+    /* [M6] 仓库不在菜单里：它在村里的「仓管·玄贮」身上。
+     * 存东西要跑一趟，这是设计的一部分 —— 见 Game.openNPC 的 steward 分支。 */
     { id: 'stat', name: '道 途', key: 'C', panel: 'statPanel', render: 'renderStats' },
     { id: 'talent', name: '天 赋', key: 'T', panel: 'talentPanel', render: 'renderTalentPanel' },
     /* 术法（技能树）已独立成整屏层：树要满宽才看得全，见 openSkill() */
@@ -1764,12 +1876,15 @@ const UI = {
     const p = document.getElementById('setCodexPanel');
     if (!p || !Game.state) return;
     const s = Game.state;
-    /* 收集全部已拥有的套装件（装备 + 行囊 + 仓库） */
+    /* 收集全部已拥有的套装件（装备 + 行囊 + 仓库 + 收藏柜） */
     const owned = {};
     const pool = [];
     for (const slot in s.equipment) if (s.equipment[slot]) pool.push(s.equipment[slot]);
     (s.inventory || []).forEach(it => { if (it) pool.push(it); });
-    if (s.stash && Array.isArray(s.stash.items)) s.stash.items.forEach(it => { if (it) pool.push(it); });
+    /* [M6] 仓库搬到 StashStore 了，且收藏柜里登记的也算「已拥有」 */
+    (Game.stashItems() || []).forEach(it => { if (it) pool.push(it); });
+    const reg = Game.stashData().sets || {};
+    for (const id in reg) (reg[id].pieces || []).forEach(it => { if (it) pool.push(it); });
     for (const it of pool) {
       if (!it.setId) continue;
       (owned[it.setId] = owned[it.setId] || []).push(it);
@@ -3033,6 +3148,23 @@ const UI = {
     this.alchemistSetId = null;
     this.openAlchemist();
   },
+  /* [M6] 仓库面板：**独立浮层**，不进主菜单。
+   * 入口只有一个 —— 村里的仓管·玄贮。所以这里不注册进 MENU_TABS，
+   * 也不给快捷键：给个 G 键就等于把 NPC 又绕过去了。 */
+  openStash() {
+    if (!Game.state) return;
+    const p = document.getElementById('stashPanel');
+    if (!p) return;
+    this.closeAll(p);
+    /* 如果这个面板之前被 menuMount 搬进过 #menuBody，先送回来 ——
+     * 否则菜单关着的时候给它加 .open，它会挂在隐藏的容器里，看不见。 */
+    this.menuUnmount();
+    if (typeof Game !== 'undefined' && Game.exitLook) Game.exitLook();
+    p.classList.add('open');
+    this.renderStash();
+    try { SFX.ui(); } catch (e) { }
+  },
+
   openAlchemist() {
     if (!Game.state) return;
     const p = document.getElementById('alchemistPanel');
@@ -3230,6 +3362,277 @@ const UI = {
     }
     bar.style.display = '';
     bar.innerHTML = h;
+  },
+
+  /* ======================================================= */
+  /* [M6] 仓库（储物箱）                                        */
+  /* ======================================================= */
+  /* 面板状态放在 UI 上而不是 Game 里：筛选条件属于「这次看的方式」，
+   * 不该跟着存档走。换角色回来还是全部 / 无搜索。 */
+  stashFilter: { cat: 'all', q: '', fit: false },
+  stashUpOpen: false,
+
+  /* 搜索用的一行文本：名称 + 基底 + 品质 + 部位 + 词缀属性名。
+   * 不做缓存 —— 挂在物品上的缓存字段会被 JSON 一起写进存档，
+   * 每件装备多一个 _sm 字段，仓库 200 件就是白占几十 KB。
+   * 每次现拼也就几个字符串，200 件量级完全够快。 */
+  stashMatchText(it) {
+    if (!it) return '';
+    const parts = [it.name, it.baseName, (RARITY[it.rarity] || {}).name, (SLOTS[it.slot] || {}).name];
+    const push = (a) => {
+      if (!a) return;
+      const s = STATS[a.key];
+      if (s && s.label) parts.push(s.label);
+    };
+    if (Array.isArray(it.affixes)) it.affixes.forEach(push);
+    if (Array.isArray(it.fixed)) it.fixed.forEach(push);
+    if (it.implicit) push(it.implicit);
+    return parts.filter(Boolean).join(' ').toLowerCase();
+  },
+
+  renderStash() {
+    const p = document.getElementById('stashPanel');
+    if (!p || !Game.state || typeof Game.stashItems !== 'function') return;
+    const s = Game.state;
+    const inv = s.inventory || [];
+    const bagCap = Game.bagCap();
+    const cap = Game.stashCap();
+    const all = Game.stashItems();
+
+    /* ---------- 左列：行囊 ---------- */
+    const bc = document.getElementById('stashBagCap');
+    if (bc) bc.textContent = `${inv.length} / ${bagCap}`;
+    const bg = document.getElementById('stashBagGrid');
+    if (bg) {
+      let h = '';
+      for (let i = 0; i < bagCap; i++) {
+        const it = inv[i];
+        if (!it) { h += '<div class="islot"></div>'; continue; }
+        const tag = (SLOTS[it.slot] || {}).name || '';
+        const sz = it.slot ? slotSize(it.slot) : '';
+        const miss = !Game.meetsReq(it);
+        const sb = it.sockets ? `<span class="sockbadge">◆${(it.runes || []).filter(Boolean).length}/${it.sockets}</span>` : '';
+        h += `<div class="islot ${sz ? 'sz-' + sz : ''} r-${it.rarity}${miss ? ' req-miss' : ''}"
+          ${it.slot ? `data-size="${sz}"` : ''} data-ref="sbag:${i}">
+          <span class="ico">${itemIcon(it)}</span>${sb}<span class="slot-tag">${tag.slice(0, 1)}</span></div>`;
+      }
+      bg.innerHTML = h;
+    }
+
+    /* ---------- 右列：仓库 ---------- */
+    const cEl = document.getElementById('stashCap');
+    if (cEl) cEl.textContent = `${all.length} / ${cap}`;
+    const upBtn = document.getElementById('stashUpBtn');
+    if (upBtn) {
+      const info = Game.stashUpgradeInfo();
+      upBtn.classList.toggle('full', !info.next);
+      upBtn.textContent = info.next ? '扩 容' : '已 满';
+      upBtn.title = info.next ? `扩容仓库（当前 ${cap} 格）` : `仓库已扩至极限 ${cap} 格`;
+    }
+
+    const cats = document.getElementById('stashCats');
+    if (cats) {
+      cats.innerHTML = STASH_CATS.filter(c => c.id !== 'set').map(c =>
+        `<button class="sbtn${this.stashFilter.cat === c.id ? ' on' : ''}" data-scat="${c.id}">${c.name}</button>`
+      ).join('');
+    }
+    const se = document.getElementById('stashSearch');
+    if (se && se.value !== this.stashFilter.q) se.value = this.stashFilter.q;
+    const fb = document.getElementById('stashOnlyFit');
+    if (fb) fb.classList.toggle('on', !!this.stashFilter.fit);
+
+    const q = (this.stashFilter.q || '').trim().toLowerCase();
+    const rows = [];
+    all.forEach((it, i) => {
+      if (!it) return;
+      if (this.stashFilter.cat !== 'all' && stashCatOf(it) !== this.stashFilter.cat) return;
+      if (this.stashFilter.fit && !Game.meetsReq(it)) return;
+      if (q && this.stashMatchText(it).indexOf(q) < 0) return;
+      rows.push({ it, i });
+    });
+
+    const grid = document.getElementById('stashGrid');
+    if (grid) {
+      let h = '';
+      for (const row of rows) {
+        const it = row.it;
+        const tag = (SLOTS[it.slot] || {}).name || '';
+        const sz = it.slot ? slotSize(it.slot) : '';
+        const miss = !Game.meetsReq(it);
+        const sb = it.sockets ? `<span class="sockbadge">◆${(it.runes || []).filter(Boolean).length}/${it.sockets}</span>` : '';
+        /* ref 用**真实下标**，不是筛选后的序号 —— 视图顺序和数组顺序不一致时，
+         * 用序号点格子会取错物品（背包那边踩过这个坑，注释在第 152 行）。 */
+        h += `<div class="islot ${sz ? 'sz-' + sz : ''} r-${it.rarity}${miss ? ' req-miss' : ''}"
+          ${it.slot ? `data-size="${sz}"` : ''} data-ref="stash:${row.i}">
+          <span class="ico">${itemIcon(it)}</span>${sb}<span class="slot-tag">${tag.slice(0, 1)}</span></div>`;
+      }
+      /* 只在没筛选时补空格：筛出 3 件却铺满 60 个空格会让人以为东西丢了 */
+      if (rows.length === all.length) {
+        for (let i = rows.length; i < cap; i++) h += '<div class="islot"></div>';
+      }
+      grid.innerHTML = h;
+    }
+
+    const foot = document.getElementById('stashFoot');
+    if (foot) {
+      const free = Math.max(0, cap - all.length);
+      const extra = rows.length !== all.length ? ` · 筛出 <b>${rows.length}</b> 件` : '';
+      foot.innerHTML = `<b>仓库跨角色共享</b>，三个角色位读同一份，换号不丢东西 · 剩 <b>${free}</b> 格${extra}<br>
+        左键行囊物品＝存入 · 左键仓库物品＝取回 · 「整理」按 部位 → 品质 → 等级 排序`;
+    }
+
+    /* 左列底部的概览：品质分布 + 占用条，顺便把行囊下方那片空白填掉 */
+    const sumEl = document.getElementById('stashSum');
+    if (sumEl) {
+      const rk = Object.keys(RARITY);
+      const cnt = {};
+      all.forEach(it => { if (it) cnt[it.rarity] = (cnt[it.rarity] || 0) + 1; });
+      const q = rk.filter(k => cnt[k]).map(k =>
+        `<span style="color:${RARITY[k].color}">${RARITY[k].name} ${cnt[k]}</span>`).join('　');
+      const pct = cap ? Math.min(100, Math.round(all.length / cap * 100)) : 0;
+      sumEl.innerHTML = `<div class="ss-h"><b>仓 库 概 览</b><i>${all.length} / ${cap} 格</i></div>
+        <div class="ss-bar"><i style="width:${pct}%"></i></div>
+        <div class="ss-q">${q || '<span style="color:#5e594e">库房空空，先把不用的收起来</span>'}</div>`;
+    }
+
+    this.renderStashUpBar();
+    this.renderStashMats();
+    this.renderStashSets();
+  },
+
+  /* 扩容条：结构与行囊那条一致（.upbar / .urow / .ucap / .udots），
+   * 只是计价单位从「玄晶 + 铜钱」换成纯铜钱。 */
+  renderStashUpBar() {
+    const bar = document.getElementById('stashUpBar');
+    if (!bar) return;
+    if (!this.stashUpOpen) { bar.style.display = 'none'; bar.innerHTML = ''; return; }
+    const info = Game.stashUpgradeInfo();
+    const gold = Math.max(0, Math.round(Game.state.gold || 0));
+    const dots = [];
+    for (let i = 0; i < info.maxTier; i++) {
+      dots.push(`<span class="${i < info.tier ? 'done' : (i === info.tier && info.next ? 'now' : '')}"></span>`);
+    }
+    let h;
+    if (info.next) {
+      h = `<div class="urow">
+          <span class="utitle">储物箱</span>
+          <span class="ucap"><b>${info.cap}</b><em>→</em><b class="nx">${info.next.cap}</b>格</span>
+          <span class="udots">${dots.join('')}</span>
+          <span class="utier">第 ${info.tier + 1}/${info.maxTier} 次</span>
+        </div>
+        <div class="urow">
+          <span class="ucosts"><span class="cst"><span class="nm" style="color:#e0c070">铜钱</span>
+            <span class="hv ${gold >= info.next.gold ? '' : 'bad'}"><b>${gold}</b><u>/${info.next.gold}</u></span></span></span>
+          <button class="ugo" data-stashupgo ${info.can ? '' : 'disabled'}>扩 容</button>
+        </div>
+        <div class="uhint">仓库跨角色共享，扩容一次三个角色都受益。${info.can ? '' : '还差：' + info.lack.join('、') + '。'}</div>`;
+    } else {
+      h = `<div class="urow">
+          <span class="utitle">储物箱</span>
+          <span class="ucap"><b class="nx">${info.cap}</b>格</span>
+          <span class="udots">${dots.join('')}</span>
+          <span class="utier">已达上限 · 共 ${info.maxTier} 次</span>
+        </div>
+        <div class="uhint">仓库已扩至 ${info.cap} 格，再多就撑破了。</div>`;
+    }
+    bar.style.display = '';
+    bar.innerHTML = h;
+  },
+
+  /* 材料仓：玄晶 / 匠材 / 符文。与背包「材料」页同一套格子与提示，
+   * 但这里只列材料（不含丹药与任务物品 —— 那两样是随身消耗品）。 */
+  renderStashMats() {
+    const el = document.getElementById('stashMats');
+    if (!el) return;
+    const RUNE_COLOR = { 1: '#a0a0a0', 2: '#67a9ff', 3: '#c084ff', 4: '#ffd166' };
+    const cells = [];
+    CRYSTAL_TIERS.forEach((t, i) => cells.push({
+      icon: matIcon('crystal' + (i + 1), { size: 30, color: t.color, glow: i >= 2 }),
+      color: t.color, name: t.name + '（' + (i + 1) + ' 阶）',
+      sub: '炼器 / 洗练 / 扩容的通货', desc: '分解装备所得，凡 → 灵 → 玄 → 神 逐阶精纯。',
+      qty: Game.crystalTierCount(i + 1)
+    }));
+    for (const id of CRAFT_MAT_ORDER) {
+      const d = CRAFT_MATS[id];
+      cells.push({
+        icon: matIcon(d.icon, { size: 30, color: d.color, glow: d.tier >= 3 }),
+        color: d.color, name: d.name,
+        sub: CRAFT_TIER_NAME[d.tier] + ' · 来自' + d.from,
+        desc: d.desc, qty: Game.craftMatCount(id)
+      });
+    }
+    for (const id of RUNE_ICON_ORDER) {
+      const n = Game.runeCount(id);
+      if (!n) continue;
+      const rd = RUNES[id], tier = RUNE_TIERS[rd.tier];
+      const col = RUNE_COLOR[rd.tier] || '#c9a86a';
+      cells.push({
+        icon: iconSvg('rune_' + id, { size: 28, style: 'color:' + col }),
+        color: col, name: rd.name + '符文',
+        sub: tier.name + ' · ' + statLine(rd.stats), desc: '镶进装备孔位，可组成符文之语。',
+        qty: n
+      });
+    }
+    /* 与背包共用 _matTips / [data-mti] 那条悬停通道。
+     * 两个面板不会同时渲染（menuMount 只挂一个），互相覆盖不会串。 */
+    this._matTips = cells;
+    el.innerHTML = '<div class="mgrid">' + cells.map((c, i) => `
+      <div class="mgcell${c.qty ? '' : ' off'}" data-mti="${i}" style="--mc:${c.color}">
+        <span class="mg-ico">${c.icon}</span>
+        <span class="mg-qty">${c.qty > 999 ? '999+' : c.qty}</span>
+      </div>`).join('') + '</div>';
+    if (IS_TOUCH) {
+      el.querySelectorAll('[data-mti]').forEach(row => {
+        row.addEventListener('click', e => {
+          const c = this._matTips[+row.dataset.mti];
+          if (c) this.showMatTip(c, e);
+        });
+      });
+    }
+  },
+
+  /* 套装收藏柜：只列「已登记」「已集齐」「差 1 件」三种，
+   * 三十多套全铺出来会变成一面墙，反而找不到能点的那几行。 */
+  renderStashSets() {
+    const el = document.getElementById('stashSets');
+    if (!el) return;
+    const reg = Game.stashData().sets || {};
+    const list = (typeof Game.setCollectList === 'function') ? Game.setCollectList() : [];
+    const rows = [];
+    let rest = 0;
+    for (const info of list) {
+      if (reg[info.setId]) { rows.push({ info, mode: 'reg' }); continue; }
+      if (info.ok) { rows.push({ info, mode: 'ok' }); continue; }
+      if (info.miss.length <= 1) { rows.push({ info, mode: 'near' }); continue; }
+      rest++;
+    }
+    if (!rows.length) {
+      el.innerHTML = `<div class="ft-empty">还没有集齐的套装。集齐一整套后可以在这里<b>登记收藏</b>——
+        登记后不占仓库格子，随时原样取回（词缀、孔位、符文都保留）。${rest ? `另有 ${rest} 套尚未集齐。` : ''}</div>`;
+      return;
+    }
+    el.innerHTML = rows.map(({ info, mode }) => {
+      const set = SETS[info.setId];
+      /* 已登记的套装，实物在收藏柜里而不在行囊/仓库，setCollectInfo 会算成 0 件。
+       * 这里直接读收藏柜的件数，否则会出现「【血怒】0/3 已收藏」这种自相矛盾的显示。 */
+      const got = (mode === 'reg')
+        ? ((reg[info.setId] && reg[info.setId].pieces) || []).length
+        : (info.total - info.miss.length);
+      let btn, sub;
+      if (mode === 'reg') {
+        sub = '已收藏';
+        btn = `<button class="sbtn" data-setout="${info.setId}">取 出</button>`;
+      } else if (mode === 'ok') {
+        sub = '可登记';
+        btn = `<button class="sbtn on" data-setin="${info.setId}">登 记</button>`;
+      } else {
+        sub = '差 ' + info.miss.map(sl => (SLOTS[sl] || {}).name || sl).join('、');
+        btn = `<button class="sbtn" disabled>差 ${info.miss.length}</button>`;
+      }
+      return `<div class="setrow ${mode === 'reg' ? 'reg' : (mode === 'ok' ? 'done' : '')}">
+        <span class="sn" style="color:${set ? set.color : '#c9a86a'}">【${set ? set.name : info.setId}】${got}/${info.total}</span>
+        <span class="sp">${sub}</span>${btn}</div>`;
+    }).join('') + (rest ? `<div class="sp" style="padding:4px 2px;color:#5e594e">另有 ${rest} 套尚未集齐</div>` : '');
   },
 
   /* [S3] 筛选出售 */

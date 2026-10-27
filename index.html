@@ -192,6 +192,68 @@
   /* 高度钉死，两列各自滚动；不钉死的话左列属性会把面板一路撑高 */
   #invPanel .pb{height:calc(88vh - 44px);max-height:none;overflow:hidden}
   .inv-wrap{display:flex;gap:14px;min-height:0}
+
+  /* ---------- [M6] 仓库（储物箱） ----------
+   * 上排「行囊 ⇄ 仓库」两列并排，下排「材料仓 / 套装收藏柜」。
+   * 复用 .islot 的格子外观，只改容器栅格列数 —— 仓库格子多，
+   * 一列 8 个会比行囊更挤，所以右列给 10 列。 */
+  #stashPanel{left:50%;top:50%;transform:translate(-50%,-50%);width:960px;max-height:90vh}
+  #stashPanel.open{display:flex;flex-direction:column}
+  /* 标题右侧的说话人：仓库是 NPC 的，写清楚是谁的库房 */
+  .phsub{font-size:10px;color:#6a6458;margin-left:9px;letter-spacing:1px;
+    font-family:"Microsoft YaHei",system-ui,sans-serif;font-weight:400}
+  #stashPanel .pb{height:calc(90vh - 44px);max-height:none;overflow:hidden}
+  .stash-wrap{display:flex;flex-direction:column;min-height:0;flex:1 1 auto}
+  .stash-cols{display:flex;gap:14px;min-height:0;flex:1 1 auto}
+  .stash-col{flex:1 1 0;display:flex;flex-direction:column;min-width:0;min-height:0;
+    border:1px solid rgba(216,178,90,.16);border-radius:3px;padding:8px 9px 9px;background:rgba(0,0,0,.2)}
+  .stash-col.wide{flex:1.3 1 0}
+  /* 标题行不许换行：手机上面板一窄，「仓 库」会被挤成竖排两个字一行，
+   * 「整 理 / 扩 容」按钮也会变成两行高的方块。 */
+  .stash-hd{display:flex;align-items:center;gap:8px;margin-bottom:6px;flex:none}
+  .stash-hd.sub{margin-top:10px;padding-top:8px;border-top:1px solid rgba(216,178,90,.14)}
+  .stash-hd b{font-family:"STKaiti","KaiTi",serif;font-weight:500;font-size:12px;letter-spacing:3px;
+    color:#c9a86a;white-space:nowrap}
+  .stash-hd i{font-style:normal;font-size:10px;color:#6a6458;letter-spacing:.5px;white-space:nowrap;
+    overflow:hidden;text-overflow:ellipsis}
+  .stash-hd .sbtn{margin-left:0;white-space:nowrap}
+  .stash-hd .sbtn:first-of-type{margin-left:auto}
+  .stash-grid{display:grid;grid-template-columns:repeat(8,1fr);grid-auto-rows:max-content;gap:5px;
+    flex:1 1 auto;min-height:0;overflow-y:auto;overflow-x:hidden;align-content:start;padding-right:2px}
+  .stash-col.wide .stash-grid{grid-template-columns:repeat(10,1fr)}
+  /* 左列的行囊不该吃掉全部剩余高度：40 格只有 5 行，拉伸之后下面会留一大片黑。
+   * 让它按内容高，剩下的空间交给材料仓。 */
+  #stashBagGrid{flex:0 1 auto;max-height:60%}
+  .stash-filter{display:flex;align-items:center;gap:5px;margin-bottom:6px;flex:none;flex-wrap:wrap}
+  .sf-cats{display:flex;gap:3px}
+  .sf-cats .sbtn{padding:3px 8px 4px;white-space:nowrap}
+  .sf-search{flex:1 1 90px;min-width:70px;font-family:inherit;font-size:11px;padding:4px 7px;
+    background:rgba(0,0,0,.45);border:1px solid rgba(216,178,90,.22);color:#e8d8b0;border-radius:2px;outline:none}
+  .sf-search:focus{border-color:var(--gold)}
+  .sf-search::placeholder{color:#5e594e}
+  .stash-foot{flex:none;margin-top:6px;font-size:10.5px;color:#7a7266;line-height:1.7}
+  .stash-foot b{color:#c9a86a;font-weight:500}
+  /* 材料仓：复用 .matlist，但这里要给个高度上限，
+   * 否则 13 种材料会把左列撑高、把行囊挤成一条 */
+  .stash-col .matlist{overflow-y:auto;min-height:0;flex:1 1 auto}
+  /* 仓库概览：钉在左列底部。行囊 40 格只有 5 行，不填点东西的话
+   * 下面会留一大片黑，看着像界面没做完。 */
+  .stash-sum{flex:none;margin-top:auto;padding-top:9px;border-top:1px solid rgba(216,178,90,.14)}
+  .stash-sum .ss-h{display:flex;align-items:center;justify-content:space-between;font-size:10.5px;margin-bottom:5px}
+  .stash-sum .ss-h b{font-family:"STKaiti","KaiTi",serif;color:#c9a86a;font-weight:500;letter-spacing:2px}
+  .stash-sum .ss-h i{font-style:normal;color:#6a6458}
+  .stash-sum .ss-bar{height:3px;background:rgba(0,0,0,.5);border-radius:2px;overflow:hidden}
+  .stash-sum .ss-bar i{display:block;height:100%;background:linear-gradient(90deg,#8a6a2a,#d8b25a)}
+  .stash-sum .ss-q{margin-top:6px;font-size:10px;line-height:1.85;letter-spacing:.3px}
+  /* 套装收藏柜 */
+  .setbox{display:flex;flex-direction:column;gap:5px;overflow-y:auto;min-height:0;flex:0 1 auto;max-height:34%}
+  .setrow{display:flex;align-items:center;gap:7px;padding:5px 7px;border-radius:2px;
+    background:rgba(0,0,0,.3);border:1px solid rgba(255,255,255,.06);font-size:11px}
+  .setrow .sn{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .setrow .sp{font-size:9.5px;color:#6a6458;flex:none;white-space:nowrap}
+  .setrow .sbtn{padding:2px 8px 3px;flex:none;white-space:nowrap}
+  .setrow.done{border-color:rgba(92,224,138,.3);background:rgba(30,60,40,.28)}
+  .setrow.reg{border-color:rgba(216,178,90,.3);background:rgba(60,48,24,.3)}
   .doll{width:300px;flex:none;display:flex;flex-direction:column;min-height:0}
   .doll-title{font-size:11px;color:var(--dim);letter-spacing:2px;margin-bottom:6px;text-align:center}
   /* 左列分隔条：上面是装备位，下面是常驻属性。
@@ -1836,6 +1898,19 @@
   /* 触屏不做「两列各自滚」：屏幕本来就矮，固定高度会把一边压成一条缝。
    * 改成整面板滚动，装备栏与行囊都完整展开（.panel 已有 overflow:auto）。 */
   body.touch #invPanel .pb{height:auto;max-height:none;overflow:visible}
+  /* [M6] 仓库：手机上两列并排会把格子挤到 20px，改成整面板滚动 + 单列堆叠。
+   * 顺序是 行囊 → 材料仓 → 仓库 → 收藏柜，从上到下就是「拿 → 存」的动作流。 */
+  body.touch #stashPanel{width:min(960px,96vw);max-height:calc(var(--app-h,100dvh) - 12px)}
+  body.touch #stashPanel .pb{height:auto;max-height:none;overflow:visible}
+  body.touch .stash-cols{flex-direction:column;gap:10px}
+  body.touch .stash-col,
+  body.touch .stash-col.wide{flex:none}
+  body.touch .stash-grid{grid-template-columns:repeat(8,minmax(0,1fr));max-height:none;overflow:visible}
+  body.touch .stash-col.wide .stash-grid{grid-template-columns:repeat(8,minmax(0,1fr))}
+  body.touch .stash-col .matlist{max-height:none}
+  body.touch .setbox{max-height:none}
+  body.touch .stash-filter{gap:4px}
+  body.touch .sf-search{flex:1 1 100%;order:9}
   /* 手机上排序条压扁，别把格子挤成一行两个字 */
   body.touch .sortbar .sortlab{display:none}
   body.touch .sbtn{padding:4px 7px;font-size:10px;letter-spacing:0}
@@ -2346,6 +2421,40 @@
   </div>
 </div>
 
+<!-- [M6] 仓库（储物箱）—— 跨角色共享 -->
+<div class="panel" id="stashPanel">
+  <div class="ph"><h3>仓 库<span class="phsub">仓管 · 玄贮</span></h3><span class="x" onclick="UI.closeAll()">✕</span></div>
+  <div class="pb stash-wrap">
+    <div class="stash-cols">
+      <!-- 左：行囊 + 材料仓（两样都短，放一起不会留大片空白） -->
+      <div class="stash-col">
+        <div class="stash-hd"><b>行 囊</b><i id="stashBagCap">0 / 40</i>
+          <button class="sbtn" id="stashPutAllBtn" title="把行囊里所有装备一次存进仓库">全 存</button></div>
+        <div class="stash-grid" id="stashBagGrid"></div>
+        <div class="stash-hd sub"><b>材 料 仓</b><i>不占格 · 跨角色</i></div>
+        <div class="matlist" id="stashMats"></div>
+        <div class="stash-sum" id="stashSum"></div>
+      </div>
+      <!-- 右：仓库 + 套装收藏柜 -->
+      <div class="stash-col wide">
+        <div class="stash-hd"><b>仓 库</b><i id="stashCap">0 / 60</i>
+          <button class="sbtn" id="stashSortBtn">整 理</button>
+          <button class="sbtn" id="stashUpBtn">扩 容</button></div>
+        <div class="stash-filter">
+          <div class="sf-cats" id="stashCats"></div>
+          <input class="sf-search" id="stashSearch" maxlength="20" placeholder="搜索名称 / 词缀…">
+          <button class="sbtn" id="stashOnlyFit">只显示可装备</button>
+        </div>
+        <div class="stash-grid" id="stashGrid"></div>
+        <div class="upbar" id="stashUpBar" style="display:none"></div>
+        <div class="stash-hd sub"><b>套 装 收 藏 柜</b><i>集齐可登记 · 不占格</i></div>
+        <div class="setbox" id="stashSets"></div>
+        <div class="stash-foot" id="stashFoot"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- 属性 -->
 <div class="panel" id="statPanel">
   <div class="ph"><h3>道 途</h3><span class="x" onclick="UI.closeAll()">✕</span></div>
@@ -2619,6 +2728,7 @@
 <script src="src/data/data-core.js"></script>
 <script src="src/data/data-icons.js"></script>
 <script src="src/data/data-items.js"></script>
+<script src="src/core/stash.js"></script>
 <script src="src/data/data-relics.js"></script>
 <script src="src/data/data-relic-icons.js"></script>
 <script src="src/data/data-craft.js"></script>

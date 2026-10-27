@@ -1011,6 +1011,57 @@ function bagNextUpgrade(cap) {
 /* 容量上限：基础 + 总扩容格数 */
 function bagHardCap() { return BAG_BASE_CAP + BAG_STEP * BAG_UPGRADES.length; }
 
+/* ============================================================
+ * [M6] 仓库（储物箱）容量
+ *
+ * 与行囊不同：仓库是**跨角色共享**的，所以它的容量单独存在
+ * `jiuxiao_stash_v1` 这个 key 里，不随角色档走。换角色不会丢东西，
+ * 也不会因为新建角色又要重新扩一遍。
+ *
+ * 扩容只吃金币（不吃玄晶）：行囊是随身空间，卡材料合理；
+ * 仓库是长期资产，用金币计价玩家更容易规划。
+ * ============================================================ */
+const STASH_BASE_CAP = 60;
+const STASH_STEP = 20;
+const STASH_UPGRADES = [
+  { cap: 80,  gold: 2000 },
+  { cap: 100, gold: 5000 },
+  { cap: 120, gold: 12000 },
+  { cap: 140, gold: 26000 },
+  { cap: 160, gold: 52000 },
+  { cap: 200, gold: 100000 }
+];
+
+/* 已扩容次数（0 = 基础 60 格）。与 bagTierOf 同口径：用 ceil，
+ * 存档里手改过的非整档容量也按「已进入下一档」算，不会白送格子。 */
+function stashTierOf(cap) {
+  const c = Math.max(STASH_BASE_CAP, Math.round(Number(cap) || STASH_BASE_CAP));
+  return Math.max(0, Math.min(STASH_UPGRADES.length, Math.ceil((c - STASH_BASE_CAP) / STASH_STEP)));
+}
+function stashNextUpgrade(cap) {
+  const t = stashTierOf(cap);
+  return t >= STASH_UPGRADES.length ? null : STASH_UPGRADES[t];
+}
+function stashHardCap() { return STASH_BASE_CAP + STASH_STEP * STASH_UPGRADES.length; }
+
+/* 仓库分类：判「这件装备属于哪一栏」。
+ * 只按 slot 分，不看 kind —— 目前所有非材料物品都是装备，
+ * 以后加消耗品时在这里补一条 kind 分支即可。 */
+const STASH_CATS = [
+  { id: 'all',   name: '全部' },
+  { id: 'weapon', name: '武器', slots: ['weapon', 'offhand'] },
+  { id: 'armor',  name: '护甲', slots: ['helm', 'chest', 'shoulders', 'cloak', 'gloves', 'boots', 'belt'] },
+  { id: 'jewel',  name: '饰品', slots: ['amulet', 'ring', 'relic', 'fate'] },
+  { id: 'set',    name: '收藏' }
+];
+function stashCatOf(item) {
+  if (!item || !item.slot) return 'other';
+  for (const c of STASH_CATS) {
+    if (c.slots && c.slots.indexOf(item.slot) >= 0) return c.id;
+  }
+  return 'other';
+}
+
 /* 词缀品质色（与玄晶等级对应） */
 const AFFIX_QUALITY_COLOR = {
   1: '#a0a0a0',   // 普通

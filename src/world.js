@@ -803,7 +803,9 @@ function buildNPC(npcId) {
     travel: { color: 0x9a9ab0, cloth: 0x4a4a5a, skin: 0xd0b090 },
     decompose: { color: 0xc08060, cloth: 0x6a4026, skin: 0xd8b090 },
     /* 试炼使者：紫袍，和「传送 / 任务」两种黄褐色系明确区分开 */
-    trial: { color: 0x8a6ec0, cloth: 0x3a2a58, skin: 0xd8c0a8 }
+    trial: { color: 0x8a6ec0, cloth: 0x3a2a58, skin: 0xd8c0a8 },
+    /* [M6] 仓管：青灰长袍。仓库要的是「稳」，配色跟着压低饱和度 */
+    stash: { color: 0x6a8a98, cloth: 0x33454e, skin: 0xd8bda8 }
   }[npc.role];
   const a = buildHumanoid({
     color: roleCfg.color, cloth: roleCfg.cloth, skin: roleCfg.skin,
@@ -830,6 +832,16 @@ function buildNPC(npcId) {
     /* 试炼使者拿一柄紫光电刃 —— 远远看见那道紫光就知道「那是试炼入口」 */
     const blade = buildWeapon('taojian', 0x6a5a8a, 0xb08aff, 0.95);
     a.parts.weaponHand.add(blade);
+  } else if (npc.role === 'stash') {
+    /* [M6] 仓管抱一只木匣：远远看见就知道「东西可以放他那儿」，
+     * 比在头顶挂一个「仓」字更省字，也不破坏村里的氛围。 */
+    const chest = new THREE.Group();
+    mesh(boxGeo(0.46, 0.3, 0.32), M(0x6a4a2e), 0, 0, 0, chest);
+    mesh(boxGeo(0.48, 0.07, 0.34), M(0x8a6a3e), 0, 0.17, 0, chest);
+    mesh(boxGeo(0.1, 0.1, 0.03), M(0xd8b25a, { metal: 0.7 }), 0, 0.04, 0.17, chest);
+    chest.position.set(0, -0.62, 0.14);
+    chest.rotation.x = 0.08;
+    a.parts.weaponHand.add(chest);
   }
   const ring = new THREE.Mesh(new THREE.RingGeometry(0.9, 1.05, 20), new THREE.MeshBasicMaterial({ color: 0xffd166, transparent: true, opacity: 0.5, side: THREE.DoubleSide }));
   ring.rotation.x = -Math.PI / 2; ring.position.y = 0.03;
