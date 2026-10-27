@@ -134,6 +134,9 @@ git fetch origin                 # 分支都在远程，clone 完就全能看到
 | 角色纸娃娃建模 | `src/charforge.js` / `src/skel.js` |
 | 地图生成 | `src/world.js` |
 | 试炼模式 | `src/trial.js` |
+| 世界结构（卷/章/图/营地/门禁） | `src/data/data-world.js`（`PARTS`/`ACTS`/`CAMPS` + `campOfMap`/`campsUpToPart`/`isChapterTail`/`nextChapterMap`） |
+| 营地场景 / 路标石 / 章间出口门 | `src/world.js`（`buildMap` 末尾建 `waystone`/`gate`）+ `src/game.js`（`travelTo` 门禁、`updateInteract`/`interact`） |
+| 山河图（传送面板） | `src/ui.js` 的 `openTravel`/`renderWorldMap` + `index.html` 的 `.wm-*` |
 
 ## 5. 回归脚本（改完必跑）
 
@@ -185,17 +188,29 @@ node dev/preview-check.js --url <预览地址>   # 预览站：能开局 + 资�
 - `webglcontextlost` **不要立刻判死刑**。Safari 弹分享面板 / 切 App 经常丢一次上下文，
   关掉后自己就回来。给 4 秒宽限，`webglcontextrestored` 到达就收起错误页。
 
+### 世界结构 / 营地（M1 之后）
+
+- **`spawnNPCs()` 必须读 `MAPS[mapId].npcs`**。曾经写死 `MAPS.village.npcs` + `loadMap` 里
+  `if (mapId === 'village')`，结果 campB~E 的 `cfg.npcs` 写了等于没写（实测营地里 0 个 NPC）。
+- **野图门禁不能严格「仅限已抵达」**。25 个图位是 `id: null`、卷二整卷没图，
+  野图一旦只允许去已抵达的卷，玩家打完玄铁矿洞就无路可走。所以只有**营地**这一层严格收口
+  （`travelTo` 里看 `state.camps`），野图仍是「等级够 或 去过」。M3 补完图再收紧。
+- **章间出口门挂「本章最后一张已开放图」**（`isChapterTail`），不是图位最后一个 ——
+  落霞坡这类 `id: null` 的图位没有实体地图，门挂上去永远不出现。
+- **营地按卷累积解锁**（`campsUpToPart`），和 `save.js` 的 `normalizeDoc` 同一口径。
+  只 push 当前卷的话，「等级跳卷三」会让 campB 永远解锁不了，而重开档后又突然冒出来。
+- 营地**故意没有 elder**：q1~q11 整条链挂在桃源村村长身上，营地再摆一个 elder 会让任务对话指错地方。
+  M2 做「一营一个发布者」时一起加。
+
 ## 7. 当前状态
 
 - 线上版本：见 `git log -1`。
+- **进行中**：大地图扩展 `feat/act-expansion` —— M0（三层结构 + schema v3）、M1（5 营地 + 路标石 +
+  章间出口门）已完成，下一步 M2 任务系统。进度与卡点看 `docs/status/act-expansion.md`。
+  方案在 `docs/ACT-EXPANSION-PLAN.md`；§14 的 6~10 项仍未拍板，但都不挡 M2。
 - **暂停中**：技能系统重构（12 技能 → 4~5 个功能位 + 元素混搭 + 发射数量成长）。
   完整方案在 `docs/SKILL-REDESIGN-PLAN.md`，用户已拍板 10 项决策，**等他说开工**。
-  不要主动实施。
-- **待拍板**：大地图扩展（5 卷 / 12 章 / 30 图 / 80 怪 / 24 首领 / 5 营地 + 5 大传送门 / 5 类地下城 × 5 阶钥匙）。
-  方案在 `docs/ACT-EXPANSION-PLAN.md`（2026-10-27 草案，**未动代码**）。
-  结构是三层：卷（营地/传送门/钥匙阶）→ 章（剧情/双首领）→ 图（zone/任务区/地下城）。
-  钥匙口径：卷末首领掉**次阶**钥匙仅 **8%**（终局混沌 15%），本阶仍必掉；地下城首领 35% 掉下一阶。
-  §14 有 10 项待拍板，**拍板前不要开工**。
+  不要主动实施；排期在大型扩展合入 main 之后。
 
 ## 8. 记忆与日志
 

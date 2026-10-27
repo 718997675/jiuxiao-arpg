@@ -790,7 +790,48 @@ function buildMap(mapId) {
   colliders.push({ x: px, z: pz, r: 3.4, isPortal: true });
   anims.push(a => { portal.userData.ring.rotation.z += 0.02; portal.userData.light.intensity = 1.3 + Math.sin(a * 2) * 0.3; });
 
-  return { root, colliders, anims, occluders, portal: { x: px, z: pz }, labels };
+  /* [M1] 路标石：野图入口旁立一块碑，交互直接回本卷营地。
+   * 为什么不干脆复用传送阵：传送阵是「去哪都行」的面板入口，路标石是「先回家」的快捷键，
+   * 两者各占一角 —— 迷路时不用先开面板、再找营地那一行。安全区不放（营地自己就是家）。 */
+  let waystone = null;
+  if (!cfg.safe && mapId !== 'trial') {
+    const wx = px + 7, wz = pz - 2;
+    const wg = new THREE.Group();
+    const stoneM = M(0x70707a, { rough: 0.95 });
+    const runeM = new THREE.MeshBasicMaterial({
+      color: 0x8fd8ff, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false
+    });
+    mesh(cylGeo(1.15, 1.35, 0.4, 8), stoneM, 0, 0.2, 0, wg);
+    mesh(boxGeo(0.9, 2.4, 0.55), stoneM, 0, 1.5, 0, wg);
+    const rune = new THREE.Mesh(boxGeo(0.5, 0.5, 0.08), runeM);
+    rune.position.set(0, 2.0, 0.32);
+    wg.add(rune);
+    wg.position.set(wx, 0, wz);
+    root.add(wg);
+    colliders.push({ x: wx, z: wz, r: 1.0 });
+    anims.push(a => { runeM.opacity = 0.55 + Math.sin(a * 2.4) * 0.35; });
+    waystone = { x: wx, z: wz };
+  }
+
+  /* [M1] 章间出口门：本章最后一张「已开放」的图 → 下一章第一张已开放的图。
+   * 用传送阵同款门、缩到 0.72，只连下一章不开面板 —— 「顺着走」比「翻山河图」顺手。
+   * 卷末 / 下一章还没做图时 nextChapterMap 返回 null，门就不出现（不会留个死门）。 */
+  let gate = null;
+  if (typeof isChapterTail === 'function' && isChapterTail(mapId)) {
+    const nx = (typeof nextChapterMap === 'function') ? nextChapterMap(mapId) : null;
+    if (nx && MAPS[nx]) {
+      const gx = px - 7, gz = pz - 2;
+      const gp = makePortal();
+      gp.position.set(gx, 0, gz);
+      gp.scale.setScalar(0.72);
+      root.add(gp);
+      colliders.push({ x: gx, z: gz, r: 2.6 });
+      anims.push(a => { gp.userData.ring.rotation.z -= 0.03; gp.userData.light.intensity = 1.0 + Math.sin(a * 2.4) * 0.25; });
+      gate = { x: gx, z: gz, to: nx, name: MAPS[nx].name };
+    }
+  }
+
+  return { root, colliders, anims, occluders, portal: { x: px, z: pz }, waystone, gate, labels };
 }
 
 /* ---------------- NPC 生成 ---------------- */

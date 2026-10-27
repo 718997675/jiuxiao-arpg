@@ -382,3 +382,38 @@ function campMapOfPart(part) {
   return (c && c.mapId) ? c.mapId : 'village';
 }
 
+/** 抵达第 N 卷时应解锁的营地 → ['campA','campB','campC']
+ *  和 save.js 的 normalizeDoc 同一口径（按卷累积）：抵达卷三说明前两卷的关口都过过了。
+ *  不这么写的话，「等级够直接跳卷三」会让 campB 永远解锁不了，而重开档后又突然出现。 */
+function campsUpToPart(part) {
+  const SEQ = ['A', 'B', 'C', 'D', 'E'];
+  const n = Math.max(1, Math.min(SEQ.length, Number(part) || 1));
+  const out = [];
+  for (let i = 0; i < n; i++) out.push('camp' + SEQ[i]);
+  return out;
+}
+
+/** 这张图是不是「本章最后一张已开放的图」→ 章间出口门挂在这里
+ *  注意是「已开放」而不是「图位最后一个」：落霞坡这类 id 为 null 的图位
+ *  没有真实地图，门要是挂在它身上就永远不出现。 */
+function isChapterTail(mapId) {
+  const a = actOfMap(mapId);
+  if (!a) return false;
+  let last = null;
+  for (const m of ACTS[a].maps) if (m.id) last = m.id;
+  return last === mapId;
+}
+
+/** 下一章第一张已开放的图 → 'swamp' / null（章间出口门的目标）
+ *  没有下一章（卷末）、或下一章一张图都没做出来时返回 null。 */
+function nextChapterMap(mapId) {
+  const a = actOfMap(mapId);
+  if (!a) return null;
+  const list = actsOfPart(ACTS[a].part);
+  let i = -1;
+  for (let k = 0; k < list.length; k++) if (list[k].id === a) i = k;
+  if (i < 0 || i + 1 >= list.length) return null;
+  const nx = firstMapOfAct(list[i + 1].id);
+  return nx ? nx.id : null;
+}
+

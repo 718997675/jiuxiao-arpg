@@ -1560,7 +1560,9 @@ const Game = {
     /* [v1.12.1] 落地保护：进图头几秒不索敌，先让玩家看清地形 */
     this.aggroGrace = (BALANCE.aggro && BALANCE.aggro.grace) || 3;
 
-    if (mapId === 'village') this.spawnNPCs();
+    /* [M1] 以前写死 `mapId === 'village'`，结果 campB~E 的 cfg.npcs 写了也不生成。
+     * 现在只要当前图声明了 npcs 就摆人（营地也有人守着了）。 */
+    if ((m.npcs || []).length) this.spawnNPCs();
     this.spawnEnemies();
     this.spawnBosses();
     this.recalc();
@@ -1608,9 +1610,13 @@ const Game = {
 
   spawnNPCs() {
     /* [M6] 仓管放在村尾右侧（与左侧的试炼使者一左一右），
-     * 新人从传送阵一路走过来会先见到铁匠药师，最后才见到仓库 —— 顺序合理。 */
+     * 新人从传送阵一路走过来会先见到铁匠药师，最后才见到仓库 —— 顺序合理。
+     * [M1] 坐标表按 npc id 通用（营地缺 elder/warden 也能用），
+     * NPC 名单改读当前图的 cfg.npcs —— 以前硬编码 MAPS.village.npcs，
+     * 营地的 npcs 写了等于没写（实测营地里 0 个 NPC）。 */
     const pos = { elder: [-7, 2], smith: [7, 7], herbalist: [-10, 14], monk: [9, 15], alchemist: [2, 18], warden: [-6, 20], steward: [9, 22] };
-    for (const id of MAPS.village.npcs) {
+    const cfg = MAPS[this.state.mapId] || MAPS.village;
+    for (const id of (cfg.npcs || [])) {
       const a = buildNPC(id);
       /* 位置表漏写就退回原点，别让整张图的 NPC 因为一个坐标缺失全部不生成 */
       const p2 = pos[id] || [0, 0];
@@ -6231,6 +6237,23 @@ const Game = {
       const p = this.world.portal;
       if (Math.hypot(pp.x - p.x, pp.z - p.z) < 5) { target = { type: 'portal' }; txt = '使用传送阵'; }
     }
+    /* [M1] 章间出口门 / 路标石：判定半径比传送阵小，挨着站时才抢焦点 */
+    if (!target && this.world && this.world.gate) {
+      const g = this.world.gate;
+      if (Math.hypot(pp.x - g.x, pp.z - g.z) < 4) {
+        const need = MAPS[g.to] ? (MAPS[g.to].unlock || 1) : 1;
+        target = { type: 'gate' };
+        txt = this.state.level >= need ? ('前往 ' + g.name) : (g.name + ' · 需 ' + need + ' 级');
+      }
+    }
+    if (!target && this.world && this.world.waystone) {
+      const w = this.world.waystone;
+      if (Math.hypot(pp.x - w.x, pp.z - w.z) < 3.2) {
+        const c = CAMPS[campOfPart(this.state.part)];
+        target = { type: 'waystone' };
+        txt = '路标石 · 回' + (c ? c.name : '营地');
+      }
+    }
     this.interactTarget = target;
     const el = document.getElementById('interact');
     if (target) { el.style.display = 'block'; el.innerHTML = `<b>F</b>${txt}`; }
@@ -6245,6 +6268,14 @@ const Game = {
       /* 试炼场里的传送阵就是「退场门」：先确认再走，别让人误触丢进度 */
       if (typeof Trial !== 'undefined' && Trial.active) Trial.quit();
       else UI.openTravel();
+    }
+    /* [M1] 章间出口门：直接去下一章第一张图，等级不够由 travelTo 统一拦（同一条口径） */
+    else if (t.type === 'gate') {
+      if (this.world && this.world.gate) this.travelTo(this.world.gate.to);
+    }
+    /* [M1] 路标石：原地回本卷营地 */
+    else if (t.type === 'waystone') {
+      this.travelTo(campMapOfPart(this.state.part));
     }
   },
 
@@ -7269,6 +7300,15 @@ const Game = {
     /* [M0] 回头路：已经抵达过的图随时能回，不受等级门禁限制
      * （低等级回高级图是玩家自己的选择；没去过的地方才看境界）。 */
     const seen = Array.isArray(this.state.mapsSeen) && this.state.mapsSeen.indexOf(mapId) >= 0;
+    /* [M1] 营地「仅限已抵达」：营地是传送网络的中枢，没到过这一卷就走不进去。
+     * 抵达判定 = 存档 camps 里已解锁（save.js 按卷累积）或这张营地本身去过。
+     * 只在营地这一层收口：野图仍走「等级够 或 去过」，因为卷二~卷五还有 25 个图位
+     * id 为 null，把野图也按「仅限已抵达」锁死会让主线无路可走（见台账 M1 决策记录）。 */
+    const campId = (typeof campOfMap === 'function') ? campOfMap(mapId) : null;
+    if (campId) {
+      const unlocked = Array.isArray(this.state.camps) && this.state.camps.indexOf(campId) >= 0;
+      if (!unlocked && !seen) { UI.log('尚未抵达此卷，走不进「' + m.name + '」。', 'bad'); return; }
+    }
     if (!seen && this.state.level < (m.unlock || 1)) { UI.log('境界不足。', 'bad'); return; }
     /* 试炼中不允许直接传送：先把本轮结算掉，否则祝福会跟着人跑到别的地图上 */
     if (typeof Trial !== 'undefined' && Trial.active) {
@@ -7279,9 +7319,25 @@ const Game = {
     if (Array.isArray(this.state.mapsSeen) && this.state.mapsSeen.indexOf(mapId) < 0) {
       this.state.mapsSeen.push(mapId);
     }
-    if (typeof actOfMap === 'function') {
+    /* [M1] 进营地也要更新世界进度：营地不属于任何章，章取该卷第一章。
+     * 反过来，进任意一张野图 = 抵达该卷 → 解锁该卷营地（和 save.js「按卷累积」同口径），
+     * 否则玩家打完卷一去了卷二，回营地时 campB 还没解锁，会被判成「没抵达」。 */
+    if (campId && typeof CAMPS !== 'undefined' && CAMPS[campId]) {
+      const part = CAMPS[campId].part;
+      this.state.part = part;
+      const acts = (typeof actsOfPart === 'function') ? actsOfPart(part) : [];
+      if (acts.length) this.state.act = acts[0].id;
+    } else if (typeof actOfMap === 'function') {
       const a = actOfMap(mapId);
       if (a && ACTS[a]) { this.state.act = a; this.state.part = ACTS[a].part; }
+    }
+    /* [M1] 营地按卷累积解锁（和 save.js 的 normalizeDoc 同一口径）。
+     * 只 push 当前卷的话，「等级够直接跳卷三」会让 campB 永远解锁不了 ——
+     * 而重开档后 normalizeDoc 又会把 campB 补上，同一个存档两次打开界面不一致。 */
+    if (typeof campsUpToPart === 'function' && Array.isArray(this.state.camps)) {
+      for (const c of campsUpToPart(this.state.part)) {
+        if (this.state.camps.indexOf(c) < 0) this.state.camps.push(c);
+      }
     }
     FX.flashCircle(this.playerGroup.position, 3, 0x88bbff, 0.6);
     SFX.cast();
