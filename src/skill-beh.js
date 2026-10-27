@@ -375,6 +375,19 @@ const SKILL_BEH = {
   follow: { ph: 'self', label: '区域跟随', run() { /* 由各技能 case 消费 */ } },
   pin: { ph: 'self', label: '钉阵', run() { /* 由剑阵 case 消费 */ } },
 
+  /* [P2b] 剑阵三条进化台阶（刀客 ③）：全部登记成 hook，由 swordarray case
+   * 铺一份 Game.swordField（阵心 / 半径 / 剩余时间），damagePlayer 消费。
+   * 为什么不在 handler 里直接改敌人：
+   *   slowField 是「每跳刷新一次」的持续场，不是施法瞬间的一次性减速 ——
+   *   走 hit 通道只会在施法那一瞬间给一次，600ms 后就没了；
+   *   arrayGuard / arrayCounter 的触发点在**玩家挨打**上，跟施法完全无关。
+   * 值 = 百分比：slowField 是减速幅度，arrayGuard 是阵内减伤，
+   * arrayCounter 是反击的攻击力百分比；slowFieldDur = 减速残留秒数。 */
+  slowField: { ph: 'hook', label: '阵内减速', run() { /* 由 swordarray case 消费 */ } },
+  slowFieldDur: { ph: 'hook', label: '减速残留', run() { /* 由 slowField 一并消费 */ } },
+  arrayGuard: { ph: 'hook', label: '阵内减伤', run() { /* 由 damagePlayer 消费 */ } },
+  arrayCounter: { ph: 'hook', label: '阵内反击', run() { /* 由 damagePlayer 消费 */ } },
+
   /* 击杀类变体：两者都由 onBehKill 钩子消费（噬魂回血 / 燎原尸体再爆） */
   killHeal: { ph: 'self', label: '击杀回血', run() { /* 由 onBehKill 消费 */ } },
   corpseBlast: { ph: 'self', label: '尸体爆炸', run() { /* 由 onBehKill 消费 */ } },

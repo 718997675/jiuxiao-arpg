@@ -358,6 +358,13 @@ const behSrc = readSrc('src/skill-beh.js');
   ok(/if \(bBeh && bBeh\.autoTarget/.test(game), 'castSkill 必须消费 autoTarget（自动索敌）');
   ok(game.indexOf('nearestEnemy(aim, bBeh.autoTarget)') >= 0, '自动索敌真的去找最近的敌人');
   ok(/s\.mp \+ 8 \* \(\(bBeh && bBeh\.rageMul\) \|\| 1\)/.test(game), 'whirl 回怒必须乘 rageMul');
+  /* --- 刀客 ③ 剑阵：三条台阶都要「阵在哪 + 人在不在阵里」，所以接线三件套 --- */
+  ok(/bBeh\.slowField/.test(game), '剑阵 case 必须消费 slowField（阵内减速）');
+  ok(game.indexOf('this.swordField =') >= 0, '剑阵要铺一份运行时场地给 damagePlayer 用');
+  ok(game.indexOf('swordFieldLive()') >= 0, '减伤 / 反击都靠 swordFieldLive 判「人还在不在阵里」');
+  ok(/sf\.dr > 0/.test(game) && /sf\.counter > 0/.test(game),
+    'damagePlayer 真的消费 arrayGuard / arrayCounter（不是只登记了键）');
+  ok(/this\.swordCounterCd = 0\.4/.test(game), '阵内反击有内置冷却（不记账等于群体秒杀）');
 }
 
 /* ---------------- 汇总 ---------------- */

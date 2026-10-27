@@ -245,6 +245,9 @@ const ok = (c, m, d) => {
     '刀客 ① 三个进化台阶都已接（不再带「待」）', panel.perCard[0].todoLv);
   ok(panel.perCard[1].todoLv.join(',') === '3,7',
     '刀客 ② 只剩 3 / 7 带「待」（位内没有吃 count 通道的技能）', panel.perCard[1].todoLv);
+  ok(panel.perCard[2].todoLv.join(',') === '3,7',
+    '刀客 ③ 的 5 / 9 / 10 已接，只剩「双圈 / 三圈」（swordarray 不吃 count 通道）',
+    panel.perCard[2].todoLv);
   ok(panel.perCard.every(c => c.badge === c.todoLv.length), '每个「待」台阶都带角标（不只是压暗）',
     panel.perCard.map(c => [c.badge, c.todoLv.length]));
   ok(/1\.85/.test(panel.tip) && /2\.57/.test(panel.tip), '卡区说明写着 1.85 / 2.57 倍', panel.tip.slice(0, 140));
@@ -666,6 +669,100 @@ const ok = (c, m, d) => {
     out.q9 = await quakeRun(9, 6.6);
     out.q10 = await quakeRun(10, 0);
 
+    /* ---------------- 刀客 ③ 剑阵：减速 / 减伤 / 反击 ----------------
+     * 三条台阶的共同前提是「人还在阵里」，所以量法必须分两种站位：
+     * 阵铺在脚下（在阵内）与阵铺在十码外（在阵外）。
+     * 只量「有没有 buff」的话，一个无条件常驻的假实现也能全绿 ——
+     * 而钉阵变体（默认 0 号就是它）本来就能让玩家走出去。 */
+    const swRun = async (lv, far) => {
+      Game.state.cls = 'warrior';
+      const es = setup('swordarray', lv, 1);
+      const pp = Game.playerGroup.position;
+      es[0].pos.set(pp.x + 1.2, 0, pp.z);            // 圈内
+      Game.aimPoint = new THREE.Vector3(far ? pp.x + 10 : pp.x, 0, pp.z);
+      Game.aimDir = new THREE.Vector3(1, 0, 0);
+      const oldHit = Game.damageEnemy;
+      Game.damageEnemy = () => { };
+      Game.castSkill('swordarray');
+      await wait(700);                                // 剑阵 600ms 一跳
+      Game.damageEnemy = oldHit;
+      const o = { field: !!Game.swordField, slow: es[0].slow || 0, slowT: es[0].slowT || 0 };
+      /* 量完就换图：剑阵的 setInterval 要跑 8 秒，不掐掉的话后面几段
+       * 会被它打进新的假怪数组里（同「探针自身的坑」第 ④ 条）。 */
+      Game.mapGen = (Game.mapGen || 0) + 1;
+      return o;
+    };
+    out.sw4 = await swRun(4);
+    out.sw5 = await swRun(5);
+
+    /* 减伤：只留「剑阵这一层」，其余乘数两次相同，比的是比值 */
+    const swGuard = async (lv, out) => {
+      Game.state.cls = 'warrior';
+      setup('swordarray', lv, 1);
+      const pp = Game.playerGroup.position;
+      Game.aimPoint = new THREE.Vector3(pp.x, 0, pp.z);
+      Game.aimDir = new THREE.Vector3(1, 0, 0);
+      const oldHit = Game.damageEnemy;
+      Game.damageEnemy = () => { };
+      Game.castSkill('swordarray');
+      Game.damageEnemy = oldHit;
+      const st = Game.state.stats;
+      /* 三个会让读数漂的东西：闪避 / 格挡 / 反伤。
+       * 不掐掉的话一次「闪避」就把这一发量成 0 伤害。 */
+      const keep = { dodge: st.dodge, block: st.block, thorns: st.thorns };
+      st.dodge = 0; st.block = 0; st.thorns = 0;
+      Game.shield = 0; Game.invuln = 0; Game.talismanCharges = 0;
+      /* 剑阵是 selfCast，落点恒在自己脚下，钉阵变体把它钉在**施法时**的位置
+       * （aim 是 aimPoint 的 clone）—— 所以「走出阵外」只能真把人挪走。 */
+      const save = pp.clone();
+      if (out) pp.set(pp.x + 20, pp.y, pp.z);
+      /* 血量每段必须复位：默认角色只有 2000 出头，前一发打空了血条，
+       * 这一发的「损失」就被血量上限卡住，量出来的是「还剩多少血」而不是伤害。 */
+      Game.dead = false; Game.state.hp = st.hpMax;
+      const before = Game.state.hp;
+      Game.damagePlayer(200, null);
+      const loss = Math.round((before - Game.state.hp) * 100) / 100;
+      if (out) pp.copy(save);
+      st.dodge = keep.dodge; st.block = keep.block; st.thorns = keep.thorns;
+      const o = { loss, field: !!Game.swordField };
+      Game.mapGen = (Game.mapGen || 0) + 1;           // 同上：把剑阵定时器作废
+      return o;
+    };
+    out.sg8 = await swGuard(8, false);
+    out.sg9 = await swGuard(9, false);
+    out.sg9out = await swGuard(9, true);
+
+    /* 反击：一次挨打反一次，0.4 秒内第二下不再反（不记账等于群体秒杀） */
+    const swCounter = (lv) => {
+      Game.state.cls = 'warrior';
+      setup('swordarray', lv, 1);
+      const pp = Game.playerGroup.position;
+      Game.aimPoint = new THREE.Vector3(pp.x, 0, pp.z);
+      Game.aimDir = new THREE.Vector3(1, 0, 0);
+      const src = { pos: new THREE.Vector3(pp.x + 1.5, 0, pp.z), dead: false, hp: 1e9, maxHp: 1e9,
+        radius: 0.5, id: 99, anim: { time: 0 }, spd: 0, atkCd: 999, cfg: null, stun: 0 };
+      let onSrc = 0, others = 0;
+      const oldHit = Game.damageEnemy;
+      Game.castSkill('swordarray');
+      Game.damageEnemy = (en) => { if (en === src) onSrc++; else others++; };
+      const st = Game.state.stats;
+      const keep = { dodge: st.dodge, block: st.block, thorns: st.thorns };
+      st.dodge = 0; st.block = 0; st.thorns = 0;
+      Game.shield = 0; Game.invuln = 0; Game.talismanCharges = 0;
+      Game.dead = false; Game.state.hp = st.hpMax;
+      Game.damagePlayer(40, src);
+      const one = onSrc;
+      Game.dead = false; Game.state.hp = st.hpMax;    // 同上：两次测量各自满血
+      Game.damagePlayer(40, src);                     // 冷却内再挨一下
+      const two = onSrc;
+      st.dodge = keep.dodge; st.block = keep.block; st.thorns = keep.thorns;
+      Game.damageEnemy = oldHit;
+      Game.mapGen = (Game.mapGen || 0) + 1;           // 把剑阵定时器作废
+      return { one, two, others };
+    };
+    out.sc9 = swCounter(9);
+    out.sc10 = swCounter(10);
+
     /* 假怪没有 actor / armorHigh，帧循环一恢复就会摸到它们（实测报
      * 「reading 'time'」与「reading 'armorHigh'」）。量完清场再恢复。 */
     Game.enemies = [];
@@ -749,6 +846,19 @@ const ok = (c, m, d) => {
   ok(evo.q10.echo > evo.q10.first, 'Lv10 地裂结束再崩一次（0.45 秒后）', evo.q10);
   ok(evo.sk10.bases.some(b => Math.abs(b / evo.sk10.bases[0] - 0.7) < 0.02),
     '改追那一下按 70% 结算（不是白送一次全额）', evo.sk10.bases);
+  /* --- 刀客 ③ 剑阵 --- */
+  ok(evo.sw4.slow === 0 && evo.sw5.slow > 0.4,
+    'Lv5 剑阵把阵内敌人黏住（Lv4 一点都不减速）', { lv4: evo.sw4.slow, lv5: evo.sw5.slow });
+  ok(evo.sw5.slowT > 0.5, '减速有残留时长（出阵后还会慢一下，不是走一步就复原）', evo.sw5.slowT);
+  ok(evo.sg8.field === false && evo.sg9.field === true,
+    '只有 Lv9 才铺「阵」这份运行时状态（Lv8 没有）', { lv8: evo.sg8.field, lv9: evo.sg9.field });
+  ok(evo.sg9.loss < evo.sg8.loss * 0.85,
+    'Lv9 站在阵里明显少挨打（同一发 200 伤害）', { lv8: evo.sg8.loss, lv9: evo.sg9.loss });
+  ok(evo.sg9out.loss > evo.sg9.loss * 1.1,
+    '走出阵外就吃不到减伤（位置判定，不是常驻）', { in: evo.sg9.loss, out: evo.sg9out.loss });
+  ok(evo.sc9.one === 0 && evo.sc10.one === 1,
+    'Lv10 挨打会自动反击（Lv9 不反）', { lv9: evo.sc9.one, lv10: evo.sc10.one });
+  ok(evo.sc10.two === 1, '反击有 0.4 秒内置冷却（连挨两下只反一次）', evo.sc10);
 
   /* ---------------- 8. 零报错 ---------------- */
   console.log('八、控制台');

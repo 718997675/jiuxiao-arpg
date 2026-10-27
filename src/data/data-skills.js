@@ -550,7 +550,11 @@ const SKILL_ARCHETYPE = {
         {
           no: 3, title: '剑阵', inherit: ['swordarray', 'riposte'],
           tiers: {
-            1: '单圈剑鸣', 3: '双圈', 5: '剑阵跟随移动', 7: '三圈',
+            /* 5 原稿「剑阵跟随移动」是现状不是台阶（本来就跟随），改成减速；
+               5/9/10 与 SKILL_TIER_EVO.swordarray 的 label 逐字一致。
+               3 / 7 的「双圈 / 三圈」还没接数量轴（swordarray 不在
+               SKILL_COUNT_BASE 里），面板照旧标「待」。 */
+            1: '单圈剑鸣', 3: '双圈', 5: '剑阵内敌人减速', 7: '三圈',
             9: '剑阵内减伤', 10: '剑阵内自动反击'
           }
         },
@@ -900,6 +904,23 @@ const SKILL_TIER_EVO = {
     5: { label: '余震钉住敌人', beh: { aftershockStun: 0.5 } },
     9: { label: '地裂范围扩大', mods: { radius: 35 } },
     10: { label: '地裂二次崩塌', beh: { echo: 80 } }
+  },
+
+  /* ---------------- 刀客 ③ 剑阵（护身清场） ----------------
+   * 原稿 Lv5「剑阵跟随移动」是假台阶：剑阵**本来就**跟着人走
+   * （`pinOn ? aim : playerGroup.position`），写它等于没写。
+   * 改成「阵内敌人减速」—— 这个位在方案里的定位是「贴身范围 · 控场」，
+   * 而 Lv9 减伤 / Lv10 反击都偏防御，减速才是把「控场」补上的那一环。
+   *
+   * 三条台阶的共同点：都要判「阵在哪、人还在不在阵里」。钉阵变体下
+   * 玩家能走出去 —— 无条件常驻就把这个选择吃掉了。所以三条全部由
+   * swordarray case 铺一份 Game.swordField，由 damagePlayer 消费。 */
+  swordarray: {
+    5: { label: '剑阵内敌人减速', beh: { slowField: 45, slowFieldDur: 0.9 } },
+    9: { label: '剑阵内减伤', beh: { arrayGuard: 20 } },
+    /* 不和 counter（格挡反击）撞键：那个只在「挡下来」时走、要过格挡判定、
+       数值乘盾墙；这个不要求格挡、有 0.4 秒内置冷却、口径独立。 */
+    10: { label: '剑阵内自动反击', beh: { arrayCounter: 120 } }
   }
 };
 

@@ -1595,6 +1595,8 @@ const Game = {
     this.talismanCharges = 0;
     /* [S4] 套装运行时状态：狂怒层数 / 格挡反击与过载天雷的内置冷却 */
     this.frenzy = { n: 0, t: 4 }; this.riposteCd = 0; this.overchargeCd = 0;
+    /* [P2b] 剑阵场地（swordarray case 铺，damagePlayer 消费）与阵内反击内置冷却 */
+    this.swordField = null; this.swordCounterCd = 0;
     this.cooldowns = {};
 
     const m = MAPS[mapId];
@@ -2567,6 +2569,13 @@ const Game = {
     /* [S4] 套装内置冷却：磐石格挡反击 / 雷殛过载天雷 */
     this.riposteCd = Math.max(0, (this.riposteCd || 0) - dt);
     this.overchargeCd = Math.max(0, (this.overchargeCd || 0) - dt);
+    /* [P2b] 剑阵场地计时 + 阵内反击冷却。setInterval 只管「每一跳打谁」，
+     * 「阵还在不在」由这里管 —— 两条时间线不共用，改一个不会影响另一个。 */
+    this.swordCounterCd = Math.max(0, (this.swordCounterCd || 0) - dt);
+    if (this.swordField) {
+      this.swordField.t -= dt;
+      if (this.swordField.t <= 0) this.swordField = null;
+    }
     /* [S4] 还魂持续时间衰减 */
     if (this.reviveT > 0) this.reviveT = Math.max(0, this.reviveT - dt);
 
@@ -3293,17 +3302,36 @@ const Game = {
         /* [P3] 钉阵（变体）：基础剑阵本来就跟着人走，所以变体给的是**反过来**的
          * 选择 —— 钉在落点，换更大的范围与更高的每跳伤害 */
         const pinOn = !!(bBeh && bBeh.pin);
+        /* [P2b] 三条进化台阶。阵心抽成一个函数：钉阵时它是落点（和上面画环用的
+         * 是同一个表达式，不能各算一套），跟随态时就是玩家 —— damagePlayer 那边
+         * 也要用同一份判定，才不会出现「环画在这儿、减伤算在那儿」。 */
+        const fieldCtr = () => (pinOn ? aim : this.playerGroup.position);
+        const slowPct = CLAMP((bBeh && bBeh.slowField) || 0, 0, 60);
+        const slowDur = Math.max(0.2, (bBeh && bBeh.slowFieldDur) || 0.9);
+        const drPct = CLAMP((bBeh && bBeh.arrayGuard) || 0, 0, 50);
+        const counterPct = Math.max(0, (bBeh && bBeh.arrayCounter) || 0);
+        /* 只有带台阶时才铺这份运行时状态；没台阶就是空，damagePlayer 里两个
+         * 消费点自然短路（不给没点台阶的玩家白送减伤） */
+        this.swordField = (drPct || counterPct)
+          ? { rad: rad, dr: drPct, counter: counterPct, ctr: fieldCtr, t: dur, gen: gen }
+          : null;
         const iv = setInterval(() => {
           if (this.mapGen !== gen || this.dead) { clearInterval(iv); return; }
           pulses++;
-          const pp2 = pinOn ? aim : this.playerGroup.position;
+          const pp2 = fieldCtr();
           FX.ring(new THREE.Vector3(pp2.x, 0.2, pp2.z), rad, 0xd8ffe0, 0.4, 0.18);
           for (const e of this.enemies) {
             if (e.dead) continue;
-            if (DIST2D(e.pos, pp2) < rad + e.radius) {
-              const { dmg, crit } = this.rollDamage(st.atk * 0.9 * spow);
-              this.damageEnemy(e, dmg, crit, { tag: 'aoe', silent: true });
+            if (DIST2D(e.pos, pp2) >= rad + e.radius) continue;
+            /* Lv5 减速：每跳刷新一次，出阵后 slowFieldDur 秒解除 ——
+             * 是「站在阵里会被黏住」而不是「中一次减速走三步」 */
+            if (slowPct) {
+              e.slow = Math.max(e.slow || 0, Math.min(0.7, (e.boss ? slowPct * 0.5 : slowPct) / 100));
+              e.slowT = Math.max(e.slowT || 0, slowDur);
+              e.slowLabel = e.slowLabel || '剑阵';
             }
+            const { dmg, crit } = this.rollDamage(st.atk * 0.9 * spow);
+            this.damageEnemy(e, dmg, crit, { tag: 'aoe', silent: true });
           }
           if (pulses >= Math.ceil(dur / 0.6)) clearInterval(iv);
         }, 600);
@@ -4509,6 +4537,18 @@ const Game = {
     }
   },
 
+  /* [P2b] 剑阵这块「地」的存活判定。
+   * 三个条件缺一不可：还在持续、还在同一张图、人还在阵里（由调用方算距离）。
+   * 换图要作废 —— setInterval 那条已经按 mapGen 自清了，状态不跟着清就会
+   * 「上一张图的剑阵还在给你减伤」。 */
+  swordFieldLive() {
+    const f = this.swordField;
+    if (!f || this.dead) return null;
+    if (f.gen !== this.mapGen) return null;
+    if ((f.t || 0) <= 0) return null;
+    return f;
+  },
+
   damagePlayer(amount, source) {
     if (this.dead || this.invuln > 0) return;
     const s = this.state, st = s.stats;
@@ -4570,6 +4610,12 @@ const Game = {
     dmg *= (1 - CLAMP(oneRes || 0, 0, 60) / 200);
     /* [S1] 固定伤害减免 */
     dmg *= (1 - CLAMP(st.dmgReduce || 0, 0, 40) / 100);
+    /* [P2b] 剑阵 Lv9：阵内减伤。位置判定而不是「持续期间常驻」——
+     * 钉阵变体下玩家能自己走出去，写死成常驻就把这个选择吃掉了。
+     * 放在抗性后面：它是一层独立的场地减伤，不该被「先乘谁」放大或缩小。 */
+    const sf = (typeof this.swordFieldLive === 'function') ? this.swordFieldLive() : null;
+    const inSword = !!(sf && DIST2D(this.playerGroup.position, sf.ctr()) <= sf.rad + 0.8);
+    if (inSword && sf.dr > 0) dmg *= (1 - sf.dr / 100);
     /* [P2] 被动的受伤侧改写（霜甲：贴身来源减伤；不动如山走 dmgReduce 通道） */
     if (typeof this.passiveTakenMul === 'function') dmg *= this.passiveTakenMul(source);
 
@@ -4671,6 +4717,20 @@ const Game = {
     this.actor.flash = 0.45; this.actor.flashWas = true;
     SFX.hit();
     if (st.thorns > 0 && source && !source.dead) this.damageEnemy(source, dmg * st.thorns / 100, false, { silent: true });
+    /* [P2b] 剑阵 Lv10：阵内自动反击。三个约束缺一不可 ——
+     *   ① 人还在阵里（inSword，同上：钉阵变体能走出去）；
+     *   ② 0.4 秒内置冷却（swordCounterCd）：不记账的话一群怪同时抡你就是
+     *      几十次反击，等于白送一个群体秒杀；
+     *   ③ 不复用 counter / onBehCounter：那条是「格挡后回击」，要过格挡判定、
+     *      数值要乘盾墙。这条不要求格挡，口径独立，混用会变成双倍反击。 */
+    if (inSword && sf.counter > 0 && source && !source.dead && (this.swordCounterCd || 0) <= 0) {
+      this.swordCounterCd = 0.4;
+      const ppc = this.playerGroup.position;
+      FX.beam(new THREE.Vector3(ppc.x, 1.2, ppc.z),
+        new THREE.Vector3(source.pos.x, 1.2, source.pos.z), 0xd8ffe0, 0.14);
+      FX.text(new THREE.Vector3(ppc.x, 2.7, ppc.z), '剑阵反击', 'info', { life: 0.6 });
+      this.damageEnemy(source, st.atk * sf.counter / 100, false, { knock: 1.2, tag: 'melee' });
+    }
     /* [S2] 玄冰套 / 玄冰之语：受击时释放冰环冻结周围敌人（4 秒内置冷却） */
     if (st.flags.frostBurst && (this.frostBurstCd || 0) <= 0) {
       this.frostBurstCd = 4;
