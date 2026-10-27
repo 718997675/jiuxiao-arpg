@@ -106,6 +106,47 @@ const MAP_ZONES = {
     ]
   },
 
+  /* ---------------- 寒潭水牢（卷二 · M2 前置） ----------------
+   * 8 区骨架照抄九幽地宫：入口 → 主廊 → 大厅 → 东西两翼 → 首领场。
+   * 骨架先复用，M3 再按 §5.2 的 8 种拓扑重做；现在要的是「任务有地方落」。 */
+  frost: {
+    entry: 'gate',
+    zones: [
+      { id: 'gate', name: '水牢铁门', type: 'rect', x: 0, z: 44.9, w: 37.7, h: 23.2, kind: 'entry' },
+      { id: 'path', name: '沉骨囚廊', type: 'rect', x: 0, z: 18.8, w: 15.9, h: 31.9, kind: 'path',
+        spawns: { kinds: ['drowned', 'toad'], count: 2 } },
+      { id: 'hall', name: '寒潭大厅', type: 'rect', x: 0, z: -14.5, w: 43.5, h: 37.7, kind: 'hall',
+        spawns: { kinds: ['drowned', 'bogwitch', 'zombie'], count: 5 } },
+      { id: 'westLink', name: '西廊', type: 'rect', x: -21.8, z: -14.5, w: 14.5, h: 11.6, kind: 'link' },
+      { id: 'west', name: '西侧水牢', type: 'rect', x: -39.1, z: -14.5, w: 24.6, h: 29, kind: 'wing',
+        spawns: { kinds: ['ghost', 'snake'], count: 2 } },
+      { id: 'eastLink', name: '东廊', type: 'rect', x: 21.8, z: -14.5, w: 14.5, h: 11.6, kind: 'link' },
+      { id: 'east', name: '东侧水牢', type: 'rect', x: 39.1, z: -14.5, w: 24.6, h: 29, kind: 'wing',
+        spawns: { kinds: ['bogwitch', 'ghost'], count: 3 } },
+      /* r 收到 19.0：size 130 的可走上限是 61.1，19.6 会让最远点 61.6 越界 */
+      { id: 'sanctum', name: '冰魄祭坛', type: 'circle', x: 0, z: -42, r: 19.0, kind: 'boss' }
+    ]
+  },
+
+  /* ---------------- 冰魄湖 ---------------- */
+  icelake: {
+    entry: 'gate',
+    zones: [
+      { id: 'gate', name: '湖岸渡口', type: 'rect', x: 0, z: 46.4, w: 40.6, h: 26.1, kind: 'entry' },
+      { id: 'path', name: '冰上栈道', type: 'rect', x: 0, z: 20.3, w: 17.4, h: 29, kind: 'path',
+        spawns: { kinds: ['wasp', 'spider'], count: 2 } },
+      { id: 'hall', name: '冰湖中心', type: 'rect', x: 0, z: -13, w: 46.4, h: 43.5, kind: 'hall',
+        spawns: { kinds: ['drowned', 'brood', 'bogwitch'], count: 5 } },
+      { id: 'westLink', name: '西廊', type: 'rect', x: -24.6, z: -13, w: 17.4, h: 13, kind: 'link' },
+      { id: 'west', name: '西岸残林', type: 'rect', x: -43.5, z: -13, w: 26.1, h: 31.9, kind: 'wing',
+        spawns: { kinds: ['toad', 'spider'], count: 2 } },
+      { id: 'eastLink', name: '东廊', type: 'rect', x: 24.6, z: -13, w: 17.4, h: 13, kind: 'link' },
+      { id: 'east', name: '东岸冰窟', type: 'rect', x: 43.5, z: -13, w: 26.1, h: 31.9, kind: 'wing',
+        spawns: { kinds: ['brood', 'drowned'], count: 3 } },
+      { id: 'sanctum', name: '冰魄神殿', type: 'circle', x: 0, z: -43.5, r: 18.8, kind: 'boss' }
+    ]
+  },
+
   /* ---------------- 天阙残境 ---------------- */
   heaven: {
     entry: 'gate',

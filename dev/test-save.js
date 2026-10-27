@@ -116,7 +116,12 @@ function buildV1() {
       active: [{ id: 'q3', progress: [0] }],
       done: ['q1', 'q2'],
       next: 'q3',
-      announced: { q1: 1, q2: 1 }
+      announced: { q1: 1, q2: 1 },
+      /* [M2] 悬赏板字段：normalizeDoc 会补默认值，所以往返一致的基线也要带上，
+       * 否则这条断言测的就不是「还原」而是「schema 有没有变」了。
+       * 注意 q1~q3 这几个老 id 故意保留 —— 存档层不负责迁移（迁移在 QuestSys.migrate），
+       * 这里要证的正是「存档层原样搬，不动任务 id」。 */
+      board: { cd: {}, count: {} }
     },
     mapId: 'forest',
     playerPos: { x: 3.5, z: -12.25 },

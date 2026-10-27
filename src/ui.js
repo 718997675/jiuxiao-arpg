@@ -1782,13 +1782,13 @@ const UI = {
       const done = (s.quests && s.quests.done) || [];
       const cnt = {};
       done.forEach(id => { cnt[id] = (cnt[id] || 0) + 1; });
-      cells = Object.keys(cnt).map(id => {
+      cells = Object.keys(cnt).map((id, i) => {
         const q = QUESTS[id];
         if (!q) return null;
         return {
           icon: matIcon('quest', { size: 30, color: '#d8b25a', glow: true }), color: '#d8b25a',
           name: q.name + '·凭证', sub: '委托完结的凭证', desc: q.brief || '',
-          qty: cnt[id], idx: id.replace(/^q/, '')
+          qty: cnt[id], idx: String(i + 1)
         };
       }).filter(Boolean);
       document.getElementById('invCap').textContent = `任务物品 ${cells.length} 种`;
@@ -2975,42 +2975,62 @@ const UI = {
       : '<span style="color:#6a6458">尚无激活的套装效果</span>';
   },
 
-  /* ---------------- 任务 ---------------- */
+  /* ---------------- 任务（M2：主线 / 支线 / 悬赏三类分栏） ---------------- */
   renderQuests() {
     const s = Game.state;
     const list = document.getElementById('questList');
-    if (!s.quests.active.length) {
+    const tr = QuestSys.track();
+    const all = [];
+    if (tr.main) all.push({ a: tr.main, kind: 'main' });
+    for (const a of tr.sides) all.push({ a: a, kind: 'side' });
+    for (const a of tr.boards) all.push({ a: a, kind: 'board' });
+
+    if (!all.length) {
       list.innerHTML = `<div class="quest"><div class="qn">暂无委托</div>
-        <div class="qb">回桃源村找村长，听听最近的怪事。</div></div>`;
+        <div class="qb">回营地找掌事听主线，找录事接支线，任务板上还有悬赏。</div></div>`;
       return;
     }
-    list.innerHTML = s.quests.active.map(a => {
+    const tag = { main: '主线', side: '支线', board: '悬赏' };
+    list.innerHTML = all.map(({ a, kind }) => {
       const q = QUESTS[a.id];
-      return `<div class="quest"><div class="qn">${q.name}</div>
-        <div class="qb">${q.brief}</div>
-        ${q.objectives.map((o, i) => {
-        const cur = Math.min(a.progress[i] || 0, o.count);
-        const done = cur >= o.count;
-        return `<div class="qo ${done ? 'done' : ''}">· ${o.label}　${cur}/${o.count}</div>`;
-      }).join('')}
+      if (!q) return '';
+      const rows = QuestSys.lines(a).map(o =>
+        `<div class="qo ${o.done ? 'done' : ''}">· ${o.label}　${o.cur}/${o.count}</div>`
+      ).join('');
+      const where = (q.map && q.map !== 'any' && MAPS[q.map]) ? `<div class="qo" style="color:#7a7466">目标 · ${MAPS[q.map].name}</div>` : '';
+      return `<div class="quest"><div class="qn">${q.name}<span style="color:#7a7466;font-size:11px;margin-left:6px">${tag[kind]}</span></div>
+        <div class="qb">${q.brief}</div>${where}${rows}
         </div>`;
     }).join('');
   },
 
+  /* 追踪三行：1 主线 + 2 支线 + 悬赏计数（§4.4）。
+   * 只显示 active[0] 的话，接了两条支线的玩家永远看不见第二条。 */
   updateQuestTrack() {
     const s = Game.state;
     const el = document.getElementById('questTrack');
-    if (!s || !s.quests.active.length) { el.style.display = 'none'; return; }
+    if (!s) { el.style.display = 'none'; return; }
+    const tr = QuestSys.track();
+    if (!tr.main && !tr.sides.length && !tr.boards.length) { el.style.display = 'none'; return; }
     el.style.display = 'block';
-    const a = s.quests.active[0];
-    const q = QUESTS[a.id];
-    let h = `<b>${q.name}</b>`;
-    q.objectives.forEach((o, i) => {
-      const cur = Math.min(a.progress[i] || 0, o.count);
-      const done = cur >= o.count;
-      h += `<div class="obj ${done ? 'done' : ''}">${o.label} ${cur}/${o.count}</div>`;
-    });
-    if (s.quests.active.length > 1) h += `<div class="obj" style="color:#7a7466">另有 ${s.quests.active.length - 1} 项委托</div>`;
+
+    let h = '';
+    const block = (a, mark) => {
+      const q = QUESTS[a.id];
+      if (!q) return '';
+      let x = `<b>${mark}${q.name}</b>`;
+      QuestSys.lines(a).forEach(o => {
+        x += `<div class="obj ${o.done ? 'done' : ''}">${o.label} ${o.cur}/${o.count}</div>`;
+      });
+      return x;
+    };
+    if (tr.main) h += block(tr.main, '');
+    for (const a of tr.sides) h += block(a, '支线 · ');
+    if (tr.boards.length) {
+      /* 悬赏只报数，不占行 —— 三条悬赏都展开会把追踪框撑到屏幕外 */
+      const done = tr.boards.filter(a => QuestSys.ready(a)).length;
+      h += `<div class="obj" style="color:#c8a86a">悬赏 ${tr.boards.length} 条${done ? ' · ' + done + ' 条可交' : ''}</div>`;
+    }
     el.innerHTML = h;
   },
 

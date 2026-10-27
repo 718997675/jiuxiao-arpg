@@ -135,6 +135,8 @@ git fetch origin                 # 分支都在远程，clone 完就全能看到
 | 地图生成 | `src/world.js` |
 | 试炼模式 | `src/trial.js` |
 | 世界结构（卷/章/图/营地/门禁） | `src/data/data-world.js`（`PARTS`/`ACTS`/`CAMPS` + `campOfMap`/`campsUpToPart`/`isChapterTail`/`nextChapterMap`） |
+| 任务数据（主线/支线/悬赏） | `src/data/data-quests.js`（`QUESTS` + `questMapOpen`/`questsOfPart`/`questByLegacyId`/`giverOfNpc`/`partOfGiver`） |
+| 任务运行时（接取/进度/复命/任务区域/迁移） | `src/quests.js`（`QuestSys`）。`game.js` 里的 `acceptQuest`/`questReady`/`turnInQuest`/`onKill` 只是转发，别再往里写业务 |
 | 营地场景 / 路标石 / 章间出口门 | `src/world.js`（`buildMap` 末尾建 `waystone`/`gate`）+ `src/game.js`（`travelTo` 门禁、`updateInteract`/`interact`） |
 | 山河图（传送面板） | `src/ui.js` 的 `openTravel`/`renderWorldMap` + `index.html` 的 `.wm-*` |
 
@@ -142,6 +144,8 @@ git fetch origin                 # 分支都在远程，clone 完就全能看到
 
 ```bash
 node dev/smoke.js            # 三职业开局冒烟，零 pageerror 才算过
+node dev/test-quest.js       # 任务系统：接取/进度/复命/任务区域/悬赏板/老档迁移/UI 接线（44 项）
+node dev/zone-check.js       # 区域数据：越界/连通/重叠/落点/刷怪（纯 node，不启浏览器）
 node dev/mobile-layout.js    # 6 视口 × 10 页签：键位重叠/出屏/裁切/可滚性
 node dev/live-check.js       # 线上能否开局（推完 30~60s 后跑）
 node dev/mobile-layout.js --live   # 线上版布局回归
@@ -200,14 +204,27 @@ node dev/preview-check.js --url <预览地址>   # 预览站：能开局 + 资�
 - **营地按卷累积解锁**（`campsUpToPart`），和 `save.js` 的 `normalizeDoc` 同一口径。
   只 push 当前卷的话，「等级跳卷三」会让 campB 永远解锁不了，而重开档后又突然冒出来。
 - 营地**故意没有 elder**：q1~q11 整条链挂在桃源村村长身上，营地再摆一个 elder 会让任务对话指错地方。
-  M2 做「一营一个发布者」时一起加。
+  M2 起改成「一营一个掌事 + 一个录事」，桃源村掌事仍是老村长（`NPC_ALIAS` 别名）。
+
+### 任务系统（M2 之后）
+
+- **任务只记「目标图 + 区域」**，图没做出来就由 `questMapOpen` 过滤掉。M3 补图不用回来改任务表。
+- **老档迁移认 `legacyId`**（`QUESTS.m*` 上的 `legacyId: 'q1'`）。`QUEST_LEGACY_OBJECTIVES` 是
+  v1.9.x 那一刻 q1~q11 的目标快照，**不要改它** —— 改了老档进度会被判成「结构变了」而清零。
+- **任务区域倍率必须回收**。`QuestSys.activeZones` 只返回「进行中且未达成」的任务，
+  复命 / 放弃之后自然不再返回；别在别处缓存这个结果，缓存了就会留下永远多怪的图。
+- **`spawnNPCs` 的坐标表要加新 id**。发布者共用老村长那一对坐标（-7,2 / -14,6），
+  同一张图上不会同时出现两个营地的发布者，所以共用不会打架。
+- **`travelTo` 的 `loadMap` 在 120ms 之后**。写回归脚本时 `Object.keys(Game.npcs)` 必须等这个延迟，
+  紧跟 `travelTo` 取到的是上一张图的 NPC（空数组）。
 
 ## 7. 当前状态
 
 - 线上版本：见 `git log -1`。
 - **进行中**：大地图扩展 `feat/act-expansion` —— M0（三层结构 + schema v3）、M1（5 营地 + 路标石 +
-  章间出口门）已完成，下一步 M2 任务系统。进度与卡点看 `docs/status/act-expansion.md`。
-  方案在 `docs/ACT-EXPANSION-PLAN.md`；§14 的 6~10 项仍未拍板，但都不挡 M2。
+  章间出口门）、M2（任务系统：35 条任务 + 任务区域 + 悬赏板 + 老档迁移）已完成，
+  下一步 M3 地图扩容。进度与卡点看 `docs/status/act-expansion.md`。
+  方案在 `docs/ACT-EXPANSION-PLAN.md`；§14 的 7~10 项仍未拍板，但都不挡 M3。
 - **暂停中**：技能系统重构（12 技能 → 4~5 个功能位 + 元素混搭 + 发射数量成长）。
   完整方案在 `docs/SKILL-REDESIGN-PLAN.md`，用户已拍板 10 项决策，**等他说开工**。
   不要主动实施；排期在大型扩展合入 main 之后。

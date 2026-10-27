@@ -525,7 +525,10 @@ const Game = {
       stash: { items: [], mats: {} },
       /* [试炼] 无尽试炼的永久记录（跨轮保留）：最高波数 / 总轮数 / 达成时间 */
       trial: { best: 0, runs: 0, bestAt: 0 },
-      quests: { active: [], done: [], next: 'q1', announced: {} },
+      /* [M2] 任务：active 里 progress[i] 对应 objectives[i]；
+       * board 是悬赏板（cd = 到期时间戳，count = 完成次数）。
+       * next 只为兼容老档保留，新逻辑按 require 链推导（见 src/quests.js）。 */
+      quests: { active: [], done: [], next: null, announced: {}, board: { cd: {}, count: {} } },
       mapId: 'village', playerPos: { x: 0, z: 10 },
       /* [M0] 世界结构：当前卷 / 章、已解锁营地与大传送门、已抵达的图（回头路直传用） */
       part: 1, act: '1-1', camps: ['campA'], portals: ['portalA'], mapsSeen: ['village'],
@@ -1447,6 +1450,8 @@ const Game = {
       target = r.slot;
     }
     this.state = this.newState(cls, name);
+    /* [M2] 任务结构归一（新档是空跑，老档在 loadSlot 里才真正迁移） */
+    if (typeof QuestSys !== 'undefined') { QuestSys.ensure(); QuestSys.migrate(); }
     this.skillFlags = {};            // 新角色不继承上个角色的技能领悟
     if (typeof UI !== 'undefined') UI.snaps = null;   // 换角色：上一个人的加点草稿作废
     this.savedSlot = target || 1;
@@ -1614,7 +1619,16 @@ const Game = {
      * [M1] 坐标表按 npc id 通用（营地缺 elder/warden 也能用），
      * NPC 名单改读当前图的 cfg.npcs —— 以前硬编码 MAPS.village.npcs，
      * 营地的 npcs 写了等于没写（实测营地里 0 个 NPC）。 */
-    const pos = { elder: [-7, 2], smith: [7, 7], herbalist: [-10, 14], monk: [9, 15], alchemist: [2, 18], warden: [-6, 20], steward: [9, 22] };
+    /* [M2] 坐标表按 npc id 通用。每座营地只有一个掌事 + 一个录事，
+     * 所以它们共用老村长那一对坐标（-7,2 / -14,6）不会打架 ——
+     * 同一张图上不可能同时出现两个营地的发布者。 */
+    const pos = {
+      elder: [-7, 2], smith: [7, 7], herbalist: [-10, 14], monk: [9, 15],
+      alchemist: [2, 18], warden: [-6, 20], steward: [9, 22],
+      campA_side: [-14, 6],
+      campB_main: [-7, 2], campC_main: [-7, 2], campD_main: [-7, 2], campE_main: [-7, 2],
+      campB_side: [-14, 6], campC_side: [-14, 6], campD_side: [-14, 6], campE_side: [-14, 6]
+    };
     const cfg = MAPS[this.state.mapId] || MAPS.village;
     for (const id of (cfg.npcs || [])) {
       const a = buildNPC(id);
@@ -1625,7 +1639,10 @@ const Game = {
       a.group.rotation.y = Math.atan2(-x, -(z - 6));
       this.scene.add(a.group);
       this.npcs[id] = { id, actor: a, group: a.group, pos: new THREE.Vector3(x, 0, z), basesY: 0 };
-      if (id === 'elder') {
+      /* [M2] 所有任务发布者都挂 ! / ? 标记（以前只挂老村长）。
+       * 不挂的话，营地里的掌事和录事看起来跟铁匠药师没区别，
+       * 玩家根本不知道谁是发任务的。 */
+      if (NPCS[id] && NPCS[id].role === 'quest') {
         const ex = makeLabelSprite('!', '#ffd166', 175, 2.4, 1.2);
         ex.position.y = 4.1;
         a.group.add(ex);
@@ -1640,13 +1657,16 @@ const Game = {
   },
 
   updateQuestMarker() {
-    const n = this.npcs.elder;
-    if (!n || !this.state) return;
-    const active = this.state.quests.active;
-    const ready = active.some(a => this.questReady(a));
-    const avail = active.length === 0 && !!QUESTS[this.state.quests.next];
-    if (n.markEx) n.markEx.visible = avail;
-    if (n.markQ) n.markQ.visible = ready;
+    if (!this.state || typeof QuestSys === 'undefined') return;
+    for (const id in this.npcs) {
+      const n = this.npcs[id];
+      if (!n.markEx) continue;
+      const giver = giverOfNpc(id);
+      const ready = QuestSys.readyOf(giver).length > 0;
+      const avail = QuestSys.offersOf(giver).length > 0;
+      n.markEx.visible = avail && !ready;
+      n.markQ.visible = ready;
+    }
   },
 
   spawnEnemies() {
@@ -1659,9 +1679,18 @@ const Game = {
     if (zs && zs.length) {
       const sp = this.playerGroup.position;
       for (const z of zs) {
-        const n = z.spawns.count || 0;
+        /* [M2] 任务区域：数量 ×1.4（上限 +6），目标怪权重 ×3。
+         * 复命 / 放弃后 QuestSys.activeZones 立刻不再返回这个区，
+         * 所以倍率不会留在图上（§4.3 第 3 条）。 */
+        const qb = (typeof QuestSys !== 'undefined') ? QuestSys.zoneBoost(this.state.mapId, z.id) : null;
+        const base = z.spawns.count || 0;
+        const n = qb ? Math.min(Math.round(base * qb.mult), base + qb.extra) : base;
         for (let i = 0; i < n; i++) {
-          const kind = zonePickKind(z, m.spawns);
+          /* 权重 ×3 用「75% 概率直接取目标怪」近似：目标怪通常是 2~3 种之一，
+           * 1/3 × 3 = 1 的权重比，换算是成立的，且比写一套加权抽样便宜。 */
+          const kind = (qb && qb.kinds && qb.kinds.length && Math.random() < 0.75)
+            ? qb.kinds[Math.floor(Math.random() * qb.kinds.length)]
+            : zonePickKind(z, m.spawns);
           if (!kind) continue;
           /* [v1.12.1] 别刷在出生点附近。走廊上端与入口区是重叠的，
            * 只把入口区的刷怪数量清零不够 —— 走廊刷出来的怪照样站在玩家脸上。
@@ -2833,6 +2862,17 @@ const Game = {
     const z = zoneAt(mid, pp.x, pp.z);
     if (!z || z.id === this._zoneId) return;
     this._zoneId = z.id;
+    /* [M2] 任务区域：进区报一次名，并推进 reach 目标。
+     * 放在这里而不是另起一个 tick —— 换区检测已经做了 0.2 秒节流，
+     * 再写一份就是第二份口径，迟早会不一致。 */
+    if (typeof QuestSys !== 'undefined') {
+      const boost = QuestSys.zoneBoost(mid, z.id);
+      if (boost && UI.toast) UI.toast('任务区域 · ' + z.name + (boost.main ? '（主线）' : '（支线）'), 'good');
+      if (QuestSys.onZone(mid, z.id)) {
+        UI.updateQuestTrack();
+        this.updateQuestMarker();
+      }
+    }
     if (typeof UI === 'undefined' || !UI.toast) return;
     /* 首领区加个前缀，让「再往前就是 boss」这件事有预告感 */
     if (z.kind === 'boss') UI.toast('⚔ ' + z.name, 'bad');
@@ -6283,8 +6323,10 @@ const Game = {
   openNPC(id) {
     const npc = NPCS[id];
     const s = this.state;
-    if (id === 'elder') {
-      this.openElder();
+    /* [M2] 任务发布者统一走 openGiver —— 老村长（campA_main）与四座营地的
+     * 掌事 / 录事是同一套逻辑，不再是「elder 特判 + 其他不管」。 */
+    if (npc && npc.role === 'quest') {
+      this.openGiver(id);
     } else if (id === 'smith') {
       /* 进货走 ensureShop：5 分钟窗口内反复说话不会换货 */
       this.ensureShop();
@@ -6323,25 +6365,40 @@ const Game = {
     }
   },
 
-  openElder() {
-    const s = this.state;
-    const elder = NPCS.elder;
-    // 有可复命的任务
-    const ready = s.quests.active.find(a => this.questReady(a));
-    if (ready) {
-      const q = QUESTS[ready.id];
-      UI.showDialog(elder.name, `「${q.name}」已了。你的手段，比我想的干净。`, [
+  /* ---------------- 任务发布者对话（M2） ----------------
+   * 五种情形，按优先级：有可复命的 → 有新委托 → 有进行中的 → 只剩悬赏板 → 闲话。
+   * 复命之后顺手把下一环递上来，少一次「再点一次掌事」。 */
+  openGiver(npcId) {
+    const npc = NPCS[npcId] || { name: '掌事', lines: ['……'] };
+    const giver = giverOfNpc(npcId);
+    const boardBtn = { label: '看看悬赏板', action: () => this.openBoard(partOfGiver(giver)) };
+    const closeBtn = { label: '告辞', action: () => UI.closeAll() };
+
+    /* 1. 可复命 */
+    const ready = QuestSys.readyOf(giver);
+    if (ready.length) {
+      const a = ready[0], q = QUESTS[a.id];
+      const tail = q.kind === 'board' ? '赏钱在这儿，点点。' : '你的手段，比我想的干净。';
+      UI.showDialog(npc.name, `「${q.name}」已了。${tail}`, [
         {
           label: '复命领赏', primary: true, action: () => {
-            this.turnInQuest(ready);
-            const next = q.next ? QUESTS[q.next] : null;
-            if (next) {
-              UI.showDialog(elder.name, next.brief, [
-                { label: '接下「' + next.name + '」', primary: true, action: () => { this.acceptQuest(next.id); UI.closeAll(); } },
+            const done = QuestSys.turnIn(a);
+            const nx = QuestSys.nextOf(done);
+            if (nx) {
+              UI.showDialog(npc.name, nx.brief, [
+                { label: '接下「' + nx.name + '」', primary: true, action: () => { QuestSys.accept(nx.id); UI.closeAll(); } },
                 { label: '稍后再说', action: () => UI.closeAll() }
               ]);
             } else {
-              UI.showDialog(elder.name, '九霄已定，山海重归清明。你已是这方天地最后的传说。', [{ label: '（沉默）', action: () => UI.closeAll() }]);
+              const more = QuestSys.offersOf(giver);
+              if (more.length) {
+                UI.showDialog(npc.name, '还有一件事，你听听看。', [
+                  { label: '听听「' + more[0].name + '」', primary: true, action: () => { QuestSys.accept(more[0].id); UI.closeAll(); } },
+                  boardBtn, closeBtn
+                ]);
+              } else {
+                UI.showDialog(npc.name, '这里暂时没别的事了。走走看看，山海的尽头自有答案。', [boardBtn, closeBtn]);
+              }
             }
           }
         },
@@ -6349,92 +6406,66 @@ const Game = {
       ]);
       return;
     }
-    // 进行中
-    if (s.quests.active.length) {
-      const a = s.quests.active[0];
-      const q = QUESTS[a.id];
-      UI.showDialog(elder.name, `「${q.name}」还未了结。\n\n${q.brief}`, [
+
+    /* 2. 有新委托可接 */
+    const offers = QuestSys.offersOf(giver);
+    if (offers.length) {
+      const q = offers[0];
+      UI.showDialog(npc.name, PICK(npc.lines) + '\n\n' + q.brief, [
+        { label: '接下「' + q.name + '」', primary: true, action: () => { QuestSys.accept(q.id); UI.closeAll(); } },
+        boardBtn,
+        { label: '容我想想', action: () => UI.closeAll() }
+      ]);
+      return;
+    }
+
+    /* 3. 有进行中的 */
+    const running = QuestSys.runningOf(giver);
+    if (running.length) {
+      const q = QUESTS[running[0].id];
+      const where = (q && q.map && MAPS[q.map]) ? `（目标：${MAPS[q.map].name}）` : '';
+      UI.showDialog(npc.name, `「${q.name}」还未了结。${where}\n\n${q.brief}`, [
+        boardBtn,
         { label: '知道了', action: () => UI.closeAll() }
       ]);
       return;
     }
-    // 新任务
-    const next = QUESTS[s.quests.next];
-    if (next) {
-      const lines = ['妖气又重了。年轻人，可愿听我一言？', '九霄将倾，总有人要站出来。', '你身上有山海的影子。'];
-      UI.showDialog(elder.name, PICK(lines) + '\n\n' + next.brief, [
-        { label: '接下「' + next.name + '」', primary: true, action: () => { this.acceptQuest(next.id); UI.closeAll(); } },
-        { label: '容我想想', action: () => UI.closeAll() }
+
+    /* 4. 只剩悬赏板 */
+    UI.showDialog(npc.name, PICK(npc.lines) + '\n\n主线的事，去问掌事。我这儿只有零碎的活。', [boardBtn, closeBtn]);
+  },
+
+  /* 悬赏板：一次列 3 条（§4.1），8 分钟刷新（QUEST_BOARD_CD）。
+   * 用对话而不是新面板：木板本身就是「走过去说话」的东西，
+   * 而且手机上少一层面板就少一处溢出风险。 */
+  openBoard(part) {
+    const list = QuestSys.boardTake(part || this.state.part || 1);
+    if (!list.length) {
+      UI.showDialog('悬赏板', '板上的纸都被揭走了，只剩下几个钉孔。\n\n过一会儿再来。', [
+        { label: '离开', action: () => UI.closeAll() }
       ]);
-    } else {
-      UI.showDialog(elder.name, '去吧，山海的尽头，自有答案。', [{ label: '告辞', action: () => UI.closeAll() }]);
+      return;
     }
+    const body = '木板上的纸被风吹得作响。\n\n' +
+      list.map(q => `· ${q.name}（${q.rewards.gold} 金）\n　${q.brief}`).join('\n\n');
+    const btns = list.map(q => ({
+      label: '接下「' + q.name + '」',
+      action: () => { QuestSys.accept(q.id); UI.closeAll(); }
+    }));
+    btns.push({ label: '离开', action: () => UI.closeAll() });
+    UI.showDialog('悬赏板', body, btns);
   },
 
-  /* ---------------- 任务逻辑 ---------------- */
-  acceptQuest(id) {
-    const q = QUESTS[id];
-    this.state.quests.active.push({ id, progress: q.objectives.map(() => 0) });
-    this.state.quests.next = q.next || null;
-    UI.toast('新委托 · ' + q.name);
-    UI.log('【委托】' + q.brief, 'good');
-    SFX.ui();
-    UI.renderQuests(); UI.updateQuestTrack();
-    this.updateQuestMarker();
-    this.save();
-  },
+  /* ---------------- 任务逻辑（M2 起全部委托给 QuestSys） ---------------- */
+  acceptQuest(id) { return QuestSys.accept(id); },
 
-  questReady(a) {
-    const q = QUESTS[a.id];
-    return q.objectives.every((o, i) => (a.progress[i] || 0) >= o.count);
-  },
-
-  turnInQuest(a) {
-    const q = QUESTS[a.id];
-    this.state.gold += q.rewards.gold;
-    this.gainXp(q.rewards.xp);
-    const it = rollItem(q.rewards.ilvl, { cls: this.state.cls, rarity: q.rewards.rarity, magicFind: this.state.stats.magicFind });
-    if (this.addItem(it)) UI.log('获得 ' + it.name, 'good');
-    // [S3] 任务奖励技能书：解锁指定技能（或下一级未解锁技能）
-    if (q.rewards.skill) {
-      const sk = SKILLS[q.rewards.skill];
-      if (sk && !this.skillFlags[q.rewards.skill]) {
-        this.skillFlags[q.rewards.skill] = true;
-        UI.log('获得技能书《' + sk.name + '》，已领悟！', 'lv');
-        SFX.levelup();
-      }
-    }
-    /* [M1] 任务奖励天赋点：主线四段共 +10，满级天赋点 60 → 70 */
-    if (q.rewards.talent) {
-      this.state.talentBonus = (this.state.talentBonus || 0) + q.rewards.talent;
-      UI.log('获得天赋点 +' + q.rewards.talent, 'lv');
-      SFX.levelup();
-    }
-    this.state.quests.active = this.state.quests.active.filter(x => x !== a);
-    this.state.quests.done.push(a.id);
-    UI.toast('委托完成 · ' + q.name, 'lv');
-    UI.log(`【委托完成】${q.name}　+${q.rewards.gold} 金`, 'good');
-    SFX.levelup();
-    UI.renderQuests(); UI.updateQuestTrack();
-    this.updateQuestMarker();
-    this.save();
-  },
+  /* 以下四个是旧调用点的薄包装：其他地方（UI / 存档 / 试炼）还在按老名字调，
+   * 真正的逻辑都在 src/quests.js 的 QuestSys 里，这里只做转发，别再往里写业务。 */
+  questReady(a) { return QuestSys.ready(a); },
+  turnInQuest(a) { return QuestSys.turnIn(a); },
 
   onKill(e) {
-    const s = this.state;
-    for (const a of s.quests.active) {
-      const q = QUESTS[a.id];
-      q.objectives.forEach((o, i) => {
-        if (o.type === 'kill' && o.target === e.tag) a.progress[i] = (a.progress[i] || 0) + 1;
-        if (o.type === 'killAny') a.progress[i] = (a.progress[i] || 0) + 1;
-        if (o.type === 'boss' && o.target === e.kind) a.progress[i] = (a.progress[i] || 0) + 1;
-      });
-      if (this.questReady(a) && !s.quests.announced[a.id]) {
-        s.quests.announced[a.id] = true;
-        UI.toast('委托目标达成 · 回村复命', 'lv');
-        UI.log('【委托】目标达成，回桃源村找村长复命。', 'good');
-      }
-    }
+    QuestSys.onKill(e);
     UI.updateQuestTrack();
     this.updateQuestMarker();
   },
@@ -7412,8 +7443,19 @@ const Game = {
     const barMissing = !Array.isArray(this.state.skillbar);
     this.normalizeProgress(this.state);
     this.skillBar(barMissing);
-    this.state.quests = this.state.quests || { active: [], done: [], next: 'q1', announced: {} };
-    this.state.quests.announced = this.state.quests.announced || {};
+    /* [M2] 任务：先归一结构，再把老档的 q1~q11 迁到新 id。
+     * 迁移认 legacyId，objectives 逐字一致的直接搬 progress 数组 —— 一条进度不丢。
+     * 迁移有改动就立刻落盘一次，免得玩家在迁移前后关页面又回到 q 号状态。 */
+    if (typeof QuestSys !== 'undefined') {
+      QuestSys.ensure();
+      if (QuestSys.migrate()) {
+        this.save();
+        UI.log('【委托】任务记录已按新体系整理，进度已保留。', 'good');
+      }
+    } else {
+      this.state.quests = this.state.quests || { active: [], done: [], next: null, announced: {}, board: { cd: {}, count: {} } };
+      this.state.quests.announced = this.state.quests.announced || {};
+    }
     /* [试炼] 存档里的 mapId 可能是 trial（在台上被关掉页面）。
      * 试炼的波次进度不落盘（这是 roguelite 的规矩：中途退出即作废），
      * 所以这里把玩家送回村，而不是让他站在一个没有波次的空擂台上。 */
