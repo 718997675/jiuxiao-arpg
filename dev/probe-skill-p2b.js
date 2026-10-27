@@ -243,8 +243,8 @@ const ok = (c, m, d) => {
   ok(panel.perCard.every(c => c.total === 6), '每张卡 6 个台阶（1/3/5/7/9/10）', panel.perCard.map(c => c.total));
   ok(panel.perCard[0].todoLv.join(',') === '',
     '刀客 ① 三个进化台阶都已接（不再带「待」）', panel.perCard[0].todoLv);
-  ok(panel.perCard[1].todoLv.join(',') === '3,5,7,9,10',
-    '刀客 ② 的 3 / 7 也带「待」（位内没有吃 count 通道的技能）', panel.perCard[1].todoLv);
+  ok(panel.perCard[1].todoLv.join(',') === '3,7',
+    '刀客 ② 只剩 3 / 7 带「待」（位内没有吃 count 通道的技能）', panel.perCard[1].todoLv);
   ok(panel.perCard.every(c => c.badge === c.todoLv.length), '每个「待」台阶都带角标（不只是压暗）',
     panel.perCard.map(c => [c.badge, c.todoLv.length]));
   ok(/1\.85/.test(panel.tip) && /2\.57/.test(panel.tip), '卡区说明写着 1.85 / 2.57 倍', panel.tip.slice(0, 140));
@@ -630,6 +630,42 @@ const ok = (c, m, d) => {
     out.p9s = poisonSpread(9);
     out.p10s = poisonSpread(10);
 
+    /* ---------------- 刀客 ② 地裂：余震 / 扩范围 / 二次崩塌 ----------------
+     * 这一位全走通用 hit 通道 —— 地裂是「落点为中心」的地面技能，
+     * 通用通道的圆心正好对得上（符箓那边必须绕开，这里反过来可以直用）。 */
+    const quakeRun = async (lv, off) => {
+      const es = setup('quake', lv, 1);
+      const pp = Game.playerGroup.position;
+      es[0].pos.set(pp.x + off, 0, pp.z);
+      Game.aimPoint = new THREE.Vector3(pp.x, 0, pp.z);     // 砸自己脚下
+      Game.aimDir = new THREE.Vector3(1, 0, 0);
+      const hits = [];
+      const oldHit = Game.damageEnemy;
+      Game.damageEnemy = (en, dmg) => { if (en === es[0]) hits.push(Math.round(dmg)); };
+      /* 抓到「余震 handler 到底收到了什么」—— 比事后读 e.stun 稳：
+       * 默认变体「三连震」会在零点几秒里再放两发，每发都把 stun 打回 1.6，
+       * 读 stun 永远读不到 0.5。 */
+      let pin;
+      const oldRun = SKILL_BEH.aftershock.run;
+      SKILL_BEH.aftershock.run = (c, v, b) => { pin = b.aftershockStun; return oldRun(c, v, b); };
+      Game.castSkill('quake');
+      const first = hits.length;
+      await wait(600);                                       // echo 是 0.45 秒后
+      const echo = hits.length;
+      /* 余震是「每秒一跳、共 2 跳」：只等 1.2 秒的话第二跳会落在
+       * damageEnemy 复原之后，真 damageEnemy 去摸没有 cfg 的假怪 →
+       * 「reading 'armorHigh'」的帧异常。等满 2.3 秒。 */
+      await wait(2300);
+      SKILL_BEH.aftershock.run = oldRun;
+      Game.damageEnemy = oldHit;
+      return { first, echo, after: hits.length, hits, pin };
+    };
+    out.q4 = await quakeRun(4, 0);
+    out.q5 = await quakeRun(5, 0);
+    out.q8 = await quakeRun(8, 6.6);       // 基础 5.8 码外、Lv9 扩范围后进圈
+    out.q9 = await quakeRun(9, 6.6);
+    out.q10 = await quakeRun(10, 0);
+
     /* 假怪没有 actor / armorHigh，帧循环一恢复就会摸到它们（实测报
      * 「reading 'time'」与「reading 'armorHigh'」）。量完清场再恢复。 */
     Game.enemies = [];
@@ -681,6 +717,36 @@ const ok = (c, m, d) => {
   ok(evo.p9s.n === 0, 'Lv9 死了不爆毒', evo.p9s);
   ok(evo.p10s.n === 1 && Math.abs(evo.p10s.rad - 4.2) < 0.01,
     'Lv10 死亡爆毒，且比变体「尸毒」的 3.2 码更大', evo.p10s);
+  /* --- 刀客 ② 地裂 --- */
+  /* ---------------- 9.5. 余震钉人：直接调一次 handler ----------------
+   * 上面那条证明了「参数送到了」，这条证明「handler 会用」——
+   * 两段分开测，是因为前者被三连震的重复施法污染，后者必须没有干扰。 */
+  const pinWorks = await p.evaluate(async () => {
+    const wait = ms => new Promise(r => setTimeout(r, ms));
+    const e = { pos: new THREE.Vector3(0, 0, 0), radius: 0.5, dead: false, stun: 0, hp: 1e9 };
+    const ctx = {
+      GFX: { ring() { }, text() { }, flashCircle() { } },
+      center: new THREE.Vector3(0, 0, 0), rad: 5,
+      hits: () => [e], strike() { },
+      tick(n, fn) { for (let i = 1; i <= n; i++) setTimeout(fn, i * 60); },
+      later() { }
+    };
+    SKILL_BEH.aftershock.run(ctx, 2, { aftershockPct: 30, aftershockStun: 0.5 });
+    await wait(80);
+    return e.stun;
+  });
+  ok(pinWorks === 0.5, '余震每跳把敌人钉住 0.5 秒（handler 真的读了 aftershockStun）', pinWorks);
+
+  /* 余震本身是 3 级精研（自动给），所以「Lv4 只砸一下」是错的 ——
+   * 台阶真正多出来的是「余震也能钉人」，量的就是这个。 */
+  ok(evo.q4.after > evo.q4.first, '3 级精研的余震本来就在跳（不是台阶给的）', evo.q4);
+  ok(evo.q4.pin === undefined && evo.q5.pin === 0.5,
+    'Lv5 才把「余震钉人」交给余震 handler（Lv4 不带这个参数）',
+    { q4: evo.q4.pin, q5: evo.q5.pin });
+  ok(pinWorks === 0.5, '余震 handler 真的把 pin 写进 e.stun（0.5 秒）', pinWorks);
+  ok(evo.q8.first === 0, 'Lv8 砸不到 6.6 码外的怪（基础半径 5.8）', evo.q8);
+  ok(evo.q9.first === 1, 'Lv9 范围扩大后能砸到 6.6 码外（+35%）', evo.q9);
+  ok(evo.q10.echo > evo.q10.first, 'Lv10 地裂结束再崩一次（0.45 秒后）', evo.q10);
   ok(evo.sk10.bases.some(b => Math.abs(b / evo.sk10.bases[0] - 0.7) < 0.02),
     '改追那一下按 70% 结算（不是白送一次全额）', evo.sk10.bases);
 

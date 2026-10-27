@@ -390,6 +390,11 @@ const SKILL_BEH = {
   /* 余震伤害：与 aftershock 一并消费 */
   aftershockPct: { ph: 'hit', label: '余震伤害', run() { } },
 
+  /* [P2b] 余震钉人（台阶 Lv5）：与 aftershock 一并消费。
+   * 精研「余震」3 级就自动给了，所以台阶不能也写「地裂持续 2 秒」——
+   * 那是玩家早就有的东西，写了等于没写。台阶给的是「余震也能控」。 */
+  aftershockStun: { ph: 'hit', label: '余震眩晕', run() { } },
+
   /* [P2b] 命中连锁 / 命中符阵 / 命中追击 的数值参数：
    * 与 chainHit / zoneHit / seek 一并消费，单独出现没有意义。
    * 连锁伤害**不能**复用 chainPct —— 那个 handler 一出现就会拿 aim 当圆心
@@ -455,9 +460,16 @@ const SKILL_BEH = {
   aftershock: { ph: 'hit', label: '余震', run(c, v, b) {
     const pct = (b.aftershockPct || 30) / 100;
     const ticks = Math.max(1, Math.round(behDur(b, v)));
+    /* [P2b] 台阶 Lv5「余震钉住敌人」：余震本来只掉血，现在每跳顺手钉一下。
+     * 为什么做成余震的参数而不是另开一套：能钉人的机制只有一个 ——
+     * e.stun。再写一套只会和怪的眩晕衰减打架。 */
+    const pin = Math.max(0, b.aftershockStun || 0);
     c.tick(v, () => {
       c.GFX.ring(c.center, c.rad, 0xffb070, 0.3, 0.25);
-      for (const e of c.hits()) c.strike(e, pct, { knock: 0.4 });
+      for (const e of c.hits()) {
+        c.strike(e, pct, { knock: 0.4 });
+        if (pin && !e.dead) e.stun = Math.max(e.stun || 0, e.boss ? Math.min(0.35, pin) : pin);
+      }
     });
     c.GFX.text(new THREE.Vector3(c.center.x, 2.4, c.center.z),
       '余震 ' + Math.round(behDur(b, v)) + 's', 'info', { life: 0.8 });
