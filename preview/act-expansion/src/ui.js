@@ -3151,9 +3151,18 @@ const UI = {
 
     /* ---- 卷头 ---- */
     const pt = PARTS[cur], camp = CAMPS[pt.camp];
+    /* [M1] 营地行：已抵达才给「回营地」按钮（和 Game.travelTo 的营地门禁同一口径）。
+     * 没到过这一卷就只显示「未抵达」—— 营地是传送网络的中枢，不能靠等级硬闯。 */
+    const campSeen = (s.camps || []).indexOf(camp.id) >= 0;
+    const inCamp = s.mapId === camp.mapId;
+    const campTail = !camp.mapId ? '<span class="wm-ml">未开放</span>'
+      : inCamp ? '<span class="wm-ml">当前所在</span>'
+        : campSeen ? `<button class="btn wm-go" data-go="${camp.mapId}">回营地</button>`
+          : '<span class="wm-ml">未抵达</span>';
     let html = `<div class="wm-head">
       <div class="wm-hn">卷${CN[cur - 1]} · ${pt.name}</div>
-      <div class="wm-hr">${pt.from}–${pt.to} 级 · 营地「${camp.name}」${camp.mapId ? '' : '（未开放）'} · ${pt.keyName}</div>
+      <div class="wm-hr">${pt.from}–${pt.to} 级 · ${pt.keyName}</div>
+      <div class="wm-camp">营地 <b>${camp.name}</b>${campTail}</div>
       <div class="wm-hb">${pt.brief}</div>
     </div>`;
 

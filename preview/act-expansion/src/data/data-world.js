@@ -7,7 +7,7 @@
 /* ---------------- 地图 ---------------- */
 const MAPS = {
   village: {
-    id: 'village', name: '桃源村', safe: true, level: 1,
+    id: 'village', name: '桃源村', safe: true, level: 1, camp: 'campA',
     ground: 'dirt', sky: 0x9fc7d9, fog: 0xa8c8d8, fogNear: 45, fogFar: 120,
     size: 70, ambient: 0xbfd9e6, sun: 0xffe6b8, sunI: 1.05, props: 'village',
     npcs: ['elder', 'smith', 'herbalist', 'monk', 'alchemist', 'warden', 'steward'],
@@ -47,6 +47,42 @@ const MAPS = {
     size: 134, ambient: 0x9ab0e0, sun: 0xffe0a0, sunI: 0.95, props: 'heaven',
     spawns: ['bloodlord', 'ghostfire', 'golem', 'yaoguai', 'fallen', 'voidbeast', 'swordwraith', 'thunderbird', 'jadeguard'], spawnCount: 12,
     bosses: ['chaos'], portal: { x: 0, z: 53.7 }, unlock: 32
+  },
+  /* ---------------- 营地 B~E（M1） ----------------
+   * 复用村的布局（props: 'village'），只换地面纹理与色调 ——
+   * M1 的验收口径是「进得去、出得来、传得动」，专属场景留给 M3。
+   * camp: 'campB' 让 world.js 认出「这是营地」，走换皮而不是原始村配色。
+   *
+   * 为什么先不放 elder：现有 q1~q11 整条链都挂在桃源村村长身上，
+   * 营地里再摆一个 elder 会让任务对话指向错误的地方。等 M2 重做任务系统、
+   * 每卷配自己的任务发布者时再加。 */
+  campB: {
+    id: 'campB', name: '玄铁关', safe: true, level: 19, camp: 'campB',
+    ground: 'rock', sky: 0x4a3230, fog: 0x5a3a34, fogNear: 40, fogFar: 118,
+    size: 78, ambient: 0xa87a68, sun: 0xff9a6a, sunI: 0.85, props: 'village',
+    npcs: ['smith', 'herbalist', 'monk', 'alchemist', 'steward'],
+    spawns: [], bosses: [], portal: { x: 0, z: -18 }
+  },
+  campC: {
+    id: 'campC', name: '忘川渡', safe: true, level: 31, camp: 'campC',
+    ground: 'abyss', sky: 0x1e2438, fog: 0x28304a, fogNear: 38, fogFar: 112,
+    size: 76, ambient: 0x7a86b8, sun: 0x9ab0ff, sunI: 0.7, props: 'village',
+    npcs: ['smith', 'herbalist', 'monk', 'alchemist', 'steward'],
+    spawns: [], bosses: [], portal: { x: 0, z: -18 }
+  },
+  campD: {
+    id: 'campD', name: '南天关', safe: true, level: 41, camp: 'campD',
+    ground: 'heaven', sky: 0x3a4a6a, fog: 0x50628a, fogNear: 42, fogFar: 126,
+    size: 80, ambient: 0xa8bcd8, sun: 0xfff0c8, sunI: 1.0, props: 'village',
+    npcs: ['smith', 'herbalist', 'monk', 'alchemist', 'steward'],
+    spawns: [], bosses: [], portal: { x: 0, z: -18 }
+  },
+  campE: {
+    id: 'campE', name: '九霄台', safe: true, level: 51, camp: 'campE',
+    ground: 'trial', sky: 0x2a1e3e, fog: 0x38264e, fogNear: 40, fogFar: 120,
+    size: 78, ambient: 0xb8a4dc, sun: 0xffd890, sunI: 1.05, props: 'village',
+    npcs: ['smith', 'herbalist', 'monk', 'alchemist', 'steward'],
+    spawns: [], bosses: [], portal: { x: 0, z: -18 }
   },
   /* ---------------- 无尽试炼场（v2.0） ----------------
    * 特殊地图：spawns / bosses 都为空 —— 刷怪完全由 src/trial.js 接管
@@ -275,13 +311,13 @@ const ACTS = {
   }
 };
 
-/* 营地：一卷一座。mapId 为空 = 营地地图还没做（M1 补，先复用村布局换皮） */
+/* 营地：一卷一座。M1 起 mapId 全部就位（campB~E 复用村布局换皮） */
 const CAMPS = {
   campA: { id: 'campA', part: 1, name: '桃源村', mapId: 'village', portal: 'portalA' },
-  campB: { id: 'campB', part: 2, name: '玄铁关', mapId: null, portal: 'portalB' },
-  campC: { id: 'campC', part: 3, name: '忘川渡', mapId: null, portal: 'portalC' },
-  campD: { id: 'campD', part: 4, name: '南天关', mapId: null, portal: 'portalD' },
-  campE: { id: 'campE', part: 5, name: '九霄台', mapId: null, portal: 'portalE' }
+  campB: { id: 'campB', part: 2, name: '玄铁关', mapId: 'campB', portal: 'portalB' },
+  campC: { id: 'campC', part: 3, name: '忘川渡', mapId: 'campC', portal: 'portalC' },
+  campD: { id: 'campD', part: 4, name: '南天关', mapId: 'campD', portal: 'portalD' },
+  campE: { id: 'campE', part: 5, name: '九霄台', mapId: 'campE', portal: 'portalE' }
 };
 
 /* ---------------- 查询辅助（纯函数，不改数据） ---------------- */
@@ -326,5 +362,58 @@ function mapCountOfPart(part) {
     for (const m of ACTS[k].maps) { all++; if (m.id) open++; }
   }
   return { all: all, open: open };
+}
+
+/** 这张图是哪座营地 → 'campA' / null（野图返回 null） */
+function campOfMap(mapId) {
+  const m = MAPS[mapId];
+  return (m && m.camp) ? m.camp : null;
+}
+
+/** 某卷的营地 id → 'campB'（卷号越界时退回 campA） */
+function campOfPart(part) {
+  const pt = PARTS[part];
+  return (pt && pt.camp) ? pt.camp : 'campA';
+}
+
+/** 某卷营地的地图 id → 'village' / 'campB'（M1 起全部有图） */
+function campMapOfPart(part) {
+  const c = CAMPS[campOfPart(part)];
+  return (c && c.mapId) ? c.mapId : 'village';
+}
+
+/** 抵达第 N 卷时应解锁的营地 → ['campA','campB','campC']
+ *  和 save.js 的 normalizeDoc 同一口径（按卷累积）：抵达卷三说明前两卷的关口都过过了。
+ *  不这么写的话，「等级够直接跳卷三」会让 campB 永远解锁不了，而重开档后又突然出现。 */
+function campsUpToPart(part) {
+  const SEQ = ['A', 'B', 'C', 'D', 'E'];
+  const n = Math.max(1, Math.min(SEQ.length, Number(part) || 1));
+  const out = [];
+  for (let i = 0; i < n; i++) out.push('camp' + SEQ[i]);
+  return out;
+}
+
+/** 这张图是不是「本章最后一张已开放的图」→ 章间出口门挂在这里
+ *  注意是「已开放」而不是「图位最后一个」：落霞坡这类 id 为 null 的图位
+ *  没有真实地图，门要是挂在它身上就永远不出现。 */
+function isChapterTail(mapId) {
+  const a = actOfMap(mapId);
+  if (!a) return false;
+  let last = null;
+  for (const m of ACTS[a].maps) if (m.id) last = m.id;
+  return last === mapId;
+}
+
+/** 下一章第一张已开放的图 → 'swamp' / null（章间出口门的目标）
+ *  没有下一章（卷末）、或下一章一张图都没做出来时返回 null。 */
+function nextChapterMap(mapId) {
+  const a = actOfMap(mapId);
+  if (!a) return null;
+  const list = actsOfPart(ACTS[a].part);
+  let i = -1;
+  for (let k = 0; k < list.length; k++) if (list[k].id === a) i = k;
+  if (i < 0 || i + 1 >= list.length) return null;
+  const nx = firstMapOfAct(list[i + 1].id);
+  return nx ? nx.id : null;
 }
 
