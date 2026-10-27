@@ -105,6 +105,24 @@ button{font-family:inherit;color:inherit;background:none;border:none;cursor:poin
 #barAllTip{text-align:center;font-size:9.5px;letter-spacing:.08em;color:#5a564c;margin-top:5px}
 #beastTip,#mixTip{font-size:9.5px;letter-spacing:.08em;color:#5a564c;margin-top:6px;line-height:1.7}
 #beastTip b,#mixTip b{color:#a08a5e;font-weight:400}
+
+/* 进化台阶清单：一档一行，已解锁才亮。
+   没解锁的必须**看得见但压暗** —— 直接隐藏就看不出"还差几级"，
+   而台阶演示的意义恰恰是"到 10 级还差什么"。 */
+#tierList{margin-top:7px;font-size:9.5px;line-height:1.5}
+#tierList .tl{display:flex;gap:6px;align-items:baseline;padding:2px 0;opacity:.3}
+#tierList .tl.on{opacity:1}
+#tierList .tl b{font-weight:400;color:#7d776a;min-width:25px;letter-spacing:.04em}
+#tierList .tl.on b{color:#d8b25a}
+#tierList .tl span{flex:1;color:#8d8676}
+#tierList .tl.on span{color:#cdc4ac}
+#tierList .tl em{font-style:normal;font-size:8px;letter-spacing:.05em;color:#4a463e;
+  border:1px solid rgba(255,255,255,.07);border-radius:2px;padding:0 3px;white-space:nowrap}
+#tierList .tl.on em.k-fx{color:#7fa86a;border-color:rgba(127,168,106,.38)}
+#tierList .tl.on em.k-num{color:#d8b25a;border-color:rgba(216,178,90,.32)}
+#tierList .tl.on em.k-sim{color:#8a8296;border-color:rgba(138,130,150,.3)}
+#tierTip{font-size:9.5px;letter-spacing:.08em;color:#5a564c;margin-top:6px;line-height:1.7}
+#tierTip b{color:#a08a5e;font-weight:400}
 @media (max-width:760px){
   #barAll .slot.sm{width:38px;height:38px}
   #barAll .slot.sm svg{width:19px;height:19px}
@@ -271,6 +289,14 @@ button{font-family:inherit;color:inherit;background:none;border:none;cursor:poin
       <button data-v="v2" class="on">新实现</button>
       <button data-v="legacy">旧实现</button>
     </div>
+  </div>
+
+  <div class="sec">
+    <div class="sec-t">进化台阶（同一个技能，Lv1 → Lv10）</div>
+    <div class="seg" id="segTier"></div>
+    <div id="tierList"></div>
+    <div id="tierTip">换档会<b>立刻重放一次</b>这个技能。清单里每一档的徽章是它的实现方式：
+      <b>数量</b>多一发 / <b>机制</b>真的多一层结构 / <b>数值</b>只改数字，画面仅作示意。</div>
   </div>
 
   <div class="sec">
@@ -3598,20 +3624,23 @@ whirl: {
        旧实现是命中时每只怪撒 7 颗向心火星 —— 300ms 就没了，而怪是"啪"地
        出现在新位置，中间那段位移没有任何交代。
        FX.suck 画视觉（螺旋吸入 / 从怪身上抽气 / 内缩环），
-       位移按 0.4 秒一拍地收，每一拍都有粒子跟着怪走。 */
-    const C0 = new THREE.Vector3(c.x, 0, c.z);
-    FX.suck(C0, { r: 4.2, dur: 1.7, color: C(E().glow) });
-    for(let i=0;i<4;i++){
-      delay(0.1 + i*0.4, ()=>{
-        enemies.forEach(e=>{
-          if(!e || e.deadT > 0) return;
-          const d = Math.hypot(e.pos.x - C0.x, e.pos.z - C0.z);
-          if(d > 4.2 || d < 1.1) return;
-          const step = Math.min(d*0.34, d - 1.5);
-          e.pos.x += (C0.x - e.pos.x)/d * step;
-          e.pos.z += (C0.z - e.pos.z)/d * step;
+       位移按 0.4 秒一拍地收，每一拍都有粒子跟着怪走。
+       Lv9 以下整段不播 —— 这是台阶演示里最能一眼看出的差别。 */
+    if(tierOn(9)){
+      const C0 = new THREE.Vector3(c.x, 0, c.z);
+      FX.suck(C0, { r: 4.2, dur: 1.7, color: C(E().glow) });
+      for(let i=0;i<4;i++){
+        delay(0.1 + i*0.4, ()=>{
+          enemies.forEach(e=>{
+            if(!e || e.deadT > 0) return;
+            const d = Math.hypot(e.pos.x - C0.x, e.pos.z - C0.z);
+            if(d > 4.2 || d < 1.1) return;
+            const step = Math.min(d*0.34, d - 1.5);
+            e.pos.x += (C0.x - e.pos.x)/d * step;
+            e.pos.z += (C0.z - e.pos.z)/d * step;
+          });
         });
-      });
+      }
     }
     // 命中
     seq([[0.14, ()=>{
@@ -5292,15 +5321,20 @@ poison: {
   note:'一片<b>绿色毒雾留在原地</b>，持续冒泡、缓慢翻滚。它是"气团"，没有边界线，和法阵的清晰边框正相反。',
   v2(c){
     const pos = new THREE.Vector3(c.tx, 0, c.tz);
-    FX.field(pos, { kind:'mist', r: 3.0, life: 4.5, color: C(0x7fbf5a), pulse: 1.0,
+    /* Lv5「毒雾蔓延」是**半径**台阶：雾本来就长在地上，
+       再叠一团会变成"两团雾"，而蔓延是"同一团铺得更开"。
+       所以只能在本体里读档 —— 这是台阶演示里唯一"必须动本体"的两处之一
+       （另一处是 whirl 的吸怪）。 */
+    const R = 3.0 * (tierOn(5) ? 1.6 : 1);
+    FX.field(pos, { kind:'mist', r: R, life: 4.5, color: C(0x7fbf5a), pulse: 1.0,
       opacity: 0.30, wall: 0.06, spin: 0.16,
-      onPulse(){ hitArea(pos, 3.0, 10, { color:'#7fbf5a' }); } });
+      onPulse(){ hitArea(pos, R, 10, { color:'#7fbf5a' }); } });
     let t = 0;
     addUpdate({ update(dt){
       t += dt;
       if(t < 4.2){
         for(let i=0;i<Math.round(3*Q());i++){
-          const a = Math.random()*7, r = Math.random()*2.6;
+          const a = Math.random()*7, r = Math.random()*R*0.87;
           FX.spr(pos.x + Math.cos(a)*r, 0.05 + Math.random()*0.3, pos.z + Math.sin(a)*r, {
             tex:'smoke', life: 1.6, s0:.6, s1:1.6, a0:.16,
             vx: (Math.random()-.5)*.4, vy:.35, vz: (Math.random()-.5)*.4, grav:-.2, drag:.6,
@@ -5511,6 +5545,468 @@ function aimPoint(){
   return P.pos.clone().add(new THREE.Vector3(Math.sin(P.face), 0, Math.cos(P.face)).multiplyScalar(3.4));
 }
 
+/* =====================================================================
+   12.5 进化台阶演示（Lv1 / 3 / 5 / 7 / 9 / 10）
+   ---------------------------------------------------------------------
+   游戏里台阶是 SKILL_TIER_EVO 给 beh 键、技能本体消费；试验页没有战斗，
+   所以这里只复现「画面上多出来的那一层」——但**必须是同一份函数跑两遍**，
+   不能另写一套"演示版特效"，否则演示和实装迟早漂移。
+
+   三条硬规矩：
+   1. 台阶效果全部写在 TIER_HOOK 里，**不改技能本体**。
+      本体只在两处读 tierOn()：whirl 的吸怪、poison 的雾半径 ——
+      这两件事本来就是"技能自己的形状变大了"，塞进 hook 会变成叠两团。
+   2. 档位是**累积**的（Lv10 = 5 + 9 + 10 一起叠），和游戏里一致。
+   3. 只演真接了的六位（刀①②③ / 法① / 道①②）；其余位在清单里标「未接」，
+      不编假效果 —— 编出来就等于把"还没做"藏起来了。
+   ===================================================================== */
+const TIER_LVS = [1, 3, 5, 7, 9, 10];
+
+/* 默认满级：一进来看到的和改造前一样，往下调才看差异。
+   反过来（默认 Lv1）会让"以前能看到的吸怪突然没了"，像功能回退。 */
+let tierLv = 10;
+const tierOn = (lv) => tierLv >= lv;
+
+/* 技能 → 技能位。文案逐字抄 src/data/data-skills.js 的
+   SKILL_ARCHETYPE.classes[].slots[].tiers，一个标点都没改。 */
+const TIER_SLOT = {
+  whirl:'b1', quake:'b2', swords:'b3', bloodrage:'b4', stance:'b5', avatar:'b5',
+  missile:'m1', meteor:'m2', firewall:'m3', iceshield:'m4',
+  talisman:'t1', poison:'t2', taiji:'t3', heal:'t4', summon:'t5'
+};
+const TIER_TEXT = {
+  b1:{1:'单发横扫',3:'双发',5:'横扫后原地余震 2 秒',7:'三连斩',9:'横扫吸怪',10:'命中回怒翻倍，可常驻'},
+  b2:{1:'单体震击',3:'溅射',5:'余震钉住敌人',7:'三连震',9:'地裂范围扩大',10:'地裂二次崩塌'},
+  b3:{1:'单圈剑鸣',3:'双圈',5:'剑阵内敌人减速',7:'三圈',9:'剑阵内减伤',10:'剑阵内自动反击'},
+  b4:{1:'单体增益',3:'队友共享',5:'增益期间吸血',7:'范围扩大',9:'击杀延长',10:'增益期间免疫控制'},
+  b5:{1:'斩锋式',3:'解锁镇岳式',5:'刃势满层 · 断岳斩',7:'解锁摧城式',9:'切换刀式保留刃势',10:'剑神降世（12 秒全强化）'},
+  m1:{1:'单发火球',3:'双发',5:'爆炸范围 +50%，爆炸处留火海',7:'三连发',9:'环绕火球',10:'飞弹自动索敌'},
+  m2:{1:'单体陨石',3:'溅射',5:'双陨',7:'三连落',9:'陨石雨',10:'陨石雨持续 8 秒'},
+  m3:{1:'单段火墙',3:'双段',5:'持续火环',7:'三段',9:'火墙跟随',10:'火墙结束爆炸'},
+  m4:{1:'单体护盾',3:'队友共享',5:'护盾反伤',7:'护盾强化',9:'护盾爆发',10:'护盾破碎时冰冻周围'},
+  t1:{1:'单张雷符',3:'双符',5:'雷符连锁',7:'三符',9:'雷符阵',10:'雷符自动追踪'},
+  t2:{1:'单团毒雾',3:'双团',5:'毒雾蔓延',7:'三团',9:'毒雾跟随',10:'毒雾内敌人死亡爆毒'},
+  t3:{1:'单圈太极',3:'双圈',5:'太极推开敌人',7:'三圈',9:'太极内减伤',10:'太极内每秒回血'},
+  t4:{1:'单体治疗',3:'队友共享',5:'治疗持续回复增强',7:'范围扩大',9:'瞬间驱散',10:'低于 30% 生命自动触发'},
+  t5:{1:'灵狼',3:'双狼',5:'白虎（范围攻击）',7:'虎 + 狼',9:'青龙（范围 + 光环）',10:'四象召唤（三兽同场）'}
+};
+
+/* 这一档在画面上真的多出什么：
+   num 数量（多一发）/ fx 机制（多一层结构）/ sim 只改数值（画面为示意）/
+   todo 还没接 —— 面板照实标，别让文案自己吹 */
+const TIER_KIND = {
+  b1:{1:'base',3:'num',5:'fx',7:'num',9:'fx',10:'sim'},
+  b2:{1:'base',3:'num',5:'fx',7:'num',9:'fx',10:'fx'},
+  b3:{1:'base',3:'todo',5:'fx',7:'todo',9:'fx',10:'fx'},
+  m1:{1:'base',3:'num',5:'fx',7:'num',9:'fx',10:'sim'},
+  t1:{1:'base',3:'num',5:'fx',7:'num',9:'fx',10:'fx'},
+  t2:{1:'base',3:'num',5:'fx',7:'num',9:'fx',10:'fx'}
+};
+const KIND_LABEL = { base:'基础', num:'数量', fx:'机制', sim:'数值', todo:'未接' };
+
+/* ---------------- 台阶要用的小件 ---------------- */
+
+/* 连发时把落点朝**切线**方向偏一点：完全同一条线会叠成一个光球，
+   看不出"双发"。偏 0.95 码刚好分开又不脱靶。 */
+function shiftCtx(c, side){
+  const nx = Math.cos(c.dir), nz = -Math.sin(c.dir);
+  const s = side * 0.95;
+  const out = Object.assign({}, c);
+  out.tx = c.tx + nx*s; out.tz = c.tz + nz*s;
+  out.aim = new THREE.Vector3(out.tx, 0, out.tz);
+  return out;
+}
+/* 重放本体但不走 hook —— 否则 hook 会递归，双发变四发 */
+function reCast(key, cc){ const s = SKILLS[key]; if(s && s.v2) s.v2(cc); }
+
+/* 火海：命中点留下的一片持续火。用 mist 的骨架（没有边界线），
+   但它**贴地**（grav 负、上升很浅），和毒雾那种"往上冒"分开。 */
+function firePatch(pos, dur = 3){
+  FX.field(pos, { kind:'mist', r: 1.9, life: dur, color: C(0xff7a3c),
+    pulse: 1.0, opacity: 0.20, wall: 0.04, spin: 0.3,
+    onPulse(){ hitArea(pos, 2.0, 6, { color:'#ff9a4c' }); } });
+  let t = 0;
+  addUpdate({ update(dt){
+    t += dt;
+    if(t < dur){
+      for(let i=0;i<Math.round(3*Q());i++){
+        const a = Math.random()*7, r = Math.random()*1.7;
+        FX.spr(pos.x + Math.cos(a)*r, 0.04 + Math.random()*0.15, pos.z + Math.sin(a)*r, {
+          tex:'flame', life:.65, s0:.45, s1:.85, a0:.5,
+          vy: 1.2 + Math.random(), grav: -.5, drag: 1.2, r:1, g:.45, b:.15 });
+      }
+    } else this.dead = true;
+  }});
+}
+
+/* 环绕火球：三颗绕着人转，是"环绕"不是"多发" —— 所以不能靠连发表达 */
+function orbitOrbs(dur = 3){
+  const orbs = [];
+  for(let i=0;i<3;i++){
+    const m = billMesh(TEX.soft, C(0xffb060), .9);
+    m.userData.noBB = true;
+    orbs.push({ m, a: i/3*Math.PI*2 });
+  }
+  let t = 0;
+  addUpdate({ update(dt){
+    t += dt;
+    const inK = Math.min(1, t/0.25);
+    const outK = t > dur-0.3 ? Math.max(0, 1-(t-(dur-0.3))/0.3) : 1;
+    const k = inK * outK;
+    orbs.forEach((o, i)=>{
+      o.a += dt*2.4;
+      const r = 1.9;
+      o.m.position.set(P.pos.x + Math.cos(o.a)*r, 1.15 + Math.sin(t*3 + i*2.1)*0.12,
+                       P.pos.z + Math.sin(o.a)*r);
+      o.m.material.opacity = 0.85*k;
+      o.m.scale.setScalar(0.85*k);
+      if(Math.random() < dt*22) FX.spr(o.m.position.x, o.m.position.y, o.m.position.z,
+        { tex:'ember', life:.35, s0:.28, s1:0, a0:.7, grav:-.6 });
+    });
+    if(t >= dur){ orbs.forEach(o=>scene.remove(o.m)); this.dead = true; }
+  }});
+}
+
+/* 跟随玩家的护罩环：位置每帧同步 —— 写死一次位置的话，人一走环就留在地上 */
+function guardRing(dur = 2.6){
+  const ring = flatMesh(TEX.ring, C(0xffd27a), THREE.AdditiveBlending, 0);
+  ring.position.set(P.pos.x, 0.06, P.pos.z);
+  let t = 0;
+  addUpdate({ update(dt){
+    t += dt;
+    const k = t/dur;
+    ring.position.set(P.pos.x, 0.06, P.pos.z);
+    ring.scale.setScalar(2.5 + Math.sin(t*4)*0.1);
+    ring.material.opacity = (k > 0.85 ? Math.max(0, 1-(k-0.85)/0.15) : 1) * (0.32 + 0.14*Math.sin(t*6));
+    if(Math.random() < dt*14){
+      const a = Math.random()*7;
+      FX.spr(P.pos.x + Math.cos(a)*2.4, 0.1, P.pos.z + Math.sin(a)*2.4,
+        { tex:'spark', life:.5, s0:.16, s1:0, a0:.7, vy:1.1, grav:-.5, r:1, g:.85, b:.55 });
+    }
+    if(k >= 1){ scene.remove(ring); this.dead = true; }
+  }});
+}
+
+/* 雷符连锁：落点再往邻近两只怪各跳一道雷（游戏里 chainHit=2） */
+function chainBolt(pos, n = 2){
+  const list = enemies.filter(e=>e && e.deadT <= 0)
+    .map(e=>({ e, d: Math.hypot(e.pos.x-pos.x, e.pos.z-pos.z) }))
+    .filter(o=>o.d < 6.5).sort((a,b)=>a.d-b.d).slice(0, n);
+  list.forEach((o, i)=>{
+    delay(i*0.11, ()=>{
+      const to = new THREE.Vector3(o.e.pos.x, 0.6, o.e.pos.z);
+      FX.bolt(new THREE.Vector3(pos.x, 0.9, pos.z), to,
+        { color: C(0x9fd8ff), core: 0xffffff, life: 0.2, width: 0.07 });
+      FX.burst(to, { n: 10, speed: 3.4, life: .35, size: .2, tex:'spark' });
+      hitEnemy(o.e, 8, { color:'#bfe4ff' });
+    });
+  });
+}
+
+/* ---------------- 台阶效果表 ---------------- */
+const TIER_HOOK = {
+  /* 刀① 连斩 */
+  whirl: {
+    /* 双发 / 三连斩：再来一次**完整的**横扫。本体 0.34s 那道补刀残影
+       只有 0.6 秒命、半径 2.1，是"一次里的一层"；台阶要的是"又来一下"，
+       所以给满 0.85 秒命 + 独立判定。 */
+    3: (c)=>{ delay(0.55, ()=> whirling(c, 1)); },
+    /* 余震 2 秒：8 拍，环从 2.9 收到 1.9 —— 往里收才是"余震"，
+       往外扩会读成第二发冲击波。 */
+    5: (c)=>{
+      const C0 = new THREE.Vector3(c.x, 0, c.z);
+      for(let i=0;i<8;i++){
+        delay(i*0.25, ()=>{
+          const k = i/7;
+          FX.shock(C0, 2.9 - k*1.0, { color: C(E().glow), dur: 0.26 });
+          for(let j=0;j<Math.round(4*Q());j++){
+            const a = Math.random()*7, r = Math.random()*(2.4 - k);
+            FX.spr(C0.x + Math.cos(a)*r, 0.05, C0.z + Math.sin(a)*r,
+              { tex:'smoke', life:.5, s0:.3, s1:.7, a0:.18, vy:.9, grav:1.2 });
+          }
+          if(i % 2 === 0) shake(0.05, 0.18);
+        });
+      }
+    },
+    7: (c)=>{ delay(0.55, ()=> { whirling(c, 1); delay(0.5, ()=> whirling(c, -1)); }); },
+    /* 9 级：吸怪交给本体（tierOn(9)），这里不重复 */
+    /* 10 级：回怒是数值，画面用"常驻刃光"示意 —— 慢速绕身，
+       和 Lv9 那阵 13 转/秒的爆发是完全不同的读法（常驻 vs 施法）。 */
+    10: (c)=>{
+      FX.spinBlades(new THREE.Vector3(P.pos.x, 0, P.pos.z),
+        { r: 1.35, n: 4, life: 3.0, y: 0.78, spin: 2.2, color: C(0xffd8a0) });
+    }
+  },
+
+  /* 刀② 裂地震击 */
+  quake: {
+    /* 溅射：外扩一圈**更大但更淡**的环 + 贴地尘。不是再塌一次 */
+    3: (c)=>{
+      const t = new THREE.Vector3(c.tx, 0, c.tz);
+      FX.shock(t, 4.6, { color: C(E().glow), dur: 0.5 });
+      FX.burst(t, { n: 20, speed: 7.2, life: .7, size: .3, up: .5, grav: 4.6, tex:'smoke' });
+    },
+    /* 余震钉住：5 拍地刺。刺是**从地里长出来**的，所以 shard 向上、
+       起点贴地、寿命短 —— 撒火花的话读成"还在爆"，不是"被钉住" */
+    5: (c)=>{
+      const t = new THREE.Vector3(c.tx, 0, c.tz);
+      for(let i=0;i<5;i++){
+        delay(0.2 + i*0.38, ()=>{
+          FX.shock(t, 2.2, { color: C(E().glow), dur: 0.2 });
+          for(let j=0;j<Math.round(5*Q());j++){
+            const a = Math.random()*7, r = Math.random()*2.0;
+            FX.spr(t.x + Math.cos(a)*r, 0.05, t.z + Math.sin(a)*r,
+              { tex:'shard', life:.45, s0:.2, s1:.34, a0:.9, vy: 3.4, grav: 9,
+                r:.9, g:.8, b:.6, rotV: (Math.random()-.5)*3 });
+          }
+          shake(0.06, 0.2);
+        });
+      }
+    },
+    /* 三连震：两次补震，半径递减 —— 递减才像"余波"，等大三联读成同一个技能按三次 */
+    7: (c)=>{ delay(0.5, ()=> quakeEcho(c, 0.55)); delay(0.95, ()=> quakeEcho(c, 0.42)); },
+    /* 范围扩大：本体半径写死，改它要动 5 处硬编码；不如**在外面补一圈更大的裂**，
+       观感上"范围变大了"这件事成立，也不跟本体打架 */
+    9: (c)=>{
+      const t = new THREE.Vector3(c.tx, 0, c.tz);
+      delay(0.06, ()=>{
+        FX.decal(t, 'crack', 4.4, 6, 0x2a1e14);
+        FX.shock(t, 4.4, { color: C(E().glow), dur: 0.55 });
+        FX.burst(t, { n: 22, speed: 7.6, life: .8, size: .3, up: .4, grav: 5.2, tex:'smoke' });
+      });
+    },
+    /* 二次崩塌：整块再塌一次。这是唯一"比第一下更狠"的档位，
+       所以半径要真的更大、还要再震一次屏 */
+    10: (c)=>{
+      const t = new THREE.Vector3(c.tx, 0, c.tz);
+      delay(0.62, ()=>{
+        FX.decal(t, 'crack', 3.8, 6, 0x241a12);
+        FX.geyser(t, { h: 4.0, w: 2.6, opacity: 0.46, life: 0.8, tex:'smoke', color: C(0x8a7458) });
+        FX.shock(t, 4.0, { color: C(E().glow), dur: 0.6 });
+        FX.burst(t, { n: 34, speed: 8, life: 1.0, size: .5, up: 1.8, grav: 5.5, tex:'smoke' });
+        const hits = hitArea(t, 3.4, 40, { kb: 0.3, from: t });
+        hits.forEach(e=>{ e.knock = 0.8; });
+        flashAt(t, 2.6, '255,230,180', 0.4);
+        hitstop(0.06); shake(0.38, 0.45);
+      });
+    }
+  },
+
+  /* 刀③ 剑阵 */
+  swords: {
+    /* 双圈 / 三圈：套一整圈新的 field，半径拉开、压暗一点。
+       就地纹亮度而言 0.26 → 三圈叠加会偏亮，但这也正是"多一圈"的证据 */
+    3: (c)=>{ delay(0.08, ()=> extraRing(c, 4.4, 0.55)); },
+    7: (c)=>{ delay(0.08, ()=> extraRing(c, 4.4, 0.55)); delay(0.16, ()=> extraRing(c, 5.9, 0.4)); },
+    /* 减速：阵内贴地一层蓝雾，颗粒**横向慢移**。
+       往上冒的雾是毒，贴地横流的才是"黏住脚" */
+    5: (c)=>{
+      const pos = new THREE.Vector3(c.x, 0, c.z);
+      let t = 0;
+      addUpdate({ update(dt){
+        t += dt;
+        if(t < 2.4){
+          for(let i=0;i<Math.round(3*Q());i++){
+            const a = Math.random()*7, r = Math.random()*3.0;
+            FX.spr(pos.x + Math.cos(a)*r, 0.06 + Math.random()*0.12, pos.z + Math.sin(a)*r, {
+              tex:'smoke', life:1.4, s0:.5, s1:1.2, a0:.14,
+              vx: Math.cos(a)*0.7, vy:.12, vz: Math.sin(a)*0.7, grav:0, drag:.9,
+              r:.45, g:.72, b:1 });
+          }
+        } else this.dead = true;
+      }});
+    },
+    /* 减伤：脚下护罩环，跟着人走 */
+    9: (c)=>{ guardRing(2.6); },
+    /* 自动反击：每 0.85 秒从阵边朝外射一道剑光 */
+    10: (c)=>{
+      for(let i=0;i<3;i++){
+        delay(0.9 + i*0.85, ()=>{
+          const a = P.face + Math.PI + (i-1)*0.9;
+          const from = new THREE.Vector3(P.pos.x, 1.0, P.pos.z);
+          const to = new THREE.Vector3(P.pos.x + Math.sin(a)*4.2, 0.5, P.pos.z + Math.cos(a)*4.2);
+          FX.arc(to, { r: 1.2, inner: .5, span: 1.3, tilt: .5, y: .5, life: .22, color: C(E().glow) });
+          const b = billMesh(TEX.blade, C(E().core), .95);
+          b.userData.noBB = true; b.scale.set(.55, 1.7, 1);
+          let tt = 0;
+          addUpdate({ update(dt){ tt += dt; const k = Math.min(1, tt/0.20);
+            b.position.copy(from).lerp(to, k);
+            b.quaternion.copy(camera.quaternion); b.rotateZ(0.3);
+            if(k >= 1){ scene.remove(b); this.dead = true; } }});
+        });
+      }
+    }
+  },
+
+  /* 法① 元素飞弹 */
+  missile: {
+    3: (c)=>{ delay(0.17, ()=> reCast('missile', shiftCtx(c, 1))); },
+    5: (c)=>{
+      const t = new THREE.Vector3(c.tx, 0, c.tz);
+      delay(0.30, ()=> firePatch(t, 3.0));
+    },
+    7: (c)=> { delay(0.17, ()=> reCast('missile', shiftCtx(c, 1)));
+               delay(0.34, ()=> reCast('missile', shiftCtx(c, -1))); },
+    /* 环绕火球：绕身转，不是又发三颗 */
+    9: (c)=>{ orbitOrbs(3.0); },
+    /* 自动索敌：数值台阶，画面给"锁定线 + 目标标记"示意 */
+    10: (c)=>{
+      const t = new THREE.Vector3(c.tx, 0.9, c.tz);
+      const from = new THREE.Vector3(c.x, 1.1, c.z);
+      delay(0.05, ()=>{
+        FX.ribbon({ width: .12, color: C(0xffb060), life: .5, segs: 10,
+          head: () => from.clone().lerp(t, Math.min(1, (now%1)/0.35)) });
+        const mark = flatMesh(TEX.ring, C(0xffb060), THREE.AdditiveBlending, .8);
+        mark.position.set(t.x, 0.05, t.z);
+        let mt = 0;
+        addUpdate({ update(dt){ mt += dt; const k = mt/0.7;
+          mark.scale.setScalar(1.6 - k*0.9);
+          mark.material.opacity = .8*(1-k);
+          if(k >= 1){ scene.remove(mark); this.dead = true; } }});
+      });
+    }
+  },
+
+  /* 道① 符箓 */
+  talisman: {
+    3: (c)=>{ delay(0.19, ()=> reCast('talisman', shiftCtx(c, 1))); },
+    /* 雷符连锁：落点炸完再往邻近两只各跳一道（本体 0.28s 落地） */
+    5: (c)=>{
+      const t = new THREE.Vector3(c.tx, 0, c.tz);
+      delay(0.40, ()=> chainBolt(t, 2));
+    },
+    7: (c)=>{ delay(0.19, ()=> reCast('talisman', shiftCtx(c, 1)));
+              delay(0.38, ()=> reCast('talisman', shiftCtx(c, -1))); },
+    /* 雷符阵：落点铺一座小法阵。符阵是"地上一直有东西"，
+       和连锁（打一下就跳走）必须能分辨 */
+    9: (c)=>{
+      const t = new THREE.Vector3(c.tx, 0, c.tz);
+      delay(0.38, ()=>{
+        FX.field(t, { kind:'sigil', r: 1.9, life: 2.2, color: C(0x9fd8ff), pulse: 0.75,
+          onPulse(){ hitArea(t, 2.0, 8, { color:'#bfe4ff' }); } });
+      });
+    },
+    /* 自动追踪：符飞出去后拐向最近目标 —— 画一条**弯的**轨迹，
+       直线轨迹读不出"追踪"，那和普通符一模一样 */
+    10: (c)=>{
+      const e = enemies.filter(x=>x && x.deadT<=0)
+        .map(x=>({ x, d: Math.hypot(x.pos.x-c.tx, x.pos.z-c.tz) }))
+        .filter(o=>o.d < 8 && o.d > 1.2).sort((a,b)=>a.d-b.d)[0];
+      if(!e) return;
+      const from = new THREE.Vector3(c.tx, 1.0, c.tz);
+      const mid = from.clone().add(new THREE.Vector3(
+        (e.x.pos.x - c.tx)*0.5, 1.9, (e.x.pos.z - c.tz)*0.5));
+      const to = new THREE.Vector3(e.x.pos.x, 0.9, e.x.pos.z);
+      const curve = new THREE.QuadraticBezierCurve3(from, mid, to);
+      const rib = new Ribbon({ width: .26, color: C(0xffd27a), life: .5, segs: 16 });
+      let t = 0;
+      addUpdate({ update(dt){ t += dt; const k = Math.min(1, t/0.34);
+        rib.push(curve.getPoint(k)); rib.update(dt);
+        if(k >= 1){
+          FX.burst(to, { n: 12, speed: 4, life: .5, size: .26, coreHex: 0xffd27a, glowHex: 0xff5a3c });
+          hitEnemy(e.x, 20, { color:'#ffd8a0' });
+          rib.destroy(); this.dead = true;
+        } }});
+    }
+  },
+
+  /* 道② 毒雾 */
+  poison: {
+    3: (c)=>{ delay(0.16, ()=> reCast('poison', shiftCtx(c, 2))); },
+    /* 5 级「蔓延」是半径 —— 在本体里读 tierOn(5)，这里不重复 */
+    7: (c)=>{ delay(0.16, ()=> reCast('poison', shiftCtx(c, 2)));
+              delay(0.32, ()=> reCast('poison', shiftCtx(c, -2))); },
+    /* 跟随：把雾的中心往人身上拉一段。雾本身是地面物体，
+       直接改 position 会连带地纹一起走 —— 这正是"跟着人跑"该有的样子 */
+    9: (c)=>{
+      const pos = new THREE.Vector3(c.tx, 0, c.tz);
+      let t = 0;
+      addUpdate({ update(dt){
+        t += dt;
+        const dx = P.pos.x - pos.x, dz = P.pos.z - pos.z;
+        const d = Math.hypot(dx, dz) || 1;
+        if(d > 0.9 && t < 3.0){
+          const step = Math.min(d, 2.4*dt);
+          pos.x += dx/d*step; pos.z += dz/d*step;
+        }
+        /* 每 0.4 秒补一团贴地绿雾，让"移动中的雾"不掉队
+           （纯靠改坐标，雾看起来是"瞬移的旧雾"，没有气流感） */
+        if(t < 3.0 && Math.random() < dt*8){
+          FX.spr(pos.x + (Math.random()-.5)*2.4, 0.1, pos.z + (Math.random()-.5)*2.4,
+            { tex:'smoke', life:1.2, s0:.6, s1:1.4, a0:.14, vy:.2, grav:-.1, drag:.8,
+              r:.5, g:.85, b:.35 });
+        }
+        if(t >= 3.2) this.dead = true;
+      }});
+    },
+    /* 死亡爆毒：监听 3.5 秒内死掉的怪，每只在原地爆一圈绿沫。
+       判据用 deadT 从 0 变成正 —— 试验页没有"杀怪"事件，这是唯一可靠的信号 */
+    10: (c)=>{
+      const seen = new Set();
+      let t = 0;
+      addUpdate({ update(dt){
+        t += dt;
+        enemies.forEach(e=>{
+          if(!e || e.deadT <= 0 || seen.has(e)) return;
+          seen.add(e);
+          if(t < 3.5){
+            const at = new THREE.Vector3(e.pos.x, 0.1, e.pos.z);
+            FX.decal(at, 'acid', 1.8, 3, 0x7fbf5a);
+            FX.burst(at, { n: 22, speed: 4.2, life: .8, size: .34, up: .6, grav: 1.0, tex:'smoke' });
+            for(let i=0;i<10;i++){
+              const a = i/10*7;
+              FX.spr(at.x, 0.2, at.z, { tex:'spark', life:.5, s0:.2, s1:0, a0:.8,
+                vx: Math.cos(a)*3.4, vy: 1.6, vz: Math.sin(a)*3.4, grav: 2.2, r:.7, g:1, b:.4 });
+            }
+          }
+        });
+        if(t > 4.2) this.dead = true;
+      }});
+    }
+  }
+};
+
+/* 补一刀的横扫：反向/同向各一版，靠 side 决定转速正负 */
+function whirling(c, side){
+  spinPlayer(0.7, 12*side);
+  FX.spinBlades(new THREE.Vector3(P.pos.x, 0, P.pos.z),
+    { r: 1.95, n: 3, life: 0.85, y: 1.0, spin: 12*side, color: C(E().glow) });
+  FX.shock(new THREE.Vector3(c.x, 0, c.z), 1.8, { color: C(E().glow), dur: 0.3 });
+  hitArea(c.aim, 2.6, 22, { kb: 0.08, from: c.aim, color:'#ffe6b0' });
+}
+
+/* 补震：半径递减，每次带一点尘和震屏 */
+function quakeEcho(c, k){
+  const t = new THREE.Vector3(c.tx, 0, c.tz);
+  FX.shock(t, 2.9*k, { color: C(E().glow), dur: 0.4 });
+  FX.geyser(t, { h: 2.4*k, w: 1.7*k, opacity: 0.30, life: 0.6, tex:'smoke', color: C(0x8a7458) });
+  FX.burst(t, { n: Math.round(16*k), speed: 5.4, life: .6, size: .34, up: 1.5, grav: 5.5, tex:'smoke' });
+  shake(0.14*k, 0.28);
+}
+
+/* 剑阵加圈：只加剑影轨道 + 一圈淡地纹，压低亮度避免三圈叠成白饼 */
+function extraRing(c, r, op){
+  const pos = new THREE.Vector3(c.x, 0, c.z);
+  FX.field(pos, { kind:'blades', r, life: 2.4, color: C(E().glow),
+    pulse: 1.3, opacity: op, spin: 0.5,
+    onPulse(){ hitArea(pos, r*0.9, 7, { color:'#cfe6ff' }); } });
+}
+
+/* 按当前档位把台阶效果叠上去；旧实现不接（对比才有意义） */
+function tierApply(key, c){
+  const pack = TIER_HOOK[key];
+  if(!pack) return;
+  TIER_LVS.forEach(lv=>{
+    if(lv > 1 && tierLv >= lv && pack[lv]) pack[lv](c);
+  });
+}
+
+function playSkill(key, c){
+  const s = SKILLS[key];
+  if(mode === 'v2') s.v2(c); else (s.legacy || legacyFallback)(c);
+  if(mode === 'v2') tierApply(key, c);
+}
+
 let now = 0;
 let _reactAt = -9;          // 上一次反应的时刻（秒），用于限流
 const CD_SWEEP = {};
@@ -5533,7 +6029,7 @@ function cast(key){
   const aim = aimPoint();
   faceTo(aim);
   const ctx = ctxOf(aim);
-  if(mode === 'v2') s.v2(ctx); else (s.legacy || legacyFallback)(ctx);
+  playSkill(key, ctx);       // 本体 + 当前档位的台阶效果（旧实现不叠台阶）
   if(el) el.scrollIntoView;
 
   /* ---- 元素反应：技能命中时把"主元素 × 副元素"交给 FX.react ----
@@ -5559,6 +6055,7 @@ function syncPanel(){
   document.getElementById('pname').innerHTML = s.name + '<em>' + CLASSES[s.cls].name + ' · ' + s.slot + '</em>';
   document.getElementById('psil').textContent = s.sil;
   document.getElementById('pnote').innerHTML = s.note;
+  renderTierList();          // 换技能时台阶清单跟着换成它所属那一位的文案
 }
 let panelSkill = 'whirl';
 
@@ -5953,6 +6450,53 @@ function renderElem2(){
 }
 renderElem2();
 
+/* ---- 进化台阶：换档**立刻重放**当前技能 ----
+   不重放的话，换完档什么都看不见，还得自己再点一次技能才知道变了没有。
+   重放用的是同一个面板技能、同一个机位，差别就摆在眼前。
+
+   两个渲染函数都用 getElementById 现取节点、不用外层 const：
+   syncPanel() 在页面初始化阶段就会被调，那时 const 还在 TDZ 里。 */
+function renderTierList(){
+  const el = document.getElementById('tierList');
+  if(!el) return;
+  const slot = TIER_SLOT[panelSkill];
+  const txt = slot && TIER_TEXT[slot];
+  if(!txt){
+    el.innerHTML = '<div class="tl" style="opacity:.45"><span>这个技能没归进新的 5 位技能树，' +
+      '所以没有台阶清单。</span></div>';
+    return;
+  }
+  const kinds = TIER_KIND[slot] || {};
+  el.innerHTML = TIER_LVS.map(lv=>{
+    const k = kinds[lv] || 'todo';
+    return '<div class="tl' + (tierLv >= lv ? ' on' : '') + '">' +
+      '<b>Lv' + lv + '</b><span>' + txt[lv] + '</span>' +
+      '<em class="k-' + k + '">' + KIND_LABEL[k] + '</em></div>';
+  }).join('');
+}
+
+function renderTier(){
+  const seg = document.getElementById('segTier');
+  if(!seg) return;
+  seg.innerHTML = '';
+  TIER_LVS.forEach(lv=>{
+    const b = document.createElement('button');
+    b.dataset.v = lv;
+    b.textContent = 'Lv' + lv;
+    b.classList.toggle('on', lv === tierLv);
+    b.onclick = ()=>{
+      if(tierLv === lv) return;
+      tierLv = lv;
+      renderTier();
+      toast(lv === 1 ? '台阶 Lv1 · 基础形态' : ('台阶 Lv' + lv));
+      cast(panelSkill);            // 同一机位重放，差别才比得出来
+    };
+    seg.appendChild(b);
+  });
+  renderTierList();
+}
+renderTier();
+
 document.getElementById('segCam').addEventListener('click', e=>{
   const b = e.target.closest('button'); if(!b) return;
   setCamPreset(b.dataset.v);
@@ -6070,6 +6614,12 @@ if(qs.get('elem') && ELEMS[qs.get('elem')]){ curElem = qs.get('elem'); FX.enchan
 /* 混元素也能从 URL 进来：?elem=fire&elem2=thunder（截图/回归用） */
 if(qs.get('elem2') && ELEMS[qs.get('elem2')]) curElem2 = qs.get('elem2');
 if(typeof renderElem2 === 'function') renderElem2();
+/* 台阶档位也能从 URL 进来：?tier=9（截图 / 回归用）。
+   必须在 start=1 的 selectSkill 之前设好，否则第一发还是默认档。 */
+if(qs.get('tier')){
+  const tv = Math.round(Number(qs.get('tier')));
+  if(TIER_LVS.indexOf(tv) >= 0){ tierLv = tv; renderTier(); }
+}
 if(qs.get('speed')) TIME.scale = parseFloat(qs.get('speed'));
 if(qs.get('q')) quality = parseFloat(qs.get('q'));
 if(qs.get('start') === '1'){
