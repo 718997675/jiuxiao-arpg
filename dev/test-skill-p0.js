@@ -28,6 +28,8 @@ const SKILL_TREE = pick('SKILL_TREE');
 const SKILL_LV_MAX = pick('SKILL_LV_MAX');
 const SKILL_LV_STEP = pick('SKILL_LV_STEP');
 const skillLvMul = pick('skillLvMul');
+const skillArchOrphans = pick('skillArchOrphans');
+const skillArchSlotOf = pick('skillArchSlotOf');
 const skillTierStep = pick('skillTierStep');
 const skillArchList = pick('skillArchList');
 const skillArchSlot = pick('skillArchSlot');
@@ -89,6 +91,21 @@ for (const cls of CLASSES) {
   /* 每个位都得有文案 */
   ok(list.every(s => s.title), cls + ' 每个位都要有标题');
   ok(list[4].no === 5, cls + ' 第 5 个位必须是职业核心');
+
+  /* P1 对账：不许有孤儿（树上还在、动作条放不上） */
+  const orphans = skillArchOrphans(cls);
+  ok(orphans.length === 0, cls + ' 的现有技能必须全部有位接（孤儿 = 树上在、动作条放不上）', orphans.join(','));
+  ok(skillArchInherit(cls).length === (SKILL_ORDER[cls] || []).length,
+    cls + ' 的继承数要等于现有技能数', skillArchInherit(cls).length + '/' + (SKILL_ORDER[cls] || []).length);
+
+  /* 反向查必须与正向一致（面板/存档迁移都靠它定位） */
+  const rev = [];
+  for (const id of (SKILL_ORDER[cls] || [])) {
+    const no = skillArchSlotOf(cls, id);
+    if (!no) rev.push(id);
+    else if ((skillArchSlot(cls, no).inherit || []).indexOf(id) < 0) rev.push(id + '@' + no);
+  }
+  ok(rev.length === 0, cls + ' 的 skillArchSlotOf 必须与 inherit 双向一致', rev.join(','));
 }
 
 /* ⑤ 号位不可互换（拍板 #6）：刀客不产单位、道士产单位、法师是状态 */

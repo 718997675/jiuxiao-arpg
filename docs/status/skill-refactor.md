@@ -3,11 +3,12 @@
 - 分支：`feat/skill-refactor`（优先级 **低**，排在大型扩展之后）
 - 计划文档：`docs/SKILL-REDESIGN-PLAN.md`（16 节）
 - 预览站：还没发（要发就 `./dev/publish-preview.sh feat/skill-refactor`）
-- 更新：2026-10-27 21:35 · P0b 只读展示
+- 更新：2026-10-27 21:50 · P1a 对账完成（孤儿清零）
 
-> 当前：**P0 完成**（数据骨架 + 面板/说明页只读展示，260 条断言全绿）；
-> 战斗、存档、键位、动作条仍是老逻辑 —— 这是有意的，P0 要能单独验证不影响手感。
-> 下一步 P1：把动作条真正收敛到 5 格。
+> 当前：**P0 完成 + P1a 对账完成**（239 条数据契约全绿）；
+> 战斗、存档、键位、动作条仍是老逻辑 —— 这是有意的，收敛放在 P1b，
+> 先把「12 个技能都有位接」这件事钉死，收敛才不会漏技能。
+> 下一步 P1b：`SKILL_BAR_SLOTS` 8 → 5 + 键位 1~4 + 老档迁移。
 
 ## 一句话现状
 
@@ -24,20 +25,20 @@ P1 起才动 `SKILL_BAR_SLOTS` 与面板的三列树。
 | D0 | 方案 + 10 项决策拍板 | ✅ | `docs/SKILL-REDESIGN-PLAN.md` | `c938dd7` |
 | P0a | 纯数据骨架：`SKILL_ARCHETYPE`（5 槽 × 职业）、`SKILL_TIERS`（1→10 台阶 + 分段倍率）、`SKILL_TREE.lineMeta` + 三线并行读取（`reqLv` / `needPts`）、`dev/test-skill-p0.js` | ✅ | `data-skills.js`、`data-skill-tree.js`、`dev/test-skill-p0.js` | 见 git log |
 | P0b | 面板/说明页只读展示新结构（既不动键位也不动战斗） | ✅ | `src/ui-skills.js`（`skArchHTML`）、`src/ui.js` 第七节 | 见 git log |
-| P1 | 槽位收敛：8 → 5，键位改左键 + 1~4，老存档迁移；技能树面板从「串行树」改为「三列并行 + 等级锁」 | ⬜ | `SKILL_BAR_SLOTS`、`SKILL_TREE.layout`、save、mobile、UI | — |
+| P1a | 对账：12 技能 × 3 职业全部有位接（孤儿清零），新增 `skillArchOrphans` / `skillArchSlotOf`。**不动任何行为** | ✅ | `data-skills.js`、`dev/test-skill-p0.js` | 见 git log |
+| P1b | 槽位收敛：`SKILL_BAR_SLOTS` 8 → 5，键位 1~8 改 1~4，老存档 8 格收敛 + 拍板 #4 全退点 | ⬜ | `data-skills.js`、`game.js`、`ui.js`、`mobile.js`、`core/save.js` | — |
+| P1c | 技能树面板从「串行树」改为「三列并行 + 等级锁」，删掉 `skillForkOf` 二选一 | ⬜ | `data-skill-tree.js`、`ui-skills.js`（`skTreeHTML`） | — |
 | P2 | 等级台阶：5 → 10 级，数量/形态台阶接进 `castSkill`，点数供给同步 | ⬜ | `src/game.js`、`src/skill-beh.js` | — |
 | P3 | 元素注入 + 反应表：伤害管线支持双元素、特效混色、词缀口径 | ⬜ | 战斗 + 词缀 + `src/fx.js` | — |
 | P4 | 三职业独立 ⑤ 号位：刀客兵形/刃势、法师法相、道士召唤 | ⬜ | `src/fx.js`、`src/charforge.js` | — |
 | P5 | 形态进化表现：5 槽 × 3 职业 × 3 段 = 45 套 | ⬜ | `src/fx.js`、模型 | — |
 | P6 | 平衡、洗点、老档兼容回归 | ⬜ | — | — |
 
-## 下一步（P1，危险面最大，先读三个卡点）
+## 下一步（P1b，危险面最大，先读卡点 2）
 
 槽位真正收敛：**8 格 → 5 格**，键位改左键 + 1~4，老存档迁移。这一步会动到存档，别急：
 
-1. **先对账**：`skillArchInherit(cls)` 已经列出每个职业 5 个位继承的全部现有技能；
-   P1 要保证「没被任何位继承的现有技能」有明确处置（并入某位 / 降级为变体 / 删掉），
-   不能留下「树上还在、动作条放不上」的孤儿。
+1. ~~**先对账**~~：P1a 已完成，`skillArchOrphans(cls)` 三职业全为 0。
 2. `SKILL_BAR_SLOTS` 8 → 5，`bindInput` 的 1~8 改 1~4（左键已经是普攻）。
 3. `src/core/save.js`：老档 8 格收敛到 5 格 —— **先看 act 的 schema 落地没**（卡点 2），
    并遵守拍板 #4：全退技能点 + 免费重投，已投点数一分不少。
@@ -70,6 +71,8 @@ P1 起才动 `SKILL_BAR_SLOTS` 与面板的三列树。
 | 2026-10-27 | 刀客 ⑤ 改「兵形/刃势」，不产生独立单位 | 避免和道士召唤、将来的宠物系统撞车 |
 | 2026-10-27 | 老档迁移：全退技能点 + 免费重投 + 一次免费元素重选 | 已投点数一分不少，避免老玩家吃亏 |
 | 2026-10-27 | 方案 §3.2 里法师 ① 的 `talisman` **归道士** | 五雷符本来就是道士技能；一个技能不能同时占两个位，否则 P1 收敛有歧义 |
+| 2026-10-27 | 5 个孤儿按「机制去哪」安置：`skysfall`+`execute` → 刀客 ②；`chain` → 法师 ①；`starfall` → 法师 ②；`revive` → 道士 ④ | 不按名字像谁分。天崩/陨星天火本来就是所在位的 9/10 台阶；雷弧链的跳 5 目标 = ① 的「自动索敌」；还魂是防御类增益归 ④ |
+| 2026-10-27 | 孤儿必须清零后才动槽位（`skillArchOrphans(cls) === []` 写进契约） | 否则收敛后会出现「树上还在、动作条放不上」的死技能 |
 
 ## 变更记录
 
@@ -113,3 +116,19 @@ P1 起才动 `SKILL_BAR_SLOTS` 与面板的三列树。
   `renderSkillPanel` 直接 return，于是量到「空的 #skList」。探针里补了「不在局内就点开始」。
 - 验证：`test-skill-p0` 230/0 · `test-items` 17/0 · `test-save` 79/0 ·
   `smoke` ERRORS none · `probe-skill-arch` 29/0。
+
+### 2026-10-27 · P1a 对账（孤儿清零）
+
+- 新增 `skillArchSlotOf(cls, id)`（反向查：技能落在哪个位）与
+  `skillArchOrphans(cls)`（树上在、5 个位都没接的技能）。两者只读，不改任何行为。
+- 5 个孤儿全部并入，按「机制去哪」而不是「名字像谁」：
+  | 技能 | 原等级 | 去处 | 依据 |
+  |---|---|---|---|
+  | `execute` 斩杀 | Lv22 | 刀客 ② | 单体高伤，归「高伤」桶 |
+  | `skysfall` 天崩 | Lv40 | 刀客 ② | 三连震 = ② 的 7 级台阶「三连震」 |
+  | `chain` 雷弧链 | Lv8 | 法师 ① | 填充·小范围；跳 5 目标 = ① 的「自动索敌」 |
+  | `starfall` 陨星天火 | Lv26 | 法师 ② | 就是 ② 的 9 级台阶「陨石雨」 |
+  | `revive` 还魂 | Lv40 | 道士 ④ | 免死一次属防御类增益 |
+- 契约加三条（每职业）：孤儿为 0、继承数 == 现有技能数、`skillArchSlotOf` 与 `inherit` 双向一致。
+  239 通过 / 0 失败。
+- 未动：`SKILL_BAR_SLOTS` 仍 8、键位仍 1~8、存档零改动。

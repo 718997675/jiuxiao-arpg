@@ -472,6 +472,13 @@ function mergeSkillMods() {
  * 与方案的一处偏差（有意）：docs/SKILL-REDESIGN-PLAN.md §3.2 把 `talisman`
  * 列进了法师 ① 号位，但 `talisman`（五雷符）是道士技能 —— 法师 ① 收
  * `fireball` / `iceshard`，「符」整个留给道士。
+ *
+ * P1 对账纪律：现有 12 个技能必须**每一个都有位接**（`skillArchOrphans(cls)` 为空）。
+ * 收进来的 5 个孤儿按「机制去哪」而不是「名字像谁」安置：
+ *   execute 斩杀 / skysfall 天崩 → 刀客 ②（高伤桶；天崩本就是 ② 的「三连震」台阶）
+ *   chain 雷弧链              → 法师 ①（填充·小范围；跳 5 目标 = ① 的「自动索敌」台阶）
+ *   starfall 陨星天火          → 法师 ②（就是 ② 的「陨石雨」台阶）
+ *   revive 还魂               → 道士 ④（防御类增益）
  * ============================================================ */
 const SKILL_ARCHETYPE = {
   /* 槽位元数据：键位、定位、冷却量级、元素开关 */
@@ -501,7 +508,9 @@ const SKILL_ARCHETYPE = {
           }
         },
         {
-          no: 2, title: '裂地震击', inherit: ['quake', 'leap', 'thrust'],
+          /* P1 对账：`skysfall`（天崩·三连震）本就是本位的「三连震」台阶，
+             `execute`（斩杀）是单体高伤，归「高伤」桶。原来这两个是孤儿。 */
+          no: 2, title: '裂地震击', inherit: ['quake', 'leap', 'thrust', 'execute', 'skysfall'],
           tiers: {
             1: '单体震击', 3: '溅射', 5: '地裂持续 2 秒', 7: '三连震',
             9: '地裂范围扩大', 10: '眩晕 1.5 秒'
@@ -544,14 +553,17 @@ const SKILL_ARCHETYPE = {
       name: '法师', elem: 'fire', resource: '灵力',
       slots: [
         {
-          no: 1, title: '元素飞弹', inherit: ['fireball', 'iceshard'],
+          /* P1 对账：`chain`（雷弧链·自动跳 5 目标）归「填充 · 小范围」，
+             正好是 ① 的 9/10 台阶「环绕 / 自动索敌」要的机制。 */
+          no: 1, title: '元素飞弹', inherit: ['fireball', 'iceshard', 'chain'],
           tiers: {
             1: '单发火球', 3: '双发', 5: '火球命中爆炸', 7: '三连发',
             9: '环绕火球', 10: '飞弹自动索敌'
           }
         },
         {
-          no: 2, title: '陨石', inherit: ['meteor', 'judgement', 'blizzard'],
+          /* P1 对账：`starfall`（陨星天火）就是本位 9/10 台阶的「陨石雨」。 */
+          no: 2, title: '陨石', inherit: ['meteor', 'judgement', 'blizzard', 'starfall'],
           tiers: {
             1: '单体陨石', 3: '溅射', 5: '双陨', 7: '三连落',
             9: '陨石雨', 10: '陨石雨持续 8 秒'
@@ -609,7 +621,8 @@ const SKILL_ARCHETYPE = {
           }
         },
         {
-          no: 4, title: '回春', inherit: ['heal', 'antidote'],
+          /* P1 对账：`revive`（还魂·免死一次）是防御类增益，归「回春」。 */
+          no: 4, title: '回春', inherit: ['heal', 'antidote', 'revive'],
           tiers: {
             1: '单体治疗', 3: '队友共享', 5: '治疗持续回复增强', 7: '范围扩大',
             9: '瞬间驱散', 10: '低于 30% 生命自动触发'
@@ -712,4 +725,20 @@ function skillArchInherit(cls) {
     for (const id of (s.inherit || [])) if (out.indexOf(id) < 0) out.push(id);
   }
   return out;
+}
+
+/* 反向查：现有技能 id 落在哪个位（0 = 没有位接它，即「孤儿」；同职业内唯一，
+ * 因为一个技能只能占一个位，见 test-skill-p0 的「不能重复占用」） */
+function skillArchSlotOf(cls, id) {
+  for (const s of skillArchList(cls)) {
+    if ((s.inherit || []).indexOf(id) >= 0) return s.no;
+  }
+  return 0;
+}
+
+/* 孤儿技能：树上还在、但 5 个功能位里没有任何一个接它。
+ * 这类技能 P1 收敛后会「在树上、动作条放不上」，必须在收敛前清零。 */
+function skillArchOrphans(cls) {
+  const owned = skillArchInherit(cls);
+  return (SKILL_ORDER[cls] || []).filter(id => owned.indexOf(id) < 0);
 }
