@@ -756,6 +756,11 @@
   .skt-nd.pas .box svg{color:#7ad0c0}
   .skt-nd.key .box svg{color:#c090ff}
   .skt-nd.key .box svg{transform:scale(.9)}
+  /* [P1d] 被动 / 关键被动比主动小一圈 —— 它是这条线上的附属，
+   * 不是与主动并列的选项（二选一在 P1c 已删）。视觉上就不该等大。 */
+  .skt-nd.pas,.skt-nd.key{width:38px}
+  .skt-nd.pas .box,.skt-nd.key .box{width:38px;height:38px}
+  .skt-nd.pas .box svg,.skt-nd.key .box svg{width:21px;height:21px}
   .skt-nd:hover .box{border-color:#ffe9a8;box-shadow:0 0 14px rgba(255,233,168,.3)}
   .skt-nd.sel .box{border-color:#ffd479;box-shadow:0 0 16px rgba(255,212,121,.45),inset 0 0 14px rgba(255,212,121,.18)}
   .skt-nd.locked{opacity:.45;filter:grayscale(.6)}

@@ -19,16 +19,25 @@
  *   右侧卡从「操作面板」降级成「说明书」：数值、描述、机制、分支，全是只读。
  * ============================================================ */
 
-/* 技能树几何常量。
- * 与 dev/preview-tree.html 顶部那份 G 是同一组数字 —— 预览页和正式面板
- * 必须同源，否则「预览看着行、上线挤成一团」。 */
+/* 技能树几何常量（[P1d] 三列纵向版）。
+ *
+ * 一条线 = 一列。之前是「3 组 × 2 子列」：主动一列、被动一列并排，
+ * 视觉上像是「二选一」；二选一在 P1c 已经删了，所以这里把被动收进列内、
+ * 小一圈挂在主动右边（它是这条线的附属，不是并列选项）。
+ *
+ * 数字怎么定的（2026-10-27 真机量出来的，别随手改）：
+ *   · 主动节点实测 85px 高（46 框 + 名称 + 变体名 + 三个分支记号），
+ *     所以 rowH 不能低于 ~100，否则变体名会压到下一行节点的框上；
+ *   · 破军那条线是最长的（9 个节点 / 5 行），H=530、W=576；
+ *     面板可视区 936×663 → 自适应缩放 1.2（顶格），没有缩字。 */
 const SKG = {
-  node: 46,        // 节点边长
-  rowH: 106,       // 行距
-  subGap: 112,     // 同系内：主动侧 → 被动侧
-  treeGap: 252,    // 系与系之间（主动侧到主动侧）
+  node: 46,        // 主动节点边长
+  pasNode: 38,     // 被动 / 关键被动边长（小一圈）
+  rowH: 104,       // 行距（一行 = 一个岔口：主动 + 它的被动）
+  pasDx: 74,       // 主动左边 → 被动左边（留 8px 给主动的名称溢出）
+  colGap: 196,     // 列与列（主动左边 → 主动左边）
   padX: 8,
-  padY: 30,
+  padY: 34,
   popW: 236        // 分支浮层宽度
 };
 
@@ -146,11 +155,13 @@ Object.assign(UI, {
     h += this.skBuilds ? this.skBuildsHTML() : '';
     /* [P0] 新版技能位预览：只读，默认折叠，不接管任何点击 */
     h += this.skArchHTML();
-    /* 手机：树上换成 DOM 横向树（见 renderSkillTreeDOM），不再用缩放画布。
-     * 外面的 .sk-body / .sk-left / .sk-right 结构不变，所以分栏 CSS 原样复用。 */
+    /* 手机：树上换成 DOM 纵向列（见 renderSkillTreeDOM），不再用缩放画布。
+     * 外面的 .sk-body / .sk-left / .sk-right 结构不变，所以分栏 CSS 原样复用。
+     * [P1d] 分页签必须在这里给：走 MTREE 的路径不经过 skTreeHTML，
+     * 原来那套 `data-skttree` 按钮就永远画不出来 —— 手机上只能看到第一条线。 */
     const mt = (typeof MTREE !== 'undefined') && MTREE.isMobile();
     h += '<div class="sk-body"><div class="sk-left">'
-      + (mt ? '<div class="sk-mt" id="skTree"></div>' : this.skTreeHTML()) + '</div>';
+      + (mt ? this.skTreeTabsHTML() + '<div class="sk-mt" id="skTree"></div>' : this.skTreeHTML()) + '</div>';
     h += this.skCardHTML(this.skShown()) + '</div>';
     h += this.skBarHTML();
 
@@ -878,53 +889,110 @@ Object.assign(UI, {
     </div>`;
   },
 
-  /* ---------------- 树形画布 ----------------
-   * 坐标全部来自 SKILL_TREE.layout，不手写。
-   * 一个节点上承载的信息：图标 / 等级（或解锁等级）/ 是否在技能条上 /
-   * 三个分支记号 / 选中时浮出的 ＋ −。 */
+  /* ---------------- 树形画布（[P1d] 三列纵向） ----------------
+   * 一条线 = 一列；列内从上往下按「等级门槛」递增；主动在列的主轴上，
+   * 被动小一圈挂在它右边（它是这条线的附属，不是与主动并列的选项）。
+   * 连线只剩「同线竖向淡引导线」+「主动到自身被动的短线」。
+   * 几何一律由 skTreeLayout 算，不手写；节点内容照旧。 */
+
+  /* 手机：三条线的分页签（桌面不需要 —— 三列一起看才叫「并行」） */
+  skTreeTabsHTML() {
+    const cls = (typeof Game !== 'undefined' && Game.state) ? Game.state.cls : null;
+    const lay = (typeof SKILL_TREE !== 'undefined' && SKILL_TREE.layout && SKILL_TREE.layout[cls]) || [];
+    const trees = lay.map(t => t.name);
+    if (!trees.length) return '';
+    if (this.skTreeTab == null || trees.indexOf(this.skTreeTab) < 0) this.skTreeTab = trees[0];
+    return '<div class="skt-tabs on">' + trees.map(t =>
+      `<button class="${t === this.skTreeTab ? 'on' : ''}" data-skttree="${t}">${t}</button>`).join('') + '</div>';
+  },
+
+  /* 纯数据排布（不碰 DOM，所以探针可以直接断言顺序与是否重叠）
+   * 返回 { cols:[{ name, ci, baseX, nodes:[nd] }], W, H, rows }
+   * nd = { id, kind, name, max, unlock, line, ci, ri, reqLv, needPts, act, baseX, y } */
+  skTreeLayout(cls, onlyName) {
+    const lay = (typeof SKILL_TREE !== 'undefined' && SKILL_TREE.layout && SKILL_TREE.layout[cls]) || [];
+    if (!lay.length) return { cols: [], W: 0, H: 0, rows: 0 };
+    const base = {};
+    skillTreeNodes(cls).forEach(n => { base[n.id] = n; });
+    const lines = (typeof skillLines === 'function') ? skillLines(cls) : [];
+    const cols = [];
+    let maxRi = 0;
+
+    lines.forEach(ln => {
+      if (onlyName && ln.name !== onlyName) return;
+      /* 列号 = 显示顺序（手机只显示一条线时从 0 起，不会留下空列） */
+      const pos = cols.length;
+      /* 行 = 岔口：同一岔口的主动与被动合成一行 —— 之前它们分居两列，
+       * 看着像「二选一」。行序 = reqLv 升序（同级按原岔口序号，重画不跳）。 */
+      const groups = {};
+      ln.nodes.forEach(n => { (groups[n.row] = groups[n.row] || []).push(n); });
+      const rows = Object.keys(groups).map(k => {
+        const arr = groups[k];
+        const act = arr.find(n => n.kind === 'active') || arr[0];
+        return { row: Number(k), act: act, subs: arr.filter(n => n !== act), reqLv: act.reqLv || 1 };
+      }).sort((a, b) => (a.reqLv - b.reqLv) || (a.row - b.row));
+
+      const baseX = SKG.padX + pos * SKG.colGap;
+      const nodes = [];
+      rows.forEach((r, ri) => {
+        if (ri > maxRi) maxRi = ri;
+        const y = SKG.padY + ri * SKG.rowH;
+        [r.act].concat(r.subs).forEach((x, si) => {
+          const b = base[x.id] || {};
+          nodes.push({
+            id: x.id, kind: x.kind, name: x.name || b.name || x.id,
+            max: x.max || b.max || 1, unlock: b.unlock || x.reqLv || 1,
+            line: ln.name, ci: pos, ri: ri, reqLv: x.reqLv, needPts: x.needPts,
+            act: si === 0, baseX: baseX, y: y
+          });
+        });
+      });
+      cols.push({ name: ln.name, ci: pos, baseX: baseX, nodes: nodes });
+    });
+
+    if (!cols.length) return { cols: [], W: 0, H: 0, rows: 0 };
+    const W = SKG.padX * 2 + (cols.length - 1) * SKG.colGap + SKG.pasDx + SKG.pasNode + 56;
+    const H = SKG.padY + maxRi * SKG.rowH + SKG.node + 34;
+    return { cols: cols, W: W, H: H, rows: maxRi + 1 };
+  },
+
   skTreeHTML() {
     const cls = Game.state.cls;
     const lay = (typeof SKILL_TREE !== 'undefined' && SKILL_TREE.layout && SKILL_TREE.layout[cls]) || [];
     if (!lay.length) return '<div class="skt-stage"><div class="vhint">这个职业还没有技能树</div></div>';
 
-    const nodes = skillTreeNodes(cls);
     const trees = lay.map(t => t.name);
     const mob = (typeof IS_TOUCH !== 'undefined' && IS_TOUCH) || window.innerWidth < 780;
     if (this.skTreeTab == null || trees.indexOf(this.skTreeTab) < 0) this.skTreeTab = trees[0];
-    const shown = mob ? [this.skTreeTab] : trees;
-    const list = nodes.filter(n => shown.indexOf(n.tree) >= 0);
+    const geo = this.skTreeLayout(cls, mob ? this.skTreeTab : null);
+    const cols = geo.cols;
+    const list = [];
+    cols.forEach(c => c.nodes.forEach(n => list.push(n)));
+    const W = geo.W, H = geo.H;
     const z = Math.max(0.45, Math.min(2, this.skZoom || 1));
-
-    const xOf = col => {
-      const ti = Math.floor(col / 2), sub = col % 2;
-      return mob ? SKG.padX + sub * SKG.subGap
-        : SKG.padX + ti * SKG.treeGap + sub * SKG.subGap;
-    };
-    const yOf = row => SKG.padY + row * SKG.rowH;
-    const maxCol = list.reduce((a, n) => Math.max(a, n.col), 0);
-    const maxRow = list.reduce((a, n) => Math.max(a, n.row), 0);
-    const W = mob
-      ? SKG.padX * 2 + SKG.subGap + SKG.node + 92
-      : SKG.padX * 2 + Math.floor(maxCol / 2) * SKG.treeGap + SKG.subGap + SKG.node + 74;
-    const H = yOf(maxRow) + SKG.node + 70;
+    const xOf = n => n.baseX + (n.act ? 0 : SKG.pasDx);
 
     const byId = {};
     list.forEach(n => byId[n.id] = n);
 
-    /* 连线：竖脊 + 到主动的横枝（同线引导）。[P1c] 主动 ↔ 被动那条虚线已删 ——
-     * 它原本表示「二选一」，三线并行后同一岔口两边都能点，再画就是误导。 */
+    /* 连线：每条线一根竖向淡引导线（穿在主动节点背后，只表示「这一列是一条线」，
+     * 不是「上一个解锁下一个」—— 三线并行里没有硬前置），
+     * 再加一条「主动 → 自己那一行的被动」短线。跨列的虚线已经不画了：
+     * 那种线原来表示「二选一」，同一行两边现在都能点，画了就是误导。 */
     let wire = `<svg class="skt-wire" width="${W}" height="${H}">`;
-    for (const t of lay) {
-      if (shown.indexOf(t.name) < 0) continue;
-      const sp = byId[t.spine];
-      if (!sp) continue;
-      const spX = xOf(sp.col) + SKG.node / 2;
-      wire += `<path d="M${spX} ${yOf(sp.row) + SKG.node}V${yOf(t.forks.length) + SKG.node / 2}" stroke="rgba(216,178,90,.36)" stroke-width="1.5" fill="none"/>`;
-      for (const f of t.forks) {
-        const a = byId[f.active];
-        if (!a) continue;
-        const ay = yOf(a.row) + SKG.node / 2;
-        wire += `<path d="M${spX} ${ay}H${xOf(a.col)}" stroke="rgba(216,178,90,.36)" stroke-width="1.5" fill="none"/>`;
+    for (const c of cols) {
+      const acts = c.nodes.filter(n => n.act);
+      if (!acts.length) continue;
+      const railX = acts[0].baseX + SKG.node / 2;
+      const y1 = acts[0].y + SKG.node / 2;
+      const y2 = acts[acts.length - 1].y + SKG.node / 2;
+      if (y2 > y1) {
+        wire += `<path d="M${railX} ${y1}V${y2}" stroke="rgba(216,178,90,.16)" stroke-width="1.5" fill="none"/>`;
+      }
+      for (const n of c.nodes) {
+        if (n.act) continue;
+        const cy = n.y + SKG.pasNode / 2 + 5;
+        wire += `<path d="M${n.baseX + SKG.node} ${cy}H${n.baseX + SKG.pasDx}" stroke="rgba(216,178,90,.2)" stroke-width="1" fill="none"/>`;
       }
     }
     wire += '</svg>';
@@ -935,10 +1003,7 @@ Object.assign(UI, {
         stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${body || ''}</svg>`;
 
     let h = '';
-    if (mob) {
-      h += '<div class="skt-tabs on">' + trees.map(t =>
-        `<button class="${t === this.skTreeTab ? 'on' : ''}" data-skttree="${t}">${t}</button>`).join('') + '</div>';
-    }
+    if (mob) h += this.skTreeTabsHTML();
     /* 余量（skPad）直接烘进标记里：重排时不会先闪一帧「内容贴边」，
      * 探针在同一帧读到的大小也才是最终值 */
     const pad0 = this.skPad || 0;
@@ -946,13 +1011,13 @@ Object.assign(UI, {
       <div class="skt-plate" data-w="${W}" data-h="${H}" style="width:${W}px;height:${H}px;left:${pad0}px;top:${pad0}px;transform:scale(${z})">`;
     h += wire;
 
-    /* 系标题（手机形态已有分页签，不再重复） */
+    /* 列标题：一条线一列，标题居中压在列上（手机形态已有分页签，不再重复）。
+     * 居中点取「主动中心」与「被动中心」的中点，不是节点宽度之和的一半 ——
+     * 那样会把标题推到列右边去（真机上看出来的）。 */
     if (!mob) {
-      shown.forEach(name => {
-        const cols = list.filter(n => n.tree === name).map(n => n.col);
-        if (!cols.length) return;
-        const x = xOf(Math.min.apply(null, cols)) + (SKG.subGap + SKG.node) / 2 - 24;
-        h += `<div class="skt-cap" style="left:${x}px;top:2px">${name}</div>`;
+      cols.forEach(c => {
+        const cx = c.baseX + (SKG.node / 2 + SKG.pasDx + SKG.pasNode / 2) / 2;
+        h += `<div class="skt-cap" style="left:${cx}px;top:2px;transform:translateX(-50%)">${c.name}</div>`;
       });
     }
 
@@ -980,7 +1045,7 @@ Object.assign(UI, {
        * NODE-INVESTED-PATCH */
       const invLv = n.kind === 'active' ? (((Game.skillState()[n.id] || {}).lv) || 1) : lv;
       const full = isPas ? lv >= n.max : invLv >= SKILL_LV_MAX;
-      const x = xOf(n.col), y = yOf(n.row);
+      const x = xOf(n), y = n.y;
 
       /* 三个小记号：精研（到 3 级自动）· 取向（3 级二选一 · 1 点）· 变体（当前 Ⅰ/Ⅱ/Ⅲ）。
        * 门槛与账本一律看「已投等级」invested，不看装备加成后的 skillLevel ——
@@ -1052,13 +1117,13 @@ Object.assign(UI, {
       if (n.kind !== 'key') continue;
       const g = (typeof Game.skillGate === 'function') ? Game.skillGate(n.id) : null;
       if (!g || g.ptsOK) continue;
-      h += `<div class="skt-or soft" style="left:${xOf(n.col) + SKG.node / 2 - 12}px;top:${yOf(n.row) - 15}px" title="关键被动软前置：该线已投入 ${g.linePts} / ${g.needPts} 点"><i>线${g.linePts}/${g.needPts}</i></div>`;
+      h += `<div class="skt-or soft" style="left:${xOf(n) + SKG.pasNode / 2 - 12}px;top:${n.y - 15}px" title="关键被动软前置：该线已投入 ${g.linePts} / ${g.needPts} 点"><i>线${g.linePts}/${g.needPts}</i></div>`;
     }
 
     /* 分支浮层：就地展开在节点旁，不跳右侧 */
     if (this.skPop && byId[this.skPop]) {
       const n = byId[this.skPop];
-      const nx = xOf(n.col), ny = yOf(n.row);
+      const nx = xOf(n), ny = n.y;
       let px = nx + SKG.node + 10;
       if (px + SKG.popW > W) px = Math.max(2, nx - SKG.popW - 10);
       const py = Math.min(Math.max(2, ny - 8), Math.max(2, H - 210));
@@ -1069,12 +1134,13 @@ Object.assign(UI, {
     return h;
   },
 
-  /* ---------------- 手机上的术法树：3 列 × N 行的横向树 ----------------
+  /* ---------------- 手机上的术法树：一条线一列、纵向排 ----------------
    * 原来的大画布要「双指捏合 + 单指平移」才看得全，节点下的 ＋/− 又只有 26px，
-   * 玩家反馈「操作比较麻烦」。这里改成固定的三列：
-   *   第 0 列 = 本系主干（脊）· 第 1 列 = 各岔口的主动 · 第 2 列 = 对应被动
-   * 岔口按行往下排，同一行左右相邻的主动/被动就是「或」的关系（虚线）。
-   * 一屏能看全，点一下选中，加减在下方说明书卡里。 */
+   * 玩家反馈「操作比较麻烦」。
+   * [P1d] 之前这里是「脊 | 主动 | 被动」三列并排 —— 那是串行二选一的形状，
+   * 三线并行后不再成立。现在改成：顶上三条线的分页签，每页只排一条线，
+   * 从上往下按等级门槛递增（主动 + 它那一行的被动相邻）。一屏一列，点一下选中，
+   * 加减在下方说明书卡里。列的顺序与桌面版同源（都走 skTreeLayout）。 */
   renderSkillTreeDOM() {
     const host = document.getElementById('skTree');
     if (!host || !Game.state) return;
@@ -1085,26 +1151,18 @@ Object.assign(UI, {
     const trees = lay.map(t => t.name);
     if (this.skTreeTab == null || trees.indexOf(this.skTreeTab) < 0) this.skTreeTab = trees[0];
     const cur = lay.find(t => t.name === this.skTreeTab) || lay[0];
-    const nodes = skillTreeNodes(cls);
     const byId = {};
-    nodes.forEach(n => { byId[n.id] = n; });
+    skillTreeNodes(cls).forEach(n => { byId[n.id] = n; });
 
-    const N = cur.forks.length;
-    const midRow = Math.floor((N - 1) / 2);
-    const list = [];
-    if (byId[cur.spine]) {
-      const sp = byId[cur.spine];
-      list.push({ id: sp.id, kind: sp.kind || 'active', col: 0, row: midRow, req: [] });
-    }
-    cur.forks.forEach((f, i) => {
-      const a = byId[f.active], p = byId[f.passive];
-      if (a) list.push({ id: a.id, kind: 'active', col: 1, row: i, req: cur.spine ? [cur.spine] : [] });
-      /* 被动挂在同岔口的主动右边：树上那根虚线就是「或」的意思，这里也一样 */
-      if (p) list.push({
-        id: p.id, kind: byId[p.id] ? (byId[p.id].kind || 'passive') : 'passive',
-        col: 2, row: i, req: a ? [a.id] : (cur.spine ? [cur.spine] : [])
-      });
-    });
+    /* 一条线一页：行序由 skTreeLayout 给（reqLv 升序，同岔口主动在前）。
+     * req 只用来画那根竖引导线 —— 每行连上一行，视觉上就是「这一列是一条线」；
+     * 结算里没有任何前置，这里的 req 只是画线用，别拿去做门槛判断。 */
+    const geo = this.skTreeLayout(cls, cur.name);
+    const one = geo.cols[0];
+    const list = one ? one.nodes.map((n, i) => ({
+      id: n.id, kind: n.kind, col: 0, row: i,
+      req: i ? [one.nodes[i - 1].id] : []
+    })) : [];
 
     const lvOf = n => n.kind === 'active'
       ? Game.skillLevel(n.id)
