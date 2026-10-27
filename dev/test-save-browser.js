@@ -42,7 +42,13 @@ const section = t => console.log('\n' + t);
   await page.setViewport({ width: 1440, height: 900 });
   page.on('pageerror', e => errs.push('[pageerror] ' + e.message));
   page.on('console', m => { if (m.type() === 'error') errs.push('[console] ' + m.text()); });
-  page.on('requestfailed', r => errs.push('[reqfail] ' + r.url() + ' :: ' + (r.failure() || {}).errorText));
+  /* 换视口要 reload，正在缓冲的 BGM 会被浏览器主动 abort（net::ERR_ABORTED）。
+   * 那不是应用报错，是测试自己打断的，过滤掉免得每次跑都随机红一条。 */
+  page.on('requestfailed', r => {
+    const t = (r.failure() || {}).errorText || '';
+    if (/ERR_ABORTED/.test(t) && /\/audio\//.test(r.url())) return;
+    errs.push('[reqfail] ' + r.url() + ' :: ' + t);
+  });
 
   /* ---------------- 1. 造一份 V1 旧档（用页面里的 Game.newState + rollItem） ---------------- */
   section('一、V1 旧档自动迁移（真实浏览器 localStorage）');
