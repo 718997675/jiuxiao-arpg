@@ -3108,25 +3108,99 @@ const UI = {
     }, 1000);
   },
 
-  /* ---------------- 传送 ---------------- */
+  /* ---------------- 传送 / 山河图 ---------------- */
+  /* [M0] 三层结构：卷 tab → 章分组 → 图列表。
+   * 只做「看」和「去」，不改地图本身 —— 30 个图位里目前只有 6 张有真实地图，
+   * 其余 id 为 null，UI 上显示「未开放」，等 M3 补。 */
+  wmPart: 0,
+
   openTravel() {
+    const p = document.getElementById('travelPanel');
+    if (!p) return;
+    this.closeAll(p);
+    if (!this.wmPart && Game.state) this.wmPart = Game.state.part || 1;
+    this.renderWorldMap();
+    p.classList.add('open');
+  },
+
+  renderWorldMap() {
     const s = Game.state;
-    const list = document.getElementById('travelList');
-    const ids = ['village', 'forest', 'swamp', 'mine', 'abyss', 'heaven'];
-    list.innerHTML = ids.map(id => {
-      const m = MAPS[id];
-      const locked = s.level < (m.unlock || 1);
-      return `<div class="trow ${locked ? 'locked' : ''}">
-        <div><div class="tn">${m.name}</div>
-        <div class="tl">推荐境界 ${m.level}${locked ? ' · 需 ' + m.unlock + ' 级' : ''}</div></div>
-        ${locked ? '<span class="tl">未开启</span>' : `<button class="btn" data-go="${id}" style="padding:4px 14px;font-size:11px">前往</button>`}
+    if (!s) return;
+    const tabs = document.getElementById('wmTabs');
+    const body = document.getElementById('wmBody');
+    if (!tabs || !body) return;
+
+    const cur = this.wmPart || s.part || 1;
+    this.wmPart = cur;
+    const CN = '一二三四五';
+
+    /* ---- 卷 tab：每卷显示「已开放图数 / 图位总数」 ---- */
+    tabs.innerHTML = [1, 2, 3, 4, 5].map(n => {
+      const pt = PARTS[n], cnt = mapCountOfPart(n);
+      const open = this._partOpen(n, s);
+      return `<button class="wm-tab ${n === cur ? 'on' : ''} ${open ? '' : 'off'}" data-part="${n}">
+        <span class="wm-tn">卷${CN[n - 1]}</span>
+        <span class="wm-ts">${pt.name}</span>
+        <span class="wm-tc">${cnt.open}/${cnt.all}</span>
+      </button>`;
+    }).join('');
+    tabs.querySelectorAll('[data-part]').forEach(b => b.addEventListener('click', () => {
+      this.wmPart = +b.dataset.part;
+      this.renderWorldMap();
+    }));
+
+    /* ---- 卷头 ---- */
+    const pt = PARTS[cur], camp = CAMPS[pt.camp];
+    let html = `<div class="wm-head">
+      <div class="wm-hn">卷${CN[cur - 1]} · ${pt.name}</div>
+      <div class="wm-hr">${pt.from}–${pt.to} 级 · 营地「${camp.name}」${camp.mapId ? '' : '（未开放）'} · ${pt.keyName}</div>
+      <div class="wm-hb">${pt.brief}</div>
+    </div>`;
+
+    /* ---- 章 → 图 ---- */
+    html += actsOfPart(cur).map(a => {
+      const maps = a.maps.map(m => {
+        if (!m.id) {
+          return `<div class="wm-map shut"><span class="wm-mn">${m.name}</span><span class="wm-ml">未开放</span></div>`;
+        }
+        const mm = MAPS[m.id];
+        const seen = (s.mapsSeen || []).indexOf(m.id) >= 0;
+        const need = mm.unlock || 1;
+        /* 回头路：去过的图随时能回，不受等级限制（和 Game.travelTo 同一口径） */
+        const can = seen || s.level >= need;
+        const here = s.mapId === m.id;
+        const tail = here ? '<span class="wm-ml">当前所在</span>'
+          : can ? `<button class="btn wm-go" data-go="${m.id}">前往</button>`
+            : `<span class="wm-ml">需 ${need} 级</span>`;
+        return `<div class="wm-map ${can ? '' : 'shut'} ${here ? 'here' : ''}">
+          <span class="wm-mn">${mm.name}</span>
+          <span class="wm-ml">推荐 ${mm.level} 级</span>
+          ${tail}
+        </div>`;
+      }).join('');
+      return `<div class="wm-act">
+        <div class="wm-ah"><b>第${'一二三四五六七八九十'[a.no - 1]}章</b> ${a.name}<span>${a.from}–${a.to} 级</span></div>
+        <div class="wm-maps">${maps}</div>
       </div>`;
     }).join('');
-    list.querySelectorAll('[data-go]').forEach(b => b.addEventListener('click', () => {
-      Game.travelTo(b.dataset.go); this.closeAll();
+
+    body.innerHTML = html;
+    body.querySelectorAll('[data-go]').forEach(b => b.addEventListener('click', () => {
+      Game.travelTo(b.dataset.go);
+      this.closeAll();
     }));
-    this.closeAll(document.getElementById('travelPanel'));
-    document.getElementById('travelPanel').classList.add('open');
+  },
+
+  /* 某卷是否已抵达：卷内任意一张图去过，或等级够得着该卷下限 */
+  _partOpen(n, s) {
+    if (n === 1) return true;
+    if (s.part && s.part >= n) return true;
+    for (const a of actsOfPart(n)) {
+      for (const m of a.maps) {
+        if (m.id && (s.mapsSeen || []).indexOf(m.id) >= 0) return true;
+      }
+    }
+    return s.level >= PARTS[n].from;
   },
 
   /* ---------------- 炼金师（分解 / 升级 / 套装打造） ---------------- */
@@ -3477,7 +3551,7 @@ const UI = {
     if (foot) {
       const free = Math.max(0, cap - all.length);
       const extra = rows.length !== all.length ? ` · 筛出 <b>${rows.length}</b> 件` : '';
-      foot.innerHTML = `<b>仓库跨角色共享</b>，三个角色位读同一份，换号不丢东西 · 剩 <b>${free}</b> 格${extra}<br>
+      foot.innerHTML = `<b>仓库跨角色共享</b>，所有角色位读同一份，换号不丢东西 · 剩 <b>${free}</b> 格${extra}<br>
         左键行囊物品＝存入 · 左键仓库物品＝取回 · 「整理」按 部位 → 品质 → 等级 排序`;
     }
 

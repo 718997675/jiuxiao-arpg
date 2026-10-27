@@ -162,3 +162,169 @@ const QUESTS = {
     rewards: { xp: 30000, gold: 12000, ilvl: 40, rarity: 'legendary', skill: 'avatar', talent: 3 }, next: null
   }
 };
+
+/* ============================================================
+ * 世界结构 · M0 地基
+ *
+ *   卷（Part，5）  —— 世界的大阶段：1 座营地 + 1 道大传送门 + 1 阶钥匙
+ *   章（Act，12）  —— 剧情单元：若干张区域图 + 章节首领
+ *   图（Map，30）  —— 实际能进的地图（zone / 任务区 / 地下城）
+ *
+ * ⚠ M0 只搭骨架，不改地图本身：
+ *   - 30 个图位里只有 6 个有真实地图（`id` 非空），其余 `id: null` = 未开放，M3 再补
+ *   - 图的 `lv` 是**方案目标等级**（docs/ACT-EXPANSION-PLAN.md §3.3），
+ *     和 `MAPS[x].level`（现有玩法等级）暂时可以不一致，M3 统一重定级时才对齐
+ *   - 卷的等级段（from/to）用于 UI 显示与门禁，不参与经验计算
+ * ============================================================ */
+
+const PARTS = {
+  1: {
+    id: 1, name: '桃源残照', from: 1, to: 18, tone: '#8fa87a',
+    camp: 'campA', portal: 'portalA', portalName: '桃源古道',
+    keyName: '一阶 · 朽骨钥', brief: '竹影婆娑，妖气初生。这是山海崩落的第一道裂缝。'
+  },
+  2: {
+    id: 2, name: '血月焚天', from: 19, to: 30, tone: '#c0705a',
+    camp: 'campB', portal: 'portalB', portalName: '铁关隘口',
+    keyName: '二阶 · 青铜钥', brief: '血月当空，铁山被熔，关隘之外再无归途。'
+  },
+  3: {
+    id: 3, name: '幽冥黄泉', from: 31, to: 40, tone: '#7a7ac0',
+    camp: 'campC', portal: 'portalC', portalName: '忘川渡口',
+    keyName: '三阶 · 玄铁钥', brief: '忘川无渡，白骨为舟。生者至此，皆须留名。'
+  },
+  4: {
+    id: 4, name: '剑冢天阙', from: 41, to: 50, tone: '#b0b8d0',
+    camp: 'campD', portal: 'portalD', portalName: '南天残门',
+    keyName: '四阶 · 赤金钥', brief: '万剑归冢，天阙断阙。剑意未散，仙骨已寒。'
+  },
+  5: {
+    id: 5, name: '九霄终焉', from: 51, to: 60, tone: '#d8b25a',
+    camp: 'campE', portal: 'portalE', portalName: '九霄天门',
+    keyName: '五阶 · 九霄钥', brief: '镜渊无相，天门将闭。走到这里的，只剩你一个。'
+  }
+};
+
+/* 章节：maps 里的每一项 { id, name, lv }
+ *   id 非空 → 有真实地图，可以前往（目前只有 6 张）
+ *   id 为空 → 图位已规划、地图未做，UI 显示「未开放」 */
+const ACTS = {
+  '1-1': {
+    id: '1-1', part: 1, no: 1, name: '竹林妖氛', from: 1, to: 6,
+    maps: [{ id: 'forest', name: '幽篁林', lv: 3 }, { id: null, name: '落霞坡', lv: 6 }],
+    boss: 'treeking', sub: 'batking'
+  },
+  '1-2': {
+    id: '1-2', part: 1, no: 2, name: '血月压境', from: 7, to: 12,
+    maps: [{ id: 'swamp', name: '血月沼泽', lv: 8 }, { id: null, name: '沉骨滩', lv: 11 }],
+    boss: 'chief', sub: 'snakequeen'
+  },
+  '1-3': {
+    id: '1-3', part: 1, no: 3, name: '铁山无声', from: 13, to: 18,
+    maps: [{ id: null, name: '骨塔祭场', lv: 13 }, { id: 'mine', name: '玄铁矿洞', lv: 16 }, { id: null, name: '铁山绝顶', lv: 18 }],
+    boss: 'golemking', sub: 'ghostlord'
+  },
+  '2-1': {
+    id: '2-1', part: 2, no: 1, name: '寒潭照骨', from: 19, to: 22,
+    maps: [{ id: null, name: '寒潭水牢', lv: 20 }, { id: null, name: '冰魄湖', lv: 22 }],
+    boss: 'icequeen', sub: 'spidermother'
+  },
+  '2-2': {
+    id: '2-2', part: 2, no: 2, name: '熔脉深处', from: 23, to: 26,
+    maps: [{ id: null, name: '熔脉深沟', lv: 24 }, { id: null, name: '灰烬荒原', lv: 26 }],
+    boss: null, sub: null
+  },
+  '2-3': {
+    id: '2-3', part: 2, no: 3, name: '焚天焦土', from: 27, to: 30,
+    maps: [{ id: null, name: '赤炎峡谷', lv: 28 }, { id: null, name: '焚天祭坛', lv: 30 }],
+    boss: 'firegeneral', sub: null
+  },
+  '3-1': {
+    id: '3-1', part: 3, no: 1, name: '九幽地宫', from: 31, to: 35,
+    maps: [{ id: 'abyss', name: '九幽地宫', lv: 32 }, { id: null, name: '白骨长廊', lv: 34 }, { id: null, name: '忘川河滩', lv: 35 }],
+    boss: null, sub: null
+  },
+  '3-2': {
+    id: '3-2', part: 3, no: 2, name: '黄泉无渡', from: 36, to: 40,
+    maps: [{ id: null, name: '九幽深渊', lv: 37 }, { id: null, name: '黄泉渡', lv: 40 }],
+    boss: 'ferryman', sub: null
+  },
+  '4-1': {
+    id: '4-1', part: 4, no: 1, name: '万剑归冢', from: 41, to: 45,
+    maps: [{ id: null, name: '天罡剑冢', lv: 42 }, { id: null, name: '万剑坑', lv: 44 }, { id: null, name: '剑冢绝巅', lv: 45 }],
+    boss: 'swordlord', sub: null
+  },
+  '4-2': {
+    id: '4-2', part: 4, no: 2, name: '云海断阙', from: 46, to: 50,
+    maps: [{ id: 'heaven', name: '天阙残境', lv: 47 }, { id: null, name: '云海断桥', lv: 49 }, { id: null, name: '南天残门', lv: 50 }],
+    boss: null, sub: null
+  },
+  '5-1': {
+    id: '5-1', part: 5, no: 1, name: '无相镜渊', from: 51, to: 58,
+    maps: [
+      { id: null, name: '玉京废墟', lv: 52 }, { id: null, name: '星陨台', lv: 54 },
+      { id: null, name: '无相幻境', lv: 56 }, { id: null, name: '镜渊', lv: 57 },
+      { id: null, name: '九霄之巅', lv: 58 }
+    ],
+    boss: null, sub: null
+  },
+  '5-2': {
+    id: '5-2', part: 5, no: 2, name: '终焉之门', from: 59, to: 60,
+    maps: [{ id: null, name: '混沌海', lv: 60 }],
+    boss: 'chaos', sub: null
+  }
+};
+
+/* 营地：一卷一座。mapId 为空 = 营地地图还没做（M1 补，先复用村布局换皮） */
+const CAMPS = {
+  campA: { id: 'campA', part: 1, name: '桃源村', mapId: 'village', portal: 'portalA' },
+  campB: { id: 'campB', part: 2, name: '玄铁关', mapId: null, portal: 'portalB' },
+  campC: { id: 'campC', part: 3, name: '忘川渡', mapId: null, portal: 'portalC' },
+  campD: { id: 'campD', part: 4, name: '南天关', mapId: null, portal: 'portalD' },
+  campE: { id: 'campE', part: 5, name: '九霄台', mapId: null, portal: 'portalE' }
+};
+
+/* ---------------- 查询辅助（纯函数，不改数据） ---------------- */
+
+/** 这张图属于哪一章 → '1-1' / null */
+function actOfMap(mapId) {
+  if (!mapId) return null;
+  for (const k in ACTS) {
+    const a = ACTS[k];
+    for (const m of a.maps) if (m.id === mapId) return k;
+  }
+  return null;
+}
+
+/** 这张图属于哪一卷 → 1~5 / null */
+function partOfMap(mapId) {
+  const a = actOfMap(mapId);
+  return a ? ACTS[a].part : null;
+}
+
+/** 一章里第一张「有真实地图」的图（用于「前往本章」） */
+function firstMapOfAct(actId) {
+  const a = ACTS[actId];
+  if (!a) return null;
+  for (const m of a.maps) if (m.id) return m;
+  return null;
+}
+
+/** 某卷下的章列表（按 no 排序） */
+function actsOfPart(part) {
+  const out = [];
+  for (const k in ACTS) if (ACTS[k].part === part) out.push(ACTS[k]);
+  out.sort((x, y) => x.no - y.no);
+  return out;
+}
+
+/** 某卷下的图总数 / 已开放数 */
+function mapCountOfPart(part) {
+  let all = 0, open = 0;
+  for (const k in ACTS) {
+    if (ACTS[k].part !== part) continue;
+    for (const m of ACTS[k].maps) { all++; if (m.id) open++; }
+  }
+  return { all: all, open: open };
+}
+

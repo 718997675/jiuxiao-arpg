@@ -527,6 +527,8 @@ const Game = {
       trial: { best: 0, runs: 0, bestAt: 0 },
       quests: { active: [], done: [], next: 'q1', announced: {} },
       mapId: 'village', playerPos: { x: 0, z: 10 },
+      /* [M0] 世界结构：当前卷 / 章、已解锁营地与大传送门、已抵达的图（回头路直传用） */
+      part: 1, act: '1-1', camps: ['campA'], portals: ['portalA'], mapsSeen: ['village'],
       bossKilled: {}, playTime: 0,
       /* [S3] 天赋：spent = { 节点id: 级数 }；presets 三套预设（存 spent 快照） */
       talents: { spent: {}, presets: [null, null, null], respecCount: 0 },
@@ -7264,11 +7266,22 @@ const Game = {
   travelTo(mapId) {
     if (!MAPS[mapId]) return;
     const m = MAPS[mapId];
-    if (this.state.level < (m.unlock || 1)) { UI.log('境界不足。', 'bad'); return; }
+    /* [M0] 回头路：已经抵达过的图随时能回，不受等级门禁限制
+     * （低等级回高级图是玩家自己的选择；没去过的地方才看境界）。 */
+    const seen = Array.isArray(this.state.mapsSeen) && this.state.mapsSeen.indexOf(mapId) >= 0;
+    if (!seen && this.state.level < (m.unlock || 1)) { UI.log('境界不足。', 'bad'); return; }
     /* 试炼中不允许直接传送：先把本轮结算掉，否则祝福会跟着人跑到别的地图上 */
     if (typeof Trial !== 'undefined' && Trial.active) {
       Trial.end('quit');
       if (mapId === 'trial') return;
+    }
+    /* [M0] 记录世界进度：去过哪张图、当前在第几卷第几章 */
+    if (Array.isArray(this.state.mapsSeen) && this.state.mapsSeen.indexOf(mapId) < 0) {
+      this.state.mapsSeen.push(mapId);
+    }
+    if (typeof actOfMap === 'function') {
+      const a = actOfMap(mapId);
+      if (a && ACTS[a]) { this.state.act = a; this.state.part = ACTS[a].part; }
     }
     FX.flashCircle(this.playerGroup.position, 3, 0x88bbff, 0.6);
     SFX.cast();
