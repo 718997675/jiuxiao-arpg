@@ -154,22 +154,33 @@ esac
 
 # ---------- 切换 ----------
 Q="$1"
-MATCHES=$(git for-each-ref --format='%(refname:short)' refs/heads refs/remotes/origin \
-  | sed 's#^origin/##' | grep -v '^HEAD$' | sort -u | grep -iF -- "$Q" || true)
+ALL=$(git for-each-ref --format='%(refname:short)' refs/heads refs/remotes/origin \
+  | sed 's#^origin/##' | grep -v '^HEAD$' | grep -v '^origin$' | sort -u)
+
+# 逐级匹配，先严格后宽松：
+#   exact      分支名完全相同              main
+#   slug-exact 去掉 feat/ 等前缀后完全相同   act-expansion
+#   slug-prefix 去掉前缀后以它开头          act → feat/act-expansion（不会误中 skill-refactor）
+#   contains   包含即可（兜底）
+MATCHES=""
+for MODE in exact slug-exact slug-prefix contains; do
+  case "$MODE" in
+    exact)       MATCHES=$(printf '%s\n' "$ALL" | grep -xF -- "$Q" || true) ;;
+    slug-exact)  MATCHES=$(printf '%s\n' "$ALL" | while IFS= read -r b; do [ "$(slug_of "$b")" = "$Q" ] && echo "$b"; done || true) ;;
+    slug-prefix) MATCHES=$(printf '%s\n' "$ALL" | while IFS= read -r b; do case "$(slug_of "$b")" in "$Q"*) echo "$b" ;; esac; done || true) ;;
+    contains)    MATCHES=$(printf '%s\n' "$ALL" | grep -iF -- "$Q" || true) ;;
+  esac
+  [ -n "$MATCHES" ] && break
+done
 
 if [ -z "$MATCHES" ]; then
   die "没有名字含「$Q」的分支。./dev/branch.sh 看全部"
 fi
 COUNT=$(printf '%s\n' "$MATCHES" | wc -l | tr -d ' ')
 if [ "$COUNT" -gt 1 ]; then
-  # 完全同名优先
-  if printf '%s\n' "$MATCHES" | grep -qxF -- "$Q"; then
-    MATCHES="$Q"
-  else
-    warn "「$Q」匹配到 $COUNT 个分支，说具体点："
-    printf '%s\n' "$MATCHES" | sed 's/^/   /'
-    exit 1
-  fi
+  warn "「$Q」匹配到 $COUNT 个分支，说具体点："
+  printf '%s\n' "$MATCHES" | sed 's/^/   /'
+  exit 1
 fi
 TARGET=$(printf '%s\n' "$MATCHES" | head -1)
 
