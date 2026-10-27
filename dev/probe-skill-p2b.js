@@ -278,6 +278,24 @@ const ok = (c, m, d) => {
   ok(taoPanel.join(',') === '',
     '道士 ① 全部台阶已接（数量 + 进化）', taoPanel);
 
+  const taoSlot2 = await p.evaluate(() => {
+    /* 面板会被帧循环重绘（重绘后 <details> 收回去，DOM 也可能整块换掉）——
+     * 量之前先自己渲染一次，别读一份别人的缓存。 */
+    Game.state.cls = 'taoist';
+    Game.state.skills = {};
+    Game.recalc();
+    UI.renderSkillPanel();
+    const arch = document.querySelector('#skList .sk-arch');
+    if (arch) arch.setAttribute('open', '');
+    const c = [...document.querySelectorAll('#skList .sk-ac')][1];
+    return [...c.querySelectorAll('.sk-as')]
+      .filter(s => s.classList.contains('todo')).map(s => (s.querySelector('i') || {}).textContent);
+  });
+  /* 毒雾这一位现在是「真的全接」：Lv3 / Lv7 的双团三团走 count 通道，
+   * Lv5 / 9 / 10 走行为键 —— 所以面板不该再有「待」。 */
+  ok(taoSlot2.join(',') === '',
+    '道士 ② 全部台阶已接（双团 / 三团 + 蔓延 / 跟随 / 尸毒）', taoSlot2);
+
   /* ---------------- 6. 卡上预览与战斗同口径 ---------------- */
   console.log('六、预览与战斗同口径');
   const preview = await p.evaluate(() => {
@@ -534,6 +552,84 @@ const ok = (c, m, d) => {
     out.sk9 = seekRun(9);
     out.sk10 = seekRun(10);
 
+    /* ---------------- 道士 ② 毒雾：蔓延 / 跟随 / 尸毒 ----------------
+     * 三条都用现成通道，所以这里要证的不是「有没有」，而是两件更容易翻车的事：
+     *   ① 蔓延的**判定半径**跟着特效一起长大（只长特效 = 看着罩住、伤害没到）
+     *   ② 台阶的尸毒比变体的大（照抄变体 = 选过尸毒的人点 Lv10 毫无反应） */
+    const pset = (lv) => {
+      Game.state.cls = 'taoist';                       // barSkillOk 按职业判
+      /* 变体固定切 2 号「化脓」（纯数值，没有任何 beh）：0 号是「尸毒」，
+       * 留着它的话 Lv9 就已经会爆毒，把「Lv10 才给爆毒」量成假的。 */
+      const es = setup('poison', lv, 2, 2);
+      const pp = Game.playerGroup.position;
+      /* 双团之后雾心不在落点：patches 沿圆周散开，偏移 = prad × 0.55 = 2.75。
+       * 所以「基础打不到、蔓延后打得到」的那只必须按**雾心**算距离（5.7 码），
+       * 按落点算会量出「Lv4 也打得到」的假结果。 */
+      es[0].pos.set(pp.x + 3.0, 0, pp.z);              // 基础半径内
+      es[1].pos.set(pp.x + 2.75 + 5.7, 0, pp.z);       // 雾心外 5.7 码：只有长大后才罩到
+      Game.aimPoint = new THREE.Vector3(pp.x, 0, pp.z);
+      Game.aimDir = new THREE.Vector3(1, 0, 0);
+      return es;
+    };
+    const poisonGrow = async (lv) => {
+      const es = pset(lv);
+      const ids = new Set();
+      const scales = [];
+      const oldArea = FX.area, oldHit = Game.damageEnemy, oldFollow = Game.attachFollow;
+      FX.area = () => ({ scale: { setScalar(v) { scales.push(Math.round(v * 100) / 100); } } });
+      Game.attachFollow = () => { };
+      Game.damageEnemy = (en) => { ids.add(en.id); };
+      Game.castSkill('poison');
+      await wait(1800);                                 // 两跳（0.8s / 跳）
+      FX.area = oldArea; Game.damageEnemy = oldHit; Game.attachFollow = oldFollow;
+      return { ids: [...ids], scales, last: scales.length ? scales[scales.length - 1] : 0 };
+    };
+    out.p4 = await poisonGrow(4);
+    out.p5 = await poisonGrow(5);
+
+    /* 双团 / 三团：毒雾以前只有一团，面板写着「双团」却只铺一团 ——
+     * 这属于「点了不生效」，比不写更糟。 */
+    const poisonPatches = (lv) => {
+      pset(lv);
+      let n = 0;
+      const oldArea = FX.area, oldHit = Game.damageEnemy, oldFollow = Game.attachFollow;
+      FX.area = () => { n++; return { scale: { setScalar() { } } }; };
+      Game.attachFollow = () => { }; Game.damageEnemy = () => { };
+      Game.castSkill('poison');
+      FX.area = oldArea; Game.damageEnemy = oldHit; Game.attachFollow = oldFollow;
+      return n;
+    };
+    out.pp2 = poisonPatches(2);
+    out.pp3 = poisonPatches(3);
+    out.pp7 = poisonPatches(7);
+
+    const poisonFollow = (lv) => {
+      pset(lv);
+      let n = 0;
+      const oldFollow = Game.attachFollow, oldHit = Game.damageEnemy;
+      Game.attachFollow = () => { n++; };
+      Game.damageEnemy = () => { };
+      Game.castSkill('poison');
+      Game.attachFollow = oldFollow; Game.damageEnemy = oldHit;
+      return n;
+    };
+    out.p8f = poisonFollow(8);
+    out.p9f = poisonFollow(9);
+
+    const poisonSpread = (lv) => {
+      const es = pset(lv);
+      let n = 0, rad = 0;
+      const oldPatch = Game.spawnPoisonPatch;
+      Game.spawnPoisonPatch = (pos, r) => { n++; rad = r; };
+      const e = es[0];
+      e.venomT = 2; e.dead = true;
+      Game.onBehKill(e);
+      Game.spawnPoisonPatch = oldPatch;
+      return { n, rad };
+    };
+    out.p9s = poisonSpread(9);
+    out.p10s = poisonSpread(10);
+
     /* 假怪没有 actor / armorHigh，帧循环一恢复就会摸到它们（实测报
      * 「reading 'time'」与「reading 'armorHigh'」）。量完清场再恢复。 */
     Game.enemies = [];
@@ -570,6 +666,21 @@ const ok = (c, m, d) => {
   ok(evo.sk10.a1.pierce === true && Math.abs(evo.sk10.a1.homingX - evo.sk10.ex) < 0.01,
     'Lv10 命中后自动改追第二个目标', evo.sk10.a1);
   ok(evo.sk10.a2.used === 2, '改追有预算（追 2 次就停，不会一符清场）', evo.sk10.a2);
+  /* --- 道士 ② 毒雾 --- */
+  ok(evo.pp2 === 1 && evo.pp3 === 2 && evo.pp7 === 3,
+    '毒雾 Lv2 / Lv3 / Lv7 分别铺 1 / 2 / 3 团（「双团 / 三团」是真的）',
+    { lv2: evo.pp2, lv3: evo.pp3, lv7: evo.pp7 });
+  ok(evo.p4.ids.join(',') === '0' && evo.p4.scales.length === 0,
+    'Lv4 毒雾不蔓延：只毒到 3 码内那只，半径不动', evo.p4);
+  ok(evo.p5.scales.length > 0 && evo.p5.last > 5,
+    'Lv5 毒雾真的长大（特效半径 > 基础 5 码）', evo.p5.scales);
+  ok(evo.p5.ids.indexOf(1) >= 0,
+    'Lv5 判定半径跟着长大（雾心外 5.7 码那只也被毒到，不是只改特效）', evo.p5.ids);
+  /* Lv9 已经有三团（Lv7 的数量台阶），每团各自跟随 —— 所以是 3 次不是 1 次 */
+  ok(evo.p8f === 0 && evo.p9f === 3, 'Lv9 才跟随（Lv8 不跟随，Lv9 三团都跟）', { p8: evo.p8f, p9: evo.p9f });
+  ok(evo.p9s.n === 0, 'Lv9 死了不爆毒', evo.p9s);
+  ok(evo.p10s.n === 1 && Math.abs(evo.p10s.rad - 4.2) < 0.01,
+    'Lv10 死亡爆毒，且比变体「尸毒」的 3.2 码更大', evo.p10s);
   ok(evo.sk10.bases.some(b => Math.abs(b / evo.sk10.bases[0] - 0.7) < 0.02),
     '改追那一下按 70% 结算（不是白送一次全额）', evo.sk10.bases);
 

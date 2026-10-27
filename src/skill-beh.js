@@ -806,6 +806,17 @@ const SKILL_BEH = {
     /* 由 Game.onBehKill 消费 */
   } },
 
+  /* [P2b] 尸毒半径（台阶 Lv10）：与 spread 一并消费。
+   * 尸毒这个机制本来就是**变体**给的，台阶再给一次等于「点了没反应」——
+   * 所以台阶给的是更大的那片雾（4.2 码 vs 变体的 3.2），
+   * 已经选了「尸毒」变体的玩家也还能拿到提升。 */
+  spreadRad: { ph: 'hit', label: '尸毒半径', run() { } },
+
+  /* [P2b] 蔓延（台阶 Lv5）：毒雾半径随时间长大，由 poison case 每跳重算。
+   * 判定半径与特效网格必须一起放大 —— 只放大特效就是「看着罩住了、伤害没到」，
+   * 只放大判定就是「看不见的雾在毒人」。 */
+  grow: { ph: 'hook', label: '区域蔓延', run() { /* 由 poison case 消费 */ } },
+
   /* 每 N 秒冻结一次：由 blizzard 的伤害循环读，命中时顺手钉住 */
   freezeEvery: { ph: 'hook', label: '周期冻结', run() {
     /* 由 blizzard case 消费 */
@@ -1378,7 +1389,9 @@ Object.assign(Game, {
     if (pz && pz.spread && this.barSkillOk('poison')
       && ((e.venomT || 0) > 0 || (e.dotT || 0) > 0)) {
       const atk = this.state.stats ? this.state.stats.atk : 0;
-      this.spawnPoisonPatch(new THREE.Vector3(e.pos.x, 0, e.pos.z), 3.2,
+      /* [P2b] 台阶 Lv10 给的是更大的那片（spreadRad），变体没写就按 3.2 */
+      const pr = Math.max(1.5, pz.spreadRad || 3.2);
+      this.spawnPoisonPatch(new THREE.Vector3(e.pos.x, 0, e.pos.z), pr,
         Math.max(0.6, (e.dotDmg || 0) * 0.6, atk * 0.5), 3);
       FX.text(new THREE.Vector3(e.pos.x, 2.4, e.pos.z), '尸毒', 'info', { life: 0.8 });
     }

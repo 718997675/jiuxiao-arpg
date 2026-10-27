@@ -766,6 +766,7 @@ const SKILL_COUNT_BASE = {
   starfall: 16,      // 一场雨 16 颗
   talisman: 1,       // 一张符（先打最近目标，多余的分配给别的怪）
   talismanarrow: 3,
+  poison: 1,         // 一团毒雾；台阶让它变成 2 团 / 3 团（围着落点散开）
   swordrain: 22      // 万剑 22 道
 };
 
@@ -872,6 +873,16 @@ const SKILL_TIER_EVO = {
     5: { label: '雷符连锁', beh: { chainHit: 2, chainHitPct: 60 } },
     9: { label: '雷符阵', beh: { zoneHit: 2, zonePct: 10 } },
     10: { label: '雷符自动追踪', beh: { seek: 2, seekPct: 70 } }
+  },
+
+  /* ---------------- 道士 ② 毒雾（蚀骨毒雾） ----------------
+   * 这一位三条台阶都能用现成通道，只有一个坑：Lv10「死亡爆毒」和变体「尸毒」
+   * 是同一个机制 —— 原样照抄的话，选过尸毒的玩家点到 Lv10 会「毫无反应」。
+   * 所以台阶额外给 spreadRad（4.2 码 vs 变体的 3.2），已经拿了尸毒的仍然变强。 */
+  poison: {
+    5: { label: '毒雾蔓延', beh: { grow: 60 } },
+    9: { label: '毒雾跟随', beh: { follow: 1 } },
+    10: { label: '毒雾内敌人死亡爆毒', beh: { spread: 1, spreadRad: 4.2 } }
   }
 };
 

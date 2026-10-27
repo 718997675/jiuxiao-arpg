@@ -4018,34 +4018,53 @@ const Game = {
       case 'poison': {
         this.actor.atkAnim = 1; this.actor.atkType = 'cast';
         SFX.cast();
-        const c = aim.clone();
         /* 青符 4 件：蚀骨毒雾范围 +30%、持续 +3 秒 */
         const prad = 5 * srad;
         const pdur = 6 + sdur;
-        const zona = FX.area(c, prad, 0x2f9a3c, pdur, { opacity: 0.3 });
-        /* [P3] 追随（变体）：毒雾跟着人走 */
-        if (bBeh && bBeh.follow) this.attachFollow([c], [zona], pdur);
-        let ticks = 0;
+        /* [P2b] 蔓延（台阶 Lv5）：雾随时间长大，最多 +grow%。
+         * 判定半径 radNow 与特效 scale 必须同步 —— 只放大特效是「看着罩住了、
+         * 伤害没到」，只放大判定是「看不见的雾在毒人」，两种玩家都会骂。 */
+        const grow = Math.max(0, (bBeh && bBeh.grow) || 0);
         const gen = this.mapGen;
-        const iv = setInterval(() => {
-          if (this.mapGen !== gen) { clearInterval(iv); return; }
-          ticks++;
-          for (const e of this.enemies) {
-            if (e.dead) continue;
-            if (DIST2D(e.pos, c) < prad + e.radius) {
-              const { dmg } = this.rollDamage(st.atk * 0.75 * spow);
-              this.damageEnemy(e, dmg, false, { silent: true, elem: 'poison' });
-              /* [S4] 蚀骨印记：天师套「打中毒目标增伤」靠它判定 */
-              e.venomT = Math.max(e.venomT || 0, 2.5);
-              /* [S4] 丹鼎套·毒爆：每跳 25% 概率在目标脚下爆裂 */
-              if (st.specials && st.specials.plagueburst && CHANCE(0.25)) {
-                this.explodeAt(e.pos.clone(), 3, st.atk * 0.8 * spow, 0x7fbf5a, false, true, 'dot');
+        /* [P2b] 数量台阶「双团 / 三团」：1 + sextra 团，围着落点散开。
+         * 以前这一位是「一团吃到底」—— 面板写着双团、实际只铺一团，
+         * 判据还被同位的符箭 / 万剑顶成「已实装」，属于自欺。
+         * 每团各自维护半径与定时器：共用一个 radNow 会让三团胀成一团大的。 */
+        const patches = 1 + Math.max(0, sextra);
+        for (let pi = 0; pi < patches; pi++) {
+          const ang = (pi / patches) * Math.PI * 2;
+          const off = patches === 1 ? 0 : prad * 0.55;
+          const c = new THREE.Vector3(aim.x + Math.cos(ang) * off, 0, aim.z + Math.sin(ang) * off);
+          const zona = FX.area(c, prad, 0x2f9a3c, pdur, { opacity: 0.3 });
+          /* [P3] 追随（变体）：毒雾跟着人走 */
+          if (bBeh && bBeh.follow) this.attachFollow([c], [zona], pdur);
+          let radNow = prad;
+          let ticks = 0;
+          const iv = setInterval(() => {
+            if (this.mapGen !== gen) { clearInterval(iv); return; }
+            ticks++;
+            if (grow) {
+              const k = Math.min(1, ticks * 0.8 / Math.max(1, pdur));
+              radNow = prad * (1 + (grow / 100) * k);
+              if (zona && zona.scale) zona.scale.setScalar(radNow);
+            }
+            for (const e of this.enemies) {
+              if (e.dead) continue;
+              if (DIST2D(e.pos, c) < radNow + e.radius) {
+                const { dmg } = this.rollDamage(st.atk * 0.75 * spow);
+                this.damageEnemy(e, dmg, false, { silent: true, elem: 'poison' });
+                /* [S4] 蚀骨印记：天师套「打中毒目标增伤」靠它判定 */
+                e.venomT = Math.max(e.venomT || 0, 2.5);
+                /* [S4] 丹鼎套·毒爆：每跳 25% 概率在目标脚下爆裂 */
+                if (st.specials && st.specials.plagueburst && CHANCE(0.25)) {
+                  this.explodeAt(e.pos.clone(), 3, st.atk * 0.8 * spow, 0x7fbf5a, false, true, 'dot');
+                }
               }
             }
-          }
-          FX.burst(new THREE.Vector3(c.x + RND(-prad + 1, prad - 1), 0.3, c.z + RND(-prad + 1, prad - 1)), 0x7fbf5a, 4, { speed: 1.4, size: 0.16, life: 1.2, gravity: -0.5 });
-          if (ticks >= Math.ceil(pdur / 0.8)) clearInterval(iv);
-        }, 800);
+            FX.burst(new THREE.Vector3(c.x + RND(-prad + 1, prad - 1), 0.3, c.z + RND(-prad + 1, prad - 1)), 0x7fbf5a, 4, { speed: 1.4, size: 0.16, life: 1.2, gravity: -0.5 });
+            if (ticks >= Math.ceil(pdur / 0.8)) clearInterval(iv);
+          }, 800);
+        }
         break;
       }
       case 'swordrain': {
