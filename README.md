@@ -531,6 +531,7 @@ doc 结构：`{ v:2, meta, char, world, stash, codex, talents, mount, settings }
 ```bash
 node dev/test-save.js           # 离线：迁移/往返/导入导出/原子写/quota 满/满位隔离
 node dev/save-slots.js          # 浏览器：角色位 10 / 面板卡片 / 第 10 位建档读回
+node dev/live-slots.js          # 线上：SLOT_COUNT / 面板 10 张卡片 / 标题文案
 node dev/test-save-browser.js   # 浏览器：真实 localStorage + 三端布局 + 控制台 0 error
 ```
 
