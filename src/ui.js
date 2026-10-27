@@ -1962,6 +1962,12 @@ const UI = {
     const el = document.getElementById('tlCard');
     if (!el) return;
     const id = this.tlSel;
+    /* 点「＋1 级」会把整张卡重画，滚动位置要还回去 ——
+     * 不还的话每加一点卡片就弹回顶部，看长说明的节点得反复往下翻。
+     * 换到另一个节点才回到顶部。 */
+    const keepY = (this._tlCardId === id) ? el.scrollTop : 0;
+    const put = () => { if (el.scrollTop !== keepY) el.scrollTop = keepY; };
+    this._tlCardId = id || null;
     if (!id) {
       el.innerHTML = '<div class="tl-empty">点上面任意一个节点，这里会显示它的说明与加减按钮<br>'
         + '<span style="color:#5e594e">金边 = 已投入 · 青边 = 已点满 · 灰 = 等级未到</span></div>';
@@ -1981,6 +1987,8 @@ const UI = {
         <button class="btn" data-tlstep="1"${canUp ? '' : ' disabled'}>＋ 1 级</button>
         <button class="btn" data-tlstep="-1"${canDown ? '' : ' disabled'}>− 1 级</button>
       </div>`;
+    put();
+    requestAnimationFrame(put);
     el.querySelectorAll('[data-tlstep]').forEach(b => b.addEventListener('click', () => {
       const up = b.dataset.tlstep === '1';
       if (this.talentStep(id, up)) this.renderTalentTree();

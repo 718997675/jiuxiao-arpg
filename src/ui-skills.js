@@ -109,12 +109,32 @@ Object.assign(UI, {
     const oldTree = document.getElementById('skTree');
     if (oldTree) this._skTreeScroll = oldTree.scrollLeft;
 
+    /* [KEEP-SCROLL] 说明书卡的滚动位置同理。换变体 / 选取向都在卡片中部，
+     * 一点就整块重画，不还回去的话滚动条会跳回顶部 —— 玩家得重新往下翻，
+     * 看起来像「点一下什么都没发生」。换到另一个技能时才该回到顶部。 */
+    const cardId = this.skShown();
+    const sameCard = (this._skCardId === cardId);
+    const oldCard = document.querySelector('#skList .sk-right');
+    const keepCardY = (sameCard && oldCard) ? oldCard.scrollTop : 0;
+
     const list = document.getElementById('skList');
     list.innerHTML = h;
+    this._skCardId = cardId;
     if (mt) {
       this.renderSkillTreeDOM();
       const nt = document.getElementById('skTree');
       if (nt && this._skTreeScroll) nt.scrollLeft = this._skTreeScroll;
+    }
+    /* 卡片滚动必须等树渲染完再还原：.sk-left 的高度取决于树，
+     * 树还没画出来时卡片是「满高」的，这时候设 scrollTop 会被夹成一个很小的值。
+     * 再用一帧兜底，等字体/折行落定。 */
+    if (sameCard && keepCardY) {
+      const put = () => {
+        const nc = list.querySelector('.sk-right');
+        if (nc && nc.scrollTop !== keepCardY) nc.scrollTop = keepCardY;
+      };
+      put();
+      requestAnimationFrame(put);
     }
 
     /* ---------------- BD 推荐：开关与「切变体」 ---------------- */
@@ -694,8 +714,17 @@ Object.assign(UI, {
     if (el) el.classList.add('sel');
     const card = list.querySelector('.sk-right');
     /* 整块换掉卡。代价：新卡上的按钮没有绑定 —— 所以卡上的变体三行用
-     * 委托（bindTreeNav），这里不需要也不应该再补绑。 */
+     * 委托（bindTreeNav），这里不需要也不应该再补绑。
+     * 换的是同一张卡（换变体 / 选取向 / 重复点同一个节点）就保住滚动位置，
+     * 换到别的技能才回到顶部。 */
+    const sameCard = (this._skCardId === id);
+    const keepY = (sameCard && card) ? card.scrollTop : 0;
     if (card) card.outerHTML = this.skCardHTML(id);
+    if (sameCard && keepY) {
+      const nc = list.querySelector('.sk-right');
+      if (nc) nc.scrollTop = keepY;
+    }
+    this._skCardId = id;
     const hint = list.querySelector('.sb-hint');
     if (hint) hint.textContent = this.skBarHint();
   },
