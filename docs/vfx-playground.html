@@ -1,0 +1,3131 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>九霄 · 技能特效实验室</title>
+<style>
+:root{
+  --gold:#d8b25a; --gold-dim:rgba(216,178,90,.28);
+  --ink:#080a0f; --panel:rgba(11,14,20,.86);
+  --txt:#e9e3d5; --txt-dim:#9a9384;
+  --c-fire:#ff7a3c; --c-ice:#9ae8ff; --c-thunder:#ffe066;
+  --c-poison:#8fd05a; --c-holy:#fff2b0; --c-phys:#ffd8a0;
+  --c-blood:#e0483c;
+}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{width:100%;height:100%;overflow:hidden;background:var(--ink);color:var(--txt);
+  font-family:system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
+  user-select:none;-webkit-user-select:none}
+canvas{display:block;position:absolute;inset:0}
+.hidden{display:none!important}
+button{font-family:inherit;color:inherit;background:none;border:none;cursor:pointer}
+
+/* ---------- 全屏叠层 ---------- */
+#flash{position:absolute;inset:0;pointer-events:none;opacity:0;
+  background:radial-gradient(circle at 50% 50%,rgba(255,255,255,.9),rgba(255,255,255,0) 60%);
+  mix-blend-mode:screen}
+#vig{position:absolute;inset:0;pointer-events:none;opacity:0;
+  box-shadow:inset 0 0 160px 40px rgba(200,30,30,.85)}
+#grain{position:absolute;inset:0;pointer-events:none;opacity:.055;
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='3'/></filter><rect width='120' height='120' filter='url(%23n)' opacity='.7'/></svg>")}
+
+/* ---------- 顶栏 ---------- */
+#top{position:absolute;left:0;right:0;top:0;height:44px;display:flex;align-items:center;
+  justify-content:center;gap:18px;pointer-events:none;z-index:20;
+  background:linear-gradient(180deg,rgba(0,0,0,.55),transparent)}
+#top .brand{font-family:"Songti SC","STSong",serif;font-size:14px;letter-spacing:.34em;
+  color:var(--gold);opacity:.9}
+#top .brand small{font-size:10px;letter-spacing:.1em;color:var(--txt-dim);margin-left:10px;
+  font-family:system-ui}
+#perf{display:flex;gap:14px;font-size:10.5px;color:var(--txt-dim);font-variant-numeric:tabular-nums}
+#perf b{color:#cfe6c0;font-weight:500}
+
+/* ---------- 左上角色板 ---------- */
+#plate{position:absolute;left:18px;top:56px;width:322px;z-index:22;pointer-events:none}
+#plate .row1{display:flex;gap:10px;align-items:center}
+#portrait{width:58px;height:58px;flex:0 0 58px;border:1px solid var(--gold-dim);border-radius:3px;
+  background:radial-gradient(circle at 50% 35%,#2a2118,#100c08);position:relative;overflow:hidden;
+  display:flex;align-items:center;justify-content:center;font-family:"Songti SC",serif;
+  font-size:22px;color:var(--gold);box-shadow:0 0 14px rgba(0,0,0,.7) inset}
+#portrait::after{content:"";position:absolute;inset:0;
+  background:linear-gradient(160deg,rgba(216,178,90,.16),transparent 55%)}
+#plate .bars{flex:1;display:flex;flex-direction:column;gap:5px;padding-top:2px}
+.bar{height:9px;border:1px solid rgba(0,0,0,.8);border-radius:1px;position:relative;overflow:hidden;
+  background:rgba(0,0,0,.62);box-shadow:0 1px 0 rgba(255,255,255,.05)}
+.bar i{position:absolute;left:0;top:0;bottom:0;display:block;transition:width .18s ease-out}
+#hp i{background:linear-gradient(180deg,#d8564a,#8e1f18)}
+#mp i{background:linear-gradient(180deg,#4d8fd6,#1d3f72)}
+.bar span{position:absolute;right:3px;top:-1px;font-size:8px;line-height:9px;color:#f0e6d2;
+  text-shadow:0 1px 2px #000;font-variant-numeric:tabular-nums}
+.lv{font-size:9px;color:var(--gold);letter-spacing:.08em;margin-top:-1px}
+
+/* ---------- buff 图标行（血条下方） ---------- */
+#buffrow{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px;margin-left:68px;
+  min-height:30px;pointer-events:auto;align-items:flex-start}
+.bf{position:relative;width:30px;height:30px;border-radius:2px;overflow:hidden;
+  border:1px solid rgba(255,255,255,.14);background:rgba(0,0,0,.55);
+  box-shadow:0 0 0 1px rgba(0,0,0,.6),0 2px 6px rgba(0,0,0,.5);
+  animation:bfIn .16s ease-out}
+@keyframes bfIn{from{transform:scale(.6);opacity:0}to{transform:scale(1);opacity:1}}
+.bf svg{position:absolute;inset:2px;width:calc(100% - 4px);height:calc(100% - 4px)}
+.bf .glow{position:absolute;inset:0;background:radial-gradient(circle at 50% 40%,var(--c),transparent 70%);
+  opacity:.28}
+.bf .cd{position:absolute;left:0;bottom:0;height:2px;background:var(--c);width:100%;
+  transition:width .5s linear;opacity:.9}
+.bf .st{position:absolute;right:1px;bottom:1px;font-size:9px;font-weight:700;line-height:1;
+  color:#fff;text-shadow:0 1px 2px #000,0 0 4px #000;font-variant-numeric:tabular-nums}
+.bf .tm{position:absolute;left:0;right:0;top:-1px;text-align:center;font-size:8px;color:#fff;
+  opacity:0;text-shadow:0 1px 2px #000;transition:opacity .2s}
+.bf.urgent .tm{opacity:.95}
+.bf.urgent .glow{animation:none;opacity:.5}
+.bf.dead{animation:bfOut .14s ease-in forwards}
+@keyframes bfOut{to{transform:scale(.4);opacity:0}}
+
+/* 旧版 HUD 对照 */
+#oldhud{position:absolute;left:50%;transform:translateX(-50%);bottom:158px;z-index:21;
+  display:flex;gap:6px;pointer-events:none;opacity:.95}
+#oldhud .ob{width:26px;height:26px;background:#c9a24a;border-radius:2px;
+  animation:oldPulse .1s infinite alternate;font-size:8px;color:#111;
+  display:flex;align-items:center;justify-content:center;overflow:hidden}
+@keyframes oldPulse{from{opacity:.35;transform:scale(.86)}to{opacity:1;transform:scale(1)}}
+#oldhud .tag{position:absolute;top:-15px;left:0;font-size:9px;color:#e0766a;white-space:nowrap}
+
+/* ---------- 右侧面板 ---------- */
+#panel{position:absolute;right:14px;top:56px;width:302px;z-index:22;background:var(--panel);
+  border:1px solid rgba(216,178,90,.18);border-radius:3px;padding:12px 13px 14px;
+  backdrop-filter:blur(8px);box-shadow:0 10px 40px rgba(0,0,0,.55);
+  max-height:calc(100vh - 200px);overflow:auto;scrollbar-width:thin}
+#panel.collapsed{display:none!important}
+#panelBtn{display:none}
+@media (max-width:760px){
+  #panelBtn{display:block;position:fixed;right:8px;top:38px;z-index:26;padding:5px 11px;
+    font-size:11px;letter-spacing:.08em;border:1px solid rgba(216,178,90,.4);border-radius:2px;
+    background:rgba(10,13,19,.85);color:#e8d2a0}
+}
+#panel::-webkit-scrollbar{width:5px}
+#panel::-webkit-scrollbar-thumb{background:rgba(216,178,90,.25)}
+#panel h2{font-family:"Songti SC",serif;font-size:15px;letter-spacing:.1em;color:var(--gold);
+  font-weight:400;display:flex;align-items:baseline;gap:8px}
+#panel h2 em{font-style:normal;font-size:10px;color:var(--txt-dim);letter-spacing:0;font-family:system-ui}
+.sil{display:inline-block;margin:7px 0 5px;font-size:9.5px;letter-spacing:.06em;
+  padding:2px 7px;border:1px solid var(--gold-dim);color:#e6cf9a;border-radius:2px}
+.note{font-size:11px;line-height:1.6;color:var(--txt-dim)}
+.note b{color:#e8dcc2;font-weight:600}
+.sec{margin-top:14px;padding-top:11px;border-top:1px solid rgba(255,255,255,.07)}
+.sec-t{font-size:9.5px;letter-spacing:.16em;color:#8b8474;margin-bottom:7px;text-transform:uppercase}
+.seg{display:flex;gap:4px}
+.seg button{flex:1;padding:5px 0;font-size:11px;border:1px solid rgba(255,255,255,.1);
+  border-radius:2px;color:var(--txt-dim);background:rgba(255,255,255,.02);transition:.13s;white-space:nowrap}
+.seg button:hover{border-color:var(--gold-dim);color:#e8dcc2}
+.seg button.on{background:rgba(216,178,90,.16);border-color:rgba(216,178,90,.6);color:#ffe9b8;
+  box-shadow:0 0 12px rgba(216,178,90,.16) inset}
+.seg button.elem.on{color:#0a0a0a;font-weight:600}
+.cmbtn{width:100%;text-align:left;display:flex;align-items:center;gap:8px;padding:6px 8px;
+  border:1px solid rgba(255,255,255,.08);border-radius:2px;margin-bottom:5px;font-size:11px;
+  color:#cfc6b2;background:rgba(255,255,255,.015);transition:.13s}
+.cmbtn:hover{background:rgba(216,178,90,.1);border-color:var(--gold-dim);color:#ffecc4}
+.cmbtn i{width:5px;height:5px;border-radius:50%;background:var(--c,#d8b25a);flex:0 0 5px}
+.cmbtn small{margin-left:auto;font-size:9px;color:#7d7669}
+.chk{display:flex;align-items:center;gap:8px;font-size:11px;color:#b9b0a0;cursor:pointer;padding:3px 0}
+.chk input{appearance:none;width:28px;height:15px;border-radius:8px;background:rgba(255,255,255,.12);
+  position:relative;transition:.16s;cursor:pointer;flex:0 0 28px}
+.chk input:after{content:"";position:absolute;left:2px;top:2px;width:11px;height:11px;border-radius:50%;
+  background:#8b8474;transition:.16s}
+.chk input:checked{background:rgba(216,178,90,.42)}
+.chk input:checked:after{left:15px;background:#ffe0a0}
+
+/* ---------- 技能栏 ---------- */
+#barwrap{position:absolute;left:50%;bottom:16px;transform:translateX(-50%);z-index:22;
+  display:flex;flex-direction:column;align-items:center;gap:7px}
+#tabs{display:flex;gap:2px;background:rgba(0,0,0,.5);padding:2px;border-radius:3px;
+  border:1px solid rgba(255,255,255,.07)}
+#tabs button{padding:4px 16px;font-size:11px;letter-spacing:.12em;color:#8b8474;border-radius:2px;
+  font-family:"Songti SC",serif}
+#tabs button.on{background:rgba(216,178,90,.16);color:#ffe9b8}
+#bar{display:flex;gap:7px}
+.slot{position:relative;width:60px;height:60px;border-radius:3px;overflow:hidden;
+  background:linear-gradient(165deg,#1a1712,#0a0a0c);border:1px solid rgba(216,178,90,.22);
+  cursor:pointer;transition:transform .1s,border-color .12s,box-shadow .12s;
+  display:flex;align-items:center;justify-content:center}
+.slot:hover{border-color:rgba(216,178,90,.75);transform:translateY(-3px);
+  box-shadow:0 6px 18px rgba(0,0,0,.6),0 0 16px rgba(216,178,90,.14)}
+.slot.on{border-color:#ffe0a0;box-shadow:0 0 18px rgba(255,210,120,.3)}
+.slot svg{width:34px;height:34px;opacity:.92}
+.slot .k{position:absolute;left:3px;top:2px;font-size:9px;color:#8b8474;font-variant-numeric:tabular-nums}
+.slot .nm{position:absolute;left:0;right:0;bottom:0;text-align:center;font-size:9px;
+  padding:1px 0 2px;background:linear-gradient(0deg,rgba(0,0,0,.9),transparent);color:#e0d5bd;
+  letter-spacing:.03em}
+.slot .cdsweep{position:absolute;inset:0;background:rgba(0,0,0,.62);transform-origin:top;
+  transform:scaleY(0);pointer-events:none}
+
+/* ---------- 教学提示 / 伤害数字 ---------- */
+#hint{position:absolute;left:18px;bottom:18px;font-size:10.5px;color:#6f695c;line-height:1.75;
+  z-index:20;pointer-events:none}
+#hint b{color:#a89b80;font-weight:500}
+#floats{position:absolute;inset:0;pointer-events:none;z-index:21;overflow:hidden}
+.dmg{position:absolute;font-size:15px;font-weight:700;font-variant-numeric:tabular-nums;
+  text-shadow:0 2px 6px rgba(0,0,0,.9),0 0 14px currentColor;will-change:transform,opacity;
+  transform:translate(-50%,-50%)}
+.dmg.crit{font-size:21px}
+.dmg small{font-size:9px;font-weight:400;opacity:.85;margin-left:2px}
+
+/* ---------- 开场遮罩 ---------- */
+#intro{position:absolute;inset:0;z-index:40;display:flex;flex-direction:column;align-items:center;
+  justify-content:center;background:radial-gradient(circle at 50% 45%,rgba(16,20,28,.62),rgba(5,6,10,.95) 72%);
+  transition:opacity .5s}
+#intro h1{font-family:"Songti SC",serif;font-size:28px;letter-spacing:.4em;color:#e8cf95;
+  font-weight:400;text-indent:.4em}
+#intro p{margin-top:12px;font-size:11.5px;color:#7d7669;letter-spacing:.16em}
+#intro .go{margin-top:26px;padding:9px 34px;border:1px solid rgba(216,178,90,.5);color:#f0d9a4;
+  font-size:12px;letter-spacing:.3em;border-radius:2px;transition:.2s;text-indent:.3em}
+#intro .go:hover{background:rgba(216,178,90,.14);box-shadow:0 0 24px rgba(216,178,90,.2)}
+#intro.gone{opacity:0;pointer-events:none}
+
+@media (max-width:1180px){
+  #panel{width:262px}
+  #plate{width:276px}
+  #hint{display:none}
+}
+@media (max-width:900px){
+  #panel{right:8px;top:48px;width:216px;transform:scale(.92);transform-origin:top right}
+  #plate{left:8px;top:48px;width:230px;transform:scale(.9);transform-origin:top left}
+  .slot{width:48px;height:48px}
+  .slot svg{width:26px;height:26px}
+}
+@media (max-width:760px){
+  #top{height:36px}
+  #top .brand{font-size:11px;letter-spacing:.2em}
+  #top .brand small,#perf{display:none}
+  #plate{left:6px;top:38px;width:214px;transform:scale(.86);transform-origin:top left}
+  #panel{position:fixed;left:6px;right:6px;top:auto;bottom:96px;width:auto!important;
+    max-width:none;max-height:40vh;transform:none;overflow-x:hidden;
+    padding:10px 11px;background:rgba(8,10,15,.94)}
+  #segElem,#segMode,#segSpeed{flex-wrap:wrap}
+  #segElem button{flex:1 1 28%;padding:5px 2px}
+  #panel .sec{margin-top:10px;padding-top:8px}
+  .cmbtn{font-size:10.5px;padding:5px 7px}
+  #panel h2{font-size:13px}
+  #panel .sil{margin:5px 0 4px}
+  #panel .note{font-size:10.5px;line-height:1.5}
+  #barwrap{bottom:8px;gap:5px}
+  #tabs button{padding:3px 12px;font-size:10px}
+  .slot{width:50px;height:50px}
+  .slot svg{width:27px;height:27px}
+  .slot .nm{font-size:8px}
+  #oldhud{bottom:150px}
+  #hint{display:none}
+}
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+<div id="grain"></div>
+<div id="flash"></div>
+<div id="vig"></div>
+<div id="floats"></div>
+
+<div id="top">
+  <div class="brand">技能特效实验室<small>VFX PLAYGROUND</small></div>
+  <div id="perf"><span>FPS <b id="pfps">60</b></span><span>粒子 <b id="ppart">0</b></span><span>DrawCall <b id="pdc">0</b></span><span>重建/秒 <b id="preb">0</b></span></div>
+</div>
+
+<div id="plate">
+  <div class="row1">
+    <div id="portrait">刀</div>
+    <div class="bars">
+      <div class="lv">Lv.42 · 试炼场 · 刀客</div>
+      <div class="bar" id="hp"><i style="width:78%"></i><span>780 / 1000</span></div>
+      <div class="bar" id="mp"><i style="width:62%"></i><span>310 / 500</span></div>
+    </div>
+  </div>
+  <div id="buffrow"></div>
+</div>
+
+<div id="oldhud" class="hidden"><div class="tag">旧版：每 100ms 整块重建 → 闪</div></div>
+
+<button id="panelBtn">设置 / 对比</button>
+<div id="panel">
+  <h2 id="pname">旋风斩<em id="pslot">刀 · ①</em></h2>
+  <div class="sil" id="psil">旋转</div>
+  <div class="note" id="pnote"></div>
+
+  <div class="sec">
+    <div class="sec-t">实现版本（A / B）</div>
+    <div class="seg" id="segMode">
+      <button data-v="v2" class="on">新实现</button>
+      <button data-v="legacy">旧实现</button>
+    </div>
+  </div>
+
+  <div class="sec">
+    <div class="sec-t">元素材质（只管色，不管形）</div>
+    <div class="seg" id="segElem"></div>
+  </div>
+
+  <div class="sec">
+    <div class="sec-t">播放速度</div>
+    <div class="seg" id="segSpeed">
+      <button data-v="0.25">0.25× 慢放</button>
+      <button data-v="0.5">0.5×</button>
+      <button data-v="1" class="on">1×</button>
+    </div>
+  </div>
+
+  <div class="sec">
+    <div class="sec-t">技能组合（读已有状态位触发）</div>
+    <button class="cmbtn" data-cm="freeze"><i style="--c:#9ae8ff"></i>冻结 → 碎裂<small>1</small></button>
+    <button class="cmbtn" data-cm="burn"><i style="--c:#8fd05a"></i>中毒 → 焚毒<small>2</small></button>
+    <button class="cmbtn" data-cm="exec"><i style="--c:#e0483c"></i>破甲 → 处决<small>3</small></button>
+    <button class="cmbtn" data-cm="gather"><i style="--c:#ffe066"></i>聚怪 → 塌陷冲击<small>4</small></button>
+  </div>
+
+  <div class="sec">
+    <div class="sec-t">对比与调试</div>
+    <button class="cmbtn" id="btnAB"><i style="--c:#e8cf95"></i>A / B 连播对比<small>1.7s 后自动换</small></button>
+    <label class="chk"><input type="checkbox" id="optOld">显示旧版 HUD（会闪）</label>
+    <label class="chk"><input type="checkbox" id="optAuto">自动巡演（2.4s 换一个）</label>
+    <label class="chk"><input type="checkbox" id="optSlowmo">受击顿帧 / 震屏</label>
+  </div>
+</div>
+
+<div id="barwrap">
+  <div id="tabs">
+    <button data-c="blade" class="on">刀客</button>
+    <button data-c="mage">法师</button>
+    <button data-c="tao">道士</button>
+  </div>
+  <div id="bar"></div>
+</div>
+
+<div id="hint">
+  <b>左键点地面</b> 移动　<b>1–5</b> 放技能　<b>Q</b> 切换实现　<b>空格</b> 暂停<br>
+  <b>1</b>–<b>4</b> 也可触发右侧技能组合
+</div>
+
+<div id="intro">
+  <h1>技能特效实验室</h1>
+  <p>同一个技能，切换「旧实现 / 新实现」看差别</p>
+  <p style="margin-top:6px;color:#5f5a50;letter-spacing:.08em">进入后点技能块，或用 1–5 释放 · Q 切换新旧 · 放慢到 0.25× 看得最清</p>
+  <button class="go" id="startBtn">进 入</button>
+</div>
+
+<!-- three.js 兜底加载：docs/ 作为站点根、file:// 双击、项目根作为站点根 三种打开方式都能命中 -->
+<script src="./three.min.js"></script>
+<script>
+if(!window.THREE){
+  document.write('<script src="../lib/three.min.js"><\/script>');
+}
+</script>
+<script>
+/* =====================================================================
+   0-A. 启动自检（先把失败原因摆到脸上，避免"点了没反应"）
+   ===================================================================== */
+function _bootFail(title, detail){
+  const el = document.getElementById('intro');
+  if(!el) return;
+  el.innerHTML = '<h1 style="font-family:system-ui;font-size:26px;letter-spacing:.2em;color:#e8b45a">'
+    + title + '</h1>'
+    + '<p style="font-family:system-ui;font-size:13px;line-height:1.9;color:#9a9184;max-width:560px">'
+    + detail + '</p>';
+  el.style.background = 'radial-gradient(circle at 50% 45%,#1a1410,#07070a 72%)';
+}
+addEventListener('error', function(e){
+  document.title = 'ERR: ' + (e.message || 'unknown');
+  _bootFail('启动失败', (e.message || '脚本报错') + '<br><span style="color:#6b6459">'
+    + (e.filename || '').split('/').pop() + ':' + e.lineno + '</span>');
+});
+if(!window.THREE){
+  _bootFail('three.js 没加载到',
+    '页面找不到 three.js，脚本无法启动。<br>'
+    + '请确认 <b>docs/three.min.js</b> 与页面在同一目录（本项目已内置）。<br>'
+    + '<span style="color:#6b6459">如果直接双击打开，也请确认 lib/three.min.js 存在。</span>');
+  throw new Error('THREE not loaded');
+}
+
+/* =====================================================================
+   0. 引擎底座
+   ===================================================================== */
+const canvas = document.getElementById('gl');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias:true, alpha:false, powerPreference:'high-performance' });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 1.75));
+renderer.setSize(innerWidth, innerHeight);
+renderer.setClearColor(0x05070b, 1);
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.FogExp2(0x05070b, 0.026);
+
+const CAM = { pitch: 50 * Math.PI/180, dist: 9.9, base: new THREE.Vector3() };
+const camera = new THREE.PerspectiveCamera(42, innerWidth/innerHeight, 0.1, 120);
+function placeCamera(){
+  const h = Math.sin(CAM.pitch) * CAM.dist;
+  const z = Math.cos(CAM.pitch) * CAM.dist;
+  CAM.base.set(0, h, z * 0.86);
+  camera.position.copy(CAM.base);
+  camera.lookAt(0, 0.9, 0);
+}
+placeCamera();
+
+scene.add(new THREE.HemisphereLight(0x9fb4d0, 0x0a0a0c, 0.55));
+const key = new THREE.DirectionalLight(0xffe2b0, 0.85); key.position.set(-5, 9, 4); scene.add(key);
+const rim = new THREE.DirectionalLight(0x5a7ea8, 0.5); rim.position.set(6, 5, -7); scene.add(rim);
+
+function fitCamera(){
+  const asp = innerWidth / innerHeight;
+  CAM.dist = asp < 0.85 ? 14.5 : (asp < 1.3 ? 11.6 : 9.9);
+  camera.fov = asp < 0.85 ? 52 : 42;
+  camera.aspect = asp;
+  camera.updateProjectionMatrix();
+  placeCamera();
+}
+fitCamera();
+addEventListener('resize', ()=>{
+  fitCamera();
+  renderer.setSize(innerWidth, innerHeight);
+  updatePointScale();
+});
+
+/* =====================================================================
+   1. 程序化贴图（不引入任何素材文件）
+   ===================================================================== */
+function cv(w, h, draw){
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  const g = c.getContext('2d'); draw(g, w, h);
+  const t = new THREE.CanvasTexture(c);
+  t.minFilter = THREE.LinearFilter; t.magFilter = THREE.LinearFilter;
+  t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
+  return t;
+}
+function radial(g, w, h, stops, cx = w/2, cy = h/2, r = w/2){
+  const gr = g.createRadialGradient(cx, cy, 0, cx, cy, r);
+  stops.forEach(s => gr.addColorStop(s[0], s[1]));
+  g.fillStyle = gr; g.fillRect(0, 0, w, h);
+}
+
+const TEX = {};
+
+// 柔光
+TEX.soft = cv(128,128,(g,w,h)=>{ radial(g,w,h,[[0,'rgba(255,255,255,1)'],[.25,'rgba(255,255,255,.72)'],[.55,'rgba(255,255,255,.22)'],[1,'rgba(255,255,255,0)']]); });
+
+// 四芒星火花
+TEX.spark = cv(128,128,(g,w,h)=>{
+  g.clearRect(0,0,w,h);
+  const c=w/2;
+  const lg=g.createLinearGradient(0,c,w,c);
+  lg.addColorStop(0,'rgba(255,255,255,0)');lg.addColorStop(.5,'rgba(255,255,255,1)');lg.addColorStop(1,'rgba(255,255,255,0)');
+  g.fillStyle=lg; g.fillRect(0,c-2.2,w,4.4);
+  const lg2=g.createLinearGradient(c,0,c,h);
+  lg2.addColorStop(0,'rgba(255,255,255,0)');lg2.addColorStop(.5,'rgba(255,255,255,1)');lg2.addColorStop(1,'rgba(255,255,255,0)');
+  g.fillStyle=lg2; g.fillRect(c-2.2,0,4.4,h);
+  radial(g,w,h,[[0,'rgba(255,255,255,.95)'],[.18,'rgba(255,255,255,.45)'],[1,'rgba(255,255,255,0)']]);
+});
+
+// 火星 / 余烬
+TEX.ember = cv(64,64,(g,w,h)=>{
+  g.clearRect(0,0,w,h);
+  radial(g,w,h,[[0,'rgba(255,255,255,1)'],[.3,'rgba(255,236,190,.9)'],[.62,'rgba(255,180,90,.28)'],[1,'rgba(255,120,40,0)']]);
+});
+
+// 烟团
+TEX.smoke = cv(128,128,(g,w,h)=>{
+  g.clearRect(0,0,w,h);
+  for(let i=0;i<16;i++){
+    const a=Math.random()*Math.PI*2, d=Math.random()*w*0.22;
+    const x=w/2+Math.cos(a)*d, y=h/2+Math.sin(a)*d;
+    const r=w*(0.16+Math.random()*0.2);
+    const gr=g.createRadialGradient(x,y,0,x,y,r);
+    gr.addColorStop(0,'rgba(255,255,255,.16)'); gr.addColorStop(1,'rgba(255,255,255,0)');
+    g.fillStyle=gr; g.beginPath(); g.arc(x,y,r,0,7); g.fill();
+  }
+  radial(g,w,h,[[.3,'rgba(255,255,255,.22)'],[1,'rgba(255,255,255,0)']]);
+});
+
+// 冰晶碎片
+TEX.shard = cv(96,96,(g,w,h)=>{
+  g.clearRect(0,0,w,h); const c=w/2;
+  g.translate(c,c);
+  g.beginPath();
+  for(let i=0;i<6;i++){ const a=-Math.PI/2+i*Math.PI/3, r=i%2?w*0.3:w*0.44;
+    i?g.lineTo(Math.cos(a)*r,Math.sin(a)*r):g.moveTo(Math.cos(a)*r,Math.sin(a)*r); }
+  g.closePath();
+  const gr=g.createLinearGradient(0,-c,0,c);
+  gr.addColorStop(0,'rgba(255,255,255,.98)'); gr.addColorStop(.5,'rgba(220,250,255,.5)'); gr.addColorStop(1,'rgba(160,230,255,.05)');
+  g.fillStyle=gr; g.fill();
+  g.strokeStyle='rgba(255,255,255,.9)'; g.lineWidth=2; g.stroke();
+});
+
+// 细环（扩散用）
+TEX.ring = cv(256,256,(g,w,h)=>{
+  g.clearRect(0,0,w,h); const c=w/2;
+  g.translate(c,c);
+  for(let i=0;i<3;i++){
+    g.beginPath(); g.arc(0,0,c*0.80+i*2.0,0,7);
+    g.strokeStyle='rgba(255,255,255,'+(0.75-i*0.22)+')';
+    g.lineWidth=(9-i*2.4); g.filter='blur(2px)'; g.stroke();
+  }
+});
+
+// 冲击波（硬内沿 + 外扩模糊）
+TEX.shock = cv(256,256,(g,w,h)=>{
+  g.clearRect(0,0,w,h); const c=w/2; g.translate(c,c);
+  const gr=g.createRadialGradient(0,0,c*0.62,0,0,c*0.98);
+  gr.addColorStop(0,'rgba(255,255,255,0)');
+  gr.addColorStop(.55,'rgba(255,255,255,.55)');
+  gr.addColorStop(.82,'rgba(255,255,255,.95)');
+  gr.addColorStop(1,'rgba(255,255,255,0)');
+  g.fillStyle=gr; g.beginPath(); g.arc(0,0,c*0.98,0,7); g.fill();
+});
+
+// 刀光弧（u 沿弧长，v 沿宽度；两端渐隐）
+TEX.slash = cv(256,64,(g,w,h)=>{
+  g.clearRect(0,0,w,h);
+  const gr=g.createLinearGradient(0,0,0,h);
+  gr.addColorStop(0,'rgba(255,255,255,0)');
+  gr.addColorStop(.42,'rgba(255,255,255,.35)');
+  gr.addColorStop(.72,'rgba(255,255,255,1)');
+  gr.addColorStop(1,'rgba(255,255,255,.85)');
+  g.fillStyle=gr; g.fillRect(0,0,w,h);
+  g.globalCompositeOperation='destination-in';
+  const gm=g.createLinearGradient(0,0,w,0);
+  gm.addColorStop(0,'rgba(0,0,0,0)'); gm.addColorStop(.18,'rgba(0,0,0,1)');
+  gm.addColorStop(.82,'rgba(0,0,0,1)'); gm.addColorStop(1,'rgba(0,0,0,0)');
+  g.fillStyle=gm; g.fillRect(0,0,w,h);
+});
+
+// 符文（单个）
+TEX.rune = cv(128,128,(g,w,h)=>{
+  g.clearRect(0,0,w,h);
+  g.strokeStyle='rgba(255,255,255,.95)'; g.lineWidth=6; g.lineCap='round';
+  g.beginPath(); g.moveTo(44,22); g.lineTo(44,104); g.moveTo(44,60); g.lineTo(86,22);
+  g.moveTo(44,60); g.lineTo(86,100); g.stroke();
+  g.beginPath(); g.arc(64,64,52,0,7); g.strokeStyle='rgba(255,255,255,.28)'; g.lineWidth=3; g.stroke();
+});
+
+// 领域法阵（带符文的双环）
+TEX.sigil = cv(512,512,(g,w,h)=>{
+  const c=w/2; g.translate(c,c); g.clearRect(-c,-c,w,h);
+  g.strokeStyle='rgba(255,255,255,.9)';
+  g.lineWidth=3; g.beginPath(); g.arc(0,0,c*0.94,0,7); g.stroke();
+  g.lineWidth=1.6; g.beginPath(); g.arc(0,0,c*0.86,0,7); g.stroke();
+  g.beginPath(); g.arc(0,0,c*0.52,0,7); g.stroke();
+  g.lineWidth=2.2;
+  for(let i=0;i<24;i++){
+    const a=i/24*Math.PI*2;
+    g.save(); g.rotate(a); g.translate(0,-c*0.72);
+    if(i%2===0){ g.beginPath(); g.moveTo(-7,0); g.lineTo(0,-11); g.lineTo(7,0); g.stroke(); }
+    else { g.beginPath(); g.arc(0,0,3.4,0,7); g.stroke(); }
+    g.restore();
+  }
+  g.lineWidth=2.6;
+  for(let i=0;i<6;i++){
+    const a=i/6*Math.PI*2, b=(i+2)/6*Math.PI*2;
+    g.beginPath(); g.moveTo(Math.cos(a)*c*0.52,Math.sin(a)*c*0.52);
+    g.lineTo(Math.cos(b)*c*0.52,Math.sin(b)*c*0.52); g.stroke();
+  }
+  radial(g,w,h,[[.4,'rgba(255,255,255,.10)'],[.92,'rgba(255,255,255,.03)'],[1,'rgba(255,255,255,0)']]);
+});
+
+// 太极双鱼
+TEX.taiji = cv(512,512,(g,w,h)=>{
+  const c=w/2, R=c*0.9; g.translate(c,c); g.clearRect(-c,-c,w,h);
+  g.fillStyle='rgba(255,255,255,.10)'; g.beginPath(); g.arc(0,0,R,0,7); g.fill();
+  g.strokeStyle='rgba(255,255,255,.85)'; g.lineWidth=3.5;
+  g.beginPath(); g.arc(0,0,R,0,7); g.stroke();
+  g.beginPath(); g.arc(0,0,R*0.5,0,7); g.stroke();
+  // 两条 S 曲线
+  g.beginPath(); g.arc(0,-R*0.5,R*0.5,Math.PI,0); g.stroke();
+  g.beginPath(); g.arc(0, R*0.5,R*0.5,0,Math.PI); g.stroke();
+  g.fillStyle='rgba(255,255,255,.55)';
+  g.beginPath(); g.arc(0,-R*0.5,R*0.11,0,7); g.fill();
+  g.beginPath(); g.arc(0, R*0.5,R*0.11,0,7); g.fill();
+  g.lineWidth=2;
+  for(let i=0;i<8;i++){ const a=i/8*Math.PI*2;
+    g.beginPath(); g.arc(Math.cos(a)*R*0.99, Math.sin(a)*R*0.99, 5, 0, 7); g.stroke(); }
+});
+
+// 竖直渐变（光柱 / 领域墙）
+TEX.beam = cv(32,256,(g,w,h)=>{
+  g.clearRect(0,0,w,h);
+  const gr=g.createLinearGradient(0,h,0,0);
+  gr.addColorStop(0,'rgba(255,255,255,0)');
+  gr.addColorStop(.12,'rgba(255,255,255,.85)');
+  gr.addColorStop(.55,'rgba(255,255,255,.35)');
+  gr.addColorStop(1,'rgba(255,255,255,0)');
+  g.fillStyle=gr; g.fillRect(0,0,w,h);
+  const gh=g.createLinearGradient(0,0,w,0);
+  gh.addColorStop(0,'rgba(0,0,0,0)'); gh.addColorStop(.5,'rgba(0,0,0,1)'); gh.addColorStop(1,'rgba(0,0,0,0)');
+  g.globalCompositeOperation='destination-in'; g.fillStyle=gh; g.fillRect(0,0,w,h);
+});
+
+// 火焰舌（底部热核 + 多条摆动火舌）
+TEX.flame = cv(192,256,(g,w,h)=>{
+  g.clearRect(0,0,w,h);
+  const base = g.createRadialGradient(w/2, h*0.93, 0, w/2, h*0.93, w*0.6);
+  base.addColorStop(0,'rgba(255,250,235,.9)');
+  base.addColorStop(.35,'rgba(255,205,130,.45)');
+  base.addColorStop(1,'rgba(255,120,40,0)');
+  g.fillStyle = base; g.fillRect(0,0,w,h);
+  for(let k=0;k<10;k++){
+    const cx = w*(0.1+Math.random()*0.8);
+    const hh = h*(0.42+Math.random()*0.5);
+    const bw = w*(0.045+Math.random()*0.075);
+    const sway = (Math.random()-0.5)*w*0.3;
+    const grd = g.createLinearGradient(0,h,0,h-hh);
+    grd.addColorStop(0,'rgba(255,245,215,.92)');
+    grd.addColorStop(.3,'rgba(255,175,90,.55)');
+    grd.addColorStop(.72,'rgba(255,115,45,.16)');
+    grd.addColorStop(1,'rgba(255,90,30,0)');
+    g.fillStyle = grd;
+    g.beginPath();
+    g.moveTo(cx-bw, h);
+    g.bezierCurveTo(cx-bw*1.6, h-hh*0.42, cx+sway-bw*0.5, h-hh*0.68, cx+sway, h-hh);
+    g.bezierCurveTo(cx+sway+bw*0.5, h-hh*0.68, cx+bw*1.6, h-hh*0.42, cx+bw, h);
+    g.closePath(); g.fill();
+  }
+});
+
+// 剑影
+TEX.blade = cv(64,256,(g,w,h)=>{
+  g.clearRect(0,0,w,h);
+  const x=w/2;
+  const gr=g.createLinearGradient(0,0,0,h);
+  gr.addColorStop(0,'rgba(255,255,255,.15)');
+  gr.addColorStop(.55,'rgba(255,255,255,.85)');
+  gr.addColorStop(.9,'rgba(255,255,255,1)');
+  gr.addColorStop(1,'rgba(255,255,255,.2)');
+  g.fillStyle=gr;
+  g.beginPath(); g.moveTo(x,6); g.lineTo(x+7,h*0.86); g.lineTo(x,h*0.94); g.lineTo(x-7,h*0.86); g.closePath(); g.fill();
+  g.fillStyle='rgba(255,255,255,.95)'; g.fillRect(x-15,h*0.86,30,7);
+  g.fillRect(x-4,h*0.9,8,h*0.1);
+});
+
+// 符纸
+TEX.paper = cv(96,192,(g,w,h)=>{
+  g.fillStyle='rgba(255,240,205,.9)'; g.fillRect(0,0,w,h);
+  g.strokeStyle='rgba(190,40,30,.95)'; g.lineWidth=4; g.lineCap='round';
+  g.beginPath(); g.moveTo(48,26); g.lineTo(48,168); g.stroke();
+  g.beginPath(); g.moveTo(30,58); g.quadraticCurveTo(48,80,66,58);
+  g.moveTo(30,96); g.lineTo(66,96); g.moveTo(34,128); g.lineTo(62,128); g.stroke();
+  g.strokeStyle='rgba(160,30,20,.55)'; g.lineWidth=2;
+  g.strokeRect(6,6,w-12,h-12);
+});
+
+// 焦痕
+TEX.scorch = cv(256,256,(g,w,h)=>{
+  g.clearRect(0,0,w,h);
+  radial(g,w,h,[[0,'rgba(0,0,0,.92)'],[.45,'rgba(12,8,6,.72)'],[.75,'rgba(20,14,10,.25)'],[1,'rgba(0,0,0,0)']]);
+  g.globalCompositeOperation='destination-out';
+  for(let i=0;i<26;i++){
+    const a=Math.random()*7, d=Math.random()*w*0.42;
+    const r=w*(0.03+Math.random()*0.07);
+    g.beginPath(); g.arc(w/2+Math.cos(a)*d, h/2+Math.sin(a)*d, r,0,7); g.fill();
+  }
+});
+
+// 裂纹
+TEX.crack = cv(256,256,(g,w,h)=>{
+  g.clearRect(0,0,w,h); const c=w/2;
+  g.strokeStyle='rgba(255,255,255,.95)'; g.lineCap='round';
+  for(let i=0;i<11;i++){
+    let a=i/11*7+Math.random()*0.3, x=c, y=c, len=w*0.42;
+    g.beginPath(); g.moveTo(x,y);
+    g.lineWidth=3.4;
+    for(let s=0;s<7;s++){
+      const step=len/7;
+      x+=Math.cos(a)*step; y+=Math.sin(a)*step;
+      a+=(Math.random()-0.5)*0.75;
+      g.lineWidth*=0.78; g.lineTo(x,y);
+    }
+    g.stroke();
+  }
+});
+
+// 霜痕
+TEX.frost = cv(256,256,(g,w,h)=>{
+  g.clearRect(0,0,w,h); const c=w/2;
+  radial(g,w,h,[[0,'rgba(255,255,255,.18)'],[.55,'rgba(200,240,255,.10)'],[1,'rgba(180,230,255,0)']]);
+  g.strokeStyle='rgba(255,255,255,.7)'; g.lineWidth=2;
+  for(let i=0;i<14;i++){
+    let a=i/14*7, x=c,y=c; g.beginPath(); g.moveTo(x,y);
+    for(let s=0;s<5;s++){ const st=w*0.08; x+=Math.cos(a)*st; y+=Math.sin(a)*st; a+=(Math.random()-0.5)*0.9;
+      g.lineTo(x,y); g.moveTo(x,y); g.lineTo(x+Math.cos(a+1.1)*st*0.5,y+Math.sin(a+1.1)*st*0.5); g.moveTo(x,y); }
+    g.stroke();
+  }
+});
+
+// 巨影（法相 / 灵兽共用，silhouette）
+function silhouette(draw){
+  return cv(256,512,(g,w,h)=>{ g.clearRect(0,0,w,h); draw(g,w,h); });
+}
+TEX.avatar = silhouette((g,w,h)=>{
+  g.fillStyle='rgba(255,255,255,.95)';
+  g.beginPath(); g.arc(w*0.5, h*0.115, w*0.055, 0, 7); g.fill();
+  g.beginPath(); g.arc(w*0.5, h*0.185, w*0.085, 0, 7); g.fill();
+  g.beginPath();
+  g.moveTo(w*0.42, h*0.235);
+  g.quadraticCurveTo(w*0.27, h*0.27, w*0.245, h*0.375);
+  g.quadraticCurveTo(w*0.225, h*0.49, w*0.30, h*0.555);
+  g.quadraticCurveTo(w*0.255, h*0.75, w*0.175, h*0.93);
+  g.quadraticCurveTo(w*0.33, h*0.975, w*0.5, h*0.975);
+  g.quadraticCurveTo(w*0.67, h*0.975, w*0.825, h*0.93);
+  g.quadraticCurveTo(w*0.745, h*0.75, w*0.70, h*0.555);
+  g.quadraticCurveTo(w*0.775, h*0.49, w*0.755, h*0.375);
+  g.quadraticCurveTo(w*0.73, h*0.27, w*0.58, h*0.235);
+  g.closePath(); g.fill();
+  g.globalCompositeOperation='destination-out';
+  g.fillRect(w*0.40, h*0.40, w*0.20, h*0.012);
+  g.globalCompositeOperation='source-over';
+});
+TEX.beast = silhouette((g,w,h)=>{
+  g.fillStyle='rgba(255,255,255,.95)';
+  g.beginPath();
+  g.moveTo(w*0.16,h*0.72); g.quadraticCurveTo(w*0.2,h*0.44,w*0.42,h*0.42);
+  g.quadraticCurveTo(w*0.6,h*0.4,w*0.72,h*0.5);
+  g.lineTo(w*0.82,h*0.42); g.lineTo(w*0.88,h*0.5); g.lineTo(w*0.78,h*0.56);
+  g.quadraticCurveTo(w*0.72,h*0.72,w*0.62,h*0.74);
+  g.lineTo(w*0.58,h*0.9); g.lineTo(w*0.48,h*0.9); g.lineTo(w*0.5,h*0.72);
+  g.lineTo(w*0.34,h*0.9); g.lineTo(w*0.24,h*0.9); g.lineTo(w*0.3,h*0.72);
+  g.quadraticCurveTo(w*0.22,h*0.72,w*0.16,h*0.72);
+  g.closePath(); g.fill();
+  g.beginPath(); g.arc(w*0.36,h*0.38,w*0.05,0,7); g.fill();  // 耳
+  g.beginPath(); g.arc(w*0.56,h*0.36,w*0.045,0,7); g.fill();
+});
+
+/* =====================================================================
+   2. 粒子池（单贴图 = 单材质 = 一批 draw call）
+   ===================================================================== */
+const U = { scale: { value: 400 } };
+function updatePointScale(){
+  U.scale.value = renderer.domElement.height * 0.5;
+}
+
+const POINT_VS = `
+uniform float uScale;
+attribute float aSize; attribute float aAlpha; attribute float aRot; attribute vec3 aTint;
+varying float vA; varying float vR; varying vec3 vC;
+void main(){
+  vA = aAlpha; vR = aRot; vC = aTint;
+  vec4 mv = modelViewMatrix * vec4(position, 1.0);
+  gl_PointSize = aSize * uScale / max(0.001, -mv.z);
+  gl_Position = projectionMatrix * mv;
+}`;
+
+const POINT_FS = `
+uniform sampler2D uTex; varying float vA; varying float vR; varying vec3 vC;
+void main(){
+  vec2 uv = gl_PointCoord - 0.5;
+  float c = cos(vR), s = sin(vR);
+  uv = vec2(uv.x*c - uv.y*s, uv.x*s + uv.y*c) + 0.5;
+  vec4 t = texture2D(uTex, uv);
+  gl_FragColor = vec4(vC * t.rgb, t.a * vA);
+  if(gl_FragColor.a < 0.004) discard;
+}`;
+
+const _c = new THREE.Color();
+class Pool {
+  constructor(tex, max = 900){
+    this.max = max; this.cursor = 0; this.alive = 0;
+    const g = new THREE.BufferGeometry();
+    this.aPos = new Float32Array(max * 3);
+    this.aSize = new Float32Array(max);
+    this.aAlpha = new Float32Array(max);
+    this.aRot = new Float32Array(max);
+    this.aTint = new Float32Array(max * 3);
+    g.setAttribute('position', new THREE.BufferAttribute(this.aPos, 3));
+    g.setAttribute('aSize', new THREE.BufferAttribute(this.aSize, 1));
+    g.setAttribute('aAlpha', new THREE.BufferAttribute(this.aAlpha, 1));
+    g.setAttribute('aRot', new THREE.BufferAttribute(this.aRot, 1));
+    g.setAttribute('aTint', new THREE.BufferAttribute(this.aTint, 3));
+    g.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 60);
+    const m = new THREE.ShaderMaterial({
+      uniforms:{ uTex:{ value: tex }, uScale: U.scale },
+      vertexShader: POINT_VS, fragmentShader: POINT_FS,
+      transparent: true, depthWrite: false, blending: THREE.AdditiveBlending
+    });
+    this.pts = new THREE.Points(g, m);
+    this.pts.frustumCulled = false;
+    scene.add(this.pts);
+    this.p = [];  // 粒子对象池
+    for(let i=0;i<max;i++) this.p.push({ live:false, x:0,y:0,z:0, vx:0,vy:0,vz:0, t:0, life:1,
+      s0:1, s1:1, a0:1, grav:0, drag:0, rot:0, rotV:0, cx:0,cy:0,cz:0, spin:0 });
+  }
+  spawn(o){
+    const p = this.p[this.cursor];
+    this.cursor = (this.cursor + 1) % this.max;
+    p.live = true; p.t = 0;
+    p.x = o.x; p.y = o.y; p.z = o.z;
+    p.vx = o.vx||0; p.vy = o.vy||0; p.vz = o.vz||0;
+    p.life = o.life || 0.6;
+    p.s0 = o.s0 != null ? o.s0 : 0.4;
+    p.s1 = o.s1 != null ? o.s1 : p.s0 * 0.2;
+    p.a0 = o.a0 != null ? o.a0 : 1;
+    p.grav = o.grav || 0; p.drag = o.drag || 0;
+    p.rot = o.rot || 0; p.rotV = o.rotV || 0;
+    p.cx = o.r != null ? o.r : 1; p.cy = o.g != null ? o.g : 1; p.cz = o.b != null ? o.b : 1;
+    p.wob = o.wob || 0;
+    return p;
+  }
+  update(dt){
+    const P = this.p, pos = this.aPos, sz = this.aSize, al = this.aAlpha, ro = this.aRot, ti = this.aTint;
+    let n = 0;
+    for(let i=0;i<this.max;i++){
+      const p = P[i];
+      if(!p.live){ sz[i] = 0; al[i] = 0; continue; }
+      p.t += dt;
+      const k = p.t / p.life;
+      if(k >= 1){ p.live = false; sz[i] = 0; al[i] = 0; continue; }
+      if(p.drag) { const d = Math.max(0, 1 - p.drag*dt); p.vx *= d; p.vy *= d; p.vz *= d; }
+      p.vy += p.grav * dt;
+      p.x += p.vx * dt; p.y += p.vy * dt; p.z += p.vz * dt;
+      p.rot += p.rotV * dt;
+      const e = 1 - Math.pow(1-k, 2.2);              // 缓出
+      const fadeIn = Math.min(1, k / 0.08);
+      const fadeOut = 1 - Math.pow(k, 2.4);
+      pos[i*3] = p.x; pos[i*3+1] = p.y; pos[i*3+2] = p.z;
+      sz[i] = (p.s0 + (p.s1 - p.s0) * e) * (0.85 + 0.15*Math.sin(p.rot*3));
+      al[i] = p.a0 * fadeIn * fadeOut;
+      ro[i] = p.rot;
+      ti[i*3] = p.cx; ti[i*3+1] = p.cy; ti[i*3+2] = p.cz;
+      n++;
+    }
+    this.alive = n;
+    const g = this.pts.geometry;
+    g.attributes.position.needsUpdate = true;
+    g.attributes.aSize.needsUpdate = true;
+    g.attributes.aAlpha.needsUpdate = true;
+    g.attributes.aRot.needsUpdate = true;
+    g.attributes.aTint.needsUpdate = true;
+  }
+}
+
+const POOLS = {};
+function pool(name){
+  if(!POOLS[name]) POOLS[name] = new Pool(TEX[name] || TEX.soft, 1100);
+  return POOLS[name];
+}
+function totalParticles(){
+  let n = 0; for(const k in POOLS) n += POOLS[k].alive; return n;
+}
+
+/* =====================================================================
+   3. 时间 / 更新队列 / 屏幕反馈
+   ===================================================================== */
+const TIME = { t: 0, dt: 0, raw: 0, scale: 1, pause: false, stop: 0 };
+const updaters = [];
+function addUpdate(o){ updaters.push(o); return o; }
+
+// 简易时间轴：seq([[delay, fn], ...])
+function seq(steps){
+  let i = 0, acc = 0;
+  const list = steps.slice().sort((a,b)=>a[0]-b[0]);
+  return addUpdate({
+    dead: false,
+    update(dt){
+      if(this.dead) return;
+      acc += dt;
+      while(i < list.length && acc >= list[i][0]){
+        const fn = list[i][1]; i++;
+        if(typeof fn === 'function') fn();
+      }
+      if(i >= list.length){ this.dead = true; }
+    }
+  });
+}
+function delay(sec, fn){ return seq([[sec, fn]]); }
+
+// 一次性贴地平面（环 / 冲击 / 贴花）
+const _plane = new THREE.PlaneGeometry(1, 1);
+function flatMesh(tex, color = 0xffffff, blending = THREE.AdditiveBlending, opacity = 1){
+  const m = new THREE.Mesh(_plane, new THREE.MeshBasicMaterial({
+    map: tex, color, transparent: true, opacity, depthWrite: false,
+    blending, side: THREE.DoubleSide, fog: false
+  }));
+  m.rotation.x = -Math.PI/2;
+  m.renderOrder = 4;
+  scene.add(m);
+  return m;
+}
+// 面向相机的竖直平面
+const billboards = [];
+function billMesh(tex, color = 0xffffff, opacity = 1, blending = THREE.AdditiveBlending){
+  const m = new THREE.Mesh(_plane, new THREE.MeshBasicMaterial({
+    map: tex, color, transparent: true, opacity, depthWrite: false,
+    blending, fog: false, side: THREE.DoubleSide
+  }));
+  m.renderOrder = 5;
+  scene.add(m);
+  billboards.push(m);
+  return m;
+}
+function killAfter(mesh, sec){
+  delay(sec, ()=>{ scene.remove(mesh); if(mesh.material.map === TEX.ring) {} });
+}
+
+// 震屏
+const shakeState = { amp: 0, t: 0, dur: 0 };
+function shake(amp, dur = 0.3){ shakeState.amp = Math.max(shakeState.amp, amp); shakeState.t = 0; shakeState.dur = dur; }
+
+// 顿帧
+function hitstop(sec){
+  if(!opts.slowmo) return;
+  TIME.stop = Math.max(TIME.stop, sec);
+}
+
+// 局部闪白（不是全屏）
+const flashEl = document.getElementById('flash');
+function flashAt(worldPos, radius = 3, color = '255,255,255', peak = 0.5){
+  const v = worldPos.clone().project(camera);
+  const x = (v.x * 0.5 + 0.5) * innerWidth;
+  const y = (-v.y * 0.5 + 0.5) * innerHeight;
+  const px = radius / Math.max(0.6, camera.position.distanceTo(worldPos)) * innerHeight * 0.9;
+  flashEl.style.background = `radial-gradient(circle at ${x}px ${y}px, rgba(${color},1) 0%, rgba(${color},.35) ${px*0.35}px, rgba(${color},0) ${px}px)`;
+  flashEl.style.opacity = peak;
+  flashEl.style.transition = 'none';
+  requestAnimationFrame(()=>{
+    flashEl.style.transition = 'opacity .18s ease-out';
+    flashEl.style.opacity = 0;
+  });
+}
+const vigEl = document.getElementById('vig');
+function hurtVignette(){ if(!opts.slowmo) return;
+  vigEl.style.transition='none'; vigEl.style.opacity = .65;
+  requestAnimationFrame(()=>{ vigEl.style.transition='opacity .5s'; vigEl.style.opacity = 0; });
+}
+
+// 伤害数字
+const floatsEl = document.getElementById('floats');
+const _v3 = new THREE.Vector3();
+function damageNumber(pos, value, color = '#fff', crit = false){
+  _v3.copy(pos); _v3.y += 1.2; _v3.project(camera);
+  const el = document.createElement('div');
+  el.className = 'dmg' + (crit ? ' crit' : '');
+  el.style.color = color;
+  el.textContent = value;
+  const x = (_v3.x*0.5+0.5)*innerWidth, y = (-_v3.y*0.5+0.5)*innerHeight;
+  el.style.left = x + 'px'; el.style.top = y + 'px';
+  floatsEl.appendChild(el);
+  const drift = (Math.random()-0.5)*40;
+  let t = 0;
+  const anim = ()=>{
+    t += 1/60;
+    el.style.transform = `translate(calc(-50% + ${drift*t}px), calc(-50% - ${t*52}px)) scale(${1 + Math.max(0, .35 - t)*1.2})`;
+    el.style.opacity = String(Math.max(0, 1 - t/0.85));
+    if(t < 0.85) requestAnimationFrame(anim); else el.remove();
+  };
+  anim();
+}
+
+/* =====================================================================
+   4. 场地 / 角色 / 木人桩
+   ===================================================================== */
+// 地面
+const groundTex = cv(1024,1024,(g,w,h)=>{
+  const c=w/2;
+  const gr=g.createRadialGradient(c,c,0,c,c,c);
+  gr.addColorStop(0,'#171c23'); gr.addColorStop(.55,'#0d1116'); gr.addColorStop(1,'#05070a');
+  g.fillStyle=gr; g.fillRect(0,0,w,h);
+  // 石板纹
+  g.strokeStyle='rgba(120,140,170,.055)'; g.lineWidth=2;
+  for(let i=0;i<9;i++){ g.beginPath(); g.arc(c,c,c*(0.12+i*0.105),0,7); g.stroke(); }
+  g.strokeStyle='rgba(120,140,170,.04)';
+  for(let i=0;i<24;i++){ const a=i/24*7; g.beginPath(); g.moveTo(c,c);
+    g.lineTo(c+Math.cos(a)*c, c+Math.sin(a)*c); g.stroke(); }
+  // 中央法阵
+  g.strokeStyle='rgba(200,170,110,.10)'; g.lineWidth=4;
+  g.beginPath(); g.arc(c,c,c*0.22,0,7); g.stroke();
+  g.lineWidth=2; g.beginPath(); g.arc(c,c,c*0.245,0,7); g.stroke();
+});
+const ground = new THREE.Mesh(new THREE.CircleGeometry(19, 64),
+  new THREE.MeshStandardMaterial({ map: groundTex, roughness: 1, metalness: 0, color: 0x8f9aa8 }));
+ground.rotation.x = -Math.PI/2;
+scene.add(ground);
+
+// 角色
+const player = new THREE.Group();
+scene.add(player);
+const playerBody = new THREE.Group();
+playerBody.scale.setScalar(1.12);
+player.add(playerBody);
+{
+  const cloth = new THREE.MeshStandardMaterial({ color: 0x1e2836, roughness: .82, metalness: .12 });
+  const trim  = new THREE.MeshStandardMaterial({ color: 0x8a6a30, roughness: .5, metalness: .55 });
+  const skin  = new THREE.MeshStandardMaterial({ color: 0xd9b48e, roughness: .8 });
+
+  const torso = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.34, 0.86, 10), cloth);
+  torso.position.y = 0.72; playerBody.add(torso);
+  const legs = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.26, 0.5, 8), cloth);
+  legs.position.y = 0.25; playerBody.add(legs);
+  const belt = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.28, 0.07, 12), trim);
+  belt.position.y = 0.46; playerBody.add(belt);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.19, 16, 12), skin);
+  head.position.y = 1.28; playerBody.add(head);
+  const hair = new THREE.Mesh(new THREE.SphereGeometry(0.2, 16, 10, 0, Math.PI*2, 0, Math.PI*0.55),
+    new THREE.MeshStandardMaterial({ color: 0x10131a, roughness: .9 }));
+  hair.position.y = 1.31; playerBody.add(hair);
+  // 肩甲
+  [-1,1].forEach(s=>{
+    const p = new THREE.Mesh(new THREE.SphereGeometry(0.13, 10, 8), trim);
+    p.position.set(s*0.3, 1.02, 0); p.scale.set(1, .7, 1); playerBody.add(p);
+  });
+  // 刀（挂在挥砍枢轴上）
+  const armPivot = new THREE.Group();
+  armPivot.position.set(0.26, 1.0, 0);
+  playerBody.add(armPivot);
+  const sword = new THREE.Mesh(new THREE.BoxGeometry(0.055, 1.15, 0.11),
+    new THREE.MeshStandardMaterial({ color: 0xcfd8e2, roughness: .25, metalness: .9, emissive: 0x2a3a4a }));
+  sword.position.set(0, 0.35, 0.1);
+  sword.rotation.z = -0.36;
+  armPivot.add(sword);
+  const guard = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.05, 0.16), trim);
+  guard.position.set(0, -0.2, 0.1); armPivot.add(guard);
+  playerBody.userData.armPivot = armPivot;
+  playerBody.userData.sword = sword;
+}
+// 脚下光环
+const playerRing = flatMesh(TEX.ring, 0x6f8fbf, THREE.AdditiveBlending, .5);
+playerRing.scale.setScalar(1.5);
+
+// 木人桩
+const enemies = [];
+const enemyGeo = new THREE.CylinderGeometry(0.19, 0.26, 1.35, 10);
+const enemyMatBase = new THREE.MeshStandardMaterial({ color: 0x5a4330, roughness: .9, metalness: .05 });
+const enemyHeadGeo = new THREE.SphereGeometry(0.17, 10, 8);
+function makeEnemy(i, angle, radius){
+  const g = new THREE.Group();
+  const mat = enemyMatBase.clone();
+  const body = new THREE.Mesh(enemyGeo, mat); body.position.y = .68; g.add(body);
+  const head = new THREE.Mesh(enemyHeadGeo, mat); head.position.y = 1.45; g.add(head);
+  const band = new THREE.Mesh(new THREE.TorusGeometry(0.22, 0.022, 6, 16),
+    new THREE.MeshStandardMaterial({ color: 0x8a6a30, roughness: .5, metalness: .6 }));
+  band.rotation.x = Math.PI/2; band.position.y = 1.2; g.add(band);
+  const mark = flatMesh(TEX.ring, 0xc0503c, THREE.AdditiveBlending, .35);
+  mark.scale.setScalar(1.1); mark.position.y = 0.012;
+  const e = { g, mat, body, head, band, mark,
+    home: new THREE.Vector3(Math.cos(angle)*radius, 0, Math.sin(angle)*radius),
+    pos: new THREE.Vector3(Math.cos(angle)*radius, 0, Math.sin(angle)*radius),
+    hp: 100, maxHp: 100, hitT: 0, deadT: 0, phase: Math.random()*7, state: null, stT: 0 };
+  g.position.copy(e.pos);
+  scene.add(g);
+  enemies.push(e);
+  return e;
+}
+for(let i=0;i<6;i++) makeEnemy(i, i/6*Math.PI*2 + 0.4, 2.9 + (i%2)*0.85);
+
+// 玩家朝向 & 移动
+const P = { pos: new THREE.Vector3(0,0,0), vel: new THREE.Vector3(), face: 0, moving: 0,
+            target: new THREE.Vector3(0,0,0), swing: 0, swingDir: 1, onGround: true };
+function faceTo(v){
+  const a = Math.atan2(v.x - P.pos.x, v.z - P.pos.z);
+  P.face = a;
+}
+
+/* =====================================================================
+   5. 元素语言（只管色 + 贴图 + 重力，不管形）
+   ===================================================================== */
+const ELEMS = {
+  phys:    { name:'物理', core:0xfff6e2, glow:0xffd8a0, tex:'spark', decal:null,     grav:  2.2 },
+  fire:    { name:'火',   core:0xfff0c0, glow:0xff7a3c, tex:'ember', decal:'scorch', grav: -1.8 },
+  ice:     { name:'冰',   core:0xe8fbff, glow:0x9ae8ff, tex:'shard', decal:'frost',  grav:  1.2 },
+  thunder: { name:'雷',   core:0xffffff, glow:0xffe066, tex:'spark', decal:'crack',  grav:  0.4 },
+  poison:  { name:'毒',   core:0xd8ffb0, glow:0x7fbf5a, tex:'smoke', decal:'acid',   grav: -0.9 },
+  holy:    { name:'圣',   core:0xfffbe0, glow:0xfff2b0, tex:'spark', decal:null,     grav: -1.2 }
+};
+const _cc = {};
+function C(hex){ if(!_cc[hex]) _cc[hex] = new THREE.Color(hex); return _cc[hex]; }
+let curElem = 'phys';
+function E(){ return ELEMS[curElem] || ELEMS.phys; }
+
+/* =====================================================================
+   6. FXKit v2 —— 本次方案里的 11 个原语
+   ===================================================================== */
+const FX = {};
+const _camDir = new THREE.Vector3();
+const _tmpA = new THREE.Vector3(), _tmpB = new THREE.Vector3();
+
+// ---- spr / burst ----
+FX.spr = function(x, y, z, o = {}){
+  const e = E();
+  const p = pool(o.tex || e.tex);
+  p.spawn({
+    x, y, z,
+    vx: o.vx||0, vy: o.vy||0, vz: o.vz||0,
+    life: o.life || 0.6, s0: o.s0 != null ? o.s0 : 0.35, s1: o.s1 != null ? o.s1 : 0.05,
+    a0: o.a0 != null ? o.a0 : 1, grav: o.grav != null ? o.grav : e.grav,
+    drag: o.drag || 0, rot: Math.random()*7, rotV: o.rotV != null ? o.rotV : (Math.random()-.5)*3,
+    r: o.r != null ? o.r : C(e.core).r, g: o.g != null ? o.g : C(e.core).g, b: o.b != null ? o.b : C(e.core).b
+  });
+};
+
+FX.burst = function(pos, o = {}){
+  const e = E();
+  const n = Math.round((o.n || 14) * Q());
+  const tex = o.tex || e.tex;
+  const sp = o.speed || 4, up = o.up || 1.2, size = o.size || 0.3, life = o.life || 0.6;
+  const core = C(o.coreHex || e.core), glow = C(o.glowHex || e.glow);
+  for(let i=0;i<n;i++){
+    const a = Math.random()*Math.PI*2, k = Math.random();
+    const v = sp * (0.35 + k*0.9);
+    const useGlow = Math.random() < 0.45;
+    FX.spr(pos.x + Math.cos(a)*0.1, pos.y + Math.random()*0.35, pos.z + Math.sin(a)*0.1, {
+      tex, life: life*(0.6+Math.random()*0.8),
+      vx: Math.cos(a)*v, vy: (Math.random()*0.9+0.15)*up*v*0.5, vz: Math.sin(a)*v,
+      s0: size*(0.5+Math.random()*0.9), s1: 0.02, grav: o.grav != null ? o.grav : e.grav,
+      drag: o.drag != null ? o.drag : 1.4,
+      r: useGlow?glow.r:core.r, g: useGlow?glow.g:core.g, b: useGlow?glow.b:core.b,
+      rotV: (Math.random()-.5)*8
+    });
+  }
+};
+
+// ---- 贴花（16 个 quad 固定池） ----
+const DECAL = { list:[], i:0, max:18 };
+for(let i=0;i<DECAL.max;i++){
+  const m = flatMesh(TEX.scorch, 0xffffff, THREE.NormalBlending, 0);
+  m.visible = false; m.renderOrder = 2;
+  DECAL.list.push({ m, life:0, max:1 });
+}
+FX.decal = function(pos, texName, size = 2, life = 4, tint = 0xffffff){
+  const d = DECAL.list[DECAL.i++ % DECAL.max];
+  const m = d.m;
+  m.material.map = TEX[texName] || TEX.scorch;
+  m.material.color.set(tint);
+  m.material.needsUpdate = true;
+  m.position.set(pos.x, 0.015 + Math.random()*0.004, pos.z);
+  m.rotation.z = Math.random()*7;
+  m.scale.setScalar(size * (0.85 + Math.random()*0.3));
+  m.visible = true;
+  d.life = 0; d.max = life;
+  d.m.material.opacity = 0.9;
+};
+
+// ---- 冲击波 ----
+FX.shock = function(pos, r = 3, o = {}){
+  const e = E();
+  const col = o.color || e.glow;
+  const dur = o.dur || 0.42;
+  // 地面环
+  const ring = flatMesh(TEX.shock, col, THREE.AdditiveBlending, 0);
+  ring.position.set(pos.x, 0.03, pos.z);
+  addUpdate({ t:0, update(dt){
+    this.t += dt; const k = this.t/dur;
+    ring.scale.setScalar(0.2 + k * r * 2);
+    ring.material.opacity = (1-k) * 0.85;
+    if(k >= 1){ scene.remove(ring); this.dead = true; }
+  }});
+  // 竖直气浪
+  if(Q() > 0.6){
+    const geo = new THREE.CylinderGeometry(1, 1, 1, 28, 1, true);
+    const mat = new THREE.MeshBasicMaterial({ map: TEX.beam, color: col, transparent: true,
+      opacity: .5, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false });
+    const shell = new THREE.Mesh(geo, mat);
+    shell.position.set(pos.x, 0.35, pos.z);
+    scene.add(shell);
+    addUpdate({ t:0, update(dt){
+      this.t += dt; const k = this.t/(dur*1.5);
+      shell.scale.set(r*(0.3+k), 0.9*(1-k*0.4), r*(0.3+k));
+      mat.opacity = (1-k)*0.45;
+      if(k >= 1){ scene.remove(shell); geo.dispose(); mat.dispose(); this.dead = true; }
+    }});
+  }
+  // 尘环
+  const n = Math.round(16 * Q());
+  for(let i=0;i<n;i++){
+    const a = i/n*Math.PI*2;
+    FX.spr(pos.x + Math.cos(a)*0.4, 0.1, pos.z + Math.sin(a)*0.4, {
+      tex:'smoke', life: 0.7 + Math.random()*0.4,
+      vx: Math.cos(a)*r*1.5, vy: 0.6+Math.random(), vz: Math.sin(a)*r*1.5,
+      s0: 0.5, s1: 1.3, a0: .28, grav: 1.6, drag: 2.4,
+      r: .7, g: .68, b: .62
+    });
+  }
+};
+
+// ---- 刀气弧（父级绕 Y 转 / 子级只管倾斜） ----
+const arcGeos = {};
+function arcGeometry(inner, outer, span, seg = 44){
+  const k = inner.toFixed(2)+'_'+outer.toFixed(2)+'_'+span.toFixed(2);
+  if(arcGeos[k]) return arcGeos[k];
+  const pos = [], uv = [], idx = [];
+  for(let i=0;i<=seg;i++){
+    const t = i/seg, a = -span/2 + span*t, ca = Math.cos(a), sa = Math.sin(a);
+    pos.push(ca*inner, sa*inner, 0); uv.push(t, 0);
+    pos.push(ca*outer, sa*outer, 0); uv.push(t, 1);
+  }
+  for(let i=0;i<seg;i++){ const b = i*2; idx.push(b, b+1, b+2, b+1, b+3, b+2); }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  g.setIndex(idx);
+  g.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 6);
+  arcGeos[k] = g;
+  return g;
+}
+function arcMaterial(color, opacity = 1){
+  return new THREE.MeshBasicMaterial({ map: TEX.slash, color, transparent: true, opacity,
+    blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false });
+}
+
+/**
+ * 刀气弧
+ * opt: { r, inner, span, tilt, y, spin, sweep, life, color, from, to }
+ *  spin  每秒绕 Y 旋转弧度；sweep 在平面内扫过的弧度（用于定向挥砍）
+ */
+FX.arc = function(center, opt = {}){
+  const r = opt.r || 1.7;
+  const inner = opt.inner != null ? opt.inner : r * 0.62;
+  const span = opt.span || 2.1;
+  const tilt = opt.tilt != null ? opt.tilt : 0.62;
+  const life = opt.life || 0.36;
+  const col = opt.color != null ? opt.color : C(E().glow);
+
+  const spinG = new THREE.Group();
+  spinG.position.set(center.x, opt.y != null ? opt.y : 0.95, center.z);
+  spinG.rotation.y = opt.yaw || 0;
+  scene.add(spinG);
+
+  const tiltG = new THREE.Group();
+  tiltG.rotation.x = -Math.PI/2 + tilt;
+  spinG.add(tiltG);
+
+  const geo = arcGeometry(inner, r, span);
+  const mkArc = (matInner, matOuter, op) => {
+    const m1 = new THREE.Mesh(geo, matOuter);
+    const m2 = new THREE.Mesh(arcGeometry(inner*1.02, r*0.82, span*0.96), matInner);
+    m2.position.z = 0.012;
+    tiltG.add(m1); tiltG.add(m2);
+    return [m1, m2];
+  };
+  const outerMat = arcMaterial(col, opt.opacity || 0.95);
+  const innerMat = arcMaterial(C(E().core), 0.9);
+  const [mOut, mIn] = mkArc(innerMat, outerMat);
+
+  const sweepFrom = opt.from != null ? opt.from : 0;
+  const sweepTo = opt.to != null ? opt.to : 0;
+  const spin = opt.spin || 0;
+
+  addUpdate({ t:0, update(dt){
+    this.t += dt;
+    const k = Math.min(1, this.t/life);
+    spinG.rotation.y += spin * dt;
+    if(sweepTo !== sweepFrom){
+      const e = 1 - Math.pow(1-k, 3);
+      mOut.rotation.z = mIn.rotation.z = sweepFrom + (sweepTo - sweepFrom) * e;
+    }
+    const fade = 1 - Math.pow(k, 1.6);
+    outerMat.opacity = fade * (opt.opacity || 0.95);
+    innerMat.opacity = fade * 0.85;
+    // 前 80% 时间轻微外扩
+    const sc = 1 + k*0.12;
+    tiltG.scale.setScalar(sc);
+    if(k >= 1){
+      scene.remove(spinG);
+      outerMat.dispose(); innerMat.dispose();
+      this.dead = true;
+    }
+  }});
+
+  // 拖尾余影：沿弧外沿撒粒子
+  if(Q() > 0.55){
+    for(let i=0;i<8;i++){
+      const a = -span/2 + Math.random()*span;
+      FX.spr(center.x + Math.cos(a)*r*0.9, (opt.y||0.95) + Math.sin(a)*tilt*0.3, center.z + Math.sin(a)*r*0.9, {
+        tex:'spark', life: .25 + Math.random()*.2, s0: .16, s1: 0,
+        vx: 0, vy: .5, vz: 0, a0: .8, grav: 0,
+        r: C(E().core).r, g: C(E().core).g, b: C(E().core).b
+      });
+    }
+  }
+  return spinG;
+};
+
+// ---- 折线闪电（带分叉，宽面带子，不是 1px Line） ----
+class Bolt {
+  constructor(a, b, o = {}){
+    this.a = a.clone(); this.b = b.clone();
+    this.color = o.color != null ? o.color : C(E().glow);
+    this.width = o.width || 0.09;
+    this.seg = o.seg || 16;
+    this.chaos = o.chaos != null ? o.chaos : 0.55;
+    this.life = o.life || 0.18;
+    this.t = 0; this.flick = 0;
+    const n = this.seg;
+    const g = new THREE.BufferGeometry();
+    this.posArr = new Float32Array(n*2*3);
+    this.alphaArr = new Float32Array(n*2);
+    const uvArr = new Float32Array(n*2*2);
+    const idx = [];
+    for(let i=0;i<n;i++){
+      uvArr[i*4] = i/(n-1); uvArr[i*4+1] = 0;
+      uvArr[i*4+2] = i/(n-1); uvArr[i*4+3] = 1;
+    }
+    for(let i=0;i<n-1;i++){ const q = i*2; idx.push(q, q+1, q+2, q+1, q+3, q+2); }
+    g.setAttribute('position', new THREE.BufferAttribute(this.posArr, 3));
+    g.setAttribute('uv', new THREE.BufferAttribute(uvArr, 2));
+    g.setAttribute('aA', new THREE.BufferAttribute(this.alphaArr, 1));
+    g.setIndex(idx);
+    g.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 40);
+    this.geo = g;
+    this.mat = new THREE.ShaderMaterial({
+      uniforms:{ uColor:{ value: new THREE.Color(this.color) }, uTex:{ value: TEX.beam }, uOp:{ value: 1 } },
+      vertexShader:`attribute float aA; varying float vA; varying vec2 vUv;
+        void main(){ vA=aA; vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
+      fragmentShader:`uniform vec3 uColor; uniform sampler2D uTex; uniform float uOp;
+        varying float vA; varying vec2 vUv;
+        void main(){ vec4 t=texture2D(uTex,vUv); float a=t.a*vA*uOp;
+          if(a<0.01) discard;
+          gl_FragColor=vec4(uColor, a); }`,
+      transparent:true, depthWrite:false, blending:THREE.AdditiveBlending, side:THREE.DoubleSide
+    });
+    this.mesh = new THREE.Mesh(g, this.mat);
+    this.mesh.frustumCulled = false;
+    scene.add(this.mesh);
+    this.regen();
+    this.points = null;
+  }
+  makePts(){
+    const n = this.seg, pts = [];
+    const dir = _tmpA.copy(this.b).sub(this.a);
+    const len = dir.length();
+    dir.normalize();
+    const perp1 = new THREE.Vector3(0,1,0);
+    if(Math.abs(dir.y) > 0.9) perp1.set(1,0,0);
+    const p1 = perp1.cross(dir).normalize();
+    const p2 = new THREE.Vector3().crossVectors(dir, p1).normalize();
+    let acc = 1;
+    for(let i=0;i<n;i++){
+      const t = i/(n-1);
+      const env = Math.sin(t*Math.PI);           // 两端固定
+      const amp = len * this.chaos * 0.14 * env;
+      acc = Math.max(0.3, acc * 0.72);
+      const ox = (Math.random()-0.5) * amp * acc * 2;
+      const oy = (Math.random()-0.5) * amp * acc * 2;
+      pts.push(new THREE.Vector3().copy(this.a)
+        .addScaledVector(dir, len*t)
+        .addScaledVector(p1, ox)
+        .addScaledVector(p2, oy));
+    }
+    return pts;
+  }
+  regen(){
+    const pts = this.makePts();
+    this.points = pts;
+    camera.getWorldDirection(_camDir);
+    const n = this.seg, pa = this.posArr, aa = this.alphaArr;
+    for(let i=0;i<n;i++){
+      const prev = pts[Math.max(0,i-1)], next = pts[Math.min(n-1,i+1)];
+      const tan = _tmpB.copy(next).sub(prev).normalize();
+      const side = new THREE.Vector3().crossVectors(tan, _camDir).normalize()
+        .multiplyScalar(this.width * (0.32 + Math.sin(i/(n-1)*Math.PI) * 0.9));
+      pa[i*6]   = pts[i].x + side.x; pa[i*6+1] = pts[i].y + side.y; pa[i*6+2] = pts[i].z + side.z;
+      pa[i*6+3] = pts[i].x - side.x; pa[i*6+4] = pts[i].y - side.y; pa[i*6+5] = pts[i].z - side.z;
+      const fade = Math.sin(i/(n-1)*Math.PI) * 0.55 + 0.55;
+      aa[i*2] = fade; aa[i*2+1] = fade;
+    }
+    this.geo.attributes.position.needsUpdate = true;
+    this.geo.attributes.aA.needsUpdate = true;
+  }
+  update(dt){
+    this.t += dt; this.flick -= dt;
+    if(this.flick <= 0 && this.t < this.life*0.72){ this.flick = 0.035; this.regen(); }
+    this.mat.uniforms.uOp.value = Math.max(0, 1 - Math.pow(this.t/this.life, 1.5));
+    if(this.t >= this.life){ this.dispose(); return false; }
+    return true;
+  }
+  dispose(){ scene.remove(this.mesh); this.geo.dispose(); this.mat.dispose(); }
+}
+FX.bolt = function(a, b, o = {}){
+  const main = new Bolt(a, b, o);
+  const list = [main];
+  addUpdate({ update(dt){
+    for(let i=list.length-1;i>=0;i--){ if(!list[i].update(dt)) list.splice(i,1); }
+    if(!list.length) this.dead = true;
+  }});
+  // 分叉
+  const extra = o.branch != null ? o.branch : 2;
+  if(Q() > 0.35){
+    for(let i=0;i<extra;i++){
+      const t = 0.25 + Math.random()*0.5;
+      const from = main.points ? main.points[Math.floor(main.seg*t)] : _tmpA.copy(a).lerp(b, t).clone();
+      const off = new THREE.Vector3((Math.random()-.5)*2.2, (Math.random()-.5)*1.4, (Math.random()-.5)*2.2);
+      const br = new Bolt(from, from.clone().addScaledVector(b.clone().sub(a).normalize(), 0.5 + Math.random()*1.2).add(off), {
+        color: o.color, width: (o.width||0.09)*0.55, seg: 8, chaos: 0.7, life: (o.life||0.18)*0.7
+      });
+      list.push(br);
+    }
+  }
+  return main;
+};
+
+// ---- 螺旋气流（龙卷） ----
+FX.vortex = function(pos, o = {}){
+  const life = o.life || 1.2;
+  const R = o.r || 1.5;
+  const h = o.h || 2.4;
+  const col = C(o.color != null ? o.color : E().glow);
+  const dirSign = o.dir || 1;
+  let t = 0, acc = 0;
+  addUpdate({ update(dt){
+    t += dt; acc += dt;
+    const k = Math.min(1, t/life);
+    const rate = 0.016;
+    while(acc > rate){
+      acc -= rate;
+      const ang = t * 11 * dirSign + Math.random()*0.5;
+      const kk = Math.random();
+      const rr = R * (0.35 + kk*0.75);
+      FX.spr(pos.x + Math.cos(ang)*rr, kk*h*0.35, pos.z + Math.sin(ang)*rr, {
+        tex:'spark', life: 0.45 + Math.random()*0.35,
+        vx: -Math.sin(ang)*2.2*dirSign, vy: 2.2 + Math.random()*1.6, vz: Math.cos(ang)*2.2*dirSign,
+        s0: 0.22, s1: 0.02, a0: 0.85, grav: 0.5, drag: 0.6,
+        r: col.r, g: col.g, b: col.b
+      });
+    }
+    if(t >= life){ this.dead = true; }
+  }});
+};
+
+// ---- 领域（地面纹 + 边界墙 + 体积柱 + 脉冲） ----
+FX.field = function(pos, o = {}){
+  const R = o.r || 3.2;
+  const life = o.life || 4.5;
+  const texName = o.tex || 'sigil';
+  const col = o.color != null ? o.color : C(E().glow);
+  const grp = new THREE.Group();
+  grp.position.set(pos.x, 0, pos.z);
+  scene.add(grp);
+
+  // 地面法阵
+  const sig = new THREE.Mesh(_plane, new THREE.MeshBasicMaterial({ map: TEX[texName], color: col,
+    transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, fog: false }));
+  sig.rotation.x = -Math.PI/2; sig.position.y = 0.02;
+  sig.scale.setScalar(R*2);
+  grp.add(sig);
+
+  // 体积柱
+  const colGeo = new THREE.CylinderGeometry(R*0.92, R*0.92, 2.6, 32, 1, true);
+  const colMat = new THREE.MeshBasicMaterial({ map: TEX.beam, color: col, transparent: true,
+    opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false });
+  const colMesh = new THREE.Mesh(colGeo, colMat);
+  colMesh.position.y = 1.3; colMesh.rotation.y = Math.PI/2;
+  grp.add(colMesh);
+
+  // 边界墙（两层反向旋转）
+  const wallGeo = new THREE.CylinderGeometry(R, R, 1.5, 40, 1, true);
+  const walls = [];
+  [1,-1].forEach((s)=>{
+    const m = new THREE.Mesh(wallGeo, new THREE.MeshBasicMaterial({ map: TEX.beam, color: col,
+      transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending,
+      side: THREE.DoubleSide, fog: false }));
+    m.position.y = 0.55; m.rotation.y = Math.PI/2;
+    m.userData.s = s;
+    grp.add(m); walls.push(m);
+  });
+
+  let t = 0, pulseT = 0;
+  addUpdate({ update(dt){
+    t += dt; pulseT += dt;
+    const k = Math.min(1, t/life);
+    // 入场
+    const inK = Math.min(1, t/0.35);
+    const outK = k > 0.85 ? 1 - (k-0.85)/0.15 : 1;
+    const e = 1 - Math.pow(1-inK, 3);
+    sig.material.opacity = 0.85 * e * outK;
+    sig.scale.setScalar(R*2 * (0.55 + e*0.45));
+    sig.rotation.z += dt * 0.22;
+    colMat.opacity = 0.10 * e * outK * (0.8 + 0.2*Math.sin(t*3));
+    colMesh.rotation.y += dt * 0.35;
+    walls.forEach(w=>{
+      w.material.opacity = 0.20 * e * outK * (0.75 + 0.25*Math.sin(t*5 + w.userData.s));
+      w.rotation.y += dt * 0.55 * w.userData.s;
+    });
+    // 边界升起的粒子
+    if(Math.random() < dt*40 * Q()){
+      const a = Math.random()*Math.PI*2;
+      FX.spr(pos.x + Math.cos(a)*R, 0.05, pos.z + Math.sin(a)*R, {
+        tex:'spark', life: 0.9, s0: 0.16, s1: 0, vy: 1.4, a0: 0.8, grav: -0.4,
+        r: col.r, g: col.g, b: col.b
+      });
+    }
+    // 脉冲
+    if(pulseT > (o.pulse || 1.6)){
+      pulseT = 0;
+      FX.shock(pos, R*1.02, { color: col, dur: 0.55 });
+      if(o.onPulse) o.onPulse();
+    }
+    if(k >= 1){ scene.remove(grp); colGeo.dispose(); wallGeo.dispose(); this.dead = true; }
+  }});
+  return grp;
+};
+
+// ---- 地裂 / 落雷 / 火柱：竖直喷发柱 ----
+FX.geyser = function(pos, o = {}){
+  const h = o.h || 3.2;
+  const wScale = o.w || 1;
+  const maxOp = o.opacity != null ? o.opacity : 0.95;
+  const life = o.life || 0.6;
+  const col = o.color != null ? C(o.color) : C(E().glow);
+  const texName = o.tex || 'beam';
+  const grp = new THREE.Group();
+  grp.position.set(pos.x, 0, pos.z);
+  scene.add(grp);
+  const planes = [];
+  const N = Q() > 0.55 ? 3 : 1;
+  for(let i=0;i<N;i++){
+    const m = new THREE.Mesh(_plane, new THREE.MeshBasicMaterial({
+      map: TEX[texName], color: col, transparent: true, opacity: 0,
+      depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false }));
+    m.position.y = h*0.5;
+    m.rotation.y = i * Math.PI / N;
+    grp.add(m); planes.push(m);
+  }
+  const flash = flatMesh(TEX.soft, col, THREE.AdditiveBlending, 0);
+  flash.position.set(pos.x, 0.04, pos.z);
+  flash.scale.setScalar(2.2);
+
+  let t = 0;
+  addUpdate({ update(dt){
+    t += dt;
+    const k = Math.min(1, t/life);
+    const grow = 1 - Math.pow(1 - Math.min(1, t/0.12), 3);
+    const fade = 1 - Math.pow(k, 2.2);
+    planes.forEach(p=>{
+      p.scale.set((0.9 + k*0.7) * wScale, h*grow, 1);
+      p.position.y = h*grow*0.5;
+      p.material.opacity = maxOp * fade;
+    });
+    flash.material.opacity = 0.85 * (1-k);
+    flash.scale.setScalar(2.2 + k*1.6);
+    if(k >= 1){ scene.remove(grp); scene.remove(flash); this.dead = true; }
+  }});
+  return grp;
+};
+
+// ---- 锥形喷射（火焰 / 毒雾 / 回春上升） ----
+FX.cone = function(pos, dir, o = {}){
+  const e = E();
+  const n = Math.round((o.n || 22) * Q());
+  const len = o.len || 3, spread = o.spread || 0.7;
+  const up = o.up || 0.4;
+  const core = C(e.core), glow = C(e.glow);
+  const src = o.tex || e.tex;
+  for(let i=0;i<n;i++){
+    const a = (Math.random()-0.5) * spread;
+    const sp = len * (0.5 + Math.random()*1.2);
+    const g = Math.random() < 0.5 ? core : glow;
+    FX.spr(pos.x + (Math.random()-.5)*0.3, pos.y + Math.random()*0.3, pos.z + (Math.random()-.5)*0.3, {
+      tex: src, life: (o.life || 0.7) * (0.6 + Math.random()*0.8),
+      vx: Math.cos(dir + a) * sp, vy: up*sp*0.5 + Math.random()*1.2, vz: Math.sin(dir + a) * sp,
+      s0: (o.size||0.4) * (0.6+Math.random()*0.7), s1: (o.size||0.4)*0.2,
+      a0: 0.9, grav: e.grav, drag: 1.6,
+      r: g.r, g: g.g, b: g.b, rotV: (Math.random()-.5)*6
+    });
+  }
+};
+
+// ---- 拖尾丝带 ----
+class Ribbon {
+  constructor(o = {}){
+    this.n = o.segs || 18;
+    this.width = o.width || 0.35;
+    this.color = new THREE.Color(o.color != null ? o.color : E().glow);
+    this.tex = o.tex || TEX.slash;
+    this.life = o.life || 0.45;
+    this.hist = [];
+    const g = new THREE.BufferGeometry();
+    this.posArr = new Float32Array(this.n*2*3);
+    this.alphaArr = new Float32Array(this.n*2);
+    const uvArr = new Float32Array(this.n*2*2);
+    for(let i=0;i<this.n;i++){ uvArr[i*4]=i/(this.n-1); uvArr[i*4+1]=0; uvArr[i*4+2]=i/(this.n-1); uvArr[i*4+3]=1; }
+    const idx = [];
+    for(let i=0;i<this.n-1;i++){ const q=i*2; idx.push(q,q+1,q+2,q+1,q+3,q+2); }
+    g.setAttribute('position', new THREE.BufferAttribute(this.posArr, 3));
+    g.setAttribute('uv', new THREE.BufferAttribute(uvArr, 2));
+    g.setAttribute('aA', new THREE.BufferAttribute(this.alphaArr, 1));
+    g.setIndex(idx);
+    g.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 60);
+    this.geo = g;
+    this.mat = new THREE.ShaderMaterial({
+      uniforms:{ uColor:{ value: this.color }, uTex:{ value: this.tex }, uOp:{ value: 1 } },
+      vertexShader:`attribute float aA; varying float vA; varying vec2 vUv;
+        void main(){ vA=aA; vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
+      fragmentShader:`uniform vec3 uColor; uniform sampler2D uTex; uniform float uOp;
+        varying float vA; varying vec2 vUv;
+        void main(){ vec4 t=texture2D(uTex,vUv); float a=t.a*vA*uOp;
+          if(a<0.01) discard; gl_FragColor=vec4(uColor, a); }`,
+      transparent:true, depthWrite:false, blending:THREE.AdditiveBlending, side:THREE.DoubleSide
+    });
+    this.mesh = new THREE.Mesh(g, this.mat);
+    this.mesh.frustumCulled = false;
+    scene.add(this.mesh);
+  }
+  push(p){ this.hist.unshift(p.clone()); if(this.hist.length > this.n) this.hist.pop(); }
+  update(dt, head){
+    this.t = (this.t||0) + dt;
+    if(head) this.push(head);
+    camera.getWorldDirection(_camDir);
+    const H = this.hist, n = this.n, pa = this.posArr, aa = this.alphaArr;
+    for(let i=0;i<n;i++){
+      const p = H[Math.min(i, H.length-1)];
+      const prev = H[Math.min(Math.max(0,i-1), H.length-1)];
+      const next = H[Math.min(i+1, H.length-1)];
+      if(!p){ pa.fill(0); aa.fill(0); continue; }
+      const tan = _tmpA.copy(next).sub(prev);
+      if(tan.lengthSq() < 1e-6) tan.set(0,0,1);
+      tan.normalize();
+      const side = _tmpB.crossVectors(tan, _camDir).normalize().multiplyScalar(this.width * (1 - i/n) * 0.5);
+      pa[i*6]=p.x+side.x; pa[i*6+1]=p.y+side.y; pa[i*6+2]=p.z+side.z;
+      pa[i*6+3]=p.x-side.x; pa[i*6+4]=p.y-side.y; pa[i*6+5]=p.z-side.z;
+      const a = (1 - i/n) * (i < H.length ? 1 : 0);
+      aa[i*2]=a; aa[i*2+1]=a;
+    }
+    this.geo.attributes.position.needsUpdate = true;
+    this.geo.attributes.aA.needsUpdate = true;
+    this.mat.uniforms.uOp.value = Math.max(0, 1 - this.t/this.life);
+    if(this.t >= this.life){ this.destroy(); return false; }
+    return true;
+  }
+  destroy(){ scene.remove(this.mesh); this.geo.dispose(); this.mat.dispose(); }
+}
+FX.ribbon = function(o){ 
+  const r = new Ribbon(o);
+  addUpdate({ update(dt){
+    if(o.follow) o.follow(dt, r);
+    if(!r.update(dt, o.head ? o.head(dt) : null)) this.dead = true;
+  }});
+  return r;
+};
+
+// ---- 武器附魔 ----
+let enchantMesh = null, enchantT = 0;
+FX.enchant = function(on, color){
+  if(enchantMesh){ playerBody.remove(enchantMesh); enchantMesh = null; }
+  if(!on) return;
+  enchantMesh = new THREE.Mesh(new THREE.PlaneGeometry(0.22, 1.2),
+    new THREE.MeshBasicMaterial({ map: TEX.slash, color: color != null ? color : C(E().glow),
+      transparent: true, opacity: .32, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false }));
+  enchantMesh.position.set(0, 0.35, 0.1);
+  enchantMesh.rotation.z = -0.36;
+  playerBody.userData.armPivot.add(enchantMesh);
+};
+
+/* 低画质降级系数 */
+let quality = 1;
+function Q(){ return quality; }
+
+/* =====================================================================
+   7. 命中判定 / 木人桩反应
+   ===================================================================== */
+const _hv = new THREE.Vector3();
+function hitEnemy(e, dmg = 0, o = {}){
+  if(!e || e.deadT > 0) return;
+  e.hp -= dmg;
+  e.hitT = 0.2;
+  e.mat.emissive = e.mat.emissive || new THREE.Color(0x000000);
+  e.mat.emissive.setHex(o.hitColor != null ? o.hitColor : 0xffb070);
+  e.mat.emissiveIntensity = 0.55;
+  if(o.kb){
+    const d = _hv.copy(e.pos).sub(o.from || P.pos).setY(0);
+    if(d.lengthSq() > 1e-4){ d.normalize(); e.pos.addScaledVector(d, o.kb); }
+  }
+  if(dmg > 0) damageNumber(_hv.set(e.pos.x, 1.4, e.pos.z), Math.round(dmg), o.color || '#ffe6b0', o.crit);
+  if(e.hp <= 0) killEnemy(e);
+}
+function hitArea(pos, radius, dmg, o = {}){
+  const hit = [];
+  enemies.forEach(e=>{
+    if(e.deadT > 0) return;
+    const d = Math.hypot(e.pos.x - pos.x, e.pos.z - pos.z);
+    if(d <= radius) hit.push(e);
+  });
+  hit.forEach((e,i)=>{
+    const crit = Math.random() < (o.critChance || 0.18);
+    hitEnemy(e, dmg * (crit ? 1.8 : 1), Object.assign({}, o, { crit }));
+  });
+  return hit;
+}
+function killEnemy(e){
+  e.deadT = 1.2;
+  e.hp = 0;
+  FX.burst(_hv.set(e.pos.x, 0.9, e.pos.z), { n: 26, speed: 5, life: .8, size: .35, up: 1.6 });
+  FX.decal(e.pos, E().decal || 'scorch', 1.4, 3, 0x111111);
+  delay(1.3, ()=>{
+    e.hp = e.maxHp; e.deadT = 0; e.pos.copy(e.home); e.mat.emissiveIntensity = 0;
+  });
+}
+
+// 弹道
+FX.projectile = function(o){
+  const from = o.from.clone(), to = o.to.clone();
+  const core = billMesh(o.tex || TEX.soft, o.color != null ? o.color : C(E().core), 1);
+  core.scale.setScalar(o.size || 0.9);
+  const glow = billMesh(TEX.soft, o.glow != null ? o.glow : C(E().glow), .55);
+  glow.scale.setScalar((o.size || 0.9) * 2.1);
+  const pts = [];
+  const rib = new Ribbon({ width: o.trailWidth || 0.55, color: o.color != null ? o.color : C(E().core), life: 0.5, segs: 16 });
+  let t = 0;
+  const speed = o.speed || 16;
+  const dist = from.distanceTo(to);
+  const dur = Math.max(0.08, dist / speed);
+  addUpdate({ update(dt){
+    t += dt;
+    const k = Math.min(1, t/dur);
+    const p = _tmpA.copy(from).lerp(to, k);
+    p.y += Math.sin(k*Math.PI) * (o.arc || 0.9);
+    core.position.copy(p); glow.position.copy(p);
+    core.scale.setScalar((o.size||0.9) * (1 + Math.sin(t*30)*0.08));
+    rib.push(p);
+    rib.update(dt);
+    // 沿路撒火星
+    if(Math.random() < dt*50){
+      FX.spr(p.x, p.y, p.z, { tex: E().tex, life: .4, s0: .22, s1: 0, a0: .8,
+        vx: (Math.random()-.5)*1.2, vy: (Math.random()-.5)*1.2, vz: (Math.random()-.5)*1.2, grav: E().grav });
+    }
+    if(k >= 1){
+      scene.remove(core); scene.remove(glow);
+      rib.destroy();
+      if(o.onHit) o.onHit(to);
+      this.dead = true;
+    }
+  }});
+};
+
+/* =====================================================================
+   8. 15 个签名技能（v2 新实现）
+   ===================================================================== */
+const ctxOf = (aim) => ({ x: P.pos.x, z: P.pos.z, tx: aim.x, tz: aim.z,
+  dir: Math.atan2(aim.x - P.pos.x, aim.z - P.pos.z), aim });
+
+function spinPlayer(dur = 0.9, speed = 13){
+  addUpdate({ t:0, update(dt){
+    this.t += dt;
+    playerBody.rotation.y += speed * dt;
+    if(this.t >= dur){ playerBody.rotation.y = 0; this.dead = true; }
+  }});
+}
+function swingArm(){
+  const pivot = playerBody.userData.armPivot;
+  addUpdate({ t:0, update(dt){
+    this.t += dt; const k = Math.min(1, this.t/0.24);
+    pivot.rotation.x = -1.1 + k * 2.4;
+    pivot.rotation.z = -0.5 + k * 1.1;
+    if(k >= 1){ pivot.rotation.x = 0; pivot.rotation.z = 0; this.dead = true; }
+  }});
+}
+function lunge(dist = 0.6){
+  const from = P.pos.clone();
+  const to = from.clone().add(new THREE.Vector3(Math.sin(P.face), 0, Math.cos(P.face)).multiplyScalar(dist));
+  addUpdate({ t:0, update(dt){
+    this.t += dt; const k = Math.min(1, this.t/0.16);
+    P.pos.lerpVectors(from, to, k);
+    if(k >= 1) this.dead = true;
+  }});
+}
+
+const SKILLS = {
+/* ---------------- 刀客 ---------------- */
+whirl: {
+  cls:'blade', slot:'①', name:'旋风斩', sil:'旋转', cd:0.85,
+  note:'角色周围两到四道<b>倾斜 35° 的刀气</b>绕圈，脚下<b>螺旋气流</b>往上卷；命中时向中心拉出流线，视觉上能看出“吸”。旧版只是外扩一个躺平的圈。',
+  v2(c){
+    spinPlayer(0.95, 14);
+    swingArm();
+    lunge(0.5);
+    // 双刀气，父级绕 Y 转
+    [0, Math.PI*2/3, Math.PI*4/3].forEach((off, i)=>{
+      FX.arc(new THREE.Vector3(c.x,0,c.z), {
+        r: 2.0, inner: 1.28, span: 1.32, tilt: 0.62, y: 0.85 + i*0.12,
+        spin: 13, yaw: off, life: 0.95, color: C(E().glow), opacity: 0.8
+      });
+    });
+    // 三道低频残影
+    for(let i=0;i<2;i++){
+      delay(0.1 + i*0.16, ()=>{
+        FX.arc(new THREE.Vector3(P.pos.x,0,P.pos.z), {
+          r: 2.3, inner: 1.3, span: 1.4, tilt: 0.62, y: 0.7, spin: 12,
+          yaw: Math.random()*7, life: 0.4, opacity: 0.4, color: C(E().glow)
+        });
+      });
+    }
+    FX.vortex(new THREE.Vector3(c.x,0,c.z), { life: 1.1, r: 1.9, h: 2.6, color: C(E().glow) });
+    FX.shock(new THREE.Vector3(c.x,0,c.z), 1.5, { color: C(E().glow), dur: 0.34 });
+    // 命中 + 向心流线（“吸怪”的视觉）
+    seq([[0.14, ()=>{
+      const hits = hitArea(c.aim, 2.7, 26, { kb: 0.1, from: c.aim, color:'#ffe6b0' });
+      hits.forEach(e=>{
+        for(let i=0;i<7;i++){
+          const a = Math.random()*7;
+          const sx = e.pos.x + Math.cos(a)*0.9, sz = e.pos.z + Math.sin(a)*0.9;
+          FX.spr(sx, 0.5 + Math.random()*0.8, sz, {
+            tex:'spark', life: .28, s0: .26, s1: 0, a0: .9, grav: 0,
+            vx: (c.x - sx)*5.5, vy: .6, vz: (c.z - sz)*5.5,
+            r: 1, g: .93, b: .78
+          });
+        }
+        FX.burst(new THREE.Vector3(e.pos.x, .8, e.pos.z), { n: 6, speed: 3, life: .3, size: .2 });
+      });
+      hitstop(0.045); shake(0.14);
+    }]]);
+  },
+  legacy(c){
+    legacyRing(c.aim, 2.4, C(E().glow));
+    legacySquares(c.aim, 18, 2.2);
+    hitArea(c.aim, 2.4, 26, { color:'#ffe6b0' });
+  }
+},
+
+quake: {
+  cls:'blade', slot:'②', name:'裂地震击', sil:'纵向塌陷', cd:1.6,
+  note:'落点先出现<b>收缩的裂纹预警</b>，砸下时地面<b>向下塌一块</b>并喷出垂直尘柱，最后留下裂痕贴花。旧版是一个圈加几颗方块。',
+  v2(c){
+    lunge(0.8);
+    const target = new THREE.Vector3(c.tx, 0, c.tz);
+    // 预警：收缩环
+    const warn = flatMesh(TEX.ring, C(E().glow), THREE.AdditiveBlending, 0);
+    warn.position.set(target.x, 0.03, target.z);
+    addUpdate({ t:0, update(dt){
+      this.t += dt; const k = Math.min(1, this.t/0.42);
+      warn.scale.setScalar(5.6 * (1 - k) + 1.2);
+      warn.material.opacity = 0.15 + k*0.7;
+      if(k >= 1){ scene.remove(warn); this.dead = true; }
+    }});
+    seq([[0.44, ()=>{
+      swingArm();
+      // 塌陷：暗盘 + 裂纹
+      FX.decal(target, 'crack', 3.2, 6, 0x2a1e14);
+      FX.geyser(target, { h: 3.2, w: 2.4, opacity: 0.42, life: 0.75, tex: 'smoke', color: C(0x8a7458) });
+      FX.shock(target, 3.2, { color: C(E().glow), dur: 0.5 });
+      FX.burst(target, { n: 30, speed: 6.5, life: .8, size: .45, up: 1.9, grav: 5.5, tex:'smoke' });
+      // 地面塌陷感：一块暗色圆盘压下
+      const pit = flatMesh(TEX.soft, 0x000000, THREE.NormalBlending, 0);
+      pit.position.set(target.x, 0.028, target.z); pit.scale.setScalar(3.4);
+      addUpdate({ t:0, update(dt){ this.t += dt; const k = Math.min(1, this.t/0.25);
+        pit.material.opacity = 0.75 * k; if(k>=1) this.dead = true; }});
+      const hits = hitArea(target, 3.0, 46, { kb: 0.35, from: target, critChance: 0.3 });
+      hits.forEach(e=>{ e.knock = 0.9; });
+      flashAt(target, 2.4, '255,230,180', 0.42);
+      hitstop(0.07); shake(0.34, 0.4);
+      delay(0.05, ()=> shake(0.18, 0.25));
+    }]]);
+  },
+  legacy(c){
+    legacyRing(c.aim, 3.0, C(E().glow));
+    legacyDisc(c.aim, 3.0, C(E().glow));
+    legacySquares(c.aim, 22, 3.4);
+    hitArea(c.aim, 3.0, 46, {});
+  }
+},
+
+swords: {
+  cls:'blade', slot:'③', name:'剑阵', sil:'环绕轨道', cd:2.4,
+  note:'2~4 把半透明<b>剑影沿椭圆轨道绕身</b>，每把剑带短拖尾，剑尖有火花。剑是有高度、有轨道的，所以和“贴地刀气”完全区分得开。',
+  v2(c){
+    const cnt = 4;
+    const blades = [];
+    for(let i=0;i<cnt;i++){
+      const m = billMesh(TEX.blade, C(E().glow), 1);
+      m.scale.set(0.62, 1.7, 1);
+      m.userData.noBB = true;
+      blades.push({ m, a: i/cnt*Math.PI*2, r: 2.0 + (i%2)*0.35, rib: new Ribbon({ width: 0.55, color: C(E().core), life: 0.38, segs: 14 }) });
+    }
+    let t = 0;
+    const life = 2.6;
+    addUpdate({ update(dt){
+      t += dt;
+      const fade = t > life-0.4 ? Math.max(0, (life-t)/0.4) : 1;
+      blades.forEach((b, i)=>{
+        b.a += dt * 2.6;
+        const x = c.x + Math.cos(b.a) * b.r, z = c.z + Math.sin(b.a) * b.r * 0.8;
+        const y = 0.95 + Math.sin(b.a*2 + i) * 0.25;
+        b.m.position.set(x, y, z);
+        b.m.quaternion.copy(camera.quaternion);
+        b.m.rotateZ(-b.a + Math.PI/2);
+        b.m.material.opacity = 0.9 * fade;
+        b.rib.push(new THREE.Vector3(x, y + 0.55, z));
+        b.rib.update(dt);
+        if(Math.random() < dt*8) FX.spr(x, y+0.7, z, { tex:'spark', life:.25, s0:.14, s1:0, a0:.7, grav:0, vy:.4 });
+      });
+      if(Math.random() < dt*3){
+        hitArea(c.aim, 3.4, 9, { color:'#cfe6ff' });
+      }
+      if(t >= life){
+        blades.forEach(b=>{ scene.remove(b.m); b.rib.destroy(); });
+        this.dead = true;
+      }
+    }});
+    seq([[0.12, ()=>{
+      FX.shock(new THREE.Vector3(c.x,0,c.z), 2.2, { color: C(E().glow), dur: 0.4 });
+      FX.burst(new THREE.Vector3(c.x,1.2,c.z), { n: 16, speed: 5, life: .5, size: .25 });
+    }]]);
+    addBuff('swordArray', 3);
+  },
+  legacy(c){
+    legacyRing(c.aim, 2.6, C(E().glow));
+    legacySquares(c.aim, 20, 2.8);
+    hitArea(c.aim, 2.8, 18, {});
+  }
+},
+
+bloodrage: {
+  cls:'blade', slot:'④', name:'血怒', sil:'从下往上', cd:8,
+  note:'血色雾<b>从脚下升起</b>包住全身，胸口一次<b>心跳式脉冲环</b>。方向是“上升”，和回春的“金色光尘上升”靠颜色与心跳区分。',
+  v2(c){
+    // 上升血雾（持续 1.2s）
+    let bt = 0;
+    addUpdate({ update(dt){
+      bt += dt;
+      if(bt < 1.2){
+        for(let i=0;i<Math.round(4*Q());i++){
+          const a = Math.random()*7, r = Math.random()*0.85;
+          FX.spr(c.x + Math.cos(a)*r, 0.03 + Math.random()*0.25, c.z + Math.sin(a)*r, {
+            tex:'smoke', life: 1.2 + Math.random()*0.7, s0: .32, s1: 1.1, a0: .3,
+            vx: (Math.random()-.5)*.5, vy: 1.5 + Math.random()*1.5, vz: (Math.random()-.5)*.5,
+            grav: -1.3, drag: 0.55, r: .85, g: .1, b: .1, rotV: (Math.random()-.5)*2
+          });
+        }
+        for(let i=0;i<2;i++){
+          const a = Math.random()*7, r = .3 + Math.random()*.7;
+          FX.spr(c.x + Math.cos(a)*r, 0.1, c.z + Math.sin(a)*r, {
+            tex:'ember', life: .9, s0: .18, s1: 0, a0: .9, vy: 2.2, grav: -1.5, r:1, g:.2, b:.15 });
+        }
+      }
+      if(bt > 2.2) this.dead = true;
+    }});
+    // 心跳双环
+    [0, 0.34].forEach((d, i)=> delay(d, ()=>{
+      const ring = flatMesh(TEX.shock, 0xff3b30, THREE.AdditiveBlending, 0);
+      ring.position.set(c.x, 0.05, c.z);
+      addUpdate({ t:0, update(dt){
+        this.t += dt; const k = Math.min(1, this.t/0.55);
+        ring.scale.setScalar(0.4 + k*1.9);
+        ring.material.opacity = (1-k) * (i ? .55 : .9);
+        if(k>=1){ scene.remove(ring); this.dead = true; }
+      }});
+      FX.burst(new THREE.Vector3(c.x, .5, c.z), { n: 10, speed: 4.2, life: .6, size: .3, grav:-2 });
+      if(i===0){ hurtVignette(); shake(0.1, .3); }
+    }));
+    // 角色染红
+    playerBody.traverse(o=>{ if(o.material && o.material.emissive) o.material.emissive.setHex(0x220000); });
+    delay(1.6, ()=> playerBody.traverse(o=>{ if(o.material && o.material.emissive) o.material.emissive.setHex(0x000000); }));
+    addBuff('bloodrage', 12);
+  },
+  legacy(c){
+    legacyRing(c.aim, 1.6, C(0xff3b30));
+    legacySquares(c.aim, 12, 1.4);
+  }
+},
+
+stance: {
+  cls:'blade', slot:'⑤', name:'兵形 · 刃势', sil:'换武器身份', cd:3,
+  note:'切刀式瞬间<b>刀气形状改变</b>：斩锋=细长弧、镇岳=半圆盾弧、摧城=短粗裂弧；刃势满层时刀身出现裂纹发光。同一套代码换参数，不是三套特效。',
+  v2(c){
+    const forms = [
+      { n:'斩锋', r:2.6, inner:1.7, span:1.15, tilt:0.45, hud:0xfff0c0, note:'细长' },
+      { n:'镇岳', r:1.5, inner:0.55, span:2.7, tilt:0.9,  hud:0xffd8a0, note:'半圆盾弧' },
+      { n:'摧城', r:1.25, inner:0.95, span:1.05, tilt:0.3, hud:0xff9a5a, note:'短粗' }
+    ];
+    const f = forms[stanceIdx % 3]; stanceIdx++;
+    swingArm(); lunge(0.7);
+    FX.arc(new THREE.Vector3(c.x,0,c.z), {
+      r: f.r, inner: f.inner, span: f.span, tilt: f.tilt, y: 1.0,
+      from: -0.9, to: 0.9, life: 0.28, color: C(f.hud), opacity: 1
+    });
+    FX.enchant(true, C(f.hud));
+    FX.burst(new THREE.Vector3(c.tx, .9, c.tz), { n: 14, speed: 5, life: .4, size: .22 });
+    if(f.n === '摧城'){
+      FX.decal(new THREE.Vector3(c.tx,0,c.tz), 'crack', 1.8, 4, 0x33241a);
+      hitstop(0.06); shake(0.22);
+    } else { hitstop(0.03); shake(0.12); }
+    hitArea(c.aim, 2.6, f.n==='镇岳'?24:34, { kb: 0.2, from: c.aim });
+    toast(`兵形 · ${f.n}｜${f.note}`);
+    addBuff('stance', 6);
+  },
+  legacy(c){
+    legacyRing(c.aim, 2.2, C(0xffd8a0));
+    legacySquares(c.aim, 14, 2.0);
+    hitArea(c.aim, 2.2, 30, {});
+  }
+},
+
+/* ---------------- 法师 ---------------- */
+missile: {
+  cls:'mage', slot:'①', name:'元素飞弹', sil:'飞行体', cd:0.5,
+  note:'带<b>拖尾</b>的光球，核心白、外晕元素色；命中一次小爆点并留下元素残留。和符箓的竖长纸片形状完全不同。',
+  v2(c){
+    const to = new THREE.Vector3(c.tx, 0.95, c.tz);
+    FX.projectile({ from: new THREE.Vector3(c.x, 1.05, c.z), to, speed: 9.5, size: 0.8,
+      onHit(p){
+        FX.burst(p, { n: 18, speed: 4.5, life: .55, size: .3 });
+        FX.shock(p, 1.0, { color: C(E().glow), dur: 0.25 });
+        if(E().decal) FX.decal(p, E().decal, 1.2, 3.5, 0x555555);
+        hitArea(p, 1.4, 20, { color:'#fff', critChance: 0.22 });
+        flashAt(p, 1.2, '255,240,200', 0.28);
+        hitstop(0.018);
+      }});
+    swingArm();
+  },
+  legacy(c){
+    // 旧版：直接在外扩一个圈，没有飞行体
+    legacyRing(c.aim, 1.6, C(E().glow));
+    legacySquares(c.aim, 10, 1.6);
+    hitArea(c.aim, 1.6, 20, {});
+  }
+},
+
+meteor: {
+  cls:'mage', slot:'②', name:'陨石', sil:'从天而降', cd:4,
+  note:'高空先拉一条<b>垂直火线</b>，落点预警圈收缩，砸下是<b>蘑菇状冲击 + 尘柱</b>。前摇在高空——这和裂地的“从地上起”正好相反。',
+  v2(c){
+    const target = new THREE.Vector3(c.tx, 0, c.tz);
+    const warn = flatMesh(TEX.ring, 0xff7a3c, THREE.AdditiveBlending, 0);
+    warn.position.set(target.x, 0.03, target.z);
+    addUpdate({ t:0, update(dt){
+      this.t += dt; const k = Math.min(1, this.t/0.7);
+      warn.scale.setScalar(6.4 * (1-k) + 2.0);
+      warn.material.opacity = 0.2 + k*0.6;
+      if(k>=1){ scene.remove(warn); this.dead = true; }
+    }});
+    // 陨石本体
+    const rock = billMesh(TEX.soft, 0xffb060, 1);
+    const trail = new Ribbon({ width: 1.4, color: 0xff7a3c, life: 0.55, segs: 20 });
+    const start = target.clone().add(new THREE.Vector3(-1.6, 7.4, -2.8));
+    let t = 0; const dur = 0.72;
+    addUpdate({ update(dt){
+      t += dt;
+      const k = Math.min(1, t/dur);
+      const e = k*k;
+      const p = _tmpA.copy(start).lerp(new THREE.Vector3(target.x, 0.4, target.z), e);
+      rock.position.copy(p);
+      rock.scale.setScalar(2.6 - k*0.8);
+      trail.push(p.clone());
+      trail.update(dt);
+      if(Math.random() < dt*60) FX.spr(p.x, p.y, p.z, { tex:'ember', life:.5, s0:.6, s1:.1, a0:.9, grav:-1, vx:(Math.random()-.5)*1.5, vy:2, vz:(Math.random()-.5)*1.5 });
+      if(k >= 1){
+        scene.remove(rock); trail.destroy();
+        // 蘑菇冲击
+        FX.shock(target, 5.0, { color: 0xffc070, dur: 0.7 });
+        FX.geyser(target, { h: 5.0, life: 0.9, tex: 'flame', color: 0xffa050 });
+        // 白色核心闪光
+        const core = flatMesh(TEX.soft, 0xffffff, THREE.AdditiveBlending, 0);
+        core.position.set(target.x, 0.06, target.z); core.scale.setScalar(2.0);
+        addUpdate({ t:0, update(dt){ this.t += dt; const k = Math.min(1, this.t/0.22);
+          core.scale.setScalar(2.0 + k*4.2); core.material.opacity = (1-k)*0.95;
+          if(k>=1){ scene.remove(core); this.dead = true; } }});
+        FX.decal(target, 'scorch', 4.2, 6, 0x2a2018);
+        FX.burst(target, { n: 64, speed: 10, life: 1.3, size: .72, up: 1.4, grav: -0.3, tex:'ember' });
+        FX.burst(target, { n: 34, speed: 6.5, life: 1.5, size: 1.1, up: .25, grav: 1.2, tex:'smoke' });
+        FX.burst(target, { n: 18, speed: 12, life: .7, size: .3, up: 2.2, grav: 6, tex:'spark' });
+        hitArea(target, 3.6, 86, { critChance: 0.3 });
+        flashAt(target, 3.4, '255,190,130', 0.6);
+        hitstop(0.09); shake(0.5, 0.55);
+        this.dead = true;
+      }
+    }});
+  },
+  legacy(c){
+    legacyRing(c.aim, 3.4, C(0xff7a3c));
+    legacyDisc(c.aim, 3.4, C(0xff7a3c));
+    legacySquares(c.aim, 26, 3.8);
+    hitArea(c.aim, 3.4, 86, {});
+  }
+},
+
+firewall: {
+  cls:'mage', slot:'③', name:'火墙', sil:'一排竖直火舌', cd:5,
+  note:'沿一条线排开 4~6 片<b>竖直火舌</b>（不是水平圆片），热浪与火星向上。线状的火焰语言和圆形的太极阵一眼可分。',
+  v2(c){
+    const perx = Math.cos(c.dir), perz = -Math.sin(c.dir);
+    const cx = c.x + Math.sin(c.dir) * 2.1, cz = c.z + Math.cos(c.dir) * 2.1;
+    const n = 6;
+    const flames = [];
+    for(let i=0;i<n;i++){
+      const off = (i - (n-1)/2) * 1.05;
+      const px = cx + perx * off, pz = cz + perz * off;
+      const m = billMesh(TEX.flame, 0xffb060, 0.85);
+      m.position.set(px, 0.05, pz);
+      m.userData.phase = Math.random()*7;
+      flames.push(m);
+      FX.spr(px, 0.1, pz, { tex:'ember', life:.6, s0:.5, s1:.1, a0:.6, vy:1 });
+    }
+    // 地面光带 + 焦痕
+    const strip = flatMesh(TEX.soft, 0xff8a3c, THREE.AdditiveBlending, 0);
+    strip.position.set(cx, 0.04, cz);
+    strip.rotation.z = -c.dir;
+    strip.scale.set(6.6, 1.5, 1);
+    addUpdate({ t:0, update(dt){ this.t += dt;
+      const k = Math.min(1, this.t/0.3);
+      strip.material.opacity = 0.5 * k * (this.t > 2.6 ? Math.max(0, (3.1-this.t)/0.5) : 1);
+      if(this.t > 3.1){ scene.remove(strip); this.dead = true; } }});
+    FX.decal(new THREE.Vector3(cx, 0, cz), 'scorch', 3.6, 5, 0x241a12);
+    let t = 0;
+    addUpdate({ update(dt){
+      t += dt;
+      flames.forEach((m, i)=>{
+        const g = 1 - Math.pow(1 - Math.min(1, t/0.22), 2);
+        const fade = t > 2.6 ? Math.max(0, (3.1-t)/0.5) : 1;
+        m.scale.set(1.75 + Math.sin(t*9 + m.userData.phase)*0.12, 2.55 * g * (0.92 + Math.sin(t*13 + i)*0.08), 1);
+        m.material.opacity = 0.8 * fade * (0.85 + Math.sin(t*17 + i*2)*0.15);
+        m.position.y = m.scale.y * 0.5 - 0.05;
+        if(Math.random() < dt*6) FX.spr(m.position.x + (Math.random()-.5)*1.4, 0.1 + Math.random()*1.2, m.position.z + (Math.random()-.5)*0.4,
+          { tex:'ember', life:.7, s0:.22, s1:0, a0:.8, vy:1.8, grav:-1.2 });
+      });
+      if(t < 3.1 && Math.random() < dt*2.5){
+        hitArea(new THREE.Vector3(cx, 0, cz), 4.2, 8, { color:'#ffb060' });
+      }
+      if(t >= 3.1){ flames.forEach(m=>scene.remove(m)); this.dead = true; }
+    }});
+    // 起手：地面热浪
+    FX.shock(new THREE.Vector3(cx,0,cz), 2.4, { color: 0xff7a3c, dur: 0.35 });
+    hitArea(new THREE.Vector3(cx, 0, cz), 3.0, 30, { color:'#ffb060' });
+  },
+  legacy(c){
+    legacyRing(c.aim, 2.6, C(0xff7a3c));
+    legacyDisc(c.aim, 2.6, C(0xff7a3c));
+    legacySquares(c.aim, 18, 2.6);
+    hitArea(c.aim, 2.6, 30, {});
+  }
+},
+
+iceshield: {
+  cls:'mage', slot:'④', name:'玄冰护盾', sil:'包裹体', cd:10,
+  note:'<b>六边形冰晶壳贴合角色轮廓</b>，受击时局部裂纹，破盾时整壳炸成冰锥。壳是包在身体外面的，和血怒“从脚下冒”完全不同。',
+  v2(c){
+    const geo = new THREE.IcosahedronGeometry(1.05, 1);
+    const mat = new THREE.ShaderMaterial({
+      uniforms:{ uOp:{ value: 0 }, uColor:{ value: new THREE.Color(0x9ae8ff) }, uTime:{ value: 0 } },
+      vertexShader:`varying vec3 vN; varying vec3 vP;
+        void main(){ vN = normalize(normalMatrix*normal); vec4 mv = modelViewMatrix*vec4(position,1.0);
+          vP = mv.xyz; gl_Position = projectionMatrix*mv; }`,
+      fragmentShader:`uniform float uOp; uniform vec3 uColor; uniform float uTime;
+        varying vec3 vN; varying vec3 vP;
+        void main(){
+          float f = pow(1.0 - abs(dot(normalize(vN), normalize(-vP))), 2.2);
+          float bands = smoothstep(0.45, 0.5, abs(fract(vP.y*2.2 + uTime*0.15)-0.5));
+          float a = (f*0.9 + bands*0.18) * uOp;
+          gl_FragColor = vec4(uColor, a);
+        }`,
+      transparent:true, depthWrite:false, blending:THREE.AdditiveBlending, side:THREE.DoubleSide
+    });
+    const shell = new THREE.Mesh(geo, mat);
+    shell.position.y = 0.82;
+    scene.add(shell);
+    const wire = new THREE.Mesh(new THREE.IcosahedronGeometry(1.06, 1),
+      new THREE.MeshBasicMaterial({ color: 0xd8f6ff, wireframe: true, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite:false }));
+    wire.position.y = 0.82;
+    scene.add(wire);
+    let t = 0; const life = 6;
+    let broken = false;
+    function breakShield(){
+      if(broken) return;
+      broken = true;
+      FX.burst(_tmpA.set(P.pos.x, .8, P.pos.z), { n: 34, speed: 7, life: .9, size: .38, tex:'shard', grav: 2.2, drag: 1.2 });
+      FX.shock(_tmpA.set(P.pos.x, 0, P.pos.z), 2.2, { color: 0x9ae8ff, dur: 0.4 });
+      scene.remove(shell); scene.remove(wire);
+      geo.dispose(); mat.dispose();
+      removeBuff('iceshield');
+    }
+    addUpdate({ update(dt){
+      if(broken){ this.dead = true; return; }
+      t += dt;
+      const inK = Math.min(1, t/0.3);
+      mat.uniforms.uOp.value = inK * (t > life-0.4 ? Math.max(0, (life-t)/0.4) : 1);
+      wire.material.opacity = 0.12 * inK * (t > life-0.4 ? Math.max(0, (life-t)/0.4) : 1);
+      mat.uniforms.uTime.value = t;
+      shell.position.set(P.pos.x, 0.82 + Math.sin(t*1.6)*0.03, P.pos.z);
+      wire.position.copy(shell.position);
+      wire.rotation.y += dt*0.3; shell.rotation.y -= dt*0.2;
+      if(t >= life) breakShield();
+    }});
+    addBuff('iceshield', 6);
+    // 起手结晶
+    for(let i=0;i<14;i++){
+      const a = i/14*7;
+      FX.spr(c.x + Math.cos(a)*1.2, 0.6 + Math.random()*0.9, c.z + Math.sin(a)*1.2, {
+        tex:'shard', life:.6, s0:.3, s1:.05, a0:1, vx:-Math.cos(a)*2, vy:0, vz:-Math.sin(a)*2, grav:0.2, rotV:2
+      });
+    }
+    FX.shock(new THREE.Vector3(c.x,0,c.z), 1.4, { color: 0x9ae8ff, dur: 0.3 });
+  },
+  legacy(c){
+    legacyRing(c.aim, 1.6, C(0x9ae8ff));
+    legacySquares(c.aim, 12, 1.4);
+  }
+},
+
+avatar: {
+  cls:'mage', slot:'⑤', name:'元素法相', sil:'背后法身', cd:14,
+  note:'角色背后浮现<b>3~4 倍高的半透明法身</b>，法相期间所有技能边缘染主元素色。它在<b>身后</b>且改变全局——和“只改手上”的兵形区分。',
+  v2(c){
+    const backX = c.x - Math.sin(P.face)*2.0, backZ = c.z - Math.cos(P.face)*2.0;
+    const aura = billMesh(TEX.soft, C(E().glow), 0);
+    aura.position.set(backX, 2.6, backZ);
+    aura.scale.set(4.6, 5.6, 1);
+    const m = billMesh(TEX.avatar, C(E().glow), 0);
+    m.position.set(backX, 2.4, backZ);
+    m.scale.set(3.2, 5.8, 1);
+    const inner = billMesh(TEX.avatar, C(E().core), 0);
+    inner.position.set(backX, 2.4, backZ + 0.02);
+    inner.scale.set(2.6, 4.8, 1);
+    let t = 0;
+    const life = 8;
+    addUpdate({ update(dt){
+      t += dt;
+      const inK = Math.min(1, t/0.5);
+      const fade = t > life-0.6 ? Math.max(0, (life-t)/0.6) : 1;
+      const pulse = 0.85 + Math.sin(t*2)*0.15;
+      m.material.opacity = 0.17 * inK * fade * pulse;
+      inner.material.opacity = 0.07 * inK * fade * pulse;
+      aura.material.opacity = 0.11 * inK * fade * pulse;
+      m.position.y = 2.4 + Math.sin(t*1.2)*0.08;
+      inner.position.y = m.position.y;
+      aura.position.y = 2.7 + Math.sin(t*1.2)*0.08;
+      if(Math.random() < dt*22){
+        const a = Math.random()*7, r = 1.2 + Math.random()*1.4;
+        FX.spr(m.position.x + Math.cos(a)*r, 0.1, m.position.z + Math.sin(a)*r,
+          { tex:'spark', life:1.1, s0:.2, s1:0, a0:.7, vy:1.6, grav:-0.5 });
+      }
+      if(t >= life){ scene.remove(m); scene.remove(inner); scene.remove(aura); this.dead = true; }
+    }});
+    FX.shock(new THREE.Vector3(c.x,0,c.z), 3.0, { color: C(E().glow), dur: 0.6 });
+    FX.geyser(new THREE.Vector3(c.x,0,c.z), { h: 5, life: 0.9, tex: 'beam', color: C(E().glow) });
+    flashAt(new THREE.Vector3(c.x,1.5,c.z), 3.2, '255,240,200', 0.35);
+    shake(0.16, 0.4);
+    addBuff('avatar', 8);
+    avatarOn = true;
+    delay(life, ()=>{ avatarOn = false; });
+    toast('法相 · 全场技能染' + ELEMS[curElem].name + '色');
+  },
+  legacy(c){
+    legacyRing(c.aim, 2.2, C(E().glow));
+    legacySquares(c.aim, 16, 2.2);
+  }
+},
+
+/* ---------------- 道士 ---------------- */
+talisman: {
+  cls:'tao', slot:'①', name:'符箓', sil:'竖长纸片', cd:0.7,
+  note:'符纸<b>竖着旋转飞行</b>，命中后纸片炸成几颗<b>朱砂字</b>。竖长纸片和法师的圆光球形状差异足够大。',
+  v2(c){
+    const paper = new THREE.Mesh(new THREE.PlaneGeometry(0.56, 1.12),
+      new THREE.MeshBasicMaterial({ map: TEX.paper, transparent: true, opacity: .95,
+        side: THREE.DoubleSide, depthWrite: false, fog: false }));
+    scene.add(paper);
+    const from = new THREE.Vector3(c.x, 1.1, c.z), to = new THREE.Vector3(c.tx, 1.0, c.tz);
+    const rib = new Ribbon({ width: 0.3, color: 0xffd27a, life: 0.4, segs: 12 });
+    let t = 0; const dur = Math.max(0.15, from.distanceTo(to) / 9);
+    addUpdate({ update(dt){
+      t += dt; const k = Math.min(1, t/dur);
+      const p = _tmpA.copy(from).lerp(to, k); p.y += Math.sin(k*Math.PI)*0.5;
+      paper.position.copy(p);
+      paper.quaternion.copy(camera.quaternion);
+      paper.rotateZ(t * 11);
+      rib.push(p); rib.update(dt);
+      if(Math.random() < dt*40) FX.spr(p.x, p.y, p.z, { tex:'ember', life:.35, s0:.16, s1:0, a0:.8, grav:-1 });
+      if(k>=1){
+        scene.remove(paper); rib.destroy();
+        // 朱砂字
+        for(let i=0;i<9;i++){
+          const a = i/9*7;
+          FX.spr(to.x, to.y, to.z, { tex:'rune', life:.75, s0:.45, s1:.1, a0:1,
+            vx: Math.cos(a)*3, vy: 1.4+Math.random()*1.5, vz: Math.sin(a)*3, grav:.6, drag:2,
+            r:1, g:.35, b:.25, rotV:(Math.random()-.5)*4 });
+        }
+        FX.burst(to, { n: 12, speed: 4, life: .5, size: .26, coreHex: 0xffd27a, glowHex: 0xff5a3c });
+        hitArea(to, 1.3, 22, { color:'#ffd8a0' });
+        hitstop(0.02);
+        this.dead = true;
+      }
+    }});
+    swingArm();
+  },
+  legacy(c){
+    legacyRing(c.aim, 1.4, C(0xffd27a));
+    legacySquares(c.aim, 8, 1.4);
+    hitArea(c.aim, 1.4, 22, {});
+  }
+},
+
+rain: {
+  cls:'tao', slot:'②', name:'万剑归宗', sil:'从天而降的剑', cd:3.5,
+  note:'多把剑从<b>斜上方插入地面</b>，每把剑落地留一根短剑影。方向是“向下插”，和剑阵的“绕身转”正好是两个剪影。',
+  v2(c){
+    const n = 7;
+    const center = new THREE.Vector3(c.tx, 0, c.tz);
+    for(let i=0;i<n;i++){
+      const off = new THREE.Vector3((Math.random()-.5)*5.2, 0, (Math.random()-.5)*5.2);
+      const target = center.clone().add(off);
+      seq([[i*0.055, ()=>{
+        const blade = billMesh(TEX.blade, C(E().core), 0.95);
+        blade.scale.set(0.7, 2.4, 1);
+        blade.userData.noBB = true;
+        const start = target.clone().add(new THREE.Vector3(off.x*0.8, 9, off.z*0.8 - 1.5));
+        let t = 0; const dur = 0.28;
+        addUpdate({ update(dt){
+          t += dt; const k = Math.min(1, t/dur);
+          const e = k*k;
+          const p = _tmpA.copy(start).lerp(target, e); p.y += 1.0*(1-e);
+          blade.position.copy(p);
+          blade.quaternion.copy(camera.quaternion);
+          blade.rotateZ(0.35);
+          if(k >= 1){
+            scene.remove(blade);
+            // 落地：剑影残留 + 火花
+            const shadow = billMesh(TEX.blade, C(E().glow), 0.75);
+            shadow.position.set(target.x, 0.9, target.z);
+            shadow.scale.set(0.55, 1.7, 1);
+            shadow.userData.noBB = true;
+            shadow.quaternion.copy(camera.quaternion);
+            shadow.rotateZ(0.35);
+            addUpdate({ t:0, update(ddt){ this.t += ddt;
+              shadow.material.opacity = 0.75 * (1 - this.t/0.5);
+              shadow.position.y = 0.9 - this.t*0.5;
+              if(this.t >= .5){ scene.remove(shadow); this.dead = true; } }});
+            FX.burst(target, { n: 10, speed: 4, life: .4, size: .22, tex:'spark' });
+            FX.decal(target, 'crack', 1.0, 3, 0x3a3020);
+            hitArea(target, 1.1, 16, {});
+            hitstop(0.01);
+            this.dead = true;
+          }
+        }});
+      }]]);
+    }
+    seq([[0.42, ()=>{
+      FX.shock(center, 4.0, { color: C(E().glow), dur: 0.5 });
+      shake(0.3, 0.4);
+      hitArea(center, 4.4, 30, { critChance: .25 });
+    }]]);
+  },
+  legacy(c){
+    legacyRing(c.aim, 3.4, C(E().glow));
+    legacyDisc(c.aim, 3.4, C(E().glow));
+    legacySquares(c.aim, 22, 3.4);
+    hitArea(c.aim, 3.4, 30, {});
+  }
+},
+
+taiji: {
+  cls:'tao', slot:'③', name:'太极玄阵', sil:'双鱼旋转', cd:9,
+  note:'地面<b>双鱼图旋转</b>（不是纯色圆），边界升起一圈符文墙，每 1.6 秒一次脉冲。领域四件套：地面纹 / 边界墙 / 体积柱 / 脉冲。',
+  v2(c){
+    const pos = new THREE.Vector3(c.tx, 0, c.tz);
+    FX.field(pos, { r: 3.4, life: 6, tex: 'taiji', color: C(0xbfe6ff), pulse: 1.6,
+      onPulse(){ hitArea(pos, 3.4, 12, { color:'#bfe6ff' }); } });
+    // 额外一层阴阳升腾
+    let t = 0;
+    addUpdate({ update(dt){
+      t += dt;
+      if(t > 6){ this.dead = true; return; }
+      if(Math.random() < dt*26){
+        const a = Math.random()*7, r = Math.random()*3.2;
+        const yang = Math.cos(a) > 0;
+        FX.spr(pos.x + Math.cos(a)*r, 0.08, pos.z + Math.sin(a)*r, {
+          tex:'spark', life: 1.0, s0:.18, s1:0, a0:.65, vy: 1.3, grav:-.3,
+          r: yang?1:.35, g: yang?.95:.75, b: yang?.8:1
+        });
+      }
+    }});
+    addBuff('taiji', 6);
+  },
+  legacy(c){
+    legacyDisc(c.aim, 3.4, C(0xbfe6ff));
+    legacyRing(c.aim, 3.4, C(0xbfe6ff));
+  }
+},
+
+heal: {
+  cls:'tao', slot:'④', name:'回春', sil:'由下而上', cd:7,
+  note:'金色光尘<b>从脚下升到头顶</b>，低血时额外一圈心跳。方向向上 + 金色 + 心跳环，和血怒（向上 + 血色）靠颜色区分。',
+  v2(c){
+    // 持续的上升光尘（不是一次性爆开）
+    let ht = 0;
+    addUpdate({ update(dt){
+      ht += dt;
+      if(ht < 1.5){
+        const n = Math.round(3 * Q());
+        for(let i=0;i<n;i++){
+          const a = Math.random()*7, r = Math.random()*1.15;
+          FX.spr(c.x + Math.cos(a)*r, 0.02 + Math.random()*0.25, c.z + Math.sin(a)*r, {
+            tex:'spark', life: 1.3 + Math.random()*0.9, s0: .26 + Math.random()*.2, s1: 0,
+            a0: .95, vy: 1.6 + Math.random()*1.5, vx: Math.cos(a)*0.25, vz: Math.sin(a)*0.25,
+            grav: -0.7, drag: 0.35, r: 1, g: .84, b: .48
+          });
+        }
+      }
+      if(ht > 2.6) this.dead = true;
+    }});
+    // 三圈错峰上浮
+    [0, .18, .36].forEach((d, i)=> delay(d, ()=>{
+      const ring = flatMesh(TEX.ring, 0xffe9a8, THREE.AdditiveBlending, 0);
+      ring.position.set(c.x, 0.05, c.z);
+      addUpdate({ t:0, update(dt){
+        this.t += dt; const k = Math.min(1, this.t/1.4);
+        ring.position.y = 0.05 + k*2.0;
+        ring.scale.setScalar(0.6 + Math.sin(k*Math.PI)*1.6);
+        ring.material.opacity = Math.sin(k*Math.PI) * 0.55;
+        if(k>=1){ scene.remove(ring); this.dead = true; }
+      }});
+    }));
+    if(playerHP < 400){
+      [0,.3].forEach((d,i)=> delay(d, ()=>{
+        const ring = flatMesh(TEX.shock, 0xffe9a8, THREE.AdditiveBlending, 0);
+        ring.position.set(c.x, 0.06, c.z);
+        addUpdate({ t:0, update(dt){ this.t += dt; const k = Math.min(1, this.t/.5);
+          ring.scale.setScalar(0.5+k*2); ring.material.opacity = (1-k)*.7;
+          if(k>=1){ scene.remove(ring); this.dead = true; } }});
+      }));
+    }
+    playerHP = Math.min(1000, playerHP + 260);
+    addBuff('heal', 10);
+    toast('回春 · 生命 +260');
+  },
+  legacy(c){
+    legacyRing(c.aim, 1.4, C(0xffe9a8));
+    legacySquares(c.aim, 10, 1.2);
+  }
+},
+
+summon: {
+  cls:'tao', slot:'⑤', name:'召灵兽', sil:'召唤阵', cd:12,
+  note:'<b>地面法阵展开 + 光柱</b>，兽影从光柱里走出（有 0.4s 登场动作）。法阵 + 登场动作是它和法相（背后法身、无阵）的分水岭。',
+  v2(c){
+    const pos = new THREE.Vector3(c.x, 0, c.z);
+    FX.field(pos, { r: 2.0, life: 5.5, tex: 'sigil', color: C(0xffd27a), pulse: 2.2 });
+    delay(0.25, ()=>{
+      FX.geyser(pos, { h: 4.6, life: 0.85, tex: 'beam', color: 0xffe0a0 });
+      flashAt(new THREE.Vector3(pos.x, 1, pos.z), 2.4, '255,230,180', 0.4);
+      shake(0.2, 0.4);
+    });
+    delay(0.55, ()=>{
+      const beast = billMesh(TEX.beast, 0xffe0a0, 0);
+      beast.userData.noBB = true;
+      const startX = pos.x, startZ = pos.z;
+      const dir = new THREE.Vector3(Math.sin(P.face), 0, Math.cos(P.face));
+      let t = 0;
+      addUpdate({ update(dt){
+        t += dt;
+        const k = Math.min(1, t/0.45);
+        const walk = Math.min(1, Math.max(0, (t-0.45)/0.5));
+        beast.scale.set(1.9, 1.6, 1);
+        beast.position.set(startX + dir.x*walk*1.7, 0.85 + Math.sin(t*14)*0.03*walk, startZ + dir.z*walk*1.7);
+        beast.quaternion.copy(camera.quaternion);
+        if(dir.x < 0) beast.scale.x *= -1;
+        beast.material.opacity = 0.9 * k * (t > 4.6 ? Math.max(0,(5.2-t)/0.6) : 1);
+        if(t >= 5.2){ scene.remove(beast); this.dead = true; }
+      }});
+      addBuff('summon', 7);
+    });
+    toast('灵兽 · 登场');
+  },
+  legacy(c){
+    legacyRing(c.aim, 2.0, C(0xffd27a));
+    legacySquares(c.aim, 12, 1.8);
+  }
+}
+};
+
+/* =====================================================================
+   9. 旧实现（照抄现有游戏的廉价版本：躺平的圈 + 方块粒子）
+   ===================================================================== */
+const _legGeo = new THREE.PlaneGeometry(1,1);
+const _legSquareTex = cv(32,32,(g,w,h)=>{ g.fillStyle='#fff'; g.fillRect(5,5,w-10,h-10); });
+const legPool = new Pool(_legSquareTex, 400);
+
+function legacyRing(pos, r, color){
+  const m = flatMesh(TEX.ring, color, THREE.AdditiveBlending, 0.9);
+  m.position.set(pos.x, 0.08, pos.z);
+  m.scale.setScalar(r*0.4);
+  addUpdate({ t:0, update(dt){
+    this.t += dt; const k = Math.min(1, this.t/0.32);
+    m.scale.setScalar(r*0.4 + k*r*1.6);
+    m.material.opacity = (1-k)*0.8;
+    if(k>=1){ scene.remove(m); this.dead = true; }
+  }});
+}
+function legacyDisc(pos, r, color){
+  const m = flatMesh(TEX.soft, color, THREE.AdditiveBlending, 0.4);
+  m.position.set(pos.x, 0.06, pos.z);
+  m.scale.setScalar(r*1.6);
+  addUpdate({ t:0, update(dt){
+    this.t += dt; const k = Math.min(1, this.t/0.45);
+    m.material.opacity = 0.32*(1-k);
+    if(k>=1){ scene.remove(m); this.dead = true; }
+  }});
+}
+function legacySquares(pos, n, sp){
+  for(let i=0;i<n;i++){
+    const a = Math.random()*7, v = sp*(0.4+Math.random());
+    legPool.spawn({ x: pos.x, y: 0.6, z: pos.z,
+      vx: Math.cos(a)*v, vy: Math.random()*2, vz: Math.sin(a)*v,
+      life: .5+Math.random()*.3, s0: .16, s1: .04, a0: .9, grav: 6, drag: 1.2,
+      r: 1, g: .8, b: .5 });
+  }
+}
+
+/* =====================================================================
+   10. Buff 系统（图标行放在血条下方，增量更新，不闪）
+   ===================================================================== */
+const BUFF_DEF = {
+  bloodrage: { name:'血怒', color:'#e0483c', icon:'M12 2C12 2 5 9.5 5 14a7 7 0 0014 0c0-4.5-7-12-7-12z' },
+  iceshield: { name:'玄冰护盾', color:'#9ae8ff', icon:'M12 2l8 4.5v9L12 22l-8-6.5v-9L12 2z' },
+  avatar:    { name:'法相', color:'#ffe066', icon:'M12 2a3.2 3.2 0 110 6.4A3.2 3.2 0 0112 2zM5 22v-6a7 7 0 0114 0v6h-3v-6a4 4 0 00-8 0v6H5z' },
+  swordArray:{ name:'剑阵', color:'#cfe6ff', icon:'M12 1l2.4 13.4L12 18l-2.4-3.6L12 1zM6 19h12v2H6z' },
+  stance:    { name:'刃势', color:'#ffd8a0', icon:'M3 18l4-12 3 9 2-5 3 8 3-3 3 3' },
+  taiji:     { name:'太极玄阵', color:'#bfe6ff', icon:'M12 2a10 10 0 100 20 10 10 0 000-20zm0 5a5 5 0 010 10 2.5 2.5 0 010-5 2.5 2.5 0 000-5z' },
+  heal:      { name:'回春', color:'#a8e07a', icon:'M12 21C7 17 4 14 4 10a5 5 0 019-3 5 5 0 019 3c0 4-3 7-8 11z' },
+  summon:    { name:'灵兽', color:'#ffd27a', icon:'M7 13a2 2 0 110-4 2 2 0 010 4zm10 0a2 2 0 110-4 2 2 0 010 4zM5 20c0-4 3-7 7-7s7 3 7 7H5z' },
+  frozen:    { name:'冻结', color:'#9ae8ff', icon:'M12 2v20M3 7l18 10M21 7L3 17' }
+};
+
+const buffRowEl = document.getElementById('buffrow');
+const activeBuffs = new Map();
+let rebuilds = 0;
+
+function addBuff(key, dur, stacks = 1){
+  const def = BUFF_DEF[key]; if(!def) return;
+  let b = activeBuffs.get(key);
+  if(b){
+    b.max = Math.max(b.max, dur); b.left = Math.max(b.left, dur);
+    b.stacks = Math.min(9, b.stacks + (stacks - 1 > 0 ? stacks - 1 : 0));
+    if(stacks > 1) b.stacks = Math.min(9, b.stacks);
+    b.stEl.textContent = b.stacks > 1 ? b.stacks : '';
+    return;
+  }
+  const el = document.createElement('div');
+  el.className = 'bf';
+  el.style.setProperty('--c', def.color);
+  el.innerHTML =
+    '<div class="glow"></div>' +
+    '<svg viewBox="0 0 24 24" fill="' + def.color + '" opacity=".95"><path d="' + def.icon + '"/></svg>' +
+    '<span class="cd" style="width:100%"></span>' +
+    '<span class="st"></span>' +
+    '<span class="tm"></span>';
+  el.title = def.name;
+  buffRowEl.appendChild(el);
+  b = { key, def, left: dur, max: dur, stacks, el,
+        cdEl: el.querySelector('.cd'), stEl: el.querySelector('.st'), tmEl: el.querySelector('.tm'),
+        lastW: 100 };
+  activeBuffs.set(key, b);
+  // 入场动画只播一次
+}
+
+function removeBuff(key){
+  const b = activeBuffs.get(key); if(!b) return;
+  b.el.classList.add('dead');
+  const el = b.el;
+  setTimeout(()=>el.remove(), 150);
+  activeBuffs.delete(key);
+}
+
+let buffTick = 0;
+function updateBuffs(dt){
+  buffTick += dt;
+  activeBuffs.forEach((b, key)=>{
+    b.left -= dt;
+    if(b.left <= 0){ removeBuff(key); return; }
+    // 每 0.5s 写一次宽度，靠 CSS 线性过渡补间 —— 不是每帧重建 DOM
+    if(buffTick > 0.5){
+      const w = Math.max(0, Math.min(100, b.left / b.max * 100));
+      if(Math.abs(w - b.lastW) > 0.5){
+        b.cdEl.style.width = w.toFixed(1) + '%';
+        b.lastW = w;
+      }
+    }
+    const urgent = b.left <= 3;
+    if(urgent !== b.urgent){
+      b.urgent = urgent;
+      b.el.classList.toggle('urgent', urgent);
+    }
+    if(urgent) b.tmEl.textContent = Math.ceil(b.left);
+  });
+  if(buffTick > 0.5) buffTick = 0;
+}
+
+// 旧版 HUD 对照（每 100ms innerHTML 重建 → 动画重播 → 闪）
+const oldhudEl = document.getElementById('oldhud');
+setInterval(()=>{
+  if(!opts.old) return;
+  let html = '<div class="tag">旧版：每 100ms 整块重建 → 闪</div>';
+  activeBuffs.forEach(b=>{
+    html += '<div class="ob" style="background:' + b.def.color + '">' + b.def.name.slice(0,1) + '</div>';
+  });
+  oldhudEl.innerHTML = html;
+  rebuilds++;
+}, 100);
+
+/* =====================================================================
+   11. 技能栏 / 输入 / 组合
+   ===================================================================== */
+const opts = { old:false, auto:false, slowmo:true };
+let mode = 'v2';
+let stanceIdx = 0;
+let avatarOn = false;
+let playerHP = 780;
+
+const CLASSES = {
+  blade: { name:'刀客', icon:'刀', keys:['whirl','quake','swords','bloodrage','stance'] },
+  mage:  { name:'法师', icon:'法', keys:['missile','meteor','firewall','iceshield','avatar'] },
+  tao:   { name:'道士', icon:'符', keys:['talisman','rain','taiji','heal','summon'] }
+};
+let curClass = 'blade';
+
+const barEl = document.getElementById('bar');
+const COOLDOWN = {};
+function renderBar(){
+  barEl.innerHTML = '';
+  CLASSES[curClass].keys.forEach((k, i)=>{
+    const s = SKILLS[k];
+    const el = document.createElement('div');
+    el.className = 'slot';
+    el.dataset.k = k;
+    el.innerHTML = '<span class="k">' + (i+1) + '</span>' +
+      skillIcon(k) +
+      '<span class="nm">' + s.name.split(' · ')[0] + '</span>' +
+      '<span class="cdsweep"></span>';
+    el.onclick = ()=> cast(k);
+    barEl.appendChild(el);
+  });
+  syncPanel();
+}
+function skillIcon(k){
+  const map = {
+    whirl:'<path d="M12 3a9 9 0 109 9" stroke="#ffd8a0" stroke-width="2" fill="none" stroke-linecap="round"/><path d="M12 7a5 5 0 105 5" stroke="#fff6e2" stroke-width="1.6" fill="none" stroke-linecap="round"/>',
+    quake:'<path d="M3 20l4-9 3 5 2-8 3 7 2-4 4 9" stroke="#ffd8a0" stroke-width="2" fill="none" stroke-linejoin="round"/>',
+    swords:'<path d="M12 2l2 12-2 3-2-3L12 2z" stroke="#cfe6ff" stroke-width="1.8" fill="none"/><path d="M5 5l3 10M19 5l-3 10" stroke="#cfe6ff" stroke-width="1.2" opacity=".65"/>',
+    bloodrage:'<path d="M12 3c0 0-6 6.4-6 10a6 6 0 0012 0c0-3.6-6-10-6-10z" stroke="#e0483c" stroke-width="1.8" fill="none"/>',
+    stance:'<path d="M4 18L12 4l8 14" stroke="#ffd8a0" stroke-width="2" fill="none" stroke-linejoin="round"/><path d="M8 13h8" stroke="#fff6e2" stroke-width="2"/>',
+    missile:'<circle cx="12" cy="12" r="3.4" stroke="#9ae8ff" stroke-width="2" fill="none"/><path d="M3 12h4M17 12h4M12 3v4M12 17v4" stroke="#9ae8ff" stroke-width="1.4" opacity=".7"/>',
+    meteor:'<circle cx="14" cy="10" r="4" stroke="#ff7a3c" stroke-width="2" fill="none"/><path d="M4 20L10 14M3 15l4 1M9 21l1-4" stroke="#ffb060" stroke-width="1.6"/>',
+    firewall:'<path d="M6 20c-2-3 0-5 1-7 0 2 1 3 2 3-1-4 1-7 3-9 0 3 2 4 2 7 1-1 1-2 1-3 2 3 3 6 1 9z" stroke="#ff7a3c" stroke-width="1.7" fill="none" stroke-linejoin="round"/>',
+    iceshield:'<path d="M12 2l8 4v8l-8 6-8-6V6l8-4z" stroke="#9ae8ff" stroke-width="1.8" fill="none"/><path d="M12 7v10M7 9.5l10 5M17 9.5l-10 5" stroke="#d8f6ff" stroke-width="1" opacity=".7"/>',
+    avatar:'<circle cx="12" cy="6" r="3" stroke="#ffe066" stroke-width="1.8" fill="none"/><path d="M6 21v-5a6 6 0 0112 0v5" stroke="#ffe066" stroke-width="1.8" fill="none"/>',
+    talisman:'<rect x="8" y="3" width="8" height="18" rx="1" stroke="#ffd27a" stroke-width="1.6" fill="none"/><path d="M12 6v12M9.5 10h5M9.5 14h5" stroke="#ff6a4a" stroke-width="1.3"/>',
+    rain:'<path d="M6 3l1.4 9L6 14l-1.4-2L6 3zM12 2l1.4 9L12 13l-1.4-2L12 2zM18 3l1.4 9L18 14l-1.4-2L18 3z" stroke="#ffd27a" stroke-width="1.5" fill="none"/>',
+    taiji:'<circle cx="12" cy="12" r="9" stroke="#bfe6ff" stroke-width="1.6" fill="none"/><path d="M12 3a4.5 4.5 0 010 9 4.5 4.5 0 000 9" stroke="#bfe6ff" stroke-width="1.6" fill="none"/><circle cx="12" cy="7.5" r="1" fill="#bfe6ff"/><circle cx="12" cy="16.5" r="1" fill="#bfe6ff"/>',
+    heal:'<path d="M12 21c-5-4-8-7-8-11a5 5 0 019-3 5 5 0 019 3c0 4-3 7-8 11z" stroke="#a8e07a" stroke-width="1.7" fill="none"/><path d="M12 8v8M8 12h8" stroke="#d8ffb0" stroke-width="1.4"/>',
+    summon:'<circle cx="12" cy="12" r="9" stroke="#ffd27a" stroke-width="1.4" fill="none" stroke-dasharray="3 3"/><path d="M8.5 13a1.6 1.6 0 110-3.2 1.6 1.6 0 010 3.2zm7 0a1.6 1.6 0 110-3.2 1.6 1.6 0 010 3.2zM7.5 19c0-3 2-5 4.5-5s4.5 2 4.5 5" stroke="#ffe0a0" stroke-width="1.5" fill="none"/>'
+  };
+  return '<svg viewBox="0 0 24 24" fill="none" stroke-linecap="round" stroke-linejoin="round">' + (map[k]||'') + '</svg>';
+}
+
+function aimPoint(){
+  let best = null, bd = 1e9;
+  enemies.forEach(e=>{
+    if(e.deadT > 0) return;
+    const d = Math.hypot(e.pos.x - P.pos.x, e.pos.z - P.pos.z);
+    if(d < bd){ bd = d; best = e; }
+  });
+  if(best && bd < 6.5) return new THREE.Vector3(best.pos.x, 0, best.pos.z);
+  return P.pos.clone().add(new THREE.Vector3(Math.sin(P.face), 0, Math.cos(P.face)).multiplyScalar(3.4));
+}
+
+let now = 0;
+const CD_SWEEP = {};
+function cast(key){
+  const s = SKILLS[key]; if(!s) return;
+  const el = barEl.querySelector('[data-k="'+key+'"]');
+  if(el && CD_SWEEP[key] > now) return;
+  CD_SWEEP[key] = now + (s.cd || 1);
+  if(el){
+    const sw = el.querySelector('.cdsweep');
+    sw.style.transition = 'none'; sw.style.transform = 'scaleY(1)';
+    requestAnimationFrame(()=>{
+      sw.style.transition = 'transform ' + (s.cd||1) + 's linear';
+      sw.style.transform = 'scaleY(0)';
+    });
+    el.classList.add('on');
+    setTimeout(()=>el.classList.remove('on'), 120);
+  }
+  const aim = aimPoint();
+  faceTo(aim);
+  const ctx = ctxOf(aim);
+  if(mode === 'v2') s.v2(ctx); else s.legacy(ctx);
+  if(el) el.scrollIntoView;
+}
+
+function syncPanel(){
+  const k = CLASSES[curClass].keys[0];
+  const s = SKILLS[panelSkill];
+  if(!s) return;
+  document.getElementById('pname').innerHTML = s.name + '<em>' + CLASSES[s.cls].name + ' · ' + s.slot + '</em>';
+  document.getElementById('psil').textContent = s.sil;
+  document.getElementById('pnote').innerHTML = s.note;
+}
+let panelSkill = 'whirl';
+
+function selectSkill(k){
+  panelSkill = k;
+  syncPanel();
+  document.querySelectorAll('.slot').forEach(el=>el.classList.toggle('on', el.dataset.k === k));
+  // 直接放一次
+  cast(k);
+}
+
+/* ---------- 技能组合 ---------- */
+const nearestEnemy = (pos)=>{
+  let best = null, bd = 1e9;
+  enemies.forEach(e=>{ if(e.deadT>0) return;
+    const d = e.pos.distanceTo(pos); if(d < bd){ bd = d; best = e; } });
+  return best;
+};
+function targetPos(){ const e = nearestEnemy(P.pos); return e ? e.pos.clone() : aimPoint(); }
+
+const COMBOS = {
+  freeze(){
+    const e = nearestEnemy(P.pos); if(!e) return;
+    const t = new THREE.Vector3(e.pos.x, 0, e.pos.z);
+    faceTo(t);
+    toast('冻结 → 碎裂');
+    // 冰壳收紧
+    for(let i=0;i<20;i++){
+      const a = i/20*7;
+      FX.spr(t.x + Math.cos(a)*1.6, 0.3 + Math.random()*1.4, t.z + Math.sin(a)*1.6, {
+        tex:'shard', life:.45, s0:.3, s1:.05, a0:1, vx:-Math.cos(a)*3.4, vy:.2, vz:-Math.sin(a)*3.4, grav:0, rotV:3 });
+    }
+    FX.decal(t, 'frost', 1.8, 4, 0xffffff);
+    hitEnemy(e, 6, { color:'#9ae8ff' });
+    addBuff('frozen', 4);
+    seq([[0.7, ()=>{
+      // 物理命中 → 碎裂
+      swingArm(); lunge(0.8);
+      FX.arc(new THREE.Vector3(t.x,0,t.z), { r: 1.9, inner: 1.1, span: 1.6, tilt: .55, y: .9, from: -.6, to: .6, life: .22 });
+      FX.burst(new THREE.Vector3(t.x, .8, t.z), { n: 40, speed: 8, life: 1.0, size: .45, tex:'shard', grav: 2.4, drag: 1.1 });
+      FX.shock(t, 2.2, { color: 0x9ae8ff, dur: .4 });
+      FX.decal(t, 'frost', 2.4, 5, 0xffffff);
+      hitEnemy(e, 120, { crit: true, color:'#bfefff' });
+      flashAt(new THREE.Vector3(t.x, 1, t.z), 2.2, '200,240,255', .5);
+      hitstop(0.1); shake(0.32);
+      removeBuff('frozen');
+    }]]);
+  },
+  burn(){
+    const e = nearestEnemy(P.pos); if(!e) return;
+    const t = new THREE.Vector3(e.pos.x, 0, e.pos.z);
+    faceTo(t); toast('中毒 → 焚毒');
+    // 先绿雾
+    for(let i=0;i<26;i++){
+      const a = Math.random()*7, r = Math.random()*0.9;
+      FX.spr(t.x+Math.cos(a)*r, 0.1, t.z+Math.sin(a)*r, { tex:'smoke', life:1.0, s0:.35, s1:1.1, a0:.3,
+        vy:.8, grav:-.3, r:.4, g:1, b:.3, drag:.8 });
+    }
+    hitEnemy(e, 10, { color:'#a8e07a' });
+    seq([[0.55, ()=>{
+      // 点燃：绿+橙双色火焰
+      for(let i=0;i<40;i++){
+        const a = Math.random()*7, r = Math.random()*0.5;
+        const green = i % 2 === 0;
+        FX.spr(t.x+Math.cos(a)*r, .2, t.z+Math.sin(a)*r, { tex:'flame', life:1.1, s0:.9, s1:.2, a0:.85,
+          vy:2.4+Math.random()*1.6, vx:(Math.random()-.5)*.6, vz:(Math.random()-.5)*.6, grav:-1.8, drag:.5,
+          r: green?.3:1, g: green?1:.45, b: green?.15:.1 });
+      }
+      FX.geyser(t, { h: 2.6, life: .7, tex:'flame', color: 0x7fbf5a });
+      FX.decal(t, 'acid', 2.0, 4, 0x88ff44);
+      hitEnemy(e, 70, { crit: true, color:'#a8ff6a' });
+      shake(0.2); hitstop(0.05);
+      buffTick = 0; addBuff('bloodrage', 6);
+    }]]);
+  },
+  exec(){
+    const e = nearestEnemy(P.pos); if(!e) return;
+    const t = new THREE.Vector3(e.pos.x, 0, e.pos.z);
+    faceTo(t); toast('破甲 → 处决');
+    // 裂口光
+    const glow = billMesh(TEX.soft, 0xff3b30, .9);
+    glow.position.set(t.x, 1.0, t.z); glow.scale.setScalar(1.4);
+    addUpdate({ t:0, update(dt){ this.t += dt;
+      glow.material.opacity = .9 * Math.min(1, this.t/.5) * Math.max(0, 1-(this.t-.5)/0.8);
+      glow.scale.setScalar(1.4 + this.t*.6);
+      if(this.t > 1.3){ scene.remove(glow); this.dead = true; } }});
+    FX.decal(t, 'crack', 1.6, 4, 0x552211);
+    seq([[0.5, ()=>{
+      swingArm(); lunge(1.2);
+      FX.arc(new THREE.Vector3(t.x,0,t.z), { r: 2.0, inner: 1.0, span: .8, tilt: .3, y: 1.0, from: -1.0, to: .3, life: .2, color: 0xff5a3c });
+      // 只闪目标
+      flashAt(new THREE.Vector3(t.x, 1.1, t.z), 1.5, '255,80,60', .75);
+      FX.burst(new THREE.Vector3(t.x, 1, t.z), { n: 30, speed: 6, life: .7, size: .4, coreHex: 0xff5a3c, glowHex: 0xff2200 });
+      hitEnemy(e, 260, { crit: true, color:'#ff7a5a' });
+      hitstop(0.11); shake(0.3);
+    }]]);
+  },
+  gather(){
+    const t = targetPos();
+    faceTo(t); toast('聚怪 → 塌陷冲击');
+    const c = new THREE.Vector3(t.x, 0, t.z);
+    // 向心吸入
+    let t0 = 0;
+    addUpdate({ update(dt){
+      t0 += dt;
+      if(t0 < 0.55){
+        for(let i=0;i<3;i++){
+          const a = Math.random()*7, r = 2.6 + Math.random()*1.4;
+          const sx = c.x + Math.cos(a)*r, sz = c.z + Math.sin(a)*r;
+          FX.spr(sx, .3 + Math.random()*1.2, sz, { tex:'spark', life:.3, s0:.24, s1:0, a0:.9,
+            vx:(c.x-sx)*7, vy:.4, vz:(c.z-sz)*7, grav:0 });
+        }
+      }
+      if(t0 > 0.55 && t0 < 0.62){
+        FX.shock(c, 3.6, { color: 0xffe066, dur: .5 });
+        FX.burst(c, { n: 34, speed: 9, life: .6, size: .35, grav: 3 });
+        FX.decal(c, 'crack', 2.6, 4, 0x33240f);
+        hitArea(c, 3.6, 60, { critChance: .3, color:'#ffe066' });
+        shake(0.36, .45); hitstop(0.07);
+        flashAt(c, 2.8, '255,230,160', .45);
+      }
+      if(t0 > 0.8) this.dead = true;
+    }});
+  }
+};
+
+/* =====================================================================
+   12. Toast / 主循环 / 输入
+   ===================================================================== */
+let toastEl = null, toastT = 0;
+function toast(msg){
+  if(!toastEl){
+    toastEl = document.createElement('div');
+    toastEl.style.cssText = 'position:absolute;left:50%;top:96px;transform:translateX(-50%);' +
+      'font-family:"Songti SC",serif;font-size:15px;letter-spacing:.18em;color:#ffe0a0;' +
+      'text-shadow:0 2px 12px rgba(0,0,0,.9),0 0 20px rgba(216,178,90,.5);pointer-events:none;z-index:30;' +
+      'opacity:0;transition:opacity .2s';
+    document.body.appendChild(toastEl);
+  }
+  toastEl.textContent = msg;
+  toastEl.style.opacity = 1;
+  toastT = 1.6;
+}
+
+// 地面点击
+const ray = new THREE.Raycaster();
+const groundPlane = new THREE.Plane(new THREE.Vector3(0,1,0), 0);
+const mouse = new THREE.Vector2();
+function screenToGround(cx, cy){
+  mouse.set(cx / innerWidth * 2 - 1, -(cy / innerHeight) * 2 + 1);
+  ray.setFromCamera(mouse, camera);
+  const p = new THREE.Vector3();
+  ray.ray.intersectPlane(groundPlane, p);
+  return p;
+}
+canvas.addEventListener('pointerdown', (e)=>{
+  const p = screenToGround(e.clientX, e.clientY);
+  if(p && p.length() < 16){
+    P.target.copy(p);
+    faceTo(p);
+    // 点击落点小提示
+    const m = flatMesh(TEX.ring, 0x88a8cc, THREE.AdditiveBlending, .5);
+    m.position.set(p.x, 0.02, p.z); m.scale.setScalar(0.8);
+    addUpdate({ t:0, update(dt){ this.t += dt; const k = this.t/.35;
+      m.material.opacity = .5*(1-k); m.scale.setScalar(0.8 + k*0.5);
+      if(k>=1){ scene.remove(m); this.dead = true; } }});
+  }
+});
+
+addEventListener('keydown', (e)=>{
+  const k = e.key.toLowerCase();
+  if(k >= '1' && k <= '5'){
+    const key = CLASSES[curClass].keys[+k - 1];
+    if(key){ selectSkill(key); }
+  }
+  if(k === 'q'){
+    mode = mode === 'v2' ? 'legacy' : 'v2';
+    document.querySelectorAll('#segMode button').forEach(b=>b.classList.toggle('on', b.dataset.v === mode));
+    toast(mode === 'v2' ? '新实现' : '旧实现');
+  }
+  if(k === ' '){ e.preventDefault(); TIME.pause = !TIME.pause; toast(TIME.pause ? '暂停' : '继续'); }
+  if(k === 'r'){ enemies.forEach(e=>{ e.hp = e.maxHp; e.deadT = 0; e.pos.copy(e.home); }); }
+});
+
+// 主循环
+let lastT = performance.now();
+let perfT = 0, frameCount = 0, autoT = 0, autoIdx = 0;
+const _mv = new THREE.Vector3();
+
+let FROZEN = false;
+function simulate(raw){
+  now += raw;
+  const stopping = TIME.stop > 0;
+  if(stopping) TIME.stop -= raw;
+  const dt = TIME.pause ? 0 : (stopping ? 0 : raw * TIME.scale);
+
+  // 玩家移动
+  _mv.copy(P.target).sub(P.pos); _mv.y = 0;
+  const dist = _mv.length();
+  if(dist > 0.08 && dt > 0){
+    const step = Math.min(dist, 5.2 * dt);
+    P.pos.addScaledVector(_mv.normalize(), step);
+    P.moving = Math.min(1, P.moving + dt*6);
+    const want = Math.atan2(_mv.x, _mv.z);
+    let d = want - P.face;
+    while(d > Math.PI) d -= Math.PI*2;
+    while(d < -Math.PI) d += Math.PI*2;
+    P.face += d * Math.min(1, dt*14);
+  } else P.moving = Math.max(0, P.moving - dt*6);
+
+  player.position.copy(P.pos);
+  player.rotation.y = P.face;
+  playerBody.position.y = Math.abs(Math.sin(now*9)) * 0.05 * P.moving;
+  playerBody.rotation.z = Math.sin(now*9) * 0.03 * P.moving;
+  playerRing.position.set(P.pos.x, 0.02, P.pos.z);
+  playerRing.material.opacity = 0.35 + Math.sin(now*2.4)*0.1;
+
+  // 更新队列
+  for(let i = updaters.length-1; i >= 0; i--){
+    const u = updaters[i];
+    if(u.dead){ updaters.splice(i,1); continue; }
+    u.update(dt);
+    if(u.dead) updaters.splice(i,1);
+  }
+
+  // 粒子
+  for(const k in POOLS) POOLS[k].update(dt);
+  legPool.update(dt);
+
+  // 贴花淡出
+  DECAL.list.forEach(d=>{
+    if(d.life >= 0 && d.m.visible){
+      d.life += dt;
+      const k = d.life / d.max;
+      if(k >= 1){ d.m.visible = false; }
+      else d.m.material.opacity = Math.min(1, (1-k)*1.6) * 0.92 * Math.min(1, d.life*6);
+    }
+  });
+
+  // 木人桩
+  enemies.forEach((e, i)=>{
+    if(e.hitT > 0){
+      e.hitT -= raw;
+      e.mat.emissiveIntensity = Math.max(0, e.hitT/0.2) * 0.55;
+      if(e.hitT <= 0) e.mat.emissiveIntensity = 0;
+    }
+    if(e.deadT > 0){
+      e.deadT -= raw;
+      const k = Math.max(0, e.deadT/1.2);
+      e.g.scale.setScalar(0.6 + k*0.4);
+      e.g.position.y = -0.6*(1-k);
+      e.g.rotation.z = (1-k) * 0.6;
+      if(e.deadT <= 0){ e.g.scale.setScalar(1); e.g.position.y = 0; e.g.rotation.z = 0; }
+    } else {
+      e.pos.lerp(e.home, Math.min(1, raw*2.4));
+      e.g.position.x = e.pos.x;
+      e.g.position.z = e.pos.z;
+      e.g.position.y = Math.sin(now*1.6 + e.phase) * 0.02;
+      e.g.rotation.y = Math.sin(now*0.8 + e.phase) * 0.1;
+      e.mark.position.set(e.pos.x, 0.012, e.pos.z);
+      e.mark.material.opacity = 0.22 + Math.sin(now*2 + e.phase)*0.08;
+      e.mark.scale.setScalar(1.1 + Math.sin(now*2 + e.phase)*0.04);
+    }
+  });
+
+  // buff
+  updateBuffs(raw);
+  if(toastT > 0){ toastT -= raw; if(toastT <= 0 && toastEl) toastEl.style.opacity = 0; }
+
+  // 相机抖动
+  if(shakeState.t < shakeState.dur){
+    shakeState.t += raw;
+    const k = Math.max(0, 1 - shakeState.t / shakeState.dur);
+    const a = shakeState.amp * k * k;
+    camera.position.set(
+      CAM.base.x + (Math.random()-0.5) * a * 1.6,
+      CAM.base.y + (Math.random()-0.5) * a * 1.2,
+      CAM.base.z + (Math.random()-0.5) * a * 1.6
+    );
+  } else {
+    camera.position.copy(CAM.base);
+  }
+  camera.lookAt(0, 0.9, 0);
+
+  // billboard
+  billboards.forEach(m=>{ if(!m.userData.noBB) m.quaternion.copy(camera.quaternion); });
+
+  // 自动巡演
+  if(opts.auto && !TIME.pause){
+    autoT += raw;
+    if(autoT > 2.4){
+      autoT = 0;
+      const keys = CLASSES[curClass].keys;
+      const k = keys[autoIdx++ % keys.length];
+      selectSkill(k);
+    }
+  }
+
+}
+
+function frame(ts){
+  requestAnimationFrame(frame);
+  if(FROZEN){ renderer.render(scene, camera); return; }
+  const raw = Math.min(0.05, Math.max(0.001, (ts - lastT) / 1000));
+  lastT = ts;
+  simulate(raw);
+  renderer.render(scene, camera);
+
+  // 性能面板
+  frameCount++;
+  perfT += raw;
+  if(perfT > 0.4){
+    document.getElementById('pfps').textContent = Math.round(frameCount / perfT);
+    document.getElementById('ppart').textContent = totalParticles();
+    document.getElementById('pdc').textContent = renderer.info.render.calls;
+    document.getElementById('preb').textContent = Math.round(rebuilds / perfT);
+    rebuilds = 0;
+    frameCount = 0; perfT = 0;
+  }
+}
+// 确定性地推进模拟（用于截图/回归检查）
+window.__step = (sec)=>{
+  let left = sec;
+  while(left > 0){ const d = Math.min(1/60, left); simulate(d); left -= d; }
+  renderer.render(scene, camera);
+  return { particles: totalParticles(), updaters: updaters.length };
+};
+updatePointScale();
+requestAnimationFrame(frame);
+
+/* =====================================================================
+   13. 面板交互
+   ===================================================================== */
+const segElem = document.getElementById('segElem');
+segElem.innerHTML = '';
+Object.keys(ELEMS).forEach(k=>{
+  const b = document.createElement('button');
+  b.className = 'elem' + (k === curElem ? ' on' : '');
+  b.dataset.v = k;
+  b.textContent = ELEMS[k].name;
+  const hex = '#' + ELEMS[k].glow.toString(16).padStart(6,'0');
+  if(k === curElem){ b.style.background = hex; b.style.color = '#0a0a0a'; }
+  b.onclick = ()=>{
+    curElem = k;
+    segElem.querySelectorAll('button').forEach(x=>{
+      const on = x.dataset.v === k;
+      x.classList.toggle('on', on);
+      x.style.background = on ? '#' + ELEMS[x.dataset.v].glow.toString(16).padStart(6,'0') : 'rgba(255,255,255,.02)';
+      x.style.color = on ? '#0a0a0a' : '';
+    });
+    FX.enchant(true, C(ELEMS[k].glow));
+  };
+  segElem.appendChild(b);
+});
+
+document.getElementById('segMode').addEventListener('click', e=>{
+  const b = e.target.closest('button'); if(!b) return;
+  mode = b.dataset.v;
+  document.querySelectorAll('#segMode button').forEach(x=>x.classList.toggle('on', x === b));
+  syncPanel();
+});
+document.getElementById('segSpeed').addEventListener('click', e=>{
+  const b = e.target.closest('button'); if(!b) return;
+  TIME.scale = parseFloat(b.dataset.v);
+  document.querySelectorAll('#segSpeed button').forEach(x=>x.classList.toggle('on', x === b));
+});
+document.querySelectorAll('.cmbtn').forEach(b=>{
+  b.onclick = ()=> COMBOS[b.dataset.cm] ? COMBOS[b.dataset.cm]() : 0;
+});
+document.getElementById('optOld').onchange = (e)=>{
+  opts.old = e.target.checked;
+  document.getElementById('oldhud').classList.toggle('hidden', !opts.old);
+  if(!opts.old) document.getElementById('oldhud').innerHTML = '';
+};
+document.getElementById('optAuto').onchange = (e)=>{ opts.auto = e.target.checked; autoT = 99; };
+document.getElementById('optSlowmo').onchange = (e)=>{ opts.slowmo = e.target.checked; };
+document.getElementById('panelBtn').onclick = ()=>{
+  document.getElementById('panel').classList.toggle('collapsed');
+};
+if(innerWidth <= 760) document.getElementById('panel').classList.add('collapsed');
+
+// A/B 连播：先用旧实现放一遍，1.7s 后换新实现再放一遍
+let abT = null;
+document.getElementById('btnAB').onclick = ()=>{
+  const k = panelSkill;
+  const restore = mode;
+  const syncMode = (m)=>document.querySelectorAll('#segMode button').forEach(b=>b.classList.toggle('on', b.dataset.v === m));
+  clearTimeout(abT);
+  mode = 'legacy'; syncMode('legacy');
+  CD_SWEEP[k] = 0; cast(k);
+  toast('旧实现');
+  abT = setTimeout(()=>{
+    mode = 'v2'; syncMode('v2');
+    CD_SWEEP[k] = 0; cast(k);
+    toast('新实现 · 同一个技能');
+    abT = setTimeout(()=>{ mode = restore; syncMode(restore); }, 2600);
+  }, 1700);
+};
+
+document.querySelectorAll('#tabs button').forEach(b=>{
+  b.onclick = ()=>{
+    curClass = b.dataset.c;
+    document.querySelectorAll('#tabs button').forEach(x=>x.classList.toggle('on', x===b));
+    renderBar();
+    panelSkill = CLASSES[curClass].keys[0];
+    syncPanel();
+    document.getElementById('portrait').textContent = CLASSES[curClass].icon;
+  };
+});
+
+// 技能槽：悬停看说明，点击释放
+barEl.addEventListener('mouseover', e=>{
+  const s = e.target.closest('.slot'); if(!s) return;
+  if(panelSkill !== s.dataset.k){ panelSkill = s.dataset.k; syncPanel(); }
+});
+
+renderBar();
+panelSkill = 'whirl';
+syncPanel();
+
+// 开场
+const introEl = document.getElementById('intro');
+document.getElementById('startBtn').onclick = ()=>{
+  introEl.classList.add('gone');
+  setTimeout(()=>introEl.remove(), 600);
+  FX.enchant(true, C(ELEMS[curElem].glow));
+  // 开场演一遍旋风斩（URL 指定技能时不抢戏）
+  if(!new URLSearchParams(location.search).get('skill')) setTimeout(()=>selectSkill('whirl'), 260);
+  setTimeout(()=>{ addBuff('bloodrage', 12); addBuff('stance', 6, 3); }, 420);
+};
+
+// 初始 buff 演示
+addBuff('stance', 12, 3);
+addBuff('heal', 10);
+
+// 全局错误兜底（调试用，也会写进标题方便无头浏览器抓取）
+addEventListener('error', (e)=>{
+  document.title = 'ERR: ' + (e.message || 'unknown');
+  console.error('[VFX]', e.message, e.filename, e.lineno);
+});
+
+// URL 参数：?start=1&skill=meteor&mode=v2&elem=fire&speed=1&q=1
+const qs = new URLSearchParams(location.search);
+if(qs.get('mode')){
+  mode = qs.get('mode');
+  document.querySelectorAll('#segMode button').forEach(b=>b.classList.toggle('on', b.dataset.v === mode));
+}
+if(qs.get('old') === '1'){
+  opts.old = true;
+  document.getElementById('oldhud').classList.remove('hidden');
+  document.getElementById('optOld').checked = true;
+}
+if(qs.get('elem') && ELEMS[qs.get('elem')]){ curElem = qs.get('elem'); FX.enchant(true, C(ELEMS[curElem].glow)); }
+if(qs.get('speed')) TIME.scale = parseFloat(qs.get('speed'));
+if(qs.get('q')) quality = parseFloat(qs.get('q'));
+if(qs.get('start') === '1'){
+  const sk = qs.get('skill');
+  const tt = qs.get('t');
+  if(tt){
+    // 确定性步进模式：直接跳过开场，放一次技能后推进 t 秒并冻结
+    introEl.remove();
+    FX.enchant(true, C(ELEMS[curElem].glow));
+    addBuff('bloodrage', 12);
+    addBuff('stance', 14, 3);
+    addBuff('heal', 10);
+    if(qs.get('combo') && COMBOS[qs.get('combo')]) COMBOS[qs.get('combo')]();
+    else selectSkill(sk || 'whirl');
+    window.__step(parseFloat(tt));
+    FROZEN = true;
+  } else {
+    document.getElementById('startBtn').click();
+    if(sk && SKILLS[sk]) setTimeout(()=>selectSkill(sk), 500);
+  }
+}
+console.log('[VFX Playground] ready');
+
+
+
+</script>
+</body>
+</html>

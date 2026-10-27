@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>增益图标行 · 原型（血条下方 / 增量更新 / 无闪烁）</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    font-family:"PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+    background:#0b0c0e;color:#cfc6b4;min-height:100vh;
+    display:flex;gap:0;align-items:stretch;
+  }
+  /* ---------------- 左：游戏内预览 ---------------- */
+  .stage{
+    flex:1;position:relative;min-height:100vh;overflow:hidden;
+    background:
+      radial-gradient(ellipse at 50% 20%,#2a3324 0%,#171d15 45%,#0a0d0a 100%);
+  }
+  .stage::after{ /* 模拟地面噪点，别太干净 */
+    content:'';position:absolute;inset:0;pointer-events:none;
+    background-image:radial-gradient(circle at 20% 70%,rgba(120,160,90,.06),transparent 40%),
+                     radial-gradient(circle at 75% 55%,rgba(90,140,70,.05),transparent 45%);
+  }
+  .hint{position:absolute;left:50%;bottom:26px;transform:translateX(-50%);
+    font-size:12px;letter-spacing:1px;color:#6d6a5e;white-space:nowrap}
+
+  /* ---- 角色板（照搬游戏里的结构与尺寸） ---- */
+  #charplate{position:absolute;left:18px;top:16px;display:flex;gap:10px;
+    align-items:flex-start;flex-wrap:wrap;z-index:3}
+  #portrait{width:66px;height:66px;border:1px solid #7a6432;
+    background:radial-gradient(circle at 50% 35%,#3a3226,#12100c);
+    display:flex;align-items:center;justify-content:center;position:relative;
+    box-shadow:0 0 0 1px #000,0 4px 18px rgba(0,0,0,.7)}
+  #portrait .glyph{font-family:"STKaiti","KaiTi",serif;font-size:34px;color:#e8c878;
+    text-shadow:0 0 12px rgba(216,178,90,.6)}
+  #portrait .lv{position:absolute;right:-1px;bottom:-1px;background:#0b0c10;
+    border:1px solid #7a6432;font-size:11px;padding:0 5px;color:#d8b25a}
+  .bars{width:238px;padding-top:2px}
+  .pname{font-size:14px;letter-spacing:2px;color:#f0e6cc;display:flex;
+    justify-content:space-between;align-items:baseline}
+  .pname small{font-size:11px;color:#8a8474}
+  .bar{height:13px;background:rgba(0,0,0,.72);border:1px solid rgba(255,255,255,.09);
+    margin-top:5px;position:relative;overflow:hidden}
+  .bar>i{display:block;height:100%;width:100%}
+  .bar.hp>i{background:linear-gradient(180deg,#e04a3a,#8a1a14)}
+  .bar.mp>i{background:linear-gradient(180deg,rgba(255,255,255,.34),rgba(255,255,255,0) 62%),#4a9ae8}
+  .bar.xp{height:4px;margin-top:4px;border-color:transparent;background:rgba(0,0,0,.6)}
+  .bar.xp>i{background:linear-gradient(90deg,#8a6d2f,#f0d080)}
+  .bar span{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+    font-size:10.5px;color:#fff9e8;text-shadow:0 1px 2px #000}
+
+  /* ---- buff 行：核心 ---- */
+  #buffrow{flex-basis:100%;margin-left:76px;margin-top:6px;
+    display:flex;flex-wrap:wrap;gap:4px;pointer-events:auto;min-height:0}
+  .bf{
+    position:relative;width:24px;height:24px;border-radius:3px;
+    background:rgba(8,9,12,.86);
+    border:1px solid var(--c,#d8b25a);
+    box-shadow:0 0 8px color-mix(in srgb,var(--c,#d8b25a) 30%,transparent);
+    display:flex;align-items:center;justify-content:center;
+    color:var(--c,#d8b25a);
+    /* 只有 transform/opacity 参与过渡，绝不改布局属性 */
+    transform-origin:50% 50%;
+  }
+  .bf svg{width:15px;height:15px;display:block}
+  .bf .n{ /* 叠层角标 */
+    position:absolute;right:-3px;bottom:-3px;min-width:11px;height:11px;
+    padding:0 2px;border-radius:2px;background:var(--c,#d8b25a);color:#10100c;
+    font-size:9px;line-height:11px;text-align:center;font-weight:700;
+    font-family:system-ui,sans-serif;
+  }
+  .bf .pg{ /* 时间进度：1.5px 底条，每秒写一次 + CSS 线性过渡 */
+    position:absolute;left:0;bottom:0;height:1.5px;background:var(--c,#d8b25a);
+    width:100%;transition:width 1s linear,background .3s;opacity:.75;
+  }
+  /* 剩余 <=3 秒：底条转红 + 边框亮一档。不做 opacity 闪烁。 */
+  .bf.urgent .pg{background:#ff5a4a}
+  .bf.urgent{box-shadow:0 0 0 1px color-mix(in srgb,var(--c,#d8b25a) 65%,#fff),0 0 10px color-mix(in srgb,var(--c,#d8b25a) 45%,transparent)}
+  .bf.debuff{border-style:dashed;background:rgba(26,9,9,.86)}
+  .bf.debuff::after{ /* 色盲兜底：左上缺角 */
+    content:'';position:absolute;left:0;top:0;border:5px solid transparent;
+    border-left-color:rgba(255,120,100,.75);border-top-color:rgba(255,120,100,.75);
+  }
+  .bf.full{box-shadow:0 0 0 1px #ffe9a8,0 0 14px rgba(255,233,168,.55)}
+  /* 入场：只播一次，用 class 控制，不靠 @keyframes 重播 */
+  .bf.enter{opacity:0;transform:scale(.72)}
+  .bf.enter.in{opacity:1;transform:scale(1);transition:opacity .16s ease-out,transform .16s cubic-bezier(.2,1.4,.4,1)}
+  /* 刷新（同 key 再次施放）：只做一次高亮，不重放入场 */
+  .bf.flash{box-shadow:0 0 0 1px #fff6d0,0 0 16px rgba(255,246,208,.7);transition:box-shadow .2s}
+  /* 到期：先缩后移除 */
+  .bf.out{opacity:0;transform:scale(.7);transition:opacity .2s,transform .2s}
+  .bf.more{width:auto;padding:0 6px;font-size:10px;color:#a8a090;border-color:#4a473c;
+    background:rgba(8,9,12,.7);box-shadow:none}
+
+  /* ---- 试炼面板（演示避让） ---- */
+  #trialHud{position:absolute;left:18px;top:calc(96px + var(--buff-h,0px));
+    width:238px;padding:7px 10px 8px;
+    background:linear-gradient(180deg,rgba(24,18,34,.94),rgba(9,7,12,.94));
+    border:1px solid rgba(168,138,216,.42);border-left:2px solid #a88ad8;
+    font-size:11px;color:#b8a8d0;
+    transition:top .2s ease-out;z-index:2}
+  #trialHud b{color:#e0d4ff;font-weight:500}
+
+  /* ---------------- 右：控制台 ---------------- */
+  .side{width:352px;background:#111316;border-left:1px solid #23262b;
+    padding:18px 18px 26px;overflow-y:auto;max-height:100vh}
+  .side h1{font-size:15px;letter-spacing:1px;color:#e8e2d2;font-weight:600;margin-bottom:4px}
+  .side .sub{font-size:11.5px;color:#767c85;line-height:1.7;margin-bottom:16px}
+  .grp{margin-bottom:16px}
+  .grp>h2{font-size:11px;letter-spacing:2px;color:#8a8474;font-weight:500;
+    margin-bottom:7px;text-transform:uppercase}
+  .row{display:flex;flex-wrap:wrap;gap:6px}
+  button{
+    font:inherit;font-size:11.5px;padding:5px 9px;border-radius:3px;cursor:pointer;
+    background:#1b1e23;color:#cfc6b4;border:1px solid #2e3238;transition:.12s;
+  }
+  button:hover{background:#23272e;border-color:#3e444c;color:#fff}
+  button.on{background:#2a2418;border-color:#8a6d2f;color:#ffd166}
+  .note{font-size:11px;color:#6d737b;line-height:1.75;margin-top:8px}
+  .note b{color:#a8b0ba;font-weight:500}
+  code{font-family:ui-monospace,Menlo,monospace;font-size:10.5px;
+    background:#191c21;padding:1px 4px;border-radius:2px;color:#a8b8c0}
+  .stat{display:flex;justify-content:space-between;font-size:11px;
+    color:#7d848c;padding:3px 0;border-bottom:1px dashed #1e2228}
+  .stat b{color:#cfc6b4;font-weight:500;font-family:ui-monospace,Menlo,monospace}
+  .divider{height:1px;background:#1e2228;margin:16px 0}
+</style>
+</head>
+<body>
+
+<div class="stage">
+  <div id="charplate">
+    <div id="portrait"><span class="glyph">刀</span><span class="lv">20</span></div>
+    <div class="bars">
+      <div class="pname"><span>无名</span><span style="display:flex;gap:7px"><small>刀客</small><small>普通</small></span></div>
+      <div class="bar hp"><i style="width:72%"></i><span>1437 / 1993</span></div>
+      <div class="bar mp"><i style="width:58%"></i><span>44 / 76</span></div>
+      <div class="bar xp"><i style="width:34%"></i></div>
+    </div>
+    <div id="buffrow"></div>
+  </div>
+
+  <div id="trialHud">
+    <div style="display:flex;justify-content:space-between;align-items:baseline">
+      <span style="letter-spacing:2px;font-size:10px">无 尽 试 炼</span>
+      <span><b style="font-size:16px;color:#e0d4ff">7</b><small> 波</small></span>
+    </div>
+    <div style="margin-top:4px;display:flex;justify-content:space-between">
+      <span>下个首领</span><b>3 波后</b>
+    </div>
+  </div>
+
+  <div class="hint">↑ buff 行紧贴血条下方，宽度与血条对齐；试炼面板自动下移</div>
+</div>
+
+<div class="side">
+  <h1>增益图标行 · 交互原型</h1>
+  <p class="sub">
+    血条下方 · 图标制 · 叠层合并 · 增量更新。<br>
+    左边的行是真 DOM，点下面的按钮试：入场只缩放一次、刷新不重播、到期先缩后移除。
+  </p>
+
+  <div class="grp">
+    <h2>施放增益</h2>
+    <div class="row" id="addRow"></div>
+    <div class="note">同时点同一个两次 → <b>同一格刷新时长 + 高亮一下</b>，不会多占一格。</div>
+  </div>
+
+  <div class="grp">
+    <h2>叠层（同名可叠）</h2>
+    <div class="row">
+      <button onclick="stack()">战意 +1 层</button>
+      <button onclick="burstAll()">一次上满 8 个</button>
+      <button onclick="clearAll()">清空</button>
+    </div>
+    <div class="note">叠到 5 层外框变金，<b>xN 角标</b>在右下角，仍然只占一格。</div>
+  </div>
+
+  <div class="grp">
+    <h2>到期与移除</h2>
+    <div class="row">
+      <button onclick="expireOne()">让一个立刻到期</button>
+      <button onclick="expireAll()">全部到期</button>
+    </div>
+    <div class="note">到期先 <b>200ms 收缩淡出</b> 再移除 —— 不是瞬间消失。</div>
+  </div>
+
+  <div class="divider"></div>
+
+  <div class="grp">
+    <h2>为什么旧版会闪</h2>
+    <div class="note" style="margin-top:0">
+      <code>renderBuffs()</code> 的签名里带了 <code>Math.ceil(dur*10)</code>，
+      于是 <b>每 100ms</b> 签名就变一次 → <code>innerHTML</code> 全量重建 →
+      每格重播 <code>@keyframes buffIn</code>。<br><br>
+      而它被 <code>game.js:2585</code> <b>每帧</b>调用。<br><br>
+      这一版：签名只含 <code>key|type|color|stacks</code>；
+      时长走独立通道，<b>每秒写一次</b>宽度；节点复用，永不重建。
+    </div>
+  </div>
+
+  <div class="grp">
+    <h2>运行状态</h2>
+    <div class="stat"><span>存活节点</span><b id="sNodes">0</b></div>
+    <div class="stat"><span>innerHTML 重建次数</span><b id="sRebuild">0</b></div>
+    <div class="stat"><span>DOM 写入 / 秒</span><b id="sWrites">0</b></div>
+    <div class="note">第三个数字是「每秒实际改样式的次数」，正常应 ≤ 12（每格每秒 1 次）。</div>
+  </div>
+</div>
+
+<script>
+/* ============================================================
+   图标：沿用项目 M11 规范（viewBox 0 0 32 32 / 纯 path / currentColor）
+   ============================================================ */
+const ICONS = {
+  atk_up: 'M16 3 24 13H19.5V21H12.5V13H8Z M12.5 24H19.5V28H12.5Z',
+  shield: 'M16 3 26 7.5V16C26 22 21.5 26.5 16 29 10.5 26.5 6 22 6 16V7.5Z',
+  crit:   'M16 3 19 13 29 16 19 19 16 29 13 19 3 16 13 13Z',
+  spd:    'M6 10H20L16 16H26L10 28 14 19H4Z',
+  regen:  'M16 27C10 22 5 18 5 13 5 9 8 6.5 11.5 6.5 13.5 6.5 15 7.5 16 9 17 7.5 18.5 6.5 20.5 6.5 24 6.5 27 9 27 13 27 18 22 22 16 27Z',
+  slow:   'M16 4V28 M6 10 26 22 M26 10 6 22 M16 9 12 13 16 17 20 13Z',
+  poison: 'M16 4C16 4 9 13 9 19A7 7 0 0 0 23 19C23 13 16 4 16 4Z M13 19H19',
+  vuln:   'M16 3 28 27H4Z M14.5 11H17.5V20H14.5Z M14.5 22H17.5V25H14.5Z'
+};
+function svgOf(key){
+  const d = ICONS[key] || ICONS.atk_up;
+  return '<svg viewBox="0 0 32 32" fill="currentColor" fill-rule="evenodd"><path d="'+d+'"/></svg>';
+}
+
+/* ============================================================
+   数据：一个 buff = { key, name, icon, color, type, dur, max, stacks, maxStacks }
+   ============================================================ */
+const POOL = [
+  { key:'skill:bloodrage', name:'血怒',     icon:'atk_up', color:'#ff4a4a', type:'buff',  dur:8  },
+  { key:'beh:锐意',        name:'锐意',     icon:'crit',   color:'#ffd166', type:'buff',  dur:6  },
+  { key:'beh:疾行',        name:'疾行',     icon:'spd',    color:'#9ad8ff', type:'buff',  dur:5  },
+  { key:'beh:回春',        name:'回春',     icon:'regen',  color:'#8affb0', type:'buff',  dur:9  },
+  { key:'skill:shieldwall',name:'盾墙',     icon:'shield', color:'#8ab0ff', type:'buff',  dur:10 },
+  { key:'beh:冰缓',        name:'冰缓',     icon:'slow',   color:'#6ab8ff', type:'debuff',dur:4  },
+  { key:'beh:中毒',        name:'中毒',     icon:'poison', color:'#7fbf5a', type:'debuff',dur:6  },
+  { key:'beh:易伤',        name:'易伤',     icon:'vuln',   color:'#c8a0ff', type:'debuff',dur:5  }
+];
+const STACK = { key:'beh:stack:whirl', name:'战意', icon:'atk_up', color:'#ffd166',
+                type:'buff', dur:8, stacks:1, maxStacks:5 };
+
+let active = new Map();          // key -> {data, el, left, lastSec}
+let rebuilds = 0, writes = 0;
+
+const row = document.getElementById('buffrow');
+const statNodes = document.getElementById('sNodes');
+const statRebuild = document.getElementById('sRebuild');
+const statWrites = document.getElementById('sWrites');
+
+/* ============================================================
+   渲染：增量 diff，只增 / 改 / 删，永不 innerHTML
+   ============================================================ */
+function makeEl(b){
+  const el = document.createElement('div');
+  el.className = 'bf enter' + (b.type === 'debuff' ? ' debuff' : '');
+  el.style.setProperty('--c', b.color);
+  el.title = b.name;
+  el.innerHTML = svgOf(b.icon) + '<span class="pg"></span>';
+  row.appendChild(el);
+  // 入场只播一次：下一帧加 .in，之后永不重播
+  requestAnimationFrame(()=> requestAnimationFrame(()=> el.classList.add('in')));
+  return el;
+}
+
+function render(){
+  // 1) 新增
+  for (const [k,b] of active){
+    if (!b.el || !b.el.isConnected){
+      b.el = makeEl(b.data);
+      if (b.data.stacks > 1) addBadge(b);
+      syncProgress(b);
+    }
+  }
+  // 2) 排序：增益在前、减益在后（同组保持加入顺序，不随剩余时间跳动）
+  const all = [...active.values()].filter(b=>!b.dying);
+  const order = all.slice().sort((x,y)=>
+    (x.data.type==='debuff'?1:0) - (y.data.type==='debuff'?1:0));
+  order.forEach((b,i)=>{ if (row.children[i] !== b.el) row.insertBefore(b.el, row.children[i]||null); });
+  // 3) 溢出折叠
+  updateMore();
+  statNodes.textContent = row.children.length;
+}
+
+let moreEl = null;
+function updateMore(){
+  const visible = [...row.querySelectorAll('.bf:not(.more)')];
+  const MAX = 8;
+  visible.forEach((el,i)=>{ el.style.display = i < MAX ? '' : 'none'; });
+  const hidden = Math.max(0, visible.length - MAX);
+  if (hidden){
+    if (!moreEl){
+      moreEl = document.createElement('div');
+      moreEl.className = 'bf more';
+      row.appendChild(moreEl);
+    }
+    moreEl.textContent = '+' + hidden;
+    moreEl.style.display = '';
+  } else if (moreEl){
+    moreEl.remove(); moreEl = null;
+  }
+}
+
+function addBadge(b){
+  let n = b.el.querySelector('.n');
+  if (!n){ n = document.createElement('span'); n.className='n'; b.el.appendChild(n); }
+  n.textContent = '×' + b.data.stacks;
+  b.el.classList.toggle('full', b.data.stacks >= (b.data.maxStacks||5));
+}
+
+function syncProgress(b){
+  const pg = b.el.querySelector('.pg');
+  const r = Math.max(0, Math.min(1, b.left / b.data.max));
+  pg.style.width = (r*100).toFixed(1) + '%'; writes++;
+  b.el.classList.toggle('urgent', b.left <= 3);
+}
+
+/* 施放：同 key 存在则刷新（高亮一下），否则新建 */
+function cast(src){
+  const key = src.key;
+  const cur = active.get(key);
+  if (cur){
+    cur.left = src.dur;
+    cur.data.max = src.dur;
+    cur.el.classList.add('flash');
+    setTimeout(()=> cur.el.classList.remove('flash'), 220);
+    syncProgress(cur);
+    return;
+  }
+  const data = Object.assign({}, src, { max: src.dur });
+  active.set(key, { data, left: src.dur, el: null, lastSec: Math.ceil(src.dur) });
+  render();
+}
+
+function stack(){
+  const cur = active.get(STACK.key);
+  if (cur){
+    cur.data.stacks = Math.min(cur.data.maxStacks, cur.data.stacks + 1);
+    cur.left = cur.data.max = STACK.dur;
+    addBadge(cur);
+    syncProgress(cur);
+    const n = cur.el.querySelector('.n');
+    if (n){ n.style.transform='scale(1.35)'; setTimeout(()=>n.style.transform='', 160); }
+  } else {
+    const data = Object.assign({}, STACK, { max: STACK.dur, stacks: 1 });
+    active.set(STACK.key, { data, left: STACK.dur, el: null, lastSec: STACK.dur });
+    render();
+  }
+}
+
+function kill(b){
+  if (!b || b.dying) return;
+  b.dying = true;
+  b.el.classList.add('out');
+  setTimeout(()=>{ b.el.remove(); }, 210);
+}
+
+function expireOne(){
+  const list = [...active.values()].filter(b=>!b.dying);
+  if (list.length) kill(list[list.length-1]);
+}
+function expireAll(){ [...active.values()].forEach(kill); }
+function clearAll(){
+  [...active.values()].forEach(b=> b.el.remove());
+  active.clear(); render();
+}
+function burstAll(){
+  POOL.forEach((p,i)=> setTimeout(()=> cast(p), i*90));
+  setTimeout(stack, POOL.length*90 + 120);
+}
+
+/* ============================================================
+   时钟：每秒结算一次，只写变化的样式
+   ============================================================ */
+setInterval(()=>{
+  for (const [k,b] of [...active]){
+    if (b.dying) { active.delete(k); continue; }
+    b.left -= 1;
+    if (b.left <= 0){ kill(b); active.delete(k); continue; }
+    const sec = Math.ceil(b.left);
+    if (sec !== b.lastSec){ b.lastSec = sec; syncProgress(b); }
+  }
+  render();
+}, 1000);
+
+/* 每秒统计写入量 */
+let wPrev = 0;
+setInterval(()=>{
+  statWrites.textContent = Math.max(0, writes - wPrev);
+  wPrev = writes;
+  statRebuild.textContent = rebuilds;
+}, 1000);
+
+/* 按钮 */
+const addRow = document.getElementById('addRow');
+POOL.forEach(p=>{
+  const btn = document.createElement('button');
+  btn.textContent = p.name;
+  btn.onclick = ()=> cast(p);
+  addRow.appendChild(btn);
+});
+
+/* 开场先上三个，方便一眼看到排布 */
+[POOL[0], POOL[1], POOL[5]].forEach((p,i)=> setTimeout(()=> cast(p), 300 + i*160));
+stack();
+
+/* 试炼面板避让：只在 buff 行高度变化时写一次 --buff-h，不是每帧 */
+const ro = new ResizeObserver(es=>{
+  const h = Math.max(0, Math.round(es[0].contentRect.height));
+  document.documentElement.style.setProperty('--buff-h', h + 'px');
+});
+ro.observe(row);
+</script>
+</body>
+</html>
