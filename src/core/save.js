@@ -2,8 +2,10 @@
  * SaveManager —— 存档系统 v2（S0「存档地基」）
  *
  * · 10 个本地角色位（jiuxiao_save_v2_s1 … s10，数量见 SLOT_COUNT）
- * · schemaVersion = 2，doc 结构见下方 pack()
+ * · schemaVersion = 3（M0 世界结构：world.part/act/camps/portals/mapsSeen），doc 结构见下方 pack()
  * · migrate()：V1 单档（扁平 JSON）→ V2 doc，字段 1:1 搬迁，不改数值
+ *   V2 → V3 不需要单独的函数：normalizeDoc() 会按 mapId 反推卷/章并补默认值，
+ *   读档时 changed=true 自动写回，等于就地升级。
  * · export() / import()：JSON 文本 + 文件
  * · 原子写入：先写 <key>.tmp 并回读校验，再替换正式键
  *
@@ -22,7 +24,7 @@
  * ============================================================ */
 
 const SaveManager = {
-  SCHEMA: 2,
+  SCHEMA: 3,
   /* [v1.13.1] 角色位 3 → 10。所有取位、遍历、校验都读这个常量，
    * 所以改这一处就够；UI 那边只有中文数字表要跟着补。
    * 存档键是 jiuxiao_save_v2_s{N}，旧的 1~3 号位原样不动。 */
@@ -82,6 +84,10 @@ const SaveManager = {
     return n;
   },
   _obj(v) { return (v && typeof v === 'object' && !Array.isArray(v)) ? v : null; },
+  /* 是不是「本代 doc」：v2 ~ 当前 SCHEMA 都算。
+   * ⚠ 别写成 v === SCHEMA —— 那样每次升版本，所有老档都会读不出来（存档面板整排变空）。
+   * 升级本身不需要额外代码：normalizeDoc 会补默认值，readSlot 看到 changed 自动写回。 */
+  _isDoc(v) { return typeof v === 'number' && v >= 2 && v <= this.SCHEMA; },
   /* [试炼] 无尽试炼的永久记录：{ best, runs, bestAt }
    * 只存「最高波数 / 总轮数 / 达成时间」—— 波次进度本身不落盘
    * （中途退出即作废，这是 roguelite 的规矩），所以这里不存在「恢复本轮」的脏状态。 */
@@ -144,7 +150,9 @@ const SaveManager = {
     n = this.validSlot(n);
     const d = this._parse(this._raw(n));
     if (!d) return null;
-    if (d.v === this.SCHEMA) return d;
+    /* 别写成「只认当前 SCHEMA」：那样每次升版本，存档面板都会把升级前的档显示成「空」。
+     * v2 结构对上层是兼容的（字段只增不减），照常返回；整形交给 readSlot/normalizeDoc。 */
+    if (typeof d.v === 'number' && d.v >= 2 && d.v <= this.SCHEMA) return d;
     return null;
   },
 
@@ -210,6 +218,44 @@ const SaveManager = {
     const pos = this._obj(w.playerPos) || (w.playerPos = { x: 0, z: 6 });
     pos.x = this._num(pos.x, 0);
     pos.z = this._num(pos.z, 6);
+
+    /* ---- M0 世界结构：卷 / 章 / 营地 / 已抵达 ----
+     * 老档（schema 2）只有 mapId，这里按图反推卷与章 —— 反推不到（村内、试炼场）就落卷一第 1 章。
+     * 反推而不是「一律从卷一重开」，是为了让已经在九幽地宫的老档不被降级。 */
+    const pv = Number(w.part);
+    w.part = (isFinite(pv) && pv >= 1 && pv <= 5) ? Math.round(pv) : 0;
+    if (typeof w.act !== 'string' || !w.act) w.act = '';
+    if (!w.part || !w.act) {
+      const p = (typeof partOfMap === 'function') ? partOfMap(w.mapId) : null;
+      const a = (typeof actOfMap === 'function') ? actOfMap(w.mapId) : null;
+      if (!w.part) w.part = p || 1;
+      if (!w.act) w.act = a || '1-1';
+    }
+    /* 章说了算：手改档里出现「卷三 / 第 1-1 章」这种不自洽的组合时，以章为准 */
+    if (typeof ACTS !== 'undefined' && ACTS[w.act]) w.part = ACTS[w.act].part;
+    else { w.act = '1-1'; w.part = 1; }
+
+    w.camps = Array.isArray(w.camps)
+      ? w.camps.filter(c => typeof c === 'string' && (typeof CAMPS === 'undefined' || CAMPS[c]))
+      : [];
+    if (!w.camps.length) w.camps = ['campA'];
+    w.portals = Array.isArray(w.portals) ? w.portals.filter(p => typeof p === 'string' && p) : [];
+    if (!w.portals.length) w.portals = ['portalA'];
+    /* 营地 / 传送门按卷累积：抵达卷 N 说明 campA..campN、portalA..portalN 都到过。
+     * M1 之前营地还没有实体地图（CAMPS[x].mapId 为空），但进度语义必须准 ——
+     * 否则卷三的老档只认 campA，等 M1 做完营地会被判成「没解锁」。 */
+    if (typeof PARTS !== 'undefined' && PARTS[w.part]) {
+      const SEQ = ['A', 'B', 'C', 'D', 'E'];
+      const upto = SEQ.indexOf(String(PARTS[w.part].camp || '').replace('camp', ''));
+      for (let i = 0; i <= upto; i++) {
+        const c = 'camp' + SEQ[i], p = 'portal' + SEQ[i];
+        if (w.camps.indexOf(c) < 0) w.camps.push(c);
+        if (w.portals.indexOf(p) < 0) w.portals.push(p);
+      }
+    }
+    w.mapsSeen = Array.isArray(w.mapsSeen) ? w.mapsSeen.filter(m => typeof m === 'string' && m) : [];
+    if (w.mapsSeen.indexOf('village') < 0) w.mapsSeen.push('village');
+    if (w.mapId && w.mapsSeen.indexOf(w.mapId) < 0) w.mapsSeen.push(w.mapId);
 
     const q = this._obj(w.quests);
     if (!q) {
@@ -295,7 +341,13 @@ const SaveManager = {
       world: {
         mapId: s.mapId || 'village',
         playerPos: { x: this._num((s.playerPos || {}).x, 0), z: this._num((s.playerPos || {}).z, 6) },
-        quests: this._obj(s.quests) || { active: [], done: [], next: 'q1', announced: {} }
+        quests: this._obj(s.quests) || { active: [], done: [], next: 'q1', announced: {} },
+        /* M0：卷 / 章 / 营地 / 大传送门 / 已抵达的图（具体整形在 normalizeDoc 里） */
+        part: s.part,
+        act: s.act,
+        camps: Array.isArray(s.camps) ? s.camps.slice() : undefined,
+        portals: Array.isArray(s.portals) ? s.portals.slice() : undefined,
+        mapsSeen: Array.isArray(s.mapsSeen) ? s.mapsSeen.slice() : undefined
       },
       stash: this._obj(s.stash) || { items: [], mats: {} },
       /* v1.0.4 商店刷新窗口 { at, items, rolls }。
@@ -328,6 +380,11 @@ const SaveManager = {
       equipment: c.equipment, inventory: c.inventory, maxInv: c.maxInv,
       bossKilled: c.bossKilled || {}, playTime: c.playTime || 0,
       quests: w.quests, mapId: w.mapId, playerPos: w.playerPos,
+      /* M0：世界结构（normalizeDoc 保证这几个字段一定存在） */
+      part: w.part, act: w.act,
+      camps: Array.isArray(w.camps) ? w.camps.slice() : ['campA'],
+      portals: Array.isArray(w.portals) ? w.portals.slice() : ['portalA'],
+      mapsSeen: Array.isArray(w.mapsSeen) ? w.mapsSeen.slice() : ['village'],
       stash: doc.stash || { items: [], mats: {} },
       shop: (doc.shop && Array.isArray(doc.shop.items)) ? doc.shop : null,
       codex: this._codex(doc.codex),
@@ -357,7 +414,7 @@ const SaveManager = {
     if (!s || typeof s !== 'object' || Array.isArray(s)) return null;
 
     // 已经是 v2 就直接整形返回（导入时可能拿到 v2 doc）
-    if (s.v === this.SCHEMA && this._obj(s.char)) {
+    if (this._isDoc(s.v) && this._obj(s.char)) {
       return this.normalizeDoc(s, slot).doc;
     }
     // 认不出格式
@@ -381,7 +438,7 @@ const SaveManager = {
 
     // 角色位上若是旧格式（不应该发生，兜一手）
     let doc;
-    if (raw.v === this.SCHEMA && this._obj(raw.char)) {
+    if (this._isDoc(raw.v) && this._obj(raw.char)) {
       doc = this.normalizeDoc(raw, n);
     } else if (raw.cls) {
       const mig = this.migrate(raw, n);
@@ -543,6 +600,8 @@ const SaveManager = {
       inventory: [], maxInv: 40,
       quests: { active: [], done: [], next: 'q1', announced: {} },
       mapId: 'village', playerPos: { x: 0, z: 10 },
+      /* [M0] 世界结构（新档默认停在卷一第 1 章，只到过桃源村） */
+      part: 1, act: '1-1', camps: ['campA'], portals: ['portalA'], mapsSeen: ['village'],
       bossKilled: {}, playTime: 0
     };
   },
@@ -632,13 +691,13 @@ const SaveManager = {
 
     let doc = null;
     let from = 0;
-    if (obj.v === this.SCHEMA && this._obj(obj.char)) {
+    if (this._isDoc(obj.v) && this._obj(obj.char)) {
       doc = this.normalizeDoc(obj, slot).doc;
       from = 2;
     } else if (obj.cls) {
       doc = this.migrate(obj, slot);        // 允许直接吃 V1 单档
       from = 1;
-    } else if (this._obj(obj.save) && obj.save.v === this.SCHEMA) {
+    } else if (this._obj(obj.save) && this._isDoc(obj.save.v)) {
       doc = this.normalizeDoc(obj.save, slot).doc;
       from = 2;
     } else {

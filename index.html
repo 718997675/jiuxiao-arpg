@@ -1417,11 +1417,41 @@
   .shop-refresh .sr-btn.dis{opacity:.42;cursor:not-allowed;filter:grayscale(.5)}
 
   /* 传送 */
-  #travelPanel{left:50%;top:50%;transform:translate(-50%,-50%);width:460px}
+  #travelPanel{left:50%;top:50%;transform:translate(-50%,-50%);width:560px;max-height:88vh;overflow:hidden}
   .trow{display:flex;justify-content:space-between;align-items:center;padding:9px 6px;border-bottom:1px solid rgba(255,255,255,.05)}
   .trow.locked{opacity:.4}
   .trow .tn{font-size:13px;color:#e8dcc0;letter-spacing:2px}
   .trow .tl{font-size:10.5px;color:#8a8474}
+
+  /* ---------- 山河图（M0 世界结构：卷 → 章 → 图） ---------- */
+  .wm-wrap{display:flex;flex-direction:column;gap:8px;max-height:calc(88vh - 47px);overflow-y:auto}
+  .wm-tabs{display:flex;gap:5px}
+  .wm-tab{flex:1 1 0;min-width:0;padding:6px 3px;background:rgba(0,0,0,.4);border:1px solid rgba(216,178,90,.22);
+    color:#b8a888;font-family:inherit;font-size:10.5px;cursor:pointer;display:flex;flex-direction:column;
+    align-items:center;gap:1px;line-height:1.35}
+  .wm-tab:hover{border-color:rgba(216,178,90,.5)}
+  .wm-tab.on{background:linear-gradient(180deg,#d8b25a,#a8863a);color:#1a1510;border-color:#d8b25a;font-weight:600}
+  .wm-tab.off{opacity:.42}
+  .wm-tn{font-size:11.5px;letter-spacing:1px;white-space:nowrap}
+  .wm-ts{font-size:9.5px;opacity:.85;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+  .wm-tc{font-size:9px;opacity:.6;font-variant-numeric:tabular-nums}
+  .wm-head{padding:7px 9px;border:1px solid rgba(216,178,90,.18);background:rgba(40,34,24,.4)}
+  .wm-hn{font-size:13px;color:#e8c46a;letter-spacing:2px}
+  .wm-hr{font-size:10px;color:#8a8474;margin-top:3px;line-height:1.6}
+  .wm-hb{font-size:10.5px;color:#a8a090;margin-top:5px;line-height:1.7}
+  .wm-act{margin-top:8px}
+  .wm-ah{font-size:11.5px;color:#d8c8a0;letter-spacing:1px;padding:3px 2px;
+    border-bottom:1px solid rgba(216,178,90,.18);display:flex;align-items:baseline;gap:6px}
+  .wm-ah b{color:#e8c46a;font-weight:600;flex:none}
+  .wm-ah span{margin-left:auto;font-size:9.5px;color:#6a6458;font-variant-numeric:tabular-nums;flex:none}
+  .wm-maps{display:flex;flex-direction:column}
+  .wm-map{display:flex;align-items:center;gap:8px;padding:6px 4px;border-bottom:1px solid rgba(255,255,255,.04)}
+  .wm-map.shut{opacity:.35}
+  .wm-map.here{background:rgba(216,178,90,.08)}
+  .wm-mn{font-size:12px;color:#e8dcc0;letter-spacing:1px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .wm-mn i{font-style:normal;font-size:9px;color:#8fd0ff;border:1px solid rgba(143,208,255,.4);padding:0 3px;margin-left:5px}
+  .wm-ml{margin-left:auto;font-size:9.5px;color:#8a8474;white-space:nowrap;flex:none}
+  .wm-go{padding:3px 12px;font-size:10.5px;flex:none}
 
   /* ---------- 炼器台（S2） ---------- */
   #forgePanel{left:50%;top:50%;transform:translate(-50%,-50%);width:760px;max-height:88vh;overflow:hidden}
@@ -2557,9 +2587,12 @@
 
 <!-- 传送 -->
 <div class="panel" id="travelPanel">
-  <div class="ph"><h3>传 送 阵</h3><span class="x" onclick="UI.closeAll()">✕</span></div>
-  <div class="pb"><div id="travelList"></div>
-    <div class="hintline">深入更险之地，需先达到对应境界。</div></div>
+  <div class="ph"><h3>山 河 图</h3><span class="x" onclick="UI.closeAll()">✕</span></div>
+  <div class="pb wm-wrap">
+    <div class="wm-tabs" id="wmTabs"></div>
+    <div id="wmBody"></div>
+    <div class="hintline">去过的地方随时能回；没去过的，需先达到对应境界。</div>
+  </div>
 </div>
 
 <!-- 炼器台 -->

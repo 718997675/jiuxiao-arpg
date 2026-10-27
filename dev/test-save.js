@@ -141,7 +141,7 @@ eq(localStorage.getItem('jiuxiao_save_v2_s1.tmp'), null, '临时键已清理（�
 eq(SM.activeSlot(), 1, '当前角色位 = 1');
 
 const doc1 = SM.readSlot(1);
-eq(doc1.v, 2, 'doc.v === 2');
+eq(doc1.v, 3, 'doc.v === 3');
 for (const k of ['meta', 'char', 'world', 'stash', 'codex', 'talents', 'mount', 'settings']) {
   ok(k in doc1, `doc 含 ${k} 段`);
 }
@@ -183,7 +183,7 @@ section('四、导出 → 清空 → 导入（100% 还原）');
 const exported = SM.exportText(1);
 ok(exported.length > 500, `导出文本长度 ${exported.length}`);
 const exObj = JSON.parse(exported);
-eq(exObj.v, 2, '导出内容 schemaVersion = 2');
+eq(exObj.v, 3, '导出内容 schemaVersion = 3');
 ok(!!exObj.meta.exportedAt, '导出带 exportedAt 时间戳');
 
 const fpExport = api.saveStateFingerprint(SM.unpack(exObj));
