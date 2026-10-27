@@ -2918,6 +2918,14 @@ function hitEnemy(e, dmg = 0, o = {}){
   if(dmg > 0) damageNumber(_hv.set(e.pos.x, 1.4, e.pos.z), Math.round(dmg), o.color || '#ffe6b0', o.crit);
   if(e.hp <= 0) killEnemy(e);
 }
+/* ---- 三段式命中反馈（方案 §5 分级表）：按**单发伤害**自动选档，不逐技能手调 ----
+   轻 <15：什么都不加 —— 毒雾脉冲 / 火墙灼烧这类小 tick 一旦给了反馈就是刷屏；
+   中 15~39：局部闪白 40ms + 焦痕 3s；
+   重 ≥40：局部闪白 80ms + 裂痕 6s。
+   限流 0.25s：同一次施法的连段只出一次（陨石雨每颗间隔 0.42s，不受影响）。
+   顿帧和震屏**不走自动档** —— 各技能已经手调过手感，自动再叠一次就是双重震屏。
+   方案里重档的"边缘暗角"留给移植时做：试验台没有全屏后处理层。 */
+let _impactAt = -9;
 function hitArea(pos, radius, dmg, o = {}){
   const hit = [];
   enemies.forEach(e=>{
@@ -2929,6 +2937,12 @@ function hitArea(pos, radius, dmg, o = {}){
     const crit = Math.random() < (o.critChance || 0.18);
     hitEnemy(e, dmg * (crit ? 1.8 : 1), Object.assign({}, o, { crit }));
   });
+  if(hit.length && dmg >= 15 && now - _impactAt > 0.25){
+    _impactAt = now;
+    const heavy = dmg >= 40;
+    flashAt(pos, heavy ? 3.2 : 2.2, '255,244,220', heavy ? 0.4 : 0.26);
+    FX.decal(pos, heavy ? 'crack' : 'scorch', heavy ? 2.8 : 2.0, heavy ? 6 : 3, 0x241a12);
+  }
   return hit;
 }
 function killEnemy(e){
