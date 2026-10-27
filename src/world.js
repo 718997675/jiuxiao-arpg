@@ -43,19 +43,28 @@ function _makeGroundTexture(type) {
      * 底色不压太暗，否则配合 ash 地面的低雾距会糊成一片黑。 */
     ash: ['#4a4038', '#3a322c', '#5c5046', '#2a2420'],
     /* [M3b] 雪原：卷一铁山绝顶 / 卷四剑冢绝巅 / 卷五九霄绝顶。
-     * 最亮的一档拉到接近纯白，暗部是蓝灰 —— 雪地的「亮」不是白，
-     * 是阴影里的蓝，这一点决定了它和 heaven（仙石）不会撞色。 */
-    snow: ['#e4edf6', '#cfdcea', '#f6fafd', '#b4c6da'],
+     * 最亮的一档接近纯白，暗部是蓝灰 —— 雪地的「亮」不是白，是阴影里的蓝，
+     * 这一点决定了它和 heaven（仙石）不会撞色。
+     * 两轮返回值：第一版亮部 #f6fafd 过曝；第二版 #eef5fc 仍然过曝 ——
+     * 原因是 **底色也在往上抬**（#dce7f3 本身就接近白），贴图里 9000 个
+     * 中灰点是压在近白底上的，等于没有对比。第三版把底色压到 #cfdcec、
+     * 中灰压到 #b3c4d8，亮部才真的成为「亮部」。 */
+    snow: ['#cfdcec', '#b3c4d8', '#e9f1fa', '#93aac3'],
     /* [M3b] 白骨：卷三骨塔祭场 / 白骨长廊。
-     * 米黄而不是灰白 —— 泡过水的骨头是暖色的，纯灰会像水泥地。 */
-    bone: ['#c9bda4', '#b3a68a', '#ded3bc', '#8e8268'],
+     * 米黄而不是灰白 —— 泡过水的骨头是暖色的，纯灰会像水泥地。
+     * 但**不能黄过头**：第一版 #c9bda4 在暖色阳光下整片读成沙漠，
+     * 骨地和沙地的差别不在明度，在「灰」—— 现在往灰里收一档，
+     * 再靠贴图里的白色骨屑把「骨」这个信息补回来。 */
+    bone: ['#bfb8a2', '#a9a28c', '#d8d2be', '#7d7767'],
     /* [M3b] 虚空：卷三九幽深渊 / 卷五玉京废墟、星陨台、无相幻境、镜渊、混沌海。
      * 比 abyss 更「空」—— 暗部压到近黑，亮部带一点紫，
      * 目的是让地面的纹理几乎看不出来，全靠道具发光撑视觉。 */
     void: ['#1c1628', '#120e1c', '#2a1e3c', '#08060e'],
     /* [M3b] 浅水：卷三忘川河滩 / 黄泉渡、卷二沉骨滩。
-     * 蓝绿而不是蓝 —— 忘川是死水，不该有清亮的水色。 */
-    flood: ['#2e4450', '#243844', '#3d5866', '#18262e'],
+     * 蓝绿而不是蓝 —— 忘川是死水，不该有清亮的水色。
+     * 整体提亮一档：原来 #2e4450 在忘川的暖雾里跟 Nine Hells 的石头分不开，
+     * 水面必须比「泥」亮，玩家才知道自己踩在水里。 */
+    flood: ['#33505c', '#27414c', '#45626f', '#1a2a32'],
     /* 试炼场：冷紫黑石，比九幽再「干净」一点 —— 这里是擂台，不是废墟 */
     trial: ['#3c3452', '#332c46', '#4a4064', '#2a2440']
   }[type] || ['#7a6a48'];
@@ -98,43 +107,98 @@ function _makeGroundTexture(type) {
       g.stroke();
     }
   }
-  /* [M3b] 雪面：细碎亮点 + 几团被风吹出来的雪堆。
-   * 只靠 4 档灰阶的话，大片雪地在中远景会糊成一块白板 ——
-   * 亮点给「颗粒感」，雪堆给「起伏」，这两个是不看小地图也能认出雪原的依据。
-   * 雪堆画成扁椭圆（y 半径 ×0.7）是因为这个俯视视角下，正圆读起来像石头。 */
+  /* [M3b] 雪面：**先铺暗、再盖亮**。顺序反了的话蓝色雪丘会把亮点压掉，
+   * 整片雪地就只剩「白 + 白 + 白」。
+   *
+   * 三个层次的分工：
+   *   ① 蓝灰雪丘（大、淡、统一朝向）→ 起伏。扁长比 2.6:1 且同向，
+   *      读成「风吹出来的坡」；正圆雪堆在俯视角下会被当成石头或水渍。
+   *   ② 风痕（细长亮线）→ 方向感。没有它，雪原的纹理是各向同性的，
+   *      跟 heaven 的仙石地面就只差颜色。
+   *   ③ 白亮点（小、密）→ 颗粒感，中远景靠它避免糊成白板。
+   */
   if (type === 'snow') {
-    for (let i = 0; i < 900; i++) {
-      g.globalAlpha = Math.random() * 0.65 + 0.2;
-      g.fillStyle = '#ffffff';
+    for (let i = 0; i < 38; i++) {
+      g.globalAlpha = RND(0.10, 0.26);
+      g.fillStyle = i % 3 ? '#a2b8d2' : '#839dbb';
+      const x = Math.random() * S, y = Math.random() * S, rr = Math.random() * 60 + 16;
+      const ang = Math.random() * Math.PI;
+      const ca = Math.cos(ang), sa = Math.sin(ang);
       g.beginPath();
-      g.arc(Math.random() * S, Math.random() * S, Math.random() * 1.4 + 0.4, 0, 7);
-      g.fill();
-    }
-    for (let i = 0; i < 26; i++) {
-      g.globalAlpha = 0.45;
-      g.fillStyle = '#ffffff';
-      g.beginPath();
-      const x = Math.random() * S, y = Math.random() * S, rr = Math.random() * 46 + 16;
       for (let k = 0; k < 9; k++) {
-        const ang = k / 9 * Math.PI * 2;
+        const a = k / 9 * Math.PI * 2;
         const r2 = rr * (0.55 + Math.random() * 0.55);
-        g.lineTo(x + Math.cos(ang) * r2, y + Math.sin(ang) * r2 * 0.7);
+        const px = Math.cos(a) * r2 * 1.6, py = Math.sin(a) * r2 * 0.62;
+        g.lineTo(x + px * ca - py * sa, y + px * sa + py * ca);
       }
       g.closePath(); g.fill();
     }
+    for (let i = 0; i < 30; i++) {
+      g.globalAlpha = RND(0.05, 0.15);
+      g.strokeStyle = '#ffffff';
+      g.lineWidth = RND(1.2, 3.4);
+      const x = Math.random() * S, y = Math.random() * S, len = RND(90, 280);
+      g.beginPath(); g.moveTo(x, y);
+      g.quadraticCurveTo(x + len * 0.5, y + RND(-14, 14), x + len, y + RND(-9, 9));
+      g.stroke();
+    }
+    for (let i = 0; i < 1100; i++) {
+      g.globalAlpha = Math.random() * 0.6 + 0.18;
+      g.fillStyle = '#ffffff';
+      g.beginPath();
+      g.arc(Math.random() * S, Math.random() * S, Math.random() * 1.2 + 0.35, 0, 7);
+      g.fill();
+    }
   }
-  /* [M3b] 浅水：横向水纹。**只画横线**是因为这个视角下水是「一层层往前推」的，
-   * 环状或乱纹会读成石头缝；横纹 + 低对比度才读得出「水很浅、底下是泥」。 */
-  if (type === 'flood') {
+  /* [M3b] 白骨：白色骨屑 + 深色骨缝。
+   * 大块斑已经把地面做「旧」了，缺的是**碎**——骨地的辨识度来自
+   * 「满地碎骨」，而不是底色。骨屑画成细长条（1×4~9px），
+   * 圆点在这个尺寸下会被读成沙粒，和沙地彻底混掉。 */
+  if (type === 'bone') {
+    for (let i = 0; i < 620; i++) {
+      g.globalAlpha = RND(0.18, 0.5);
+      g.strokeStyle = i % 4 ? '#efe9d8' : '#8b8272';
+      g.lineWidth = RND(0.8, 2.0);
+      const x = Math.random() * S, y = Math.random() * S;
+      const a = Math.random() * 6.28, len = RND(4, 9);
+      g.beginPath(); g.moveTo(x, y);
+      g.lineTo(x + Math.cos(a) * len, y + Math.sin(a) * len);
+      g.stroke();
+    }
+    /* 骨缝：比裂缝更短更细，密而不抢 —— 只有 9 条长裂缝时地面太干净 */
     for (let i = 0; i < 46; i++) {
-      g.globalAlpha = Math.random() * 0.28 + 0.08;
-      g.strokeStyle = Math.random() < 0.55 ? '#6a8a96' : '#1a2a32';
-      g.lineWidth = Math.random() * 2.2 + 0.6;
-      const y = Math.random() * S, x = Math.random() * S, len = Math.random() * 150 + 40;
+      g.globalAlpha = RND(0.12, 0.3);
+      g.strokeStyle = '#6a6252';
+      g.lineWidth = RND(0.6, 1.4);
+      const x = Math.random() * S, y = Math.random() * S;
+      g.beginPath(); g.moveTo(x, y);
+      g.lineTo(x + RND(-22, 22), y + RND(-16, 16));
+      g.stroke();
+    }
+  }
+  /* [M3b] 浅水：横向水纹 + 泥痕。**只画横线**是因为这个视角下水是
+   * 「一层层往前推」的，环状或乱纹会读成石头缝；横纹 + 低对比度才读得出
+   * 「水很浅、底下是泥」。
+   * 第一版 alpha 0.08~0.36 在暗绿底上完全看不见（截图是一片纯色），
+   * 现在亮纹拉到 0.14~0.5，并补一层更暗的泥痕做反向对比。 */
+  if (type === 'flood') {
+    for (let i = 0; i < 60; i++) {
+      g.globalAlpha = Math.random() * 0.36 + 0.14;
+      g.strokeStyle = Math.random() < 0.6 ? '#7ba0ad' : '#16242c';
+      g.lineWidth = Math.random() * 2.4 + 0.6;
+      const y = Math.random() * S, x = Math.random() * S, len = Math.random() * 160 + 40;
       g.beginPath();
       g.moveTo(x, y);
-      g.bezierCurveTo(x + len * 0.3, y + RND(-5, 5), x + len * 0.7, y + RND(-5, 5), x + len, y);
+      g.bezierCurveTo(x + len * 0.3, y + RND(-6, 6), x + len * 0.7, y + RND(-6, 6), x + len, y);
       g.stroke();
+    }
+    for (let i = 0; i < 22; i++) {
+      g.globalAlpha = RND(0.10, 0.22);
+      g.fillStyle = '#1b2a30';
+      const x = Math.random() * S, y = Math.random() * S, rr = Math.random() * 46 + 14;
+      g.beginPath();
+      g.ellipse(x, y, rr * 1.7, rr * 0.55, RND(0, 3.14), 0, 7);
+      g.fill();
     }
   }
   g.globalAlpha = 1;
@@ -145,8 +209,59 @@ function _makeGroundTexture(type) {
   return tex;
 }
 
-function makeLabelSprite(text, color = '#ffe9a8', size = 40, sx = 6, sy = 1.5) {
+/* [M3b] 柔边圆点贴图 —— 给虚空星屑用。
+ *
+ * THREE 的 `PointsMaterial` **不带 map 时画的是硬边正方形**。
+ * 第一版星屑没给贴图，size 提到 0.9 之后截图里是一地淡紫色小方块
+ * （远看像渲染 bug，近看像贴图丢失）。
+ * 32×32 的径向渐变是最省的做法：一次生成、所有 Points 共用、带 markShared 不参与释放。
+ */
+let _dotTex = null;
+function dotTexture() {
+  if (_dotTex) return _dotTex;
   const c = document.createElement('canvas');
+  c.width = c.height = 32;
+  const g = c.getContext('2d');
+  const gr = g.createRadialGradient(16, 16, 0, 16, 16, 16);
+  gr.addColorStop(0, 'rgba(255,255,255,1)');
+  gr.addColorStop(0.35, 'rgba(255,255,255,0.62)');
+  gr.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = gr;
+  g.fillRect(0, 0, 32, 32);
+  _dotTex = markShared(new THREE.CanvasTexture(c));
+  return _dotTex;
+}
+
+/* [M3b] 水洼贴图 —— 柔边 + 两圈涟漪。
+ *
+ * 硬边正圆的浅蓝圆片会被读成「UI 标记」或「石膏」，不像水；
+ * 水的视觉特征一半在**边缘**（alpha 收到 0）和**内部环纹**上。
+ * 一张 128×128 共用给所有水洼，18 个水洼只多一次绘制。
+ */
+let _puddleTex = null;
+function puddleTexture() {
+  if (_puddleTex) return _puddleTex;
+  const S = 128, R = 64;
+  const c = document.createElement('canvas');
+  c.width = c.height = S;
+  const g = c.getContext('2d');
+  const gr = g.createRadialGradient(R, R, 4, R, R, R);
+  gr.addColorStop(0, 'rgba(196,228,240,0.95)');
+  gr.addColorStop(0.55, 'rgba(140,184,204,0.78)');
+  gr.addColorStop(0.88, 'rgba(96,140,162,0.35)');
+  gr.addColorStop(1, 'rgba(80,120,140,0)');
+  g.fillStyle = gr;
+  g.beginPath(); g.arc(R, R, R, 0, 7); g.fill();
+  g.strokeStyle = 'rgba(226,244,252,0.55)';
+  for (const [rr, lw] of [[0.86, 1.6], [0.62, 1.2], [0.4, 1.0]]) {
+    g.lineWidth = lw;
+    g.beginPath(); g.arc(R, R, R * rr, 0, 7); g.stroke();
+  }
+  _puddleTex = markShared(new THREE.CanvasTexture(c));
+  return _puddleTex;
+}
+
+function makeLabelSprite(text, color = '#ffe9a8', size = 40, sx = 6, sy = 1.5) {  const c = document.createElement('canvas');
   c.width = 512; c.height = 128;
   const g = c.getContext('2d');
   g.font = `bold ${size}px "PingFang SC","Microsoft YaHei",sans-serif`;
@@ -194,13 +309,49 @@ function scatterFoliage(root, count, rmin, rmax, grassColor, flowerColor) {
   return { grass, flowers };
 }
 
+/* [M3b] 雪松的三种树冠材质共用一份。
+ * 一棵雪松 = 3 个锥体（暗针叶 / 半覆雪 / 压满雪），72 棵就是 216 个材质；
+ * 每次进图 new 一遍会让首帧多 30~40ms，而且 disposeTree 会把它们逐个释放。
+ * `M()` 没有缓存，所以这里手工缓存 + `markShared`（共享资源不参与卸载释放）。 */
+let _snowTreeMats = null;
+function snowTreeMats() {
+  if (!_snowTreeMats) {
+    _snowTreeMats = {
+      trunk: markShared(M(0x2e2620, { rough: 1 })),
+      low: markShared(M(0x3f5a70, { rough: 1 })),
+      mid: markShared(M(0x6b8398, { rough: 1 })),
+      top: markShared(M(0xdde8f4, { rough: 0.95 }))
+    };
+  }
+  return _snowTreeMats;
+}
+
 function makeTree(scale = 1, kind = 'pine') {
   const g = new THREE.Group();
-  /* [M3b] kind='snow'：雪松 —— 松树骨架 + 白色树冠 + 深色树干。
+  /* [M3b] kind='snow'：雪松 —— 松树骨架，三层树冠由下往上「由暗到白」。
    * 复用松树的锥形层次而不是新建模型，是因为「雪压松枝」本来就是松树的形状，
-   * 换个颜色就能读出来；新模型只会让 draw call 预算再紧一档。 */
+   * 换个颜色就能读出来；新模型只会让 draw call 预算再紧一档。
+   *
+   * ⚠️ 两轮踩坑：
+   *   ① 第一版树冠写白色（0xe6f0fa）—— 白树长在白地上，截图里一棵都看不见；
+   *   ② 第二版整棵改成冷蓝灰（0x9db4c8）—— 是能看见了，但三个锥体同色，
+   *      读出来是一块灰板，看不出「松」。
+   * 现在**逐层变白**：底层深冷杉绿灰 → 中层过渡 → 顶冠近白。
+   * 深色底把轮廓钉在白地上，白顶交代「上面压着雪」，两个信息一次给全。 */
+  if (kind === 'snow') {
+    const sm = snowTreeMats();
+    mesh(cylGeo(0.22, 0.34, 3.4, 6), sm.trunk, 0, 1.7, 0, g);
+    const tiers = [sm.low, sm.mid, sm.top];
+    for (let i = 0; i < 3; i++) {
+      const cone = mesh(coneGeo(1.5 - i * 0.32, 1.9, 7), tiers[i], 0, 3.0 + i * 1.0, 0, g);
+      cone.rotation.y = RND(0, 3);
+    }
+    g.scale.setScalar(scale);
+    g.userData.collider = { r: 0.7 * scale };
+    return g;
+  }
   const trunk = M(kind === 'snow' ? 0x3a3028 : 0x4a3826, { rough: 1 });
-  const leaf = M(kind === 'pine' ? 0x2f5a34 : (kind === 'snow' ? 0xe6f0fa : 0x4a7a3a), { rough: 1 });
+  const leaf = M(kind === 'pine' ? 0x2f5a34 : (kind === 'snow' ? 0x9db4c8 : 0x4a7a3a), { rough: 1 });
   mesh(cylGeo(0.22, 0.34, 3.4, 6), trunk, 0, 1.7, 0, g);
   if (kind === 'pine' || kind === 'snow') {
     for (let i = 0; i < 3; i++) {
@@ -523,9 +674,17 @@ function buildMap(mapId) {
 
   /* [M12] 有区域配置的图走「区域 + 走廊」，没有的（老图 / 试炼场）仍用圆形 */
   const zones = (typeof mapZones === 'function') ? mapZones(mapId) : null;
+  /* [M3b] baseColor 补 4 种新地貌。
+   * 不补的话会落到 `|| 0xffffff` —— 可走区直接拿满亮白去乘贴图，
+   * 雪原和骨滩都会过曝（截图里雪地整片糊白、骨地像沙漠）。
+   * 取值 = 「贴图主色的提亮版」，比贴图本身亮一档，才能和压暗的底层荒原分开。 */
   const baseColor = {
     dirt: 0xc6d2b0, bamboo: 0xa6c096, swamp: 0x9a8064,
-    rock: 0xa8a8b2, abyss: 0xc0a8dc, heaven: 0xc4d2e6, trial: 0xd2c8ec
+    rock: 0xa8a8b2, abyss: 0xc0a8dc, heaven: 0xc4d2e6, trial: 0xd2c8ec,
+    /* [M3b] 四个新地貌的提亮版，跟着第三版贴图一起收了一档 ——
+     * 贴图压暗之后如果提亮值不跟着降，等于又把它抬回白板。
+     * bone 额外再压一档：地面比骨道具还亮的话，「满地白骨」就糊在底里了。 */
+    snow: 0xc6d6e8, bone: 0xb2aa96, void: 0x9c88c4, flood: 0xa4c0cc
   }[cfg.ground] || 0xffffff;
 
   const groundTex = makeGroundTexture(cfg.ground);
@@ -534,7 +693,13 @@ function buildMap(mapId) {
   /* 区域化地图：底层压暗当「不可走的荒原」，可走区域再单独铺亮色，
    * 玩家一眼能看出「哪能走」—— 这比墙更早建立空间感。 */
   if (zones) groundMat.color.multiplyScalar(0.40);
-  const gEmis = { abyss: [0x2a1040, 0.75], heaven: [0x223350, 0.5], mine: [0x140e08, 0.35], trial: [0x2a1444, 0.4] }[cfg.ground];
+  /* [M3b] void 也补一条自发光：`void` 的贴图四档全近黑，只靠环境光会黑到
+   * 看不清地形（截图里除了紫裂缝什么都没有）。0x1e0e38 / 0.55 是「有微光但
+   * 仍然读成虚空」的那一档 —— 再亮就变成第二个 abyss 了。 */
+  const gEmis = {
+    abyss: [0x2a1040, 0.75], heaven: [0x223350, 0.5], mine: [0x140e08, 0.35],
+    trial: [0x2a1444, 0.4], void: [0x1e0e38, 0.55]
+  }[cfg.ground];
   if (gEmis) { groundMat.emissive.setHex(gEmis[0]); groundMat.emissiveIntensity = gEmis[1]; }
   const ground = new THREE.Mesh(new THREE.PlaneGeometry(cfg.size * 3, cfg.size * 3, 1, 1), groundMat);
   ground.rotation.x = -Math.PI / 2;
@@ -568,10 +733,12 @@ function buildMap(mapId) {
   const R = cfg.size * 0.5;
   /* [M3b] 边界岩色查表。地貌从 4 种涨到 11 种之后，原来的三层嵌套三元已经读不动了。
    * 取值原则：比地貌底色更暗一档 —— 这圈石头的任务是「压住画面边缘」，不是被当成石头看。
-   * 雪原反其道用亮蓝灰（0x9aacbe）：雪地边缘放暗石头会像一堆脏东西。 */
+   * 雪原反其道用亮蓝灰（0x9aacbe）：雪地边缘放暗石头会像一堆脏东西。
+   * 虚空也反其道（0x332a4a）：第一版按原则压到 0x1a1426，结果墙和「更黑的外圈荒原」
+   * 完全同色，整张图的边界消失了，玩家看不出自己能走多远 —— 暗底上的边界必须比底更亮。 */
   const BORDER_COL = {
     heaven: 0x8a9ab0, abyss: 0x2b2038, ice: 0x8fa8bc,
-    snow: 0x9aacbe, bone: 0x8a7e64, void: 0x1a1426, flood: 0x2a3e48
+    snow: 0x9aacbe, bone: 0x8a7e64, void: 0x332a4a, flood: 0x2a3e48
   };
   const borderM = M(BORDER_COL[cfg.ground] || 0x3a3a40, { rough: 1 });
   if (zones) {
@@ -796,9 +963,12 @@ function buildMap(mapId) {
      * 散点交给雪堆（无碰撞，纯视觉起伏）和零星裸岩。
      * 冰柱用半透明高光材质：雪原的辨识度一半来自「冷白色的亮」，
      * 纯不透明的浅蓝会读成石膏。 */
-    for (let i = 0; i < 46; i++) {
+    /* 雪松 72 棵（第一版 46 棵，16000㎡ 上摊下来是「一片白地上零星几棵树」，
+     * 截图里入口附近一棵都看不到）。树也是雪原唯一的「纵向参照物」——
+     * 没有它，三层台地在俯视角下全是平的白面。 */
+    for (let i = 0; i < 72; i++) {
       const { x, z } = spot(10, R + 3, 3.6);
-      add(makeTree(RND(0.85, 1.5), 'snow'), x, z);
+      add(makeTree(RND(1.0, 1.8), 'snow'), x, z);
     }
     const iceM = new THREE.MeshStandardMaterial({
       color: 0xbfe0f0, roughness: 0.12, metalness: 0.1, transparent: true, opacity: 0.72
@@ -813,6 +983,26 @@ function buildMap(mapId) {
       spike.rotation.set(RND(-0.12, 0.12), RND(0, 3), RND(-0.12, 0.12));
       g.userData.collider = { r: 0.5 };
       add(g, x, z);
+    }
+    /* 冰面：贴地的半透明亮片。
+     * 雪原的问题是「全图一个亮度」——雪堆、树、冰柱都近白，俯视角下
+     * 缺一层**平的、反光的**东西，坡地和冰面才分得开。
+     * 冰面必须画成不规则多边形（0.14 高、圆盘读成水渍），
+     * 而且要贴地（y=0.04）——抬高一点就会和雪堆一起变成「第二个凸起」。 */
+    for (let i = 0; i < 16; i++) {
+      const { x, z } = spot(8, R - 4, 3.4);
+      const pts = [], seg = RNDI(7, 11), rad = RND(2.2, 4.6);
+      for (let k = 0; k < seg; k++) {
+        const a = k / seg * Math.PI * 2, rr2 = rad * RND(0.6, 1.15);
+        pts.push(new THREE.Vector2(Math.cos(a) * rr2, Math.sin(a) * rr2));
+      }
+      const sheet = mesh(new THREE.ShapeGeometry(new THREE.Shape(pts)), new THREE.MeshStandardMaterial({
+        color: 0xcfeaf8, emissive: 0x2a4a60, emissiveIntensity: 0.45,
+        roughness: 0.06, metalness: 0.35, transparent: true, opacity: 0.55, side: THREE.DoubleSide
+      }), x, 0.04, z, root);
+      sheet.rotation.x = -Math.PI / 2;
+      sheet.rotation.z = RND(0, 3);
+      sheet.castShadow = false;
     }
     /* 雪堆：压扁的半球半埋进地里，只露上半个弧 —— 正圆的球放地上读成「雪球」 */
     for (let i = 0; i < 34; i++) {
@@ -856,10 +1046,89 @@ function buildMap(mapId) {
       g.userData.collider = { r: rad * 0.5 };
       add(g, x, z);
     }
-    for (let i = 0; i < 40; i++) {
-      const { x, z } = spot(6, R, 2.2);
-      add(makeBonePile(), x, z, false);
+    /* 脊柱：一串椎节躺在地上，中间拱起。
+     * 这是骨地最「像骨」的东西 —— 骨堆是碎渣、骨柱是堆叠，只有脊柱有
+     * 解剖结构（一节一节 + 朝上的棘突），远看也知道「这里死过一只大东西」。
+     * 缺了棘突就只是一串横放的圆柱，所以每节都要配一根短刺。 */
+    const vertM = M(0xdcd2b6, { rough: 1 });
+    const thornM = M(0xc4b898, { rough: 1 });
+    for (let i = 0; i < 12; i++) {
+      const { x, z } = spot(9, R - 4, 3.6);
+      const g = new THREE.Group();
+      const n = RNDI(6, 9);
+      const wob = RND(-0.1, 0.1);
+      for (let k = 0; k < n; k++) {
+        const px = (k - (n - 1) / 2) * 0.66;
+        const py = 0.32 + Math.sin(k / Math.max(1, n - 1) * Math.PI) * RND(0.28, 0.6);
+        const pz = Math.sin(k * 0.9 + i) * wob;
+        const seg = mesh(cylGeo(0.3, 0.32, 0.46, 6), vertM, px, py, pz, g);
+        seg.rotation.z = Math.PI / 2;
+        mesh(coneGeo(0.12, 0.5, 4), thornM, px, py + 0.34, pz, g);
+      }
+      g.rotation.y = RND(0, 3);
+      g.userData.collider = { r: 1.3 };
+      add(g, x, z);
     }
+    /* 头骨：不追求解剖准确，只要「圆颅 + 吻部 + 两只暗眼窝」的剪影。
+     * 一个头骨 4 个 mesh（颅/吻/双眼），比堆 20 根骨头更省，也更远就看得出。 */
+    for (let i = 0; i < 10; i++) {
+      const { x, z } = spot(8, R - 4, 3.2);
+      const g = new THREE.Group();
+      const skM = M(0xe2d8bc, { rough: 1 });
+      const cran = mesh(sphGeo(0.56, 7), skM, 0, 0.42, 0, g);
+      cran.scale.set(1, 0.86, 1.1);
+      const snout = mesh(boxGeo(0.42, 0.34, 0.5), skM, 0, 0.3, 0.56, g);
+      const eyeM = M(0x241f18, { rough: 0.6 });
+      for (const ex of [-0.2, 0.2]) mesh(sphGeo(0.15, 5), eyeM, ex, 0.5, 0.42, g);
+      g.rotation.y = RND(0, 3);
+      g.rotation.z = RND(-0.3, 0.3);
+      g.scale.setScalar(RND(0.9, 1.8));
+      g.userData.collider = { r: 0.7 };
+      add(g, x, z);
+    }
+    /* 骨堆：**大小必须拉开**（0.7~2.0）。第一版全按 1.0 撒，40 堆在
+     * 16000㎡ 上读起来像「撒了一把牙签」，完全撑不起「白骨遍地」。
+     *
+     * 用 InstancedMesh 而不是 60 个 `makeBonePile()` 组：
+     * 一个骨堆 = 7 根骨头 + 3 个骨节 = 10 个 mesh，60 堆就是 **600 次绘制** ——
+     * 这一条让白骨图的对象数从 654 直接涨到 1080（实测）。改成两个
+     * InstancedMesh（骨头 420、骨节 180）之后是 2 次绘制，视觉一模一样。
+     * 不带碰撞 —— 碎骨不该挡路。 */
+    const PILES = 60, PER = 7, KNOBS = 3;
+    const stickGeo = cylGeo(0.06, 0.06, 1, 5);
+    const pileMat = M(0xcfc8b0, { rough: 1 });
+    const sticks = new THREE.InstancedMesh(stickGeo, pileMat, PILES * PER);
+    const knobs = new THREE.InstancedMesh(sphGeo(0.18, 5), pileMat, PILES * KNOBS);
+    const pm4 = new THREE.Matrix4(), pq = new THREE.Quaternion(), pe = new THREE.Euler();
+    const pv = new THREE.Vector3(), ps = new THREE.Vector3();
+    let si = 0, ki = 0;
+    for (let i = 0; i < PILES; i++) {
+      const { x, z } = spot(6, R, 2.2);
+      const sc = RND(0.7, 2.0), rot = RND(0, 3.14);
+      for (let k = 0; k < PER; k++) {
+        const lx = RND(-0.7, 0.7) * sc, lz = RND(-0.7, 0.7) * sc;
+        pe.set(RND(0, 3), RND(0, 3), RND(-0.6, 0.6));
+        pq.setFromEuler(pe);
+        ps.set(sc, RND(0.5, 1.1) * sc, sc);
+        pv.set(x + lx * Math.cos(rot) - lz * Math.sin(rot), RND(0.1, 0.3) * sc,
+          z + lx * Math.sin(rot) + lz * Math.cos(rot));
+        pm4.compose(pv, pq, ps);
+        sticks.setMatrixAt(si++, pm4);
+      }
+      for (let k = 0; k < KNOBS; k++) {
+        const lx = RND(-0.6, 0.6) * sc, lz = RND(-0.6, 0.6) * sc;
+        pe.set(RND(0, 3), RND(0, 3), RND(0, 3));
+        pq.setFromEuler(pe);
+        ps.setScalar(sc);
+        pv.set(x + lx * Math.cos(rot) - lz * Math.sin(rot), RND(0.15, 0.3) * sc,
+          z + lx * Math.sin(rot) + lz * Math.cos(rot));
+        pm4.compose(pv, pq, ps);
+        knobs.setMatrixAt(ki++, pm4);
+      }
+    }
+    sticks.instanceMatrix.needsUpdate = true;
+    knobs.instanceMatrix.needsUpdate = true;
+    root.add(sticks); root.add(knobs);
     /* 鬼火：青绿色，和卷二火原的橙红明确区分 —— 白骨地貌的关键词是「冷」 */
     for (let i = 0; i < 8; i++) {
       const { x, z } = spot(12, R - 6, 4);
@@ -880,6 +1149,25 @@ function buildMap(mapId) {
     for (let i = 0; i < 24; i++) {
       const { x, z } = spot(9, R - 2, 3.6);
       add(makePillar(RND(5, 11), CHANCE(0.45), 0x2e2440), x, z);
+    }
+    /* 地台碎板：贴地的扁平石板，**唯一作用是给地面一点「结构」**。
+     * 虚空的地面纹理是故意做成近黑的（见 `void` 的配色注释），结果第一版
+     * 整张图是一块纯紫渐变 —— 玩家分不清自己站在地上还是浮着。
+     * 这些板子比地面亮一档、带硬边和投影，俯视角下立刻读出「一层一层的地台」。
+     * 不带碰撞：它们只是地砖，不是障碍。 */
+    /* 板子必须比地面**亮**：0x3d3258 试过一版，比自发光的紫地面暗，
+     * 截图里读成「地上一块块黑洞」。0x4a4470 才读成「抬起来一层的石台」。 */
+    const slabM = M(0x4a4470, { rough: 1 });
+    const slabEdgeM = M(0x8268bc, { rough: 0.9 });
+    for (let i = 0; i < 26; i++) {
+      const { x, z } = spot(8, R - 3, 3.2);
+      const g = new THREE.Group();
+      const w = RND(3.4, 8.2), d = RND(3.4, 8.2);
+      mesh(boxGeo(w, 0.34, d), slabM, 0, 0.08, 0, g);
+      /* 只有一侧描边：四面全描会变成「发光的盒子」，一侧就够交代板子的边 */
+      mesh(boxGeo(w, 0.36, 0.22), slabEdgeM, 0, 0.1, d / 2, g);
+      g.rotation.y = RND(0, 3);
+      add(g, x, z, false);
     }
     for (let i = 0; i < 30; i++) {
       const { x, z } = spot(8, R, 2.4);
@@ -913,24 +1201,78 @@ function buildMap(mapId) {
     }
     starGeo.setAttribute('position', new THREE.BufferAttribute(spos, 3));
     const stars = new THREE.Points(starGeo, new THREE.PointsMaterial({
-      color: 0xb89aff, size: 0.34, sizeAttenuation: true,
-      transparent: true, opacity: 0.85, depthWrite: false, blending: THREE.AdditiveBlending
+      /* size 0.9 而不是 0.34：PointsMaterial 的 size 是**世界单位**，
+       * 0.34 在 30 米外只有亚像素，截图里整片星屑一个点都看不见。
+       * map 必须给 —— 不给贴图时 Points 画的是硬边正方形（截图里是一地
+       * 淡紫色小方块，像渲染出错），柔边圆点才读成「星屑」。
+       * 尺寸收到 0.62：0.9 在镜头附近会变成一颗悬空的白色小球（加色混合
+       * 直接过曝成白），近处的星应该只是「亮一下」。 */
+      map: dotTexture(), color: 0xc4aaff, size: 0.62, sizeAttenuation: true,
+      transparent: true, opacity: 0.72, depthWrite: false, blending: THREE.AdditiveBlending
     }));
     root.add(stars);
     anims.push(a => { stars.rotation.y = a * 0.012; });
+    /* 贴地浮尘：第二批 Points，尺寸更小、位置压到 0.3~3 米。
+     * 星屑全飘在 6~22 米，俯视角下大部分在画面外；贴地这一层才是
+     * 「脚边有东西在亮」的来源，也是虚空唯一的地面纹理。 */
+    const moteGeo = new THREE.BufferGeometry();
+    const mpos = new Float32Array(160 * 3);
+    for (let i = 0; i < 160; i++) {
+      const ang = Math.random() * 6.28, rr = RND(4, R - 2);
+      mpos[i * 3] = Math.cos(ang) * rr;
+      mpos[i * 3 + 1] = RND(0.3, 3);
+      mpos[i * 3 + 2] = Math.sin(ang) * rr;
+    }
+    moteGeo.setAttribute('position', new THREE.BufferAttribute(mpos, 3));
+    const motes = new THREE.Points(moteGeo, new THREE.PointsMaterial({
+      map: dotTexture(), color: 0x9a7ae0, size: 0.42, sizeAttenuation: true,
+      transparent: true, opacity: 0.65, depthWrite: false, blending: THREE.AdditiveBlending
+    }));
+    root.add(motes);
+    anims.push(a => { motes.rotation.y = -a * 0.02; });
   } else if (cfg.props === 'flood') {
     /* ---------------- 浅水（M3b） ----------------
      * 水洼 + 枯木 + 芦苇 + 石墩。
      * 水洼**不带碰撞** —— 玩家踩着水走才像浅滩；能挡路的只有石墩和枯木。
      * 芦苇直接复用 scatterFoliage（实例化，一次 draw call），
      * 不自己堆 300 个锥体 —— 那是 300 次绘制，手机端立刻掉帧。 */
-    for (let i = 0; i < 18; i++) {
+    /* 水洼：**比地面亮**、带反射、边缘柔和，才读成「水」。
+     * 三轮返回值：
+     *   ① 0x3a5a68（比地面暗）+ 半径 3~6.5 → 截图里是地上一块块黑洞；
+     *   ② 0x5a8496 + 硬边正圆 → 变成「贴在地上的浅蓝圆片」，像 UI 标记；
+     *   ③ 现在是**带柔边与水波环的贴图圆盘**：边缘 alpha 收到 0，
+     *      再叠两圈涟漪，才读得出「一洼浅水」。
+     * 用贴图而不是自己拼多边形：18 个水洼拼多边形要 18 份几何体，
+     * 贴图是一张 128×128 共用，且柔边比锯齿多边形好看。 */
+    const puddleTex = puddleTexture();
+    const puddleMat = new THREE.MeshStandardMaterial({
+      map: puddleTex, color: 0xc8dce6, emissive: 0x1b3844, emissiveIntensity: 0.9,
+      roughness: 0.06, metalness: 0.6, transparent: true, opacity: 0.9, depthWrite: false
+    });
+    for (let i = 0; i < 22; i++) {
       const { x, z } = spot(10, R - 4, 4.5);
-      const puddle = mesh(new THREE.CircleGeometry(RND(3, 6.5), 16), new THREE.MeshStandardMaterial({
-        color: 0x3a5a68, emissive: 0x0a2430, emissiveIntensity: 0.5,
-        roughness: 0.15, metalness: 0.5, transparent: true, opacity: 0.8
-      }), x, 0.035, z, root);
+      const r0 = RND(2.4, 5.2);
+      const puddle = mesh(new THREE.CircleGeometry(r0, 18), puddleMat, x, 0.035, z, root);
       puddle.rotation.x = -Math.PI / 2;
+      puddle.rotation.z = RND(0, 3);
+      puddle.castShadow = false;
+    }
+    /* 涟漪：6 圈只做「扩散 + 淡出」的循环，用来交代「水面是活的」。
+     * 只做 6 圈 —— 每个圈一次绘制，20 圈会在手机端明显掉帧。 */
+    for (let i = 0; i < 6; i++) {
+      const { x, z } = spot(10, R - 6, 5);
+      const ring = mesh(ringGeo(0.86, 1, 22), new THREE.MeshBasicMaterial({
+        color: 0xa8cede, transparent: true, opacity: 0.4, side: THREE.DoubleSide, depthWrite: false
+      }), x, 0.05, z, root);
+      ring.rotation.x = -Math.PI / 2;
+      ring.castShadow = false;
+      const ph = RND(0, 6.28);
+      anims.push(a => {
+        const t = (a * 0.55 + ph) % 1;
+        const s = 1.2 + t * 3.4;
+        ring.scale.set(s, s, 1);
+        ring.material.opacity = 0.42 * (1 - t);
+      });
     }
     for (let i = 0; i < 44; i++) {
       const { x, z } = spot(8, R + 2, 3.2);
@@ -953,7 +1295,7 @@ function buildMap(mapId) {
       const { x, z } = spot(10, R - 4, 3.4);
       add(makeRock(RND(0.8, 1.6), 0x4e5a5e), x, z);
     }
-    scatterFoliage(root, 340, 6, R * 0.94, 0x5a6a3a, 0x9aa86a);
+    scatterFoliage(root, 340, 6, R * 0.94, 0x6d7d44, 0xc2c88e);
   } else if (cfg.props === 'trial') {
     /* ---------------- 无尽试炼场 ----------------
      * 设计原则：**没有遮挡、没有死角**。无限波数的核心是走位与聚怪，

@@ -3,9 +3,10 @@
 - 分支：`feat/act-expansion`（优先级 **高**，先于技能重构合入 main）
 - 计划文档：`docs/ACT-EXPANSION-PLAN.md`（15 节）
 - 预览站：<https://718997675.github.io/jiuxiao-arpg/preview/act-expansion/>
-- 更新：2026-10-27 23:20
+- 更新：2026-10-28 00:20
 
-> 当前：M3a + M3b 全部完成（8 种骨架 · 8 种地貌 · **30 张图全部落地**）。下一步 M4。
+> 当前：M3a + M3b 全部完成（8 种骨架 · 8 种地貌 · **30 张图全部落地**），
+> M3b 的四种新地貌又补了一轮配色与道具细节。下一步 M4。
 
 ## 一句话现状
 
@@ -47,6 +48,64 @@ M3 把「手写地图」变成了数据：8 种 zone 骨架（`ZONE_ARCHETYPES`�
 | 任务引用探针 | 新建 `dev/quest-ref.js`：map / zone / boss / monster / skill / next / require 七类引用 + 主线链可走通。**它抓到了 isles 图首领区叫 `nave` 不叫 `sanctum` 这个坑** | 63 条任务 0 错误 |
 | m3-check 扩容 | A 段改为跑全部 `MAP_SPECS`（23 张）；B/C/D 抽 10 张覆盖 4 种新地貌 + 8 种骨架；新增 `mapId === mid` 总闸（`travelTo` 因等级被拦时不抛异常，旧版会拿错图数据去比） | `m3-check` 全通过 |
 | 老图不动 | 7 张手写图坐标一个像素没改；`MAP_BOSS_POS` 老表照旧生效（新首领不在表里，自动走 `bossPosOf` 推导） | 老图首领落点不变 |
+
+### M3b 视觉补完（第三轮配色，已提交）
+
+数据层在 M3b 主体里就位了，但**四种新地貌第一眼认不出来**（截图逐张比对）：
+雪原是「过曝的白板」、白骨是「沙漠」、虚空是「一块紫渐变 + 满地小方块」、浅水是「暗绿水泥地」。
+这一轮只改 `src/world.js`，不动任何数据。
+
+| 地貌 | 症状（截图判定） | 改法 |
+|---|---|---|
+| `snow` | 整片近白，地形起伏全丢；树是白树长白地，一棵看不见 | 底色压到 `#cfdcec` / 中灰 `#b3c4d8`（**底色本身在往白抬是最初的错**）；雪松改**三层树冠由暗到白**（`0x3f5a70 → 0x6b8398 → 0xdde8f4`）；补 16 片贴地冰面（不规则多边形，y=0.04） |
+| `bone` | 暖黄底色在暖阳光下整片读成沙漠；骨堆像「撒了一把牙签」 | 配色往灰里收一档；贴图加 620 根白色骨屑 + 46 条短骨缝；新增 12 条**脊柱**（椎节 + 棘突，唯一有解剖结构的骨道具）与 10 个头骨；骨堆尺寸拉开到 0.7~2.0 |
+| `void` | 地面是一块纯紫渐变；星屑被渲染成**硬边正方形**；边界墙与黑荒原同色 → 图的边界消失 | 星屑补柔边圆点贴图（`PointsMaterial` 不给 `map` 画的就是方块）+ 贴地浮尘；补 26 块**地台碎板**（比地面亮一档、单侧描边）；`BORDER_COL.void` `0x1a1426 → 0x332a4a` |
+| `flood` | 水洼是硬边浅蓝圆片（像 UI 标记）；水纹在暗绿底上完全看不见 | 水洼改成**柔边贴图圆盘**（alpha 收到 0 + 两圈涟漪）+ 6 圈会扩散淡出的涟漪；贴图亮纹 alpha `0.08~0.36 → 0.14~0.5` 并补一层暗泥痕 |
+
+两个顺带的结论：
+
+1. **`PointsMaterial` 不给 `map` = 硬边正方形**。星屑第一版就是「一地淡紫小方块」，
+   远看像渲染出错。柔边贴图 32×32 一次生成、全场景共用（`markShared`）。
+2. **白骨图的骨堆从 60 个组改成 2 个 `InstancedMesh`**：原来一堆 = 10 个 mesh，
+   60 堆 = 600 次绘制，实测对象数 654 → 1080。改完 471 个 mesh、绘制 652 → 566，
+   视觉完全一致。**大数量散点一律先想 InstancedMesh**，这条对 M4 的 24 只新怪同样适用。
+
+回归：`smoke` 三职业 ERRORS none · `zone-check` 30 张 · `zone-density` 全达标 ·
+`m3-check` 全通过（10 张抽样，帧率 10~24.5 FPS 软件渲染）· `test-quest` 44/44 · `quest-ref` 39/39 主线链。
+
+### 23 张骨架图规格总表（M4/M5 的参照）
+
+尺寸一律按骨架覆盖率反推（294~306），**不是整齐的 300**；`size` 越小覆盖率越低骨架的图越大。
+
+| 卷 | 图 id | 名 | lv | 地貌 | 骨架 | size | 区数 |
+|---|---|---|---|---|---|---|---|
+| 一 | `sunset` | 落霞坡 | 6 | dirt | terrace | 294 | 12 |
+| 一 | `bonestrand` | 沉骨滩 | 11 | bone | isles | 302 | 14 |
+| 一 | `bonetower` | 骨塔祭场 | 13 | bone | spiral | 294 | 12 |
+| 一 | `ironpeak` | 铁山绝顶 | 18 | snow | terrace | 296 | 12 |
+| 二 | `magmagully` | 熔脉深沟 | 24 | rock | spiral | 290 | 12 |
+| 二 | `ashfield` | 灰烬荒原 | 26 | ash | canyon | 295 | 12 |
+| 二 | `flamecanyon` | 赤炎峡谷 | 28 | ash | canyon | 300 | 12 |
+| 二 | `flamealtar` | 焚天祭坛 | 30 | ash | radial | 295 | 12 |
+| 三 | `bonehall` | 白骨长廊 | 34 | bone | ring | 297 | 13 |
+| 三 | `forgetshore` | 忘川河滩 | 35 | flood | isles | 302 | 14 |
+| 三 | `abyssdeep` | 九幽深渊 | 37 | void | spiral | 298 | 12 |
+| 三 | `yellowferry` | 黄泉渡 | 40 | flood | canyon | 300 | 12 |
+| 四 | `swordtomb` | 天罡剑冢 | 42 | bone | radial | 296 | 12 |
+| 四 | `swordpit` | 万剑坑 | 44 | ash | canyon | 297 | 12 |
+| 四 | `swordapex` | 剑冢绝巅 | 45 | snow | terrace | 300 | 12 |
+| 五 | `cloudbridge` | 云海断桥 | 49 | heaven | twin | 306 | 12 |
+| 五 | `southgate` | 南天残门 | 50 | heaven | radial | 298 | 12 |
+| 五 | `jadecapital` | 玉京废墟 | 52 | void | ring | 297 | 13 |
+| 五 | `starfall` | 星陨台 | 54 | void | radial | 299 | 12 |
+| 五 | `mirrorrealm` | 无相幻境 | 56 | void | cross | 298 | 13 |
+| 五 | `mirrorabyss` | 镜渊 | 57 | void | spiral | 299 | 12 |
+| 五 | `nineapex` | 九霄之巅 | 58 | snow | terrace | 301 | 12 |
+| 五 | `chaossea` | 混沌海 | 60 | void | isles | 303 | 14 |
+
+分区命名全部写在 `MAP_SPECS[*].names` 里（12~14 条/图，key 与骨架的区 id 一一对应），
+**首领区的 key 不都是 `sanctum`** —— `isles` 用 `nave`，判定一律用 `kind === 'boss'`
+（`quest-ref.js` 抓到过两条写 `zone:'sanctum'` 的任务会静默失效）。
 
 ### M2 交付明细（已完成）
 
