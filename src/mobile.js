@@ -101,9 +101,19 @@ const Mobile = {
       lastTouchEnd = now;
     }, { passive: false });
     /* [FIX-BUG2] 阻止整页滚动/橡皮筋效果，iPhone Safari 上
-     * 触摸时页面被拖动会导致 visualViewport 偏移、摇杆跑位 */
+     * 触摸时页面被拖动会导致 visualViewport 偏移、摇杆跑位。
+     * [FIX-SCROLL] 但不能一律拦 —— 之前是无条件 preventDefault()，
+     * 结果所有菜单面板在真机上「滚不动」：内容被面板底部裁掉、没有滚动条、
+     * 手指上推毫无反应（PC 上鼠标滚轮走的是另一条路，所以看不出来）。
+     * 现在按落点分流：落在已打开的面板 / 对话框里 → 放行原生滚动；
+     * 落在游戏画面、HUD、触控层上 → 照旧拦掉。 */
+    const SCROLL_HOST = '.panel.open, #dialog, .dlg-box, #setCodexPanel.open';
     document.addEventListener('touchmove', e => {
-      if (e.touches.length >= 1) e.preventDefault();
+      /* 多指一律拦：这是「整页缩放」，不是滚动 */
+      if (e.touches.length >= 2) { e.preventDefault(); return; }
+      const t = e.target;
+      if (t && t.closest && t.closest(SCROLL_HOST)) return;
+      e.preventDefault();
     }, { passive: false });
     document.addEventListener('visibilitychange', () => {
       if (document.hidden) this.resetJoy();

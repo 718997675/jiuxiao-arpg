@@ -55,6 +55,9 @@ Object.assign(UI, {
   renderSkillPanel() {
     const p = document.getElementById('skillPanel');
     if (!p || !Game.state) return;
+    /* 重画会换掉整个 #skList，手势状态跟着归零（否则漏掉的 pointerup 会让
+     * 之后每次单指触摸都被当成捏合） */
+    if (this._skPts) this._skPts.clear();
     const s = Game.state;
     const order = SKILL_ORDER[s.cls] || [];
     const pts = Game.skillPoints();
@@ -327,7 +330,10 @@ Object.assign(UI, {
       this.renderSkillPanel();
     });
 
-    /* 树视图：插进 DOM 之后才量得到容器大小 */
+    /* 树视图：插进 DOM 之后才量得到容器大小。
+     * 同步先试一次（面板刚打开时尺寸已可量），rAF 再兜一次 ——
+     * 只靠 rAF 在个别环境下会晚一帧，表现是「刚打开 100%，闪一下才缩」。 */
+    try { this.fitSkillTree(); } catch (e) { }
     requestAnimationFrame(() => this.fitSkillTree());
   },
 
@@ -1129,7 +1135,34 @@ Object.assign(UI, {
     /* 拖拽：从节点拖 = 把技能放进技能条第几格；从空白拖 = 平移画布。
      * 两者都从 pointerdown 开始，靠起点是不是节点来分流，
      * 移动超过 5px 才当真（否则那是一次点击）。 */
-    let pan = null, ndrag = null, sdrag = null;
+    let pan = null, ndrag = null, sdrag = null, pinch = null;
+    /* [PINCH] 触屏双指缩放：按 pointerId 记所有落在树上的手指。
+     * 两指落下就切到 pinch 模式（单指平移 / 拖节点全部让位），
+     * 抬起一指回到单指状态但不恢复平移 —— 否则松手瞬间画面会跳一下。 */
+    const pts = new Map();
+    this._skPts = pts;      // 面板重画时清一遍，防止漏掉的 pointerup 把状态卡在「双指」
+    const stageRect = st => st.getBoundingClientRect();
+    const startPinch = stage => {
+      const [a, b] = [...pts.values()];
+      if (!a || !b) return;
+      const r = stageRect(stage);
+      const pad = this.skPad || 0;
+      const mx = (a.x + b.x) / 2 - r.left, my = (a.y + b.y) / 2 - r.top;
+      const z0 = this.skZoom || 1;
+      pinch = {
+        stage, z0,
+        d0: Math.max(1, Math.hypot(a.x - b.x, a.y - b.y)),
+        /* 捏合起点「手指中点底下压着的那块内容」的内容坐标，缩放时钉住它 */
+        cx: (stage.scrollLeft + mx - pad) / z0,
+        cy: (stage.scrollTop + my - pad) / z0
+      };
+      pan = null;
+      if (ndrag && ndrag.el) { ndrag.el.remove(); ndrag = null; }
+      if (sdrag && sdrag.el) { sdrag.el.remove(); sdrag = null; }
+      clearDrop();
+      this._panMoved = true;
+      stage.classList.add('panning');
+    };
     const dropOf = t => (t && t.closest) ? t.closest('#skList .sb-slot[data-skbar]') : null;
     const clearDrop = () => document.querySelectorAll('#skList .sb-slot.drop').forEach(x => x.classList.remove('drop'));
     const ghostOf = (id, x, y) => {
@@ -1145,6 +1178,15 @@ Object.assign(UI, {
 
     document.addEventListener('pointerdown', e => {
       if (e.button !== 0) { pan = ndrag = sdrag = null; return; }
+      /* [PINCH] 触屏：先记手指。第二根手指落到树上 → 立刻切捏合，
+       * 把这一轮的单指平移 / 拖节点全部作废（否则拖出半截 ghost 很难看） */
+      if (e.pointerType === 'touch') {
+        const st0 = stageOf(e.target);
+        if (st0 && !(e.target.closest && e.target.closest('.skt-pop'))) {
+          pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+          if (pts.size >= 2) { startPinch(st0); return; }
+        }
+      }
       /* 技能条上有东西的格子：拖它换位（空位不拖，留给 click 上技能） */
       const slotEl = dropOf(e.target);
       if (slotEl) {
@@ -1167,6 +1209,28 @@ Object.assign(UI, {
     });
 
     document.addEventListener('pointermove', e => {
+      /* [PINCH] 双指缩放：优先于一切单指逻辑 */
+      if (pts.has(e.pointerId)) pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (pinch) {
+        if (pts.size < 2) return;
+        const [a, b] = [...pts.values()];
+        if (!a || !b) return;
+        const d = Math.max(1, Math.hypot(a.x - b.x, a.y - b.y));
+        const next = this.clampZoom(pinch.z0 * (d / pinch.d0));
+        const stage = pinch.stage;
+        const r = stageRect(stage);
+        const pad = this.skPad || 0;
+        const mx = (a.x + b.x) / 2 - r.left, my = (a.y + b.y) / 2 - r.top;
+        if (next !== this.skZoom) {
+          this.skZoomAuto = false;
+          this.skZoom = next;
+          this.applyZoom();
+        }
+        /* 两指一起平移也算：钉住起点手指中点下的那块内容 */
+        stage.scrollLeft = pad + pinch.cx * next - mx;
+        stage.scrollTop = pad + pinch.cy * next - my;
+        return;
+      }
       /* 技能条内换位：ghost 跟着手，底下格子高亮成落点 */
       if (sdrag) {
         if (!sdrag.on && Math.abs(e.clientX - sdrag.x) + Math.abs(e.clientY - sdrag.y) > 5) {
@@ -1220,6 +1284,15 @@ Object.assign(UI, {
     });
 
     const end = e => {
+      /* [PINCH] 收手指：剩不到两指就结束捏合，并吃掉这一轮的点击 */
+      if (pts.has(e.pointerId)) pts.delete(e.pointerId);
+      if (pinch && pts.size < 2) {
+        pinch.stage.classList.remove('panning');
+        pinch = null;
+        pan = null;
+        setTimeout(() => { this._panMoved = false; }, 40);
+        return;
+      }
       /* 技能条内换位：落到别的格子上就交换，落到原格 / 外面就取消 */
       if (sdrag) {
         const d = sdrag;
@@ -1321,9 +1394,12 @@ Object.assign(UI, {
       const mob = (typeof IS_TOUCH !== 'undefined' && IS_TOUCH) || window.innerWidth < 780;
       let z = 1;
       if (mob) {
-        /* 手机上不为了「一屏塞下」把字缩没：宁可上下滚，最小 70% */
-        if (haveW > 40) z = haveW / W;
-        z = Math.max(0.7, z);
+        /* 手机上不为了「一屏塞下」把字缩没：最小 70%。
+         * 宽高都要顾 —— 这棵树是竖着长的，只按宽度算会放大过头，
+         * 一屏只剩两个节点（玩家的实际反馈），所以把高度也压进来。 */
+        const zw = haveW > 40 ? haveW / W : 1;
+        const zh = haveH > 40 ? haveH / H : 1;
+        z = Math.max(0.7, Math.min(zw, zh));
       } else {
         /* 桌面：宽高都塞得下就放大到铺满（上限 1.2），整棵树始终完整可见 */
         z = Math.min(1.2, haveW / W, haveH / H);

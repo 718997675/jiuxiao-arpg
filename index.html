@@ -176,6 +176,12 @@
   .ph h3{font-family:"STKaiti","KaiTi",serif;font-size:16px;font-weight:500;letter-spacing:5px;color:#f0dca8}
   .ph .x{cursor:pointer;color:#a89878;font-size:16px;padding:0 4px;line-height:1}
   .ph .x:hover{color:#fff}
+  /* 触屏：✕ 放大成 40×40 的点击区。原来只有 16px 字 + 8px 内边距，
+   * 手指点十次中三次 —— 玩家明确反馈过「关闭按钮点不到」。 */
+  body.touch .ph .x{font-size:20px;padding:0;min-width:40px;height:40px;
+    display:flex;align-items:center;justify-content:center;margin:-8px -8px -8px 0;
+    border-radius:4px;line-height:1}
+  body.touch .ph .x:active{background:rgba(216,178,90,.2);color:#fff}
   .pb{padding:14px}
 
   /* 背包：左列装备栏（纸娃娃 + 角色属性，常驻且自己滚），右列行囊与其他栏位 */
@@ -188,11 +194,20 @@
   .inv-wrap{display:flex;gap:14px;min-height:0}
   .doll{width:300px;flex:none;display:flex;flex-direction:column;min-height:0}
   .doll-title{font-size:11px;color:var(--dim);letter-spacing:2px;margin-bottom:6px;text-align:center}
-  /* 左列分隔条：上面是装备位，下面是常驻属性 */
-  .doll-head{display:flex;align-items:baseline;justify-content:space-between;gap:8px;
-    margin:9px 0 3px;padding-top:7px;border-top:1px solid rgba(216,178,90,.16)}
+  /* 左列分隔条：上面是装备位，下面是常驻属性。
+   * 手机上这行是「收起 / 展开属性」的开关 —— 属性有 20 多行，展开时会把
+   * 行囊整个顶到屏幕外，收起来才看得见格子。 */
+  .doll-head{display:flex;align-items:center;justify-content:space-between;gap:8px;
+    margin:9px 0 3px;padding-top:7px;border-top:1px solid rgba(216,178,90,.16);
+    cursor:pointer;user-select:none;-webkit-user-select:none}
   .doll-head span{font-family:"STKaiti","KaiTi",serif;font-size:11.5px;letter-spacing:3px;color:#c9a86a}
-  .doll-head i{font-style:normal;font-size:9px;color:#5e594e;letter-spacing:.5px}
+  .doll-head i{font-style:normal;font-size:9px;color:#5e594e;letter-spacing:.5px;margin-left:auto}
+  .doll-head .fold{font-style:normal;font-size:9px;color:#a89878;transition:transform .15s;
+    margin-left:6px;flex:none}
+  .doll.fold .doll-head .fold{transform:rotate(-90deg)}
+  .doll.fold .inv-stats{display:none}
+  body.touch .doll-head{padding:9px 2px 7px;margin:8px 0 2px}
+  body.touch .doll-head .fold{font-size:11px;padding:0 4px}
   /* 纸娃娃：按身体方向排（v1.3.0 参考暗黑 3）
    *   头在中上 → 左右肩（左上护肩 / 右上副手）→ 胸甲占中两行 →
    *   手腰一排 → 战靴在下 → 最底一条长格放兵器。
@@ -757,19 +772,33 @@
   .sk-right .sd-branch .dim2{font-size:9px;color:#5e5648;margin-top:6px}
   .sk-right .sd-hintline{margin-top:9px;font-size:9.5px;color:#6a6458;letter-spacing:0}
 
-  /* 窄屏 / 手机：左右结构改成上下，整页只留一条滚动条（树自己不再内滚，
-   * 否则树一条、卡片一条，手指不知道在滚谁），技能条吸在底部 */
+  /* 窄屏 / 手机：改成「上树下卡」的上下分栏，各自独立滚动。
+   * 之前是树按内容撑高、整页一条滚动条 —— 树一放大（157%）就把说明书卡
+   * 顶到屏幕外，玩家看不到技能描述。现在树固定占一块视口，卡固定占另一块，
+   * 树内靠单指平移 + 双指缩放，缩放不再影响卡的位置。 */
   @media (max-width:900px){
+    .sk-top{flex-wrap:wrap;gap:5px 9px;justify-content:flex-start}
     .sk-top .dim{display:none}
-    .sk-list{display:block;overflow-y:auto;overflow-x:hidden}
-    .sk-body{display:block}
-    .sk-left{display:block}
-    .skt-stage{display:block;height:auto;flex:none;overflow:visible}
-    .sk-right{width:auto;max-height:none;overflow:visible;margin-top:9px}
-    .sk-bar{position:sticky;bottom:0;z-index:9;margin-top:10px;padding:8px 0 6px;
+    .sk-list{display:flex;flex-direction:column;overflow:hidden}
+    .sk-body{display:flex;flex-direction:column;flex:1;min-height:0;gap:7px;align-items:stretch}
+    .sk-left{flex:1 1 62%;min-height:0;display:flex;flex-direction:column}
+    /* 树自己内滚：手势在 JS 里接管（touch-action:none），浏览器不参与 */
+    .skt-stage{display:block;flex:1;min-height:0;overflow:hidden}
+    /* 卡片固定占下面 38%，长卡（旋风斩那种带精研/取向/变体）在自己框里滚。
+     * 不按内容高度走 —— 那会让长卡把树挤没，短卡又白占地方，两头不讨好。 */
+    .sk-right{flex:1 1 38%;min-height:0;width:auto;max-height:none;overflow-y:auto;
+      -webkit-overflow-scrolling:touch;margin-top:0}
+    .sk-bar{position:relative;flex:none;z-index:9;margin-top:0;padding:8px 0 4px;
       background:linear-gradient(180deg,rgba(20,17,12,.92),rgba(14,12,9,.99))}
     .sk-bar .sb-hint{display:none}
     .sk-bar .sb-slot{width:30px;height:30px}
+  }
+  /* 横屏手机（可视高度只有 380 上下）：上下分栏会把树压成一条缝，
+   * 改回左右并排 —— 横向本来就有富余，卡占右侧 38% 够读。 */
+  @media (max-width:900px) and (orientation:landscape){
+    .sk-body{flex-direction:row;align-items:stretch;gap:10px}
+    .sk-left{flex:1 1 auto;min-width:0}
+    .sk-right{flex:0 0 38%;max-width:38%;min-height:0;max-height:none;overflow-y:auto;margin-top:0}
   }
   .sk-tile{position:relative;width:50px;height:50px;flex:none;display:flex;align-items:center;justify-content:center;
     border:1px solid rgba(216,178,90,.3);border-radius:3px;cursor:pointer;transition:.12s;
@@ -1585,6 +1614,9 @@
     -webkit-touch-callout:none;
     -webkit-overflow-scrolling:auto}  /* 关掉 momentum scrolling，防止地址栏跳动 */
   body.touch #gl,body.touch #mtouch,body.touch #mJoy{touch-action:none}
+  /* 这两个是「自己接管手势」的区域，不能让浏览器先滚/先缩：
+   * #tlCanvas 天赋轮盘靠拖动旋转，.skt-stage 术法树靠单指平移 + 双指缩放 */
+  body.touch #tlCanvas,body.touch #skList .skt-stage{touch-action:none}
   /* [FIX-BUG2] 面板内部允许滚动 */
   body.touch .panel,body.touch #dialog{touch-action:auto}
   /* iOS Safari 的规矩：输入框字号 < 16px 时，一旦聚焦就自动把整页放大，
@@ -2197,7 +2229,8 @@
     <div class="doll">
       <div class="doll-title">装 备 栏</div>
       <div class="doll-grid" id="dollGrid"></div>
-      <div class="doll-head"><span>角 色 属 性</span><i>滚轮查看全部</i></div>
+      <div class="doll-head" id="dollHead" role="button" tabindex="0" aria-expanded="true">
+        <span>角 色 属 性</span><i>滚轮查看全部</i><b class="fold">▾</b></div>
       <div class="inv-stats" id="invStats"></div>
     </div>
     <!-- 右列：行囊 + 材料 / 丹药 / 任务物品 -->
@@ -2279,7 +2312,7 @@
 
 <!-- 技能（S4 / P1：独立整屏层，操作全在树上） -->
 <div class="panel" id="skillPanel">
-  <div class="ph"><h3>术 法</h3><span class="x" onclick="UI.closeAll()">✕</span></div>
+  <div class="ph"><h3>术 法</h3><span class="x" onclick="UI.closeSkill()" title="返回山海录">✕</span></div>
   <div class="pb sk-wrap">
     <div class="sk-list" id="skList"></div>
     <div id="skDraft"></div>

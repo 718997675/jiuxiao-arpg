@@ -342,7 +342,9 @@ const UI = {
       else if (k === 'tab') { this.toggleMenu(); e.preventDefault(); }
       else if (k === 'escape') {
         const mp = document.getElementById('menuPanel');
-        if (mp && mp.classList.contains('open')) this.closeMenu();
+        const sp = document.getElementById('skillPanel');
+        if (sp && sp.classList.contains('open')) this.closeSkill();
+        else if (mp && mp.classList.contains('open')) this.closeMenu();
         else this.closeAll();
       }
     });
@@ -352,10 +354,13 @@ const UI = {
     if (mTabs) mTabs.addEventListener('click', e => {
       const b = e.target.closest('[data-mtab]');
       if (!b || b.dataset.mtab === this.menuTab) return;
-      /* 术法树是整屏层，没有可嵌进菜单的 DOM：收起菜单直接开 */
+      /* 术法树是整屏层，没有可嵌进菜单的 DOM：收起菜单直接开。
+       * 记住是从哪一页点进来的 —— 术法里的 ✕ 要能回到那一页，
+       * 而不是把整个山海录一起关掉（玩家的实际抱怨）。 */
       if (b.dataset.mtab === 'skill') {
+        const back = this.menuTab || 'bag';
         this.closeMenu();
-        this.openSkill();
+        this.openSkill(back);
         try { SFX.ui(); } catch (err) { }
         return;
       }
@@ -1211,8 +1216,14 @@ const UI = {
 
   openMenu(tab) {
     if (!Game.state) return;
-    /* 术法不在菜单里了（整屏层）：老调用点照旧传 'skill'，在这里转一道 */
-    if (tab === 'skill') { this.openSkill(); return; }
+    /* 术法不在菜单里了（整屏层）：老调用点照旧传 'skill'，在这里转一道。
+     * 菜单开着的时候转过去，要记住来源页，关术法时退回来。 */
+    if (tab === 'skill') {
+      const mp0 = document.getElementById('menuPanel');
+      const back = (mp0 && mp0.classList.contains('open')) ? (this.menuTab || 'bag') : null;
+      this.openSkill(back);
+      return;
+    }
     const p = document.getElementById('menuPanel');
     if (!p) return;
     const id = tab || this.menuTab || 'bag';
@@ -1372,9 +1383,36 @@ const UI = {
     this.tooltipEl.style.display = 'none';
   },
 
+  /* 「角色属性」折叠开关（手机专用诉求）：
+   * 行囊页左列 = 装备栏 + 常驻属性，属性有 20 多行，展开时会把右边的行囊
+   * 整个顶到屏幕外，玩家以为「行囊没了」。手机上默认收起，点标题行展开。
+   * 类挂在 .doll 上（renderDoll 只重画 #dollGrid，不会把类冲掉）。 */
+  bindDollFold() {
+    const head = document.getElementById('dollHead');
+    const doll = document.querySelector('#invPanel .doll');
+    if (!head || !doll || head._foldBound) return;
+    head._foldBound = true;
+    if (typeof IS_TOUCH !== 'undefined' && IS_TOUCH && !doll._foldInit) {
+      doll._foldInit = true;
+      doll.classList.add('fold');
+    }
+    const sync = () => head.setAttribute('aria-expanded', doll.classList.contains('fold') ? 'false' : 'true');
+    const toggle = () => {
+      doll.classList.toggle('fold');
+      sync();
+      try { SFX.ui(); } catch (e) { }
+    };
+    sync();
+    head.addEventListener('click', toggle);
+    head.addEventListener('keydown', e => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); }
+    });
+  },
+
   renderInventory() {
     const s = Game.state;
     if (!s) return;
+    this.bindDollFold();
     this.renderDoll();
     const tab = this.invTab || 'equip';
     /* 排序 / 分解 / 图鉴 只对「装备」栏有意义，其余栏位收起 */
@@ -2369,11 +2407,14 @@ const UI = {
 
   /* P1：技能页从「山海录」里独立出来，做成整屏层。
    * 原因很具体：菜单内容宽 842，扣掉右侧卡只剩 544，而三系并排的树要 752，
-   * 只能缩到 70%。整屏之后按 100% 显示，再加滚轮缩放 + 拖拽平移兜住更大的屏。 */
-  openSkill() {
+   * 只能缩到 70%。整屏之后按 100% 显示，再加滚轮缩放 + 拖拽平移兜住更大的屏。
+   * backTab：从菜单的「术法」页签点进来时传入来源页；关窗时回到那一页。
+   * 传 null / 不传 = 独立打开，关窗就是全关。 */
+  openSkill(backTab) {
     if (!Game.state) return;
     const p = document.getElementById('skillPanel');
     if (!p) { this.openMenu('talent'); return; }
+    this.skBackTab = (typeof backTab === 'string' && backTab) ? backTab : null;
     /* 保险：万一它曾被搬进菜单容器 / 原籍隐藏区，先送回 body，否则 open 了也看不见 */
     if (p.parentElement && (p.parentElement.id === 'menuBody' || p.parentElement.id === 'panelHome')) {
       p.classList.remove('embed');
@@ -2384,6 +2425,17 @@ const UI = {
     p.classList.add('open');
     this.renderSkillPanel();
     try { SFX.ui(); } catch (e) { }
+  },
+
+  /* 关术法：从山海录点进来的 → 回到来源页；否则关掉一切。
+   * 之前这里直接 closeAll()，玩家从菜单进术法、点 ✕ 会把整个菜单也带走。 */
+  closeSkill() {
+    const p = document.getElementById('skillPanel');
+    const back = this.skBackTab;
+    this.skBackTab = null;
+    if (p) p.classList.remove('open');
+    if (back) this.openMenu(back);
+    else this.closeAll();
   },
 
   /* 属性分组（v1.3.0 抽出）：属性面板与背包「详细属性」共用同一份口径，

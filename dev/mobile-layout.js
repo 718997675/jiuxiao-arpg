@@ -32,7 +32,7 @@ const VIEWPORTS = LIVE ? [
   { name: '窄屏-竖', w: 320, h: 568 }
 ];
 
-const TABS = ['bag', 'talent', 'stat', 'quest', 'codex', 'forge', 'save', 'set', 'help'];
+const TABS = ['bag', 'talent', 'stat', 'quest', 'codex', 'forge', 'save', 'set', 'help', 'skill'];
 
 (async () => {
   const browser = await puppeteer.launch({
@@ -99,8 +99,11 @@ const TABS = ['bag', 'talent', 'stat', 'quest', 'codex', 'forge', 'save', 'set',
           const canY = /auto|scroll/.test(cs.overflowY), canX = /auto|scroll/.test(cs.overflowX);
           const ellipsis = cs.textOverflow === 'ellipsis';   // 故意省略号截断
           const vis = cs.overflow === 'visible';             // 子元素外溢不裁切
-          const clipX = dx > 4 && !canX && !ellipsis && !vis;
-          const clipY = dy > 4 && !canY && !ellipsis && !vis;
+          /* touch-action:none = 「手势由 JS 接管」的视口（术法树 / 天赋轮盘），
+           * 内容比容器大是设计如此，靠拖动平移，不算裁切 */
+          const gesture = cs.touchAction === 'none';
+          const clipX = dx > 4 && !canX && !ellipsis && !vis && !gesture;
+          const clipY = dy > 4 && !canY && !ellipsis && !vis && !gesture;
           if (clipY || clipX) {
             bad.push((el.id ? '#' + el.id : '.' + (el.className || '').toString().split(' ')[0])
               + (clipY ? ' 纵+' + dy : '') + (clipX ? ' 横+' + dx : ''));
