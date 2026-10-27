@@ -1205,9 +1205,14 @@ const Game = {
     return (sk && sk.v) || 0;
   },
 
-  /* 可用技能点：每级 1 点，每升 1 级技能花 1 点（1→5 共 4 点）。
-   * [P2] 取向也要花点，一并从这里扣 —— 否则分支等于白送，
-   * 「12 个技能装不满 60 级」的取舍就不成立了。 */
+  /* 可用技能点：总供给 = 等级 × 1.5（skillPointPool），再扣掉三笔已投：
+   *   · 主动技能等级（每级 1 点，1→10 共 9 点）
+   *   · 取向 / 变体（各 1 点）
+   *   · 被动与关键被动（每级 1 点）
+   * [P2] 供给从「等级 × 1」抬到 ×1.5 是配合上限 10 级的：不抬的话
+   * 5 个技能位拉满要 45 点，40 级根本分不出来，只会从「都弱」变成「养不起」。
+   * 只留一个池子（不按方案 §8 拆技能点 / 天赋点）：天赋点已有独立系统，
+   * 再拆一次总和会到 130 点，正好能点满全树 —— 取舍就没了。 */
   skillPoints() {
     const s = this.state;
     let spent = 0;
@@ -1216,7 +1221,10 @@ const Game = {
     if (typeof this.branchSpent === 'function') spent += this.branchSpent();
     /* [P2] 被动 / 关键被动：每级 1 点，一并从可用池里扣 */
     if (typeof this.passiveSpent === 'function') spent += this.passiveSpent();
-    return Math.max(0, (s ? s.level : 1) - spent);
+    const pool = (typeof skillPointPool === 'function')
+      ? skillPointPool(s ? s.level : 1)
+      : (s ? s.level : 1);
+    return Math.max(0, pool - spent);
   },
 
   /* ======================================================= */
@@ -2993,7 +3001,12 @@ const Game = {
      * 与旧机制变体都不再参与 —— 两套并存会互相叠乘，数值直接失控。
      * 口径收敛在 effSkillMods 里，面板预览与测试都读同一个函数。 */
     const smod = this.effSkillMods(id);
-    const lvMul = 1 + SKILL_LV_STEP * (Math.max(1, this.skillLevel(id)) - 1);
+    /* [P2] 等级倍率：唯一口径 skillLvMul（1~10 每级 8% / 11~15 4% / 16~20 2%）。
+     * 以前这里是「1 + 每级固定 8%」，20 级会到 2.52 倍；
+     * 面板预览与这里必须读同一个函数，否则「卡上 2.02 倍、打出来 2.52 倍」。 */
+    const lvMul = (typeof skillLvMul === 'function')
+      ? skillLvMul(this.skillLevel(id))
+      : 1;
     /* 常驻（变体）：自动施放的那一次按半数值结算 —— 「不用按」的代价就在这里，
      * 否则等于白送一倍强度。 */
     const autoCast = !!this._autoCast;

@@ -118,11 +118,15 @@ Object.assign(UI, {
     const s = Game.state;
     const order = SKILL_ORDER[s.cls] || [];
     const pts = Game.skillPoints();
+    /* [P2] 供给与三笔投入都要摊开写：上限抬到 10 级之后「点花在哪了」
+     * 比之前更重要 —— 玩家看到「60 点 · 已投 47」才知道还能点几级 */
+    const pool = (typeof skillPointPool === 'function') ? skillPointPool(s.level) : s.level;
     /* 已投账本：等级点数与分支点数分开写，玩家能看出「点花在哪了」 */
     const skState = Game.skillState();
     let lvSpent = 0;
     for (const sid in skState) lvSpent += Math.max(0, (skState[sid].lv || 1) - 1);
     const brSpent = (typeof Game.branchSpent === 'function') ? Game.branchSpent() : 0;
+    const pasSpent = (typeof Game.passiveSpent === 'function') ? Game.passiveSpent() : 0;
     /* [C3] 未确认改动条 */
     const sdf = document.getElementById('skDraft');
     if (sdf) sdf.innerHTML = this.draftBarHTML('skill');
@@ -141,8 +145,8 @@ Object.assign(UI, {
     }
 
     let h = `<div class="sk-top">
-      <span id="skPtsTxt">可用技能点 <b>${pts}</b></span>
-      <span class="sk-spent" title="等级每升 1 级消耗 1 点；每条取向 1 点；精研与变体不消耗技能点">投入 ${lvSpent} 级 · 分支 ${brSpent}</span>
+      <span id="skPtsTxt">可用技能点 <b>${pts}</b><i class="sk-pool">/${pool}</i></span>
+      <span class="sk-spent" title="供给 = 角色等级 × 1.5；升级 1 级 1 点、每条取向 1 点、被动每级 1 点；精研与变体不消耗技能点">投入 等级 ${lvSpent} · 分支 ${brSpent} · 被动 ${pasSpent}</span>
       <span class="sk-respec"><button class="vb" id="skRespec" title="退光全部技能等级、取向与被动（阶梯收费，每洗一次涨一档）">洗点 ${Game.treeRespecFee ? Game.treeRespecFee() : '?'} 金</button></span>
       <span class="sk-bdbtn"><button class="vb${this.skBuilds ? ' on' : ''}" id="skBuilds" aria-pressed="${this.skBuilds ? 'true' : 'false'}"
         title="按当前存档算三套最省事的流派（契合度，不是强度榜）">推荐流派</button></span>
@@ -589,7 +593,8 @@ Object.assign(UI, {
     const smod = mergeSkillMods(Game.skillMod(id),
       (typeof Game.branchMods === 'function' ? Game.branchMods(id) : null),
       (typeof Game.formMods === 'function' ? Game.formMods(id) : null));
-    const lvMul = 1 + SKILL_LV_STEP * (lv - 1);
+    /* [P2] 等级倍率必须与 castSkill 同口径（skillLvMul 分段曲线） */
+    const lvMul = (typeof skillLvMul === 'function') ? skillLvMul(lv) : 1;
     const spow = (smod ? 1 + (smod.dmg || 0) / 100 : 1) * lvMul;
     const dmgTxt = Math.round(s.stats.atk * sk.mult * spow);
     const desc = (sk.desc || '').replace(/\{dmg\}/g, '<b style="color:#ffe9a8">' + dmgTxt + '</b>');
@@ -1082,8 +1087,10 @@ Object.assign(UI, {
         : (locked ? reqLv + '级' : (lv > 0 ? lv : n.max));
       /* 等阶比已投高 = 身上有「+技能等级」的加成，角标说清楚，
        * 不然玩家会拿这个数字去对分支门槛（门槛看的是已投） */
-      const badgeTip = (n.kind === 'active' && lv > invLv)
-        ? `等阶 ${lv} = 投入 ${invLv} + 加成 ${lv - invLv}（分支门槛以投入等级 ${invLv} 计）` : '';
+      const badgeTip = full
+        ? `已满级 ${isPas ? lv : invLv}/${n.max}`
+        : (n.kind === 'active' && lv > invLv)
+          ? `等阶 ${lv} = 投入 ${invLv} + 加成 ${lv - invLv}（分支门槛以投入等级 ${invLv} 计）` : '';
       const attr = n.kind === 'active'
         ? `data-skpick="${n.id}"`
         : `data-sktpas="${n.id}" data-sktname="${n.name}"`;

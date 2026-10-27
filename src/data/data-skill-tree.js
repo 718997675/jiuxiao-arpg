@@ -22,9 +22,10 @@
  * ============================================================ */
 
 const SKILL_TREE = {
-  /* 目标数值：等级 10 → 5，每级 +16%（5 级满 +80%，与旧 10×8% 持平） */
-  lvMax: 5,
-  lvStep: 16,
+  /* [P2] 等级上限 5 → 10，与 SKILL_LV_MAX 同源（两处写死必然有一处忘记改：
+   * 面板写 5、接口放 10，玩家点不到满级还以为卡了）。
+   * `lvStep` 已删 —— 每级加多少只有 skillLvMul() 一个口径。 */
+  lvMax: (typeof SKILL_LV_MAX === 'number' ? SKILL_LV_MAX : 10),
   /* 分支解锁门槛与点数 */
   pickAt: 3,      // 精研到 3 级自动给；取向需技能 3 级
   formAt: 5,      // 变体需技能 5 级
@@ -982,7 +983,8 @@ function skillNodeGate(id, opts) {
   };
 }
 
-/* 把某个技能的「满配花费」算出来：等级 4 点 + 取向 1 + 变体 1 = 6 */
+/* 把某个技能的「满配花费」算出来：[P2] 等级 9 点 + 取向 1 + 变体 1 = 11。
+ * 别再写死 6 —— 上限改过一次（5→10），写死的数字会让面板上的「还需 N 点」全部错位。 */
 function skillFullCost() {
   return (SKILL_TREE.lvMax - 1) + SKILL_TREE.branchCost.pick + SKILL_TREE.branchCost.form;
 }

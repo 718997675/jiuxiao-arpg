@@ -420,16 +420,38 @@ function barSetIcon(i, size) {
   return (typeof skillIconSvg === 'function') ? skillIconSvg(key, size || 16) : '';
 }
 
-/* 技能等级：每级 +8% 伤害（也放大治疗 / 护盾 / 召唤伤害）。
+/* 技能等级上限：10（点出来的那一档）。
  *
- * 上限 5（曾经是 10）。为什么改：三层分支（精研 / 取向 / 变体）让「点数
- * 该往哪花」变成了真正的取舍，而 1→10 级要吃掉 9 点，等于把整棵树的分支
- * 全挤掉 —— 满配一个技能 6 点（4 级 + 取向 1 + 变体 1）才是设计口径
- * （SKILL_TREE.lvMax = 5，两边必须一致，否则面板写 5、接口放 10）。
- * 老档 lv 6~10 在 normalizeProgress 里压到 5，多出的点由派生的
- * skillPoints()（= 等级 − 已投）自动退回，不需要单独写退款逻辑。 */
-const SKILL_LV_STEP = 0.08;
-const SKILL_LV_MAX = 5;
+ * 曾经 10 → 压到 5 → [P2] 回到 10。压到 5 的理由是「8 格动作条摊薄了点数，
+ * 1→10 要吃掉 9 点，分枝就没得点了」；现在动作条收到 5 格（左键 + 1~4）、
+ * 点数集中（见 SKILL_POINT_RATE），单个技能养到 10 级才是「这是我的主输出」。
+ *
+ * 数值成长**不在这个文件里写死**：唯一口径是 skillLvMul(lv)（分段曲线，
+ * 1~10 每级 8%、11~15 每级 4%、16~20 每级 2% → 20 级 2.02 倍）。
+ * 战斗（castSkill）与面板预览读同一个函数，SKILL_LV_STEP 已随 P2 删除。
+ *
+ * 老档 lv 6~10 曾经在 normalizeProgress 里被压到 5，压掉的那些级数补不回来
+ * （点也没留下）；从现在起 clamp 的上界直接读这里，不再写死数字。 */
+const SKILL_LV_MAX = 10;
+
+/* 技能点供给：角色等级 × 1.5（40 级 60 点）。
+ *
+ * 为什么必须和「上限 10」同时改：5 个技能位全部点到 10 级要 45 点、
+ * 加上每条取向 / 变体各 1 点共 55 点；如果还是「1 级 1 点」的 40 点，
+ * 改完只会从「每个都弱」变成「一个都养不起」。
+ *
+ * 60 点 vs 点满整棵树（12 主动 × 9 + 21 点被动 = 129 点）≈ 46%，
+ * 所以取舍还在，只是取舍从「点哪条线」变成了「点多少」。
+ * 方案 §8 建议「技能点 / 天赋点拆成两套」，这里**没有拆**：
+ * 天赋点已有独立系统（Game.talentPoints），再拆一次总和会到 130 点
+ * ≈ 点满全树，取舍直接消失。 */
+const SKILL_POINT_RATE = 1.5;
+
+/* 某角色等级能拿到的技能点总数（不含已投，扣减在 Game.skillPoints 里） */
+function skillPointPool(level) {
+  const n = Math.max(1, Math.round(Number(level) || 1));
+  return Math.floor(n * SKILL_POINT_RATE);
+}
 
 function mergeSkillMods() {
   let out = null;
@@ -657,8 +679,8 @@ const SKILL_ARCHETYPE = {
  * → 20 级约 2.02 倍。原来单一 SKILL_LV_STEP=0.08 全程 8% 会到 2.52 倍，
  * 再乘数量轴 DPS 会到 7~12 倍。
  *
- * 【P0 只提供函数，不接线】：`skillLvMul()` 现在没有任何调用点，
- * 战斗仍按 SKILL_LV_STEP 算（P2 才切），test-skill-p0 会钉住这一点。
+ * 【P2 已接线】：`castSkill` 与面板预览都调 `skillLvMul()`，
+ * 不再有第二套「每级 +N%」的算式（原来的 SKILL_LV_STEP 已删）。
  * ============================================================ */
 const SKILL_TIERS = {
   baseMax: 10,     // 玩家投入能到的等级

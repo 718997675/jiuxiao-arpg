@@ -596,8 +596,7 @@ const UI = {
     /* 动作条键位：① 号位是左键，②~⑤ 是 1~4（[P1] 从 8 格收敛而来） */
     const barKeyText = barKeys.slice(1).join(' / ');
     const barSets = (typeof SKILL_BAR_SETS === 'number') ? SKILL_BAR_SETS : 2;
-    const lvStep = (typeof SKILL_LV_STEP === 'number') ? Math.round(SKILL_LV_STEP * 100) : 8;
-    const lvMax = (typeof SKILL_LV_MAX === 'number') ? SKILL_LV_MAX : 5;
+    const lvMax = (typeof SKILL_LV_MAX === 'number') ? SKILL_LV_MAX : 10;
 
     /* 每一节先按原样拼成 html，末尾再从 <h4> 里反解出「短名」给左侧页签用
      * —— 这样新增一节只要写一次 sec(...)，不用再维护一份页签名列表。 */
@@ -789,7 +788,7 @@ const UI = {
       }
     }
     const pendAll = behPendNames.concat(pasPendNames);
-    /* [P0] 新版技能位 / 等级台阶：只展示。文案全部现读 SKILL_ARCHETYPE / SKILL_TIERS，
+    /* [P2] 技能位与等级台阶都已接线：文案全部现读 SKILL_ARCHETYPE / SKILL_TIERS，
      * 面板里那份预览用的是同一批数据 —— 改表两处一起变，不用维护第二份清单。 */
     const ARCH = (typeof SKILL_ARCHETYPE !== 'undefined') ? SKILL_ARCHETYPE : null;
     const TIERS = (typeof SKILL_TIERS !== 'undefined') ? SKILL_TIERS : null;
@@ -803,19 +802,23 @@ const UI = {
       .filter(s => TIERS.visible.indexOf(s.lv) >= 0)
       .map(s => `<b>Lv${s.lv}</b> ${s.name}`).join(' · ') : '';
     const tierMul = (typeof skillLvMul === 'function' && TIERS) ? skillLvMul(TIERS.cap) : 2.02;
+    const pointPool = (typeof skillPointPool === 'function') ? skillPointPool(40) : 60;
+    /* 曲线读数兜底：数据表缺失时说明页不许整块崩（宁可按旧数字写） */
+    const CV = (TIERS && TIERS.curve) || [{ pct: 8 }, { pct: 4 }, { pct: 2 }];
     const archRows = (ARCH && TIERS) ? [
-      row('技能位（新版预览）', `从 12 技能平铺收敛到 <b>5 个功能位</b>（${slotLine}）：点数集中，每个技能才养得起来。` +
+      row('技能位', `从 12 技能平铺收敛到 <b>5 个功能位</b>（${slotLine}）：点数集中，每个技能才养得起来。` +
         `三职业内容各自独立，⑤ 号位不可互换 —— 刀客兵形（三种刀式 + 断岳斩，全程不产生任何独立单位）、` +
         `法师元素法相（只强化主元素）、道士限时召唤（技能产物，不是宠物）。` +
-        `<b>动作条已切到 ${barSlots} 格：左键 = ①，${barKeyText} = ②~⑤</b>；` +
-        `每格只能放本位技能（越位会被打回）。台阶数值仍只在展示层，战斗读级数在 P2。${archHTML}`),
-      row('等级台阶（新版预览）', `1→10 级为圆满：${tierLine}；11→20 为精进层（来自装备词缀，不占技能点）。` +
-        `伤害曲线分段：1~10 每级 ${TIERS.curve[0].pct}%、11~15 每级 ${TIERS.curve[1].pct}%、` +
-        `16~20 每级 ${TIERS.curve[2].pct}%，20 级合计约 <b>${tierMul} 倍</b>` +
-        `（若全程按 8% 算会到 2.52 倍，再乘数量轴 DPS 会爆）。当前技能等级上限仍是 ${lvMax}`)
+        `<b>动作条 ${barSlots} 格：左键 = ①，${barKeyText} = ②~⑤</b>；` +
+        `每格只能放本位技能（越位会被打回）。${archHTML}`),
+      row('等级台阶', `1→${TIERS.baseMax} 级为圆满：${tierLine}；11→${TIERS.cap} 为精进层（来自装备词缀，不占技能点）。` +
+        `伤害曲线分段：1~10 每级 ${CV[0].pct}%、11~15 每级 ${CV[1].pct}%、` +
+        `16~20 每级 ${CV[2].pct}%，20 级合计约 <b>${tierMul} 倍</b>` +
+        `（若全程按 8% 算会到 2.52 倍，再乘数量轴 DPS 会爆）。` +
+        `技能等级上限 <b>${lvMax}</b>，点满一个技能 ${lvMax - 1} 点；40 级共 <b>${pointPool}</b> 点技能点`)
     ] : [];
     H.push(sec('七 · 术法与变体', `${skillIds.length} 个技能 · ${coreN} 条精研 · ${pickN} 条取向 · ${varN} 个变体 · ${pasN} 条被动 · ${bdN} 套流派`, [
-      row('技能', `三职业各 ${Math.round(skillIds.length / 3)} 个，按等级领悟。技能点每级 1 点，技能等级上限 ${lvMax}，每级 +${lvStep}% 伤害。详情卡的「升级」与「−1」同样先进入「未确认」条，确认后写入存档`),
+      row('技能', `三职业各 ${Math.round(skillIds.length / 3)} 个，按等级领悟。技能点 = 角色等级 × 1.5（40 级 ${pointPool} 点），升级 1 级花 1 点；技能等级上限 ${lvMax}，伤害按分段曲线走（1~10 每级 ${CV[0].pct}%、11~15 ${CV[1].pct}%、16~20 ${CV[2].pct}%）。详情卡的「升级」与「−1」同样先进入「未确认」条，确认后写入存档`),
       ...archRows,
       row('精研', `每技能一条，等级达到 ${SKILL_TREE.pickAt} 后自动生效，不消耗技能点，效果随等级提升。改写对象为战斗行为：斩杀线、攻击段数、作用范围、附带的持续伤害`),
       row('取向', `技能等级达到 ${SKILL_TREE.pickAt} 后解锁，二选一，消耗 ${SKILL_TREE.branchCost.pick} 点。已选项可单独取消并返还点数，更换取向无需重置技能树`),

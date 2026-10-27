@@ -8,9 +8,11 @@
  *   2. 1→10 台阶表没有「连续 3 级纯数值」的空档，且 20 级倍率约 2.0 而不是 2.52
  *   3. 三线并行：每个节点都有 reqLv / needPts，且**没有任何硬前置**
  *      （到级 + 该线点数够就一定能点，不需要先点同线的另一个节点）
- *   4. P0 只加数据不接线：skillLvMul 没有调用点，SKILL_LV_MAX 仍是 5
+ *   4. [P2] 已接线：skillLvMul 必须进战斗、SKILL_LV_MAX 必须是 10，
+ *      且旧的 SKILL_LV_STEP 必须彻底消失（两套曲线并存必然对不上）
  *
- * 4 是刻意的「反向断言」：P2 接进 castSkill 时这条会红，提醒把注释一起改。
+ * 4 原本是刻意的「反向断言」（P0/P1 阶段不许接线）；P2 接线时它按计划变红，
+ * 这里已经翻成正向：**接线是必须的，退回老公式才是 bug**。
  * ============================================================ */
 const fs = require('fs');
 const path = require('path');
@@ -26,7 +28,8 @@ const SKILL_ARCHETYPE = pick('SKILL_ARCHETYPE');
 const SKILL_TIERS = pick('SKILL_TIERS');
 const SKILL_TREE = pick('SKILL_TREE');
 const SKILL_LV_MAX = pick('SKILL_LV_MAX');
-const SKILL_LV_STEP = pick('SKILL_LV_STEP');
+const SKILL_POINT_RATE = pick('SKILL_POINT_RATE');
+const skillPointPool = pick('skillPointPool');
 const SKILL_BAR_SLOTS = pick('SKILL_BAR_SLOTS');
 const skillLvMul = pick('skillLvMul');
 const skillArchOrphans = pick('skillArchOrphans');
@@ -230,19 +233,35 @@ ok(skillLineSpent('warrior', '狂战', spent) === 7, '狂战线已投 7 点', sk
 ok(skillLineSpent('warrior', '守护', spent) === 0, '没投的线是 0 点');
 ok(skillLineSpent('warrior', '不存在', spent) === 0, '未知线返回 0');
 
-/* ---------------- 6. P0 不接线 ---------------- */
-console.log('六、边界（P1 已放开技能条，关卡台阶仍未接）');
-ok(SKILL_LV_MAX === 5, 'SKILL_LV_MAX 仍是 5（P2 才升 10）', SKILL_LV_MAX);
-ok(near(SKILL_LV_STEP, 0.08), 'SKILL_LV_STEP 仍是 0.08（P2 才分段）', SKILL_LV_STEP);
-/* [P1] 边界变了：技能条**必须**读功能位数据（8→5 收敛 + 越位拦截 + 老档迁移），
- * 但「等级台阶」仍只许展示 —— skillLvMul 不许进战斗，等 P2 接。 */
+/* ---------------- 6. P2 接线边界 ---------------- */
+console.log('六、边界（技能条 5 格、等级台阶已接线）');
+ok(SKILL_LV_MAX === 10, 'SKILL_LV_MAX = 10（P2 已升）', SKILL_LV_MAX);
+ok(SKILL_TREE.lvMax === SKILL_LV_MAX, '技能树上限与 SKILL_LV_MAX 同源（不许两处各写一个数）',
+  SKILL_TREE.lvMax);
+ok(SKILL_TIERS.baseMax === SKILL_LV_MAX, '台阶表 baseMax 也要跟上', SKILL_TIERS.baseMax);
+/* 旧的单一曲线必须删干净：留着就一定有人接着用，两套曲线必然对不上 */
+ok(vm.runInContext('typeof SKILL_LV_STEP', ctx) === 'undefined',
+  'SKILL_LV_STEP 已删除（每级加多少只认 skillLvMul）');
 const readSrc = f => fs.readFileSync(path.join(ROOT, f), 'utf8');
 const combatFiles = ['src/game.js', 'src/core/save.js'];
 const wired = combatFiles.filter(f => readSrc(f).indexOf('skillLvMul') >= 0);
-ok(wired.length === 0, 'skillLvMul 还不许进战斗/存档（P2 才接）', wired.join(','));
+ok(wired.indexOf('src/game.js') >= 0, '战斗必须读 skillLvMul（castSkill 的等级倍率）', wired.join(','));
+ok(readSrc('src/ui-skills.js').indexOf('skillLvMul') >= 0, '面板预览也必须读同一个函数');
 ok(SKILL_BAR_SLOTS === 5, '动作条必须收敛到 5 格', SKILL_BAR_SLOTS);
 const migrateWired = combatFiles.filter(f => readSrc(f).indexOf('skillBarMigrate') >= 0);
 ok(migrateWired.length === 2, '战斗与存档都要用 skillBarMigrate（格位 = 功能位）', migrateWired.join(','));
+
+/* 点数供给：等级 × 1.5，且必须够把 5 个技能位拉满 */
+ok(SKILL_POINT_RATE === 1.5, '技能点供给倍率 = 1.5', SKILL_POINT_RATE);
+ok(skillPointPool(1) === 1, '1 级 1 点（不白送）', skillPointPool(1));
+ok(skillPointPool(40) === 60, '40 级 60 点', skillPointPool(40));
+ok(skillPointPool(40) >= 5 * (SKILL_LV_MAX - 1), '40 级点数够把 5 个技能位全部拉满（45 点）',
+  skillPointPool(40));
+/* 又不能多到「点满整棵树」：否则取舍消失 */
+{
+  const full = SKILL_ORDER.warrior.length * (SKILL_LV_MAX - 1);
+  ok(skillPointPool(40) < full, '40 级点数不许够点满全部技能（' + skillPointPool(40) + ' < ' + full + '）');
+}
 
 /* 展示侧反过来必须真的读了，否则「说明页跟着数据变」只是句空话 */
 ok(readSrc('src/ui-skills.js').indexOf('SKILL_ARCHETYPE') >= 0, '术法面板要展示新版技能位');

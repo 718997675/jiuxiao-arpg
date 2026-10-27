@@ -772,7 +772,10 @@
    * 满级的徽标变金 */
   .skt-nd.pas.own .box{border-color:#7ad0c0;box-shadow:0 0 10px rgba(122,208,192,.4),inset 0 0 12px rgba(122,208,192,.12)}
   .skt-nd.key.own .box{border-color:#a98fd0;box-shadow:0 0 12px rgba(160,120,220,.45),inset 0 0 12px rgba(160,120,220,.14)}
-  .skt-nd.max .bg{color:#ffe9a8;border-color:rgba(216,178,90,.6)}
+  /* [P2] 满级：上限抬到 10 之后「点到 10 才算满」必须一眼看得出来，
+   * 只改角标颜色太弱 —— 金环 + 实心角标，玩家在树上一扫就知道哪些还要点 */
+  .skt-nd.max .box{box-shadow:0 0 0 2px rgba(255,212,121,.45),0 0 12px rgba(255,212,121,.22)}
+  .skt-nd.max .bg{background:rgba(255,212,121,.92);color:#241c0c;font-weight:700;border-color:rgba(255,212,121,.9)}
   .skt-nd .nm{margin-top:4px;font-size:10.5px;line-height:1.2;text-align:center;color:#b6ab92;
     max-width:86px;letter-spacing:.4px;white-space:nowrap}
   .skt-nd.key .nm{color:#b79fdc}
@@ -1019,11 +1022,14 @@
   .sd-meta{font-size:10px;color:#8a8474;margin:7px 0 10px;padding:6px 9px;background:rgba(0,0,0,.28);
     border-left:2px solid rgba(216,178,90,.4);line-height:1.7}
   .sd-lv{display:flex;align-items:center;gap:9px;margin-bottom:10px}
-  .sk-pips{display:flex;gap:3px;flex:1}
-  .sk-pip{width:8px;height:8px;border:1px solid rgba(216,178,90,.4);transform:rotate(45deg)}
+  /* [P2] 10 格：8px + 3px 间距会顶到 107px，卡窄时把「升级」按钮挤出去 —— 缩到 7px / 2px */
+  .sk-pips{display:flex;gap:2px;flex:1}
+  .sk-pip{width:7px;height:7px;border:1px solid rgba(216,178,90,.4);transform:rotate(45deg)}
   .sk-pip.on{background:#ffd479;box-shadow:0 0 5px rgba(255,212,121,.55)}
   .sk-lvt{font-size:10.5px;color:#a8a090;font-variant-numeric:tabular-nums;white-space:nowrap}
   .sk-lvt b{color:#ffd479}
+  /* 可用点 / 总供给：分母用小字，一眼看出「还剩几级」 */
+  .sk-pool{font-style:normal;font-size:10.5px;color:#8a8474;margin-left:2px}
   .sk-lvb{font-family:inherit;font-size:11px;letter-spacing:1px;padding:3px 10px;cursor:pointer;
     background:linear-gradient(180deg,rgba(216,178,90,.22),rgba(216,178,90,.08));
     border:1px solid rgba(216,178,90,.45);color:#e8d8b0;transition:.12s;white-space:nowrap}
