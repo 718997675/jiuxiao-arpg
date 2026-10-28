@@ -319,7 +319,7 @@ const WORLD_BOSSES = {
         elem: 'ice', cd: 6, warn: 0.9, desc: '高压水柱，穿透。' },
       wb_windblade: { id: 'wb_windblade', name: '风刃', mul: 2.4, shape: 'fan', range: 18, arc: 120,
         elem: 'phys', cd: 5, warn: 0.6, desc: '翼展扫出的风刃，穿透两层。' },
-      wb_dive: { id: 'wb_dive', name: '潜渊', mul: 1.8, shape: 'circle', range: 20,
+      wb_dive: { id: 'wb_dive', name: '潜渊', mul: 1.8, shape: 'circle', range: 20, at: 'target',
         elem: 'phys', cd: 8, warn: 1.4, desc: '沉进水里，再从落点砸上来。落点圆形，预警长。' }
     },
     loot: {
@@ -428,8 +428,13 @@ const WORLD_BOSSES = {
       { at: 0.66, id: 'p2', name: '盾', desc: '格挡正面，必须绕后。',
         enter: { stance: 'shield', blockFront: true },
         skills: ['wb_axecleave', 'wb_shieldbash'] },
-      { at: 0.33, id: 'p3', name: '舞干戚', desc: '斧盾同用、攻速 ×2，但每 8 秒有 3 秒硬直。',
-        enter: { stance: 'both', aspdMul: 2, staggerEvery: 8000, staggerDur: 3000 },
+      /* 第三段**不给硬直窗口**。原来写的是 `staggerEvery: 8000 / staggerDur: 3000`
+       * —— 那是八部天龙的「破绽」语言（找窗口站桩输出），与世界 Boss 的去重要求冲突。
+       * 改成「弃守全攻」：攻速翻倍、伤害 +30%、但不再格挡正面。
+       * 玩家的答案是**拉开距离 / 绕背走位**，不是「等它硬直」。
+       * `check-worldboss.js` 第十一节会拦住任何带 stagger 字样的 enter 键。 */
+      { at: 0.33, id: 'p3', name: '舞干戚', desc: '斧盾同用、攻速 ×2、伤害 +30%，但不再格挡 —— 这一阶段只能拉开打。',
+        enter: { stance: 'both', aspdMul: 2, dmgMul: 1.3 },
         skills: ['wb_axecleave', 'wb_shieldbash', 'wb_warcry'] }
     ],
     skills: {
@@ -492,7 +497,7 @@ const WORLD_BOSSES = {
         skills: ['wb_foxfire', 'wb_tailbind', 'wb_phantomdash'] }
     ],
     skills: {
-      wb_foxfire: { id: 'wb_foxfire', name: '狐火', mul: 2.4, shape: 'circle', range: 16,
+      wb_foxfire: { id: 'wb_foxfire', name: '狐火', mul: 2.4, shape: 'circle', range: 16, at: 'target',
         elem: 'fire', cd: 7, warn: 1.0, desc: '青白色的火，落点圆形，会留 3 秒余烬。' },
       wb_tailbind: { id: 'wb_tailbind', name: '尾缚', mul: 1.6, shape: 'ring', range: 20,
         elem: 'phys', cd: 9, warn: 1.3, root: 2.5, desc: '九尾环扫，命中定身 2.5 秒。伤害不高，但定住就完了。' },

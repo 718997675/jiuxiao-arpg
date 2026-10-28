@@ -2,9 +2,9 @@
 
 - 分支：`feat/act-expansion`（与本线其它改动一起合入 main）
 - 设计文档：`V2-ROADMAP.md` §18（六只设计表 / 刷新机制 / 骨架规范 / **§18.7 与八部天龙去重**）
-- 更新：2026-10-28 15:30
+- 更新：2026-10-28 16:20
 
-> 当前：M18.1 ~ M18.5 全部完成并全绿，下一步 M18.7 多阶段战斗（3 阶段切换 + 18 个招牌技能）
+> 当前：M18.1 ~ M18.5 + M18.7a（三阶段 + 18 技能 + enter 分派）完成并全绿，下一步 M18.8 掉落（或 M18.6 六套骨架）
 
 ## 一句话现状
 
@@ -28,7 +28,8 @@
 | M18.4 | 小地图组合星标 + 领域光环 | ✅ | `src/ui-minimap.js`（`drawWorldBoss` / `_starPath` / `_lift`）、`src/worldboss.js`（`makeAura` / `dropAura` / `anim`） | 本次提交 |
 | M18.5 | 领域机制：6 种玩家侧效果 | ✅ | `src/worldboss.js`（`domainTick` / `domainState` / `_domainClear` / `_applySight` / `_restoreSight` / `dim` / `domainBuff`）、`src/game.js`、`src/ui.js`、`src/ui-minimap.js` | `dev/worldboss-live.js` G 段 20 项（六种效果 + 出圈归位） |
 | M18.6 | 六套全新骨架 + 专属动画 | ⬜ | `src/actors.js`、`src/fx.js` | — |
-| M18.7 | 多阶段战斗：3 阶段 + 18 个招牌技能 + `enter` 分派 | ⬜ | `src/game.js`、`src/data/data-worldboss.js` | — |
+| M18.7a | 多阶段战斗：3 阶段切换 + 18 招牌技能（7 种 shape）+ `enter` 14 键落地 + 定身 / 格挡 / 场地 | ✅ | 新建 `src/worldboss-fight.js`、`dev/worldboss-fight.js`、`dev/worldboss-battle-live.js`；改 `src/game.js`、`src/worldboss.js`、`src/data/data-worldboss.js`、`index.html` | 本次提交 |
+| M18.7b | 骨架相关 `enter`：`tails`（九尾展开）/ `revealVuln`（真身现身受伤 ×2） | ⏸ | 等 M18.6 | — |
 | M18.8 | 掉落：必掉 1~3 传世 + 稀有材料 + 世界魂接入 | ⬜ | `src/game.js`、`src/items.js`、`src/data/data-craft.js` | — |
 | M18.9 | 说明页 / 图鉴 / README 同步 | ⬜ | `src/ui.js`、`README.md` | — |
 
@@ -211,33 +212,95 @@ C 段（小地图星标）用「画 / 不画」两张图的差异把星标**单�
 幻域压暗 0.35，压暗后星标仍有 2071 px
 ```
 
-## 下一步（M18.7，具体到行）
+## M18.7a 已交付明细（多阶段战斗）
 
-**多阶段战斗：3 阶段切换 + 18 个招牌技能 + `enter` 分派。**
+**新文件 `src/worldboss-fight.js`（全局 `WBFight`，约 560 行）**，只做三件事：
+阶段 / 出手 / 场地。**不塞进 `worldboss.js`** —— 那个文件是刷新·存档·通知·领域，
+一处都不需要 THREE 几何与 FX；混在一起会让「状态机」和「满屏特效」互相打岔。
 
-数据全在 `data-worldboss.js` 里（`phases[].at / enter / skills`、`skills{18 条}`），
-M18.7 只做「读它并打出来」：
+| 段 | 职责 | 关键决定 |
+|---|---|---|
+| 一、`tick(dt)` | 场地效果（毒沼 / 狐火）持续区域伤害 | 走 `damagePlayer(..., {pierce:true})`，与领域 DoT 同口径 |
+| 二、`phaseOf` / `_enterPhase` / `_applyEnter` / `_resetCombat` / `_syncAtkCd` | 三阶段切换 + `enter` 分派 | 进阶段先把「随阶段变」的字段**打回基线**再重算，否则 P3 会带着 P2 的盾 |
+| 三、`ai(e, dt, pp)` | 每技能独立 cd + 距离门槛 + 夜间限定，挑一个能打的 | 共用一个大会导致「cd 短的永远抢不到出手」 |
+| 四、`cast(e, sk, pp)` | 7 种 shape：`line / circle / fan / cone / scatter / ring / self` | 全部走 `FX.telegraph` 预警，**不新写判定框架** |
+| 五、`clear()` | 换图 / 击杀 / 到点换人 全走它 | 场地是 `life: 999` 铺的，FX 不会自己回收，必须手动摘 |
 
-1. **阶段切换**：`worldBossPhaseAt(cfg, hp/maxHp)` 已经写好并已被领域机制用上
-   （昼夜领域靠它切视野）。M18.7 要补的是**切换的那一下**：
-   播报（现在会冒出「烛九阴 狂暴」是别处复用，要换成阶段名）+ `enter` 生效 + 技能表换套。
-2. **`enter` 分派**：17 个键（`sight / heads / morph / stance / clones / pullMul / dayNightCycle` …）。
-   先做**能落地的 8 个**（视野 / 段数 / 形态 / 架式 / 分身 / 吸力倍率 / 昼夜循环 / 移速），
-   剩下的（召唤 / 场地改造）留到 M18.6 有骨架之后。
-3. **18 个技能**：`shape` 有 `line / circle / fan / cone / scatter / ring / self` 七种，
-   全部走已有的 `Game.enemySkill()` 通道（八部天龙那套 `patterns` 就在用），
-   不要新写一套判定。
-4. **警告时间**：`warn ≥ 0.5` 已经在数据里，`FX.ring` / 地面预警圈复用地下城那套。
+三条判定口径（改之前先读 `src/worldboss-fight.js` 文件头）：
 
-**不要做的事**：不要给世界 Boss 加 `stagger`（破绽窗口）—— 那是八部天龙的谜题，
-`check-worldboss.js` 第十一节会红。世界 Boss 的「答案」在领域与阶段，不在破绽。
+1. **预警画在哪，判定就按哪。** 几何在**施放瞬间**锁死，结算时只拿玩家的**当时**位置去测。
+   如果结算时还追着玩家重算几何，预警就变成装饰了。
+2. **所有判定留 0.7 米宽容**（玩家碰撞半径 0.55）。
+3. **伤害 = `e.dmg × sk.mul`**，`e.dmg` 里已经含阶段加成，这里不再乘一次。
+
+`enter` 16 个键的落地情况：
+
+| 键 | 落点 |
+|---|---|
+| `sight` | `worldboss.js` 的 `domainTick`（M18.5 已接） |
+| `dayNightCycle` | `ai()` 每 N 毫秒翻 `e.wbNight`；`nightOf()` 是唯一读口 |
+| `heads` | 技能齐射轮数 `volley()`（3 头 = 1 轮 / 9 头 = 3 轮） |
+| `mire` / `foxfireField` | `_addHazard` 铺一次，`e.wbSpawned` 记账防叠层 |
+| `morph` | 代偿成 `spd` ×0.8/1.5 与 `reach` ×1.3/0.8（真模型切换等 M18.6） |
+| `pullMul` | `worldboss.js` 的吸力（M18.5 已接） |
+| `aspdMul` / `dmgMul` / `stance` | `_syncAtkCd` 与 `e.dmg`，`_resetCombat` 每阶段重算 |
+| `blockFront` | `Game.damageEnemy` 读 `e.wbBlockFront`：正面 ±75° 内伤害 ×0.4 |
+| `clones` | `Game.spawnEnemy(..., e.wbId)` 生分身，逐项拆掉 `boss/wb/active` |
+| `rootOnHit` | 普攻命中写 `Game.rootT`（连普攻都定身） |
+| `regurgitate` | **不需要落字段**：P2 的主题就是技能表多了 `wb_regurgitate` |
+| `tails` / `revealVuln` | ⏸ 显式 pending，等 M18.6 骨架 |
+
+配套改动：
+
+- `Game.updateBossAI`：`e.wb` 分流到 `WBFight.ai`，**不再走** `bossPattern()` 的 patterns 池
+  （那是八部天龙八只共用的语言）；「狂怒」那套 0.6/0.3 的阶段也跳过（世界 Boss 有自己
+  的三阶段与阶段名）。
+- `Game.update`：`WBFight.tick(dt)` 在 `WorldBoss.domainTick` 之后、`hp<=0 → die()` 之前。
+- `Game.loadMap` / `WorldBoss.despawn` / `WorldBoss.onKill`：三处都调 `WBFight.clear()`。
+- `Game.rootT`：定身。移动速度直接归零（**不复用 `slow`**，那个封顶 0.85 还能走 15%），
+  冲刺一并作废，`die()` / `loadMap` 归零，buff 条单列一条「定身」。
+- `Game.damageEnemy`：`e.wbBlockFront` 正面折减（见下「决策记录」）。
+- `worldboss.js` 的视野：`dayNightCycle` 时白天回到 `sightDay`，**读 `WBFight.nightOf(e)`**，
+  不另起计时器。
+
+### 验收（三层，全绿）
+
+| 脚本 | 项数 | 查什么 |
+|---|---|---|
+| `node dev/worldboss-fight.js` | **231** | 离线（vm + THREE/FX/Game 桩）：9 个血量点 × 6 只的阶段边界、cd / 夜间限定 / 距离门槛、7 种 shape 的命中与**不**命中、场地节拍与 `pierce`、定身两个来源、enter 每个键的消费点、接线断言 |
+| `node dev/worldboss-battle-live.js` | 浏览器 | 刑天三阶段真的按 1.00/0.66/0.33 切且播报阶段名、预警真的结算掉血、**正面 37.5 / 背后 93.75（2.5 倍）**、战吼 1s→0.667s→8 秒后回 1s、九尾狐 2 个分身（血 6% / 不带 boss·wb 标记 / 出生就追人）+ 尾缚定身 2.5 秒、相柳毒沼 2.6 秒掉 1754 血 + 出圈停手 + 换图清场 |
+| `node dev/worldboss-live.js` | 浏览器 | M18.2~M18.5 的老回归，本次改动后复跑仍全绿 |
+
+离线脚本的两条纪律（写进文件头了）：
+
+- `FX.telegraph` **不自动结算**，cb 存起来由测试挑着调 —— 否则「预警期间跑开」没法写。
+- `Game.damagePlayer` 只记账不扣血 —— 把「伤害数值对不对」和「判定有没有命中」分开。
+
+## 下一步（M18.8 掉落 / M18.6 骨架，二选一）
+
+**M18.8 掉落（推荐先做，工作量小、玩家感知强）**
+
+1. `WorldBoss.onKill` 现在只播报 + 记冷却，**没发奖**。接 `WORLD_BOSSES[*].loot`：
+   `uniqueMin-Max` 必掉传世 1~3 件（`data-uniques.js` 里 ilvl ≥ 40 的池子）、
+   `mats` 三种材料、`rune` 2~4 个。
+2. 传世掉落池按 `ilvl` 过滤已经写好（40 级前为空），**不要加额外开关**。
+3. `WORLD_BOSS_MATERIALS.worldsoul`（世界魂）`pending: 'M18.8'`，要进 `CRAFT_MATS`。
+4. 掉落走已有的 `Game.dropLoot` 路径，别新写一套（自动拾取 P04 要统一读它）。
+
+**M18.6 骨架（六套全新模型 + 专属动画）**
+
+- 现有骨架是给 2~3 米怪设计的，世界 Boss 放大到 4.6~5.6 倍后关节比例全错。
+- 做完之后回来补 M18.7b 的两个键（`tails` / `revealVuln`）与 `morph` 的真模型切换。
 
 ## 卡点
 
-- **无阻塞**。三个待定项按合理默认先做，等实测再调：
+- **无阻塞**。待实测再调的四个数（都已有合理默认，不要因为「感觉太难」先动）：
   1. 刷新门槛 40 级（传世掉落线）
   2. 周期 30 分钟真实时间；太稀降到 20 分钟，**不要**改成游戏内时间
   3. 九尾狐「幻域」先做成「变暗但五角星仍显示」
+  4. M18.7a 新引入的两个手感数：格挡折减 `0.4`（正面挨四成）、格挡窗口 `±75°`。
+     实测如果「绕后绕不动」就把窗口收到 ±60°，如果「绕后没意义」就把折减提到 0.3。
+     两个数都在 `Game.damageEnemy` 的 `[M18.7]` 段里，只改那里。
 
 ## 决策记录
 
@@ -269,3 +332,17 @@ M18.7 只做「读它并打出来」：
 | 2026-10-28 | 夜阶段的雾**连颜色一起压暗**，且按**绝对距离**算夜色 | 只收 `fog.far` 不改色 → 屏幕一片亮白，看着像贴图没加载。按比例算 → 各图 `fogFar` 98~196，同一只 boss 在不同图上深浅不一。改成「18 米以上只是收窄，6 米才入夜」 |
 | 2026-10-28 | 领域视野的**阶段覆盖**读 `phases[].enter.sight`，不等 M18.7 | 昼夜领域的「闭眼」本来就该随血量走；先按 `worldBossPhaseAt` 算阶段，M18.7 补真正的切换演出时不用改这里 |
 | 2026-10-28 | buff 条给领域那一条加 `noTimer`，显示「常驻」 | 它没有剩余秒数（出去就没了），写 `0.0s` 会让人以为快结束 |
+| 2026-10-28 | 战斗层单独一个文件 `src/worldboss-fight.js`，不塞进 `worldboss.js` | 后者是刷新·存档·通知·领域，一处都不需要 THREE 几何；混进去「状态机」和「满屏特效」会互相打岔，而且那个文件已经 600 行 |
+| 2026-10-28 | 世界 Boss **不走 `bossPattern()`**，走自己的 18 条技能 | patterns 是八部天龙八只共用的招式池（slam / roots / ringshot / charge）。撞上就等于「又一只八部」，`check-worldboss` 第十一节会红 |
+| 2026-10-28 | 阶段切换时**先把随阶段变的字段打回基线**再重算 | 不打回的话 P3 会带着 P2 的正面格挡，玩家绕到背后也打不动，而且找不到原因（数据里明明写了 P3 没有 `blockFront`） |
+| 2026-10-28 | 刑天 P3 的 `staggerEvery/staggerDur` 改成 `dmgMul: 1.3` | 硬直窗口是八部天龙的「破绽」语言（等窗口站桩）。世界 Boss 的答案是**拉开距离 / 绕背**，不是等它硬直。`check-worldboss` 现在会拦住任何带 stagger 字样的 enter 键 |
+| 2026-10-28 | `blockFront` 判**玩家站位角度**，不判「这一击从哪来」 | 本作伤害大多是范围 / 追踪，没有单一来向；站位是玩家唯一能控制的东西。窗口 ±75°、折减到 40%：再大等于永远格挡（谜题消失），再小转个身就躲掉（盾变装饰）；全免则 19 万血拖成十分钟 |
+| 2026-10-28 | `blockFront` **不分元素** | 只挡物理的话换法术就绕过去了 —— 那又变成「猜元素」，与八部的去重直接冲突。这里的答案只有站位 |
+| 2026-10-28 | 定身写 `Game.rootT`，**不复用 `playerSlow`** | 减速封顶 0.85，拉满还能走 15%，那不是「定住」。数据里 `root: 2.5` 承诺的是「动不了」 |
+| 2026-10-28 | 定身同时作废 `dashT` | 不然被定住的瞬间按一下冲刺就跑了（冲刺那段位移不读移速），「定住」变成一句空话 |
+| 2026-10-28 | 战吼加速走 `wbHaste/wbHasteT`，**不借 `aspdT/aspdMul`** | 那一对是**压制**通道（`atkCd -= dt*(1-aspdMul)`），写 0.34 是「慢 34%」，用来表达「快 50%」正好相反。而且它到期不清零，会把加速带到下一只 boss 身上 |
+| 2026-10-28 | 场地效果的 `t` 初值给 `every`，不是 0 | 初值 0 会让进圈那一帧白挨一下。领域 DoT 的累加器也是「先等一个间隔」，同一场战斗里两套节拍必须一致，否则玩家觉得有一边是 bug |
+| 2026-10-28 | 场地伤害走 `pierce`，与领域 DoT 同口径 | 「每秒扣多少」是对玩家的一句承诺，不该被护甲吃掉 |
+| 2026-10-28 | 分身用 `spawnEnemy(..., e.wbId)` 生，再逐项拆掉 `boss/wb/active` | 分身和本尊**长得一模一样**才是谜题前提。代价是 spawnEnemy 会走 isBoss 分支（顶栏血条、`BOSSES[bid]` 查询），必须拆干净，否则 `onKill` 直接抛异常 |
+| 2026-10-28 | 昼夜视野读 `WBFight.nightOf(e)`，不另起计时器 | 两套计时器一定漂，漂了的表现是「视野亮了但暗潮还放得出来」。谁维护 `e.wbNight` 就只让谁算 |
+| 2026-10-28 | `enter.regurgitate` 不落字段 | P2 的「反刍」就是技能表多了 `wb_regurgitate`。写一个没人读的 `e.wbRegurgitate` 只会让以后的人以为有东西没接上 |

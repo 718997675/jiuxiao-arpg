@@ -284,10 +284,9 @@ const ENTER_KEYS = {
   pullMul: '吸力倍率（饕餮）',
   regurgitate: '启用反刍（饕餮 P2）',
   aspdMul: '攻速倍率（饕餮 P3 / 刑天 P3）',
+  dmgMul: '伤害倍率（刑天 P3 弃守全攻）',
   stance: '持械姿态 axe / shield / both（刑天）',
   blockFront: '正面格挡（刑天 P2）',
-  staggerEvery: '每隔多久硬直一次（毫秒）',
-  staggerDur: '硬直时长（毫秒）',
   clones: '分身数量（九尾狐 P1）',
   tails: '展开的尾数（九尾狐）',
   rootOnHit: '命中定身秒数（九尾狐 P2）',
@@ -299,6 +298,14 @@ for (const id of ORDER) {
   for (const p of WB[id].phases) for (const k in p.enter) usedKeys.add(k);
 }
 for (const k of usedKeys) ok(!!ENTER_KEYS[k], `enter 键「${k}」在词表里`, k);
+/* enter 键里**不许出现 stagger 字样**。
+ * 八部天龙的「破绽窗口」是 `stagger` + `staggerDur`，世界 Boss 一旦也开
+ * 硬直窗口，两套 Boss 的战斗节奏就变成同一件事（等窗口 → 站桩）。
+ * 这条曾经真的红过：刑天 P3 原来写的是 `staggerEvery: 8000`。 */
+for (const k of usedKeys) {
+  ok(k.toLowerCase().indexOf('stagger') < 0,
+    `enter 键「${k}」不是硬直窗口（那是八部的语言）`, k);
+}
 /* 每只至少有一个「改变战斗规则」的 enter，而不是只有数值加成 */
 const RULE_KEYS = ['sight', 'dayNightCycle', 'heads', 'mire', 'morph', 'regurgitate',
   'stance', 'blockFront', 'clones', 'tails', 'foxfireField', 'revealVuln'];

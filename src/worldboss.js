@@ -196,6 +196,8 @@ const WorldBoss = {
     }
     this._liveId = null;
     this.dropAura();
+    /* [M18.7] 到点换人 / 换图：场地效果一起撤 */
+    if (typeof WBFight !== 'undefined') WBFight.clear();
     /* [M18.5] 实体被清掉，领域自然失效 —— 主动归位，
      * 不等下一帧 `domainTick` 发现「记录与实体对不上」 */
     this._domainClear();
@@ -358,6 +360,9 @@ const WorldBoss = {
      * 但这里主动清一次：击杀的那一帧到下一帧之间还有一次 UI 刷新。 */
     this.dropAura();
     this._domainClear();
+    /* [M18.7] 场地效果（毒沼 / 狐火）跟着撤。
+     * 本尊倒地了地上还在掉血，玩家会以为「打赢了还在扣血是 bug」。 */
+    if (typeof WBFight !== 'undefined') WBFight.clear();
     const cfg = worldBossById(e.wbId);
     if (typeof UI !== 'undefined') {
       UI.log('【世界 Boss】' + (cfg ? cfg.name : '巨兽') + ' 已被讨伐。' +
@@ -458,6 +463,18 @@ const WorldBoss = {
     if (typeof pl.sightDay === 'number' || typeof pl.sightNight === 'number') {
       sight = (typeof pl.sightDay === 'number') ? pl.sightDay : pl.sightNight;
       if (typeof enter.sight === 'number') sight = enter.sight;   // 阶段覆盖
+      /* [M18.7] 昼夜交替（烛九阴 P3）：`enter.sight` 写的是**夜**那一档，
+       * 天亮时要回到领域自己的 `sightDay`。
+       *
+       * 谁在管「现在是昼还是夜」？`WBFight.nightOf(e)` —— 它读 `e.wbNight`，
+       * 由 `WBFight.ai()` 按 `dayNightCycle` 每 N 毫秒翻一次。
+       * **这里不要自己再跑一个计时器**：两套计时器一定会漂，
+       * 漂了的表现是「视野亮了但暗潮还放得出来」（或反过来），
+       * 而且玩家会觉得领域坏了，而不是觉得 BOSS 在切昼夜。 */
+      if (typeof enter.dayNightCycle === 'number' && enter.dayNightCycle > 0 && e &&
+          typeof WBFight !== 'undefined' && !WBFight.nightOf(e)) {
+        sight = (typeof pl.sightDay === 'number') ? pl.sightDay : 26;
+      }
     }
     this._applySight(sight);
 

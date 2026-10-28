@@ -1522,8 +1522,14 @@ const Game = {
     if (this.world) disposeTree(this.world.root);
     this.boss = null; UI.updateBoss(null);
     FX.clear();
+    /* [M18.7] 场地效果（相柳毒沼 / 九尾狐狐火）必须跟着清。
+     * FX.clear 只删了看得见的圆，伤害记账还在 `WBFight._hazards` 里 ——
+     * 不清的话换图后新地图的落脚点上会继续掉血，而且再也找不到源头。 */
+    if (typeof WBFight !== 'undefined') WBFight.clear();
 
     this.buffs = []; this.shield = 0; this.shieldT = 0; this.regen = 0; this.poisonT = 0; this.playerSlow = 0; this.playerSlowT = 0; this.reviveT = 0;
+    /* [M18.7] 定身（九尾狐 P2 尾缚）跟着换图归零 */
+    this.rootT = 0;
     /* 技能树分支叠层（stack）：换图 / 重开都归零 */
     this.behStack = {}; this._drainOn = null; this._follows = null;
     this._recharge = null; this._dragonT = 0; this._autoReviveCd = 0; this._pasT = 0;
@@ -2494,6 +2500,10 @@ const Game = {
      * 放在 anim 之后、`hp <= 0 → die()` 之前：
      * 毒沼把人毒死的那一帧要能正常走死亡流程。 */
     if (typeof WorldBoss !== 'undefined') WorldBoss.domainTick(dt);
+    /* [M18.7] 场地效果（相柳毒沼 / 九尾狐狐火）每帧结算。
+     * 没有场地时 `tick` 第一行就返回，代价可忽略。
+     * 必须**在 die 判定之前**：站在毒沼里被毒死的那一帧要能走死亡流程。 */
+    if (typeof WBFight !== 'undefined') WBFight.tick(dt);
     this.updateWorldAnims(dt);
     this.updateInteract();
     this.tickAudio(dt);
@@ -2619,6 +2629,13 @@ const Game = {
       this.playerSlowT -= dt;
       if (this.playerSlowT <= 0) this.playerSlow = 0;
     }
+    /* [M18.7] 定身倒计时。冲刺一并作废 —— 不然被定住的瞬间按一下冲刺
+     * 就跑了，「定住」变成一句空话（`dashT` 那段位移不读移速）。 */
+    if (this.rootT > 0) {
+      this.rootT -= dt;
+      if (this.rootT <= 0) this.rootT = 0;
+      this.dashT = 0;
+    }
     // 中毒
     if (this.poisonT > 0) {
       this.poisonT -= dt;
@@ -2678,7 +2695,11 @@ const Game = {
        * 并进去的话，出圈时要把它减掉，而「减掉多少」在敌人也给过减速时
        * 是算不清的 —— 少减会留永久残留，多减会顺手抹掉冰霜减速。 */
       const slow = Math.min(0.85, (this.playerSlow || 0) + (this.domSlow || 0));
-      const spd = st.moveSpd * analog * (1 - slow) * rush;
+      /* [M18.7] 定身（九尾狐 P2「尾缚」）：速度直接归零，不是「减到最慢」。
+       * 不能复用上面的 `slow` —— 它封顶 0.85，拉满也还能走 15%，
+       * 玩家会以为「定身只是变慢」，而数据里 `root: 2.5` 承诺的是「定住」。
+       * 转身与 `moving` 保留：原地挣扎比整个人冻住更像被尾巴缠住。 */
+      const spd = (this.rootT || 0) > 0 ? 0 : st.moveSpd * analog * (1 - slow) * rush;
       pg.position.x += mx * spd * dt;
       pg.position.z += mz * spd * dt;
       this.lastMoveDir = { x: mx, z: mz };
@@ -4059,6 +4080,9 @@ const Game = {
     /* [S4] 还魂激活中 */
     if (this.reviveT > 0) out.push({ name: '还魂', dur: this.reviveT, color: '#ffd166', type: 'buff', icon: '魂', desc: '受到致命伤时以 35% 生命存活' });
     if (this.playerSlowT > 0) out.push({ name: '迟滞', dur: this.playerSlowT, color: '#6ab8ff', type: 'debuff', icon: '缓', desc: '移动速度降低 ' + Math.round((this.playerSlow || 0) * 100) + '%' });
+    /* [M18.7] 定身：必须单独一条。它和「迟滞」是两种感受 ——
+     * 迟滞是「走得慢」，定身是「完全走不了」，混在一起玩家会以为没生效。 */
+    if (this.rootT > 0) out.push({ name: '定身', dur: this.rootT, color: '#e0a0ff', type: 'debuff', icon: '缚', desc: '无法移动（仍可攻击与闪避以外的动作）' });
     if (this.poisonT > 0) out.push({ name: '中毒', dur: this.poisonT, color: '#7fbf5a', type: 'debuff', icon: '毒', desc: '每 0.9 秒受到 ' + Math.round(this.poisonDps || 0) + ' 点毒素伤害' });
     /* [M18.5] 领域压制：站进世界 Boss 的圈里就常驻一条。
      * 它没有倒计时（出去就没了），所以带 noTimer，UI 不显示秒数。 */
@@ -4155,6 +4179,38 @@ const Game = {
     const shred = (e.shredT > 0) ? Math.min(80, e.shred || 0) / 100 : 0;
     const effArmor = Math.max(0, armor * (1 - Math.min(0.8, (st.armorPen || 0) / 100)) * (1 - shred));
     final *= 100 / (100 + effArmor);
+
+    /* [M18.7] 刑天 P2「盾」：正面格挡。
+     *
+     * 判的是**玩家站在它正面的哪个角度**，不是「这一击从哪来」——
+     * 本作的伤害大多是范围 / 追踪，没有单一来向，只有站位是玩家能控制的。
+     * boss 的朝向是 `a.group.rotation.y`（`updateBossAI` 末尾每帧转向玩家，
+     * 半衰约 0.16 秒），所以「绕后」是一段**有时限**的操作窗口，不是一句空话。
+     *
+     * 窗口 ±75°（正面 150° 被挡，剩下 210° 安全）：
+     *   - 窗口再大 → 绕到侧面也算正面，等于「永远格挡」，谜题消失；
+     *   - 窗口再小 → 转个身就躲掉了，盾牌变成装饰。
+     * 折减到 40%：挡得很痛但还能打。全免的话 19 万血会拖成十分钟。
+     *
+     * **不分元素**：只挡物理的话，换法术就绕过去了 —— 那又变成「猜元素」，
+     * 和八部天龙的去重直接冲突。这里的答案只有站位。
+     * `silent`（持续伤害）不挡：毒 / 火不认盾牌，而且 DoT 每跳都弹「格挡」
+     * 会把屏幕糊满。 */
+    if (e.wbBlockFront && !opts.silent && this.playerGroup && e.actor && e.actor.group) {
+      const pl = this.playerGroup.position;
+      let da = Math.atan2(pl.x - e.pos.x, pl.z - e.pos.z) - e.actor.group.rotation.y;
+      while (da > Math.PI) da -= Math.PI * 2;
+      while (da < -Math.PI) da += Math.PI * 2;
+      if (Math.abs(da) <= Math.PI * 75 / 180) {
+        final *= 0.4;
+        /* 提示节流 0.4 秒：连击时每一下都弹字，字会叠成一坨 */
+        const now = Date.now();
+        if (!e._blockAt || now - e._blockAt > 400) {
+          e._blockAt = now;
+          FX.text(new THREE.Vector3(e.pos.x, 4.4, e.pos.z), '格挡 · 绕后', 'info', { life: 0.6 });
+        }
+      }
+    }
 
     /* [S5] 族群抗性：按本次伤害的元素结算（opts.elem 缺省按物理）。
      * 正数减伤、负数增伤；元素免疫（85%）也走这一条，不另开分支。
@@ -4615,6 +4671,9 @@ const Game = {
   die() {
     if (this.dead) return;
     this.dead = true;
+    /* [M18.7] 定身必须当场清掉：死亡演出期间 `update` 还在跑，
+     * 带着 2.5 秒定身复活的话，玩家会以为「复活了还是动不了」。 */
+    this.rootT = 0;
     this.actor.anim = 'die';
     this.actor.group.rotation.z = 0;
     SFX.die();
@@ -5376,18 +5435,24 @@ const Game = {
     if (e.dead) return;
     const a = e.actor;
     const hpRatio = e.hp / e.maxHp;
-    /* [DIFF] 困难/极难：Boss 提前进阶段（75% / 45%），压迫感更强 */
-    const rush = this.diff().bossRush;
-    const newPhase = rush
-      ? (hpRatio < 0.45 ? 2 : (hpRatio < 0.75 ? 1 : 0))
-      : (hpRatio < 0.3 ? 2 : (hpRatio < 0.6 ? 1 : 0));
-    if (newPhase > e.phase) {
-      e.phase = newPhase;
-      UI.toast(e.cfg.name + ' 狂怒', 'lv');
-      SFX.boss(); this.shake = 0.6;
-      if (typeof AudioSys !== 'undefined') AudioSys.mob(e, 'bossPhase');
-      FX.ring(e.pos, 6, 0xff5522, 0.8, 0.3);
-      e.dmg *= 1.15;
+    /* [M18.7] 世界 Boss 的「阶段」走自己的三阶段（血量 1.00 / 0.66 / 0.33，
+     * 见 data-worldboss.js 的 phases），**不是**常驻首领那套 0.6 / 0.3 的「狂怒」。
+     * 两套阈值不同，混用会出现「血条已经是 P2、技能还是 P1」，
+     * 而且「狂怒」这个词是常驻首领的语言（世界 Boss 的阶段有自己的名字）。 */
+    if (!e.wb) {
+      /* [DIFF] 困难/极难：Boss 提前进阶段（75% / 45%），压迫感更强 */
+      const rush = this.diff().bossRush;
+      const newPhase = rush
+        ? (hpRatio < 0.45 ? 2 : (hpRatio < 0.75 ? 1 : 0))
+        : (hpRatio < 0.3 ? 2 : (hpRatio < 0.6 ? 1 : 0));
+      if (newPhase > e.phase) {
+        e.phase = newPhase;
+        UI.toast(e.cfg.name + ' 狂怒', 'lv');
+        SFX.boss(); this.shake = 0.6;
+        if (typeof AudioSys !== 'undefined') AudioSys.mob(e, 'bossPhase');
+        FX.ring(e.pos, 6, 0xff5522, 0.8, 0.3);
+        e.dmg *= 1.15;
+      }
     }
 
     e.patternCd -= dt;
@@ -5399,7 +5464,13 @@ const Game = {
       a.moving = false;
       if (e.windup <= 0 && e.pendingMelee) {
         e.pendingMelee = false;
-        if (DIST2D(e.pos, pp) < e.reach + 2.2) this.damagePlayer(e.dmg * RND(0.9, 1.2), e);
+        if (DIST2D(e.pos, pp) < e.reach + 2.2) {
+          this.damagePlayer(e.dmg * RND(0.9, 1.2), e);
+          /* [M18.7] `enter.rootOnHit`（九尾狐 P2「九尾缚」）：连普攻都定身。
+           * 名字叫 onHit 就真的是 onHit —— 只在技能上生效的话，
+           * 玩家会发现「躲开技能就没事」，那 P2 等于没有。 */
+          if (e.wbRoot) this.rootT = Math.max(this.rootT || 0, e.wbRoot);
+        }
       }
     } else if (e.charging > 0) {
       e.charging -= dt;
@@ -5434,7 +5505,9 @@ const Game = {
 
     // 普攻
     if (e.atkCd <= 0 && d < e.reach + 1.6 && e.windup <= 0 && e.charging <= 0) {
-      e.atkCd = e.cfg.atkCd || 2;
+      /* [M18.7] 攻速阶段加成走 `e.atkCdBase`（`enter.aspdMul` 写进去的）。
+       * 常驻首领没有这个字段，回落到 cfg.atkCd，行为不变。 */
+      e.atkCd = e.atkCdBase || e.cfg.atkCd || 2;
       e.windup = 0.45;
       e.pendingMelee = true;
       a.atkAnim = 1; a.atkType = 'swing'; a.atkSpeed = 2.6;
@@ -5443,7 +5516,14 @@ const Game = {
     }
 
     // 技能
-    if (e.patternCd <= 0) {
+    if (e.wb) {
+      /* [M18.7] 世界 Boss 走自己的 18 个招牌技能（`cfg.skills` + 三阶段过滤），
+       * **不走** `bossPattern()` 的 patterns 招式池 —— 那是八部天龙八只共用的
+       * 语言（slam / roots / ringshot…），撞上就等于「又一只八部」。
+       * 阶段切换也在里面（`phaseOf` → `_enterPhase`），所以上面那段
+       * 「狂怒」不用管它，这里也不按血量再判一次。 */
+      if (typeof WBFight !== 'undefined') WBFight.ai(e, dt, pp);
+    } else if (e.patternCd <= 0) {
       e.patternCd = RND(4.5, 7.5) * (1 - e.phase * 0.12);
       this.bossPattern(e, pp);
     }
