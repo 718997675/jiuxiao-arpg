@@ -921,7 +921,7 @@ const BOSSES = {
     lines: ['九霄之上，没有更高的地方了。', '上去，就得踩着神过。']
   },
   chaosavatar: {
-    id: 'chaosavatar', name: '混沌·无相天魔（真身）', title: '九霄终焉 · 真', map: 'chaossea', level: 60, scale: 3.0,
+    id: 'chaosavatar', name: '混沌·无相天魔（真身）', title: '九霄终焉 · 真', map: 'wuxiang', level: 60, scale: 3.0,
     hp: 195000, atk: 162, spd: 3.4, color: 0x5a2478, cloth: 0x220c30, model: 'demon', scale: 2.1, skin: 0x6a3a7a,
     melee: true, range: 5.6, atkCd: 1.8, all: true, family: 'spirit',
     /* [M4] 终局：keyTier 仍是 5（没有六阶），final 把掉率抬到 15% */
@@ -929,6 +929,132 @@ const BOSSES = {
     patterns: ['slam', 'ringshot', 'charge', 'meteor', 'summon', 'curse'],
     lines: ['天阙那一具，只是我伸出去的手。', '现在，你见到我了。', '九霄本来就没有底，你以为你站在上面？']
   },
+  /* ============================================================
+   * [M7] 八部天龙 · 八魔将（守 8 张副本图，各掉一枚印）
+   *
+   * 8 位魔将共用**一套打法模板**，但每人只留一个缺口：
+   *
+   *   1) 元素抗性（`resist`）：其余四元素 +80（只吃 20%），
+   *      唯独弱点 −60（吃 160%）。差 **8 倍**。
+   *      −60 不是随手写的数：damageEnemy 的抗性夹取下限就是 −60，
+   *      1 − (−60)/100 = 1.6 正好是计划书要的「命中 ×1.6」；
+   *      写 −37.5 只能拿到 1.375 倍，写 −100 会被夹回 −60。唯一解。
+   *   2) 破绽窗口（`stagger`）：每人有一个长后摇技能，后摇期间受伤
+   *      ×1.5。元素对了只是「打得动」，抓住后摇才「打得快」——
+   *      这两层叠起来是 12 倍，正好是「打对」和「打错」两个游戏。
+   *
+   * 弱点**不进族群表**：MON_FAMILIES 是公开的（图鉴会显示 resist），
+   * 写进去等于把答案贴在门上。只写在 BOSSES 里，玩家只能靠
+   * 「打上去的数字大小」自己摸 —— 这是用户要的摸索过程。
+   *
+   * `animKind` 是 M7.5 的模型分派键（程序化骨架，见 actors.js），
+   * `seal` / `sealName` 是 M7.4 的存档键与 UI 名。
+   * ============================================================ */
+
+  bafo_deva: {
+    id: 'bafo_deva', name: '帝释·持杵天主', title: '八部之一 · 天', map: 'bafo_deva', level: 60,
+    hp: 142000, atk: 156, spd: 3.4, color: 0xd8c890, cloth: 0x5a4a20, model: 'brute',
+    scale: 2.5, skin: 0xe8d8b0,
+    melee: true, range: 5.4, atkCd: 1.9, armorHigh: true, family: 'humanoid',
+    animKind: 'deva', weak: 'lightning',
+    resist: { phys: 80, fire: 80, ice: 80, lightning: -60, poison: 80 },
+    stagger: { skill: 'slam', dur: 2.5, mul: 1.5, label: '金刚杵落空，甲胄散了' },
+    seal: 'deva', sealName: '天之印',
+    patterns: ['slam', 'ringshot', 'summon', 'charge'],
+    lines: ['八部之首，是我。', '杵举起来的时候，你该退。', '……雷。你怎么会知道。']
+  },
+
+  bafo_naga: {
+    id: 'bafo_naga', name: '难陀·盘渊龙众', title: '八部之一 · 龙', map: 'bafo_naga', level: 60,
+    hp: 138000, atk: 154, spd: 3.2, color: 0x4a8a7a, cloth: 0x1e3a34, model: 'demon',
+    scale: 2.6, skin: 0x6ab0a0,
+    melee: true, range: 5.8, atkCd: 2.0, family: 'beast',
+    animKind: 'naga', weak: 'fire',
+    resist: { phys: 80, fire: -60, ice: 80, lightning: 80, poison: 80 },
+    stagger: { skill: 'slam', dur: 4, mul: 1.5, label: '鳞甲被烧穿，露出底下的软肉' },
+    seal: 'naga', sealName: '龙之印',
+    patterns: ['slam', 'ringshot', 'charge', 'summon'],
+    lines: ['渊底的水，是我翻身搅起来的。', '龙鳞不怕刀。怕什么，你自己想。']
+  },
+
+  bafo_yaksa: {
+    id: 'bafo_yaksa', name: '毗沙·四臂鬼将', title: '八部之一 · 夜叉', map: 'bafo_yaksa', level: 60,
+    hp: 145000, atk: 158, spd: 3.8, color: 0x8a7a6a, cloth: 0x2a2420, model: 'brute',
+    scale: 2.4, skin: 0xb8a890,
+    melee: true, range: 5.0, atkCd: 1.6, family: 'undead',
+    animKind: 'yaksa', weak: 'poison',
+    resist: { phys: 80, fire: 80, ice: 80, lightning: 80, poison: -60 },
+    stagger: { skill: 'quake', dur: 3, mul: 1.5, label: '毒入骨缝，护甲一块块掉' },
+    seal: 'yaksa', sealName: '夜叉之印',
+    patterns: ['slam', 'quake', 'charge', 'ringshot'],
+    lines: ['四只手，够接你八招。', '骨面之下，才是真的我。']
+  },
+
+  bafo_gandharva: {
+    id: 'bafo_gandharva', name: '乾闼婆·弦歌乐神', title: '八部之一 · 乾闼婆', map: 'bafo_gandharva', level: 60,
+    hp: 134000, atk: 152, spd: 3.0, color: 0xc0a0d8, cloth: 0x3a2a50, model: 'demon',
+    scale: 2.3, skin: 0xe0d0f0,
+    melee: false, ranged: true, range: 18, atkCd: 1.7, family: 'spirit',
+    animKind: 'gandharva', weak: 'phys',
+    resist: { phys: -60, fire: 80, ice: 80, lightning: 80, poison: 80 },
+    stagger: { skill: 'ringshot', dur: 3.5, mul: 1.5, label: '曲子断了，护身的乐障散了' },
+    seal: 'gandharva', sealName: '乾闼婆之印',
+    patterns: ['ringshot', 'curse', 'meteor', 'summon'],
+    lines: ['听。这是给你弹的。', '刀兵之声最难听 —— 也最伤我。']
+  },
+
+  bafo_asura: {
+    id: 'bafo_asura', name: '罗睺·三头阿修罗', title: '八部之一 · 阿修罗', map: 'bafo_asura', level: 60,
+    hp: 150000, atk: 160, spd: 3.6, color: 0x9a4a4a, cloth: 0x3a1414, model: 'brute',
+    scale: 2.7, skin: 0xc07070,
+    melee: true, range: 5.2, atkCd: 1.7, armorHigh: true, family: 'humanoid',
+    animKind: 'asura', weak: 'ice',
+    resist: { phys: 80, fire: 80, ice: -60, lightning: 80, poison: 80 },
+    stagger: { skill: 'charge', dur: 3, mul: 1.5, label: '怒气冲顶，自己被冻在原地' },
+    seal: 'asura', sealName: '阿修罗之印',
+    patterns: ['slam', 'charge', 'quake', 'ringshot'],
+    lines: ['三头六臂。你砍哪个？', '怒到极处，连自己也烧。']
+  },
+
+  bafo_garuda: {
+    id: 'bafo_garuda', name: '金翅·迦楼罗王', title: '八部之一 · 迦楼罗', map: 'bafo_garuda', level: 60,
+    hp: 140000, atk: 157, spd: 4.2, color: 0xd8b040, cloth: 0x5a4410, model: 'demon',
+    scale: 2.6, skin: 0xe8c860,
+    melee: true, range: 5.6, atkCd: 1.5, family: 'beast',
+    animKind: 'garuda', weak: 'lightning',
+    resist: { phys: 80, fire: 80, ice: 80, lightning: -60, poison: 80 },
+    stagger: { skill: 'charge', dur: 2.5, mul: 1.5, label: '俯冲落地，翅骨还在颤' },
+    seal: 'garuda', sealName: '迦楼罗之印',
+    patterns: ['charge', 'ringshot', 'slam', 'meteor'],
+    lines: ['飞起来的时候，你连我的影子都摸不到。', '雷从天上来 —— 那是我的天。']
+  },
+
+  bafo_kimnara: {
+    id: 'bafo_kimnara', name: '紧那罗·鹿鸣乐天', title: '八部之一 · 紧那罗', map: 'bafo_kimnara', level: 60,
+    hp: 136000, atk: 153, spd: 3.5, color: 0x9ac088, cloth: 0x2a3a24, model: 'demon',
+    scale: 2.3, skin: 0xc0d8b0,
+    melee: false, ranged: true, range: 16, atkCd: 1.8, family: 'plant',
+    animKind: 'kimnara', weak: 'poison',
+    resist: { phys: 80, fire: 80, ice: 80, lightning: 80, poison: -60 },
+    stagger: { skill: 'ringshot', dur: 3, mul: 1.5, label: '高音被毒哑，琴弦一根根断' },
+    seal: 'kimnara', sealName: '紧那罗之印',
+    patterns: ['ringshot', 'roots', 'curse', 'summon'],
+    lines: ['鹿鸣三声，林子里就没有活人了。', '我的歌能杀人，也能救 —— 可惜我只唱前半段。']
+  },
+
+  bafo_mahoraga: {
+    id: 'bafo_mahoraga', name: '摩睺罗迦·大蟒腹', title: '八部之一 · 摩睺罗迦', map: 'bafo_mahoraga', level: 60,
+    hp: 148000, atk: 155, spd: 3.3, color: 0x5a7a4a, cloth: 0x1e2a18, model: 'demon',
+    scale: 2.8, skin: 0x7a9a68,
+    melee: true, range: 6.0, atkCd: 2.1, family: 'beast',
+    animKind: 'mahoraga', weak: 'fire',
+    resist: { phys: 80, fire: -60, ice: 80, lightning: 80, poison: 80 },
+    stagger: { skill: 'slam', dur: 3.5, mul: 1.5, label: '缠身的蛇群被烧退，露出腹鳞' },
+    seal: 'mahoraga', sealName: '摩睺罗迦之印',
+    patterns: ['slam', 'roots', 'charge', 'summon'],
+    lines: ['地底下缠上来的，都是我。', '蟒腹里没有光，也没有你。']
+  },
+
   chaos: {
     id: 'chaos', name: '混沌·无相天魔', title: '九霄终焉', map: 'heaven', level: 38, scale: 3.0,
     hp: 42000, atk: 105, spd: 3.4, color: 0x5a2478, cloth: 0x220c30, model: 'demon', scale: 2.1, skin: 0x6a3a7a,

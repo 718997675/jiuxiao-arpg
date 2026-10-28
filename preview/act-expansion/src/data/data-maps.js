@@ -671,20 +671,132 @@ const MAP_SPECS = {
       t3: '九霄前庭', nave: '登霄石阶', sanctum: '九霄之巅'
     }
   },
-  /* 混沌海：全作最后一张，只有一张图的一章。isles —— 几块碎岛漂在混沌里，
-   * 桥是唯一的路，退无可退。
-   * [M6] 怪池原来混了 `shade`（影魅，130 血的三卷杂兵）—— 它是全终局最弱的一只，
-   * 把整图 TTK 拉到 1.7s（比九霄之巅还软，终章反而最好打）。
-   * 换成同卷的 `jadepuppet`（玉傀，430 血）。 */
+  /* ============================================================
+   * [M7] 终章 · 八部天龙
+   *
+   * 5-2 从「一张图一个首领」改成「枢纽 + 8 副本 + 终 boss 场」：
+   *   chaossea（枢纽，安全区，无怪）→ 8 张副本图 → wuxiang（终 boss 场）
+   *
+   * 8 个副本各用**一种不同的骨架**（radial / spiral / twin / ring /
+   * canyon / terrace / cross / isles）—— 走进去第一眼就知道换了地方。
+   * 这比做 8 套贴图便宜，也比做 8 套贴图有效：骨架决定的是「怎么走」，
+   * 而 8 个魔将的差异本来就不在墙上，在打法上。
+   *
+   * 尺寸 138~144（世界图 290~300 的一半）：一局 3~5 分钟，从入口到魔将
+   * 要穿过 4~6 个区，路上 12 只护卫 —— 够「打进去」的分量，又不至于
+   * 让 8 遍重复变成折磨。
+   *
+   * 刷怪数**写死 12**：suggestSpawnTotal() 的下限是 40（世界图口径），
+   * 拿它算副本会直接给 40 只，把 140 的图塞满。
+   * ============================================================ */
+
+  /* ---- 枢纽：混沌海 → 八部坛 ----
+   * radial 的 8 间侧室正好一室一门（见 MAPS.chaossea.gates），
+   * 中庭是八部坛，北端 sanctum 是天龙终门。安全区，不刷怪。 */
   chaossea: {
-    archetype: 'isles', size: 303, ground: 'void',
-    kinds: ['voidbeast', 'jadepuppet', 'fallen', 'thunderbird', 'jadeguard', 'mirrortwin', 'maskweaver', 'voidmoth'],
+    archetype: 'radial', size: 220, ground: 'void', spawnTotal: 0, kinds: [],
     names: {
-      gate: '混沌岸', b1: '南浮桥', isleS: '混沌南岛', b2: '西浮桥', isleW: '西浮岛',
-      b3: '东浮桥', isleE: '东浮岛', b4: '北浮桥', isleN: '混沌北岛',
-      b5: '西北浮桥', isleNW: '西北碎岛', b6: '东北浮桥', isleNE: '东北碎岛', nave: '混沌祭岛'
+      gate: '混沌岸', hub: '八部坛',
+      wingW: '西廊 · 龙', wingE: '东廊 · 金翅',
+      outW: '西偏殿 · 乾闼婆', outE: '东偏殿 · 紧那罗',
+      wingNW: '西北廊 · 帝释', wingNE: '东北廊 · 毗沙',
+      outNW: '西北偏殿 · 罗睺', outNE: '东北偏殿 · 摩睺罗迦',
+      nave: '终门御道', sanctum: '天龙终门'
+    }
+  },
+
+  /* ---- 1. 天部 · 帝释殿（radial · heaven）---- */
+  bafo_deva: {
+    archetype: 'radial', size: 140, ground: 'heaven', spawnTotal: 12,
+    kinds: ['thunderbird', 'jadeguard', 'starfaller', 'swordwraith'],
+    names: {
+      gate: '三十三天门', hub: '善见中庭', wingW: '西雷廊', wingE: '东雷廊',
+      outW: '西天门', outE: '东天门', wingNW: '北云廊', wingNE: '北风廊',
+      outNW: '西偏殿', outNE: '东偏殿', nave: '御道', sanctum: '帝释座'
+    }
+  },
+  /* ---- 2. 龙部 · 难陀渊（spiral · flood）---- */
+  bafo_naga: {
+    archetype: 'spiral', size: 140, ground: 'flood', spawnTotal: 12,
+    kinds: ['voidbeast', 'fallen', 'mirrortwin', 'voidmoth'],
+    names: {
+      gate: '龙渊井口', s0: '井台', s1: '上渊回廊', s2: '东转渊', e2: '东侧水洞',
+      s3: '中段窄渊', s4: '西转渊', w2: '西侧水洞', s5: '下渊回廊',
+      nw: '塌方水角', hub: '龙渊大厅', sanctum: '难陀盘座'
+    }
+  },
+  /* ---- 3. 夜叉部 · 毗沙窟（twin · bone）---- */
+  bafo_yaksa: {
+    archetype: 'twin', size: 138, ground: 'bone', spawnTotal: 12,
+    kinds: ['jadepuppet', 'fallen', 'maskweaver', 'swordwraith'],
+    names: {
+      gate: '夜叉牢门', westHall: '西鬼牢', wCell: '西骨室', wLow: '西下骨室',
+      wHigh: '西深骨室', bridge: '骨桥', eastHall: '东鬼牢', eCell: '东骨室',
+      eLow: '东下骨室', eHigh: '东深骨室', nave: '刑道', sanctum: '毗沙刑台'
+    }
+  },
+  /* ---- 4. 乾闼婆 · 乐天（ring · void）---- */
+  bafo_gandharva: {
+    archetype: 'ring', size: 140, ground: 'void', spawnTotal: 12,
+    kinds: ['maskweaver', 'silkweaver', 'voidmoth', 'starfaller'],
+    names: {
+      gate: '乐天门外', inlet: '前甬道', hall: '弦歌大殿', ringS: '南乐廊',
+      ringE: '东乐廊', ringN: '北乐廊', ringW: '西乐廊', se: '东南琴室',
+      ne: '东北鼓室', nw: '西北笙室', sw: '西南磬室', nave: '后殿道', sanctum: '乾闼婆座'
+    }
+  },
+  /* ---- 5. 阿修罗 · 罗睺狱（canyon · ash）---- */
+  bafo_asura: {
+    archetype: 'canyon', size: 142, ground: 'ash', spawnTotal: 12,
+    kinds: ['fallen', 'voidbeast', 'jadepuppet', 'mirrortwin'],
+    names: {
+      gate: '修罗谷口', c1: '下谷', c2: '怒谷', c3: '上谷', c4: '谷底',
+      w1: '西侧兵洞', e1: '东侧兵洞', w2: '西侧血洞', e2: '东侧血洞',
+      w3: '西侧残洞', e3: '东侧残洞', sanctum: '罗睺战台'
+    }
+  },
+  /* ---- 6. 迦楼罗 · 金翅崖（terrace · snow）---- */
+  bafo_garuda: {
+    archetype: 'terrace', size: 144, ground: 'snow', spawnTotal: 12,
+    kinds: ['thunderbird', 'voidmoth', 'swordwraith', 'starfaller'],
+    names: {
+      gate: '金翅崖脚', t1: '下层崖台', t1w: '下层西崖', t1e: '下层东崖',
+      r1: '第一崖道', t2: '中层崖台', t2w: '中层西崖', t2e: '中层东崖',
+      r2: '第二崖道', t3: '上层崖台', nave: '绝顶石阶', sanctum: '金翅巢'
+    }
+  },
+  /* ---- 7. 紧那罗 · 鹿鸣林（cross · bamboo）---- */
+  bafo_kimnara: {
+    archetype: 'cross', size: 140, ground: 'bamboo', spawnTotal: 12,
+    kinds: ['silkweaver', 'maskweaver', 'jadeguard', 'voidmoth'],
+    names: {
+      gate: '鹿鸣林口', path: '竹径', hall: '鹿鸣空地', westLink: '西廊',
+      west: '西坡', eastLink: '东廊', east: '东坡', nwLink: '西北廊',
+      nw: '西北角', neLink: '东北廊', ne: '东北角', nave: '后林道', sanctum: '紧那罗琴台'
+    }
+  },
+  /* ---- 8. 摩睺罗迦 · 蟒腹（isles · abyss）---- */
+  bafo_mahoraga: {
+    archetype: 'isles', size: 140, ground: 'abyss', spawnTotal: 12,
+    kinds: ['voidbeast', 'mirrortwin', 'jadepuppet', 'voidmoth'],
+    names: {
+      gate: '蟒腹渡口', b1: '南桥', isleS: '南腹岛', b2: '西桥', isleW: '西腹岛',
+      b3: '东桥', isleE: '东腹岛', b4: '北桥', isleN: '北腹岛',
+      b5: '西北桥', isleNW: '西北碎岛', b6: '东北桥', isleNE: '东北碎岛', nave: '蟒心祭岛'
     }
   }
+};
+
+/* [M7] 无相天：终 boss 场，手写两个区而不是套骨架 ——
+ * 它只要「一个能塌缩的大圆 + 一条进门的道」，套 12~16 区的骨架反而是干扰。
+ * 手写也让它落进 zone-check 的「手写图」分支：区数 / 密度那些世界图指标
+ * 不会拿它开刀（`arena: true` 另有一处豁免，见 zone-check）。 */
+MAP_ZONES.wuxiang = {
+  entry: 'gate',
+  zones: [
+    { id: 'gate', name: '无相门外', type: 'rect', x: 0, z: 62, w: 34, h: 22, kind: 'entry' },
+    { id: 'court', name: '无相天', type: 'circle', x: 0, z: -6, r: 58, kind: 'boss' }
+  ]
 };
 
 /* ---------------- 骨架展开 ----------------

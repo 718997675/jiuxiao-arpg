@@ -3236,12 +3236,20 @@ const UI = {
         const mm = MAPS[m.id];
         const seen = (s.mapsSeen || []).indexOf(m.id) >= 0;
         const need = mm.unlock || 1;
+        /* [M7] 印门：无相天要 8 枚魔将之印才进得去。
+         * 这里把「前往」换成「需 8 印（3）」而不是让它点下去再弹一句
+         * 「天龙终门未开」—— 后者看起来像坏了，前者是进度。
+         * 拦截本身在 Game.travelTo 里（山河图之外还有传送阵 / 章间门两条路）。 */
+        const sealNeed = mm.sealNeed || 0;
+        const sealHave = (typeof Game !== 'undefined' && Game.sealCount) ? Game.sealCount() : 0;
+        const sealOk = !sealNeed || sealHave >= sealNeed;
         /* 回头路：去过的图随时能回，不受等级限制（和 Game.travelTo 同一口径） */
-        const can = seen || s.level >= need;
+        const can = (seen || s.level >= need) && sealOk;
         const here = s.mapId === m.id;
         const tail = here ? '<span class="wm-ml">当前所在</span>'
-          : can ? `<button class="btn wm-go" data-go="${m.id}">前往</button>`
-            : `<span class="wm-ml">需 ${need} 级</span>`;
+          : !sealOk ? `<span class="wm-ml">需 ${sealNeed} 印（${sealHave}）</span>`
+            : can ? `<button class="btn wm-go" data-go="${m.id}">前往</button>`
+              : `<span class="wm-ml">需 ${need} 级</span>`;
         return `<div class="wm-map ${can ? '' : 'shut'} ${here ? 'here' : ''}">
           <span class="wm-mn">${mm.name}</span>
           <span class="wm-ml">推荐 ${mm.level} 级</span>
