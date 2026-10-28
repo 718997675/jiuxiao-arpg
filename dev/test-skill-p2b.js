@@ -171,12 +171,15 @@ ok(skillCountDmgPct('meteor', 1) === skillCountDmgPct('fireball', 1),
     '天罚是单体判定，溅射走 splash（radius 对它没有意义）');
 }
 /* 面板别把没做的等级标成已生效：发数是累计的，Lv7 之后一直 +2，
- * 只判「> 0」会把 9 / 10 的「陨石雨」也算成已实装 */
+ * 只判「> 0」会把 9 / 10 也算成已实装。
+ * 9 / 10 现在真做了（落点留火海），这条从「必须标待」翻成「必须已接」——
+ * 反过来钉住的是同一个坑：以后要有人把 evo 里那两条删掉、只留文案，
+ * 这里立刻红。 */
 ok(skillSlotTierDone('mage', 2, 3), '法师 ② Lv3「溅射」已接');
 ok(skillSlotTierDone('mage', 2, 5), '法师 ② Lv5「双陨」已接（数量台阶）');
 ok(skillSlotTierDone('mage', 2, 7), '法师 ② Lv7「三连落」已接（数量台阶）');
-ok(skillSlotTierDone('mage', 2, 9) === false && skillSlotTierDone('mage', 2, 10) === false,
-  '法师 ② 的 9 / 10（陨石雨 / 持续 8 秒）还没做，面板必须标「待」');
+ok(skillSlotTierDone('mage', 2, 9) && skillSlotTierDone('mage', 2, 10),
+  '法师 ② 的 9 / 10（落点留火海）已接，面板不许再标「待」');
 
 /* 三个职业 5 个位的 Lv7：「实装状态」= 有发数 **或** 有一条形态台阶。
  * 原断言写的是「实装 ⟺ 位内有 count 技能」，那是数量轴唯一的年代定的；
@@ -743,6 +746,42 @@ console.log('八、法师 ② 陨石（发数 5 / 7）');
   /* 天罚多发：目标不够时补在主目标身上，不许「没目标就当没这级」 */
   ok(/while \(jTgts\.length < jCnt\) jTgts\.push\(target\)/.test(game),
     '天罚多头不足时补打主目标（否则单挑首领时这级白给）');
+
+  /* --- 9 / 10「落点留火海」：同格四只都得接，漏一只就是那只点了没反应 ---
+   * 台账里「一个格位躺多只技能」这条踩过三次（血怒 / 回春 / 护盾），
+   * 每次都是「文案是位的、台阶只接了其中一只」。所以这里按 id 逐个查。 */
+  {
+    const four = s2.inherit;
+    const naked = [];
+    for (const id of four) {
+      for (const lv of [9, 10]) {
+        const b = skillTierBeh(id, lv);
+        if (!b || !(b.tierField > 0)) naked.push(id + ' Lv' + lv);
+      }
+    }
+    ok(naked.length === 0, '9 / 10 四只都拿得到 tierField', naked);
+    ok(four.every(id => skillTierBeh(id, 9).tierFieldDur === undefined),
+      'Lv9 不写 tierFieldDur —— 4 秒是默认值，数据里只写有变化的那一档');
+    /* beh 的合并是**覆盖**不是累加（mods 才是累加，别搞混）：
+     * Lv10 那行必须自带时长，否则 10 级只拿到 9 级的默认 4 秒。 */
+    ok(four.every(id => skillTierBeh(id, 10).tierFieldDur === 8),
+      'Lv10 明写 8 秒（beh 覆盖不累加，10 级那行要自带）');
+    ok(/tierField: \{ ph: 'hook'/.test(behSrc) && /tierFieldDur: \{ ph: 'hook'/.test(behSrc),
+      'tierField / tierFieldDur 已在 SKILL_BEH 登记');
+    /* 登记了但 case 不消费 = 假台阶。四只里 starfall 有两条路（正常雨 / 星移引导），
+     * 所以是 5 处调用。 */
+    const calls = (game.match(/this\.spawnTierField\(/g) || []).length;
+    ok(calls >= 5, '四只 case 都真的调 spawnTierField（炎爆 / 雷罚 / 暴雪 / 陨星天火 ×2）', calls);
+    ok(/const MAX = 4/.test(game),
+      '落点领域同时最多 4 块 —— 陨星天火一场 18 颗，不记账就是 18 块地糊满屏');
+    ok(/setTimeout\(\(\) => \{[\s\S]{0,260}?spawnTierField\(ck/.test(game),
+      '暴雪要等自己那片区域停了才铺落点领域（同时铺只是在同一片地上叠一层）');
+    /* 落点必须落在**爆炸点 / 敌脚下**，不是准星：雷罚追着怪走，两者恒不重合 */
+    ok(/this\.explodeAt\(c, mRad[\s\S]{0,120}?spawnTierField\(c,/.test(game),
+      '陨石的落点领域铺在每颗自己的爆炸点上');
+    ok(/spawnTierField\(tgt\.pos,/.test(game),
+      '雷罚的落点领域铺在被打中那只脚下（不是准星）');
+  }
 }
 
 /* ---------------- 汇总 ---------------- */

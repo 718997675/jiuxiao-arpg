@@ -1581,7 +1581,7 @@ const ok = (c, m, d) => {
    * 所以要证三件事：3 级真的不多发、5 / 7 真的一颗一颗多出来、
    * 多出来的那几颗**落得进彼此的半径**（否则准星上的怪只吃一颗还得背惩罚）。 */
   console.log('十三、法师 ② 陨石（3 溅射 · 5 双陨 · 7 三连落）');
-  const mage2 = await p.evaluate(() => {
+  const mage2 = await p.evaluate(async () => {
     const mkFoe = (x, z, id) => ({
       pos: new THREE.Vector3(x, 0, z), radius: 0.5, dead: false,
       hp: 1e9, maxHp: 1e9, id: id, level: 1, cfg: {},
@@ -1670,6 +1670,93 @@ const ok = (c, m, d) => {
       };
     };
 
+    /* 9 / 10「落点留火海」：数「铺了几块地 + 每块活多久」。
+     * FX.area 的返回值会被 spawnTierField 当网格用（顶预算时 remove），
+     * 所以 stub 要带 remove / 一个能挂 parent 的对象。
+     *
+     * 坑：`FX.area` 不只我们一家在用 —— 陨星天火的精研「星痕」也拿它画
+     * 2 秒光圈。所以**按 dur 过滤**，不能拿 fields[0] 当台阶那块地。 */
+    const fieldRun = async (id, lv, form, durWant) => {
+      setup(id, lv, form);
+      Game._tierFields = [];          // 上一轮的残账（旧 timer 靠 mapGen 自灭）
+      const pp = Game.playerGroup.position;
+      /* 雷罚是单体技，没目标整个 case 都不走 —— 其余三只朝准星落，不需要怪。
+       * 假怪没有 actor / cfg，帧循环一跑就 `reading 'time'`；但 `castSkill`
+       * 自己也看 running（`if (!this.state || this.dead || !this.running) return`），
+       * 所以不能先停帧 —— 施法完立刻把假怪收走，等待期间才安全。 */
+      if (id === 'judgement') Game.enemies.push(mkFoe(pp.x + 5, pp.z, 9101));
+      const fields = [];
+      const oldA = FX.area, oldRing = FX.ring, oldHit = Game.damageEnemy;
+      const oldX = Game.explodeAt, oldT = FX.telegraph, oldST = window.setTimeout;
+      FX.area = (c, r, col, du) => {
+        fields.push({ r: r, dur: du, x: c.x, z: c.z });
+        return { remove() { }, setOpacity() { } };
+      };
+      FX.ring = () => { };
+      FX.telegraph = (pos, r, d, cb) => { cb(); };
+      Game.explodeAt = () => { };
+      Game.damageEnemy = () => { };
+      /* 暴雪的落点领域是「自己那片雪停了才铺」，不把定时器压平就一块都量不到 */
+      window.setTimeout = (fn) => { try { fn(); } catch (e) { } return 0; };
+      Game.castSkill(id);
+      Game.enemies = [];              // 目标已用完，等下来的时候别让假怪进帧循环
+      /* 先把定时器还回去再 await —— 上面那个压平的 setTimeout 会把等待本身也压平 */
+      window.setTimeout = oldST;
+      /* 陨星天火是逐颗落的（220ms 一颗）。无头页面的后台定时器会被节流到
+       * 1 秒一次，所以这里等 1.2 秒只落得到 1~2 颗 —— 够证明「会铺」，上限
+       * 交给 fieldCap 单独量。 */
+      if (id === 'starfall') await new Promise(r => setTimeout(r, 1200));
+      FX.area = oldA; FX.ring = oldRing; FX.telegraph = oldT;
+      Game.explodeAt = oldX; Game.damageEnemy = oldHit;
+      const mine = fields.filter(x => x.dur === durWant);
+      const live = (Game._tierFields || []).length;
+      Game._tierFields = [];
+      Game.enemies = [];
+      Game.mapGen = (Game.mapGen || 0) + 1;
+      return { n: mine.length, dur: mine.length ? mine[0].dur : 0, live: live, all: fields.length };
+    };
+
+    /* 地必须**真的在掉血**，不然只是画了个圈。
+     * 直接调 spawnTierField（不经过 castSkill），这样只量「领域」这一层：
+     * 一只假怪站在里面，等 2.3 秒收两跳。 */
+    const fieldDmg = async () => {
+      setup('meteor', 10, 2);
+      Game._tierFields = [];
+      const pp = Game.playerGroup.position;
+      const foe = mkFoe(pp.x + 2, pp.z, 9001);
+      Game.enemies = [foe];
+      Game.running = false;           // 假怪没有 actor，帧循环会炸
+      let hits = 0, total = 0;
+      const oldHit = Game.damageEnemy;
+      Game.damageEnemy = (e, d) => { hits++; total += d; };
+      Game.spawnTierField(new THREE.Vector3(pp.x + 2, 0, pp.z), 4, 30, 2, 0xff5522);
+      await new Promise(r => setTimeout(r, 2300));
+      Game.damageEnemy = oldHit;
+      Game.running = true;
+      Game._tierFields = [];
+      Game.enemies = [];
+      Game.mapGen = (Game.mapGen || 0) + 1;
+      return { hits: hits, dmg: Math.round(total), atk: Math.round(Game.state.stats.atk) };
+    };
+
+    /* 预算：连铺 6 块，只会剩 4 块（陨星天火一场 18 颗，不记账就糊满屏） */
+    const fieldCap = () => {
+      setup('meteor', 10, 2);
+      Game._tierFields = [];
+      const pp = Game.playerGroup.position;
+      const oldA = FX.area, oldRing = FX.ring;
+      FX.area = () => ({ remove() { }, setOpacity() { } });
+      FX.ring = () => { };
+      for (let i = 0; i < 6; i++) {
+        Game.spawnTierField(new THREE.Vector3(pp.x + i, 0, pp.z), 3, 30, 4, 0xff5522);
+      }
+      FX.area = oldA; FX.ring = oldRing;
+      const live = (Game._tierFields || []).length;
+      Game._tierFields = [];
+      Game.mapGen = (Game.mapGen || 0) + 1;
+      return { live: live };
+    };
+
     const out = {};
     out.meteor = {};
     for (const lv of [1, 2, 3, 5, 7, 10]) out.meteor['lv' + lv] = meteorRun(lv);
@@ -1683,7 +1770,17 @@ const ok = (c, m, d) => {
       lv2near: judgeRun(2, 2, 1.5),
       lv3near: judgeRun(3, 2, 1.5)
     };
-    /* 面板：3 / 5 / 7 已接，9 / 10（陨石雨）还是文案 —— 必须还带「待」 */
+    /* 9 / 10 落点留火海：四只各铺一块，外加「真的掉血」与「最多 4 块」 */
+    out.field = {
+      meteor9: await fieldRun('meteor', 9, 2, 4),
+      meteor10: await fieldRun('meteor', 10, 2, 8),
+      judge9: await fieldRun('judgement', 9, 1, 4),
+      blizz9: await fieldRun('blizzard', 9, 1, 4),
+      star10: await fieldRun('starfall', 10, 0, 8),
+      dmg: await fieldDmg(),
+      cap: fieldCap()
+    };
+    /* 面板：3 / 5 / 7 已接，9 / 10（落点留火海）也接了 —— 六档全绿 */
     out.panel = [1, 3, 5, 7, 9, 10].map(lv => skillSlotTierDone('mage', 2, lv));
     Game.enemies = [];
     Game.mapGen = (Game.mapGen || 0) + 1;
@@ -1717,8 +1814,26 @@ const ok = (c, m, d) => {
     ok(j.lv2near.targets === 1, 'Lv2 没有溅射，旁边那只不吃伤害', j.lv2near);
     ok(j.lv3near.targets === 2, 'Lv3「溅射」真的波及旁边那只', j.lv3near);
 
-    ok(mage2.panel.join(',') === 'true,true,true,true,false,false',
-      '面板：1 / 3 / 5 / 7 已生效，9 / 10（陨石雨）仍标「待」', mage2.panel);
+    const f = mage2.field;
+    ok(f.meteor9.n === 3 && f.meteor9.dur === 4,
+      'Lv9：三颗陨石各留一块 4 秒的地（不是只留一块）', f.meteor9);
+    ok(f.meteor10.n === 3 && f.meteor10.dur === 8,
+      'Lv10：每块地都拉到 8 秒（beh 覆盖不累加，10 级要自带）', f.meteor10);
+    ok(f.judge9.n === 3 && f.judge9.dur === 4,
+      '雷罚：3 道雷各留一块（单体巨雷不许漏这一级）', f.judge9);
+    ok(f.blizz9.n === 3 && f.blizz9.dur === 4,
+      '暴雪：3 片雪各留一块，且等雪停了才铺（不是同时叠一层）', f.blizz9);
+    ok(f.star10.n >= 1 && f.star10.dur === 8,
+      '陨星天火逐颗留火海（无头页面定时器被节流到 1 秒，只量得到 1~2 颗）', f.star10);
+    ok(f.star10.live <= 4,
+      '一场雨 18 颗，同时最多 4 块（不记账会把战场糊死）', f.star10.live);
+    ok(f.cap.live === 4, '连铺 6 块只活 4 块（顶掉最老的）', f.cap.live);
+    ok(f.dmg.hits === 2, '地真的逐秒跳：2.3 秒收两跳', f.dmg);
+    ok(f.dmg.dmg > 0 && Math.abs(f.dmg.dmg - f.dmg.hits * f.dmg.atk * 0.3) < f.dmg.atk * 0.35,
+      '每跳 ≈ 30% 攻击力（与数据表 tierField: 30 对得上）', f.dmg);
+
+    ok(mage2.panel.join(',') === 'true,true,true,true,true,true',
+      '面板：1 / 3 / 5 / 7 / 9 / 10 六档全部已生效', mage2.panel);
   }
 
   /* ---------------- 14. 零报错 ---------------- */

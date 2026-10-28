@@ -339,6 +339,14 @@ const SKILL_BEH = {
    * 的近似对它等于永远打空 —— 所以这一条由 fireball case 的 onHit 消费。 */
   firePatch: { ph: 'hook', label: '命中火海', run() { /* 由 fireball case 的 onHit 消费 */ } },
 
+  /* [P2b] 台阶落点领域（法师 ② 的 Lv9 / Lv10）：技能落点留一块持续掉血的地。
+   * 值 = **每跳伤害占攻击力 %**，时长默认 4 秒，`tierFieldDur` 可拉到 8 秒。
+   * 四只技能（炎爆 / 雷罚 / 暴雪 / 陨星天火）共用，颜色按元素走。
+   * 不复用 firePatch：那个写死火焰色 + 0.45 倍（火球的 Lv5），
+   * 而这里要跟元素上色、且伤害占比是台阶自己的数。 */
+  tierField: { ph: 'hook', label: '落点领域（台阶）', run() { /* 由四只技能的 case 消费 */ } },
+  tierFieldDur: { ph: 'hook', label: '落点领域时长（台阶）', run() { /* 同上 */ } },
+
   /* [P2b] 回怒倍率（台阶专用）：whirl case 那一发固定回 8 点，这里给倍数。
    * 不复用 ragePerHit —— 那是「每命中一个 +N」，两套口径叠在一起会重复计。 */
   rageMul: { ph: 'hit', label: '回怒倍率', run() { /* 由 whirl case 消费 */ } },

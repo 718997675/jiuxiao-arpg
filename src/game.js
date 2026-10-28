@@ -3539,12 +3539,18 @@ const Game = {
          * 就是「升一级反而更弱」（火墙位踩过）。留出的余量是为了让几颗石头
          * 看得见是几颗，而不是全叠成一个点。 */
         const mCnt = 1 + Math.max(0, sextra);
+        /* [P2b] Lv9 / Lv10「落点留火海」：每颗自己的落点各留一块。
+         * 半径取 0.75 倍爆炸半径 —— 火海比爆炸小一圈，玩家才看得出「炸点」
+         * 与「烧着的地」是两层；等大会让范围读数虚高。 */
+        const mField = Math.max(0, (bBeh && bBeh.tierField) || 0);
+        const mFieldDur = Math.max(1, (bBeh && bBeh.tierFieldDur) || 4);
         for (let k = 0; k < mCnt; k++) {
           const a = k * Math.PI * 2 / Math.max(1, mCnt - 1);
           const off = k === 0 ? 0 : mRad * 0.55;
           const c = new THREE.Vector3(target.x + Math.cos(a) * off, 0, target.z + Math.sin(a) * off);
           FX.telegraph(c, mRad, 0.9 + k * 0.12, () => {
             this.explodeAt(c, mRad, st.atk * 4.2 * spow, 0xff5522, true);
+            if (mField) this.spawnTierField(c, mRad * 0.75, mField, mFieldDur, 0xff5522);
             SFX.explode(); this.shake = 0.6;
             for (let i = 0; i < 4; i++) setTimeout(() => {
               FX.burst(new THREE.Vector3(c.x + RND(-4, 4), 0.3, c.z + RND(-4, 4)), 0xff7a20, 14, { speed: 9, size: 0.16, life: 0.8, gravity: -3, additive: true });
@@ -3581,6 +3587,12 @@ const Game = {
         const center = aim.clone();
         let n = 0;
         const gen = this.mapGen;
+        /* [P2b] Lv9 / Lv10「落点留火海」：每颗陨星的落点各留一块。
+         * 一场雨落 16~18 颗，所以 `spawnTierField` 那边有「同时最多 4 块」的
+         * 预算 —— 不然 18 块 3 码的地会把整片战场糊死。留下的 4 块是**最后
+         * 落下的那 4 颗**，观感正好是「雨停了，地上还在烧」。 */
+        const sfField = Math.max(0, (bBeh && bBeh.tierField) || 0);
+        const sfFieldDur = Math.max(1, (bBeh && bBeh.tierFieldDur) || 4);
         /* [P3] 星移（变体）：改成一段「跟着人走」的引导 —— 4 秒内每 0.35 秒
          * 在你**当前**位置砸一颗，所以边跑边下陨星。原口径是「围着落点砸 16 颗」，
          * 换的是「能不能挪窝」，不是数字 */
@@ -3593,6 +3605,7 @@ const Game = {
             const ppc = this.playerGroup.position;
             const t = new THREE.Vector3(ppc.x + RND(-2.4, 2.4), 0, ppc.z + RND(-2.4, 2.4));
             this.explodeAt(t, 3.0 * srad, st.atk * 1.5, 0xff7a30, false, true);
+            if (sfField) this.spawnTierField(t, 3.0 * srad * 0.75, sfField, sfFieldDur, 0xff7a30);
             if (ct >= Math.ceil(ch / 0.35)) clearInterval(ivc);
           }, 350);
           UI.toast('星移 · 引导 ' + ch + ' 秒');
@@ -3604,6 +3617,7 @@ const Game = {
           const off = new THREE.Vector3(RND(-9, 9), 0, RND(-9, 9));
           const t = center.clone().add(off);
           this.explodeAt(t, 3.2 * srad, st.atk * 1.6, 0xff7a30, false, true);
+          if (sfField) this.spawnTierField(t, 3.2 * srad * 0.75, sfField, sfFieldDur, 0xff7a30);
           /* 星阙 5 件：陨星 +8 颗（count 修正）。
            * [P2b] 基数 16 = SKILL_COUNT_BASE.starfall；这个位的发数台阶在
            * Lv5 / Lv7（Lv3 是「溅射」，只改落点半径），所以 sextra 在这里
@@ -3665,6 +3679,19 @@ const Game = {
         /* [P3] 暴风（变体）：区域跟着人走。锚点是伤害循环真正在读的那些对象，
          * 网格一并挪，判定与观感才不会分家 */
         if (bBeh && bBeh.follow) this.attachFollow(cs, zfx, dur);
+        /* [P2b] Lv9 / Lv10「落点留领域」：暴雪是持续 5 秒的区域，所以这一块
+         * **要等它停了才铺**，否则只是在同一片地上叠一层，没有「留」的意思。
+         * 锚点读的是 cs —— 「暴风」变体会把区域带着走，玩家看到的是
+         * 「冰暴最后停在哪」，不是「最初瞄准哪」。 */
+        const zField = Math.max(0, (bBeh && bBeh.tierField) || 0);
+        const zFieldDur = Math.max(1, (bBeh && bBeh.tierFieldDur) || 4);
+        if (zField) {
+          const zGen = this.mapGen;
+          setTimeout(() => {
+            if (this.mapGen !== zGen || this.dead || !this.state) return;
+            for (const ck of cs) this.spawnTierField(ck, rad * 0.7, zField, zFieldDur, 0x9ad8ff);
+          }, dur * 1000);
+        }
         let ticks = 0;
         const gen = this.mapGen;
         /* [P3] 冰封（变体）：每隔 N 秒把区域里的人钉住 1 秒。
@@ -3941,6 +3968,10 @@ const Game = {
          * 键来自 SKILL_TIER_EVO.judgement（splash），同位的另外三只是范围
          * 判定，溅射就是半径变大（mods.radius），不需要这个键。 */
         const jSplash = Math.max(0, (bBeh && bBeh.splash) || 0);
+        /* [P2b] Lv9 / Lv10「落点留领域」：雷罚的落点是被劈中的那只脚下，
+         * 不是准星 —— 落雷会追到怪身上，两者恒不重合（符箓那边踩过）。 */
+        const jField = Math.max(0, (bBeh && bBeh.tierField) || 0);
+        const jFieldDur = Math.max(1, (bBeh && bBeh.tierFieldDur) || 4);
         for (let k = 0; k < jTgts.length; k++) {
           const tgt = jTgts[k];
           const bossMul = tgt.boss ? 1.3 : 1;
@@ -3949,6 +3980,7 @@ const Game = {
             const { dmg, crit } = this.rollDamage(st.atk * 8.5 * spow * bossMul);
             this.damageEnemy(tgt, dmg, crit, { elem: 'lightning', knock: 1 });
             FX.flashCircle(tgt.pos, 3.4 * srad, 0xd8e8ff, 0.4);
+            if (jField) this.spawnTierField(tgt.pos, 3.2 * srad * 0.75, jField, jFieldDur, 0xd8e8ff);
             if (jSplash) {
               for (const e of this.enemies) {
                 if (e.dead || e === tgt) continue;
@@ -4709,6 +4741,49 @@ const Game = {
       }
       if (ticks >= Math.round(dur * 1000 / step)) clearInterval(iv);
     }, step);
+  },
+
+  /* [P2b] 台阶落点领域（法师 ② 的 Lv9 / Lv10「落点留火海」）。
+   *
+   * 四只技能共用这一个消费点：炎爆 / 陨星天火是火，雷罚是雷，暴雪是冰 ——
+   * 机制同一个（站进去就掉血），只是颜色不同。之所以不各写一份：四份几乎
+   * 一样的定时器，改一次平衡要改四处（`createFirePatch` / `createSigilField`
+   * 已经是两处了，别再添）。
+   *
+   * pct 是**每跳伤害占攻击力 %**，dur 是秒，每秒一跳。
+   *
+   * 同时最多 MAX 块：陨星天火一次落 16~18 颗，不记账就是 18 块地糊满屏，
+   * 帧率和伤害都会爆。超出时顶掉最老的一块（跟音频「近的顶掉远的」同一思路）。
+   * 顶掉只清定时器 + 收掉网格，`zones` 里那条记录留着让它自己到期 ——
+   * 提前删数组会让 FX 的 tick 拿到空洞。 */
+  spawnTierField(pos, rad, pct, dur, color) {
+    if (!this.state || typeof FX === 'undefined') return;
+    const MAX = 4;
+    const gen = this.mapGen;
+    this._tierFields = this._tierFields || [];
+    while (this._tierFields.length >= MAX) {
+      const old = this._tierFields.shift();
+      if (!old) continue;
+      clearInterval(old.iv);
+      if (old.vis) { old.vis.visible = false; if (old.vis.parent) old.vis.parent.remove(old.vis); }
+    }
+    const p = pos.clone(); p.y = 0;
+    const vis = FX.area(p, rad, color, dur, { opacity: 0.18 });
+    FX.ring(p, rad * 1.05, color, dur, 0.2);
+    const rec = { iv: 0, vis };
+    this._tierFields.push(rec);
+    let ticks = 0;
+    const total = Math.max(1, Math.round(dur));
+    rec.iv = setInterval(() => {
+      if (this.mapGen !== gen) { clearInterval(rec.iv); return; }
+      ticks++;
+      for (const e of this.enemies) {
+        if (e.dead || DIST2D(e.pos, p) >= rad + e.radius) continue;
+        const { dmg, crit } = this.rollDamage(this.state.stats.atk * pct / 100);
+        this.damageEnemy(e, dmg, crit, { silent: true, tag: 'dot' });
+      }
+      if (ticks >= total) clearInterval(rec.iv);
+    }, 1000);
   },
 
   nearestEnemy(pos, range) {

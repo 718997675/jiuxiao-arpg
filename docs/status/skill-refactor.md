@@ -3,7 +3,7 @@
 - 分支：`feat/skill-refactor`（优先级 **低**，排在大型扩展之后）
 - 计划文档：`docs/SKILL-REDESIGN-PLAN.md`（16 节）
 - 预览站：暂不发（2026-10-27 用户口径：本地验证即可，别再折腾线上）
-- 更新：2026-10-28 · P2b 进化台阶 **12/15 位**（34/45 条）· **收工点：法师 ② 只剩 9 / 10（陨石雨），三个 ⑤ 号位要单独排**
+- 更新：2026-10-28 · P2b 进化台阶 **13/15 位**（37/45 条）· **收工点：只剩刀客 ⑤ 兵形 / 法师 ⑤ 法相 / 道士 ⑤ 召灵兽（都要新写机制）**
 
 > 当前：**P0 + P1a + P1b + P1c + P1d + P2a 完成，P2b 进行中**。动作条 5 格、格位 = 功能位；
 > 技能树已按「三线并行」结算 —— 没有必点主干、没有主动↔被动二选一，
@@ -14,8 +14,9 @@
 > 台阶也接进战斗了：数量台阶走 `smod.count`（多发带 0.85^n 递减）——**12 个技能全接**
 > （毒雾、火墙、雷云是后两批补进来的）。**节奏不是全局 3 / 7**：法师 ② 在 5 / 7
 > （3 级是「溅射」），按技能覆盖见 `SKILL_COUNT_TIER`。Lv5 / Lv9 / Lv10 走行为键，
-> **已接 12 个位**（刀客 ①②③④、法师 ①②③④、道士 ①②③④），45 条里完成 **34 条**
-> （法师 ② 只剩 9 / 10）。剩 3 个 ⑤ 号位仍是文案，面板上带「待」角标 ——
+> **已接 13 个位**（刀客 ①②③④、法师 ①②③④、道士 ①②③④），45 条里完成 **37 条**。
+> 剩 3 个 ⑤ 号位仍是文案，面板上带「待」角标 —— 那三位都要**新写机制**
+> （刃势记账 / 一整只技能 / 三兽调度），不是接个行为键就完事的。
 > **别把「P2b 完成」读成 45 条都做了**。
 
 ## 一句话现状
@@ -38,7 +39,7 @@ P1 起才动 `SKILL_BAR_SLOTS` 与面板的三列树。
 | P1c | **取消二选一**：三线并行结算（等级门 `reqLv` + 关键被动软前置 `needPts`），`levelUpSkill` / `levelUpPassive` 的 fork 拦截整块删除，面板去掉「或/锁」标记与互斥虚线，说明页同步 | ✅ | `data-skill-tree.js`、`game.js`、`skill-passive.js`、`ui-skills.js`、`ui.js`、`index.html` | `dev/test-skill-p1c.js` 353 · `dev/probe-skill-p1c.js` 23 |
 | P1d | 面板**视觉**重排：一条线一列、列内按 `reqLv` 递增，被动小一圈挂在主动右边，只留同线淡引导线；手机上三条线分页签、一页一列 | ✅ | `ui-skills.js`（`skTreeLayout` / `skTreeHTML` / `renderSkillTreeDOM` / `skTreeTabsHTML`）、`index.html`（SKG + 被动腰围）、`ui.js`（说明页「技能树布局」） | `dev/probe-skill-p1d.js` 36 |
 | P2a | **等级上限 5 → 10** + 分段曲线真的进战斗（`skillLvMul` 取代旧「每级固定 8%」）+ 点数供给 等级 × 1.5；面板 10 格 / 满级金环 / 洗点全额退回 | ✅ | `data-skills.js`（`SKILL_LV_MAX` / `SKILL_POINT_RATE` / `skillPointPool`）、`data-skill-tree.js`（`lvMax` 同源）、`game.js`（`castSkill` / `skillPoints`）、`ui-skills.js`、`ui.js`、`index.html` | `dev/test-skill-p2.js` 41 · `dev/probe-skill-p2.js` 26 |
-| P2b | **数量 / 形态台阶接进 `castSkill`**。①数量：默认 Lv3 / Lv7 各 +1，接 `smod.count`（13 个技能消费），第 n 发 ×0.85^n 防三倍伤害；**发数节奏可按技能覆盖**（`SKILL_COUNT_TIER`，法师 ② 在 Lv5 / Lv7）。②进化：新建 `SKILL_TIER_EVO`（挂**技能 id** 不挂技能位），合并顺序 **台阶最前 → 精研 / 取向 / 变体覆盖同名键**（花点的选择必须盖过等级送的）。**已接 12 个位 / 34 条**：刀客①旋风斩、法师①火球、道士①符箓、道士②毒雾、刀客②地裂、刀客③剑阵、刀客④血怒、道士④回春、法师③火墙、法师④护盾、道士③太极、法师②陨石（3 溅射 / 5 双陨 / 7 三连落）—— 细则见下面「P2b 收口要点」。**⚠ 12/15 个位：法师 ② 的 9 / 10 与三个 ⑤ 号位还没接（11/45 条）** | 🟡 | `data-skills.js`（`SKILL_TIER_EVO` / `SKILL_COUNT_TIER` / `skillTierEvo` / `skillTierMods` / `skillTierBeh`）、`skill-beh.js`（`branchBeh` 台阶排最前 + `killProlong` / `lifesteal` / `ccImmune` / `healOnCast` / `tierDur` / `splash`）、`game.js`（autoTarget / rageMul / firePatch / swordField / applyPlayerSlow / ccImmuneNow / behTierNova / shieldT+sdur / 符阵 dur+tierDur / meteor·blizzard·judgement·starfall 多发）、`ui.js`（说明页读数现算）、`ui-skills.js` | `dev/test-skill-p2b.js` 621 · `dev/probe-skill-p2b.js` 202 |
+| P2b | **数量 / 形态台阶接进 `castSkill`**。①数量：默认 Lv3 / Lv7 各 +1，接 `smod.count`（13 个技能消费），第 n 发 ×0.85^n 防三倍伤害；**发数节奏可按技能覆盖**（`SKILL_COUNT_TIER`，法师 ② 在 Lv5 / Lv7）。②进化：新建 `SKILL_TIER_EVO`（挂**技能 id** 不挂技能位），合并顺序 **台阶最前 → 精研 / 取向 / 变体覆盖同名键**（花点的选择必须盖过等级送的）。**已接 13 个位 / 37 条**：刀客①旋风斩、法师①火球、道士①符箓、道士②毒雾、刀客②地裂、刀客③剑阵、刀客④血怒、道士④回春、法师③火墙、法师④护盾、道士③太极、法师②陨石（3 溅射 / 5 双陨 / 7 三连落）—— 细则见下面「P2b 收口要点」。**⚠ 12/15 个位：法师 ② 的 9 / 10 与三个 ⑤ 号位还没接（11/45 条）** | 🟡 | `data-skills.js`（`SKILL_TIER_EVO` / `SKILL_COUNT_TIER` / `skillTierEvo` / `skillTierMods` / `skillTierBeh`）、`skill-beh.js`（`branchBeh` 台阶排最前 + `killProlong` / `lifesteal` / `ccImmune` / `healOnCast` / `tierDur` / `splash`）、`game.js`（autoTarget / rageMul / firePatch / swordField / applyPlayerSlow / ccImmuneNow / behTierNova / shieldT+sdur / 符阵 dur+tierDur / meteor·blizzard·judgement·starfall 多发 / spawnTierField 落点领域）、`ui.js`（说明页读数现算）、`ui-skills.js` | `dev/test-skill-p2b.js` 654 · `dev/probe-skill-p2b.js` 211 |
 | P2c | 精通层 11~20：光效随等级变亮、Lv15 精通小质变（统一三选一模板），不新增形态 | ⬜ | `src/fx.js`、`skill-beh.js` | — |
 | P3 | 元素注入 + 反应表：伤害管线支持双元素、特效混色、词缀口径 | ⬜ | 战斗 + 词缀 + `src/fx.js` | — |
 | P4 | 三职业独立 ⑤ 号位：刀客兵形/刃势、法师法相、道士召唤 | ⬜ | `src/fx.js`、`src/charforge.js` | — |
@@ -183,7 +184,7 @@ P1 起才动 `SKILL_BAR_SLOTS` 与面板的三列树。
     于是还得再造一个「本级别给发数」的开关，绕一圈回来，只多一条语义混装的 evo 条目。
     纪律：**同一位里躺几只技能就登记几只**，契约查「同位节奏一致」。
 37. **面板「已实装」要判「本级新增发数」，不能判 `count > 0`**。发数是**累计**的
-    （Lv7 之后一直 +2），只判大于零的话，法师 ② 的 Lv9 / Lv10（文案还是「陨石雨」）
+    （Lv7 之后一直 +2），只判大于零的话，法师 ② 的 Lv9 / Lv10（那时还只是文案）
     会因为 Lv7 那两发一直挂着而显示成已生效。改成
     `skillTierCount(id, n) > skillTierCount(id, n - 1)`，两个方向一起查
     （契约第七节 + 三·B 节）。
@@ -197,18 +198,28 @@ P1 起才动 `SKILL_BAR_SLOTS` 与面板的三列树。
     一道雷本来就会打出好几下；而且精研 / 取向的 `chain` / `bounce` 会在 `applySkillBeh`
     里再补一串。所以探针截 `FX.telegraph` 数落点圈，并把 `applySkillBeh` 临时关掉。
 
+41. **一套「落点领域」给四只技能共用**（`Game.spawnTierField`）。法师 ② 的 9 / 10 原本写
+    「陨石雨 / 持续 8 秒」—— 那是 `starfall` 这**一只**技能的名字，对另外三只（单颗陨石 /
+    单体落雷 / 一片暴雪）是空话。改成「落点留火海」后四只都能兑现，颜色按元素走。
+    **不能借现成键**：`burnPct` 被 meteor 的精研「灼地」与变体「熔心」占着，`zone` 是
+    starfall 精研「星痕」自己的光圈 —— 借过来就是「点过精研的人这一级白给」。
+    **同时最多 4 块**：陨星天火一场 18 颗，不记账就是 18 块地糊满屏，帧率和总伤一起爆。
+42. **`skillTierEvo` 里 `mods` 是累加、`beh` 是覆盖**。所以 Lv10 那行必须**自带**
+    `tierField`，只写 `tierFieldDur` 的话拿不到 9 级那份伤害。写台阶前先看清这个键走哪条。
+43. **探针里 `FX.area` 不只我们一家在用**。陨星天火的精研「星痕」也拿它画 2 秒光圈，
+    直接读 `fields[0]` 会把精研的圈当成台阶那块地 —— **按 dur 过滤**再数。
+44. **停帧不能停在 `castSkill` 之前**。它第一行就是
+    `if (!this.state || this.dead || !this.running) return`，先 `Game.running = false`
+    再施法，整个 case 一行都不跑（量到 0，看起来像「没做」）。
+    要躲假怪的 `reading 'time'`，只能**施法后立刻把假怪从 `enemies` 里收走**，
+    或者在不需要施法的段落（直接调 `spawnTierField`）里停帧。
 
-## P2b 剩余：法师 ② 的 9 / 10 + 三个 ⑤ 号位（11 条）
 
-已接 12 个位：刀客 ①②③④、法师 ①②③④、道士 ①②③④。
+## P2b 剩余：三个 ⑤ 号位（9 条）
 
-**法师 ② 的 9 / 10（陨石雨 / 持续 8 秒）· 单独一轮**
-3 / 5 / 7 已落地（溅射 / 双陨 / 三连落，四只技能逐只接）。剩下的 9 / 10 是**新机制**：
-`starfall` 本身就是那颗雨，但 meteor / judgement / blizzard 在 9 / 10 要变成什么，
-还没定（候选：「命中后落一场小雨」/「落点留持续火海」）。**别直接照抄 starfall** ——
-它 16 颗的基数与另外三只的 1 发基数不是一个量级。面板现在诚实地标着「待」。
+已接 13 个位：刀客 ①②③④、法师 ①②③④、道士 ①②③④（法师 ② 的 9 / 10 也已落地）。
 
-**B 档 · 要新写机制（单独排，别混进 A 档的批次）**
+**B 档 · 要新写机制（单独排，别混进「接个行为键」的批次）**
 
 - **刀客 ⑤ 兵形**：刃势满层断岳斩、切刀式保刃势、剑神降世 —— 三件都是新系统（刃势记账 + 终结技 + 三刀式状态），
   比「一个行为键」大一个量级。
@@ -381,7 +392,7 @@ P1 起才动 `SKILL_BAR_SLOTS` 与面板的三列树。
   | `execute` 斩杀 | Lv22 | 刀客 ② | 单体高伤，归「高伤」桶 |
   | `skysfall` 天崩 | Lv40 | 刀客 ② | 三连震 = ② 的 7 级台阶「三连震」 |
   | `chain` 雷弧链 | Lv8 | 法师 ① | 填充·小范围；跳 5 目标 = ① 的「自动索敌」 |
-  | `starfall` 陨星天火 | Lv26 | 法师 ② | 就是 ② 的 9 级台阶「陨石雨」 |
+  | `starfall` 陨星天火 | Lv26 | 法师 ② | 本位唯一一只「一场落十几颗」，9 / 10 的落点领域最初从它设想 |
   | `revive` 还魂 | Lv40 | 道士 ④ | 免死一次属防御类增益 |
 - 契约加三条（每职业）：孤儿为 0、继承数 == 现有技能数、`skillArchSlotOf` 与 `inherit` 双向一致。
   239 通过 / 0 失败。
