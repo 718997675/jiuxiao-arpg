@@ -3,7 +3,7 @@
 - 分支：`feat/skill-refactor`（优先级 **低**，排在大型扩展之后）
 - 计划文档：`docs/SKILL-REDESIGN-PLAN.md`（16 节）
 - 预览站：暂不发（2026-10-27 用户口径：本地验证即可，别再折腾线上）
-- 更新：2026-10-28 · P2b 进化台阶 **10/15 位**（30/45 条）· **收工点：下次从 A 档「道士 ③ 太极」接**
+- 更新：2026-10-28 · P2b 进化台阶 **11/15 位**（33/45 条）· **收工点：下次先解 A- 档「法师 ② 陨石」的发数级别前置**
 
 > 当前：**P0 + P1a + P1b + P1c + P1d + P2a 完成，P2b 进行中**。动作条 5 格、格位 = 功能位；
 > 技能树已按「三线并行」结算 —— 没有必点主干、没有主动↔被动二选一，
@@ -12,9 +12,9 @@
 > **等级上限已是 10，伤害走 skillLvMul 分段曲线（10 级 1.72 倍 / 20 级 2.02 倍），
 > 技能点供给 = 等级 × 1.5（40 级 60 点）**。
 > 台阶也接进战斗了：Lv3 / Lv7 走 `smod.count`（多发带 0.85^n 递减）——**12 个技能全接**
-> （毒雾、火墙、雷云是后两批补进来的）；Lv5 / Lv9 / Lv10 走行为键，**已接 10 个位**
-> （刀客 ①②③④、法师 ①③④、道士 ①②④），15 个位 × 3 级 = 45 条里完成 **30 条**。
-> 剩 5 个位仍是文案，面板上带「待」角标 —— **别把「P2b 完成」读成 45 条都做了**。
+> （毒雾、火墙、雷云是后两批补进来的）；Lv5 / Lv9 / Lv10 走行为键，**已接 11 个位**
+> （刀客 ①②③④、法师 ①③④、道士 ①②③④），15 个位 × 3 级 = 45 条里完成 **33 条**。
+> 剩 4 个位仍是文案，面板上带「待」角标 —— **别把「P2b 完成」读成 45 条都做了**。
 
 ## 一句话现状
 
@@ -36,7 +36,7 @@ P1 起才动 `SKILL_BAR_SLOTS` 与面板的三列树。
 | P1c | **取消二选一**：三线并行结算（等级门 `reqLv` + 关键被动软前置 `needPts`），`levelUpSkill` / `levelUpPassive` 的 fork 拦截整块删除，面板去掉「或/锁」标记与互斥虚线，说明页同步 | ✅ | `data-skill-tree.js`、`game.js`、`skill-passive.js`、`ui-skills.js`、`ui.js`、`index.html` | `dev/test-skill-p1c.js` 353 · `dev/probe-skill-p1c.js` 23 |
 | P1d | 面板**视觉**重排：一条线一列、列内按 `reqLv` 递增，被动小一圈挂在主动右边，只留同线淡引导线；手机上三条线分页签、一页一列 | ✅ | `ui-skills.js`（`skTreeLayout` / `skTreeHTML` / `renderSkillTreeDOM` / `skTreeTabsHTML`）、`index.html`（SKG + 被动腰围）、`ui.js`（说明页「技能树布局」） | `dev/probe-skill-p1d.js` 36 |
 | P2a | **等级上限 5 → 10** + 分段曲线真的进战斗（`skillLvMul` 取代旧「每级固定 8%」）+ 点数供给 等级 × 1.5；面板 10 格 / 满级金环 / 洗点全额退回 | ✅ | `data-skills.js`（`SKILL_LV_MAX` / `SKILL_POINT_RATE` / `skillPointPool`）、`data-skill-tree.js`（`lvMax` 同源）、`game.js`（`castSkill` / `skillPoints`）、`ui-skills.js`、`ui.js`、`index.html` | `dev/test-skill-p2.js` 41 · `dev/probe-skill-p2.js` 26 |
-| P2b | **数量 / 形态台阶接进 `castSkill`**。①数量：Lv3 / Lv7 各 +1，接 `smod.count`（10 个技能消费），第 n 发 ×0.85^n 防三倍伤害。②进化：新建 `SKILL_TIER_EVO`（挂**技能 id** 不挂技能位），合并顺序 **台阶最前 → 精研 / 取向 / 变体覆盖同名键**（花点的选择必须盖过等级送的）。**已接 10 个位 / 30 条**：刀客①旋风斩、法师①火球、道士①符箓、道士②毒雾、刀客②地裂、刀客③剑阵、刀客④血怒、道士④回春、法师③火墙、法师④护盾 —— 细则见下面「P2b 收口要点」。**⚠ 只接了 10/15 个位（30/45 条），剩 5 位仍是文案** | 🟡 | `data-skills.js`（`SKILL_TIER_EVO` / `skillTierEvo` / `skillTierMods` / `skillTierBeh`）、`skill-beh.js`（`branchBeh` 台阶排最前 + `killProlong` / `lifesteal` / `ccImmune` / `healOnCast` / `tierDur`）、`game.js`（autoTarget / rageMul / firePatch / swordField / applyPlayerSlow / ccImmuneNow / behTierNova / shieldT+sdur）、`ui.js`（说明页读数现算）、`ui-skills.js` | `dev/test-skill-p2b.js` 505 · `dev/probe-skill-p2b.js` 170 |
+| P2b | **数量 / 形态台阶接进 `castSkill`**。①数量：Lv3 / Lv7 各 +1，接 `smod.count`（10 个技能消费），第 n 发 ×0.85^n 防三倍伤害。②进化：新建 `SKILL_TIER_EVO`（挂**技能 id** 不挂技能位），合并顺序 **台阶最前 → 精研 / 取向 / 变体覆盖同名键**（花点的选择必须盖过等级送的）。**已接 11 个位 / 33 条**：刀客①旋风斩、法师①火球、道士①符箓、道士②毒雾、刀客②地裂、刀客③剑阵、刀客④血怒、道士④回春、法师③火墙、法师④护盾、道士③太极 —— 细则见下面「P2b 收口要点」。**⚠ 只接了 11/15 个位（33/45 条），剩 4 位仍是文案** | 🟡 | `data-skills.js`（`SKILL_TIER_EVO` / `skillTierEvo` / `skillTierMods` / `skillTierBeh`）、`skill-beh.js`（`branchBeh` 台阶排最前 + `killProlong` / `lifesteal` / `ccImmune` / `healOnCast` / `tierDur`）、`game.js`（autoTarget / rageMul / firePatch / swordField / applyPlayerSlow / ccImmuneNow / behTierNova / shieldT+sdur / 符阵 dur+tierDur）、`ui.js`（说明页读数现算）、`ui-skills.js` | `dev/test-skill-p2b.js` 561 · `dev/probe-skill-p2b.js` 183 |
 | P2c | 精通层 11~20：光效随等级变亮、Lv15 精通小质变（统一三选一模板），不新增形态 | ⬜ | `src/fx.js`、`skill-beh.js` | — |
 | P3 | 元素注入 + 反应表：伤害管线支持双元素、特效混色、词缀口径 | ⬜ | 战斗 + 词缀 + `src/fx.js` | — |
 | P4 | 三职业独立 ⑤ 号位：刀客兵形/刃势、法师法相、道士召唤 | ⬜ | `src/fx.js`、`src/charforge.js` | — |
@@ -156,25 +156,26 @@ P1 起才动 `SKILL_BAR_SLOTS` 与面板的三列树。
 31. **case 里写死的时长会吃掉变体的 `mods.dur`**。`iceshield` 的 `shieldT` 一直写死 10，
     而变体「永冻」写的是「持续 +6 秒」—— 玩家一整条变体换了个寂寞。凡是 case 里
     「XX 持续 N 秒」的常量，都要加 `sdur`（青符 4 件的 +3 秒也走这条）。
+32. **「一个格位多只技能」里最狠的一种：两只连「形态类别」都不同**。道士 ③ 躺着
+    `taiji`（cast:'self' 的 12 秒增益，连 `radius` 字段都没有）与 `mastersigil`
+    （丢在准星上的 6 秒落雷符阵）。原稿「单圈 / 双圈 / 三圈」对增益是空话（增益没有
+    「第几圈」），改发数就等于 Lv3 白送一发而文案写「双圈」。判据还是第 11 条：
+    **把这一级清空，行为有没有变化？** 没有就不是台阶。3 / 7 因此改成瞬回与延长。
+33. **延长要两个消费点都接**。Lv7「阵法持续 +3 秒」对太极走 buff case 的 `tierDur`，
+    对天师符走它自己 case 里的 `dur` —— 只给增益加，把天师符放进 ③ 号的玩家这一级
+    就是假话。探针没法读「符阵还剩几秒」（它没有 buff 条目），直接截 `FX.area` 的
+    第 4 个参数，比读内部定时器稳。
+34. **`slow` 是这一位的正确解，`knock` 不是**。原稿 Lv5「太极推开敌人」看着很对，
+    但天师符是**靠怪站在阵里持续掉血**的技能 —— 把怪推出 6 码等于把自己的伤害推走。
+    「阵内减速」对两只都是纯赚：增益那只是怪贴不上来，符阵那只是怪走不出雷区。
+35. **`+drPct` 的验收要看「两份都在」**。太极的 `drPct` 被精研「阴阳」10 +
+    变体「绵劲」20 占了，台阶写同名键会被顶掉。探针因此量的是
+    「Lv9 − Lv7 == 12」而不是「Lv9 == 12」—— 后者会把「被顶掉、只剩 20+10」也判成过。
 
 
-## P2b 剩余：5 个位的进化台阶（15 条）
+## P2b 剩余：4 个位的进化台阶（12 条）
 
-已接 10 个位：刀客 ①②③④、法师 ①③④、道士 ①②④。剩下的按「要不要新写相位」分三档：
-
-**A 档 · 复用现成键（可以直接接着做）**
-
-| 位 | Lv5 / Lv9 / Lv10 文案 | 可用的键 |
-|---|---|---|
-| 道士 ③ 太极 | 推开 / 内减伤 / 内回血 | `knock` / `drPct` / `hotPct` |
-
-> ⚠ **A 档只剩道士 ③，原表推荐的键「看着能用，其实全撞」**（2026-10-28 核查）：
-> 法师 ③ 火墙与法师 ④ 护盾都已按这条路做完，可当范例 ——
-> 火墙的 `grow / ring / follow / endBurst`、护盾的 `reflect`（霜甲、冰甲）/ `breakNova`（冰刺）
-> 全是**该技能自己的精研 / 取向 / 变体**；
-> 道士 ③ 太极的 `knock`（两仪）/ `drPct`（阴阳、太极、绵劲、无极）同理。
-> 照原表直接接 = 三条台阶全被花点的选择顶掉。**动手前先按第 22 条选路**：
-> 数值类走 `+键` 叠加，形态类必须换一个消费点不同的新语义（参考血怒位与回春位）。
+已接 11 个位：刀客 ①②③④、法师 ①③④、道士 ①②③④。**A 档已清空**，剩下的按「要不要新写相位」分两档：
 
 **A- 档 · 有前提没解开（别直接开工）**
 

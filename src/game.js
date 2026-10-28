@@ -4088,7 +4088,9 @@ const Game = {
         SFX.cast();
         const c = aim.clone();
         const rad = 6 * srad;
-        const dur = 6 + sdur;
+        /* [P2b] 台阶 Lv7「阵法持续 +3 秒」。这一位躺着太极（增益）与天师符（符阵）
+         * 两只 —— 只给增益加时长的话，把天师符放进 ③ 号位的玩家这一级就是假话。 */
+        const dur = 6 + sdur + ((bBeh && bBeh.tierDur) || 0);
         const zona = FX.area(c, rad, 0xffd24a, dur, { opacity: 0.22 });
         /* [P3] 贴身印（变体）：符印贴在身上跟着走 */
         if (bBeh && bBeh.follow) this.attachFollow([c], [zona], dur);

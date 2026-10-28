@@ -1429,8 +1429,155 @@ const ok = (c, m, d) => {
     ok(todo.join(',') === '', '法师 ④ 面板不再有「待」角标', todo);
   }
 
-  /* ---------------- 12. 零报错 ---------------- */
-  console.log('十二、控制台');
+  /* ---------------- 12. 道士 ③ 太极（自身增益 / 地面符阵） ---------------- */
+  console.log('十二、道士 ③ 太极（太极玄阵 / 天师符）');
+  const taijiTiers = await p.evaluate(async () => {
+    const out = {};
+    const mkFoe = (x, z, id) => ({
+      pos: new THREE.Vector3(x, 0, z), radius: 0.5, dead: false,
+      hp: 1e9, maxHp: 1e9, id: id, level: 1, cfg: {},
+      anim: { time: 0 }, spd: 0, atkCd: 999, stun: 0, slow: 0, slowT: 0
+    });
+    /* 这一位两只技能的**形态类别不同**：taiji 是 cast:'self' 的增益（阵心 = 人），
+     * mastersigil 是丢在准星上的符阵（阵心 = 落点）。假怪放在 2.4 码：
+     * 太极的默认半径是 3（没有 radius 字段），符阵 6 × 变体 1.4 —— 两边都够得着。 */
+    const setup = (id, lv, form) => {
+      Game.mapGen = (Game.mapGen || 0) + 1;
+      Game.state.cls = 'taoist';
+      Game.state.skills = { [id]: { lv: lv } };
+      if (form != null) Game.state.skills[id].f = form;
+      window.__mkClean();
+      Game.buffs = []; Game.shield = 0; Game.shieldT = 0;
+      Game.recalc();
+      /* recalc 之后清加成：量的是台阶那一份，不是装备 / 等级 */
+      Game.state.stats.skillLv = 0;
+      Game.state.stats.skillRank = {};
+      Game.state.stats.skillMods = {};
+      Game.state.mp = 99999; Game.dead = false; Game.invuln = 0;
+      Game.regen = 0;
+      const p0 = Game.playerGroup.position;
+      Game.enemies = [mkFoe(p0.x + 2.4, p0.z, 0), mkFoe(p0.x, p0.z + 2.4, 1)];
+      Game.state.hp = Math.round(Game.state.stats.hpMax * 0.5);
+      return p0;
+    };
+    /* taiji 的变体 0 号「绵劲」自带 drPct 20 —— 正好用来验「+键」叠加：
+     * 9 级的减伤必须是 20（变体）+ 10（精研阴阳）+ 12（台阶），
+     * 而不是被其中任意一份顶掉。mastersigil 用 2 号「天师敕令」（纯 mods），
+     * 0 号「贴身印」会去 attachFollow、1 号「五雷印」会加落雷，都会污染读数。 */
+    const run = (id, lv, form) => {
+      setup(id, lv, form);
+      const hp0 = Game.state.hp;
+      const oldHit = Game.damageEnemy;
+      Game.damageEnemy = () => { };
+      Game.castSkill(id);
+      Game.damageEnemy = oldHit;
+      const dr = Game.buffs.reduce((a, b) => a + ((b.stats && b.stats.dmgReduce) || 0), 0);
+      const main = Game.buffs.find(b => b.key === 'skill:' + id);
+      const es = Game.enemies || [];
+      return {
+        heal: Math.round(Game.state.hp - hp0),
+        hpMax: Game.state.stats.hpMax,
+        dur: main ? Math.round(main.dur * 10) / 10 : 0,
+        dr: dr,
+        slow: es.length ? Math.round((es[0].slow || 0) * 100) : -1,
+        stun: es.length ? Math.round((es[0].stun || 0) * 10) / 10 : -1
+      };
+    };
+    for (const id of ['taiji', 'mastersigil']) {
+      const o = {};
+      for (const lv of [2, 3, 5, 7, 9, 10]) o['lv' + lv] = run(id, lv, id === 'taiji' ? 0 : 2);
+      out[id] = o;
+    }
+    /* 符阵没有 buff 可读：它的时长只活在 case 里那一句 FX.area —— 直接截参数。
+     * 这一条正是「只给增益加时长、符阵不加」那个假话的守门人。 */
+    const durOf = (lv) => {
+      setup('mastersigil', lv, 2);
+      let d = -1;
+      const oldArea = FX.area;
+      FX.area = function (c, r, col, du) { d = du; return { remove() { }, setOpacity() { } }; };
+      const oldHit = Game.damageEnemy;
+      Game.damageEnemy = () => { };
+      Game.castSkill('mastersigil');
+      FX.area = oldArea;
+      Game.damageEnemy = oldHit;
+      Game.mapGen = (Game.mapGen || 0) + 1;
+      Game.enemies = [];
+      return Math.round(d * 10) / 10;
+    };
+    out.sigilDur = { lv4: durOf(4), lv7: durOf(7) };
+
+    /* Lv10 的持续回复要真的逐秒跳：等 2.3 秒收两跳（1.5% × 2 ≈ 3% 最大生命）。
+     * 期间不能让真 damageEnemy 碰到假怪，也不能换图（换图会让 tick 的
+     * `later` 直接作废 —— 那样量到的是 0，看起来像「没做」）。
+     * 假怪没有 `actor`，帧循环第一行就是 `e.actor.time` → 必须在这之前清空；
+     * 清数组不影响 tick（`c.tick` 只判 mapGen / dead）。 */
+    const hotRun = async (lv) => {
+      setup('taiji', lv, 0);
+      const oldHit = Game.damageEnemy;
+      Game.damageEnemy = () => { };
+      Game.castSkill('taiji');
+      Game.damageEnemy = oldHit;
+      Game.enemies = [];
+      const h0 = Game.state.hp;
+      await new Promise(r => setTimeout(r, 2300));
+      const h1 = Game.state.hp;
+      Game.mapGen = (Game.mapGen || 0) + 1;
+      Game.enemies = []; Game.buffs = [];
+      return { healed: Math.round(h1 - h0), hpMax: Game.state.stats.hpMax };
+    };
+    out.hot = { lv7: await hotRun(7), lv10: await hotRun(10) };
+
+    window.__mkClean();
+    Game.enemies = [];
+    Game.mapGen = (Game.mapGen || 0) + 1;
+    return out;
+  });
+  for (const id of ['taiji', 'mastersigil']) {
+    const o = taijiTiers[id];
+    ok(o.lv3.heal - o.lv2.heal >= o.lv3.hpMax * 0.07,
+      id + ' Lv3 多回 8% 最大生命（Lv2 没有这一份）', { lv2: o.lv2.heal, lv3: o.lv3.heal });
+    ok(o.lv2.slow === 0 && o.lv5.slow >= 38,
+      id + ' Lv5 阵内敌人真的被减速 40%（Lv2 不减速）', { lv2: o.lv2.slow, lv5: o.lv5.slow });
+    ok(o.lv2.stun === 0 && o.lv10.stun >= 1.9,
+      id + ' Lv10 定住周围敌人 2 秒（Lv2 不晕）', { lv2: o.lv2.stun, lv10: o.lv10.stun });
+    /* 减伤：mastersigil 没有分支 drPct，读数就是台阶本身；taiji 的读数里
+     * 还叠着变体「绵劲」与精研「阴阳」—— 两份都得在，不是被谁顶掉。 */
+    if (id === 'mastersigil') {
+      ok(o.lv7.dr === 0 && o.lv9.dr === 12, id + ' Lv9 减伤 12%（Lv7 没有）', { lv7: o.lv7.dr, lv9: o.lv9.dr });
+    } else {
+      ok(o.lv9.dr - o.lv7.dr === 12,
+        id + ' Lv9 的 +drPct 与变体「绵劲」20 + 精研「阴阳」10 叠加（不是顶掉）',
+        { lv7: o.lv7.dr, lv9: o.lv9.dr });
+    }
+  }
+  ok(taijiTiers.taiji.lv5.dur === 12 && taijiTiers.taiji.lv7.dur === 15,
+    '太极的增益时长 12 → 15（Lv7 走 tierDur，不碰变体的 sdur）',
+    { lv5: taijiTiers.taiji.lv5.dur, lv7: taijiTiers.taiji.lv7.dur });
+  ok(taijiTiers.sigilDur.lv4 === 6 && taijiTiers.sigilDur.lv7 === 9,
+    '天师符的符阵时长 6 → 9（同一级台阶，符阵也得吃）', taijiTiers.sigilDur);
+  ok(taijiTiers.hot.lv7.healed <= taijiTiers.hot.lv7.hpMax * 0.005,
+    'Lv7 没有持续回复（对照）', taijiTiers.hot.lv7);
+  ok(taijiTiers.hot.lv10.healed >= taijiTiers.hot.lv10.hpMax * 0.02,
+    'Lv10 两跳至少回 3% 最大生命（每秒 1.5%）', taijiTiers.hot.lv10);
+
+  /* 面板：道士 ③ 号位不许再有「待」 */
+  {
+    const todo = await p.evaluate(() => {
+      Game.state.cls = 'taoist';
+      Game.state.skills = {};
+      Game.recalc();
+      UI.renderSkillPanel();
+      const arch = document.querySelector('#skList .sk-arch');
+      if (arch) arch.setAttribute('open', '');
+      const c = [...document.querySelectorAll('#skList .sk-ac')][2];   // ③ 号位
+      return [...c.querySelectorAll('.sk-as')]
+        .filter(s => s.classList.contains('todo')).map(s => (s.querySelector('i') || {}).textContent);
+    });
+    ok(todo.join(',') === '', '道士 ③ 面板不再有「待」角标', todo);
+  }
+
+  /* ---------------- 13. 零报错 ---------------- */
+  console.log('十三、控制台');
   ok(errs.length === 0, '全程零控制台报错', errs.slice(0, 3));
 
   console.log('\n' + (fail === 0 ? '✓' : '✗') + ' P2b 探针：' + pass + ' 通过 / ' + fail + ' 失败');

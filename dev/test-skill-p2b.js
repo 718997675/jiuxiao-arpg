@@ -597,6 +597,63 @@ const behSrc = readSrc('src/skill-beh.js');
     }
   }
 
+  /* --- 道士 ③ 太极：太极玄阵（自身增益）/ 天师符（地面符阵）共用一个位 ---
+   * 这一位比「三只增益」更狠：两只连**形态类别**都不同 —— 一只没有圈，
+   * 一只没有增益。所以 3 / 7 不能是发数（增益没有「第几圈」），
+   * 5 / 9 / 10 也不能用撞自己分支的 knock / drPct。 */
+  {
+    const ids = ['taiji', 'mastersigil'];
+    for (const id of ids) {
+      const e = SKILL_TIER_EVO[id];
+      ok(!!e && !!e[3] && !!e[5] && !!e[7] && !!e[9] && !!e[10],
+        id + ' 五条台阶都在（太极位只放一只，漏一只就是假话）');
+      ok(e && e[3].beh.healOnCast === 8, id + ' Lv3 施法瞬回 8%', e && e[3].beh);
+      ok(e && e[5].beh.slow === 40, id + ' Lv5 阵内减速 40%', e && e[5].beh);
+      ok(e && e[7].beh.tierDur === 3, id + ' Lv7 走 tierDur（增益与符阵都要加时长）', e && e[7].beh);
+      ok(e && e[9].beh['+drPct'] === 12,
+        id + ' Lv9 走 +drPct 叠加键（不撞「阴阳 / 太极 / 绵劲 / 无极」）', e && e[9].beh);
+      ok(e && e[10].beh.stun === 2 && e[10].beh.tierHot === 1.5,
+        id + ' Lv10 定身 2 秒 + 每秒回复 1.5% 最大生命', e && e[10].beh);
+    }
+    /* 撞键复查：这两个键确实是 taiji 自己的分支键 */
+    {
+      const tjBr = skillBranches('taiji');
+      const own = new Set();
+      const eat = o => { if (o && o.beh) for (const k in o.beh) own.add(k); };
+      if (tjBr) { eat(tjBr.core); (tjBr.pick || []).forEach(eat); (tjBr.form || []).forEach(eat); }
+      ok(own.has('knock') && own.has('drPct'),
+        '两仪 / 阴阳 / 太极 / 绵劲 / 无极 确实占了 knock / drPct（台阶不能再直接写这两个）', [...own]);
+      const tierKeys = new Set();
+      for (const id of ids) {
+        for (const lv of Object.keys(SKILL_TIER_EVO[id])) {
+          for (const k in (SKILL_TIER_EVO[id][lv].beh || {})) tierKeys.add(k);
+        }
+      }
+      ok(!tierKeys.has('knock'), '台阶没有占用 knock（占用 = 选过「两仪」的玩家点了没反应）', [...tierKeys]);
+      ok(!tierKeys.has('drPct'), '减伤只走 +drPct，不许直接写 drPct', [...tierKeys]);
+    }
+    /* 数量语义撤销：这两只都不吃发数，文案也不许再写「圈」 */
+    ok(!skillCountCapable('taiji') && !skillCountCapable('mastersigil'),
+      '太极 / 天师符都不在数量通道（增益没有发数，符阵是一只地阵）');
+    {
+      const slot3 = skillArchSlot('taoist', 3);
+      const txt = [3, 7].map(lv => (slot3.tiers || {})[lv] || '').join(' ');
+      ok(!/圈|发/.test(txt), '太极位 Lv3 / Lv7 不再写「双圈 / 三圈」（对增益是空话）', txt);
+    }
+    /* 接线：天师符的 dur 必须读 tierDur，否则这一位一半是假话 */
+    ok(/const dur = 6 \+ sdur \+ \(\(bBeh && bBeh\.tierDur\) \|\| 0\)/.test(game),
+      '天师符的符阵时长读 tierDur（只给增益加时长 = 另一半是假话）');
+    ok(/buff\.dur = \(buff\.dur \|\| 8\) \+ bBeh\.tierDur/.test(game),
+      '太极的增益时长也读 tierDur（两只都吃）');
+    ok(/slow: \{ ph: 'hit'/.test(behSrc) && /stun: \{ ph: 'hit'/.test(behSrc),
+      'slow / stun 都已在 SKILL_BEH 登记');
+    ok(/tierHot: \{ ph: 'self'/.test(behSrc), 'tierHot 已在 SKILL_BEH 登记');
+    for (const cls of ['taoist']) {
+      const todo = [1, 3, 5, 7, 9, 10].filter(lv => !skillSlotTierDone(cls, 3, lv));
+      ok(todo.length === 0, '道士 ③ 面板不再有「待」角标', todo);
+    }
+  }
+
   /* --- 刀客 ③ 剑阵：三条台阶都要「阵在哪 + 人在不在阵里」，所以接线三件套 --- */
   ok(/bBeh\.slowField/.test(game), '剑阵 case 必须消费 slowField（阵内减速）');
   ok(game.indexOf('this.swordField =') >= 0, '剑阵要铺一份运行时场地给 damagePlayer 用');
