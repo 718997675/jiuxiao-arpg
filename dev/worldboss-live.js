@@ -362,8 +362,183 @@ const ok = (cond, msg, extra) => {
     console.log('  击杀后追踪行：' + F.track);
   }
 
-  console.log('\n【G】页面错误');
-  ok(errs.length === 0, 'G: 有 pageerror / console.error', errs.slice(0, 4));
+  console.log('\n【G】领域机制（M18.5 · 六种玩家侧效果）');
+  const G = await page.evaluate(() => {
+    const out = {};
+
+    /* 把玩家丢进指定 boss 的领域里。offset 是相对领域中心的偏移（米）。 */
+    function enter(id, offset) {
+      const cfg = worldBossById(id);
+      const mapId = cfg.map;
+      const pos = bossPosOf(mapId, id, 0);
+      Game.state.level = 60; Game.recalc();
+      Game.state.mapsSeen = Object.keys(MAPS);
+      Game.state.worldBoss = {
+        id, mapId, x: pos[0], z: pos[1],
+        spawnAt: Date.now() - 1000, until: Date.now() + 1800000,
+        killed: false, killAt: 0
+      };
+      /* 换图会重建 scene.fog，先丢掉旧原值，否则还原时会写错雾 */
+      WorldBoss._fogBase = null;
+      WorldBoss._domainClear();
+      Game.loadMap(mapId, pos[0] + offset, pos[1] + offset);
+      /* loadMap 的落点参数会被入口区覆盖（它按 zone 选出生点），
+       * 所以要**手动**把人放到领域里，否则永远站在 160 米外测不到东西。 */
+      const pg = Game.playerGroup.position;
+      pg.set(pos[0] + offset, pg.y, pos[1] + offset);
+      /* loadMap 末尾已经调过 onMapEnter（ensure + sync），实体应该在了 */
+      Game.dead = false;
+      Game.invuln = 0;
+      Game.state.hp = Game.state.stats.hpMax;
+      Game.state.stats.dodge = 0;      // 别让「闪避」把毒沼那一下整条吃掉
+      const fog = Game.scene && Game.scene.fog;
+      return {
+        cfg, pos, e: WorldBoss.live(),
+        inside: (WorldBoss.domainState() || {}).inside || false,
+        baseFar: fog ? fog.far : 0, baseNear: fog ? fog.near : 0,
+        radius: cfg.domain.radius
+      };
+    }
+    const run = (n, dt) => { for (let i = 0; i < n; i++) WorldBoss.domainTick(dt); };
+    const fogNow = () => (Game.scene && Game.scene.fog) ? Math.round(Game.scene.fog.far) : -1;
+    /* 雾色亮度：压视野时如果只改 far 不改色，屏幕会变成「一片亮白」，
+     * 玩家以为贴图没加载。用 RGB 之和当亮度代理，够用且不依赖 THREE。 */
+    const fogLum = () => {
+      const c = Game.scene && Game.scene.fog && Game.scene.fog.color;
+      if (!c) return -1;
+      return Math.round(c.r * 255) + Math.round(c.g * 255) + Math.round(c.b * 255);
+    };
+
+    /* ---- ① 昼夜领域：视野压缩 + 阶段覆盖 + 出圈还原 ---- */
+    let s = enter('zhulong', 6);
+    out.daySpawned = !!s.e;
+    out.dayInside = s.inside;
+    run(3, 0.1);
+    out.sightDay = fogNow();
+    out.lumDay = fogLum();
+    if (s.e) {
+      s.e.hp = s.e.maxHp * 0.5;        // 打到 P2（闭眼）
+      run(3, 0.1);
+      out.sightNight = fogNow();
+      out.lumNight = fogLum();
+      s.e.hp = s.e.maxHp;              // 还原，后面还要用这只
+    }
+    /* 走出圈：雾必须回到进圈前的值 */
+    Game.playerGroup.position.set(s.pos[0] + 400, 0, s.pos[1] + 400);
+    run(3, 0.1);
+    out.fogBack = fogNow();
+    out.fogBase = Math.round(s.baseFar);
+    out.lumBack = fogLum();
+
+    /* ---- ② 毒沼领域：每秒扣最大生命的 0.6%（无视护甲） ---- */
+    s = enter('xiangliu', 6);
+    Game.invuln = 0;
+    const hp0 = Game.state.hp;
+    run(10, 0.1);                      // 1.0 秒 = 1 跳
+    out.poisonDrop = +(hp0 - Game.state.hp).toFixed(2);
+    out.poisonExpect = +(Game.state.stats.hpMax * 0.006).toFixed(2);
+    out.buff = Game.statusBuffs().find(b => b.noTimer) || null;
+    out.buffDom = (document.getElementById('buffbar').textContent || '').replace(/\s+/g, '');
+
+    /* ---- ③ 水天领域：移速 −20% ---- */
+    s = enter('kunpeng', 6);
+    run(3, 0.1);
+    out.slow = Game.domSlow;
+    out.slowPlayer = Game.playerSlow;   // 必须是 0：领域减速走独立字段
+
+    /* ---- ④ 吞噬领域：每秒被拉近 2.2 米 ---- */
+    s = enter('taotie', 10);
+    const p = Game.playerGroup.position;
+    const d0 = Math.hypot(p.x - s.pos[0], p.z - s.pos[1]);
+    run(10, 0.1);
+    const d1 = Math.hypot(p.x - s.pos[0], p.z - s.pos[1]);
+    out.pullIn = +(d0 - d1).toFixed(2);
+
+    /* ---- ⑤ 战意领域：攻速 −15% ---- */
+    s = enter('xingtian', 6);
+    run(3, 0.1);
+    out.aspd = Game.domAspd;
+    /* 攻速真的进了普攻冷却：同一套装备下 cd 应该变长 */
+    Game.doBasicAttack();
+    out.cdInDomain = Game.atkCd;
+    Game.domAspd = 0;
+    Game.doBasicAttack();
+    out.cdOutDomain = Game.atkCd;
+
+    /* ---- ⑥ 幻域：小地图压暗（但星标仍画） ---- */
+    s = enter('jiuweihu', 6);
+    run(3, 0.1);
+    out.dim = WorldBoss.dim();
+    /* 压暗之后小地图还应该画出星标 —— 用「画 / 不画」差异像素证明 */
+    const cv = document.getElementById('minimap');
+    const g2 = cv.getContext('2d');
+    const W = cv.width, H = cv.height;
+    Minimap.draw(Game.state);
+    const A = g2.getImageData(0, 0, W, H).data;
+    const r2 = WorldBoss.rec(), keep2 = r2.killed;
+    r2.killed = true;
+    try { Minimap.draw(Game.state); } finally { r2.killed = keep2; }
+    const B = g2.getImageData(0, 0, W, H).data;
+    let starPx = 0;
+    for (let i = 0; i < A.length; i += 4) {
+      if (Math.abs(A[i] - B[i]) + Math.abs(A[i + 1] - B[i + 1]) + Math.abs(A[i + 2] - B[i + 2]) > 18) starPx++;
+    }
+    out.starUnderDim = starPx;
+
+    /* ---- ⑦ 出圈 / 换图：一切归位 ---- */
+    Game.playerGroup.position.set(s.pos[0] + 400, 0, s.pos[1] + 400);
+    run(3, 0.1);
+    out.after = {
+      slow: Game.domSlow, aspd: Game.domAspd, dim: WorldBoss.dim(),
+      inDomain: !!WorldBoss._inDomain, buff: !!WorldBoss.domainBuff()
+    };
+    return out;
+  });
+
+  ok(G.daySpawned, 'G: 昼夜领域那只没刷出来');
+  ok(G.dayInside, 'G: 没把玩家放进领域里 —— 后面所有断言都不可信');
+  ok(Math.abs(G.sightDay - 26) <= 1, 'G: 昼阶段视野不是 26 米', G.sightDay);
+  ok(Math.abs(G.sightNight - 8) <= 1, 'G: 打到 P2 后视野没压到 8 米', G.sightNight);
+  ok(G.lumNight < G.lumDay * 0.5,
+    'G: 夜阶段雾色没压暗（屏幕会变成一片亮白，玩家以为贴图没加载）',
+    G.lumDay + ' → ' + G.lumNight);
+  ok(Math.abs(G.fogBack - G.fogBase) <= 1,
+    'G: 出圈后雾距没还原（会变成「打完 Boss 永远看不见远处」）', G.fogBack + ' vs ' + G.fogBase);
+  ok(Math.abs(G.lumBack - G.lumDay) <= 6,
+    'G: 出圈后雾色没还原', G.lumBack + ' vs ' + G.lumDay);
+
+  ok(G.poisonDrop > 0, 'G: 毒沼领域没有掉血', G.poisonDrop);
+  ok(Math.abs(G.poisonDrop - G.poisonExpect) <= Math.max(1, G.poisonExpect * 0.12),
+    'G: 毒沼每秒伤害不是「最大生命的 0.6%」（被护甲吃了？）',
+    G.poisonDrop + ' vs ' + G.poisonExpect);
+  ok(G.buff && G.buff.noTimer, 'G: buff 条没有领域那一条', G.buff);
+  ok(G.buffDom.indexOf('领域') >= 0, 'G: buff 条上没写出领域名', G.buffDom);
+  ok(G.buffDom.indexOf('常驻') >= 0, 'G: buff 条给领域写了倒计时（它没有剩余时间）', G.buffDom);
+
+  ok(Math.abs(G.slow - 0.2) < 1e-6, 'G: 水天领域减速不是 20%', G.slow);
+  ok(!G.slowPlayer, 'G: 领域减速串到了 playerSlow（出圈会算不清该清多少）', G.slowPlayer);
+  ok(G.pullIn > 1.6 && G.pullIn < 2.8, 'G: 吞噬领域每秒拉近不是 ~2.2 米', G.pullIn);
+  ok(G.aspd === -15, 'G: 战意领域攻速不是 −15%', G.aspd);
+  ok(G.cdInDomain > G.cdOutDomain,
+    'G: 攻速 −15% 没进普攻冷却', G.cdInDomain + ' vs ' + G.cdOutDomain);
+  ok(Math.abs(G.dim - 0.35) < 1e-6, 'G: 幻域压暗系数不是 0.35', G.dim);
+  ok(G.starUnderDim > 200, 'G: 幻域压暗之后小地图上找不到星标了', G.starUnderDim);
+  ok(!G.after.slow && !G.after.aspd && !G.after.dim,
+    'G: 出圈后玩家侧字段没归零', G.after);
+  ok(!G.after.inDomain && !G.after.buff, 'G: 出圈后 buff 条还挂着领域', G.after);
+
+  console.log('  视野 昼 ' + G.sightDay + 'm → 夜 ' + G.sightNight + 'm → 出圈还原 ' +
+    G.fogBack + 'm（原 ' + G.fogBase + 'm）；雾色亮度 ' + G.lumDay + ' → ' + G.lumNight +
+    ' → ' + G.lumBack);
+  console.log('  毒沼 1 秒掉 ' + G.poisonDrop + ' 血（应 ' + G.poisonExpect +
+    '），buff 条：' + (G.buff ? G.buff.name + ' / ' + G.buffDom : '无'));
+  console.log('  水天减速 ' + (G.slow * 100) + '% · 吞噬每秒拉近 ' + G.pullIn +
+    'm · 战意攻速 ' + G.aspd + '%（cd ' + G.cdInDomain.toFixed(3) + 's vs ' +
+    G.cdOutDomain.toFixed(3) + 's）');
+  console.log('  幻域压暗 ' + G.dim + '，压暗后星标仍有 ' + G.starUnderDim + ' px');
+
+  console.log('\n【H】页面错误');
+  ok(errs.length === 0, 'H: 有 pageerror / console.error', errs.slice(0, 4));
 
   await browser.close();
   console.log('\n' + '='.repeat(56));

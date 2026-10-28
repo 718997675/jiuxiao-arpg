@@ -1318,7 +1318,10 @@ const UI = {
       const c = typeof b.color === 'number' ? '#' + b.color.toString(16).padStart(6, '0') : (b.color || '#d8b25a');
       const icon = b.icon || (b.name ? b.name.slice(0, 1) : '·');
       const desc = b.desc ? ` title="${b.desc}"` : '';
-      return `<div class="buff ${b.type || 'buff'}" style="--c:${c}"${desc}><span class="bi">${icon}</span><span class="bn">${b.name}</span><span class="bt">${Math.max(0, Number(b.dur) || 0).toFixed(1)}s</span></div>`;
+      /* [M18.5] 领域压制没有「剩余秒数」—— 它是「站在圈里就一直有」。
+       * 硬写 0.0s 会让人以为快结束了，所以显示「常驻」。 */
+      const tail = b.noTimer ? '常驻' : Math.max(0, Number(b.dur) || 0).toFixed(1) + 's';
+      return `<div class="buff ${b.type || 'buff'}" style="--c:${c}"${desc}><span class="bi">${icon}</span><span class="bn">${b.name}</span><span class="bt">${tail}</span></div>`;
     }).join('');
   },
 

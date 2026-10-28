@@ -1592,6 +1592,9 @@ const Game = {
       this.state.mp = st.mpMax;
       this.shield = 0;
       this.poisonT = 0; this.playerSlow = 0; this.playerSlowT = 0; this.shieldT = 0;
+      /* [M18.5] 领域压制一律清掉：换图时 WorldBoss.domainTick 也会归位，
+       * 但这一行是「进图 = 干净状态」的口径，别指望下游兜底 */
+      this.domSlow = 0; this.domAspd = 0;
       if (wasHurt) {
         const pp = new THREE.Vector3(this.playerGroup.position.x, 0, this.playerGroup.position.z);
         FX.ring(pp, 3.2, 0x8ce0a8, 0.8, 0.3);
@@ -2486,6 +2489,11 @@ const Game = {
     /* 领域光环的淡入与旋转要按帧走（1 秒节流会一顿一顿）。
      * 没有光环时内部第一行就判空返回，代价可以忽略。 */
     if (typeof WorldBoss !== 'undefined') WorldBoss.anim(dt);
+    /* [M18.5] 领域机制：视野 / 毒 / 减速 / 吸力 / 攻速 / 小地图。
+     * 必须按帧走 —— 吸力是位移，1 秒节流会变成「瞬移一下」。
+     * 放在 anim 之后、`hp <= 0 → die()` 之前：
+     * 毒沼把人毒死的那一帧要能正常走死亡流程。 */
+    if (typeof WorldBoss !== 'undefined') WorldBoss.domainTick(dt);
     this.updateWorldAnims(dt);
     this.updateInteract();
     this.tickAudio(dt);
@@ -2664,8 +2672,13 @@ const Game = {
       /* [M1] 行脚套·疾行：击杀后 3 秒移速 +30% */
       const rush = this.lootRushT > 0 ? 1.3 : 1;
       /* 冲刺期间的速度由 dashSpd 单独决定（见下方 dashT 分支），
-       * 这里不再叠 ×4.6 —— 原来按着方向键冲刺比松开冲刺快一截。 */
-      const spd = st.moveSpd * analog * (1 - (this.playerSlow || 0)) * rush;
+       * 这里不再叠 ×4.6 —— 原来按着方向键冲刺比松开冲刺快一截。
+       *
+       * [M18.5] 领域减速用**独立字段** `domSlow`，不并进 `playerSlow`：
+       * 并进去的话，出圈时要把它减掉，而「减掉多少」在敌人也给过减速时
+       * 是算不清的 —— 少减会留永久残留，多减会顺手抹掉冰霜减速。 */
+      const slow = Math.min(0.85, (this.playerSlow || 0) + (this.domSlow || 0));
+      const spd = st.moveSpd * analog * (1 - slow) * rush;
       pg.position.x += mx * spd * dt;
       pg.position.z += mz * spd * dt;
       this.lastMoveDir = { x: mx, z: mz };
@@ -2778,7 +2791,11 @@ const Game = {
     const aspdK = (this.aspdCritT > 0 ? 1 + (st.aspdOnCrit || 0) / 100 : 1)
       * (1 + 0.04 * ((this.frenzy && this.frenzy.n) || 0))
       /* [M1] 行脚套·疾行：击杀后 3 秒攻速 +15% */
-      * (this.lootRushT > 0 ? 1.15 : 1);
+      * (this.lootRushT > 0 ? 1.15 : 1)
+      /* [M18.5] 战意领域（刑天）：攻速 -15%。
+       * 走独立字段而不是 buffs —— 领域压制不该被「净化」驱散，
+       * 也不该和药水 / 技能的攻速加成互相覆盖。 */
+      * Math.max(0.4, 1 + (this.domAspd || 0) / 100);
     const cdBase = 0.72 / (st.aspd * wpSpeed * aspdK);
     this.atkCd = cdBase;
     this.attacking = 0.32;
@@ -4043,6 +4060,12 @@ const Game = {
     if (this.reviveT > 0) out.push({ name: '还魂', dur: this.reviveT, color: '#ffd166', type: 'buff', icon: '魂', desc: '受到致命伤时以 35% 生命存活' });
     if (this.playerSlowT > 0) out.push({ name: '迟滞', dur: this.playerSlowT, color: '#6ab8ff', type: 'debuff', icon: '缓', desc: '移动速度降低 ' + Math.round((this.playerSlow || 0) * 100) + '%' });
     if (this.poisonT > 0) out.push({ name: '中毒', dur: this.poisonT, color: '#7fbf5a', type: 'debuff', icon: '毒', desc: '每 0.9 秒受到 ' + Math.round(this.poisonDps || 0) + ' 点毒素伤害' });
+    /* [M18.5] 领域压制：站进世界 Boss 的圈里就常驻一条。
+     * 它没有倒计时（出去就没了），所以带 noTimer，UI 不显示秒数。 */
+    if (typeof WorldBoss !== 'undefined' && WorldBoss.domainBuff) {
+      const db = WorldBoss.domainBuff();
+      if (db) out.push(db);
+    }
     if (this.shield > 0 && this.shieldT > 0) out.push({ name: '玄冰护盾', dur: this.shieldT, color: '#9ae0ff', type: 'buff', icon: '盾', desc: '吸收 ' + Math.round(this.shield) + ' 点伤害' });
     return out;
   },
@@ -4374,8 +4397,16 @@ const Game = {
     }
   },
 
-  damagePlayer(amount, source) {
+  /* `opts.pierce = true` —— 无视护甲 / 格挡 / 抗性 / 难度 / 被动减伤，
+   * 只保留护盾吸收与免死。
+   *
+   * 为什么需要这个开关：领域 DoT 在数据里写的是「每秒扣最大生命的 0.6%」，
+   * 这是**对玩家的一句承诺**。如果它走常规结算，60 级满装能把它压到 0.19%，
+   * 结果就是「堆防御的人完全无视领域」—— 那领域机制等于不存在。
+   * 常规伤害（怪打你）该吃护甲，环境伤害（站在毒沼里）不该。 */
+  damagePlayer(amount, source, opts) {
     if (this.dead || this.invuln > 0) return;
+    const pierce = !!(opts && opts.pierce);
     const s = this.state, st = s.stats;
 
     /* [S1] 闪避：完全免伤。给 0.2 秒无敌，避免一次群体攻击连续闪出十几条文字 */
@@ -4401,10 +4432,10 @@ const Game = {
     const reduce = Math.min(0.70, st.def / (st.def + 380 + this.state.level * 28));
     /* [DIFF] 玩家承受伤害系数：放在减伤之后，保证「护甲收益」在四档难度里一致，
      * 难度只放大最终结果，不扭曲装备词条的价值。 */
-    let dmg = amount * (1 - reduce) * this.diff().taken;
+    let dmg = pierce ? amount : amount * (1 - reduce) * this.diff().taken;
 
     /* [S1] 格挡：伤害减半（先于抗性结算） */
-    if (st.block && CHANCE(st.block / 100)) {
+    if (!pierce && st.block && CHANCE(st.block / 100)) {
       /* [P3] 舍身（反击变体）：格挡照挡，但这一下不再减半 ——
        * 换的是格挡后 3 秒的伤害加成（onBehCounter 里给） */
       const noDR = !!(this.buffs && this.buffs.some(b => b.noDR));
@@ -4426,17 +4457,19 @@ const Game = {
       if (typeof this.onBehCounter === 'function') this.onBehCounter(source);
     }
 
-    dmg *= (1 - CLAMP(st.allRes, 0, 60) / 200);
-    /* [S1] 单元素抗性：按来源怪物的元素标记取，无标记按物理 */
-    const cfg = source && source.cfg;
-    const oneRes = cfg
-      ? (cfg.fire ? st.fireRes : cfg.ice ? st.iceRes : cfg.poison ? st.poisonRes : st.physRes)
-      : st.physRes;
-    dmg *= (1 - CLAMP(oneRes || 0, 0, 60) / 200);
-    /* [S1] 固定伤害减免 */
-    dmg *= (1 - CLAMP(st.dmgReduce || 0, 0, 40) / 100);
-    /* [P2] 被动的受伤侧改写（霜甲：贴身来源减伤；不动如山走 dmgReduce 通道） */
-    if (typeof this.passiveTakenMul === 'function') dmg *= this.passiveTakenMul(source);
+    if (!pierce) {
+      dmg *= (1 - CLAMP(st.allRes, 0, 60) / 200);
+      /* [S1] 单元素抗性：按来源怪物的元素标记取，无标记按物理 */
+      const cfg = source && source.cfg;
+      const oneRes = cfg
+        ? (cfg.fire ? st.fireRes : cfg.ice ? st.iceRes : cfg.poison ? st.poisonRes : st.physRes)
+        : st.physRes;
+      dmg *= (1 - CLAMP(oneRes || 0, 0, 60) / 200);
+      /* [S1] 固定伤害减免 */
+      dmg *= (1 - CLAMP(st.dmgReduce || 0, 0, 40) / 100);
+      /* [P2] 被动的受伤侧改写（霜甲：贴身来源减伤；不动如山走 dmgReduce 通道） */
+      if (typeof this.passiveTakenMul === 'function') dmg *= this.passiveTakenMul(source);
+    }
 
     if (this.shield > 0) {
       const absorbed = Math.min(this.shield, dmg);

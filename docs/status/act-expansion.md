@@ -2,7 +2,8 @@
 
 - 分支：`feat/act-expansion`（优先级 **高**，先于技能重构合入 main）
 - 计划文档：`docs/ACT-EXPANSION-PLAN.md`（16 节，§15 = 终章重做）
-- 专题台账：`docs/status/world-boss.md`（M18 世界 Boss，插单，与本线并行；**M18.1~M18.4 已完成**，下一步 M18.5 领域机制）
+- 打磨计划：`docs/POLISH-PLAN.md`（用户 2026-10-28 提的 17 项体验 / 平衡，P01~P17，分 4 批）
+- 专题台账：`docs/status/world-boss.md`（M18 世界 Boss，插单，与本线并行；**M18.1~M18.5 已完成**，下一步 M18.7 多阶段战斗）
 - 预览站：<https://718997675.github.io/jiuxiao-arpg/preview/act-expansion/>
 - 更新：2026-10-28 15:40
 

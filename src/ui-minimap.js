@@ -255,6 +255,19 @@ const Minimap = {
       g.fillRect(tx(l.pos.x) - 1.5, tz(l.pos.z) - 1.5, 3, 3);
     }
 
+    /* ---------- 幻域压暗（M18.5 · 九尾狐）----------
+     * 铺在敌人 / 掉落**之后**、世界 Boss 星标**之前**：
+     * 压暗的是「地形与杂兵」，星标和玩家箭头必须留着 ——
+     * 玩家连自己在哪都看不见就不叫「幻域」，叫「小地图坏了」。 */
+    const dimA = (typeof WorldBoss !== 'undefined' && WorldBoss.dim) ? WorldBoss.dim() : 0;
+    if (dimA > 0) {
+      g.save();
+      g.globalAlpha = Math.min(0.75, dimA);
+      g.fillStyle = '#05060a';
+      g.fillRect(0, 0, W, H);
+      g.restore();
+    }
+
     /* ---------- 世界 Boss 星标（M18.4）----------
      * 放在敌人 / 掉落**之后**画：它是全图唯一的事件级目标，
      * 被一只路过的小怪红点盖住就白做了。 */

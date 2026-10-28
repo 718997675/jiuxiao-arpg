@@ -1,7 +1,7 @@
 /* ============================================================
- * 世界 Boss · 运行时（M18.2）
+ * 世界 Boss · 运行时（M18.2 ~ M18.5）
  * ------------------------------------------------------------
- * 这套状态机只做四件事，别往里加第五件：
+ * 这套状态机只做五件事，别往里加第六件：
  *
  *   1. **保证「此刻该有哪一只」永远能算出来**（`ensure`）
  *      —— 记录缺字段 / 到点 / 被击杀后冷却结束，都归它管。
@@ -10,6 +10,8 @@
  *        走的都是同一条路，不需要三个入口各写一遍。
  *   3. **每秒一次心跳**（`tick`）—— 只做「到点换人 + 刷界面文字」。
  *   4. **击杀记账**（`onKill`）—— 记时间戳，不记倒计时。
+ *   5. **领域机制**（`domainTick`，M18.5）—— 玩家踩进圈里之后的
+ *      六种压制效果。**这是唯一每帧都要跑的一段**，因为它包含位移（吸力）。
  *
  * ------------------------------------------------------------
  * 三条设计决定，改之前先看：
@@ -194,6 +196,9 @@ const WorldBoss = {
     }
     this._liveId = null;
     this.dropAura();
+    /* [M18.5] 实体被清掉，领域自然失效 —— 主动归位，
+     * 不等下一帧 `domainTick` 发现「记录与实体对不上」 */
+    this._domainClear();
   },
 
   /* ============================================================
@@ -316,6 +321,11 @@ const WorldBoss = {
   onMapEnter() {
     this._acc = 0;
     this._liveId = null;
+    /* [M18.5] 换图时 `scene.fog` 已经被 `loadMap` 换成了新对象，
+     * 缓存的原值（`_fogBase`）指向旧雾，拿它还原会把新图的雾写成旧图的。
+     * 所以先丢掉原值，再归位 —— 归位那一步就只会清玩家侧字段。 */
+    this._fogBase = null;
+    this._domainClear();
     const r = this.ensure();
     this._seenSpawnAt = r ? r.spawnAt : 0;
     this.sync();
@@ -343,8 +353,11 @@ const WorldBoss = {
     this._liveId = null;
     this._seenSpawnAt = 0;
     /* 尸体留在场上做死亡动画，但领域圈要立刻撤 ——
-     * 圈还在 = 玩家会以为领域效果还在生效（毒沼 / 吸力）。 */
+     * 圈还在 = 玩家会以为领域效果还在生效（毒沼 / 吸力）。
+     * [M18.5] 玩家侧效果同理，`domainTick` 下一次就会归位，
+     * 但这里主动清一次：击杀的那一帧到下一帧之间还有一次 UI 刷新。 */
     this.dropAura();
+    this._domainClear();
     const cfg = worldBossById(e.wbId);
     if (typeof UI !== 'undefined') {
       UI.log('【世界 Boss】' + (cfg ? cfg.name : '巨兽') + ' 已被讨伐。' +
@@ -356,7 +369,263 @@ const WorldBoss = {
   },
 
   /* ============================================================
-   * 六、给 UI 读的纯查询
+   * 六、领域机制（M18.5）
+   *
+   * 六只各有一套「站在圈里就不舒服」的规则。数据早在 M18.1 就写进
+   * `domain.player` 了，这一段只负责**读它并生效**。
+   *
+   * 三条硬规矩，改之前先看：
+   *
+   * 【一】「在不在圈里」用 `rec()` 的 (x,z) + `domain.radius`，
+   *   不用实体坐标。实体被击退 / 追击时会跑，圈跟着飘的话，
+   *   玩家会看到「明明站在圈里却没中毒」，从此认为圈是假的。
+   *   圈是**地点**的属性，不是**怪物**的属性。
+   *
+   * 【二】每种效果写进自己的字段（`domSlow` / `domAspd` / `domSight`…），
+   *   不并进 `playerSlow` / `poisonT`。
+   *   并进去的话出圈时要「减掉多少」是算不清的：
+   *   减多了会顺手抹掉敌人刚给的冰霜减速，减少了会留下永久残留 ——
+   *   也就是「打完 Boss 移速永远慢 20%」这种没人查得动的 bug。
+   *   独立字段 + `_domainClear()` 一次性归零，代价是多两个字段。
+   *
+   * 【三】视觉类（视野 / 小地图）也必须能归位。
+   *   视野要先记原值（`_fogBase`）再改，出圈写回去；
+   *   **不要**拿 `MAPS[mapId].fogFar` 当原值 —— `dungeon.js` 会就地
+   *   乘 0.65，那张表早被改过了，拿它还原会越还原越短。
+   *
+   * 与阶段的关系：视野取 `phases[i].enter.sight`（M18.7 才有真正的
+   * 阶段切换，这里先按当前血量算阶段，所以 P2 一进入视野就压到 8 米，
+   * 不用等 M18.7 落地 —— 昼夜领域的「闭眼」本来就是这个意思）。
+   * ============================================================ */
+
+  /* 领域效果的文案：名字 / 图标 / 一句话。buff 条与日志共用一份，
+   * 别在两处各写一遍，否则改数值时必有一处忘掉。 */
+  DOMAIN_TEXT: {
+    daynight: { icon: '夜', text: (pl, sight) => '视野压缩到 ' + sight + ' 米' },
+    poison: { icon: '毒', text: (pl) => '每秒失去 ' + pl.dotPct + '% 最大生命' },
+    tide: { icon: '水', text: (pl) => '移动速度 −' + pl.slow + '%' },
+    devour: { icon: '噬', text: (pl) => '每秒被拉近 ' + pl.pull + ' 米' },
+    warcry: { icon: '战', text: (pl) => '攻击速度 ' + (pl.aspd > 0 ? '+' : '') + pl.aspd + '%' },
+    illusion: { icon: '幻', text: () => '小地图被迷雾遮蔽' }
+  },
+
+  /* 当前领域状态。每帧一次，也给 UI / 小地图复用。
+   * 返回 null 表示「没有可生效的领域」：没记录 / 已讨伐 / 不在本图 / 数据缺半径。 */
+  domainState() {
+    if (typeof Game === 'undefined' || !Game.state || !Game.playerGroup) return null;
+    const r = this.rec();
+    if (!r || r.killed) return null;
+    const s = Game.state;
+    if (s.mapId !== r.mapId) return null;
+    const cfg = worldBossById(r.id);
+    if (!cfg) return null;
+    const dom = (typeof worldBossDomain === 'function') ? worldBossDomain(cfg) : cfg.domain;
+    if (!dom || !dom.radius) return null;
+    const p = Game.playerGroup.position;
+    const dist = Math.hypot(p.x - r.x, p.z - r.z);
+    return { r, cfg, dom, dist, inside: dist <= dom.radius };
+  },
+
+  /* 每帧结算。`Game.update` 里在 `anim` 之后、死亡判定之前调。 */
+  domainTick(dt) {
+    const g = (typeof Game !== 'undefined') ? Game : null;
+    if (!g || !g.state) return;
+    const d = this.domainState();
+    /* 死亡 / 离图 / 已讨伐 / 出圈 → 一律归位。归位必须幂等：
+     * 站在圈外时这个分支每帧都会走一次。 */
+    if (!d || !d.inside || g.dead || (g.state.hp || 0) <= 0) {
+      this._domainClear();
+      return;
+    }
+
+    const dom = d.dom;
+    const pl = dom.player || {};
+    const kind = dom.kind || dom.id || '';
+    /* 单帧步长夹在 0.1 秒内：切后台回来 dt 可能是 3 秒，
+     * 不夹的话「吸力」会把人一次拉进模型里、「毒」会一次结算 3 跳。 */
+    const step = Math.max(0, Math.min(0.1, dt || 0));
+
+    /* 当前阶段（M18.7 之前先按血量算，见文件头说明） */
+    const e = this.live();
+    const frac = (e && e.maxHp) ? Math.max(0, Math.min(1, e.hp / e.maxHp)) : 1;
+    const phases = d.cfg.phases || [];
+    const phase = phases.length && typeof worldBossPhaseAt === 'function'
+      ? phases[worldBossPhaseAt(d.cfg, frac)] : null;
+    const enter = (phase && phase.enter) || {};
+
+    /* ---- 视野（昼夜领域）---- */
+    let sight = 0;
+    if (typeof pl.sightDay === 'number' || typeof pl.sightNight === 'number') {
+      sight = (typeof pl.sightDay === 'number') ? pl.sightDay : pl.sightNight;
+      if (typeof enter.sight === 'number') sight = enter.sight;   // 阶段覆盖
+    }
+    this._applySight(sight);
+
+    /* ---- 持续伤害（毒沼领域）---- */
+    if (typeof pl.dotPct === 'number' && pl.dotPct > 0) {
+      const iv = Math.max(0.25, pl.dotInterval || 1);
+      this._dotT = (this._dotT || 0) + step;
+      /* while 而不是 if：一帧最多补 1 跳（step 已夹到 0.1 秒，
+       * iv 最小 0.25，所以理论上进不来第二跳；写成 while 是防以后调小 iv）。
+       * `+1e-6` 是浮点补偿：0.1 累加 10 次得到 0.9999999999999999，
+       * 严格比 1 小，会白等一帧才结算 —— 秒级节拍上这一帧的抖动很明显。 */
+      let guard = 0;
+      while (this._dotT + 1e-6 >= iv && guard++ < 4) {
+        this._dotT -= iv;
+        const dmg = Math.max(1, (g.state.stats.hpMax || 100) * pl.dotPct / 100);
+        /* pierce：环境伤害不吃护甲 / 抗性 / 难度，否则「0.6% 最大生命」
+         * 在满装身上只剩 0.2%，堆防御就等于免疫领域 */
+        g.damagePlayer(dmg, null, { pierce: true });
+        if (typeof FX !== 'undefined' && g.playerGroup) {
+          const p = g.playerGroup.position;
+          FX.text(new THREE.Vector3(p.x, 2.3, p.z), '毒沼', 'player', { life: 0.7 });
+        }
+      }
+    } else this._dotT = 0;
+
+    /* ---- 减速 / 攻速（水天 / 战意）---- */
+    g.domSlow = (typeof pl.slow === 'number') ? Math.max(0, Math.min(0.8, pl.slow / 100)) : 0;
+    g.domAspd = (typeof pl.aspd === 'number') ? Math.max(-60, Math.min(60, pl.aspd)) : 0;
+
+    /* ---- 吸力（吞噬领域）---- */
+    if (typeof pl.pull === 'number' && pl.pull > 0) {
+      const mul = (typeof enter.pullMul === 'number') ? enter.pullMul : 1;
+      const p = g.playerGroup.position;
+      const dx = d.r.x - p.x, dz = d.r.z - p.z;
+      const len = Math.hypot(dx, dz);
+      /* 1.2 米以内不再拉：再拉就把人塞进模型里，玩家会以为卡住了 */
+      if (len > 1.2) {
+        const v = Math.min(6, pl.pull * mul) * step;
+        const ux = dx / len, uz = dz / len;
+        p.x += ux * v; p.z += uz * v;
+        if (g.collideWorld) g.collideWorld(p, 0.55, { x: ux, z: uz });
+      }
+    }
+
+    /* ---- 小地图压暗（幻域）---- */
+    this._dim = (typeof pl.minimapDim === 'number') ? Math.max(0, Math.min(0.75, pl.minimapDim)) : 0;
+
+    /* ---- 进场那一下：记名字 / 色 / 文案，并写一条日志 ---- */
+    if (!this._inDomain) {
+      this._inDomain = true;
+      const t = this.DOMAIN_TEXT[kind] || {};
+      this._inName = dom.name || '领域';
+      this._inColor = dom.color || '#e0895a';
+      this._inIcon = t.icon || '域';
+      this._inDesc = t.text ? t.text(pl, sight) : (dom.desc || '');
+      if (typeof UI !== 'undefined' && UI.log) {
+        UI.log('踏入「' + this._inName + '」—— ' + this._inDesc, 'bad');
+      }
+      if (typeof UI !== 'undefined' && UI.renderBuffs) UI.renderBuffs();
+    } else {
+      /* 数值会随阶段变（视野 / 吸力倍率），文案跟着刷新，
+       * 但不重建 DOM —— renderBuffs 自己按签名去重 */
+      const t = this.DOMAIN_TEXT[kind] || {};
+      this._inDesc = t.text ? t.text(pl, sight) : this._inDesc;
+    }
+  },
+
+  /* 归位。离开领域 / 死亡 / 换图 / 被讨伐 全走这里，**必须幂等**。 */
+  _domainClear() {
+    const g = (typeof Game !== 'undefined') ? Game : null;
+    if (g) {
+      if (g.domSlow) g.domSlow = 0;
+      if (g.domAspd) g.domAspd = 0;
+    }
+    const had = this._inDomain || this._fogBase || this._dim;
+    this._dim = 0;
+    this._dotT = 0;
+    this._restoreSight();
+    this._fogBase = null;
+    if (!had) return;
+    const name = this._inName;
+    this._inDomain = false;
+    this._inName = null;
+    if (name && typeof UI !== 'undefined' && UI.log) UI.log('离开「' + name + '」');
+    if (typeof UI !== 'undefined' && UI.renderBuffs) UI.renderBuffs();
+  },
+
+  /* 视野压缩。`sight` 为 0 / 非正数 = 不压。
+   *
+   * 只改 `fog.far` 是不够的：雾色还是白天的浅蓝，压到 8 米之后
+   * 屏幕上就是**一片亮白**，玩家第一反应是「贴图没加载」，
+   * 而不是「天黑了」。所以视野压得越狠，雾色 / 天空 / 环境光
+   * 一起往夜色（#05070c）走 —— 那才读得出「闭眼为夜」。
+   *
+   * near 跟着 far 按同比例收：只改 far 会变成「近处清楚、远处一堵墙」，
+   * 看起来像贴图错误而不是「看不见」。
+   *
+   * 原值存在 `_fogBase` 里，出圈 / 换图必须原样写回（`_domainClear`）。 */
+  _applySight(sight) {
+    const g = (typeof Game !== 'undefined') ? Game : null;
+    const fog = g && g.scene && g.scene.fog;
+    if (!fog) return;
+    /* 没视野效果就别去抓原值 —— 抓了会让 `_domainClear` 以为
+     * 「这次压过视野」，多跑一遍还原与 UI 刷新 */
+    if (!(sight > 0)) { this._restoreSight(); return; }
+    if (!this._fogBase) {
+      this._fogBase = {
+        near: fog.near, far: fog.far,
+        fog: fog.color ? fog.color.clone() : null,
+        bg: (g.scene.background && g.scene.background.clone) ? g.scene.background.clone() : null,
+        hemi: g.hemi ? g.hemi.intensity : 0,
+        sun: g.sun ? g.sun.intensity : 0
+      };
+    }
+    const b = this._fogBase;
+
+    const k = Math.min(1, sight / Math.max(1, b.far));
+    fog.far = Math.max(8, Math.min(b.far, sight));
+    fog.near = Math.max(2, b.near * k);
+
+    /* 夜色按**绝对距离**算，不按比例。
+     * 各图 fogFar 是 98~196，按比例算的话同一只 boss 在雾近的图上
+     * 「白天」就已经黑成一片，在不同图上表现不一样。
+     * 语义也清楚：18 米以上只是「视野收窄」（还是白天），
+     * 掉到 6 米才「闭眼为夜」。数据里 sightDay 26 / sightNight 8
+     * 正好落在两端。 */
+    const t = Math.max(0, Math.min(1, (18 - sight) / 12));
+    if (!this._night) this._night = new THREE.Color(0x05070c);
+    if (b.fog && fog.color) fog.color.copy(b.fog).lerp(this._night, t * 0.9);
+    if (b.bg && g.scene.background && g.scene.background.copy) {
+      g.scene.background.copy(b.bg).lerp(this._night, t * 0.9);
+    }
+    /* 光也一起压：只压雾会变成「远处全黑、身边亮得像白天」，很割裂 */
+    if (g.hemi) g.hemi.intensity = b.hemi * (1 - t * 0.55);
+    if (g.sun) g.sun.intensity = b.sun * (1 - t * 0.55);
+  },
+
+  /* 把雾 / 天空 / 光照写回进圈前的值。没有原值就什么都不做。 */
+  _restoreSight() {
+    const g = (typeof Game !== 'undefined') ? Game : null;
+    const b = this._fogBase;
+    if (!b) return;
+    const fog = g && g.scene && g.scene.fog;
+    if (fog) {
+      fog.near = b.near; fog.far = b.far;
+      if (b.fog && fog.color) fog.color.copy(b.fog);
+    }
+    if (b.bg && g.scene.background && g.scene.background.copy) g.scene.background.copy(b.bg);
+    if (g.hemi && typeof b.hemi === 'number') g.hemi.intensity = b.hemi;
+    if (g.sun && typeof b.sun === 'number') g.sun.intensity = b.sun;
+  },
+
+  /* 小地图压暗系数（0 = 不压）。给 `Minimap.draw` 读。 */
+  dim() { return this._dim || 0; },
+
+  /* buff 条那一条。没站在圈里返回 null。
+   * `noTimer` —— 它没有「剩余秒数」，出去就没了。 */
+  domainBuff() {
+    if (!this._inDomain || !this._inName) return null;
+    return {
+      name: this._inName, dur: 0, noTimer: true, type: 'debuff',
+      color: this._inColor || '#e0895a', icon: this._inIcon || '域',
+      desc: this._inDesc || ''
+    };
+  },
+
+  /* ============================================================
+   * 七、给 UI 读的纯查询
    * ============================================================ */
 
   /* 剩余毫秒。已击杀时是「距离下一只出现」。

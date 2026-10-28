@@ -2,16 +2,18 @@
 
 - 分支：`feat/act-expansion`（与本线其它改动一起合入 main）
 - 设计文档：`V2-ROADMAP.md` §18（六只设计表 / 刷新机制 / 骨架规范 / **§18.7 与八部天龙去重**）
-- 更新：2026-10-28 14:48
+- 更新：2026-10-28 15:30
 
-> 当前：M18.1 ~ M18.4 全部完成并全绿（含小地图星标与其他 Boss 强制区分），下一步 M18.5 领域机制
+> 当前：M18.1 ~ M18.5 全部完成并全绿，下一步 M18.7 多阶段战斗（3 阶段切换 + 18 个招牌技能）
 
 ## 一句话现状
 
 6 只山海经巨兽，**30 分钟真实时间轮转**（无人打则到点消失、立刻换下一只；
 被击杀则冷却一个周期），小地图四层组合星标（领域色 / 信标环 / 双层五角星 / 发光）
-+ 场景领域光环 + 屏幕横幅 + 山海志常驻卡，**必掉 1~3 件传世**（M18.8 待接）。
-数据层 / 运行时 / 通知面板 / 小地图与光环已落地；领域效果、多阶段战斗、六套骨架、掉落还没做。
++ 场景领域光环 + 屏幕横幅 + 山海志常驻卡，**六种玩家侧领域压制**，
+**必掉 1~3 件传世**（M18.8 待接）。
+数据层 / 运行时 / 通知面板 / 小地图与光环 / 领域机制已落地；
+多阶段战斗、六套骨架、掉落还没做。
 
 **与八部天龙（M7）已强制去重**：八部 = 一个 −60 洞 + 四条 +80 墙（猜元素，8 倍差）；
 世界 Boss = 五项抗性同值（零缺口）、答案在领域与阶段里。见 §18.7 与本文「决策记录」。
@@ -24,7 +26,7 @@
 | M18.2 | 运行时：`WorldBoss` 刷新状态机 + `state.worldBoss` 存档字段 | ✅ | 新建 `src/worldboss.js`、`dev/worldboss-run.js`、`dev/worldboss-live.js`；改 `src/core/save.js`、`src/game.js`、`index.html` | 本次提交 |
 | M18.3 | 通知与面板：屏幕横幅 + 山海志常驻卡 + 追踪行 + 「前往」 | ✅ | `src/ui.js`（`showWorldBossBanner` / `renderWorldBoss` / `worldBossCard` / `gotoWorldBoss`）、`index.html`（`#wbBanner` / `#wbTrack`） | 本次提交 |
 | M18.4 | 小地图组合星标 + 领域光环 | ✅ | `src/ui-minimap.js`（`drawWorldBoss` / `_starPath` / `_lift`）、`src/worldboss.js`（`makeAura` / `dropAura` / `anim`） | 本次提交 |
-| M18.5 | 领域机制：6 种玩家侧效果 | ⬜ | `src/game.js` | — |
+| M18.5 | 领域机制：6 种玩家侧效果 | ✅ | `src/worldboss.js`（`domainTick` / `domainState` / `_domainClear` / `_applySight` / `_restoreSight` / `dim` / `domainBuff`）、`src/game.js`、`src/ui.js`、`src/ui-minimap.js` | `dev/worldboss-live.js` G 段 20 项（六种效果 + 出圈归位） |
 | M18.6 | 六套全新骨架 + 专属动画 | ⬜ | `src/actors.js`、`src/fx.js` | — |
 | M18.7 | 多阶段战斗：3 阶段 + 18 个招牌技能 + `enter` 分派 | ⬜ | `src/game.js`、`src/data/data-worldboss.js` | — |
 | M18.8 | 掉落：必掉 1~3 传世 + 稀有材料 + 世界魂接入 | ⬜ | `src/game.js`、`src/items.js`、`src/data/data-craft.js` | — |
@@ -141,6 +143,8 @@
 **真浏览器里时间快进 31 分钟会换人**、
 真实伤害路径打死之后 `killed` 生效且光环撤掉、零 pageerror。
 
+G 段（领域机制，20 项）逐个量六种效果与出圈归位，见上文「M18.5 已交付明细」。
+
 C 段（小地图星标）用「画 / 不画」两张图的差异把星标**单独抠出来**再量：
 
 | 断言 | 实测 |
@@ -162,27 +166,71 @@ C 段（小地图星标）用「画 / 不画」两张图的差异把星标**单�
 3. **反证必须把实体挪开**。实体正好在领域中心时，红点被不透明的星标完全盖住，
    差异恒为 0，测不出「跳过 wb」这道闸到底在不在。
 
-## 下一步（M18.5，具体到行）
+## M18.5 已交付明细（领域机制）
 
-**领域机制：6 种玩家侧效果。** 数据已经在 `domain.player` 里写好了（M18.1 就落了），
-M18.5 只做「读它并生效」：
+`WorldBoss` 新增 7 个方法（`src/worldboss.js` 第六节，全文 200 行注释在代码里）：
 
-| 领域 | `domain.player` | 生效点 |
+| 方法 | 职责 |
+|---|---|
+| `domainState()` | 判定「此刻玩家在不在领域里」，返回 `{ r, cfg, dom, dist, inside }` |
+| `domainTick(dt)` | 每帧结算。`Game.update` 里在 `WorldBoss.anim` 之后、`hp<=0 → die()` 之前 |
+| `_domainClear()` | 归位。离开 / 死亡 / 换图 / 讨伐 / 实体被清 全走这里，**幂等** |
+| `_applySight(sight)` | 压视野：雾距 + 雾色 + 天空 + 环境光 |
+| `_restoreSight()` | 把上面四项写回进圈前的值 |
+| `dim()` | 小地图压暗系数，给 `Minimap.draw` 读 |
+| `domainBuff()` | buff 条那一条（`noTimer: true`，显示「常驻」而不是秒数） |
+
+六种效果与生效点：
+
+| 领域 | 数据 | 落点 |
 |---|---|---|
-| 昼夜（烛九阴） | `sightDay: 26, sightNight: 8` | `Game.fog` / 相机远裁，随阶段 `enter.sight` 切换 |
-| 毒沼（相柳） | `dotPct: 0.6, dotInterval: 1` | 每秒扣 `maxHp × 0.6%`，走出圈就停（复用 `poisonT` 那套） |
-| 水天（鲲鹏） | `slow: 20` | `playerSlow` / `playerSlowT`（已有字段） |
-| 吞噬（饕餮） | `pull: 2.2` | 每帧朝 boss 位移 `pull × dt`，`pullMul` 由阶段倍率 |
-| 战意（刑天） | `aspd: -15` | 攻速乘区，和 `buffs` 里的减速分开算（它不该被驱散） |
-| 幻域（九尾狐） | `minimapDim: 0.35` | `Minimap.draw` 里压 `globalAlpha`，**五角星仍显示** |
+| 昼夜（烛九阴） | `sightDay: 26, sightNight: 8` | `_applySight`；阶段 `enter.sight` 覆盖，所以打到 P2 自动入夜 |
+| 毒沼（相柳） | `dotPct: 0.6, dotInterval: 1` | `damagePlayer(dmg, null, { pierce: true })` |
+| 水天（鲲鹏） | `slow: 20` | `Game.domSlow` → `update()` 的移动乘区（与 `playerSlow` 相加后夹 85%） |
+| 吞噬（饕餮） | `pull: 2.2` | 直接改 `playerGroup.position` + `collideWorld`；1.2 米内停手 |
+| 战意（刑天） | `aspd: -15` | `Game.domAspd` → `doBasicAttack` 的 `aspdK`（下限 0.4 倍） |
+| 幻域（九尾狐） | `minimapDim: 0.35` | `Minimap.draw` 在敌人/掉落之后、星标之前铺一层暗色 |
 
-三条硬规矩：
+配套改动：
 
-1. **判定「在不在领域内」用 `WorldBoss.rec()` 的 (x,z) 与 `domain.radius`**，
-   不要用实体坐标 —— 实体被击退后圈会跟着飘，玩家会觉得「圈是假的」。
-2. **离开领域必须完全恢复**：视野 / 移速 / 攻速都要在 `sync()` 或换图时归位，
-   否则会出现「打完 Boss 移速永远慢 20%」。
-3. **`minimapDim` 不做成「小地图失效」**（决策记录第 9 条）。
+- `Game.damagePlayer(amount, source, opts)` 新增 `opts.pierce`：无视护甲 / 格挡 / 抗性 /
+  难度 / 被动减伤，只保留护盾吸收与免死（还魂 / 替身 / 涅槃）。
+  **理由**：「每秒 0.6% 最大生命」是对玩家的一句承诺；走常规结算的话满装只剩 0.19%，
+  堆防御就等于免疫领域，机制等于不存在。常规伤害该吃护甲，环境伤害不该。
+- `Game.update` 的移动乘区改成 `1 - min(0.85, playerSlow + domSlow)`。
+- `Game.loadMap` 重置玩家状态时一并清 `domSlow / domAspd`（「进图 = 干净状态」口径）。
+- `Game.statusBuffs()` 追加领域那一条；`UI.renderBuffs` 支持 `noTimer`（显示「常驻」）。
+- `WorldBoss.onMapEnter` / `despawn` / `onKill` 都主动归位一次。
+
+**验收**：`dev/worldboss-live.js` G 段 20 项，逐个量：
+
+```
+视野 昼 26m → 夜 8m → 出圈还原 196m（原 196m）；雾色亮度 544 → 154 → 544
+毒沼 1 秒掉 18.77 血（应 18.77），buff 条：毒沼领域 / 毒毒沼领域常驻
+水天减速 20% · 吞噬每秒拉近 2.2m · 战意攻速 -15%（cd 0.685s vs 0.582s）
+幻域压暗 0.35，压暗后星标仍有 2071 px
+```
+
+## 下一步（M18.7，具体到行）
+
+**多阶段战斗：3 阶段切换 + 18 个招牌技能 + `enter` 分派。**
+
+数据全在 `data-worldboss.js` 里（`phases[].at / enter / skills`、`skills{18 条}`），
+M18.7 只做「读它并打出来」：
+
+1. **阶段切换**：`worldBossPhaseAt(cfg, hp/maxHp)` 已经写好并已被领域机制用上
+   （昼夜领域靠它切视野）。M18.7 要补的是**切换的那一下**：
+   播报（现在会冒出「烛九阴 狂暴」是别处复用，要换成阶段名）+ `enter` 生效 + 技能表换套。
+2. **`enter` 分派**：17 个键（`sight / heads / morph / stance / clones / pullMul / dayNightCycle` …）。
+   先做**能落地的 8 个**（视野 / 段数 / 形态 / 架式 / 分身 / 吸力倍率 / 昼夜循环 / 移速），
+   剩下的（召唤 / 场地改造）留到 M18.6 有骨架之后。
+3. **18 个技能**：`shape` 有 `line / circle / fan / cone / scatter / ring / self` 七种，
+   全部走已有的 `Game.enemySkill()` 通道（八部天龙那套 `patterns` 就在用），
+   不要新写一套判定。
+4. **警告时间**：`warn ≥ 0.5` 已经在数据里，`FX.ring` / 地面预警圈复用地下城那套。
+
+**不要做的事**：不要给世界 Boss 加 `stagger`（破绽窗口）—— 那是八部天龙的谜题，
+`check-worldboss.js` 第十一节会红。世界 Boss 的「答案」在领域与阶段，不在破绽。
 
 ## 卡点
 
@@ -216,3 +264,8 @@ M18.5 只做「读它并生效」：
 | 2026-10-28 | 世界 Boss 的实体**不画红点**（`if (e.wb) continue`） | Boss 追人时会离开领域中心；不跳过的话星标旁边会多一颗红点，等于白做。星标画在敌人之后也是为了同一件事 |
 | 2026-10-28 | 星标外径定 17.5、内径 7.7（比值 0.44） | 0.38 的「标准五角星」填起来像一堆细刺，缩到 82px 面板上完全看不出是星；0.44 才像一枚徽章 |
 | 2026-10-28 | `remaining()` 封顶在 `cycle` | 系统时钟往回跳时会出现「61:20 后离去」这种明显不对的数字 |
+| 2026-10-28 | 领域效果写**独立字段**（`domSlow` / `domAspd`），不并进 `playerSlow` / `poisonT` | 并进去的话出圈时「该减掉多少」算不清：减多了顺手抹掉敌人刚给的冰霜减速，减少了留下永久残留（「打完 Boss 移速永远慢 20%」） |
+| 2026-10-28 | 领域 DoT 走 `damagePlayer` 的 `opts.pierce`，无视护甲 / 抗性 / 难度 | 数据写的是「每秒 0.6% 最大生命」，这是对玩家的一句承诺。走常规结算满装只剩 0.19%，堆防御就等于免疫领域。常规伤害该吃护甲，环境伤害不该 |
+| 2026-10-28 | 夜阶段的雾**连颜色一起压暗**，且按**绝对距离**算夜色 | 只收 `fog.far` 不改色 → 屏幕一片亮白，看着像贴图没加载。按比例算 → 各图 `fogFar` 98~196，同一只 boss 在不同图上深浅不一。改成「18 米以上只是收窄，6 米才入夜」 |
+| 2026-10-28 | 领域视野的**阶段覆盖**读 `phases[].enter.sight`，不等 M18.7 | 昼夜领域的「闭眼」本来就该随血量走；先按 `worldBossPhaseAt` 算阶段，M18.7 补真正的切换演出时不用改这里 |
+| 2026-10-28 | buff 条给领域那一条加 `noTimer`，显示「常驻」 | 它没有剩余秒数（出去就没了），写 `0.0s` 会让人以为快结束 |

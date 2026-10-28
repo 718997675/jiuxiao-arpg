@@ -938,6 +938,39 @@ const ICON_PATHS = {
 > 这是全作**唯一**「稳定产出传世」的入口。章节首领是抽奖（0.9%/次），
 > 世界 Boss 是打卡（30 分钟一次，每次 1~3 件）。两者互补，不冲突。
 
+#### 18.4b 领域机制（M18.5 · 已落地）
+
+「领域」不是一个光圈特效，是**六套站在圈里就难受的规则**。数据写在
+`domain.player` 里（M18.1 就落了），M18.5 负责读它并生效。
+
+| 领域 | `domain.player` | 玩家感受 | 生效点 |
+|---|---|---|---|
+| 昼夜（烛九阴） | `sightDay: 26, sightNight: 8` | 视野被压窄，P2「闭眼」直接入夜 | `scene.fog` + 雾色 + 天空 + 环境光 |
+| 毒沼（相柳） | `dotPct: 0.6, dotInterval: 1` | 每秒掉 0.6% 最大生命 | `damagePlayer(…, {pierce:true})` |
+| 水天（鲲鹏） | `slow: 20` | 移速 −20% | `Game.domSlow` → 移动乘区 |
+| 吞噬（饕餮） | `pull: 2.2` | 每秒被拉近 2.2 米 | 直接改 `playerGroup.position` + `collideWorld` |
+| 战意（刑天） | `aspd: -15` | 攻速 −15% | `Game.domAspd` → `doBasicAttack` 的 `aspdK` |
+| 幻域（九尾狐） | `minimapDim: 0.35` | 小地图压暗（星标与玩家箭头仍可见） | `Minimap.draw` 里铺一层暗色 |
+
+**四条实现纪律**（`dev/worldboss-live.js` G 段 20 项把它们钉住了）：
+
+1. **「在不在圈里」用 `rec()` 的坐标 + `domain.radius`，不用实体坐标。**
+   实体被击退 / 追击时会跑，圈跟着飘的话玩家会看到「明明在圈里却没中毒」。
+   圈是**地点**的属性。
+2. **每种效果写进独立字段**（`domSlow` / `domAspd`），不并进 `playerSlow` / `poisonT`。
+   并进去的话出圈时「该减掉多少」算不清 —— 减多了顺手抹掉冰霜减速，
+   减少了留下永久残留（「打完 Boss 移速永远慢 20%」）。
+3. **视觉类必须能归位**：视野先记原值（`_fogBase`）再改，出圈 / 换图原样写回。
+   **不要**拿 `MAPS[mapId].fogFar` 当原值 —— `dungeon.js` 会就地乘 0.65。
+4. **环境伤害无视护甲**（`damagePlayer` 的 `opts.pierce`）。
+   「每秒 0.6% 最大生命」是对玩家的一句承诺；走常规结算的话满装只剩 0.2%，
+   堆防御就等于免疫领域，机制等于不存在。
+
+> 夜阶段的雾**必须一起压暗**。第一版只把 `fog.far` 从 196 收到 8，雾色还是白天的
+> 浅蓝 —— 屏幕上是一片亮白，看着像贴图没加载，不像天黑了。现在按**绝对距离**
+> 算夜色（18 米以上只是收窄，6 米才入夜），不按比例 —— 各图 `fogFar` 是 98~196，
+> 按比例算同一只 boss 在不同图上深浅不一。
+
 #### 18.5 骨架规范（六套都不许复用）
 
 现有 `buildMonster(kind, cfg)` 有 20 余种 kind，**世界 Boss 一个都不用**。理由：
@@ -975,14 +1008,14 @@ const ICON_PATHS = {
 | M18.2 | 运行时：`WorldBoss` 刷新状态机 + `state.worldBoss` 存档字段 + 老档补字段 | ✅ | 新建 `src/worldboss.js`；改 `src/core/save.js`、`src/game.js`、`index.html` | `dev/worldboss-run.js` **76 项**（时间打桩快进 6 小时）+ `dev/worldboss-live.js` 全部通过 |
 | M18.3 | 通知与面板：屏幕横幅 + 山海志常驻卡 + 追踪行 + 「前往」 | ✅ | `src/ui.js`、`index.html` | 三处共用 `WorldBoss.timeText()`；`worldboss-live` 验横幅/卡片/追踪行 |
 | M18.4 | 小地图组合星标 + 领域光环 | ✅ | `src/ui-minimap.js`、`src/worldboss.js` | 星标 = `WorldBoss.rec()` 坐标（= 领域中心）；四层组合（领域圈 / 信标环 / 双层五角星 / 发光）；实体本身不画红点；光环挂 scene 不吃 5 倍缩放 |
-| M18.5 | 领域机制：玩家侧效果（视野 / 毒 / 减速 / 吸力 / 攻速 / 小地图失效） | ⬜ | `src/game.js` | 6 种领域各自可复现 |
+| M18.5 | 领域机制：玩家侧效果（视野 / 毒 / 减速 / 吸力 / 攻速 / 小地图失效） | ✅ | `src/worldboss.js`（`domainTick` 等 7 个方法）、`src/game.js`、`src/ui.js`、`src/ui-minimap.js` | `dev/worldboss-live.js` G 段 20 项：六种效果逐个实测 + 出圈全部归位 |
 | M18.6 | 六套骨架 + 专属动画 | ⬜ | `src/actors.js`、`src/fx.js` | `verify-perf` 报错 0；单只 ≤9000 面 |
 | M18.7 | 多阶段战斗：3 阶段切换 + 18 个招牌技能 | ⬜ | `src/game.js`、`src/data/data-worldboss.js` | 阶段切换与技能表可复现 |
 | M18.8 | 掉落：必掉 1~3 传世 + 稀有材料 + 未收集优先 | ⬜ | `src/game.js`、`src/items.js` | 抽样 1 万次：100% 至少 1 件 |
 | M18.9 | 说明页 / 图鉴 / README 同步 | ⬜ | `src/ui.js`、`README.md` | 文案与实际一致 |
 
 **依赖顺序**：M18.1 → M18.2 → （M18.3 / M18.4 可并行）→ M18.5 → M18.7 → M18.6 → M18.8 → M18.9
-（M18.1 ~ M18.4 已于 2026-10-28 完成，下一步是 **M18.5 领域机制**）
+（M18.1 ~ M18.5 已于 2026-10-28 完成，下一步是 **M18.7 多阶段战斗**）
 （M18.6 骨架放在 M18.7 之后：技能要按骨骼挂点设计，先做模型等于先画框后想内容）
 
 #### 18.7 与「八部天龙」强制去重（用户 2026-10-28 追加的硬约束）

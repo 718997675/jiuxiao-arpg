@@ -144,7 +144,7 @@ git fetch origin                 # 分支都在远程，clone 完就全能看到
 | 地貌（地表贴图 + 道具撒点） | `src/world.js`：`_makeGroundTexture` 的 `conf` 表 + 裂缝/雪粒/水纹分支；`buildMap` 里 `cfg.props` 的 `else if` 链 |
 | 首领落点 | `src/data/data-maps.js` 的 `bossPosOf(mapId, bossId, idx)`。**不要再往 `MAP_BOSS_POS` 里加坐标**，那是老图的表 |
 | 出口门落点 / 开门时机 | 落点 `src/data/data-maps.js` 的 `gatePosOf(mapId)`（boss 区最深处）；时机 `src/game.js` 的 `mapCleared`/`markCleared` + `src/world.js` 的 `makeExitGate` |
-| 世界 Boss（数据 / 刷新 / 通知 / 星标） | 数据 `src/data/data-worldboss.js`（`WORLD_BOSSES` 6 只 + `WORLD_BOSS_CFG`）；运行时 `src/worldboss.js`（`WorldBoss`：`ensure`/`rollNext`/`sync`/`tick`/`onKill`/`makeAura`）。**不要把世界 Boss 写进 `MAPS[mapId].bosses`** —— 那张表是常驻首领，读档会被 `spawnBosses` 反复重生 |
+| 世界 Boss（数据 / 刷新 / 通知 / 星标 / 领域） | 数据 `src/data/data-worldboss.js`（`WORLD_BOSSES` 6 只 + `WORLD_BOSS_CFG`）；运行时 `src/worldboss.js`（`WorldBoss`：`ensure`/`rollNext`/`sync`/`tick`/`onKill`/`makeAura`/`domainTick`）。**不要把世界 Boss 写进 `MAPS[mapId].bosses`** —— 那张表是常驻首领，读档会被 `spawnBosses` 反复重生。领域压制写**独立字段**（`Game.domSlow`/`domAspd`），别并进 `playerSlow`/`poisonT`，否则出圈算不清该清多少 |
 | 八部天龙（8 魔将 + 八印 + 终门） | 数据 `src/data/data-monsters.js` 的 `bafo_*`（`resist` 一个 −60 洞 + `stagger` + `patterns`）+ `dev/check-bafo.js`。**与世界 Boss 是互斥的两套语言**，见 `V2-ROADMAP.md` §18.7 |
 
 ## 5. 回归脚本（改完必跑）
@@ -162,7 +162,7 @@ node dev/mobile-layout.js --live   # 线上版布局回归
 node dev/preview-check.js --url <预览地址>   # 预览站：能开局 + 资源不越界 + 存档隔离
 node dev/check-worldboss.js  # 世界 Boss 数据层：抗性平坦 / 三阶段 / 领域 / 掉落 / **与八部去重**（1152 项）
 node dev/worldboss-run.js    # 世界 Boss 运行时：30 分钟轮转（时间打桩）、击杀冷却、跨会话、存档往返（76 项）
-node dev/worldboss-live.js   # 世界 Boss 浏览器实测：实体/光环/横幅/星标/真实击杀链路（可加 --shot 截图）
+node dev/worldboss-live.js   # 世界 Boss 浏览器实测：实体/光环/横幅/星标/真实击杀链路/六种领域效果（可加 --shot 截图）
 ```
 
 ## 6. 踩过的坑（改之前先看一眼，能省几小时）
