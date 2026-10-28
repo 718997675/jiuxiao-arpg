@@ -612,19 +612,19 @@ const MONSTERS = {
   /* ---------------- 卷五 5-2 混沌海 ---------------- */
   mirrortwin: {
     name: '镜影', model: 'humanoid', family: 'spirit',
-    hp: 330, atk: 62, spd: 4.2, scale: 1.0, color: 0xa8b8d8, cloth: 0x4a5a7a,
+    hp: 420, atk: 62, spd: 4.2, scale: 1.0, color: 0xa8b8d8, cloth: 0x4a5a7a,
     xp: 205, melee: true, range: 2.4, atkCd: 1.4,
     ai: 'flank', lore: '镜子里那个，先动的手。'
   },
   maskweaver: {
     name: '画皮', model: 'fox', family: 'spirit',
-    hp: 300, atk: 64, spd: 3.8, scale: 1.0, color: 0xd8a8b8, cloth: 0x6a3a4a,
+    hp: 400, atk: 64, spd: 3.8, scale: 1.0, color: 0xd8a8b8, cloth: 0x6a3a4a,
     xp: 208, ranged: true, range: 12, atkCd: 2.0, proj: { color: 0xffc0d8, speed: 15 },
     ai: 'coward', lore: '披着别人的脸，笑着退。'
   },
   voidmoth: {
     name: '虚空蛾', model: 'bat', family: 'spirit',
-    hp: 280, atk: 62, spd: 4.6, scale: 0.95, color: 0x6a5a9a, cloth: 0x2a2044,
+    hp: 380, atk: 62, spd: 4.6, scale: 0.95, color: 0x6a5a9a, cloth: 0x2a2044,
     xp: 210, melee: true, range: 2.2, atkCd: 1.6, fly: true,
     ai: 'bomber', lore: '扑向光，也扑向你。'
   },
@@ -908,21 +908,21 @@ const BOSSES = {
   },
   mirrorlord: {
     id: 'mirrorlord', name: '镜渊之主', title: '渊底那面镜子', map: 'mirrorabyss', level: 57, scale: 2.6,
-    hp: 83800, atk: 154, spd: 3.4, color: 0x6a5aa8, cloth: 0x1e1840, model: 'demon', scale: 2.5,
+    hp: 170000, atk: 154, spd: 3.4, color: 0x6a5aa8, cloth: 0x1e1840, model: 'demon', scale: 2.5,
     melee: false, ranged: true, range: 16, atkCd: 1.7, family: 'spirit',
     patterns: ['ringshot', 'charge', 'curse', 'meteor'],
     lines: ['往下看，看到的都是真的。', '镜子里那个，才是本尊。']
   },
   nineheaven: {
     id: 'nineheaven', name: '九霄神将', title: '最后一层天的人', map: 'nineapex', level: 58, scale: 2.7,
-    hp: 86200, atk: 157, spd: 3.8, color: 0xd8c890, cloth: 0x6a5a2a, model: 'brute', scale: 2.6, skin: 0xe0c8a0,
+    hp: 175000, atk: 157, spd: 3.8, color: 0xd8c890, cloth: 0x6a5a2a, model: 'brute', scale: 2.6, skin: 0xe0c8a0,
     melee: true, range: 5.0, atkCd: 1.8, family: 'humanoid',
     patterns: ['slam', 'charge', 'meteor', 'summon'],
     lines: ['九霄之上，没有更高的地方了。', '上去，就得踩着神过。']
   },
   chaosavatar: {
     id: 'chaosavatar', name: '混沌·无相天魔（真身）', title: '九霄终焉 · 真', map: 'chaossea', level: 60, scale: 3.0,
-    hp: 91000, atk: 162, spd: 3.4, color: 0x5a2478, cloth: 0x220c30, model: 'demon', scale: 2.1, skin: 0x6a3a7a,
+    hp: 195000, atk: 162, spd: 3.4, color: 0x5a2478, cloth: 0x220c30, model: 'demon', scale: 2.1, skin: 0x6a3a7a,
     melee: true, range: 5.6, atkCd: 1.8, all: true, family: 'spirit',
     /* [M4] 终局：keyTier 仍是 5（没有六阶），final 把掉率抬到 15% */
     actEnd: true, keyTier: 5, final: true,
