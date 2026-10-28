@@ -28,7 +28,7 @@
 | M18.4 | 小地图组合星标 + 领域光环 | ✅ | `src/ui-minimap.js`（`drawWorldBoss` / `_starPath` / `_lift`）、`src/worldboss.js`（`makeAura` / `dropAura` / `anim`） | 本次提交 |
 | M18.5 | 领域机制：6 种玩家侧效果 | ✅ | `src/worldboss.js`（`domainTick` / `domainState` / `_domainClear` / `_applySight` / `_restoreSight` / `dim` / `domainBuff`）、`src/game.js`、`src/ui.js`、`src/ui-minimap.js` | `dev/worldboss-live.js` G 段 20 项（六种效果 + 出圈归位） |
 | M18.6 | 六套全新骨架 + 专属动画 | ⬜ | `src/actors.js`、`src/fx.js` | — |
-| M18.7a | 多阶段战斗：3 阶段切换 + 18 招牌技能（7 种 shape）+ `enter` 14 键落地 + 定身 / 格挡 / 场地 | ✅ | 新建 `src/worldboss-fight.js`、`dev/worldboss-fight.js`、`dev/worldboss-battle-live.js`；改 `src/game.js`、`src/worldboss.js`、`src/data/data-worldboss.js`、`index.html` | 本次提交 |
+| M18.7a | 多阶段战斗：3 阶段切换 + 18 招牌技能（7 种 shape）+ `enter` 14 键落地 + 定身 / 格挡 / 场地 | ✅ | 新建 `src/worldboss-fight.js`、`dev/worldboss-fight.js`、`dev/worldboss-battle-live.js`；改 `src/game.js`、`src/worldboss.js`、`src/data/data-worldboss.js`、`index.html` | `611c45f` |
 | M18.7b | 骨架相关 `enter`：`tails`（九尾展开）/ `revealVuln`（真身现身受伤 ×2） | ⏸ | 等 M18.6 | — |
 | M18.8 | 掉落：必掉 1~3 传世 + 稀有材料 + 世界魂接入 | ⬜ | `src/game.js`、`src/items.js`、`src/data/data-craft.js` | — |
 | M18.9 | 说明页 / 图鉴 / README 同步 | ⬜ | `src/ui.js`、`README.md` | — |
