@@ -3532,24 +3532,36 @@ const Game = {
         this.actor.atkAnim = 1; this.actor.atkType = 'cast';
         SFX.cast();
         const target = aim.clone();
-        FX.telegraph(target, 5.5 * srad, 0.9, () => {
-          this.explodeAt(target, 5.5 * srad, st.atk * 4.2 * spow, 0xff5522, true);
-          SFX.explode(); this.shake = 0.6;
-          for (let i = 0; i < 4; i++) setTimeout(() => {
-            FX.burst(new THREE.Vector3(target.x + RND(-4, 4), 0.3, target.z + RND(-4, 4)), 0xff7a20, 14, { speed: 9, size: 0.16, life: 0.8, gravity: -3, additive: true });
-          }, i * 60);
-        });
-        // 落下的陨石视觉
-        const rock = new THREE.Mesh(sphGeo(0.8, 6), new THREE.MeshBasicMaterial({ color: 0xff5522 }));
-        rock.position.set(target.x, 18, target.z);
-        this.scene.add(rock);
-        const fall = { t: 0 };
-        const fallFn = () => {
-          fall.t += 0.016;
-          rock.position.y -= 20 * 0.05;
-          if (fall.t < 0.95) requestAnimationFrame(fallFn); else { this.scene.remove(rock); }
-        };
-        fallFn();
+        const mRad = 5.5 * srad;
+        /* [P2b] 双陨 / 三连落：1 + sextra 颗（这个位的发数台阶在 Lv5 / Lv7，
+         * 3 级是「溅射」—— 见 SKILL_COUNT_TIER）。
+         * 偏移取 0.55 倍半径：数量轴的折算按「每颗都打中同一只」算，偏出半径
+         * 就是「升一级反而更弱」（火墙位踩过）。留出的余量是为了让几颗石头
+         * 看得见是几颗，而不是全叠成一个点。 */
+        const mCnt = 1 + Math.max(0, sextra);
+        for (let k = 0; k < mCnt; k++) {
+          const a = k * Math.PI * 2 / Math.max(1, mCnt - 1);
+          const off = k === 0 ? 0 : mRad * 0.55;
+          const c = new THREE.Vector3(target.x + Math.cos(a) * off, 0, target.z + Math.sin(a) * off);
+          FX.telegraph(c, mRad, 0.9 + k * 0.12, () => {
+            this.explodeAt(c, mRad, st.atk * 4.2 * spow, 0xff5522, true);
+            SFX.explode(); this.shake = 0.6;
+            for (let i = 0; i < 4; i++) setTimeout(() => {
+              FX.burst(new THREE.Vector3(c.x + RND(-4, 4), 0.3, c.z + RND(-4, 4)), 0xff7a20, 14, { speed: 9, size: 0.16, life: 0.8, gravity: -3, additive: true });
+            }, i * 60);
+          });
+          // 落下的陨石视觉
+          const rock = new THREE.Mesh(sphGeo(0.8, 6), new THREE.MeshBasicMaterial({ color: 0xff5522 }));
+          rock.position.set(c.x, 18, c.z);
+          this.scene.add(rock);
+          const fall = { t: 0 };
+          const fallFn = () => {
+            fall.t += 0.016;
+            rock.position.y -= 20 * 0.05;
+            if (fall.t < 0.95) requestAnimationFrame(fallFn); else { this.scene.remove(rock); }
+          };
+          fallFn();
+        }
         break;
       }
       case 'iceshield': {
@@ -3580,7 +3592,7 @@ const Game = {
             ct++;
             const ppc = this.playerGroup.position;
             const t = new THREE.Vector3(ppc.x + RND(-2.4, 2.4), 0, ppc.z + RND(-2.4, 2.4));
-            this.explodeAt(t, 3.0, st.atk * 1.5, 0xff7a30, false, true);
+            this.explodeAt(t, 3.0 * srad, st.atk * 1.5, 0xff7a30, false, true);
             if (ct >= Math.ceil(ch / 0.35)) clearInterval(ivc);
           }, 350);
           UI.toast('星移 · 引导 ' + ch + ' 秒');
@@ -3591,8 +3603,11 @@ const Game = {
           n++;
           const off = new THREE.Vector3(RND(-9, 9), 0, RND(-9, 9));
           const t = center.clone().add(off);
-          this.explodeAt(t, 3.2, st.atk * 1.6, 0xff7a30, false, true);
-          /* 星阙 5 件：陨星 +8 颗（count 修正） */
+          this.explodeAt(t, 3.2 * srad, st.atk * 1.6, 0xff7a30, false, true);
+          /* 星阙 5 件：陨星 +8 颗（count 修正）。
+           * [P2b] 基数 16 = SKILL_COUNT_BASE.starfall；这个位的发数台阶在
+           * Lv5 / Lv7（Lv3 是「溅射」，只改落点半径），所以 sextra 在这里
+           * 只来自 5 / 7 级 + 装备，不再有 3 级那一发。 */
           if (n > 16 + sextra) clearInterval(iv);
         }, 220);
         break;
@@ -3632,13 +3647,24 @@ const Game = {
       case 'blizzard': {
         this.actor.atkAnim = 1; this.actor.atkType = 'cast';
         SFX.ice();
-        const c = aim.clone();
+        const core = aim.clone();
         const rad = 6 * srad;
         const dur = 5 + sdur;
-        const zona = FX.area(c, rad, 0x9ad8ff, dur, { opacity: 0.26 });
-        /* [P3] 暴风（变体）：区域跟着人走。锚点 c 是伤害循环真正在读的那个对象，
+        /* [P2b] 多片暴雪（这个位的发数台阶在 Lv5 / Lv7）：1 + sextra 片，围着落点散开。
+         * 偏移必须 < 半径 —— 数量轴的折算按「每片都盖住同一只」算，偏出去就等于
+         * 高一级反而更弱（火墙位踩过这个坑）。 */
+        const zCnt = 1 + Math.max(0, sextra);
+        const cs = [], zfx = [];
+        for (let k = 0; k < zCnt; k++) {
+          const a = k * Math.PI * 2 / Math.max(1, zCnt - 1);
+          const off = k === 0 ? 0 : rad * 0.55;
+          const ck = new THREE.Vector3(core.x + Math.cos(a) * off, 0, core.z + Math.sin(a) * off);
+          cs.push(ck);
+          zfx.push(FX.area(ck, rad, 0x9ad8ff, dur, { opacity: 0.26 }));
+        }
+        /* [P3] 暴风（变体）：区域跟着人走。锚点是伤害循环真正在读的那些对象，
          * 网格一并挪，判定与观感才不会分家 */
-        if (bBeh && bBeh.follow) this.attachFollow([c], [zona], dur);
+        if (bBeh && bBeh.follow) this.attachFollow(cs, zfx, dur);
         let ticks = 0;
         const gen = this.mapGen;
         /* [P3] 冰封（变体）：每隔 N 秒把区域里的人钉住 1 秒。
@@ -3651,18 +3677,23 @@ const Game = {
           const freezeNow = fe > 0 && ticks % fe === 0;
           for (const e of this.enemies) {
             if (e.dead) continue;
-            if (DIST2D(e.pos, c) < rad + e.radius) {
+            let hitAny = false;
+            for (const c of cs) {
+              if (e.dead) break;
+              if (DIST2D(e.pos, c) >= rad + e.radius) continue;
+              hitAny = true;
               const { dmg } = this.rollDamage(st.atk * 0.6 * spow);
               this.damageEnemy(e, dmg, false, { silent: true, elem: 'ice' });
-              e.slow = Math.max(e.slow || 0, 0.45); e.slowT = Math.max(e.slowT || 0, 1.5);
-              if (freezeNow) {
-                e.stun = Math.max(e.stun || 0, e.boss ? 0.3 : 1);
-                e.slow = 1; e.slowLabel = '冻结';
-                FX.burst(new THREE.Vector3(e.pos.x, 1.1, e.pos.z), 0x9ae8ff, 7, { speed: 3, size: 0.1, life: 0.5, additive: true });
-              }
+            }
+            if (!hitAny) continue;
+            e.slow = Math.max(e.slow || 0, 0.45); e.slowT = Math.max(e.slowT || 0, 1.5);
+            if (freezeNow) {
+              e.stun = Math.max(e.stun || 0, e.boss ? 0.3 : 1);
+              e.slow = 1; e.slowLabel = '冻结';
+              FX.burst(new THREE.Vector3(e.pos.x, 1.1, e.pos.z), 0x9ae8ff, 7, { speed: 3, size: 0.1, life: 0.5, additive: true });
             }
           }
-          FX.burst(new THREE.Vector3(c.x + RND(-rad + 1, rad - 1), 2.2, c.z + RND(-rad + 1, rad - 1)), 0xcfe8ff, 3, { speed: 1.2, size: 0.14, life: 1.4, gravity: -0.4 });
+          FX.burst(new THREE.Vector3(core.x + RND(-rad + 1, rad - 1), 2.2, core.z + RND(-rad + 1, rad - 1)), 0xcfe8ff, 3, { speed: 1.2, size: 0.14, life: 1.4, gravity: -0.4 });
           if (ticks >= Math.ceil(dur / 0.7)) clearInterval(iv);
         }, 700);
         break;
@@ -3892,13 +3923,40 @@ const Game = {
           }, 400);
           break;
         }
+        /* [P2b] 双陨 / 三连落在天罚这里 = 多劈几个目标（它本来就是单体巨雷）。
+         * 目标不够就把多出来的雷补在主目标身上 —— 数量轴的折算（skillCountDmgPct）
+         * 是按「每一发都打中同一只」算的，补打同一只是这套折算唯一自洽的读法。
+         * 也不做「多段分摊到同一只时每段减伤」：递减已经由 spow 统一折过了。 */
+        const jCnt = 1 + Math.max(0, sextra);
+        const jTgts = [];
         if (target) {
-          const bossMul = target.boss ? 1.3 : 1;
-          FX.telegraph(target.pos, 3.2 * srad, 0.7, () => {
-            FX.beam(new THREE.Vector3(target.pos.x, 10, target.pos.z), new THREE.Vector3(target.pos.x, 1, target.pos.z), 0xd8e8ff, 0.3);
+          jTgts.push(target);
+          const others = this.enemies
+            .filter(e => !e.dead && e !== target && DIST2D(e.pos, aim) < 16)
+            .sort((a, b) => DIST2D(a.pos, aim) - DIST2D(b.pos, aim));
+          for (const e of others) { if (jTgts.length >= jCnt) break; jTgts.push(e); }
+          while (jTgts.length < jCnt) jTgts.push(target);
+        }
+        /* [P2b] Lv3「溅射」：天罚是单体判定，靠这一段打到落点周围一圈。
+         * 键来自 SKILL_TIER_EVO.judgement（splash），同位的另外三只是范围
+         * 判定，溅射就是半径变大（mods.radius），不需要这个键。 */
+        const jSplash = Math.max(0, (bBeh && bBeh.splash) || 0);
+        for (let k = 0; k < jTgts.length; k++) {
+          const tgt = jTgts[k];
+          const bossMul = tgt.boss ? 1.3 : 1;
+          FX.telegraph(tgt.pos.clone(), 3.2 * srad, 0.7 + k * 0.1, () => {
+            FX.beam(new THREE.Vector3(tgt.pos.x, 10, tgt.pos.z), new THREE.Vector3(tgt.pos.x, 1, tgt.pos.z), 0xd8e8ff, 0.3);
             const { dmg, crit } = this.rollDamage(st.atk * 8.5 * spow * bossMul);
-            this.damageEnemy(target, dmg, crit, { elem: 'lightning', knock: 1 });
-            FX.flashCircle(target.pos, 3.4, 0xd8e8ff, 0.4);
+            this.damageEnemy(tgt, dmg, crit, { elem: 'lightning', knock: 1 });
+            FX.flashCircle(tgt.pos, 3.4 * srad, 0xd8e8ff, 0.4);
+            if (jSplash) {
+              for (const e of this.enemies) {
+                if (e.dead || e === tgt) continue;
+                if (DIST2D(e.pos, tgt.pos) >= 3.4 * srad + e.radius) continue;
+                const s2 = this.rollDamage(st.atk * 8.5 * spow * bossMul * jSplash / 100);
+                this.damageEnemy(e, s2.dmg, s2.crit, { elem: 'lightning' });
+              }
+            }
             this.shake = 0.6; this.hitstop = 110;
           }, 0xd8e8ff);
         }

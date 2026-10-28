@@ -602,7 +602,12 @@ const SKILL_ARCHETYPE = {
           }
         },
         {
-          /* P1 对账：`starfall`（陨星天火）就是本位 9/10 台阶的「陨石雨」。 */
+          /* P1 对账：`starfall`（陨星天火）就是本位 9/10 台阶的「陨石雨」。
+           *
+           * 这一位的发数台阶在 **5 / 7**，不是默认的 3 / 7：3 级是「溅射」
+           * （落点变大 / 天罚溅射），5 级才是双陨。所以四只技能都在
+           * SKILL_COUNT_TIER 里单独登记了 {5:1, 7:1}，Lv3 只给 evo 的 radius / splash。
+           * 9 / 10「陨石雨 / 持续 8 秒」还没做 —— 面板带「待」角标，别当已完成。 */
           no: 2, title: '陨石', inherit: ['meteor', 'judgement', 'blizzard', 'starfall'],
           tiers: {
             1: '单体陨石', 3: '溅射', 5: '双陨', 7: '三连落',
@@ -778,8 +783,37 @@ function skillTierStep(lv) {
  * 会拿它和 game.js 的 case 块逐条对账，两边不一致就变红。
  * ============================================================ */
 
-/* 等级 → 额外发数。1 / 3 / 7 是台阶，2 / 4 / 6 是纯数值，不进这张表 */
+/* 等级 → 额外发数（**默认节奏**）。1 / 3 / 7 是台阶，2 / 4 / 6 是纯数值，不进这张表。
+ * 个别技能的「多发」不落在这两级上 —— 见下面的 SKILL_COUNT_TIER。 */
 const SKILL_TIER_COUNT = { 3: 1, 7: 1 };
+
+/* 按技能覆盖「哪几级给几发」。
+ *
+ * 为什么需要这张表：台阶文案是**按技能位**写的，而发数节奏原本是全局一刀切
+ * 的 3 / 7。法师 ② 的位面上 3 级是「溅射」、5 级才是「双陨」，7 级「三连落」——
+ * 照全局表接，Lv3 会凭空多发一颗（说好的溅射变成双陨），面板那一级却还显示
+ * 已生效。这不是文案问题，是「等级 → 发数」的映射本身不唯一。
+ *
+ * 为什么不塞进 SKILL_TIER_EVO 的 mods.count：那样要保住「多发递减」的唯一口径
+ * 就得把基数登记进 SKILL_COUNT_BASE，而基数一登记，全局 3 / 7 立刻又会在 Lv3
+ * 多给一发 —— 于是还得再造一个「本级别给发数」的开关，绕一圈回到这张表，
+ * 只是多了一条语义混装的 evo 条目。
+ *
+ * 纪律：**同一个位里躺几只技能就登记几只**，漏一只就是假话（契约会查同位一致）。 */
+const SKILL_COUNT_TIER = {
+  /* 法师 ② 陨石：3 = 溅射（走 evo 的 radius），5 = 双陨，7 = 三连落 */
+  meteor: { 5: 1, 7: 1 },
+  judgement: { 5: 1, 7: 1 },
+  blizzard: { 5: 1, 7: 1 },
+  /* starfall 基础就是 16 颗，同样挪到 5 / 7 —— 否则它在 Lv3 就多发一颗，
+     而面板那一级写的是「溅射」，等于文案与数值各说各话。 */
+  starfall: { 5: 1, 7: 1 }
+};
+
+/* 某只技能的发数台阶表：登记过就用它自己的，没登记用默认节奏 */
+function skillCountTierTable(id) {
+  return SKILL_COUNT_TIER[id] || SKILL_TIER_COUNT;
+}
 
 /* 额外发数上限（方案 §13：「count 总量上限 8」）。
  * 台阶 + 装备 + 天赋 + 变体四个来源在 castSkill 里相加后统一截断，
@@ -795,6 +829,9 @@ const SKILL_COUNT_BASE = {
   chain: 5,          // 基础 5 跳
   iceshard: 3,       // 三枚扇形
   starfall: 16,      // 一场雨 16 颗
+  meteor: 1,         // 一颗陨石；台阶让它变成双陨 / 三连落（5 / 7 级，见 SKILL_COUNT_TIER）
+  judgement: 1,      // 一道天罚巨雷；台阶让它多劈 N 个目标
+  blizzard: 1,       // 一片暴雪；台阶让它变成多片叠加
   talisman: 1,       // 一张符（先打最近目标，多余的分配给别的怪）
   talismanarrow: 3,
   poison: 1,         // 一团毒雾；台阶让它变成 2 团 / 3 团（围着落点散开）
@@ -823,12 +860,14 @@ function skillCountCapable(id) {
 }
 
 /* 台阶给多少发（只看技能等级，不看装备 / 天赋 / 变体 ——
- * 装备那部分照旧走 stats.skillMods → smod.count，两条来源在 castSkill 相加） */
+ * 装备那部分照旧走 stats.skillMods → smod.count，两条来源在 castSkill 相加）。
+ * 节奏读 skillCountTierTable：默认 3 / 7，法师 ② 是 5 / 7。 */
 function skillTierCount(id, lv) {
   if (!skillCountCapable(id)) return 0;
   const n = Math.round(Number(lv) || 1);
+  const table = skillCountTierTable(id);
   let extra = 0;
-  for (const k in SKILL_TIER_COUNT) if (n >= Number(k)) extra += SKILL_TIER_COUNT[k];
+  for (const k in table) if (n >= Number(k)) extra += table[k];
   return Math.min(extra, SKILL_COUNT_CAP);
 }
 
@@ -896,6 +935,31 @@ const SKILL_TIER_EVO = {
       mods: { radius: 50 }, beh: { firePatch: 1 } },
     9: { label: '环绕火球', beh: { orbit: 5 } },
     10: { label: '飞弹自动索敌', beh: { autoTarget: 12 } }
+  },
+
+  /* ---------------- 法师 ② 陨石（四只技能共用一个位） ----------------
+   * 这个位的发数节奏是 5 / 7，不是默认的 3 / 7 —— 3 级是「溅射」（见
+   * SKILL_COUNT_TIER，以及 `skillTierCount` 为什么读覆盖表的那段注释）。
+   *
+   * Lv3 的四只怎么兑现同一个「溅射」：
+   *   meteor / blizzard / starfall 都是**范围判定**，溅射就是半径变大
+   *       （cases 里分别读 srad）；
+   *   judgement 是**单体**巨雷（`mult 8.5`，只打一只），给它加半径没有意义 ——
+   *       它走 `splash`：主目标周围一起吃 55%。这是本位唯一一个需要 case
+   *       额外结算的台阶，所以键单独登记，不借 `echo`（那是同一目标再打一次）。
+   * Lv5 / Lv7 的发数（双陨 / 三连落）由 SKILL_COUNT_TIER + 四只 case 里的
+   * `1 + sextra` 兑现，不在这张表里登记 —— 登记了也不会额外多发。 */
+  meteor: {
+    3: { label: '溅射', mods: { radius: 25 } }
+  },
+  judgement: {
+    3: { label: '溅射', beh: { splash: 55 } }
+  },
+  blizzard: {
+    3: { label: '溅射', mods: { radius: 25 } }
+  },
+  starfall: {
+    3: { label: '溅射', mods: { radius: 25 } }
   },
 
   /* ---------------- 道士 ① 符箓（五雷符） ----------------
@@ -1194,29 +1258,28 @@ function skillArchSlot(cls, no) {
   return skillArchList(cls).find(s => s.no === no) || null;
 }
 
-/* 台阶实装状态：面板据此把台阶标成「已生效 / 待实装」，别让文案自己吹。
- *
- * 判据不是手写清单，而是「这个位里真有技能走得到那条通道」：
- *   Lv1              —— 基础形态，永远成立
- *   Lv3 / Lv7        —— 位内至少一个技能真的消费 count 通道（否则「双发」只是文案）
- *   Lv5 / Lv9 / Lv10 —— 位内至少一个技能在 SKILL_TIER_EVO 里登记了这一级
- *
- * 改文案时不用动这里：文案说「双发」而位里没有 count 技能、或说「环绕」
- * 而 evo 表里没这一级，契约会直接红。 */
 /* 某一级台阶「实装了没有」（面板据此标「待」角标）。
  *
- * 判据两路：数量台阶走 skillCountCapable，形态台阶走 SKILL_TIER_EVO。
- * **3 / 7 不再无条件当数量级** —— 血怒位（刀客 ④）的 Lv3 / Lv7 是「施法瞬回」
- * 与「持续 +3 秒」，没有发数可言；先判数量、再落回 EVO 才是对的。
- * 反过来，某个位若把 Lv3 写成发数却没登记在 SKILL_COUNT_BASE 里，这里会返回
- * false → 面板标「待」，正好暴露「写了没接」。 */
+ * 判据两路，都不写死等级：
+ *   数量台阶 —— 位内至少一只技能**在这一级新增了发数**（n 比 n−1 多）
+ *   形态台阶 —— 位内至少一只技能在 SKILL_TIER_EVO 里登记了这一级
+ * Lv1 是基础形态，永远成立。
+ *
+ * 「新增」这个限定是必须的：发数是**累计**的（Lv7 之后一直是 +2），只判
+ * `> 0` 的话，法师 ② 的 Lv9 / Lv10（文案是「陨石雨」「持续 8 秒」，还没做）
+ * 会因为 Lv7 那两发一直挂着而显示成已生效。
+ *
+ * **别再把 3 / 7 当数量级写死**：血怒位（刀客 ④）的 Lv3 / Lv7 是「施法瞬回」
+ * 与「持续 +3 秒」；法师 ② 的发数在 5 / 7，而 3 级是「溅射」。写死 3 / 7 的后果
+ * 两头都错 —— 法师 ② 的 Lv3 会因为 starfall 吃 count 被判成已生效（假绿），
+ * 真正给了发数的 Lv5 反倒显示「待」。 */
 function skillSlotTierDone(cls, no, lv) {
   const slot = skillArchSlot(cls, no);
   if (!slot) return false;
   const n = Math.round(Number(lv) || 0);
   if (n === 1) return true;
   const own = slot.inherit || [];
-  if ((n === 3 || n === 7) && own.some(id => skillCountCapable(id))) return true;
+  if (own.some(id => skillTierCount(id, n) > skillTierCount(id, n - 1))) return true;
   return own.some(id => {
     const pack = SKILL_TIER_EVO[id];
     return !!(pack && pack[n]);

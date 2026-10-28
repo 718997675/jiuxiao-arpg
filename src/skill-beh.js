@@ -800,6 +800,14 @@ const SKILL_BEH = {
     /* 由 Game.behTierNova 消费 */
   } },
 
+  /* 落点溅射（法师 ② Lv3 台阶）：**单体**技能（天罚）的落点也打到周围一圈。
+   * 同位的另外三只是范围判定，溅射就是半径变大（mods.radius），不需要这个键。
+   * 由 castSkill 的 judgement 结算消费 —— 它不走通用 hit 通道（那条以准星为
+   * 圆心，而天罚的落点锁在目标身上，两者恒不重合）。 */
+  splash: { ph: 'hook', label: '落点溅射（台阶）', run() {
+    /* 由 Game.castSkill 的 judgement case 消费 */
+  } },
+
   detonate: { ph: 'hook', label: '引爆剩余伤害', run() {
     /* 由 Game.onBehKill 消费：带持续伤害的目标死亡时原地引爆 */
   } },

@@ -1576,8 +1576,153 @@ const ok = (c, m, d) => {
     ok(todo.join(',') === '', '道士 ③ 面板不再有「待」角标', todo);
   }
 
-  /* ---------------- 13. 零报错 ---------------- */
-  console.log('十三、控制台');
+  /* ---------------- 13. 法师 ② 陨石：发数在 5 / 7 ----------------
+   * 这一位是唯一「发数不在 3 / 7」的：3 级是「溅射」，5 / 7 才是双陨 / 三连落。
+   * 所以要证三件事：3 级真的不多发、5 / 7 真的一颗一颗多出来、
+   * 多出来的那几颗**落得进彼此的半径**（否则准星上的怪只吃一颗还得背惩罚）。 */
+  console.log('十三、法师 ② 陨石（3 溅射 · 5 双陨 · 7 三连落）');
+  const mage2 = await p.evaluate(() => {
+    const mkFoe = (x, z, id) => ({
+      pos: new THREE.Vector3(x, 0, z), radius: 0.5, dead: false,
+      hp: 1e9, maxHp: 1e9, id: id, level: 1, cfg: {},
+      anim: { time: 0 }, spd: 0, atkCd: 999, stun: 0, slow: 0, slowT: 0
+    });
+    const setup = (id, lv, form) => {
+      Game.mapGen = (Game.mapGen || 0) + 1;
+      Game.state.cls = 'mage';
+      Game.state.skills = { [id]: { lv: lv } };
+      if (form != null) Game.state.skills[id].f = form;
+      window.__mkClean();
+      Game.recalc();
+      /* recalc 之后清加成：量的是台阶那一份，不是装备 / 等级 */
+      Game.state.stats.skillLv = 0;
+      Game.state.stats.skillRank = {};
+      Game.state.stats.skillMods = {};
+      Game.state.mp = 99999; Game.dead = false;
+      Game.enemies = [];
+      const pp = Game.playerGroup.position;
+      Game.aimPoint = new THREE.Vector3(pp.x + 6, 0, pp.z);
+      return pp;
+    };
+
+    /* 陨石：数「真的落了几颗」+ 落点半径（telegraph 立即结算，免得等 0.9 秒） */
+    const meteorRun = (lv) => {
+      setup('meteor', lv, 2);        // 2 号「速降」只加伤害 / 消耗，不碰 radius 与 count
+      const drops = [];
+      const oldT = FX.telegraph, oldX = Game.explodeAt, oldHit = Game.damageEnemy;
+      FX.telegraph = (pos, r, d, cb) => { cb(); };
+      Game.explodeAt = (c, r) => { drops.push({ x: c.x, z: c.z, r: r }); };
+      Game.damageEnemy = () => { };
+      Game.castSkill('meteor');
+      FX.telegraph = oldT; Game.explodeAt = oldX; Game.damageEnemy = oldHit;
+      const ax = Game.aimPoint.x, az = Game.aimPoint.z;
+      const off = drops.map(d => Math.hypot(d.x - ax, d.z - az));
+      return {
+        n: drops.length,
+        r: drops.length ? Math.round(drops[0].r * 100) / 100 : 0,
+        maxOff: off.length ? Math.round(Math.max(...off) * 100) / 100 : 0
+      };
+    };
+
+    /* 暴雪：数「铺了几片」+ 片心离准星多远 */
+    const blizzRun = (lv) => {
+      setup('blizzard', lv, 1);      // 1 号「暴雪」只加每跳伤害
+      const zones = [];
+      const oldA = FX.area, oldHit = Game.damageEnemy;
+      FX.area = (c, r, col, du) => { zones.push({ x: c.x, z: c.z, r: r }); return { remove() { }, setOpacity() { } }; };
+      Game.damageEnemy = () => { };
+      Game.castSkill('blizzard');
+      FX.area = oldA; Game.damageEnemy = oldHit;
+      const ax = Game.aimPoint.x, az = Game.aimPoint.z;
+      const off = zones.map(z => Math.hypot(z.x - ax, z.z - az));
+      return {
+        n: zones.length,
+        r: zones.length ? Math.round(zones[0].r * 100) / 100 : 0,
+        maxOff: off.length ? Math.round(Math.max(...off) * 100) / 100 : 0
+      };
+    };
+
+    /* 雷罚：数「劈了几道 / 打到几只」（它本来就是单体巨雷，多发 = 多目标） */
+    const judgeRun = (lv, nFoes, gap) => {
+      setup('judgement', lv, 1);     // 1 号「速罚」只减冷却
+      const pp = Game.playerGroup.position;
+      for (let i = 0; i < nFoes; i++) Game.enemies.push(mkFoe(pp.x + 3 + i * gap, pp.z, i));
+      const hits = {};
+      let bolts = 0;
+      const oldT = FX.telegraph, oldHit = Game.damageEnemy;
+      /* 只数**这个 case 自己**劈出去的雷：雷罚的精研 / 取向带 chain / bounce，
+       * applySkillBeh 会在 switch 之后再打一串，混进来就数不清「多发几道」。
+       * 台阶的 splash 不走这条路（它在 case 里直接读 bBeh），所以关掉不影响它。
+       * 「发了几个」数 telegraph（一道雷 = 一个落点圈），不数伤害次数 ——
+       * 5 级起 3 级那条溅射还在，一道雷本来就会打出好几下。 */
+      const oldBeh = Game.applySkillBeh;
+      Game.applySkillBeh = () => { };
+      FX.telegraph = (pos, r, d, cb) => { bolts++; cb(); };
+      Game.damageEnemy = (e) => { hits[e.id] = (hits[e.id] || 0) + 1; };
+      Game.castSkill('judgement');
+      FX.telegraph = oldT; Game.damageEnemy = oldHit; Game.applySkillBeh = oldBeh;
+      const ids = Object.keys(hits).map(Number);
+      return {
+        bolts: bolts,
+        total: ids.reduce((a, k) => a + hits[k], 0),
+        targets: ids.length,
+        most: ids.length ? Math.max(...ids.map(k => hits[k])) : 0
+      };
+    };
+
+    const out = {};
+    out.meteor = {};
+    for (const lv of [1, 2, 3, 5, 7, 10]) out.meteor['lv' + lv] = meteorRun(lv);
+    out.blizzard = {};
+    for (const lv of [1, 3, 5, 7]) out.blizzard['lv' + lv] = blizzRun(lv);
+    out.judge = {
+      lv1x3: judgeRun(1, 3, 1.2),
+      lv5x3: judgeRun(5, 3, 1.2),
+      lv7x3: judgeRun(7, 3, 1.2),
+      lv7x1: judgeRun(7, 1, 0),
+      lv2near: judgeRun(2, 2, 1.5),
+      lv3near: judgeRun(3, 2, 1.5)
+    };
+    /* 面板：3 / 5 / 7 已接，9 / 10（陨石雨）还是文案 —— 必须还带「待」 */
+    out.panel = [1, 3, 5, 7, 9, 10].map(lv => skillSlotTierDone('mage', 2, lv));
+    Game.enemies = [];
+    Game.mapGen = (Game.mapGen || 0) + 1;
+    return out;
+  });
+
+  {
+    const m = mage2.meteor;
+    ok(m.lv1.n === 1, 'Lv1 落 1 颗', m.lv1);
+    ok(m.lv2.n === 1, 'Lv2 仍是 1 颗（纯数值台阶）', m.lv2);
+    ok(m.lv3.n === 1, 'Lv3「溅射」不凭空多发一颗', m.lv3);
+    ok(m.lv3.r > m.lv2.r, 'Lv3 的落点半径真的变大（溅射 = radius，不是发数）', { lv2: m.lv2.r, lv3: m.lv3.r });
+    ok(m.lv5.n === 2, 'Lv5「双陨」真的落 2 颗', m.lv5);
+    ok(m.lv7.n === 3, 'Lv7「三连落」真的落 3 颗', m.lv7);
+    ok(m.lv10.n === 3, 'Lv10 不再增加颗数', m.lv10);
+    ok(m.lv7.maxOff < m.lv7.r, '多出来的陨石落点都在半径内（偏出去 = 升一级反而更弱）',
+      { maxOff: m.lv7.maxOff, r: m.lv7.r });
+
+    const bz = mage2.blizzard;
+    ok(bz.lv1.n === 1 && bz.lv3.n === 1, '暴雪 Lv1 / Lv3 只有 1 片（3 级是溅射）', bz);
+    ok(bz.lv3.r > bz.lv1.r, '暴雪 Lv3 的每片半径变大', { lv1: bz.lv1.r, lv3: bz.lv3.r });
+    ok(bz.lv5.n === 2 && bz.lv7.n === 3, '暴雪 Lv5 / Lv7 铺 2 / 3 片', { lv5: bz.lv5.n, lv7: bz.lv7.n });
+    ok(bz.lv7.maxOff < bz.lv7.r, '多片暴雪的片心都在半径内（中间目标被每一片盖住）',
+      { maxOff: bz.lv7.maxOff, r: bz.lv7.r });
+
+    const j = mage2.judge;
+    ok(j.lv1x3.bolts === 1, '雷罚 Lv1 只劈 1 道', j.lv1x3);
+    ok(j.lv5x3.bolts === 2, 'Lv5 劈 2 道（打 2 个不同目标）', j.lv5x3);
+    ok(j.lv7x3.bolts === 3, 'Lv7 劈 3 道', j.lv7x3);
+    ok(j.lv7x1.bolts === 3 && j.lv7x1.targets === 1, '只有一只怪时多出来的雷补在它身上（不许白给）', j.lv7x1);
+    ok(j.lv2near.targets === 1, 'Lv2 没有溅射，旁边那只不吃伤害', j.lv2near);
+    ok(j.lv3near.targets === 2, 'Lv3「溅射」真的波及旁边那只', j.lv3near);
+
+    ok(mage2.panel.join(',') === 'true,true,true,true,false,false',
+      '面板：1 / 3 / 5 / 7 已生效，9 / 10（陨石雨）仍标「待」', mage2.panel);
+  }
+
+  /* ---------------- 14. 零报错 ---------------- */
+  console.log('十四、控制台');
   ok(errs.length === 0, '全程零控制台报错', errs.slice(0, 3));
 
   console.log('\n' + (fail === 0 ? '✓' : '✗') + ' P2b 探针：' + pass + ' 通过 / ' + fail + ' 失败');

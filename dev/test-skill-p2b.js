@@ -25,6 +25,8 @@ const pick = name => vm.runInContext(name, ctx);
 const SKILLS = pick('SKILLS');
 const SKILL_ARCHETYPE = pick('SKILL_ARCHETYPE');
 const SKILL_TIER_COUNT = pick('SKILL_TIER_COUNT');
+const SKILL_COUNT_TIER = pick('SKILL_COUNT_TIER');
+const skillCountTierTable = pick('skillCountTierTable');
 const SKILL_COUNT_BASE = pick('SKILL_COUNT_BASE');
 const SKILL_COUNT_CAP = pick('SKILL_COUNT_CAP');
 const SKILL_COUNT_DECAY = pick('SKILL_COUNT_DECAY');
@@ -129,6 +131,52 @@ ok(skillTierCount('fireball', 20) === 2, '词缀顶到 20 级也不再多发', s
 ok(skillTierCount('quake', 10) === 0, '地裂拿不到发数（不吃通道）');
 ok(skillTierCount('fireball', 3) <= SKILL_COUNT_CAP, '发数不超过上限');
 ok(skillCountCap() === 8, '额外发数上限 = 8（方案 §13）', skillCountCap());
+
+/* ============================================================
+ * 三·B、发数节奏可以按技能覆盖（法师 ②：3 级是「溅射」，5 / 7 才是多发）
+ * ============================================================ */
+console.log('三·B、发数节奏按技能覆盖');
+ok(SKILL_TIER_COUNT[3] === 1 && SKILL_TIER_COUNT[7] === 1, '默认表没被改写（3 / 7 仍是全局节奏）');
+ok(skillCountTierTable('fireball') === SKILL_TIER_COUNT, '没登记的技能走默认表');
+ok(skillCountTierTable('meteor') === SKILL_COUNT_TIER.meteor, '登记过的技能走自己的表');
+ok(skillTierCount('meteor', 3) === 0, '法师 ② 的 Lv3 是「溅射」，不多发');
+ok(skillTierCount('meteor', 5) === 1, 'Lv5「双陨」= +1 颗');
+ok(skillTierCount('meteor', 7) === 2, 'Lv7「三连落」= +2 颗');
+ok(skillTierCount('meteor', 10) === 2, '10 级不再加（5 / 7 是唯二的数量台阶）');
+ok(skillCountDmgPct('meteor', 1) === skillCountDmgPct('fireball', 1),
+  '同为基数 1，多发递减口径完全一致（不许为覆盖表另算一套）');
+{
+  /* 同一个位里的技能必须同节奏：玩家把 blizzard 而不是 meteor 放进 ② 号位时，
+   * 看到的必须还是「5 级双陨」。漏登记一只 = 那一只是假话。 */
+  const bad = [];
+  const sig = id => {
+    const t = skillCountTierTable(id);
+    return Object.keys(t).map(k => k + ':' + t[k]).sort().join(',');
+  };
+  for (const cls of CLASSES) {
+    for (const slot of skillArchList(cls)) {
+      const caps = (slot.inherit || []).filter(id => skillCountCapable(id));
+      if (caps.length < 2) continue;
+      const first = sig(caps[0]);
+      for (const id of caps) if (sig(id) !== first) bad.push(cls + slot.no + ' ' + id);
+    }
+  }
+  ok(bad.length === 0, '同一个位里的技能，发数台阶级别必须一致（漏登记就是假话）', bad);
+}
+{
+  const s2 = skillArchSlot('mage', 2);
+  const miss = (s2.inherit || []).filter(id => !(SKILL_TIER_EVO[id] && SKILL_TIER_EVO[id][3]));
+  ok(miss.length === 0, '法师 ② 的四只技能都登记了 Lv3「溅射」（少一只就是假话）', miss);
+  ok(!!SKILL_TIER_EVO.judgement[3].beh && SKILL_TIER_EVO.judgement[3].beh.splash > 0,
+    '天罚是单体判定，溅射走 splash（radius 对它没有意义）');
+}
+/* 面板别把没做的等级标成已生效：发数是累计的，Lv7 之后一直 +2，
+ * 只判「> 0」会把 9 / 10 的「陨石雨」也算成已实装 */
+ok(skillSlotTierDone('mage', 2, 3), '法师 ② Lv3「溅射」已接');
+ok(skillSlotTierDone('mage', 2, 5), '法师 ② Lv5「双陨」已接（数量台阶）');
+ok(skillSlotTierDone('mage', 2, 7), '法师 ② Lv7「三连落」已接（数量台阶）');
+ok(skillSlotTierDone('mage', 2, 9) === false && skillSlotTierDone('mage', 2, 10) === false,
+  '法师 ② 的 9 / 10（陨石雨 / 持续 8 秒）还没做，面板必须标「待」');
 
 /* 三个职业 5 个位的 Lv7：「实装状态」= 有发数 **或** 有一条形态台阶。
  * 原断言写的是「实装 ⟺ 位内有 count 技能」，那是数量轴唯一的年代定的；
@@ -259,18 +307,23 @@ console.log('六、文案与实装对齐');
 }
 {
   /* 进化台阶：登记了 = 已实装、没登记 = 面板标「待」。**两个方向都查** ——
-   * 只查「没登记的不许实装」会让实装之后仍然标「待」，面板反过来骗人。 */
+   * 只查「没登记的不许实装」会让实装之后仍然标「待」，面板反过来骗人。
+   *
+   * 5 / 9 / 10 的「已实装」有两个合法来源：evo 表登记，或者这一级**新增发数**
+   * （法师 ② 的发数台阶在 5 / 7 —— 见 SKILL_COUNT_TIER）。所以这里查的是
+   * `evo || 本级新增发数`，不是只看 evo。 */
   let bad = [];
   for (const cls of CLASSES) {
     for (const slot of skillArchList(cls)) {
       for (const lv of [5, 9, 10]) {
         const done = skillSlotTierDone(cls, slot.no, lv);
         const has = (slot.inherit || []).some(id => !!SKILL_TIER_EVO[id] && !!SKILL_TIER_EVO[id][lv]);
-        if (done !== has) bad.push(cls + slot.no + ' Lv' + lv + ' done=' + done + ' has=' + has);
+        const cnt = (slot.inherit || []).some(id => skillTierCount(id, lv) > skillTierCount(id, lv - 1));
+        if (done !== (has || cnt)) bad.push(cls + slot.no + ' Lv' + lv + ' done=' + done + ' has=' + has + ' cnt=' + cnt);
       }
     }
   }
-  ok(bad.length === 0, '每位每级：面板「待」状态 == evo 表是否登记（双向）', bad.slice(0, 6));
+  ok(bad.length === 0, '每位每级：面板「待」状态 == evo 登记 或 本级新增发数（双向）', bad.slice(0, 6));
   /* 台阶表本身要有这些等级，否则面板画不出「待」 */
   ok(SKILL_TIERS.visible.join(',') === '1,3,5,7,9,10', '可见台阶仍是 1/3/5/7/9/10', SKILL_TIERS.visible);
 }
@@ -661,6 +714,35 @@ const behSrc = readSrc('src/skill-beh.js');
   ok(/sf\.dr > 0/.test(game) && /sf\.counter > 0/.test(game),
     'damagePlayer 真的消费 arrayGuard / arrayCounter（不是只登记了键）');
   ok(/this\.swordCounterCd = 0\.4/.test(game), '阵内反击有内置冷却（不记账等于群体秒杀）');
+}
+
+/* ============================================================
+ * 八、法师 ② 陨石：发数在 5 / 7，3 级是溅射
+ * ============================================================ */
+console.log('八、法师 ② 陨石（发数 5 / 7）');
+{
+  const s2 = skillArchSlot('mage', 2);
+  ok(s2.tiers[3] === '溅射' && s2.tiers[5] === '双陨' && s2.tiers[7] === '三连落',
+    '本位文案：3 溅射 / 5 双陨 / 7 三连落', s2.tiers);
+  for (const id of s2.inherit) {
+    ok(skillTierCount(id, 3) === 0 && skillTierCount(id, 5) === 1,
+      id + ' 的发数落在 5 / 7，不落 3（否则 Lv3「溅射」凭空多发一颗）', {
+        lv3: skillTierCount(id, 3), lv5: skillTierCount(id, 5)
+      });
+  }
+  /* 四只都真的读 sextra 这件事，一 / 二节已按 SKILL_COUNT_BASE 对过账；
+   * 这里钉住正则查不到的那两条纪律 */
+  ok(/const off = k === 0 \? 0 : mRad \* 0\.55/.test(game) &&
+    /const off = k === 0 \? 0 : rad \* 0\.55/.test(game),
+    '陨石 / 暴雪的多发偏移取 0.55 倍半径（偏出半径 = 升一级反而更弱）');
+  ok(/3\.2 \* srad/.test(game) && /3\.0 \* srad/.test(game),
+    '陨星天火的落点半径读 srad（否则 Lv3 的溅射对它是空话）');
+  ok(/bBeh\.splash/.test(game) && /jSplash/.test(game),
+    '天罚 case 真的消费 splash（不是只登记了键）');
+  ok(/splash: \{ ph: 'hook'/.test(behSrc), 'splash 已在 SKILL_BEH 登记');
+  /* 天罚多发：目标不够时补在主目标身上，不许「没目标就当没这级」 */
+  ok(/while \(jTgts\.length < jCnt\) jTgts\.push\(target\)/.test(game),
+    '天罚多头不足时补打主目标（否则单挑首领时这级白给）');
 }
 
 /* ---------------- 汇总 ---------------- */
