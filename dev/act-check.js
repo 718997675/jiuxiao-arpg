@@ -36,6 +36,7 @@ const BALANCE = g('BALANCE');
 const firstMapOfAct = g('firstMapOfAct'), actsOfPart = g('actsOfPart');
 const campOfPart = g('campOfPart'), campMapOfPart = g('campMapOfPart');
 const isChapterTail = g('isChapterTail'), nextChapterMap = g('nextChapterMap');
+const nextMapInWorld = g('nextMapInWorld');
 
 const LV_MAX = (BALANCE && BALANCE.levelMax) || 60;
 const PART_IDS = Object.keys(PARTS).map(Number).sort((a, b) => a - b);
@@ -270,6 +271,64 @@ const lastTail = ACTS[LAST_ACT].maps.filter(m => m.id).pop();
 if (lastTail) {
   eq(`最后一章 ${LAST_ACT} 的末图没有下一章`, nextChapterMap(lastTail.id), null);
 }
+
+/* ---- 图间门（M3b 补）：每张图都要有「顺着走的下一张」 ----
+ * 这一节是给一个真事故补的回归：M1 只给章尾挂了门，一章里第 2 张起的图
+ * （落霞坡 / 沉骨滩 / 玄铁矿洞 / 万剑坑 …）在游戏里**根本没有入口** ——
+ * 上一张图走不过去，只能翻山河图，而山河图在叙事上是「回头路」不是「前进」。
+ * 判据三条：
+ *   1. 非卷末、非终章的图，nextMapInWorld 必须给出一张真实地图；
+ *   2. 同章内相邻两张图要直连（不许跳过中间的图）；
+ *   3. 从每卷首图出发顺着门一路走，要能走完整卷（不漏图、不死循环）。
+ * 终章（linear:false）单独验：八部坛是枢纽，靠 8 道门而不是走廊。 */
+for (const p of PART_IDS) {
+  const list = actsOfPart(p).slice().sort((a, b) => a.no - b.no);
+  const lastAct = list[list.length - 1];
+  for (const a of list) {
+    if (a.linear === false) {
+      eq(`终章 ${a.id} 不参与线性串联（八部坛走 8 道门）`, nextMapInWorld(firstMapOfAct(a.id).id), null);
+      continue;
+    }
+    const open = a.maps.filter(m => m.id);
+    for (let k = 0; k < open.length; k++) {
+      const to = nextMapInWorld(open[k].id);
+      if (k + 1 < open.length) {
+        eq(`章 ${a.id} 的 ${open[k].id} 顺着门去本章下一张 ${open[k + 1].id}`, to, open[k + 1].id);
+      } else if (a.id === lastAct.id) {
+        eq(`卷 ${p} 末章 ${a.id} 的末图 ${open[k].id} 不出门（回营地）`, to, null);
+      } else {
+        ok(!!to && !!MAPS[to], `章 ${a.id} 的末图 ${open[k].id} 门通向下一章首图`, to);
+      }
+      if (to) ok(!!MAPS[to], `图间门目标 ${to} 是真实地图`);
+    }
+  }
+
+  /* 顺着门把整卷走一遍：卷内所有图都要踩到，且不能绕回已踩过的图 */
+  let cur = firstMapOfAct(list[0].id);
+  const walked = [];
+  let guard = 0;
+  while (cur && guard++ < 100) {
+    const id = cur.id || cur;
+    if (walked.indexOf(id) >= 0) { ok(false, `卷 ${p} 的图间门在 ${id} 处成环`); break; }
+    walked.push(id);
+    const nx = nextMapInWorld(id);
+    if (!nx) break;
+    cur = nx;
+  }
+  const want = [];
+  for (const a of list) {
+    if (a.linear === false) {
+      /* 终章只有「首图」算链上的终点（混沌海），8 张副本不在走廊上 */
+      const f = firstMapOfAct(a.id);
+      if (f) want.push(f.id);
+      continue;
+    }
+    for (const m of a.maps) if (m.id) want.push(m.id);
+  }
+  eq(`卷 ${p} 顺着门能从首图走完整卷（${walked.length} 张）`, walked.length, want.length);
+  for (const id of want) ok(walked.indexOf(id) >= 0, `卷 ${p} 顺着门能走到 ${id}`);
+}
+
 /* ============================================================
  * 五、图鉴区域（M4 把图鉴改成 5 大卷，这里确认每张图都归得进去）
  * ============================================================ */

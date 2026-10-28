@@ -642,7 +642,12 @@ const ACTS = {
       { id: 'bafo_mahoraga', name: '蟒腹', lv: 60 },
       { id: 'wuxiang', name: '无相天', lv: 60 }
     ],
-    boss: 'chaosavatar', sub: null
+    boss: 'chaosavatar', sub: null,
+    /* [M7] 终章**不参与线性串联**：混沌海是枢纽，8 张副本走坛上的 8 道门
+     * （`MAPS.chaossea.gates`），终 boss 场走「天龙终门」+ 8 印。
+     * 若把 maps 数组当链条，会得到「混沌海 → 帝释殿 → 难陀渊…」这种
+     * 把八部当成一条走廊的走法，和设计冲突。 */
+    linear: false
   }
 };
 
@@ -770,5 +775,31 @@ function nextChapterMap(mapId) {
   if (i < 0 || i + 1 >= list.length) return null;
   const nx = firstMapOfAct(list[i + 1].id);
   return nx ? nx.id : null;
+}
+
+/** 这张图「顺着走」的下一张 → 'sunset' / null（图间出口门的目标）
+ *
+ *  为什么要这个而不直接用 nextChapterMap：
+ *    M1 只给「章尾」挂了门，一章里第 2 张起的图就只剩「翻山河图」一条路 ——
+ *    落霞坡、沉骨滩、玄铁矿洞、万剑坑……全是这样，玩家在上一张图里
+ *    怎么走都找不到入口。计划书 §3.6/§3.7 的原话是
+ *    「章的边界是门，不是按钮」，指的是**每一张图**都有门，
+ *    所以门的目标要先看本章内、再跨章。
+ *
+ *  顺序 = ACTS[x].maps 的书写顺序（跳过 id 为 null 的图位）：
+ *    幽篁林 → 落霞坡 → （章尾）血月沼泽 → 沉骨滩 → （章尾）骨塔祭场 …
+ *  卷末章 / 下一章没图 / 终章（linear:false）返回 null，门就不出现。 */
+function nextMapInWorld(mapId) {
+  const a = actOfMap(mapId);
+  if (!a) return null;
+  const act = ACTS[a];
+  if (act.linear === false) return null;
+  let i = -1;
+  for (let k = 0; k < act.maps.length; k++) if (act.maps[k].id === mapId) i = k;
+  if (i >= 0) {
+    for (let k = i + 1; k < act.maps.length; k++) if (act.maps[k].id) return act.maps[k].id;
+  }
+  /* 本章已走完 → 跨到下一章第一张；卷末返回 null（卷间靠营地 + 大传送门） */
+  return nextChapterMap(mapId);
 }
 

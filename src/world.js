@@ -1438,22 +1438,32 @@ function buildMap(mapId) {
     waystone = { x: wx, z: wz };
   }
 
-  /* [M1] 章间出口门：本章最后一张「已开放」的图 → 下一章第一张已开放的图。
-   * 用传送阵同款门、缩到 0.72，只连下一章不开面板 —— 「顺着走」比「翻山河图」顺手。
-   * 卷末 / 下一章还没做图时 nextChapterMap 返回 null，门就不出现（不会留个死门）。 */
+  /* [M1/M3b] 图间出口门：本图 →「顺着走的下一张图」。
+   * 顺序先看**本章内**的下一张（幽篁林 → 落霞坡），本章走完才跨到下一章首图；
+   * 卷末章 / 终章（5-2 八部坛）/ 下一章没图 → 返回 null，门不出现（不留死门）。
+   *
+   * 为什么不是「只有章尾才有门」：M1 那版只在章尾挂门，结果一章里第 2 张起的图
+   * （落霞坡 / 沉骨滩 / 玄铁矿洞 / 万剑坑 …）只能靠翻山河图进，玩家在上一张图里
+   * 怎么走都找不到入口。计划书 §3.6 的原话是「章的边界是门，不是按钮」。
+   *
+   * 用传送阵同款门、缩到 0.72，只连下一张不开面板 —— 「顺着走」比「翻山河图」顺手。
+   * 门上挂一块名牌，不然两扇门长得一样，玩家分不清这扇去哪。 */
   let gate = null;
-  if (typeof isChapterTail === 'function' && isChapterTail(mapId)) {
-    const nx = (typeof nextChapterMap === 'function') ? nextChapterMap(mapId) : null;
-    if (nx && MAPS[nx]) {
-      const gx = px - 7, gz = pz - 2;
-      const gp = makePortal();
-      gp.position.set(gx, 0, gz);
-      gp.scale.setScalar(0.72);
-      root.add(gp);
-      colliders.push({ x: gx, z: gz, r: 2.6 });
-      anims.push(a => { gp.userData.ring.rotation.z -= 0.03; gp.userData.light.intensity = 1.0 + Math.sin(a * 2.4) * 0.25; });
-      gate = { x: gx, z: gz, to: nx, name: MAPS[nx].name };
-    }
+  const nx = (typeof nextMapInWorld === 'function') ? nextMapInWorld(mapId) : null;
+  if (nx && MAPS[nx]) {
+    const gx = px - 7, gz = pz - 2;
+    const gp = makePortal();
+    gp.position.set(gx, 0, gz);
+    gp.scale.setScalar(0.72);
+    root.add(gp);
+    colliders.push({ x: gx, z: gz, r: 2.6 });
+    anims.push(a => { gp.userData.ring.rotation.z -= 0.03; gp.userData.light.intensity = 1.0 + Math.sin(a * 2.4) * 0.25; });
+    /* 名牌：目标图名（带箭头，和右边的传送阵区分开 —— 右边是「开面板」，左边是「去下一张」） */
+    const gl = makeLabelSprite('→ ' + MAPS[nx].name, '#ffe9a8', 34, 6.2, 1.55);
+    gl.position.set(gx, 4.9, gz);
+    root.add(gl);
+    labels.push(gl);
+    gate = { x: gx, z: gz, to: nx, name: MAPS[nx].name };
   }
 
   return { root, colliders, anims, occluders, portal: { x: px, z: pz }, waystone, gate, labels };

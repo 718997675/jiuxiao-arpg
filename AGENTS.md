@@ -134,10 +134,10 @@ git fetch origin                 # 分支都在远程，clone 完就全能看到
 | 角色纸娃娃建模 | `src/charforge.js` / `src/skel.js` |
 | 地图生成 | `src/world.js` |
 | 试炼模式 | `src/trial.js` |
-| 世界结构（卷/章/图/营地/门禁） | `src/data/data-world.js`（`PARTS`/`ACTS`/`CAMPS` + `campOfMap`/`campsUpToPart`/`isChapterTail`/`nextChapterMap`） |
+| 世界结构（卷/章/图/营地/门禁） | `src/data/data-world.js`（`PARTS`/`ACTS`/`CAMPS` + `campOfMap`/`campsUpToPart`/`isChapterTail`/`nextChapterMap`/`nextMapInWorld`） |
 | 任务数据（主线/支线/悬赏） | `src/data/data-quests.js`（`QUESTS` + `questMapOpen`/`questsOfPart`/`questByLegacyId`/`giverOfNpc`/`partOfGiver`） |
 | 任务运行时（接取/进度/复命/任务区域/迁移） | `src/quests.js`（`QuestSys`）。`game.js` 里的 `acceptQuest`/`questReady`/`turnInQuest`/`onKill` 只是转发，别再往里写业务 |
-| 营地场景 / 路标石 / 章间出口门 | `src/world.js`（`buildMap` 末尾建 `waystone`/`gate`）+ `src/game.js`（`travelTo` 门禁、`updateInteract`/`interact`） |
+| 营地场景 / 路标石 / 图间出口门 | `src/world.js`（`buildMap` 末尾建 `waystone`/`gate`）+ `src/game.js`（`travelTo` 门禁、`updateInteract`/`interact`） |
 | 山河图（传送面板） | `src/ui.js` 的 `openTravel`/`renderWorldMap` + `index.html` 的 `.wm-*` |
 | 小地图 | `src/ui-minimap.js`（`Minimap.draw`）。`ui.js` 的 `drawMinimap` 只是转发，别再往那边写 |
 | zone 拓扑 / 骨架 / 刷怪分配 | `src/data/data-maps.js` 的 `ZONE_ARCHETYPES` + `MAP_SPECS` + `buildZones`/`suggestSpawnTotal` |
@@ -206,8 +206,17 @@ node dev/preview-check.js --url <预览地址>   # 预览站：能开局 + 资�
 - **野图门禁不能严格「仅限已抵达」**。25 个图位是 `id: null`、卷二整卷没图，
   野图一旦只允许去已抵达的卷，玩家打完玄铁矿洞就无路可走。所以只有**营地**这一层严格收口
   （`travelTo` 里看 `state.camps`），野图仍是「等级够 或 去过」。M3 补完图再收紧。
-- **章间出口门挂「本章最后一张已开放图」**（`isChapterTail`），不是图位最后一个 ——
-  落霞坡这类 `id: null` 的图位没有实体地图，门挂上去永远不出现。
+- **图间出口门挂「顺着走的下一张图」**（`nextMapInWorld`）：先看**本章内**的下一张
+  （幽篁林 → 落霞坡），本章走完才跨到下一章首图（落霞坡 → 血月沼泽）。
+  M1 那版只给章尾挂门（`isChapterTail`），结果一章里第 2 张起的图 —— 落霞坡 / 沉骨滩 /
+  玄铁矿洞 / 万剑坑 …… 在游戏里**根本没有入口**，上一张图走不过去，只能翻山河图。
+  计划书 §3.6 的原话是「章的边界是门，不是按钮」。
+- 门的三条边界：**卷末章不出门**（回营地走大传送门）、**终章 `linear:false` 不出门**
+  （混沌海是枢纽，8 张副本走坛上的 8 道门 + 8 印开终门）、`id: null` 的图位跳过。
+- 门在 `px-7`、传送阵在 `px`，两扇门长得一样 → **门上必须挂名牌**（`→ 目标图名`），
+  否则玩家分不清「这扇是去下一张」还是「这扇是开山河图」。
+- **`ui.js:renderQuests` 的 `wbCard` 必须在「无任务」分支之前取**。`const` 写在分支后面时，
+  任务全交完再打开山海志会读到 TDZ 直接抛 `Cannot access 'wbCard' before initialization`。
 - **营地按卷累积解锁**（`campsUpToPart`），和 `save.js` 的 `normalizeDoc` 同一口径。
   只 push 当前卷的话，「等级跳卷三」会让 campB 永远解锁不了，而重开档后又突然冒出来。
 - 营地**故意没有 elder**：q1~q11 整条链挂在桃源村村长身上，营地再摆一个 elder 会让任务对话指错地方。
