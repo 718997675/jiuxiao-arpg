@@ -3,7 +3,7 @@
 - 分支：`feat/skill-refactor`（优先级 **低**，排在大型扩展之后）
 - 计划文档：`docs/SKILL-REDESIGN-PLAN.md`（16 节）
 - 预览站：暂不发（2026-10-27 用户口径：本地验证即可，别再折腾线上）
-- 更新：2026-10-28 · P2b 进化台阶 **9/15 位**（27/45 条）· **收工点：下次从 A 档「法师 ④ 护盾」接**
+- 更新：2026-10-28 · P2b 进化台阶 **10/15 位**（30/45 条）· **收工点：下次从 A 档「道士 ③ 太极」接**
 
 > 当前：**P0 + P1a + P1b + P1c + P1d + P2a 完成，P2b 进行中**。动作条 5 格、格位 = 功能位；
 > 技能树已按「三线并行」结算 —— 没有必点主干、没有主动↔被动二选一，
@@ -12,9 +12,9 @@
 > **等级上限已是 10，伤害走 skillLvMul 分段曲线（10 级 1.72 倍 / 20 级 2.02 倍），
 > 技能点供给 = 等级 × 1.5（40 级 60 点）**。
 > 台阶也接进战斗了：Lv3 / Lv7 走 `smod.count`（多发带 0.85^n 递减）——**12 个技能全接**
-> （毒雾、火墙、雷云是后两批补进来的）；Lv5 / Lv9 / Lv10 走行为键，**已接 9 个位**
-> （刀客 ①②③④、法师 ①③、道士 ①②④），15 个位 × 3 级 = 45 条里完成 **27 条**。
-> 剩 6 个位仍是文案，面板上带「待」角标 —— **别把「P2b 完成」读成 45 条都做了**。
+> （毒雾、火墙、雷云是后两批补进来的）；Lv5 / Lv9 / Lv10 走行为键，**已接 10 个位**
+> （刀客 ①②③④、法师 ①③④、道士 ①②④），15 个位 × 3 级 = 45 条里完成 **30 条**。
+> 剩 5 个位仍是文案，面板上带「待」角标 —— **别把「P2b 完成」读成 45 条都做了**。
 
 ## 一句话现状
 
@@ -36,7 +36,7 @@ P1 起才动 `SKILL_BAR_SLOTS` 与面板的三列树。
 | P1c | **取消二选一**：三线并行结算（等级门 `reqLv` + 关键被动软前置 `needPts`），`levelUpSkill` / `levelUpPassive` 的 fork 拦截整块删除，面板去掉「或/锁」标记与互斥虚线，说明页同步 | ✅ | `data-skill-tree.js`、`game.js`、`skill-passive.js`、`ui-skills.js`、`ui.js`、`index.html` | `dev/test-skill-p1c.js` 353 · `dev/probe-skill-p1c.js` 23 |
 | P1d | 面板**视觉**重排：一条线一列、列内按 `reqLv` 递增，被动小一圈挂在主动右边，只留同线淡引导线；手机上三条线分页签、一页一列 | ✅ | `ui-skills.js`（`skTreeLayout` / `skTreeHTML` / `renderSkillTreeDOM` / `skTreeTabsHTML`）、`index.html`（SKG + 被动腰围）、`ui.js`（说明页「技能树布局」） | `dev/probe-skill-p1d.js` 36 |
 | P2a | **等级上限 5 → 10** + 分段曲线真的进战斗（`skillLvMul` 取代旧「每级固定 8%」）+ 点数供给 等级 × 1.5；面板 10 格 / 满级金环 / 洗点全额退回 | ✅ | `data-skills.js`（`SKILL_LV_MAX` / `SKILL_POINT_RATE` / `skillPointPool`）、`data-skill-tree.js`（`lvMax` 同源）、`game.js`（`castSkill` / `skillPoints`）、`ui-skills.js`、`ui.js`、`index.html` | `dev/test-skill-p2.js` 41 · `dev/probe-skill-p2.js` 26 |
-| P2b | **数量 / 形态台阶接进 `castSkill`**。①数量：Lv3 / Lv7 各 +1，接 `smod.count`（10 个技能消费），第 n 发 ×0.85^n 防三倍伤害。②进化：新建 `SKILL_TIER_EVO`（挂**技能 id** 不挂技能位），合并顺序 **台阶最前 → 精研 / 取向 / 变体覆盖同名键**（花点的选择必须盖过等级送的）。**已接 9 个位 / 27 条**：刀客①旋风斩、法师①火球、道士①符箓、道士②毒雾、刀客②地裂、刀客③剑阵、刀客④血怒、道士④回春、法师③火墙 —— 细则见下面「P2b 收口要点」。**⚠ 只接了 9/15 个位（27/45 条），剩 6 位仍是文案** | 🟡 | `data-skills.js`（`SKILL_TIER_EVO` / `skillTierEvo` / `skillTierMods` / `skillTierBeh`）、`skill-beh.js`（`branchBeh` 台阶排最前 + `killProlong` / `lifesteal` / `ccImmune` / `healOnCast` / `tierDur`）、`game.js`（autoTarget / rageMul / firePatch / swordField / applyPlayerSlow / ccImmuneNow）、`ui.js`（说明页读数现算）、`ui-skills.js` | `dev/test-skill-p2b.js` 448 · `dev/probe-skill-p2b.js` 156 |
+| P2b | **数量 / 形态台阶接进 `castSkill`**。①数量：Lv3 / Lv7 各 +1，接 `smod.count`（10 个技能消费），第 n 发 ×0.85^n 防三倍伤害。②进化：新建 `SKILL_TIER_EVO`（挂**技能 id** 不挂技能位），合并顺序 **台阶最前 → 精研 / 取向 / 变体覆盖同名键**（花点的选择必须盖过等级送的）。**已接 10 个位 / 30 条**：刀客①旋风斩、法师①火球、道士①符箓、道士②毒雾、刀客②地裂、刀客③剑阵、刀客④血怒、道士④回春、法师③火墙、法师④护盾 —— 细则见下面「P2b 收口要点」。**⚠ 只接了 10/15 个位（30/45 条），剩 5 位仍是文案** | 🟡 | `data-skills.js`（`SKILL_TIER_EVO` / `skillTierEvo` / `skillTierMods` / `skillTierBeh`）、`skill-beh.js`（`branchBeh` 台阶排最前 + `killProlong` / `lifesteal` / `ccImmune` / `healOnCast` / `tierDur`）、`game.js`（autoTarget / rageMul / firePatch / swordField / applyPlayerSlow / ccImmuneNow / behTierNova / shieldT+sdur）、`ui.js`（说明页读数现算）、`ui-skills.js` | `dev/test-skill-p2b.js` 505 · `dev/probe-skill-p2b.js` 170 |
 | P2c | 精通层 11~20：光效随等级变亮、Lv15 精通小质变（统一三选一模板），不新增形态 | ⬜ | `src/fx.js`、`skill-beh.js` | — |
 | P3 | 元素注入 + 反应表：伤害管线支持双元素、特效混色、词缀口径 | ⬜ | 战斗 + 词缀 + `src/fx.js` | — |
 | P4 | 三职业独立 ⑤ 号位：刀客兵形/刃势、法师法相、道士召唤 | ⬜ | `src/fx.js`、`src/charforge.js` | — |
@@ -146,23 +146,32 @@ P1 起才动 `SKILL_BAR_SLOTS` 与面板的三列树。
     要挂在每一跳上，且只在 `dotT < 0.75` 时补 —— 每跳都调会刷一屏飘字。
 28. **`tierDot` 而不是 `burnPct`**：`burnPct` 写死火元素 + 「灼烧」，冰霜新星用它会挂一层
     火焰 DoT。持续伤害的元素必须跟技能走（火=灼烧 / 冰=霜蚀 / 雷=雷灼）。
+29. **一个钩子挂多条独立效果时，不许按「其中一条」早退**。`onBehShieldBreak` 原来开头
+    就是 `if (!beh.breakNova) return` —— 台阶 Lv10 加进来之后，没选「冰刺」的玩家
+    连破盾爆发一起被吞掉。改成「先判能不能跑，再各自 if」。
+30. **同一个行为有两个触发入口时，结算只能有一份**。护盾位 Lv10 的「破盾 / 爆发」：
+    冰盾走破盾钩子、焚天走自己的 case，两处**只调同一个 `behTierNova`**。
+    各写一遍的下场是数值漂移 + 元素写死（冰蓝的火焰爆发）。元素按技能分：
+    冰=冰爆 / 火=爆燃。
+31. **case 里写死的时长会吃掉变体的 `mods.dur`**。`iceshield` 的 `shieldT` 一直写死 10，
+    而变体「永冻」写的是「持续 +6 秒」—— 玩家一整条变体换了个寂寞。凡是 case 里
+    「XX 持续 N 秒」的常量，都要加 `sdur`（青符 4 件的 +3 秒也走这条）。
 
 
-## P2b 剩余：6 个位的进化台阶（18 条）
+## P2b 剩余：5 个位的进化台阶（15 条）
 
-已接 9 个位：刀客 ①②③④、法师 ①③、道士 ①②④。剩下的按「要不要新写相位」分三档：
+已接 10 个位：刀客 ①②③④、法师 ①③④、道士 ①②④。剩下的按「要不要新写相位」分三档：
 
 **A 档 · 复用现成键（可以直接接着做）**
 
 | 位 | Lv5 / Lv9 / Lv10 文案 | 可用的键 |
 |---|---|---|
-| 法师 ④ 护盾 | 反伤 / 爆发 / 破碎冰冻 | `reflect` / **新写「护盾到期炸」** / `breakNova`（hook 已有） |
 | 道士 ③ 太极 | 推开 / 内减伤 / 内回血 | `knock` / `drPct` / `hotPct` |
 
-> ⚠ **A 档剩下的两位，原表推荐的键「看着能用，其实全撞」**（2026-10-28 核查）：
-> 法师 ③ 火墙（已按这条路做完，可当范例）的 `grow / ring / follow / endBurst` 全是
-> **该技能自己的精研 / 取向 / 变体**，
-> 法师 ④ 护盾的 `reflect`（霜甲、冰甲）与 `breakNova`（冰刺）同理，
+> ⚠ **A 档只剩道士 ③，原表推荐的键「看着能用，其实全撞」**（2026-10-28 核查）：
+> 法师 ③ 火墙与法师 ④ 护盾都已按这条路做完，可当范例 ——
+> 火墙的 `grow / ring / follow / endBurst`、护盾的 `reflect`（霜甲、冰甲）/ `breakNova`（冰刺）
+> 全是**该技能自己的精研 / 取向 / 变体**；
 > 道士 ③ 太极的 `knock`（两仪）/ `drPct`（阴阳、太极、绵劲、无极）同理。
 > 照原表直接接 = 三条台阶全被花点的选择顶掉。**动手前先按第 22 条选路**：
 > 数值类走 `+键` 叠加，形态类必须换一个消费点不同的新语义（参考血怒位与回春位）。
@@ -572,3 +581,42 @@ arch 29 · p2 26 · smoke ERRORS none。
 不依赖帧循环 —— 施法后把 `Game.running` 关掉等完再打开即可，别去补假 `actor`；
 ② 「中间的目标挨 N 下」不能写成 1/2/3：火带段距 2.6 < 半径 3，一道墙本来就让正中挨 2 下，
 所以判据要写成「双段把 2 变成 4」+「外侧从打不到变打得到」。
+
+### 2026-10-28 · P2b 法师 ④ 护盾（玄冰护盾 / 焚天 共用一个位）
+
+这一位的问题比前几个位更根本：**两只技能连「有没有护盾」都不一样**。
+冰盾是给自己套吸收条，焚天是踩在脚下的一发爆发 —— 原稿的
+「护盾反伤 / 护盾爆发 / 护盾破碎时冰冻周围」对焚天一句都不成立。
+而即使是冰盾那半，`reflect` 也早被精研「霜甲」(40) 与变体「冰甲」(60) 占了，
+`breakNova` 归取向「冰刺」、`dur` 归「冰甲 / 永冻」—— 四条全撞。
+
+- **三条数值台阶重写成「施法后的 4 秒窗口」**，四档全是 self 相位的通用键，
+  两只都真的兑现：Lv3 瞬回 10%（`healOnCast`）、Lv5 护甲 +30%（`armorPct`）、
+  Lv7 移速 +15%（`moveSpd`）、Lv9 暴击 +15 点（`crit`，走 BUFF_ADD 加值而不是乘区）。
+  全部靠 `behDur(b, 4)`：默认 4 秒；选了「冰甲」的玩家因为 beh.dur=10 会更久，
+  那是分支的额外好处，不算台阶吹牛。
+- **Lv10「护盾破碎 / 爆发时对周围敌人造成伤害并定身 1.5 秒」**：新键 `tierNova`
+  （值 = 攻击力百分比），结算只有一份 `Game.behTierNova`，两个入口共用 ——
+  冰盾走 `onBehShieldBreak`，焚天在自己的 case 里调。元素按技能分：
+  冰=冰爆（蓝）/ 火=爆燃（橙），定身用 `slow 1.0`（完全不动，但仍可被打）。
+- **`onBehShieldBreak` 去掉按 `breakNova` 的早退**：这个钩子现在挂两条独立效果
+  （冰刺 + 台阶），早退会让只点台阶的玩家连破盾爆发一起丢掉。
+- **顺带修掉一条老假话**：`iceshield` 的 `shieldT` 写死 10，而变体「永冻」的
+  `mods.dur = 6` 就是「持续 +6 秒」—— 真人选了一整条变体等于没选。改成 `10 + sdur`，
+  探针实测 10 → 16。
+
+**验证**：`test-skill-p2b` 482→**505 通过 / 0 失败**（新增法师 ④ 节 23 条：
+五档 × 两只、撞键复查、`tierNova` 登记、两个入口都调同一结算、
+不许按 breakNova 早退、定身数值、`shieldT` 带 sdur、面板无「待」）、
+`probe-skill-p2b` 156→**170 通过 / 0 失败**（新增「十一、法师 ④」14 条：
+两只 × 瞬回 / 护甲 / 移速 / 暴击四条真机读数，永冻 10→16，
+冰盾破碎炸一发 + 两只都被定住、焚天爆发炸一发）。
+回归：p0 248 · p1 52 · p1c 353 · p2 41 · p2b 505 · items 17 · save 79 · s1 通过 ·
+arch 29 · p2 26 · smoke ERRORS none。
+
+**踩坑**：① 这一节要**真结算**伤害（不像火墙那节全 stub），假怪必须补 `level` 与
+`cfg`，否则 `damageEnemy` 报 `reading 'armorHigh'`（报在 `castSkill` 里，看着像技能坏了）；
+② 补完 `cfg` 还有 `e.actor.flash` —— 假怪没有 actor / 血条 DOM，所以这一节
+仍然把 `damageEnemy` 挡掉，只量玩家侧的账（瞬回 / 三条属性 / 定身）；
+③ 焚天的 1 号变体「献祭」扣 20% 生命、0 号「火焰新星」打三段，量「瞬回多少」时
+必须选 2 号「燎原」，否则量到的是别的账。

@@ -3556,7 +3556,9 @@ const Game = {
         this.actor.atkAnim = 1; this.actor.atkType = 'cast';
         SFX.ice();
         this.shield = st.hpMax * 0.35 * (1 + (st.shieldBonus || 0) / 100) * spow;   // [S1] 护盾强度，传世可再强化
-        this.shieldT = 10;
+        /* [P2b] 时长必须带 sdur：变体「永冻」的 mods {dur:6} 就是「持续 +6 秒」，
+         * 原来这里写死 10，那一整条变体一个字都没生效（面板还写着 +6 秒）。 */
+        this.shieldT = 10 + sdur;
         FX.ring(pp, 2, 0x9ae0ff, 0.6, 0.2);
         UI.toast('玄冰护盾 ' + Math.round(this.shield));
         break;
@@ -3787,6 +3789,9 @@ const Game = {
           FX.burst(new THREE.Vector3(pp.x + Math.cos(ang) * r, RND(0.2, 1.6), pp.z + Math.sin(ang) * r), 0xff9040, 2, { speed: 5, size: 0.13, life: 0.7, gravity: -2, additive: true });
         }
         this.shake = 0.55; this.hitstop = 90;
+        /* [P2b] 台阶 Lv10「爆发时定身」：焚天没有护盾，走的是「爆发」这个入口 ——
+         * 结算与破盾侧共用 behTierNova，两个入口的数值不会漂。 */
+        if (bBeh && bBeh.tierNova) this.behTierNova('pyroclasm', pp);
         break;
       }
       /* [S4] 雷云：区域持续随机落雷 */

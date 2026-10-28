@@ -1289,8 +1289,148 @@ const ok = (c, m, d) => {
     ok(todo.join(',') === '', '法师 ③ 面板不再有「待」角标', todo);
   }
 
-  /* ---------------- 11. 零报错 ---------------- */
-  console.log('十一、控制台');
+  /* ---------------- 11. 法师 ④ 护盾（施法后的 4 秒窗口 × 两只） ---------------- */
+  console.log('十一、法师 ④ 护盾（玄冰护盾 / 焚天）');
+  const shieldTiers = await p.evaluate(async () => {
+    const out = {};
+    /* 这一节要**真结算**伤害（焚天的爆发 / 破盾那一发都走 damageEnemy），
+     * 假怪必须补上 damageEnemy 会读的 level 与 cfg —— 少了 cfg 就是
+     * 「reading 'armorHigh'」，而且报在 castSkill 里，看着像技能坏了。 */
+    const mkFoe = (x, z, id) => ({
+      pos: new THREE.Vector3(x, 0, z), radius: 0.5, dead: false,
+      hp: 1e9, maxHp: 1e9, id: id, level: 1, cfg: {},
+      anim: { time: 0 }, spd: 0, atkCd: 999, stun: 0
+    });
+    const setup = (id, lv, form) => {
+      Game.mapGen = (Game.mapGen || 0) + 1;
+      Game.state.cls = 'mage';
+      Game.state.skills = { [id]: { lv: lv } };
+      if (form != null) Game.state.skills[id].f = form;
+      window.__mkClean();
+      Game.buffs = []; Game.shield = 0; Game.shieldT = 0;
+      Game.recalc();
+      /* recalc 之后清加成：量台阶那一份，不能把装备/等级算进来 */
+      Game.state.stats.skillLv = 0;
+      Game.state.stats.skillRank = {};
+      Game.state.stats.skillMods = {};
+      Game.state.mp = 99999; Game.dead = false; Game.invuln = 0;
+      Game.regen = 0;
+      /* 两只假怪贴在脚下（0.6 / 1.2 码）：焚天要有人可打，破盾那发也要有东西挨 */
+      const p0 = Game.playerGroup.position;
+      Game.enemies = [mkFoe(p0.x + 0.6, p0.z, 0), mkFoe(p0.x + 1.2, p0.z, 1)];
+      Game.state.hp = Math.round(Game.state.stats.hpMax * 0.5);
+      return p0;
+    };
+    /* 一次施法：量「血条跳了多少」和三条属性窗口（护甲 / 移速 / 暴击）。
+     * 属性都在 recalc 后的 stats 上读 —— buff 一加上就 recalc，所以施法后
+     * 立刻读到的就是「带了这一级窗口」的数。 */
+    const run = (id, lv, form) => {
+      setup(id, lv, form);
+      const hp0 = Game.state.hp;
+      const d0 = Game.state.stats.def, s0 = Game.state.stats.moveSpd, c0 = Game.state.stats.crit;
+      /* 假怪没有 actor / 血条 DOM，damageEnemy 一碰就抛（reading 'flash'）。
+       * 这一节只量「玩家身上的账」，敌人挨多少不在判据里 —— 直接挡掉。 */
+      const oldHit = Game.damageEnemy;
+      Game.damageEnemy = () => { };
+      Game.castSkill(id);
+      Game.damageEnemy = oldHit;
+      const st1 = Game.state.stats;
+      return {
+        heal: Math.round(Game.state.hp - hp0),
+        hpMax: st1.hpMax,
+        def: Math.round((st1.def / (d0 || 1) - 1) * 100),
+        spd: Math.round((st1.moveSpd / (s0 || 1) - 1) * 100),
+        crit: Math.round(st1.crit - c0),
+        shieldT: Math.round(Game.shieldT || 0)
+      };
+    };
+    for (const id of ['iceshield', 'pyroclasm']) {
+      const o = {};
+      /* 变体统一用 2 号（永冻 / 燎原）—— 焚天的 0 号「火焰新星」会打三段、
+       * 1 号「献祭」扣 20% 生命，两个都会把「瞬回多少」量成别的账 */
+      for (const lv of [2, 3, 5, 7, 9]) o['lv' + lv] = run(id, lv, 2);
+      out[id] = o;
+    }
+    /* 永冻写「持续 +6 秒」—— 原来 case 里 shieldT 写死 10，这条一直是假话 */
+    out.dur = { base: run('iceshield', 4, 0).shieldT, freeze: run('iceshield', 4, 2).shieldT };
+
+    /* Lv10：破盾（冰盾）/ 爆发（焚天）都要补一发范围伤害 + 定身，两个入口共用结算 */
+    const breakRun = (id, lv) => {
+      setup(id, lv, 2);
+      let bursts = 0;
+      const oldExp = Game.explodeAt;
+      Game.explodeAt = function () { bursts++; return oldExp.apply(Game, arguments); };
+      const oldHit = Game.damageEnemy;
+      Game.damageEnemy = () => { };
+      Game.castSkill(id);
+      if (id === 'iceshield') {
+        /* 打空护盾才走「破碎」那一侧；hp 抬高是为了量完不触发还魂 / 死亡 */
+        Game.state.hp = 99999;
+        Game.talismanCharges = 0;
+        Game.invuln = 0;
+        Game.shield = 5; Game.shieldT = 10;
+        Game.damagePlayer(500, null);
+      }
+      Game.explodeAt = oldExp;
+      Game.damageEnemy = oldHit;
+      const es = Game.enemies || [];
+      return {
+        bursts,
+        slowed: es.filter(e => (e.slow || 0) >= 1).length,
+        slowT: es.length ? Math.round((es[0].slowT || 0) * 10) / 10 : 0,
+        shield: Math.round(Game.shield || 0)
+      };
+    };
+    out.nova9 = { shield: breakRun('iceshield', 9), fire: breakRun('pyroclasm', 9) };
+    out.nova10 = { shield: breakRun('iceshield', 10), fire: breakRun('pyroclasm', 10) };
+
+    window.__mkClean();
+    Game.enemies = [];
+    Game.mapGen = (Game.mapGen || 0) + 1;
+    return out;
+  });
+  for (const id of ['iceshield', 'pyroclasm']) {
+    const o = shieldTiers[id];
+    ok(o.lv3.heal - o.lv2.heal >= o.lv3.hpMax * 0.09,
+      id + ' Lv3 多回 10% 最大生命（Lv2 没有这一份）', { lv2: o.lv2.heal, lv3: o.lv3.heal });
+    ok(o.lv2.def === 0 && o.lv5.def >= 25,
+      id + ' Lv5 护甲真的上去了（约 +30%）', { lv2: o.lv2.def, lv5: o.lv5.def });
+    ok(o.lv2.spd === 0 && o.lv7.spd >= 12,
+      id + ' Lv7 移速真的上去了（约 +15%）', { lv2: o.lv2.spd, lv7: o.lv7.spd });
+    ok(o.lv2.crit === 0 && o.lv9.crit >= 14,
+      id + ' Lv9 暴击率真的 +15（点数，不是乘区）', { lv2: o.lv2.crit, lv9: o.lv9.crit });
+  }
+  ok(shieldTiers.dur.base === 10 && shieldTiers.dur.freeze === 16,
+    '变体「永冻」的 +6 秒真的进了护盾时长（原来写死 10）', shieldTiers.dur);
+  /* 破盾 / 爆发：Lv9 是暴击（没有 tierNova），Lv10 才补那一发 */
+  ok(shieldTiers.nova9.shield.bursts === 0 && shieldTiers.nova10.shield.bursts === 1,
+    'Lv10 冰盾破碎时炸一发（Lv9 不炸，对照）',
+    { lv9: shieldTiers.nova9.shield, lv10: shieldTiers.nova10.shield });
+  ok(shieldTiers.nova10.shield.slowed === 2 && shieldTiers.nova10.shield.slowT >= 1.4,
+    '碎盾那一发把周围敌人定住 1.5 秒', shieldTiers.nova10.shield);
+  ok(shieldTiers.nova9.fire.bursts === 0 && shieldTiers.nova10.fire.bursts === 1,
+    'Lv10 焚天爆发时也炸那一发（它没有护盾，走「爆发」入口）',
+    { lv9: shieldTiers.nova9.fire, lv10: shieldTiers.nova10.fire });
+  ok(shieldTiers.nova10.fire.slowed === 2, '焚天的定身也生效', shieldTiers.nova10.fire);
+
+  /* 面板：法师 ④ 号位不许再有「待」 */
+  {
+    const todo = await p.evaluate(() => {
+      Game.state.cls = 'mage';
+      Game.state.skills = {};
+      Game.recalc();
+      UI.renderSkillPanel();
+      const arch = document.querySelector('#skList .sk-arch');
+      if (arch) arch.setAttribute('open', '');
+      const c = [...document.querySelectorAll('#skList .sk-ac')][3];   // ④ 号位
+      return [...c.querySelectorAll('.sk-as')]
+        .filter(s => s.classList.contains('todo')).map(s => (s.querySelector('i') || {}).textContent);
+    });
+    ok(todo.join(',') === '', '法师 ④ 面板不再有「待」角标', todo);
+  }
+
+  /* ---------------- 12. 零报错 ---------------- */
+  console.log('十二、控制台');
   ok(errs.length === 0, '全程零控制台报错', errs.slice(0, 3));
 
   console.log('\n' + (fail === 0 ? '✓' : '✗') + ' P2b 探针：' + pass + ' 通过 / ' + fail + ' 失败');

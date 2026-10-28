@@ -544,6 +544,59 @@ const behSrc = readSrc('src/skill-beh.js');
     }
   }
 
+  /* --- 法师 ④ 护盾：玄冰护盾 / 焚天 共用一个位 ---
+   * 这一位两只技能的根本差异是**一只带护盾、一只没有**：焚天是踩在自己脚下的
+   * 一发爆发，「护盾反伤 / 护盾爆发 / 破碎冰冻」对它一句都不成立。
+   * 而「护盾反伤」连 iceshield 自己都撞（`reflect` 是精研「霜甲」和变体「冰甲」
+   * 的键）。所以四档统一改成「施法之后的 4 秒窗口」，两只都真的兑现。 */
+  {
+    for (const id of ['iceshield', 'pyroclasm']) {
+      const e = SKILL_TIER_EVO[id];
+      ok(!!e && !!e[3] && !!e[5] && !!e[7] && !!e[9] && !!e[10],
+        id + ' 五条台阶都在（护盾位只放一只，漏一只就是假话）');
+      ok(e && e[3].beh.healOnCast === 10, id + ' Lv3 施法瞬回 10%', e && e[3].beh);
+      ok(e && e[5].beh.armorPct === 30, id + ' Lv5 护甲 +30%', e && e[5].beh);
+      ok(e && e[7].beh.moveSpd === 15, id + ' Lv7 移速 +15%', e && e[7].beh);
+      ok(e && e[9].beh.crit === 15, id + ' Lv9 暴击率 +15%', e && e[9].beh);
+      ok(e && e[10].beh.tierNova === 150,
+        id + ' Lv10 走 tierNova（破盾 / 爆发两个入口共用一份结算）', e && e[10].beh);
+    }
+    /* 撞键复查：这三个键确实是 iceshield 自己的分支键，台阶一个都没再写 */
+    {
+      const isBr = skillBranches('iceshield');
+      const own = new Set();
+      const eat = o => { if (o && o.beh) for (const k in o.beh) own.add(k); };
+      if (isBr) { eat(isBr.core); (isBr.pick || []).forEach(eat); (isBr.form || []).forEach(eat); }
+      ok(own.has('reflect') && own.has('breakNova') && own.has('dur'),
+        '霜甲 / 冰甲 / 冰刺 确实占了 reflect / breakNova / dur（台阶不能再写这三个）', [...own]);
+      const tierKeys = new Set();
+      for (const id of ['iceshield', 'pyroclasm']) {
+        for (const lv of Object.keys(SKILL_TIER_EVO[id])) {
+          for (const k in (SKILL_TIER_EVO[id][lv].beh || {})) tierKeys.add(k);
+        }
+      }
+      ok(!tierKeys.has('reflect') && !tierKeys.has('breakNova') && !tierKeys.has('dur'),
+        '台阶没有反过来占用这三个键（占用 = 选过分支的玩家点了没反应）', [...tierKeys]);
+    }
+    ok(/tierNova: \{ ph: 'hook'/.test(behSrc), 'tierNova 已在 SKILL_BEH 登记');
+    ok(/behTierNova\(id, at\) \{/.test(behSrc), '结算只有一份 behTierNova（两个入口不会漂）');
+    ok(/this\.behTierNova\('iceshield'\)/.test(behSrc), '破盾钩子调它');
+    ok(/this\.behTierNova\('pyroclasm', pp\)/.test(game), '焚天 case 调它（爆发侧入口）');
+    /* 钩子是「冰刺 + 台阶」两条独立效果，按 breakNova 早退会把台阶一起吞掉 */
+    ok(!/if \(!beh \|\| !beh\.breakNova/.test(behSrc),
+      'onBehShieldBreak 不许再按 breakNova 早退（否则只点台阶的玩家拿不到）');
+    ok(/const warm = \(id === 'pyroclasm'\)/.test(behSrc),
+      '元素按技能分（火=爆燃 / 冰=冰爆），不是一律冰蓝');
+    ok(/e\.slow = Math\.max\(e\.slow \|\| 0, 1\)/.test(behSrc) && /e\.slowT = Math\.max\(e\.slowT \|\| 0, 1\.5\)/.test(behSrc),
+      '定身 = slow 1.0 持续 1.5 秒');
+    /* 顺带修的既有假话：变体「永冻」写「持续 +6 秒」，而 case 里 shieldT 写死 10 */
+    ok(/this\.shieldT = 10 \+ sdur/.test(game), '永冻的 +6 秒真的进了 shieldT（原来写死 10）');
+    for (const cls of ['mage']) {
+      const todo = [1, 3, 5, 7, 9, 10].filter(lv => !skillSlotTierDone(cls, 4, lv));
+      ok(todo.length === 0, '法师 ④ 面板不再有「待」角标', todo);
+    }
+  }
+
   /* --- 刀客 ③ 剑阵：三条台阶都要「阵在哪 + 人在不在阵里」，所以接线三件套 --- */
   ok(/bBeh\.slowField/.test(game), '剑阵 case 必须消费 slowField（阵内减速）');
   ok(game.indexOf('this.swordField =') >= 0, '剑阵要铺一份运行时场地给 damagePlayer 用');

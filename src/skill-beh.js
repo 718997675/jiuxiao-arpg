@@ -790,6 +790,16 @@ const SKILL_BEH = {
     /* 由 firewall / frostnova / thundercloud 的 case 消费 */
   } },
 
+  /* [P2b] 破盾 / 爆发补偿（护盾位 Lv10）：值 = 攻击力百分比。
+   * 触发口有两处，但结算只有一份（`Game.behTierNova`）：
+   *   · iceshield —— 护盾被打空时（onBehShieldBreak，和冰刺共用那个钩子）
+   *   · pyroclasm —— 属于「爆发」侧，没有护盾可破，所以在自己的 case 里调
+   * 这一位两只技能只有一只有护盾，写死成「破盾时」对焚天就是空话，
+   * 所以文案与实现都按「破盾 / 爆发」两个入口来。 */
+  tierNova: { ph: 'hook', label: '破盾 / 爆发定身（台阶）', run() {
+    /* 由 Game.behTierNova 消费 */
+  } },
+
   detonate: { ph: 'hook', label: '引爆剩余伤害', run() {
     /* 由 Game.onBehKill 消费：带持续伤害的目标死亡时原地引爆 */
   } },
@@ -1615,28 +1625,65 @@ Object.assign(Game, {
   /* 破盾钩子（damagePlayer 护盾被打空时调用）：冰刺。
    * 只认「被打破」，不认「到期消散」—— 描述写的是破盾。 */
   onBehShieldBreak() {
+    /* [P2b] 这个钩子现在服务两条互相独立的分支效果：
+     *   ① 取向「冰刺」的 breakNova（原有）
+     *   ② 台阶 Lv10 的 tierNova（新）
+     * 所以**不能**再在开头按 breakNova 早退 —— 只登记了台阶、没选冰刺的玩家
+     * 会连破盾爆发一起吞掉。 */
     const beh = this.branchBeh('iceshield');
-    if (!beh || !beh.breakNova || !this.state || this.dead || !this.running) return;
-    const st = this.state.stats;
-    const pp = this.playerGroup.position;
-    const n = Math.max(2, Math.round(beh.breakNova) || 6);
-    for (let i = 0; i < n; i++) {
-      const a = (i / n) * Math.PI * 2;
-      const d2 = new THREE.Vector3(Math.cos(a), 0, Math.sin(a));
-      FX.projectile({
-        pos: new THREE.Vector3(pp.x + d2.x * 0.6, 1.3, pp.z + d2.z * 0.6),
-        dir: d2, speed: 18, color: 0x9ae0ff, radius: 0.24, hitRadius: 0.55, team: 'player',
-        dmg: st.atk * 1.2, life: 0.9, elem: 'ice', tag: 'proj', trail: true,
-        onHit: (e, p) => {
-          if (!e) return;
-          this.damageEnemy(e, p.dmg, false, { tag: 'proj', elem: 'ice' });
-          e.slow = Math.max(e.slow || 0, 0.35);
-          e.slowT = Math.max(e.slowT || 0, 2);
-        }
-      });
+    if (!this.state || this.dead || !this.running) return;
+    if (beh && beh.breakNova) {
+      const st = this.state.stats;
+      const pp = this.playerGroup.position;
+      const n = Math.max(2, Math.round(beh.breakNova) || 6);
+      for (let i = 0; i < n; i++) {
+        const a = (i / n) * Math.PI * 2;
+        const d2 = new THREE.Vector3(Math.cos(a), 0, Math.sin(a));
+        FX.projectile({
+          pos: new THREE.Vector3(pp.x + d2.x * 0.6, 1.3, pp.z + d2.z * 0.6),
+          dir: d2, speed: 18, color: 0x9ae0ff, radius: 0.24, hitRadius: 0.55, team: 'player',
+          dmg: st.atk * 1.2, life: 0.9, elem: 'ice', tag: 'proj', trail: true,
+          onHit: (e, p) => {
+            if (!e) return;
+            this.damageEnemy(e, p.dmg, false, { tag: 'proj', elem: 'ice' });
+            e.slow = Math.max(e.slow || 0, 0.35);
+            e.slowT = Math.max(e.slowT || 0, 2);
+          }
+        });
+      }
+      FX.ring(new THREE.Vector3(pp.x, 0, pp.z), 3, 0x9ae0ff, 0.5, 0.25);
+      FX.text(new THREE.Vector3(pp.x, 2.7, pp.z), '冰刺', 'info', { life: 0.8 });
     }
-    FX.ring(new THREE.Vector3(pp.x, 0, pp.z), 3, 0x9ae0ff, 0.5, 0.25);
-    FX.text(new THREE.Vector3(pp.x, 2.7, pp.z), '冰刺', 'info', { life: 0.8 });
+    /* 台阶 Lv10：破盾补一发范围伤害 + 定身。走同一个结算口 ——
+     * 焚天那边（爆发侧）调的也是这个方法，两处数值不会漂。 */
+    if (typeof this.behTierNova === 'function') this.behTierNova('iceshield');
+  },
+
+  /* [P2b] 台阶 Lv10「护盾破碎 / 爆发时对周围敌人造成伤害并定身」。
+   * 值 = 攻击力百分比。两个入口共用这一份结算：
+   *   · iceshield —— onBehShieldBreak（护盾被打空）
+   *   · pyroclasm —— 自己的 case（它没有护盾，「爆发」就是它本身）
+   * 元素按技能分：冰盾是冰爆，焚天是爆燃 —— 用同一套蓝光会把火系技能做成冰的。 */
+  behTierNova(id, at) {
+    const beh = (typeof this.branchBeh === 'function') ? this.branchBeh(id) : null;
+    const pct = beh && beh.tierNova;
+    if (!pct || !this.state || this.dead) return;
+    const st = this.state.stats;
+    const c = at || this.playerGroup.position;
+    const pos = new THREE.Vector3(c.x, 0, c.z);
+    const rad = 4.5;
+    const warm = (id === 'pyroclasm');
+    const col = warm ? 0xff9040 : 0x9ae0ff;
+    this.explodeAt(pos.clone(), rad, st.atk * pct / 100, col, false, true, 'aoe');
+    /* 定身 = slow 1.0：war3 式的「完全不动」，比 freeze 轻一档（能被打、能被推） */
+    for (const e of this.enemies) {
+      if (e.dead) continue;
+      if (DIST2D(e.pos, pos) > rad + e.radius) continue;
+      e.slow = Math.max(e.slow || 0, 1);
+      e.slowT = Math.max(e.slowT || 0, 1.5);
+    }
+    FX.ring(pos, rad, col, 0.6, 0.3);
+    FX.text(new THREE.Vector3(pos.x, 2.6, pos.z), warm ? '爆燃定身' : '冰爆定身', 'info', { life: 0.9 });
   },
 
   /* 灵兽消散钩子（updateAllies 到期移除时调用）：护主。
