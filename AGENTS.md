@@ -200,6 +200,7 @@ node dev/check-wbmodels.js   # 世界 Boss 六套骨架（真 three，离线）�
 node dev/wbmodels-shot.js    # 六套骨架渲图到 shots/wbm-*.png，人工肉眼验收剪影
 node dev/check-seals.js      # 魔将之印（离线 111 项）：八印表 / 印↔将↔图三向对齐 / 终门门槛 / 真装载 game.js 调 onBossKill / 老档与脏值 / 存档三段（导出·归一·unpack）/ README 殿名比对
 node dev/seal-live.js        # 魔将之印（浏览器 19 项）：真 DOM 播报 / 真 localStorage / 刷新后 Game.loadSlot(n) 读回仍 8 枚
+node dev/input-keys.js       # 键盘与输入框（浏览器 21 项）：三框 autocomplete=off / e.key===undefined 不崩 / 打字不点亮游戏按键 / 打字不触发热键
 ```
 
 ## 6. 踩过的坑（改之前先看一眼，能省几小时）
@@ -325,6 +326,19 @@ node dev/seal-live.js        # 魔将之印（浏览器 19 项）：真 DOM 播�
   在 `Game.onBossKill` 里一次性写入；走掉落表反而要额外处理背包满 / 分解 / 重复。
 - **门槛数字只能有一个来源**。终门写 `sealNeed: 8`，印表 `BAFO_SEALS.length` 也是 8 ——
   `check-seals` 里有硬断言把两者钉在一起，改印数忘了改门槛会红。
+
+### 键盘 / 输入框
+
+- **`e.key` 可能是 `undefined`**，必须 `(e.key || '').toLowerCase()`。Chrome 在输入框的
+  「历史输入」下拉里点选、安卓软键盘、部分输入法都会发这种 keydown/keyup。
+  直接 `.toLowerCase()` 抛 TypeError，被 `boot.js` 兜成「山海未开 · 运行出错」整页卡死
+  （2026-10-28 用户报的就是这个：道号框点一下弹旧名字、再点一次就报错）。
+- **所有文本输入框都要 `autocomplete="off"`**（+ `autocorrect="off" autocapitalize="off"
+  spellcheck="false"`），否则浏览器会给道号框弹历史输入下拉 —— 玩家以为「游戏记住了我的名字」。
+- **热键判断要在「有没有在打字」之后**，并且判断条件用
+  `INPUT / TEXTAREA / contentEditable` 三者，别只认某个 id。只挡 `#nameInput` 时，
+  在仓库搜索框里打 `h` 会弹说明页、在存档面板道号框里打 `i` 会切行囊。
+- **`keys[k] = true` 必须写在输入框判断之后**。写在前面时，在道号框里打 `w` 会真的让角色往前走。
 
 ## 7. 当前状态
 

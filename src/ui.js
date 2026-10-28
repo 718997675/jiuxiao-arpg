@@ -422,8 +422,15 @@ const UI = {
 
     // 快捷键（v1.6.0：全部指向主菜单的对应页签）
     window.addEventListener('keydown', e => {
-      if (document.activeElement && document.activeElement.id === 'nameInput') return;
-      const k = e.key.toLowerCase();
+      /* [FIX-TYPE1] 任何输入框 / 文本域 / 可编辑区里都不吃游戏热键。
+       * 原来只挡了 `#nameInput`，于是在仓库搜索框里打 "h" 会弹说明页、
+       * 在「新建角色」道号框里打 "i" 会切到行囊 —— 都是打字打出来的误触。 */
+      const a = document.activeElement;
+      if (a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.isContentEditable)) return;
+      /* [FIX-TYPE3] e.key 可能是 undefined（输入框历史下拉点选 / 软键盘 / 部分输入法），
+       * 直接 .toLowerCase() 会抛 TypeError 把整页兜成「山海未开 · 运行出错」。 */
+      const k = (e.key || '').toLowerCase();
+      if (!k) return;
       if (k === 'i') { this.openMenu('bag'); e.preventDefault(); }
       else if (k === 't') { this.openMenu('talent'); e.preventDefault(); }
       else if (k === 'k') { this.openMenu('skill'); e.preventDefault(); }

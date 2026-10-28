@@ -626,3 +626,13 @@ M7 把「打完终 boss 就结束」改成了终局循环：混沌海从战斗�
 | 2026-10-28 | P06 砍**法师施法距离**（最远 13 米 < Boss 技能 14 米）+ 加大耗蓝 | 用户原话「法师是释法距离砍，耗蓝要加大，不然一个蓝条都用不完」。射程是「站远打」的根，耗蓝是「无限输出」的根，只改一个没用 |
 | 2026-10-28 | P10 的解法是**硬拒绝施法**，不是「补 castRange」 | 复核发现所有技能**都有** castRange；`resolveCast` 只夹落点、从不拒绝，且 `nearestEnemy(pp, maxR)` 会自动改锁最近的怪 —— 射程对玩家根本不构成约束 |
 | 2026-10-28 | P14 副区 Boss 血量 ×0.7 **接受**；P15 演出**只播一次** | 副 Boss 独享一个区，不该和主 Boss 一样肉；刷子玩家每次进图都看 2.5 秒演出会烦 |
+
+## 热修记录
+
+| 日期 | 问题 | 根因 | 修法 | 提交 |
+|---|---|---|---|---|
+| 2026-10-28 | **道号框点一下就整页崩**：「输入名称时如果之前有名称，点击输入框会显示以前输入的，再次点击就会报错」→「山海未开 · 运行出错」，控制台 `Cannot read properties of undefined (reading 'toLowerCase')` @ `game.js:341` / `:382` | 两条叠加：① 三个输入框都没写 `autocomplete="off"`，Chrome 给道号框弹「历史输入」下拉（= 用户看到的「显示以前输入的」）；② 在历史下拉里点选时 Chrome 会发 **`e.key === undefined`** 的 keydown/keyup，而 `bindInput()` 里 `const k = e.key.toLowerCase()` 写在「输入框聚焦」判断**之前**，先抛 TypeError，被 `boot.js` 兜成运行出错页 | ① 三个输入框加 `autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"`；② `game.js` 两处 + `ui.js` 一处把 `e.key` 兜成 `''` 并提前 return；③ 顺手把「输入框聚焦」判断挪到 `keys[k] = true` **之前**（原来在道号框里打 w 会让角色往前走） | 见下 |
+| 2026-10-28 | 输入框里打字会误触全局热键 | `ui.js` 只挡了 `#nameInput`，`#newName`（存档面板新建角色）和 `#stashSearch`（仓库搜索）没挡 | 改成「INPUT / TEXTAREA / contentEditable 一律不吃热键」 | 同上 |
+
+**回归**：新建 `dev/input-keys.js`（浏览器 21 项：autocomplete 属性 / `e.key===undefined` 不崩 / 打字不点亮游戏按键 / 打字不触发热键 + 反证热键仍可用 / 零 pageerror）。
+用线上旧版跑同一脚本可复现 10 项红（`game.js:341` 与 `:382` 各抛一次），修完全绿 —— 这个脚本能抓到老 bug，不是空跑。
