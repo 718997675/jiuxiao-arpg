@@ -2,9 +2,9 @@
 
 - 分支：`feat/act-expansion`（与本线其它改动一起合入 main）
 - 设计文档：`V2-ROADMAP.md` §18（六只设计表 / 刷新机制 / 骨架规范 / **§18.7 与八部天龙去重**）
-- 更新：2026-10-28 17:30
+- 更新：2026-10-28 17:45
 
-> 当前：M18.1 ~ M18.8 全部完成并全绿，只剩 M18.9 说明页 / 图鉴 / README
+> 当前：M18.1 ~ M18.9 **全部完成**并全绿，本线可以准备合 main 了
 
 ## 一句话现状
 
@@ -32,7 +32,7 @@
 | M18.7a | 多阶段战斗：3 阶段切换 + 18 招牌技能（7 种 shape）+ `enter` 14 键落地 + 定身 / 格挡 / 场地 | ✅ | 新建 `src/worldboss-fight.js`、`dev/worldboss-fight.js`、`dev/worldboss-battle-live.js`；改 `src/game.js`、`src/worldboss.js`、`src/data/data-worldboss.js`、`index.html` | `611c45f` |
 | M18.7b | 骨架相关 `enter`：`tails`（九尾展开）/ `revealVuln`（真身现身受伤 ×2） | ✅ | `src/wbmodels.js`（`setTails` / `setGhost`）、`src/worldboss-fight.js`（`_revealTick` / `_setRevealState`）、`src/game.js`（`wbVulnMul`） | 本次提交 |
 | M18.8 | 掉落：必掉 1~3 传世 + 稀有材料 + 世界魂接入 | ✅ | `src/worldboss.js`（`grantLoot` / `_lootAnchor` / `_scatter`）、`src/data/data-worldboss.js`（六只补 `craft_worldsoul`、去掉 `pending`）、`src/data/data-craft.js`（`CRAFT_MATS.worldsoul`）、新建 `dev/worldboss-loot.js` | 本次提交 |
-| M18.9 | 说明页 / 图鉴 / README 同步 | ⬜ | `src/ui.js`、`README.md` | — |
+| M18.9 | 说明页 / 图鉴 / README 同步 | ✅ | `src/ui.js`（说明页第十四节「世界 Boss」，全节实时读数据表）、`README.md`（新增「世界 Boss」整节 + 匠材表补世界魂 + 首段摘要） | 本次提交 |
 
 ## M18.1 已交付明细
 
@@ -329,15 +329,23 @@ C 段（小地图星标）用「画 / 不画」两张图的差异把星标**单�
 4. **`dev/worldboss-loot.js`**（191 项）+ `dev/worldboss-live.js` 的 F 段扩了 5 条实测断言
    （真击杀后地上 17 件 / 传世 2 件 / 世界魂距中心 7.8 米 > 半径 5 / 踩上去材料仓 +1）。
 
-## 下一步（只剩 M18.9）
+## M18.9 已交付明细（说明页 / README）
 
-**M18.9 说明页 / 图鉴 / README**
+- `src/ui.js` 的 `renderHelp` 新增第十四节「世界 Boss」：全节**实时读数据表**
+  （`WORLD_BOSS_ORDER` / `WORLD_BOSSES` / `WORLD_BOSS_CFG` / `WORLD_BOSS_MATERIALS`），
+  改名字 / 领域 / 三阶段 / 掉落件数，这一页自己跟着变。九行：是什么 / 怎么找 / 六只 /
+  三阶段 / 怎么打 / 领域 / 三阶段一览 / 掉落 / 世界魂 / 节奏 / 死了。
+  浏览器实测：14 个页签、本节 1061 字、零 pageerror。
+- `README.md`：新增「### 世界 Boss（六只山海经巨兽）」整节（六只表格：领域 / 三阶段 / 骨架），
+  匠材表补「魂料 · 世界魂」一行，首段摘要补世界 Boss 并把「9 种匠材」改成「10 种」。
 
-- 游戏内说明页加一节「世界 Boss」：六只的名字、领域、三阶段、掉落一句话；
-  `WORLD_BOSSES[*].lines` 是六只的台词，图鉴卡直接用。
-- `README.md` 的功能清单同步（六套骨架 / 三阶段 / 必掉传世 / 世界魂）。
-- 台账收尾：`docs/status/world-boss.md` 全部 ✅ 之后，本线（`feat/act-expansion`）就可以走
-  `--sync` → 回归 → 预览站 → 合 main 的流程了。
+## 下一步（M18 全部完成，可以准备合 main）
+
+1. `./dev/branch.sh --sync`（把 main 的新东西并进来）
+2. `node dev/smoke.js` + `node dev/mobile-layout.js` + 世界 Boss 六个脚本
+3. `./dev/publish-preview.sh feat/act-expansion` 看预览站
+4. 通过之后合 `main` → 线上地址 <https://718997675.github.io/jiuxiao-arpg/>
+5. 合完回来把 `docs/status/act-expansion.md` 与本文的「分支」行改成 main
 
 ## 卡点
 

@@ -944,6 +944,50 @@ const UI = {
       ]));
     }
 
+    /* ---------------- 13. 世界 Boss（M18 落地，M18.9 补说明页） ----------------
+     * 全节实时读 data-worldboss.js：改一只的名字 / 领域 / 三阶段，这一页自己跟着变。
+     * 只硬编码依赖 `WORLD_BOSSES` 与 `WORLD_BOSS_ORDER` —— 缺了就不渲染这一节。 */
+    if (typeof WORLD_BOSSES !== 'undefined' && typeof WORLD_BOSS_ORDER !== 'undefined') {
+      const ids = WORLD_BOSS_ORDER;
+      const cfg0 = (typeof WORLD_BOSS_CFG !== 'undefined') ? WORLD_BOSS_CFG : {};
+      const cycleMin = Math.round((cfg0.cycle || 1800000) / 60000);
+      const soul = (typeof WORLD_BOSS_MATERIALS !== 'undefined') ? WORLD_BOSS_MATERIALS.worldsoul : null;
+      H.push(sec('十四 · 世界 Boss', `${ids.length} 只 · 每 ${cycleMin} 分钟轮换一只`, [
+        row('是什么', `山海间游荡的<b>六只巨兽</b>，${cfg0.minLevel || 40} 级起能在野图撞见。`
+          + `<b>同一时刻只有一只</b>，${cycleMin} 分钟换一次；没人打就自动走，被打死则冷却一整个周期。`
+          + `它不在任何一张图的固定首领位上 —— 到点在 <b>homeMaps</b> 里挑一张已解锁的图落下`),
+        row('怎么找', `四条线同时指路：<b>屏幕横幅</b>（换人时弹一次）、<b>小地图星标</b>（领域色五角星 + 外发光，`
+          + `与首领红点完全两套标记）、<b>追踪行</b>（常驻倒计时）、<b>山海志</b>（常驻卡，带「前往」直接传过去）`),
+        row('六只', ids.map(id => {
+          const c = WORLD_BOSSES[id];
+          const dn = (c.domain && c.domain.name) || '领域';
+          return `<b>${c.name}</b>（${dn}）`;
+        }).join(' · ')),
+        row('三阶段', `血量降到 <b>66%</b> 与 <b>33%</b> 时各切一次，阶段名与打法都在下面。`
+          + `按<b>血量比例</b>切、不按时间切 —— 打得快不会跳过阶段，打得慢也不会卡在第一段`),
+        row('怎么打', `六只的<b>五项抗性全部持平</b>：没有「弱点元素」可以猜。`
+          + `答案在<b>领域</b>与<b>阶段</b>里 —— 站在圈里会持续难受，切阶段会改规矩（视野 / 攻速 / 分身 / 盾）。`
+          + `这也是它和<b>八部天龙</b>的分工：八部是「猜元素」（一个 −60 洞 + 四条 +80 墙），世界 Boss 是「读场地」`),
+        row('领域', ids.map(id => {
+          const c = WORLD_BOSSES[id], d = c.domain || {};
+          return `<b>${d.name || '领域'}</b>：${d.desc || ''}`;
+        }).join('<br>')),
+        row('三阶段一览', ids.map(id => {
+          const c = WORLD_BOSSES[id];
+          return `<b>${c.name}</b>：` + (c.phases || []).map(p => p.name).join(' → ');
+        }).join('<br>')),
+        row('掉落', `必掉 <b>${cfg0.uniqueMin || 1}~${cfg0.uniqueMax || 3} 件传世</b>（难度越高下限越高，极难 3~5 件），`
+          + `外加三种材料与 <b>2~4 枚符文</b>。战利品落在尸体<b>边缘</b>，不会埋进几十米长的模型里`),
+        row('世界魂', soul
+          ? `六只<b>必掉 1~2 个</b><b>${soul.name}</b>。${soul.desc}`
+          : `材料与符文直接进材料仓，不占行囊格`),
+        row('节奏', `它是<b>打卡</b>，不是刷子：${cycleMin} 分钟一次、一次必出传世。`
+          + `想反复刷装备去<b>地脉裂隙</b>或章节首领；想稳拿传世就来这里等这一只`),
+        row('死了', `世界 Boss 的领域<b>跟着地点不跟着怪</b> —— 它追出圈外，圈里的压制就没了；`
+          + `把它拉出领域打，是正经打法之一`)
+      ]));
+    }
+
     /* 反解短名：'一 · 怎么玩' → '怎么玩'，作为左侧页签文字 */
     const SECTIONS = H.map((html, i) => {
       const m = html.match(/<h4>([^<]*)/);
