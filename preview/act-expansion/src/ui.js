@@ -422,8 +422,15 @@ const UI = {
 
     // 快捷键（v1.6.0：全部指向主菜单的对应页签）
     window.addEventListener('keydown', e => {
-      if (document.activeElement && document.activeElement.id === 'nameInput') return;
-      const k = e.key.toLowerCase();
+      /* [FIX-TYPE1] 任何输入框 / 文本域 / 可编辑区里都不吃游戏热键。
+       * 原来只挡了 `#nameInput`，于是在仓库搜索框里打 "h" 会弹说明页、
+       * 在「新建角色」道号框里打 "i" 会切到行囊 —— 都是打字打出来的误触。 */
+      const a = document.activeElement;
+      if (a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.isContentEditable)) return;
+      /* [FIX-TYPE3] e.key 可能是 undefined（输入框历史下拉点选 / 软键盘 / 部分输入法），
+       * 直接 .toLowerCase() 会抛 TypeError 把整页兜成「山海未开 · 运行出错」。 */
+      const k = (e.key || '').toLowerCase();
+      if (!k) return;
       if (k === 'i') { this.openMenu('bag'); e.preventDefault(); }
       else if (k === 't') { this.openMenu('talent'); e.preventDefault(); }
       else if (k === 'k') { this.openMenu('skill'); e.preventDefault(); }
@@ -985,6 +992,27 @@ const UI = {
           + `想反复刷装备去<b>地脉裂隙</b>或章节首领；想稳拿传世就来这里等这一只`),
         row('死了', `世界 Boss 的领域<b>跟着地点不跟着怪</b> —— 它追出圈外，圈里的压制就没了；`
           + `把它拉出领域打，是正经打法之一`)
+      ]));
+    }
+
+    /* ---------------- 14. 终章 · 八部天龙（M7.1/M7.2/M7.4） ----------------
+     * 只依赖 `BAFO_SEALS` + `MAPS.chaossea.finalGate` 两个数据源，
+     * 改印数 / 改门槛这一页自己跟着变；缺数据就整节不渲染。 */
+    if (typeof BAFO_SEALS !== 'undefined' && BAFO_SEALS.length) {
+      const hub = (typeof MAPS !== 'undefined' && MAPS.chaossea) ? MAPS.chaossea : null;
+      const fg = (hub && hub.finalGate) || {};
+      const need = fg.sealNeed || BAFO_SEALS.length;
+      H.push(sec('十五 · 终章', `${BAFO_SEALS.length} 印 · ${need} 印开门`, [
+        row('怎么走', `卷五终章是一座<b>坛</b>：坛心<b>八扇门</b>，每扇通一座魔将殿，一殿一只魔将。`
+          + `打完八只、收齐<b>${need} 枚魔将之印</b>，坛北的<b>${fg.name || '天龙终门'}</b>才开`),
+        row('八印', BAFO_SEALS.map(s => `<b>${s.name}</b>（${s.part}）`).join(' · ')),
+        row('印从哪来', `每只魔将<b>必掉自己那一枚</b>，只掉一次 —— 重打不会重复给，也不会漏。`
+          + `拿到时会有播报与光圈，右下角日志会写「<b>N / ${need}</b>」`),
+        row('怎么打', `八只都是<b>一项弱点 −60</b>（吃 160%）、<b>其余四项 +80</b>（只吃 20%）—— 差 8 倍。`
+          + `也就是说：带错元素，一场架要打八倍长；带对元素，它就是个普通首领。`
+          + `每只还有一个<b>破绽窗口</b>（放完大招有硬直），抓住那几秒能多打一截`),
+        row('卡住了', `终门不开只有一种原因：印没齐。山河图上那扇门会写「<b>需 ${need} 印（你有几枚）</b>」，`
+          + `照着缺的那几枚去打就行 —— 门本身不会坏`)
       ]));
     }
 

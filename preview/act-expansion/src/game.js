@@ -332,16 +332,27 @@ const Game = {
 
   /* ======================================================= */
   bindInput() {
-    /* [FIX-BUG1] keydown repeat 问题：
+    /* [FIX-TYPE1] 输入框聚焦时一律不碰游戏按键。
+     * 以前这条判断在 `keys[k] = true` **之后**，于是「在道号里打 w」会真的让角色往前走；
+     * 更糟的是它在 `e.key.toLowerCase()` 之后，而 `e.key` 可能是 undefined。 */
+    const typing = () => {
+      const a = document.activeElement;
+      return !!(a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.isContentEditable));
+    };
+    /* [FIX-TYPE2] keydown repeat 问题：
      * Windows 上按住任意键时 keydown 会持续触发（e.repeat=true），
      * 如果用户开着中文输入法或某些系统热键软件，按住 WASD 移动时
      * 可能额外触发空格 keydown → tryDash() 被反复调用（"回馈"）。
      * 修复：repeat 的 keydown 不执行任何动作逻辑，只更新 keys 状态。 */
     window.addEventListener('keydown', e => {
-      const k = e.key.toLowerCase();
+      /* [FIX-TYPE3] `e.key` 可能是 undefined —— Chrome 在输入框的「历史输入」下拉里
+       * 点选、安卓软键盘、部分输入法都会发这种 keydown/keyup。直接 .toLowerCase()
+       * 抛 TypeError，被 boot.js 兜成「山海未开 · 运行出错」，整页卡死。
+       * 用户报的就是这个：道号框点一下弹出以前的名字，再点一次就报错。 */
+      const k = (e.key || '').toLowerCase();
+      if (!k) return;
+      if (typing()) return;
       this.keys[k] = true;
-      /* 输入框聚焦时不拦截游戏按键 */
-      if (document.activeElement && document.activeElement.tagName === 'INPUT') return;
       /* repeat 的 keydown 不触发翻滚/技能/药水等动作，避免持续触发 */
     if (e.repeat) return;
       if (k === ' ') { this.tryDash(); e.preventDefault(); return; }
@@ -379,8 +390,10 @@ const Game = {
      * 'process' 或 'unidentified'，导致 keys['w'] 等永远无法清除。
      * 修复：keyup 时同时用 e.code（物理键位）做兜底清除。 */
     window.addEventListener('keyup', e => {
-      const k = e.key.toLowerCase();
-      this.keys[k] = false;
+      /* 同样兜 `e.key === undefined`（见上面 FIX-TYPE3）；这里**不能**加 typing() 判断 ——
+       * 按住 w 时鼠标点进输入框再松手，keyup 落在输入框上，不清理就会一直往前走。 */
+      const k = (e.key || '').toLowerCase();
+      if (k) this.keys[k] = false;
       /* 用 code 兜底：KeyW → w, KeyA → a, Space → space */
       const codeMap = {
         'KeyW': 'w', 'KeyA': 'a', 'KeyS': 's', 'KeyD': 'd',
@@ -533,6 +546,9 @@ const Game = {
       /* [M0] 世界结构：当前卷 / 章、已解锁营地与大传送门、已抵达的图（回头路直传用） */
       part: 1, act: '1-1', camps: ['campA'], portals: ['portalA'], mapsSeen: ['village'],
       bossKilled: {}, playTime: 0,
+      /* [M7.4] 魔将之印：8 个布尔位 { deva:1, naga:1, ... }。
+       * 只由 onBossKill 写入（八只魔将各掉自己那枚），终门读 sealCount()。 */
+      seals: {},
       /* [S3] 天赋：spent = { 节点id: 级数 }；presets 三套预设（存 spent 快照） */
       talents: { spent: {}, presets: [null, null, null], respecCount: 0 },
       /* [M1] 任务奖励的天赋点（主线四段共 +10，满级 60 → 70） */
@@ -6872,8 +6888,40 @@ const Game = {
     this.updateQuestMarker();
   },
 
+  /* 首领倒地后的一次性结算钩子（现在只有八部魔将用得上）。
+   * [M7.4] 魔将之印：八只魔将各掉自己那一枚，一枚只掉一次。
+   * 为什么挂在 onBossKill 而不是掉落表里：印是**进度物**不是装备，
+   * 不能卖、不能丢、不能重复拿，走 `state.seals` 布尔位最省事，
+   * 也顺手让老档（没有 seals 字段）天然按「0 枚」算。 */
   onBossKill(e) {
-    // 已包含在 onKill 中
+    if (!e || typeof BAFO_SEALS === 'undefined') return;
+    const s = this.state;
+    if (!s) return;
+    const rec = BAFO_SEALS.find((it) => it.boss === e.kind);
+    if (!rec) return;
+    if (!s.seals) s.seals = {};
+    if (s.seals[rec.key]) return;            // 重打不重复给
+    s.seals[rec.key] = 1;
+    const have = this.sealCount();
+    const total = BAFO_SEALS.length;
+    /* 印是终章唯一的钥匙，必须给足反馈：播报 + 音效 + 光柱 */
+    try {
+      UI.toast('得 · ' + rec.name, 'lv');
+      UI.log('魔将已伏，' + rec.name + ' 归位（' + have + ' / ' + total + '）。', 'good');
+      const pp = new THREE.Vector3(this.playerGroup.position.x, 0, this.playerGroup.position.z);
+      FX.ring(pp, 6, rec.color, 1.1, 0.28);
+      SFX.cast();
+    } catch (err) { }
+    if (have >= total) {
+      /* 8/8 当场把「终门已开」喊出来，免得玩家还要自己去数 */
+      try {
+        UI.toast('天 龙 终 门 已 开', 'lv');
+        UI.log('八印齐备，无相之界的大门开了。', 'good');
+        const pp = new THREE.Vector3(this.playerGroup.position.x, 0, this.playerGroup.position.z);
+        FX.flashCircle(pp, 8, 0xffe0a0, 1.2);
+      } catch (err) { }
+    }
+    this.save();
   },
 
   /* ---------------- 出口门开关（M3b-fix） ----------------
