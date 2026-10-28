@@ -383,7 +383,9 @@ const SKILL_BEH = {
    *   arrayGuard / arrayCounter 的触发点在**玩家挨打**上，跟施法完全无关。
    * 值 = 百分比：slowField 是减速幅度，arrayGuard 是阵内减伤，
    * arrayCounter 是反击的攻击力百分比；slowFieldDur = 减速残留秒数。 */
-  slowField: { ph: 'hook', label: '阵内减速', run() { /* 由 swordarray case 消费 */ } },
+  /* 持续场减速：由**领域类技能自己的每一跳**消费（剑阵 case / 毒雾 case），
+   * 不是施法瞬间的一次性 slow —— 领域会活好几秒，怪随时可能走进来。 */
+  slowField: { ph: 'hook', label: '场内减速', run() { /* 由 swordarray / poison case 消费 */ } },
   slowFieldDur: { ph: 'hook', label: '减速残留', run() { /* 由 slowField 一并消费 */ } },
   arrayGuard: { ph: 'hook', label: '阵内减伤', run() { /* 由 damagePlayer 消费 */ } },
   arrayCounter: { ph: 'hook', label: '阵内反击', run() { /* 由 damagePlayer 消费 */ } },
@@ -723,6 +725,43 @@ const SKILL_BEH = {
     /* 与 killExtend 一并消费（castSkill 把它折进 buff.killExtend.max） */
   } },
 
+  /* [P2b] 击杀延长（台阶 Lv9）：**故意不复用 killExtend** —— 那条是
+   * warcry 精研「战鼓」的键，而精研覆盖台阶（合并顺序），warcry 玩家会完全看不到这一级。
+   * 所以另开一条通道，两条各记各的账：战鼓 +1/次 与它 +2/次 叠加。 */
+  killProlong: { ph: 'hook', label: '击杀延长（台阶）', run() {
+    /* 由 Game.onBehKill 消费：与 killExtend 并行，各自有自己的 got/max */
+  } },
+
+  killProlongMax: { ph: 'hook', label: '击杀延长上限（台阶）', run() {
+    /* 与 killProlong 一并消费 */
+  } },
+
+  /* [P2b] 增益期间吸血（台阶 Lv5）：折进**增益本体**，不另开 buff ——
+   * 另开一个 buff 时长就对不上「增益期间」（增益结束了吸血还在，或者反过来先没）。
+   * warcry 自带 8%，台阶再 +10% 是叠加，三只增益都真的变强。 */
+  lifesteal: { ph: 'hook', label: '增益吸血', run() {
+    /* 由 castSkill 的增益 case 折进 buff.lifesteal */
+  } },
+
+  /* [P2b] 免控（台阶 Lv10）：**不是** immune（无敌帧）也不是 noSlow（只减时长）。
+   * 真免控 = 增益期间根本挂不上减速 / 中毒，施法瞬间还清掉身上已有的。
+   * 判定口 Game.ccImmuneNow()，施加口 Game.applyPlayerSlow / playerPoison。 */
+  ccImmune: { ph: 'hook', label: '免疫控制', run() {
+    /* 由 castSkill 的增益 case 标记在 buff.ccImmune 上 */
+  } },
+
+  /* [P2b] 施法瞬回（血怒位 Lv3）：值 = 最大生命的百分比。
+   * 走 healPlayer —— 治疗加成 / 血条钳制 / 弹字全在那一处，别自己加 hp。 */
+  healOnCast: { ph: 'hook', label: '施法瞬回', run() {
+    /* 由 castSkill 的增益 case 消费 */
+  } },
+
+  /* [P2b] 增益延长（血怒位 Lv7）：与变体「持久」给 sdur 的延长**各记各的**，
+   * 两条叠加。撞键的话，带持久的变体一选，这一级就没了。 */
+  tierDur: { ph: 'hook', label: '增益延长（台阶）', run() {
+    /* 由 castSkill 的增益 case 消费：buff.dur += tierDur */
+  } },
+
   detonate: { ph: 'hook', label: '引爆剩余伤害', run() {
     /* 由 Game.onBehKill 消费：带持续伤害的目标死亡时原地引爆 */
   } },
@@ -747,8 +786,10 @@ const SKILL_BEH = {
     /* 由 Game.tickBeh（帧循环）消费：变身期间每 N 秒自动旋风斩 */
   } },
 
+  /* 区域蔓延（毒雾台阶 Lv5 / 火墙共用）：**只登记一次** —— 这个文件里原来写了两遍，
+     后一遍静默覆盖前一遍，等哪天给火墙写实现时会白写。两个消费者都写在这儿。 */
   grow: { ph: 'hook', label: '区域蔓延', run() {
-    /* 施法时由 castSkill 消费：火墙每秒向两侧延伸 */
+    /* 施法时由 castSkill 消费：火墙每秒向两侧延伸 / 毒雾半径随时间长大 */
   } },
 
   ramp: { ph: 'hook', label: '驻留增频', run() {
@@ -837,10 +878,9 @@ const SKILL_BEH = {
    * 已经选了「尸毒」变体的玩家也还能拿到提升。 */
   spreadRad: { ph: 'hit', label: '尸毒半径', run() { } },
 
-  /* [P2b] 蔓延（台阶 Lv5）：毒雾半径随时间长大，由 poison case 每跳重算。
+  /* [P2b] 蔓延的毒雾侧细节见上面那条唯一的 grow 登记；这里只补一句：
    * 判定半径与特效网格必须一起放大 —— 只放大特效就是「看着罩住了、伤害没到」，
    * 只放大判定就是「看不见的雾在毒人」。 */
-  grow: { ph: 'hook', label: '区域蔓延', run() { /* 由 poison case 消费 */ } },
 
   /* 每 N 秒冻结一次：由 blizzard 的伤害循环读，命中时顺手钉住 */
   freezeEvery: { ph: 'hook', label: '周期冻结', run() {
@@ -1366,13 +1406,19 @@ Object.assign(Game, {
     /* 战鼓：增益期间每次击杀延长 1 秒，最多 +max 秒。
      * 标记在增益本体上（castSkill 时折进 b.killExtend），只延长还活着的增益。 */
     for (const b of this.buffs) {
-      if (!b.killExtend) continue;
-      const kx = b.killExtend;
-      if ((kx.got || 0) >= kx.max) continue;
-      kx.got = (kx.got || 0) + (kx.per || 1);
-      b.dur += kx.per || 1;
-      FX.text(new THREE.Vector3(this.playerGroup.position.x, 2.9, this.playerGroup.position.z),
-        '战鼓 +' + (kx.per || 1) + 's', 'info', { life: 0.8 });
+      /* [P2b] 两条延长通道各记各的账：killExtend 是精研「战鼓」给的，
+       * killProlong 是等级台阶给的。同一只增益可以同时吃到两条。 */
+      const chans = [];
+      if (b.killExtend) chans.push({ k: b.killExtend, tag: '战鼓' });
+      if (b.killProlong) chans.push({ k: b.killProlong, tag: '延寿' });
+      for (const ch of chans) {
+        const kx = ch.k;
+        if ((kx.got || 0) >= kx.max) continue;
+        kx.got = (kx.got || 0) + (kx.per || 1);
+        b.dur += kx.per || 1;
+        FX.text(new THREE.Vector3(this.playerGroup.position.x, 2.9, this.playerGroup.position.z),
+          ch.tag + ' +' + (kx.per || 1) + 's', 'info', { life: 0.8 });
+      }
     }
     if (!e) return;
     /* 补刀：用处决同步击杀 → 立即重置冷却。

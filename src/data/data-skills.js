@@ -533,7 +533,7 @@ const SKILL_ARCHETYPE = {
             /* 5 / 9 / 10 的文案与 SKILL_TIER_EVO.whirl 的 label 逐字一致（契约对账）。
                原稿写「可移动」是空话 —— 这个引擎本来就没有施法锁定。 */
             1: '单发横扫', 3: '双发', 5: '横扫后原地余震 2 秒', 7: '三连斩',
-            9: '横扫吸怪', 10: '命中回怒翻倍，可常驻'
+            9: '横扫撕裂 · 命中目标受伤 +15%', 10: '命中回怒翻倍，可常驻'
           }
         },
         {
@@ -561,7 +561,10 @@ const SKILL_ARCHETYPE = {
         {
           no: 4, title: '血怒', inherit: ['bloodrage', 'warcry', 'shieldwall'],
           tiers: {
-            1: '单体增益', 3: '队友共享', 5: '增益期间吸血', 7: '范围扩大',
+            /* 原稿 Lv3「队友共享」/ Lv7「范围扩大」在这个游戏里是空话：
+               三只增益全是 cast:'self'、单人局没有队友 —— 写了也是假话。
+               改成施法瞬回 + 延长，两只手都数得出来的实际变化。 */
+            1: '单体增益', 3: '施法瞬间回复 12% 生命', 5: '增益期间吸血', 7: '增益持续 +3 秒',
             9: '击杀延长', 10: '增益期间免疫控制'
           }
         },
@@ -647,7 +650,7 @@ const SKILL_ARCHETYPE = {
           no: 2, title: '毒雾', inherit: ['talismanarrow', 'swordrain', 'poison'],
           tiers: {
             1: '单团毒雾', 3: '双团', 5: '毒雾蔓延', 7: '三团',
-            9: '毒雾跟随', 10: '毒雾内敌人死亡爆毒'
+            9: '雾内敌人减速', 10: '毒雾内敌人死亡爆毒'
           }
         },
         {
@@ -850,7 +853,10 @@ const SKILL_TIER_EVO = {
        台阶再用同一个键，玩家在默认配置下永远看不到区别 —— 等于没做。
        改用余震：横扫之后原地再震 2 秒，与多段、吸怪都不抢键。 */
     5: { label: '横扫后原地余震 2 秒', beh: { aftershock: 2, aftershockPct: 30 } },
-    9: { label: '横扫吸怪', beh: { gather: 3.4, gatherDur: 2, gatherEvery: 0.5 } },
+    /* Lv9 原写「横扫吸怪」（gather 3.4）—— 变体「聚怪」用的就是 gather 这一族键，
+       选过聚怪的玩家这一级会被整条覆盖（点了毫无反应），没选的则等于白拿了变体。
+       改成「撕裂」：命中的敌人 4 秒内受伤 +15%，与余震 / 回怒都不抢键。 */
+    9: { label: '横扫撕裂 · 命中目标受伤 +15%', beh: { vuln: 15 } },
     /* 回怒翻倍：whirl case 那一发固定回 8 点（Lv10 前就是这么写的），
        这里给它乘 2 —— 用 rageMul 而不是再塞一个 ragePerHit，避免和「回流」重复计。 */
     10: { label: '命中回怒翻倍，可常驻', beh: { rageMul: 2, passive: 1 } }
@@ -887,7 +893,10 @@ const SKILL_TIER_EVO = {
    * 所以台阶额外给 spreadRad（4.2 码 vs 变体的 3.2），已经拿了尸毒的仍然变强。 */
   poison: {
     5: { label: '毒雾蔓延', beh: { grow: 60 } },
-    9: { label: '毒雾跟随', beh: { follow: 1 } },
+    /* Lv9 原写「毒雾跟随」—— 变体「追随」用的就是 follow 键，整级被覆盖。
+       改成「雾内敌人减速」：与剑阵共用 slowField（每跳刷新的持续场），
+       毒雾的每一跳里刷新一次。粘滞的雾自带减速，读起来也顺。 */
+    9: { label: '雾内敌人减速', beh: { slowField: 40, slowFieldDur: 0.9 } },
     10: { label: '毒雾内敌人死亡爆毒', beh: { spread: 1, spreadRad: 4.2 } }
   },
 
@@ -921,6 +930,47 @@ const SKILL_TIER_EVO = {
     /* 不和 counter（格挡反击）撞键：那个只在「挡下来」时走、要过格挡判定、
        数值乘盾墙；这个不要求格挡、有 0.4 秒内置冷却、口径独立。 */
     10: { label: '剑阵内自动反击', beh: { arrayCounter: 120 } }
+  },
+
+  /* ---------------- 刀客 ④ 血怒（增益位） ----------------
+   * 这一位躺着 bloodrage / warcry / shieldwall 三只增益，而**一个格位只放一只** ——
+   * 三条台阶必须三只都接，否则玩家把 warcry 放进 ④ 号位时看到的就是假话。
+   *
+   * 两条原稿撞了既有分支，都绕开了（撞键 = 点了没反应）：
+   *   Lv9 「击杀延长」= warcry 精研「战鼓」的 `killExtend`。战鼓是**精研**（3 级自动给），
+   *        台阶用同键一定被它覆盖，warcry 玩家永远看不到这一级。
+   *        改用 `killProlong`：另一条延长通道，各记各的账，与战鼓的 +1 叠加。
+   *   Lv10「免疫控制」不能用 `immune`（那是**无敌帧**，血怒变体「无我」和 avatar 精研在用的
+   *        就是它，语义完全不同），也不能用 `noSlow`（它给 ccResist 100，
+   *        而 ccResist 在 game.js 里被 CLAMP 到 60 —— 只减时长，不免疫）。
+   *        新增 `ccImmune`：增益期间**根本不再被挂上**减速 / 中毒，施法瞬间还清掉已有的。
+   *
+   * Lv5 吸血看着也撞（warcry 自带 lifesteal 8%），但它是**叠加**不是覆盖：
+   * 台阶 +10% 之后 warcry 是 18%，血怒 / 盾墙从 0 变 10% —— 三只都真的变强。
+   *
+   * Lv3 / Lv7 原稿是「队友共享」「范围扩大」，这个游戏里两件都是空话
+   * （cast:'self' + 单人局），已换成瞬回与延长：三只增益都吃，且不与变体
+   * 「持久」（sdur）撞键 —— 那条加在 sdur 上，这条加在 tierDur 上，叠加。 */
+  bloodrage: {
+    3: { label: '施法瞬间回复 12% 生命', beh: { healOnCast: 12 } },
+    5: { label: '增益期间吸血', beh: { lifesteal: 10 } },
+    7: { label: '增益持续 +3 秒', beh: { tierDur: 3 } },
+    9: { label: '击杀延长', beh: { killProlong: 2, killProlongMax: 6 } },
+    10: { label: '增益期间免疫控制', beh: { ccImmune: 1 } }
+  },
+  warcry: {
+    3: { label: '施法瞬间回复 12% 生命', beh: { healOnCast: 12 } },
+    5: { label: '增益期间吸血', beh: { lifesteal: 10 } },
+    7: { label: '增益持续 +3 秒', beh: { tierDur: 3 } },
+    9: { label: '击杀延长', beh: { killProlong: 2, killProlongMax: 6 } },
+    10: { label: '增益期间免疫控制', beh: { ccImmune: 1 } }
+  },
+  shieldwall: {
+    3: { label: '施法瞬间回复 12% 生命', beh: { healOnCast: 12 } },
+    5: { label: '增益期间吸血', beh: { lifesteal: 10 } },
+    7: { label: '增益持续 +3 秒', beh: { tierDur: 3 } },
+    9: { label: '击杀延长', beh: { killProlong: 2, killProlongMax: 6 } },
+    10: { label: '增益期间免疫控制', beh: { ccImmune: 1 } }
   }
 };
 
@@ -1000,13 +1050,20 @@ function skillArchSlot(cls, no) {
  *
  * 改文案时不用动这里：文案说「双发」而位里没有 count 技能、或说「环绕」
  * 而 evo 表里没这一级，契约会直接红。 */
+/* 某一级台阶「实装了没有」（面板据此标「待」角标）。
+ *
+ * 判据两路：数量台阶走 skillCountCapable，形态台阶走 SKILL_TIER_EVO。
+ * **3 / 7 不再无条件当数量级** —— 血怒位（刀客 ④）的 Lv3 / Lv7 是「施法瞬回」
+ * 与「持续 +3 秒」，没有发数可言；先判数量、再落回 EVO 才是对的。
+ * 反过来，某个位若把 Lv3 写成发数却没登记在 SKILL_COUNT_BASE 里，这里会返回
+ * false → 面板标「待」，正好暴露「写了没接」。 */
 function skillSlotTierDone(cls, no, lv) {
   const slot = skillArchSlot(cls, no);
   if (!slot) return false;
   const n = Math.round(Number(lv) || 0);
   if (n === 1) return true;
   const own = slot.inherit || [];
-  if (n === 3 || n === 7) return own.some(id => skillCountCapable(id));
+  if ((n === 3 || n === 7) && own.some(id => skillCountCapable(id))) return true;
   return own.some(id => {
     const pack = SKILL_TIER_EVO[id];
     return !!(pack && pack[n]);

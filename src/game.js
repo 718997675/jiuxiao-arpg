@@ -3130,10 +3130,20 @@ const Game = {
          * 总伤与「第 n 段 ×0.85^n」完全相等。
          * 多段时每段画一圈略大的光环，「打了两下」在画面上要看得出来。 */
         const passes = 1 + Math.max(0, sextra);
+        /* [P2b] 台阶 Lv9「横扫撕裂」：命中的敌人 4 秒内受伤 +15%。
+         * 走 e.vuln / e.vulnT —— damageEnemy 里真在用的字段（同一个键在
+         * SKILL_BEH.vuln 里也有实现，但那条走通用 hit 通道，而旋风斩是
+         * 自己遍历 hits 直接结算的，压根不经过那个通道）。
+         * 先结算伤害再挂易伤：这一下不吃自己的加成，后续多段与队友的才吃。 */
+        const vulnPct = Math.max(0, (bBeh && bBeh.vuln) || 0);
         for (let ps = 0; ps < passes; ps++) {
           for (const e of hits) {
             const { dmg, crit } = this.rollDamage(st.atk * mult * spow);
             this.damageEnemy(e, dmg, crit, { knock: knockW });
+            if (vulnPct) {
+              e.vuln = Math.max(e.vuln || 0, vulnPct);
+              e.vulnT = Math.max(e.vulnT || 0, 4);
+            }
           }
           if (passes > 1) FX.ring(pp, rad * (1 + 0.07 * ps), 0xffd8a0, 0.3, 0.1 + 0.05 * ps);
         }
@@ -3200,6 +3210,14 @@ const Game = {
         }
         /* [S4] 变体可以延长增益持续时间 */
         if (sdur) buff.dur = (buff.dur || 8) + sdur;
+        /* [P2b] 台阶 Lv7「增益持续 +3 秒」：与变体「持久」的 sdur 分开记、
+         * 直接叠加 —— 同用一个键的话，带持久的变体一选这一级就没了。 */
+        if (bBeh && bBeh.tierDur) buff.dur = (buff.dur || 8) + bBeh.tierDur;
+        /* [P2b] 台阶 Lv5「增益期间吸血」：折进增益本体，不另开 buff。
+         * 另开一个 buff 时长就对不上「增益期间」—— 增益结束了吸血还在，
+         * 或者吸血先结束。放在 spow 放大**之后**，避免「传世技能」把它再乘一遍。
+         * warcry 自带 8%，这里是 +10%（叠加，不是覆盖）。 */
+        if (bBeh && bBeh.lifesteal) buff.lifesteal = (buff.lifesteal || 0) + bBeh.lifesteal;
         /* 常驻（变体）：持续拉满到下次冷却 —— 数值已经减半，合起来才是
          * 「常驻的一半」；只减半不拉满会变成「按键少了但还得盯时间」的怪东西 */
         if (autoCast) buff.dur = Math.max(buff.dur || 0, this.skillCd(sk) + 0.4);
@@ -3210,11 +3228,24 @@ const Game = {
          * 嗜血（critHeal）由 damageEnemy 的暴击钩子消费，
          * 战鼓（killExtend + maxExtend）由 onBehKill 的击杀钩子消费。
          * 重施（refresh）会重置延长计数 —— 每一层增益独立记账。 */
-        if (bBeh && (bBeh.critHeal || bBeh.killExtend)) {
+        if (bBeh && (bBeh.critHeal || bBeh.killExtend || bBeh.killProlong || bBeh.ccImmune)) {
           const cb = this.buffs.find(x => x.key === 'skill:' + id);
           if (cb) {
             if (bBeh.critHeal) cb.critHeal = bBeh.critHeal;
             if (bBeh.killExtend) cb.killExtend = { per: bBeh.killExtend, max: bBeh.maxExtend || 4, got: 0 };
+            /* [P2b] 台阶的击杀延长：与 killExtend 并行记账，两条各算各的上限。
+             * 重施（refresh）会重置计数 —— 每一层增益独立记账。 */
+            if (bBeh.killProlong) cb.killProlong = { per: bBeh.killProlong, max: bBeh.killProlongMax || 4, got: 0 };
+            /* [P2b] 台阶 Lv10 免控：标记在增益本体上，判定口 ccImmuneNow()。
+             * 施法瞬间顺手清掉身上已有的减速 / 中毒 —— 否则「免疫控制」在
+             * 已经被控住的时候按下去是没用的，玩家会以为这一级没生效。 */
+            if (bBeh.ccImmune) {
+              cb.ccImmune = true;
+              if ((this.playerSlowT || 0) > 0 || (this.poisonT || 0) > 0) {
+                this.playerSlowT = 0; this.playerSlow = 0; this.poisonT = 0;
+                FX.text(new THREE.Vector3(pp.x, 2.7, pp.z), '免控', 'info', { life: 0.8 });
+              }
+            }
           }
         }
         /* [P3] 舍身（变体）：标记在增益本体上 —— damagePlayer 的格挡分支
@@ -3227,6 +3258,9 @@ const Game = {
         FX.burst(new THREE.Vector3(pp.x, 1.2, pp.z), bc, 26, { speed: 3, size: 0.12, life: 0.8, gravity: -2, additive: true });
         SFX.cast();
         UI.toast(sk.name);
+        /* [P2b] 台阶 Lv3「施法瞬间回复 12% 生命」：三只增益都吃。
+         * 走 healPlayer —— 治疗加成、血条钳制、弹字全在那一处。 */
+        if (bBeh && bBeh.healOnCast) this.healPlayer(st.hpMax * bBeh.healOnCast / 100);
         /* [S4] 解毒：立即清除自身中毒与减速 */
         if (id === 'antidote') {
           this.playerSlowT = 0; this.playerSlow = 0; this.poisonT = 0;
@@ -4053,6 +4087,11 @@ const Game = {
          * 判定半径 radNow 与特效 scale 必须同步 —— 只放大特效是「看着罩住了、
          * 伤害没到」，只放大判定是「看不见的雾在毒人」，两种玩家都会骂。 */
         const grow = Math.max(0, (bBeh && bBeh.grow) || 0);
+        /* [P2b] 雾内减速（台阶 Lv9）：与剑阵共用 slowField —— 它是「每跳刷新一次」
+         * 的持续场，不是施法瞬间的一次性减速，所以要挂在雾的每一跳上。
+         * 原稿「毒雾跟随」撞了变体「追随」的 follow 键，选过追随的玩家毫无反应。 */
+        const slowPct = Math.min(0.7, CLAMP((bBeh && bBeh.slowField) || 0, 0, 60) / 100);
+        const slowDur = Math.max(0.2, (bBeh && bBeh.slowFieldDur) || 0.9);
         const gen = this.mapGen;
         /* [P2b] 数量台阶「双团 / 三团」：1 + sextra 团，围着落点散开。
          * 以前这一位是「一团吃到底」—— 面板写着双团、实际只铺一团，
@@ -4083,6 +4122,13 @@ const Game = {
                 this.damageEnemy(e, dmg, false, { silent: true, elem: 'poison' });
                 /* [S4] 蚀骨印记：天师套「打中毒目标增伤」靠它判定 */
                 e.venomT = Math.max(e.venomT || 0, 2.5);
+                /* 雾内减速：每跳刷新，出雾后 slowDur 秒解除。
+                 * 首领砍半 —— 与剑阵同口径，否则一坨雾能把首领黏在原地 5 秒。 */
+                if (slowPct) {
+                  e.slow = Math.max(e.slow || 0, e.boss ? slowPct * 0.5 : slowPct);
+                  e.slowT = Math.max(e.slowT || 0, slowDur);
+                  e.slowLabel = e.slowLabel || '毒雾';
+                }
                 /* [S4] 丹鼎套·毒爆：每跳 25% 概率在目标脚下爆裂 */
                 if (st.specials && st.specials.plagueburst && CHANCE(0.25)) {
                   this.explodeAt(e.pos.clone(), 3, st.atk * 0.8 * spow, 0x7fbf5a, false, true, 'dot');
@@ -4751,9 +4797,9 @@ const Game = {
       this._eliteProc = true;
       const A = source.aff;
       if (A.frost) {
-        this.playerSlow = Math.max(this.playerSlow || 0, A.frost.slow / 100);
-        this.playerSlowT = Math.max(this.playerSlowT || 0, A.frost.slowDur);
-        FX.text(new THREE.Vector3(this.playerGroup.position.x, 2.7, this.playerGroup.position.z), '冰缓', 'info', { life: 0.7 });
+        if (this.applyPlayerSlow(A.frost.slow / 100, A.frost.slowDur)) {
+          FX.text(new THREE.Vector3(this.playerGroup.position.x, 2.7, this.playerGroup.position.z), '冰缓', 'info', { life: 0.7 });
+        }
       }
       if (A.venom) this.playerPoison(source.dmg * (A.venom.dpsPct || 12) / 100);
       if (A.vampiric) {
@@ -5495,7 +5541,37 @@ const Game = {
     });
   },
 
+  /* [P2b] 免控判定：身上有没有带 ccImmune 标记的增益（血怒位 Lv10 台阶）。
+   * 与 ccResist 是两回事 —— ccResist 只把时长按 CLAMP(60) 缩短，
+   * 打到身上还是会中；这个是**根本挂不上**。 */
+  ccImmuneNow() {
+    if (!this.buffs) return false;
+    for (const b of this.buffs) if (b.ccImmune) return true;
+    return false;
+  },
+
+  /* [P2b] 玩家侧减速的唯一施加口。三处 boss / 精英技能原本各写各的
+   * （0.5 / 2.5 秒等字面量），免控要拦就得三处都改 —— 收成一个口，
+   * 漏一处的代价是「免控在冰霜面前无效」，而这恰好是最常见的那一种控制。 */
+  applyPlayerSlow(amount, dur) {
+    if (this.ccImmuneNow()) {
+      FX.text(new THREE.Vector3(this.playerGroup.position.x, 2.7, this.playerGroup.position.z),
+        '免疫', 'info', { life: 0.7 });
+      return false;
+    }
+    /* [S1] 控制抗性同时缩短减速持续时间 */
+    const k = 1 - CLAMP(this.state.stats.ccResist || 0, 0, 60) / 100;
+    this.playerSlow = Math.max(this.playerSlow || 0, amount);
+    this.playerSlowT = Math.max(this.playerSlowT || 0, dur * k);
+    return true;
+  },
+
   playerPoison(dps) {
+    if (this.ccImmuneNow()) {
+      FX.text(new THREE.Vector3(this.playerGroup.position.x, 2.7, this.playerGroup.position.z),
+        '免疫', 'info', { life: 0.7 });
+      return;
+    }
     /* [S1] 控制抗性同时缩短中毒持续时间 */
     this.poisonT = 4 * (1 - CLAMP(this.state.stats.ccResist || 0, 0, 60) / 100);
     this.poisonDps = dps;
@@ -5701,8 +5777,7 @@ const Game = {
         SFX.ice();
         if (DIST2D(new THREE.Vector3(this.playerGroup.position.x, 0, this.playerGroup.position.z), c) < 7) {
           this.damagePlayer(st * 1.1, self);
-          this.playerSlow = 0.5;
-          this.playerSlowT = 2.5 * (1 - CLAMP(this.state.stats.ccResist || 0, 0, 60) / 100);
+          this.applyPlayerSlow(0.5, 2.5);
         }
         break;
       }
@@ -5721,10 +5796,10 @@ const Game = {
       case 'curse': {
         if (DIST2D(new THREE.Vector3(this.playerGroup.position.x, 0, this.playerGroup.position.z), e.pos) < 14) {
           this.damagePlayer(st * 0.6, self);
-          this.playerSlow = 0.45;
-          this.playerSlowT = 3 * (1 - CLAMP(this.state.stats.ccResist || 0, 0, 60) / 100);
+          const slowed = this.applyPlayerSlow(0.45, 3);
           FX.beam(new THREE.Vector3(e.pos.x, 2, e.pos.z), new THREE.Vector3(this.playerGroup.position.x, 1.4, this.playerGroup.position.z), 0xaa66ff, 0.4);
-          UI.log('你被邪咒缠绕，身法迟滞！', 'bad');
+          UI.log(slowed ? '你被邪咒缠绕，身法迟滞！' : '免控生效，邪咒缠不上身！',
+            slowed ? 'bad' : 'good');
         }
         break;
       }

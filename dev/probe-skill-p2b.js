@@ -38,7 +38,7 @@ const ok = (c, m, d) => {
   await p.setViewport({ width: 1440, height: 900, deviceScaleFactor: 2 });
   const errs = [];
   p.on('console', m => { if (m.type() === 'error') errs.push(m.text()); });
-  p.on('pageerror', e => errs.push('pageerror: ' + e.message));
+  p.on('pageerror', e => errs.push('pageerror: ' + e.message + (e.stack ? '\n' + String(e.stack).split('\n').slice(0, 4).join('\n') : '')));
 
   await p.goto('file://' + path.resolve('index.html'), { waitUntil: 'load' });
   await wait(1400);
@@ -96,8 +96,11 @@ const ok = (c, m, d) => {
     };
     const r = { lv1: run(1), lv2: run(2), lv3: run(3), lv7: run(7), lv10: run(10) };
     /* 假怪没有 actor / cfg，留到下一段 evaluate 之间就会被帧循环摸到
-     * （「reading 'time'」「reading 'armorHigh'」）—— 每次量完就清场。 */
+     * （「reading 'time'」「reading 'armorHigh'」）—— 每次量完就清场。
+     * 余震 / 环绕这类定时器还要靠换图才作废（`c.later` 判 mapGen），
+     * 只清数组不够：定时器到点会重新 filter 一遍新的假怪。 */
     Game.enemies = [];
+    Game.mapGen = (Game.mapGen || 0) + 1;
     return r;
   });
   ok(whirl.lv1.n === 1, 'Lv1 只扫 1 段', whirl.lv1.n);
@@ -297,7 +300,7 @@ const ok = (c, m, d) => {
   /* 毒雾这一位现在是「真的全接」：Lv3 / Lv7 的双团三团走 count 通道，
    * Lv5 / 9 / 10 走行为键 —— 所以面板不该再有「待」。 */
   ok(taoSlot2.join(',') === '',
-    '道士 ② 全部台阶已接（双团 / 三团 + 蔓延 / 跟随 / 尸毒）', taoSlot2);
+    '道士 ② 全部台阶已接（双团 / 三团 + 蔓延 / 减速 / 尸毒）', taoSlot2);
 
   /* ---------------- 6. 卡上预览与战斗同口径 ---------------- */
   console.log('六、预览与战斗同口径');
@@ -385,26 +388,37 @@ const ok = (c, m, d) => {
       const first = n;
       await wait(1300);          // 余震是「每秒一跳」，700ms 只能看到 0
       Game.damageEnemy = oldHit;
+      /* 第二跳在 2 秒，还在路上 —— 不换图的话它到点会拿真 damageEnemy
+       * 去打假怪（报 reading 'armorHigh'） */
+      Game.mapGen = (Game.mapGen || 0) + 1;
+      Game.enemies = [];
       return { first, after: n };
     };
     out.w2 = await spinRun(2);
     out.w5 = await spinRun(5);
 
-    /* --- whirl Lv9：吸怪（3.2 码外的怪被拉近） --- */
-    const gatherRun = async (lv) => {
+    /* --- whirl Lv9：撕裂（命中的敌人挂易伤） ---
+     * 原写「吸怪」（gather），但那是变体「聚怪」的键 —— 撞键的台阶对选过
+     * 聚怪的玩家等于不存在。改测易伤：e.vuln 是伤害管线里真在用的字段。 */
+    const tearRun = (lv) => {
       const es = setup('whirl', lv, 1, 1);
       const pp = Game.playerGroup.position;
-      es[0].pos.set(pp.x + 3.2, 0, pp.z);
-      const before = Math.hypot(es[0].pos.x - pp.x, es[0].pos.z - pp.z);
+      es[0].pos.set(pp.x + 1.5, 0, pp.z);
       const oldHit = Game.damageEnemy;
       Game.damageEnemy = () => { };
       Game.castSkill('whirl');
-      await wait(80);
+      const vuln = es[0].vuln || 0, vulnT = es[0].vulnT || 0;
       Game.damageEnemy = oldHit;
-      return { before, after: Math.hypot(es[0].pos.x - pp.x, es[0].pos.z - pp.z) };
+      /* Lv5 台阶的余震是定时器（1s / 2s 两跳）。不换图的话它会在**这之后**
+       * 拿已经复原的真 damageEnemy 去摸这些没有 cfg 的假怪 ——
+       * 报「Cannot read properties of undefined (reading 'armorHigh')」。
+       * `c.later` 判 mapGen，所以换图是一次性作废旧定时器的开关。 */
+      Game.mapGen = (Game.mapGen || 0) + 1;
+      Game.enemies = [];
+      return { vuln, vulnT };
     };
-    out.g8 = await gatherRun(8);
-    out.g9 = await gatherRun(9);
+    out.t8 = tearRun(8);
+    out.t9 = tearRun(9);
 
     /* --- whirl Lv10：回怒翻倍（同步读，避开每秒自然回蓝） --- */
     const rageRun = (lv) => {
@@ -417,6 +431,9 @@ const ok = (c, m, d) => {
       Game.castSkill('whirl');
       const delta = Game.state.mp - before;
       Game.damageEnemy = oldHit;
+      /* 同 tearRun：Lv9 / Lv10 也带余震定时器，量完就作废 */
+      Game.mapGen = (Game.mapGen || 0) + 1;
+      Game.enemies = [];
       return { delta };
     };
     out.r9 = rageRun(9);
@@ -482,11 +499,14 @@ const ok = (c, m, d) => {
     out.a9 = aimRun(9);
     out.a10 = aimRun(10);
 
-    /* --- 变体覆盖台阶：Lv9 台阶 gather 3.4，变体「聚怪」gather 4 —— 变体必须赢 --- */
+    /* --- 变体覆盖台阶（用毒雾 Lv10 验，它有一条合法的「撞名 + 加参数」）---
+     * spread 是变体「尸毒」的键，台阶也用它 —— 合并后**变体的值必须赢**
+     * （花点选的盖过等级送的）；但台阶带的 spreadRad 分支没有，要活下来，
+     * 否则「已经选了尸毒的玩家升到 10 级毫无反应」。 */
     {
-      setup('whirl', 9, 1, 2);
-      const beh = Game.branchBeh('whirl');
-      out.ovr = { gather: beh && beh.gather, every: beh && beh.gatherEvery };
+      setup('poison', 10, 1, 0);          // 0 号变体 = 尸毒
+      const beh = Game.branchBeh('poison');
+      out.ovr = { spread: beh && beh.spread, rad: beh && beh.spreadRad };
     }
 
     /* ---------------- 道士 ① 符箓：三条台阶都在「落雷点」 ----------------
@@ -555,7 +575,7 @@ const ok = (c, m, d) => {
     out.sk9 = seekRun(9);
     out.sk10 = seekRun(10);
 
-    /* ---------------- 道士 ② 毒雾：蔓延 / 跟随 / 尸毒 ----------------
+    /* ---------------- 道士 ② 毒雾：蔓延 / 减速 / 尸毒 ----------------
      * 三条都用现成通道，所以这里要证的不是「有没有」，而是两件更容易翻车的事：
      *   ① 蔓延的**判定半径**跟着特效一起长大（只长特效 = 看着罩住、伤害没到）
      *   ② 台阶的尸毒比变体的大（照抄变体 = 选过尸毒的人点 Lv10 毫无反应） */
@@ -606,18 +626,26 @@ const ok = (c, m, d) => {
     out.pp3 = poisonPatches(3);
     out.pp7 = poisonPatches(7);
 
-    const poisonFollow = (lv) => {
-      pset(lv);
-      let n = 0;
-      const oldFollow = Game.attachFollow, oldHit = Game.damageEnemy;
-      Game.attachFollow = () => { n++; };
+    /* 雾内减速（Lv9）：原写「毒雾跟随」，撞了变体「追随」的 follow 键 ——
+     * 选过追随的玩家这一级等于没有。改测每跳刷新的 e.slow。 */
+    const poisonSlow = async (lv) => {
+      const es = pset(lv);
+      const oldArea = FX.area, oldHit = Game.damageEnemy, oldFollow = Game.attachFollow;
+      FX.area = () => ({ scale: { setScalar() { } } });
+      Game.attachFollow = () => { };
       Game.damageEnemy = () => { };
+      es[0].slow = 0; es[0].slowT = 0;
       Game.castSkill('poison');
-      Game.attachFollow = oldFollow; Game.damageEnemy = oldHit;
-      return n;
+      await wait(900);                                   // 至少一跳（0.8s / 跳）
+      const s = { slow: es[0].slow || 0, slowT: es[0].slowT || 0 };
+      FX.area = oldArea; Game.damageEnemy = oldHit; Game.attachFollow = oldFollow;
+      /* 雾的定时器还能再跑 5 秒，而 damageEnemy 已经复原成真的了 ——
+       * 不清掉的话下一跳就去摸没有 cfg 的假怪，报「reading 'armorHigh'」。 */
+      Game.mapGen = (Game.mapGen || 0) + 1;
+      return s;
     };
-    out.p8f = poisonFollow(8);
-    out.p9f = poisonFollow(9);
+    out.p8sl = await poisonSlow(8);
+    out.p9sl = await poisonSlow(9);
 
     const poisonSpread = (lv) => {
       const es = pset(lv);
@@ -772,8 +800,8 @@ const ok = (c, m, d) => {
   ok(evo.w2.after === evo.w2.first, 'Lv2 旋风斩只打一次（没有补段）', evo.w2);
   ok(evo.w2.first === 1, 'Lv2 只有 1 段（数量台阶从 3 级才起）', evo.w2);
   ok(evo.w5.after > evo.w5.first, 'Lv5 旋风斩 0.5 秒后真的补了一段', evo.w5);
-  ok(evo.g8.after > 3.0, 'Lv8 不吸怪（怪还在 3.2 码外）', evo.g8);
-  ok(evo.g9.after < evo.g9.before - 0.4, 'Lv9 把 3.2 码外的怪拉近了', evo.g9);
+  ok(evo.t8.vuln === 0, 'Lv8 横扫不留易伤', evo.t8);
+  ok(evo.t9.vuln === 15 && evo.t9.vulnT > 0, 'Lv9 横扫撕裂：命中的敌人挂上 15% 易伤', evo.t9);
   ok(evo.r10.delta - evo.r9.delta === 8, 'Lv10 回怒从 8 点变 16 点（翻倍）', { r9: evo.r9, r10: evo.r10 });
   ok(evo.f5.rad > evo.f4.rad * 1.3, 'Lv5 爆炸半径明显变大（+50%）', { f4: evo.f4.rad, f5: evo.f5.rad });
   ok(evo.f5.patch > 0 && evo.f4.patch === 0, 'Lv5 爆炸处留火海（Lv4 不留）', { f4: evo.f4.patch, f5: evo.f5.patch });
@@ -781,8 +809,9 @@ const ok = (c, m, d) => {
   ok(evo.o9.after > evo.o9.first, 'Lv9 火球放完还会绕着自己补伤害', evo.o9);
   ok(evo.a9.dz > 0.3, 'Lv9 瞄哪打哪（朝 +z 飞）', evo.a9);
   ok(evo.a10.dz < -0.5, 'Lv10 自动索敌（改朝 −z 的敌人飞）', evo.a10);
-  ok(evo.ovr.gather === 4,
-    '变体「聚怪」覆盖台阶参数（4 码而不是台阶的 3.4）', evo.ovr);
+  ok(evo.ovr.spread === true, '撞名时变体的值赢（尸毒变体的 spread 盖过台阶的 1）', evo.ovr);
+  ok(Math.abs(evo.ovr.rad - 4.2) < 0.01,
+    '但台阶带的 spreadRad 活下来了（选过尸毒的人升到 Lv10 也真的变强）', evo.ovr);
   /* --- 道士 ① 符箓 --- */
   ok(evo.tl2.n === 1, 'Lv2 符箓只打中一张（没有连锁）', evo.tl2.n);
   /* Lv5 有两张符（Lv3 的数量台阶），每张各自「1 主 + 2 连锁」 */
@@ -809,8 +838,10 @@ const ok = (c, m, d) => {
     'Lv5 毒雾真的长大（特效半径 > 基础 5 码）', evo.p5.scales);
   ok(evo.p5.ids.indexOf(1) >= 0,
     'Lv5 判定半径跟着长大（雾心外 5.7 码那只也被毒到，不是只改特效）', evo.p5.ids);
-  /* Lv9 已经有三团（Lv7 的数量台阶），每团各自跟随 —— 所以是 3 次不是 1 次 */
-  ok(evo.p8f === 0 && evo.p9f === 3, 'Lv9 才跟随（Lv8 不跟随，Lv9 三团都跟）', { p8: evo.p8f, p9: evo.p9f });
+  /* 键名带 l（slow）：p9s 已经被「死亡爆毒」那组占了 */
+  ok(evo.p8sl.slow === 0, 'Lv8 的雾不减速', evo.p8sl);
+  ok(Math.abs(evo.p9sl.slow - 0.4) < 0.01 && evo.p9sl.slowT > 0,
+    'Lv9 雾内敌人减速 40%，且每跳刷新（不是施法瞬间一次性）', evo.p9sl);
   ok(evo.p9s.n === 0, 'Lv9 死了不爆毒', evo.p9s);
   ok(evo.p10s.n === 1 && Math.abs(evo.p10s.rad - 4.2) < 0.01,
     'Lv10 死亡爆毒，且比变体「尸毒」的 3.2 码更大', evo.p10s);
@@ -860,8 +891,116 @@ const ok = (c, m, d) => {
     'Lv10 挨打会自动反击（Lv9 不反）', { lv9: evo.sc9.one, lv10: evo.sc10.one });
   ok(evo.sc10.two === 1, '反击有 0.4 秒内置冷却（连挨两下只反一次）', evo.sc10);
 
-  /* ---------------- 8. 零报错 ---------------- */
-  console.log('八、控制台');
+  /* ---------------- 8. 刀客 ④ 血怒：三只增益共用一个格位 ----------------
+   * 这一位最容易被做假：只接 bloodrage 一只，玩家把 warcry 放进 ④ 号位
+   * 就会看到「面板写着吸血、实际一点血都不回」。所以三条台阶三只都要量。 */
+  console.log('八、刀客 ④ 血怒（三条台阶 × 三只增益）');
+  const buffTiers = await p.evaluate(async () => {
+    const out = {};
+    const cast = (id, lv, form) => {
+      Game.mapGen = (Game.mapGen || 0) + 1;
+      Game.state.cls = 'warrior';
+      Game.state.skills = { [id]: { lv: lv } };
+      if (form != null) Game.state.skills[id].f = form;
+      window.__mkClean();
+      window.__mkEnemies(1);
+      Game.recalc();
+      /* 装备 / 命格把技能等级顶上去过 —— recalc 之后再清，否则量到的不是 lv */
+      Game.state.stats.skillLv = 0;
+      Game.state.stats.skillRank = {};
+      Game.state.stats.skillMods = {};
+      Game.buffs = [];
+      Game.state.mp = 99999; Game.cooldowns = {};
+      Game.dead = false;
+      Game.playerSlowT = 0; Game.playerSlow = 0; Game.poisonT = 0;
+      /* 半血起手：满血时「瞬回 12%」一点都看不出来（血条顶在上限） */
+      Game.state.hp = Math.round(Game.state.stats.hpMax * 0.5);
+      const before = Game.state.hp;
+      Game.castSkill(id);
+      const b = Game.buffs.find(x => x.key === 'skill:' + id) || null;
+      return {
+        heal: Math.round(Game.state.hp - before),
+        hpMax: Game.state.stats.hpMax,
+        ls: Math.round((Game.state.stats.lifesteal || 0) * 10) / 10,
+        dur: b ? Math.round(b.dur * 10) / 10 : 0,
+        prolong: b && b.killProlong ? b.killProlong.max : 0,
+        cc: Game.ccImmuneNow(),
+        slowBlocked: Game.applyPlayerSlow(0.5, 2.5) === false,
+        poisonBlocked: (Game.playerPoison(100), (Game.poisonT || 0) === 0),
+        b
+      };
+    };
+    /* 三位台阶的等级：2（都不给）/ 3 / 5 / 7 / 9 / 10 */
+    for (const id of ['bloodrage', 'warcry', 'shieldwall']) {
+      const o = {};
+      for (const lv of [2, 3, 5, 7, 9, 10]) {
+        const r = cast(id, lv, 1);        // 1 号变体 = 纯数值/持久，不带 beh
+        delete r.b;
+        o['lv' + lv] = r;
+      }
+      out[id] = o;
+    }
+    /* Lv9「击杀延长」：真跑击杀钩子看增益有没有变长。
+     * 注意 warcry 自己还带精研「战鼓」（killExtend）——两条通道**同时**存在，
+     * 所以「一直杀下去」的总延长 = 战鼓上限 + 台阶上限，不是只算台阶那一路。 */
+    {
+      const r = cast('warcry', 9, 1);
+      const b = Game.buffs.find(x => x.key === 'skill:warcry');
+      const d0 = b.dur;
+      Game.onBehKill(null);
+      const one = Math.round((b.dur - d0) * 10) / 10;
+      for (let i = 0; i < 9; i++) Game.onBehKill(null);
+      out.kill = {
+        one, total: Math.round((b.dur - d0) * 10) / 10,
+        pg: b.killProlong ? b.killProlong.got : 0,
+        pm: b.killProlong ? b.killProlong.max : 0,
+        eg: b.killExtend ? b.killExtend.got : 0,
+        em: b.killExtend ? b.killExtend.max : 0
+      };
+    }
+    window.__mkClean();
+    Game.enemies = [];
+    return out;
+  });
+  for (const id of ['bloodrage', 'warcry', 'shieldwall']) {
+    const o = buffTiers[id];
+    ok(o.lv2.heal === 0 && o.lv3.heal > 0,
+      id + ' Lv3 施法瞬回（Lv2 一点都不回）', { lv2: o.lv2.heal, lv3: o.lv3.heal });
+    ok(Math.abs(o.lv3.heal - o.lv3.hpMax * 0.12) < o.lv3.hpMax * 0.03,
+      id + ' 回的是 12% 最大生命', { heal: o.lv3.heal, hpMax: o.lv3.hpMax });
+    /* warcry 自带 8%，台阶是**叠加**不是覆盖 —— 8 → 18 才算真的变强 */
+    ok(o.lv2.ls < o.lv5.ls, id + ' Lv5 吸血是叠加（不是覆盖原值）',
+      { lv2: o.lv2.ls, lv5: o.lv5.ls });
+    ok(o.lv7.dur > o.lv5.dur, id + ' Lv7 增益真的变长', { lv5: o.lv5.dur, lv7: o.lv7.dur });
+    ok(o.lv9.prolong === 6, id + ' Lv9 有击杀延长预算（6 秒上限）', o.lv9.prolong);
+    ok(o.lv9.cc === false && o.lv10.cc === true,
+      id + ' Lv10 才免控', { lv9: o.lv9.cc, lv10: o.lv10.cc });
+    ok(o.lv10.slowBlocked === true, id + ' Lv10 减速挂不上身', o.lv10);
+    ok(o.lv10.poisonBlocked === true, id + ' Lv10 中毒也挂不上身', o.lv10);
+  }
+  ok(buffTiers.kill.one >= 2, 'Lv9 真杀一只，增益当场变长 2 秒', buffTiers.kill);
+  ok(buffTiers.kill.pg === buffTiers.kill.pm,
+    '台阶这条通道顶到自己的上限（6 秒）就不再涨', buffTiers.kill);
+  ok(buffTiers.kill.total === buffTiers.kill.pm + buffTiers.kill.em,
+    '两条延长通道各自封顶、互不吞并（战鼓 + 台阶一起算）', buffTiers.kill);
+
+  {
+    const todo = await p.evaluate(() => {
+      Game.state.cls = 'warrior';
+      Game.state.skills = {};
+      Game.recalc();
+      UI.renderSkillPanel();
+      const arch = document.querySelector('#skList .sk-arch');
+      if (arch) arch.setAttribute('open', '');
+      const c = [...document.querySelectorAll('#skList .sk-ac')][3];   // ④ 号位
+      return [...c.querySelectorAll('.sk-as')]
+        .filter(s => s.classList.contains('todo')).map(s => (s.querySelector('i') || {}).textContent);
+    });
+    ok(todo.join(',') === '', '刀客 ④ 面板不再有「待」角标', todo);
+  }
+
+  /* ---------------- 9. 零报错 ---------------- */
+  console.log('九、控制台');
   ok(errs.length === 0, '全程零控制台报错', errs.slice(0, 3));
 
   console.log('\n' + (fail === 0 ? '✓' : '✗') + ' P2b 探针：' + pass + ' 通过 / ' + fail + ' 失败');

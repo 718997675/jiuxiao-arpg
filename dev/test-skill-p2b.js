@@ -43,6 +43,7 @@ const skillTierEvoList = pick('skillTierEvoList');
 const skillTierEvo = pick('skillTierEvo');
 const skillTierBeh = pick('skillTierBeh');
 const SKILL_TIERS = pick('SKILL_TIERS');
+const skillBranches = pick('skillBranches');
 
 let pass = 0, fail = 0;
 const ok = (c, m, d) => {
@@ -129,14 +130,17 @@ ok(skillTierCount('quake', 10) === 0, '地裂拿不到发数（不吃通道）')
 ok(skillTierCount('fireball', 3) <= SKILL_COUNT_CAP, '发数不超过上限');
 ok(skillCountCap() === 8, '额外发数上限 = 8（方案 §13）', skillCountCap());
 
-/* 三个职业的 ① / ② / ③ 位，该有 count 技能的都有 */
+/* 三个职业 5 个位的 Lv7：「实装状态」= 有发数 **或** 有一条形态台阶。
+ * 原断言写的是「实装 ⟺ 位内有 count 技能」，那是数量轴唯一的年代定的；
+ * 血怒位（刀客 ④）的 Lv7 是「增益持续 +3 秒」，没有发数但真的接了。 */
 for (const cls of CLASSES) {
   for (const slot of skillArchList(cls)) {
     const gets = (slot.inherit || []).filter(id => skillTierCount(id, 7) > 0);
+    const evo7 = (slot.inherit || []).some(id => (SKILL_TIER_EVO[id] || {})[7]);
     const done = skillSlotTierDone(cls, slot.no, 7);
-    ok(done === (gets.length > 0),
-      cls + ' ' + slot.no + ' 号位的 Lv7 实装状态 == 位内有 count 技能',
-      { done, gets: gets.length });
+    ok(done === (gets.length > 0 || evo7),
+      cls + ' ' + slot.no + ' 号位的 Lv7 实装状态 == 有发数 或 有形态台阶',
+      { done, gets: gets.length, evo7 });
   }
 }
 
@@ -296,7 +300,11 @@ const behSrc = readSrc('src/skill-beh.js');
   for (const id of ids) {
     ok(!!SKILLS[id], id + ' 是真实技能');
     const lvs = Object.keys(SKILL_TIER_EVO[id]).map(Number).sort((a, z) => a - z);
-    ok(lvs.every(l => [5, 9, 10].includes(l)), id + ' 只登记 5 / 9 / 10（4/6/8 是纯数值）', lvs);
+    /* 台阶只挂在 1/3/5/7/9/10 这六个显示级上（4/6/8 是纯数值）。
+     * 3 / 7 以前是数量级的专属，血怒位之后不再是 —— 那里 Lv3 是瞬回、
+     * Lv7 是延长，发数对「自身增益」毫无意义。 */
+    ok(lvs.every(l => [3, 5, 7, 9, 10].includes(l)),
+      id + ' 只登记 3 / 5 / 7 / 9 / 10（4/6/8 是纯数值）', lvs);
     for (const lv of lvs) {
       const e = SKILL_TIER_EVO[id][lv];
       ok(!!e.label && e.label.length > 1, id + ' Lv' + lv + ' 有 label（面板要对账）');
@@ -358,6 +366,83 @@ const behSrc = readSrc('src/skill-beh.js');
   ok(/if \(bBeh && bBeh\.autoTarget/.test(game), 'castSkill 必须消费 autoTarget（自动索敌）');
   ok(game.indexOf('nearestEnemy(aim, bBeh.autoTarget)') >= 0, '自动索敌真的去找最近的敌人');
   ok(/s\.mp \+ 8 \* \(\(bBeh && bBeh\.rageMul\) \|\| 1\)/.test(game), 'whirl 回怒必须乘 rageMul');
+  /* --- 通用铁律：台阶不许被该技能的精研 / 取向 / 变体整条吃掉 ---
+   * branchBeh 里台阶排最前、分支后写覆盖，所以「台阶给的键分支全都有」
+   * = 这一级被完全顶掉，玩家升到 9 级什么都没变。
+   *
+   * 判据是**子集**而不是「有同名键」：撞名但台阶额外带了一个分支没有的参数
+   * （毒雾 Lv10 的 spread + 分支没有的 spreadRad），值是真的变了的，合法。
+   * 只撞名、没新东西的（旋风斩 Lv9 gather、毒雾 Lv9 follow）才是假台阶。 */
+  {
+    const brOf = (typeof skillBranches === 'function') ? skillBranches : null;
+    ok(!!brOf, '拿得到 skillBranches（撞键检查要用）');
+    const hits = [];
+    for (const id of ids) {
+      const br = brOf ? brOf(id) : null;
+      if (!br) continue;
+      const own = new Set();
+      const eat = o => { if (o && o.beh) for (const k in o.beh) own.add(k); };
+      eat(br.core);
+      (br.pick || []).forEach(eat);
+      (br.form || []).forEach(eat);
+      for (const lv of Object.keys(SKILL_TIER_EVO[id])) {
+        const beh = (SKILL_TIER_EVO[id][lv] || {}).beh || {};
+        const keys = Object.keys(beh);
+        if (!keys.length) continue;
+        if (keys.every(k => own.has(k))) hits.push(id + ' Lv' + lv + ' → ' + keys.join('/'));
+      }
+    }
+    ok(hits.length === 0, '台阶必须带来至少一个分支没有的新键（否则整级被覆盖 = 点了没反应）', hits);
+  }
+
+  /* --- 刀客 ④ 血怒：三只增益共用一个格位，五条台阶必须三只都接 --- */
+  {
+    for (const id of ['bloodrage', 'warcry', 'shieldwall']) {
+      const e = SKILL_TIER_EVO[id];
+      ok(!!e && !!e[3] && !!e[5] && !!e[7] && !!e[9] && !!e[10],
+        id + ' 五条台阶都在（格位只放一只，漏一只就是假话）');
+      ok(e && e[3].beh.healOnCast === 12, id + ' Lv3 施法瞬回 12%', e && e[3].beh);
+      ok(e && e[5].beh.lifesteal === 10, id + ' Lv5 给 10% 吸血', e && e[5].beh);
+      ok(e && e[7].beh.tierDur === 3, id + ' Lv7 走 tierDur（不是撞变体「持久」的 sdur）', e && e[7].beh);
+      ok(e && e[9].beh.killProlong === 2 && e[9].beh.killProlongMax === 6,
+        id + ' Lv9 走 killProlong（不是撞精研的 killExtend）', e && e[9].beh);
+      ok(e && e[10].beh.ccImmune, id + ' Lv10 走 ccImmune（不是无敌帧 immune）', e && e[10].beh);
+    }
+    ok(!/beh: \{ killExtend:/.test(JSON.stringify(SKILL_TIER_EVO)),
+      'evo 表里不许出现 killExtend（它是 warcry 精研「战鼓」的键）');
+    ok(/bBeh\.lifesteal/.test(game) && /buff\.lifesteal = /.test(game),
+      '吸血折进增益本体（不另开 buff，否则对不上「增益期间」）');
+    ok(/\(buff\.lifesteal \|\| 0\) \+ bBeh\.lifesteal/.test(game),
+      '吸血是叠加不是覆盖（warcry 自带 8% 要保住）');
+    ok(/cb\.killProlong = /.test(game), '击杀延长标记在增益本体上（每层独立记账）');
+    ok(/killProlong: \{ k: b\.killProlong/.test(behSrc) || /killProlong\) chans\.push/.test(behSrc),
+      'onBehKill 真的消费 killProlong');
+    ok(/ccImmune = true/.test(game), '免控标记在增益本体上');
+    ok(/ccImmuneNow\(\)/.test(game), '有免控判定口 ccImmuneNow');
+    ok(/applyPlayerSlow\(/.test(game), '有唯一的减速施加口 applyPlayerSlow');
+    ok(/this\.healPlayer\(st\.hpMax \* bBeh\.healOnCast/.test(game),
+      'Lv3 走 healPlayer（治疗加成 / 血条钳制 / 弹字都在那一处）');
+    ok(/buff\.dur = \(buff\.dur \|\| 8\) \+ bBeh\.tierDur/.test(game),
+      'Lv7 的延长加在 tierDur 上，与变体的 sdur 叠加');
+    {
+      /* 三处减速（精英冰缓 / 首领冰环 / 首领邪咒）必须都走同一个口，
+       * 漏一处就是「免控在最常见的那一种控制面前无效」 */
+      const sites = (game.match(/this\.applyPlayerSlow\(/g) || []).length;
+      ok(sites === 3, '三处施加全部走 applyPlayerSlow', sites);
+      ok(/applyPlayerSlow\(amount, dur\) \{/.test(game), '施加口本身存在（不是只改了调用点）');
+      /* = 0 是解毒 / 净化在清场，合法；剩下的字面量赋值才是漏网的施加点 */
+      ok(!/this\.playerSlowT = (?!Math\.max|0)/.test(game.replace(/this\.playerSlowT = Math\.max[^\n]*/g, '')),
+        '不许再有三处各写各的 playerSlowT（收口后只剩施加口内部那一处）');
+    }
+    ok(/playerPoison\(dps\) \{[\s\S]{0,240}ccImmuneNow/.test(game),
+      'playerPoison 也过免控（中毒是最常见的第二种控制）');
+    /* 三只增益共用一个位 —— 面板上这一位不许再有「待」 */
+    for (const cls of ['warrior']) {
+      const todo = [1, 3, 5, 7, 9, 10].filter(lv => !skillSlotTierDone(cls, 4, lv));
+      ok(todo.length === 0, '刀客 ④ 面板不再有「待」角标', todo);
+    }
+  }
+
   /* --- 刀客 ③ 剑阵：三条台阶都要「阵在哪 + 人在不在阵里」，所以接线三件套 --- */
   ok(/bBeh\.slowField/.test(game), '剑阵 case 必须消费 slowField（阵内减速）');
   ok(game.indexOf('this.swordField =') >= 0, '剑阵要铺一份运行时场地给 damagePlayer 用');
