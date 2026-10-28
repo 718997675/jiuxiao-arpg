@@ -150,6 +150,9 @@ const WBFight = {
       }
     }
 
+    /* 真身现身（九尾狐 P3）：**每帧推进**，和昼夜交替同一个位置 */
+    this._revealTick(e, dt);
+
     /* 每只技能独立冷却。共用一个大会让「cd 短的永远抢不到出手」 */
     const cds = e.wbCd || (e.wbCd = {});
     for (const k in cds) if (cds[k] > 0) cds[k] -= dt;
@@ -229,9 +232,21 @@ const WBFight = {
     e.wbAspdMul = 1;
     e.wbHaste = 1;
     e.wbHasteT = 0;
+    /* 九尾狐 P2/P3 的两个状态也归零：P3 进 P2 时（理论上不会，但重进阶段会）
+     * 尾巴要收回去、影子态要还原，否则会出现「已经不在 P3 了还在半透明」。 */
+    e.wbTailsOut = false;
+    e.wbReveal = null;
+    e.wbVulnMul = 1;
     e.dmg = e.wbBaseDmg;
     e.spd = e.wbBaseSpd;
     this._syncAtkCd(e);
+    /* [M18.6] 形态也打回鲲。不打回的话「先打到 P2 变鹏 → 死亡重进 P1」
+     * 会看到一条长着翅膀的鱼，而且没有代码负责再切回来。 */
+    if (e.actor && typeof WBModels !== 'undefined') {
+      WBModels.setMorph(e.actor, 'kun');
+      WBModels.setTails(e.actor, 0);
+      WBModels.setGhost(e.actor, false);
+    }
   },
 
   /* 普攻间隔 = 基线 / (阶段攻速 × 战吼加速)。
@@ -278,9 +293,12 @@ const WBFight = {
       e.wbMorph = en.morph;
       const m = en.morph === 'kun' ? 0.8 : (en.morph === 'peng' ? 1.5 : 1.2);
       e.spd = e.wbBaseSpd * m;
-      /* 鲲的撞击距离更远、鹏更短 —— 用 reach 表达「体型」，
-       * 等 M18.6 有了骨架再换成真正的模型切换 */
+      /* 鲲的撞击距离更远、鹏更短 —— 用 reach 表达「体型」 */
       e.reach = (e.cfg.range || 2.2) * (en.morph === 'kun' ? 1.3 : (en.morph === 'peng' ? 0.8 : 1.0));
+      /* [M18.6] 真模型切换。之前只有 spd / reach 的代偿 ——
+       * 那是数值，玩家看不到「它化鹏了」，只会觉得「它忽然变快了」。
+       * 三档：kun 鱼 / peng 鸟 / both 鱼身长翅膀（P3「鲲鹏同体」）。 */
+      if (e.actor && typeof WBModels !== 'undefined') WBModels.setMorph(e.actor, en.morph);
     }
 
     /* ---- 攻速：改的是「普攻间隔」，不改全局 cd ---- */
@@ -338,12 +356,76 @@ const WBFight = {
       }
     }
 
-    /* ---- 留给 M18.6 的（骨架 / 动画类）----
-     * 这些键**现在不生效**，但必须显式登记：静默忽略的话，
-     * 以后看数据会以为「写了就该有效果」，查半天查不到。
-     * 视觉上能用数值代偿的已经在上面做了（morph → spd/reach）。 */
-    if (en.tails) e.wbPending = 'tails';          // 九尾展开（要骨架）
-    if (en.revealVuln) e.wbPending = 'revealVuln'; // 真身现身受伤倍率（要分身可辨识）
+    /* ---- 骨架类（M18.7b：M18.6 的骨架就位后接上）---- */
+    if (en.tails) {
+      /* 九尾狐 P2「九尾缚」：九条尾全部展开。
+       * `en.tails` 的值是尾巴数量（数据 9），**不是强度** —— 模型本来就是
+       * 九条，这个键的语义是「展开」。展开后 `wb_tailbind` 那道环扫才有
+       * 视觉依据：不然技能名写「九尾环扫」，屏幕上只有一只普通狐狸转身。 */
+      if (e.actor && typeof WBModels !== 'undefined') WBModels.setTails(e.actor, 1);
+      e.wbTailsOut = true;
+      if (typeof FX !== 'undefined') FX.ring(e.pos, 9, 0xffb0e0, 0.9, 0.3);
+      if (typeof UI !== 'undefined' && UI.log) UI.log('【' + cfg.name + '】九尾尽数展开。', 'bad');
+    }
+    if (en.revealVuln) {
+      /* 九尾狐 P3「狐火焚天」：真身周期性从狐火里现身。
+       * 计时器放在 `ai` 里每帧推进（`_revealTick`），不用 setTimeout ——
+       * 换图 / 击杀 / 暂停时 setTimeout 还在跑，会把倍率带到下一只 boss 身上。 */
+      e.wbReveal = {
+        mul: en.revealVuln, every: this.REVEAL_EVERY, dur: this.REVEAL_DUR,
+        t: 5, on: false
+      };
+      /* 进 P3 当场就是「藏起来」的状态，必须立刻转半透明 ——
+       * 只写字段不调 setGhost 的话，头 5 秒里模型还是实心的，
+       * 玩家会以为「它明明站在那，为什么打不动」。 */
+      this._setRevealState(e, false);
+    }
+  },
+
+  /* ============================================================
+   * 真身现身（九尾狐 P3）
+   * ============================================================
+   * 节奏：藏 REVEAL_EVERY 秒 → 现身 REVEAL_DUR 秒 → 再藏。
+   *
+   * 为什么藏的时候不是「无敌」：175000 血的 boss 如果只在 5 秒窗口里可打，
+   * 一场要打十几分钟，玩家会以为卡住了。0.6 倍 + 半透明是「打得到但很亏」，
+   * 玩家自己会挑窗口爆发 —— 这才是设计里「真身现身受伤 ×2」的意思。 */
+  REVEAL_EVERY: 9,
+  REVEAL_DUR: 5,
+  REVEAL_HIDE_MUL: 0.6,
+
+  _revealTick(e, dt) {
+    const rv = e.wbReveal;
+    if (!rv) return;
+    rv.t -= dt;
+    if (rv.t > 0) return;
+    rv.on = !rv.on;
+    rv.t = rv.on ? rv.dur : rv.every;
+    this._setRevealState(e, rv.on);
+  },
+
+  /* 「藏起来 / 现身」的唯一落点：倍率 + 骨架透明度 + 播报。
+   * 进阶段和每 9 秒的翻转都走这里 —— 两条路各写一份必然漏掉一处
+   * （第一版就是进阶段只写了倍率，没调 setGhost）。 */
+  _setRevealState(e, on) {
+    const rv = e.wbReveal;
+    const mul = rv ? rv.mul : 2;
+    const dur = rv ? rv.dur : this.REVEAL_DUR;
+    e.wbVulnMul = on ? mul : this.REVEAL_HIDE_MUL;
+    if (e.actor && typeof WBModels !== 'undefined') WBModels.setGhost(e.actor, !on);
+    if (typeof FX !== 'undefined') {
+      if (on) {
+        FX.ring(e.pos, 6, 0xffe6a0, 0.8, 0.3);
+        FX.text(new THREE.Vector3(e.pos.x, 7, e.pos.z), '真身现身 · 受伤 ×' + mul, 'crit', { life: 1.2 });
+      } else {
+        FX.ring(e.pos, 6, 0x6a5aa0, 0.6, 0.25);
+      }
+    }
+    if (typeof UI !== 'undefined' && UI.log) {
+      UI.log(on
+        ? '【' + e.cfg.name + '】真身从狐火里走出来 —— ' + dur + ' 秒内吃满伤害。'
+        : '【' + e.cfg.name + '】真身藏进狐火，打中的只是影子。', on ? 'good' : 'bad');
+    }
   },
 
   _addHazard(e, r, dmg, every, life, label) {

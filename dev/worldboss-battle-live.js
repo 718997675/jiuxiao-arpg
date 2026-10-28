@@ -33,6 +33,7 @@ const ok = (cond, msg, extra) => {
   return cond;
 };
 const near = (a, b, tol, msg) => ok(Math.abs(a - b) <= tol, msg, `实际 ${a} / 期望 ${b}±${tol}`);
+const eq = (a, b, msg) => ok(a === b, msg, `实际 ${JSON.stringify(a)} / 期望 ${JSON.stringify(b)}`);
 
 (async () => {
   const browser = await puppeteer.launch({
@@ -256,6 +257,11 @@ const near = (a, b, tol, msg) => ok(Math.abs(a - b) <= tol, msg, `实际 ${a} / 
     e.hp = e.maxHp * 0.5;
     WBFight.ai(e, 0.016, pp);
     const rootOnHit = e.wbRoot;
+    /* P2 的 enter.tails：九尾要真的展开（M18.7b） */
+    const tails = {
+      out: !!e.wbTailsOut,
+      flare: e.actor ? +(+e.actor.tailFlare).toFixed(2) : null
+    };
     Game.rootT = 0;
     window.__stand(e, 0, (e.cfg.skills.wb_tailbind.range || 20) * 0.75);
     const hpA = Game.state.hp;
@@ -265,7 +271,7 @@ const near = (a, b, tol, msg) => ok(Math.abs(a - b) <= tol, msg, `实际 ${a} / 
     const hpB = Game.state.hp;
     const rootT = +(Game.rootT || 0).toFixed(2);
     const buffs = Game.statusBuffs().map(b => b.name);
-    return { before, cloneCount: clones.length, cloneInfo, rootOnHit, rootT, buffs,
+    return { before, cloneCount: clones.length, cloneInfo, rootOnHit, rootT, buffs, tails,
       phase: e.wbPhase, teleN, hurt: +(hpA - hpB).toFixed(1), dead: Game.dead,
       dist: +Math.hypot(Game.playerGroup.position.x - e.pos.x, Game.playerGroup.position.z - e.pos.z).toFixed(2),
       ringR: e.cfg.skills.wb_tailbind.range, eDmg: +e.dmg.toFixed(1) };
@@ -279,6 +285,7 @@ const near = (a, b, tol, msg) => ok(Math.abs(a - b) <= tol, msg, `实际 ${a} / 
     ok(E.cloneInfo.every(c => c.active === true), 'E: 分身必须一出生就追人（active）', E.cloneInfo);
     ok(E.cloneInfo.every(c => c.hpIs6pct), 'E: 分身血量应为本尊 6%', E.cloneInfo);
     near(E.rootOnHit, 2.5, 0.01, 'E: P2 enter.rootOnHit 应落到 wbRoot');
+    ok(E.tails.out === true && E.tails.flare === 1, 'E: P2 enter.tails 应把九尾展开（骨架 tailFlare=1）', E.tails);
     ok(E.rootT > 0, 'E: 尾缚命中后玩家应被定身', E);
     ok(E.buffs.indexOf('定身') >= 0, 'E: buff 条应有「定身」', E.buffs);
     console.log('  分身 ' + E.cloneCount + ' 个（' + (E.cloneInfo[0] && E.cloneInfo[0].name) +
@@ -340,10 +347,74 @@ const near = (a, b, tol, msg) => ok(Math.abs(a - b) <= tol, msg, `实际 ${a} / 
   }
 
   /* ============================================================
-   * 【G】页面错误
+   * 【G】九尾狐 P3 真身现身（enter.revealVuln，M18.7b）
    * ============================================================ */
-  console.log('\n【G】页面错误');
-  ok(errs.length === 0, 'G: 有页面错误', errs.slice(0, 5));
+  console.log('\n【G】九尾狐 P3 真身现身');
+  await spawnOn('jiuweihu', 'mirrorrealm');
+  const G = await page.evaluate(() => {
+    const e = Game.enemies.find(x => x.wb && !x.dead);
+    if (!e) return { none: true };
+    window.__hpUp();
+    const pp = window.__pp();
+    window.__stand(e, 0, 8);
+    e.hp = e.maxHp * 0.2;
+    WBFight.ai(e, 0.016, pp);                        // 进 P3
+
+    const snap = () => ({
+      on: !!(e.wbReveal && e.wbReveal.on),
+      mul: +(+e.wbVulnMul).toFixed(3),
+      ghost: !!(e.actor && e.actor.ghost),
+      op: e.actor && e.actor.mats[0] ? e.actor.mats[0].opacity : null
+    });
+    const hidden = snap();
+    /* 打一下量倍率。**量完必须把血还回 P3 水平** —— 探针如果停在
+     * maxHp*0.5，下一帧 `phaseOf` 会把阶段算成 P2，`_resetCombat` 顺手
+     * 清掉 `wbReveal`，后面「5 秒后现身」就永远不会发生（第一版假红在这）。 */
+    const probe = () => {
+      const keep = e.hp;
+      e.hp = e.maxHp * 0.5;
+      const before = e.hp;
+      Game.damageEnemy(e, 2000, false, {});
+      const d = before - e.hp;
+      e.hp = keep;
+      return +d.toFixed(1);
+    };
+    const dHidden = probe();
+    /* 推 5 秒 → 现身窗口 */
+    for (let i = 0; i < 5; i++) WBFight.ai(e, 1, pp);
+    const shown = snap();
+    const dShown = probe();
+    /* 再 5 秒 → 收回去 */
+    for (let i = 0; i < 5; i++) WBFight.ai(e, 1, pp);
+    const back = snap();
+    return {
+      hidden, shown, back, dHidden, dShown, phase: e.wbPhase,
+      hideMul: WBFight.REVEAL_HIDE_MUL, showMul: e.wbReveal ? e.wbReveal.mul : 0
+    };
+  });
+  ok(!G.none, 'G: 九尾狐没刷出来');
+  if (!G.none) {
+    eq(G.phase, 2, 'G: 应停在 P3');
+    eq(G.hidden.on, false, 'G: 进 P3 当场是「藏在狐火里」');
+    ok(G.hidden.ghost === true && G.hidden.op < 0.6, 'G: 藏起来时骨架真的半透明', G.hidden);
+    near(G.hidden.mul, G.hideMul, 0.001, 'G: 藏起来时伤害倍率 0.6');
+    eq(G.shown.on, true, 'G: 5 秒后进入现身窗口');
+    ok(G.shown.ghost === false && G.shown.op === 1, 'G: 现身后骨架恢复不透明', G.shown);
+    near(G.shown.mul, G.showMul, 0.001, 'G: 现身窗口倍率取自数据（×2）');
+    near(G.dShown / Math.max(0.001, G.dHidden), G.showMul / G.hideMul, 0.3,
+      'G: 现身窗口的实际掉血是藏起来时的 3.3 倍（倍率真的进了伤害结算）', { 藏: G.dHidden, 现: G.dShown });
+    eq(G.back.on, false, 'G: 5 秒窗口结束后重新藏起来');
+    ok(G.back.ghost === true, 'G: 收回去时重新半透明', G.back);
+    console.log('  藏 ' + G.dHidden + ' 伤害 → 现身 ' + G.dShown + ' 伤害（×' +
+      (G.dShown / Math.max(0.001, G.dHidden)).toFixed(2) + '），透明度 ' +
+      G.hidden.op + ' ↔ ' + G.shown.op);
+  }
+
+  /* ============================================================
+   * 【H】页面错误
+   * ============================================================ */
+  console.log('\n【H】页面错误');
+  ok(errs.length === 0, 'H: 有页面错误', errs.slice(0, 5));
   console.log(errs.length ? '  ' + errs.slice(0, 5).join('\n  ') : '  无');
 
   if (SHOT) {

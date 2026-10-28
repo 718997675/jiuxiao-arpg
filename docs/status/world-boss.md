@@ -2,18 +2,19 @@
 
 - 分支：`feat/act-expansion`（与本线其它改动一起合入 main）
 - 设计文档：`V2-ROADMAP.md` §18（六只设计表 / 刷新机制 / 骨架规范 / **§18.7 与八部天龙去重**）
-- 更新：2026-10-28 16:20
+- 更新：2026-10-28 17:10
 
-> 当前：M18.1 ~ M18.5 + M18.7a（三阶段 + 18 技能 + enter 分派）完成并全绿，下一步 M18.8 掉落（或 M18.6 六套骨架）
+> 当前：M18.1 ~ M18.7（含 M18.6 六套骨架、M18.7b 两个骨架键）完成并全绿，下一步 M18.8 掉落
 
 ## 一句话现状
 
 6 只山海经巨兽，**30 分钟真实时间轮转**（无人打则到点消失、立刻换下一只；
 被击杀则冷却一个周期），小地图四层组合星标（领域色 / 信标环 / 双层五角星 / 发光）
 + 场景领域光环 + 屏幕横幅 + 山海志常驻卡，**六种玩家侧领域压制**，
-**必掉 1~3 件传世**（M18.8 待接）。
-数据层 / 运行时 / 通知面板 / 小地图与光环 / 领域机制已落地；
-多阶段战斗、六套骨架、掉落还没做。
+**三阶段战斗 + 18 个招牌技能 + 六套专属程序化骨架**，
+必掉 1~3 件传世（M18.8 待接）。
+数据层 / 运行时 / 通知面板 / 小地图与光环 / 领域机制 / 多阶段战斗 / 六套骨架已落地；
+**只剩掉落与说明页**。
 
 **与八部天龙（M7）已强制去重**：八部 = 一个 −60 洞 + 四条 +80 墙（猜元素，8 倍差）；
 世界 Boss = 五项抗性同值（零缺口）、答案在领域与阶段里。见 §18.7 与本文「决策记录」。
@@ -27,9 +28,9 @@
 | M18.3 | 通知与面板：屏幕横幅 + 山海志常驻卡 + 追踪行 + 「前往」 | ✅ | `src/ui.js`（`showWorldBossBanner` / `renderWorldBoss` / `worldBossCard` / `gotoWorldBoss`）、`index.html`（`#wbBanner` / `#wbTrack`） | 本次提交 |
 | M18.4 | 小地图组合星标 + 领域光环 | ✅ | `src/ui-minimap.js`（`drawWorldBoss` / `_starPath` / `_lift`）、`src/worldboss.js`（`makeAura` / `dropAura` / `anim`） | 本次提交 |
 | M18.5 | 领域机制：6 种玩家侧效果 | ✅ | `src/worldboss.js`（`domainTick` / `domainState` / `_domainClear` / `_applySight` / `_restoreSight` / `dim` / `domainBuff`）、`src/game.js`、`src/ui.js`、`src/ui-minimap.js` | `dev/worldboss-live.js` G 段 20 项（六种效果 + 出圈归位） |
-| M18.6 | 六套全新骨架 + 专属动画 | ⬜ | `src/actors.js`、`src/fx.js` | — |
+| M18.6 | 六套全新骨架 + 专属动画 | ✅ | 新建 `src/wbmodels.js`（约 900 行）、`dev/check-wbmodels.js`、`dev/wbmodels-shot.js`；改 `src/actors.js`（分派 + `noAutoScale`）、`src/game.js`（`body.radius` 夹碰撞）、`src/data/data-worldboss.js`（六只补 `radius`）、`index.html` | 本次提交 |
 | M18.7a | 多阶段战斗：3 阶段切换 + 18 招牌技能（7 种 shape）+ `enter` 14 键落地 + 定身 / 格挡 / 场地 | ✅ | 新建 `src/worldboss-fight.js`、`dev/worldboss-fight.js`、`dev/worldboss-battle-live.js`；改 `src/game.js`、`src/worldboss.js`、`src/data/data-worldboss.js`、`index.html` | `611c45f` |
-| M18.7b | 骨架相关 `enter`：`tails`（九尾展开）/ `revealVuln`（真身现身受伤 ×2） | ⏸ | 等 M18.6 | — |
+| M18.7b | 骨架相关 `enter`：`tails`（九尾展开）/ `revealVuln`（真身现身受伤 ×2） | ✅ | `src/wbmodels.js`（`setTails` / `setGhost`）、`src/worldboss-fight.js`（`_revealTick` / `_setRevealState`）、`src/game.js`（`wbVulnMul`） | 本次提交 |
 | M18.8 | 掉落：必掉 1~3 传世 + 稀有材料 + 世界魂接入 | ⬜ | `src/game.js`、`src/items.js`、`src/data/data-craft.js` | — |
 | M18.9 | 说明页 / 图鉴 / README 同步 | ⬜ | `src/ui.js`、`README.md` | — |
 
@@ -241,14 +242,15 @@ C 段（小地图星标）用「画 / 不画」两张图的差异把星标**单�
 | `dayNightCycle` | `ai()` 每 N 毫秒翻 `e.wbNight`；`nightOf()` 是唯一读口 |
 | `heads` | 技能齐射轮数 `volley()`（3 头 = 1 轮 / 9 头 = 3 轮） |
 | `mire` / `foxfireField` | `_addHazard` 铺一次，`e.wbSpawned` 记账防叠层 |
-| `morph` | 代偿成 `spd` ×0.8/1.5 与 `reach` ×1.3/0.8（真模型切换等 M18.6） |
+| `morph` | `WBModels.setMorph`（M18.6 接上真模型）+ `spd` ×0.8/1.5 与 `reach` 代偿 |
 | `pullMul` | `worldboss.js` 的吸力（M18.5 已接） |
 | `aspdMul` / `dmgMul` / `stance` | `_syncAtkCd` 与 `e.dmg`，`_resetCombat` 每阶段重算 |
 | `blockFront` | `Game.damageEnemy` 读 `e.wbBlockFront`：正面 ±75° 内伤害 ×0.4 |
 | `clones` | `Game.spawnEnemy(..., e.wbId)` 生分身，逐项拆掉 `boss/wb/active` |
 | `rootOnHit` | 普攻命中写 `Game.rootT`（连普攻都定身） |
 | `regurgitate` | **不需要落字段**：P2 的主题就是技能表多了 `wb_regurgitate` |
-| `tails` / `revealVuln` | ⏸ 显式 pending，等 M18.6 骨架 |
+| `tails` | `WBModels.setTails(actor, 1)`：九条尾绕 Y 反向展开 0.55 rad + 抬 0.16 rad（M18.7b） |
+| `revealVuln` | `_revealTick` 每 9 秒翻一次「现身 5 秒」；`e.wbVulnMul` 0.6 ↔ 2.0，`WBModels.setGhost` 同步半透明（M18.7b） |
 
 配套改动：
 
@@ -267,18 +269,51 @@ C 段（小地图星标）用「画 / 不画」两张图的差异把星标**单�
 
 | 脚本 | 项数 | 查什么 |
 |---|---|---|
-| `node dev/worldboss-fight.js` | **231** | 离线（vm + THREE/FX/Game 桩）：9 个血量点 × 6 只的阶段边界、cd / 夜间限定 / 距离门槛、7 种 shape 的命中与**不**命中、场地节拍与 `pierce`、定身两个来源、enter 每个键的消费点、接线断言 |
-| `node dev/worldboss-battle-live.js` | 浏览器 | 刑天三阶段真的按 1.00/0.66/0.33 切且播报阶段名、预警真的结算掉血、**正面 37.5 / 背后 93.75（2.5 倍）**、战吼 1s→0.667s→8 秒后回 1s、九尾狐 2 个分身（血 6% / 不带 boss·wb 标记 / 出生就追人）+ 尾缚定身 2.5 秒、相柳毒沼 2.6 秒掉 1754 血 + 出圈停手 + 换图清场 |
+| `node dev/check-wbmodels.js` | **182** | 真 three（r128 UMD）在 vm 里跑：六套骨架建得出来 / `group.scale===1` / 尺寸贴 `body.len·height·wingspan` / 脚不陷地 / **剪影两两点距 > 0.10** / 面数 < 9000 / 材质全注册 / 120 帧动画不抛异常 / 鲲鹏三档 morph / `setTails` 展开后包围盒变宽 + 摆动不被覆盖 / `setGhost` 全材质一起变且能完整还原 |
+| `node dev/worldboss-fight.js` | **252** | 离线（vm + THREE/FX/Game/WBModels 桩）：9 个血量点 × 6 只的阶段边界、cd / 夜间限定 / 距离门槛、7 种 shape 的命中与**不**命中、场地节拍与 `pierce`、定身两个来源、`enter` 每个键的消费点（**pending 已清零**）、`tails`/`revealVuln` 的调用与倍率、接线断言 |
+| `node dev/worldboss-battle-live.js` | 浏览器 8 段 | 刑天三阶段真的按 1.00/0.66/0.33 切且播报阶段名、预警真的结算掉血、**正面 37.5 / 背后 93.75（2.5 倍）**、战吼 1s→0.667s→8 秒后回 1s、九尾狐 2 个分身（血 6% / 不带 boss·wb 标记 / 出生就追人）+ 尾缚定身 2.5 秒 + **P2 九尾展开 tailFlare=1**、相柳毒沼 2.6 秒掉 1754 血 + 出圈停手 + 换图清场、**P3 真身现身：藏 112.5 → 现身 375 伤害（×3.33），透明度 0.42 ↔ 1** |
 | `node dev/worldboss-live.js` | 浏览器 | M18.2~M18.5 的老回归，本次改动后复跑仍全绿 |
+| `node dev/wbmodels-shot.js` | 6 张 | 独立 canvas 渲六只特写 + 合影到 `shots/wbm-*.png`，人工肉眼验收剪影 |
 
 离线脚本的两条纪律（写进文件头了）：
 
 - `FX.telegraph` **不自动结算**，cb 存起来由测试挑着调 —— 否则「预警期间跑开」没法写。
 - `Game.damagePlayer` 只记账不扣血 —— 把「伤害数值对不对」和「判定有没有命中」分开。
 
-## 下一步（M18.8 掉落 / M18.6 骨架，二选一）
+## M18.6 已交付明细（六套骨架）
 
-**M18.8 掉落（推荐先做，工作量小、玩家感知强）**
+1. **`src/wbmodels.js`（新建，约 900 行）**，全局 `WBModels`，按 `model` 名分派：
+
+   | 模型 | 剪影特征 | 关键部件 |
+   |---|---|---|
+   | `wb_candle`（烛九阴） | 盘三圈的螺旋 + 直立颈 | 七节脊椎螺旋（半径 1.4→7.0）、颈三节、人面 + 长发 + 金色竖瞳 |
+   | `wb_hydra`（相柳） | 贴地长身 + 九颈炸开 | 五节贴地躯干、3×3 九颈各四节、蛇头 + 毒牙 |
+   | `wb_kunpeng`（鲲鹏） | 横躺巨鱼 ↔ 60 米翼展的鸟 | `parts.kun/peng/pengBody/wings/fins`，三档 morph |
+   | `wb_maw`（饕餮） | 矮胖四足 + 占一半体长的大嘴 | 上下颚 + 两排牙 + 腋下双目 + 背六刺 |
+   | `wb_headless`（刑天） | 直立无头巨人 + 斧盾 | 断颈口 + 残骨、双乳发光、脐为口、举斧 + 朝前圆盾 |
+   | `wb_ninetail`（九尾狐） | 四足狐身 + 扇形九尾 | 颈立头高过背、九条五节弧线尾（毛量剖面 0.70→1.20→0.36）、三股炸开的白尾尖 |
+
+2. **三条硬约定**（写在文件头，违反任意一条都会「模型和逻辑分家」）：
+   - `group.scale === 1`，按真实米数建；`build` 返回 `noAutoScale: true`，`buildMonster` 跳过 `setScalar`
+   - `parts.torso` 必须是**内层 group**（`updateActorAnim` 无条件写它，指根节点会抹掉世界坐标）
+   - 碰撞半径 ≠ 包围盒半径：`body.radius` 由 `game.js` 的 `[M18.6]` 段夹住 `measureFootR`
+3. `src/actors.js`：`buildMonster` 开头分派 `WBModels.has(kind)`；`updateActorAnim` 开头分派 `WBModels.anim`。
+4. `src/data/data-worldboss.js`：六只 `body` 补 `radius`（3.0~5.2）。
+5. `dev/check-wbmodels.js`（182 项）+ `dev/wbmodels-shot.js`（渲图人工验收）。
+
+## M18.7b 已交付明细（两个骨架键）
+
+- `WBModels.setTails(actor, 0~1)`：只存 `a.tailFlare`，姿态在 `anim` 里**叠加**在摆动之上。
+  `rotation.y` 必须**取负**（尾巴朝 −Z 长，绕 Y 正向转是往中间收）。
+- `WBModels.setGhost(actor, on)`：所有材质 `transparent/opacity 0.42/depthWrite` 一起切，能完整还原。
+- `WBFight._revealTick(e, dt)` + `_setRevealState(e, on)`：每 9 秒翻一次「现身 5 秒」；
+  `e.wbVulnMul` 0.6（藏）↔ 2.0（现）；进 P3 当场就是「藏」的状态，所以立刻转半透明。
+- `Game.damageEnemy`：`final *= e.wbVulnMul`（放在格挡之后、抗性之前）。
+- `_resetCombat` 一并清 `wbTailsOut / wbReveal / wbVulnMul` 并调 `setTails(0)` / `setGhost(false)`。
+
+## 下一步（只剩 M18.8 + M18.9）
+
+**M18.8 掉落**
 
 1. `WorldBoss.onKill` 现在只播报 + 记冷却，**没发奖**。接 `WORLD_BOSSES[*].loot`：
    `uniqueMin-Max` 必掉传世 1~3 件（`data-uniques.js` 里 ilvl ≥ 40 的池子）、
@@ -287,20 +322,20 @@ C 段（小地图星标）用「画 / 不画」两张图的差异把星标**单�
 3. `WORLD_BOSS_MATERIALS.worldsoul`（世界魂）`pending: 'M18.8'`，要进 `CRAFT_MATS`。
 4. 掉落走已有的 `Game.dropLoot` 路径，别新写一套（自动拾取 P04 要统一读它）。
 
-**M18.6 骨架（六套全新模型 + 专属动画）**
-
-- 现有骨架是给 2~3 米怪设计的，世界 Boss 放大到 4.6~5.6 倍后关节比例全错。
-- 做完之后回来补 M18.7b 的两个键（`tails` / `revealVuln`）与 `morph` 的真模型切换。
+**M18.9 说明页 / 图鉴 / README**：六只的名字、领域、三阶段、掉落一句话，写进游戏内说明页与 README。
 
 ## 卡点
 
-- **无阻塞**。待实测再调的四个数（都已有合理默认，不要因为「感觉太难」先动）：
+- **无阻塞**。待实测再调的五个数（都已有合理默认，不要因为「感觉太难」先动）：
   1. 刷新门槛 40 级（传世掉落线）
   2. 周期 30 分钟真实时间；太稀降到 20 分钟，**不要**改成游戏内时间
   3. 九尾狐「幻域」先做成「变暗但五角星仍显示」
   4. M18.7a 新引入的两个手感数：格挡折减 `0.4`（正面挨四成）、格挡窗口 `±75°`。
      实测如果「绕后绕不动」就把窗口收到 ±60°，如果「绕后没意义」就把折减提到 0.3。
      两个数都在 `Game.damageEnemy` 的 `[M18.7]` 段里，只改那里。
+  5. M18.7b 的现身节奏 `REVEAL_EVERY 9s / REVEAL_DUR 5s / HIDE 0.6`。
+     三个数都在 `WBFight` 顶部的常量区；嫌「等太久」就缩 every，嫌「太肉」就把 0.6 提到 0.8。
+     注意 **0.6 不是无敌**：写成无敌会让 175000 血拖成十几分钟。
 
 ## 决策记录
 
@@ -346,3 +381,13 @@ C 段（小地图星标）用「画 / 不画」两张图的差异把星标**单�
 | 2026-10-28 | 分身用 `spawnEnemy(..., e.wbId)` 生，再逐项拆掉 `boss/wb/active` | 分身和本尊**长得一模一样**才是谜题前提。代价是 spawnEnemy 会走 isBoss 分支（顶栏血条、`BOSSES[bid]` 查询），必须拆干净，否则 `onKill` 直接抛异常 |
 | 2026-10-28 | 昼夜视野读 `WBFight.nightOf(e)`，不另起计时器 | 两套计时器一定漂，漂了的表现是「视野亮了但暗潮还放得出来」。谁维护 `e.wbNight` 就只让谁算 |
 | 2026-10-28 | `enter.regurgitate` 不落字段 | P2 的「反刍」就是技能表多了 `wb_regurgitate`。写一个没人读的 `e.wbRegurgitate` 只会让以后的人以为有东西没接上 |
+| 2026-10-28 | 六套骨架**单开 `src/wbmodels.js`**，不塞进 `actors.js` | `actors.js` 已经 1286 行、19 个 kind 分支，再塞 6 套「每套 150 行」的巨兽骨架就没人看得懂了。分派只加一行 `if (WBModels.has(kind)) return WBModels.build(kind, cfg)` |
+| 2026-10-28 | 骨架按**真实米数**建，`group.scale = 1`，带 `noAutoScale` | 数据里 `scale: 4.6~5.6` 是给「2 米人形 × scale」的旧口径；44 米的蛇再乘 5.4 会变成 238 米直接穿出地图 |
+| 2026-10-28 | `parts.torso` 必须是**内层 group** | `updateActorAnim` 无条件写 `P.torso.position`；指根节点等于每帧抹掉 `updateEnemies` 同步过来的世界坐标，表现是「逻辑走远了、模型钉在出生点」 |
+| 2026-10-28 | 碰撞半径用数据里的 `body.radius` 夹住 `measureFootR` | 44 米盘蛇的水平包围有 14 米，拿它当碰撞半径玩家得站 14 米外，近战永远够不到 |
+| 2026-10-28 | 剪影验收用 **(w/len, h/len) 平面点距 > 0.10**，不用三维尺寸向量 | 三维归一化会把「两只都是长条兽」的差异全吃掉（相柳 vs 饕餮只剩 0.038）。玩家看剪影看的是比例 |
+| 2026-10-28 | 材质的 `metalness` 一律 ≤ 0.45 | 场景没有环境贴图，`metalness: 0.75` 直接渲成近黑 —— 第一版刑天的斧盾在截图里就是两块黑木板 |
+| 2026-10-28 | 九尾展开的 `rotation.y` **取负** | 尾巴朝 −Z 长，绕 Y 正向转是把它往中间收：第一版「展开」反而把扇形从 24.3 米收到 18.2 米 |
+| 2026-10-28 | 现身窗口用「藏 0.6 倍 / 现 2 倍」，**不做无敌** | 175000 血的 boss 如果只在 5 秒窗口里可打，一场要十几分钟，玩家会以为卡住了。「打得到但很亏」才会自己挑窗口爆发 |
+| 2026-10-28 | 现身节奏放 `ai` 里每帧推进，不用 `setTimeout` | 换图 / 击杀 / 暂停时 setTimeout 还在跑，会把倍率带到下一只 boss 身上 |
+| 2026-10-28 | `setGhost` 用**材质透明度**而不是 `visible=false` | 藏起来会让玩家以为 boss 消失了，还丢掉「打中的是影子」这层意思 |

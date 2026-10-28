@@ -1986,8 +1986,15 @@ const Game = {
      * 没带武器的半成品模型，radius 会严重偏小，玩家直接走进 Boss 身体（穿模）。 */
     const _fr = measureFootR(a.group);
     const _br = Math.max(0.5, _fr + 0.2);                 // +0.2 冗余，避免贴边穿模
-    e.radius = _br;
-    e.reach = Math.max(cfg.range || 2.2, _br * 1.26 + 0.75);
+    /* [M18.6] 世界 Boss 的模型是**真实米数**（烛九阴 44 米、翼展 60 米的鹏），
+     * 量出来的水平包围有十几米。直接当碰撞半径的话：
+     *   ① 玩家得站在 14 米外才不穿模，战士 reach 3.2 永远够不到；
+     *   ② 分离逻辑会把玩家一路往外推，看起来像「被一堵空气墙挡着」。
+     * 数据里的 `body.radius` 描述的是「主干有多粗」，不是「尾巴甩到多远」，
+     * 用它当上限。没有 `body.radius` 的（老模型）保持原样。 */
+    const wbCap = (cfg.body && cfg.body.radius) || 0;
+    e.radius = wbCap ? Math.min(_br, wbCap) : _br;
+    e.reach = Math.max(cfg.range || 2.2, e.radius * 1.26 + 0.75);
 
     this.enemies.push(e);
     return e;
@@ -4211,6 +4218,12 @@ const Game = {
         }
       }
     }
+
+    /* [M18.7b] 九尾狐 P3「真身现身」：藏进狐火时只吃 60%，
+     * 现身那 5 秒吃 200%。倍率由 `WBFight._revealTick` 每帧写。
+     * 放在格挡之后、抗性之前：它描述的是「有没有打中本体」，
+     * 属于命中层的倍率，和「元素抗性」是两回事，顺序换过来数值也一样。 */
+    if (e.wbVulnMul && e.wbVulnMul !== 1) final *= e.wbVulnMul;
 
     /* [S5] 族群抗性：按本次伤害的元素结算（opts.elem 缺省按物理）。
      * 正数减伤、负数增伤；元素免疫（85%）也走这一条，不另开分支。

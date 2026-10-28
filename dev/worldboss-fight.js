@@ -115,6 +115,17 @@ function buildHarness() {
   ctx.UI = { toasts: [], logs: [], toast(s) { this.toasts.push(s); }, log(s) { this.logs.push(s); } };
   ctx.SFX = { boss() {}, cast() {}, explode() {}, swing() {} };
 
+  /* --- WBModels：只记调用 ---
+   * M18.7b 的两个键（tails / revealVuln）落在骨架上，纯数值断言查不出
+   * 「setTails 根本没被调」。这里换成记账桩，断言的是**调用本身**。 */
+  const wbm = {
+    calls: [],
+    setTails(a, s) { this.calls.push(['tails', s]); return true; },
+    setGhost(a, on) { this.calls.push(['ghost', on]); return true; },
+    setMorph(a, w) { this.calls.push(['morph', w]); return true; }
+  };
+  ctx.WBModels = wbm;
+
   /* --- Game：玩家位置 + 伤害记账 + spawnEnemy --- */
   const game = {
     playerGroup: { position: mkVector(0, 0, 0) },
@@ -145,11 +156,11 @@ function buildHarness() {
   vm.runInContext(fs.readFileSync(path.join(ROOT, 'src/worldboss-fight.js'), 'utf8'), ctx,
     { filename: 'src/worldboss-fight.js' });
 
-  return { ctx, fx, game, WBFight: vm.runInContext('WBFight', ctx) };
+  return { ctx, fx, game, wbm, WBFight: vm.runInContext('WBFight', ctx) };
 }
 
 const H = buildHarness();
-const { fx, game, WBFight } = H;
+const { fx, game, wbm, WBFight } = H;
 const WB = vm.runInContext('WORLD_BOSSES', H.ctx);
 const ORDER = vm.runInContext('WORLD_BOSS_ORDER', H.ctx);
 
@@ -161,6 +172,9 @@ function mkBoss(id, hpPct) {
     level: 60, maxHp: 1000, hp: 1000 * (hpPct === undefined ? 1 : hpPct),
     dmg: 100, spd: 3, atkCdBase: cfg.atkCd, reach: cfg.range || 2.2,
     pos: mkVector(0, 0, 0), radius: 2,
+    /* `actor` 是骨架（WBModels.build 的产物）。这里给个空对象占位，
+     * 只为让 `e.actor && WBModels.xxx` 这类守卫走进去 —— 桩会记账。 */
+    actor: { fake: true },
     wbCd: {}, wbGcd: 0, wbPhase: -1, wbSpawned: {}
   };
   return e;
@@ -177,6 +191,7 @@ function reset() {
   game.rootT = 0;
   game.dead = false;
   game.placePlayer(0, 0);
+  wbm.calls.length = 0;
 }
 
 /* ============================================================
@@ -671,6 +686,49 @@ console.log('\n=== 六、enter 与接线 ===');
   eq(e.wbNight, false, '再过 6 秒回到白天');
 }
 
+/* 九尾狐 P2「九尾缚」：enter.tails → 骨架九尾展开（M18.7b） */
+{
+  reset();
+  const e = mkBoss('jiuweihu', 0.5);
+  WBFight.ai(e, 0.016, game.playerGroup.position);
+  eq(e.wbPhase, 1, '九尾狐 P2');
+  eq(e.wbTailsOut, true, 'P2 enter.tails 落到 e.wbTailsOut');
+  ok(wbm.calls.some(c => c[0] === 'tails' && c[1] === 1),
+    'P2 真的把骨架的九尾展开了（WBModels.setTails(actor, 1)）',
+    JSON.stringify(wbm.calls));
+}
+
+/* 九尾狐 P3「狐火焚天」：enter.revealVuln → 真身周期性现身，倍率 ×2 / 藏起 ×0.6 */
+{
+  reset();
+  const e = mkBoss('jiuweihu', 0.2);
+  WBFight.ai(e, 0.016, game.playerGroup.position);
+  eq(e.wbPhase, 2, '九尾狐 P3');
+  ok(!!e.wbReveal, 'P3 enter.revealVuln 建了现身计时器');
+  eq(e.wbReveal && e.wbReveal.mul, 2, '现身倍率取自数据（2.0）');
+  eq(e.wbReveal && e.wbReveal.on, false, '起手是「藏在狐火里」');
+  near(e.wbVulnMul, WBFight.REVEAL_HIDE_MUL, 0.001, '藏起来时伤害 ×0.6（不是无敌）');
+  ok(wbm.calls.some(c => c[0] === 'ghost' && c[1] === true), '藏起来时骨架转半透明');
+
+  /* 5 秒后现身 */
+  for (let i = 0; i < 5; i++) WBFight.ai(e, 1, game.playerGroup.position);
+  eq(e.wbReveal.on, true, '5 秒后进入现身窗口');
+  near(e.wbVulnMul, 2, 0.001, '现身窗口伤害 ×2');
+  ok(wbm.calls.some(c => c[0] === 'ghost' && c[1] === false), '现身后骨架恢复不透明');
+
+  /* 再 5 秒收回去 */
+  for (let i = 0; i < 5; i++) WBFight.ai(e, 1, game.playerGroup.position);
+  eq(e.wbReveal.on, false, '5 秒窗口结束后重新藏起来');
+  near(e.wbVulnMul, WBFight.REVEAL_HIDE_MUL, 0.001, '回到 ×0.6');
+
+  /* 换阶段 / 重置必须把倍率与影子态一起清掉，否则会带到别的 boss 身上 */
+  WBFight._resetCombat(e);
+  eq(e.wbReveal, null, '_resetCombat 清掉现身计时器');
+  near(e.wbVulnMul, 1, 0.001, '_resetCombat 把伤害倍率还原成 1');
+  ok(wbm.calls.some(c => c[0] === 'ghost' && c[1] === false), '_resetCombat 还原半透明');
+  ok(wbm.calls.some(c => c[0] === 'tails' && c[1] === 0), '_resetCombat 把九尾收回去');
+}
+
 /* 接线断言：这些是「数据对了但没接上」的唯一防线。
  * 战斗层自己全绿、游戏里却一点效果都没有，是最难查的一类问题。 */
 {
@@ -679,6 +737,7 @@ console.log('\n=== 六、enter 与接线 ===');
   ok(gsrc.indexOf('WBFight.tick(') >= 0, 'game.js update 每帧调 WBFight.tick（场地伤害）');
   ok(gsrc.indexOf('WBFight.clear(') >= 0, 'game.js loadMap 清场地（否则换图还在掉血）');
   ok(/e\.wbBlockFront/.test(gsrc), 'game.js damageEnemy 读 wbBlockFront（否则 P2 的盾是装饰）');
+  ok(/e\.wbVulnMul/.test(gsrc), 'game.js damageEnemy 读 wbVulnMul（否则真身现身只是换个透明度）');
   ok(/this\.rootT/.test(gsrc), 'game.js 有 rootT 并进了移动 / 死亡 / 换图三处');
   ok(/e\.wbRoot/.test(gsrc), 'game.js 普攻结算读 wbRoot（九尾狐 P2 连普攻都定身）');
   ok(/e\.atkCdBase/.test(gsrc), 'game.js 普攻冷却读 atkCdBase（阶段攻速才生效）');
@@ -696,18 +755,18 @@ console.log('\n=== 六、enter 与接线 ===');
 /* `enter` 的每一个键都要有**消费点**（战斗层或领域层真的读过它）。
  * 这是「数据里加了新键、代码没接」的唯一防线 —— 只写不读的字段
  * 看起来一切正常，进游戏什么都不会发生，是最难查的一类问题。
- * 显式 pending 的两个键要写进 PENDING，而不是静默放过。 */
+ *
+ * 2026-10-28：`tails` / `revealVuln` 曾经是 pending（等 M18.6 骨架），
+ * M18.7b 接上之后 pending 清零 —— 这一条现在会**拦住任何新的空键**。 */
 {
-  const PENDING = new Set(['tails', 'revealVuln']);   // 等 M18.6 的骨架
   const srcAll = fs.readFileSync(path.join(ROOT, 'src/worldboss-fight.js'), 'utf8') +
     fs.readFileSync(path.join(ROOT, 'src/worldboss.js'), 'utf8');
   const keys = new Set();
   for (const id of ORDER) for (const ph of (WB[id].phases || [])) for (const k in (ph.enter || {})) keys.add(k);
   for (const k of keys) {
-    if (PENDING.has(k)) continue;
     ok(srcAll.indexOf(k) >= 0, `enter 键「${k}」有消费点（战斗层或领域层读过它）`);
   }
-  ok(PENDING.size === 2, 'pending 的 enter 键应当只有 tails / revealVuln');
+  ok(keys.size >= 16, 'enter 键总数没缩水（16 个以上）', keys.size);
 }
 
 /* ============================================================
