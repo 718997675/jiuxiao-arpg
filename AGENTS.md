@@ -191,7 +191,7 @@ node dev/live-check.js       # 线上能否开局（推完 30~60s 后跑）
 node dev/mobile-layout.js --live   # 线上版布局回归
 node dev/preview-check.js --url <预览地址>   # 预览站：能开局 + 资源不越界 + 存档隔离
 node dev/check-worldboss.js  # 世界 Boss 数据层：抗性平坦 / 三阶段 / 领域 / 掉落 / **与八部去重**（1152 项）
-node dev/worldboss-run.js    # 世界 Boss 运行时：30 分钟轮转（时间打桩）、击杀冷却、跨会话、存档往返（76 项）
+node dev/worldboss-run.js    # 世界 Boss 运行时：10 分钟轮转（时间打桩）、击杀冷却、跨会话、存档往返、空窗预选（85 项）。**周期断言全部从 CFG.cycle 派生，别写死分钟数**
 node dev/worldboss-loot.js   # 世界 Boss 掉落：必掉件数 × 四难度 / 120 次大样本全传世 / 材料符文世界魂区间 / 落点在模型外 / 幂等 / onKill 接线（191 项）
 node dev/worldboss-live.js   # 世界 Boss 浏览器实测：实体/光环/横幅/星标/真实击杀链路/六种领域效果（可加 --shot 截图）
 node dev/worldboss-fight.js  # 世界 Boss 战斗层（离线）：阶段边界 / 7 种 shape 命中与否 / 场地 / 定身 / enter 消费点 / 接线断言（252 项）
