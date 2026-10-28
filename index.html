@@ -1892,6 +1892,10 @@
   .setseg{display:flex;gap:5px;flex-wrap:wrap;flex:1;min-width:0}
   .setseg .sbtn{min-width:44px;text-align:center;padding:4px 9px}
   .setseg .sbtn.on{pointer-events:none}
+  /* 被总开关关掉的子项（拾取那五行的后四行）：变灰 + 不可点，但不隐藏 ——
+   * 隐藏会让后面的行整体上移，玩家会以为设置项被删掉了 */
+  .setrow.off{opacity:.38}
+  .setrow.off .sbtn{pointer-events:none}
   /* 音频滑杆：用原生 range，但要压掉浏览器的默认蓝白配色，融进这套暗金 UI */
   .setrange-wrap{align-items:center;gap:10px}
   .setrange{-webkit-appearance:none;appearance:none;flex:1;min-width:120px;height:3px;border-radius:2px;

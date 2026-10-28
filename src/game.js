@@ -6321,19 +6321,82 @@ const Game = {
     this.scene.add(g);
   },
 
+  /* ---------------- 拾取策略（P04） ----------------
+   * 返回本帧生效的拾取配置。**设置还没加载时按「全默认」**（自动开 / 灵品+），
+   * 而不是按「全关」—— 否则从没开过设置面板的玩家会莫名其妙没有自动拾取。 */
+  pickupCfg() {
+    const S = (typeof Settings !== 'undefined' && Settings.d) ? Settings.d : null;
+    return {
+      auto: S ? S.autoPickup !== false : true,
+      minRank: rarityRank(S ? S.pickupMinRarity : 'magic'),
+      gold: S ? S.pickupGold !== false : true,
+      mat: S ? S.pickupMat !== false : true,
+      rune: S ? S.pickupRune !== false : true
+    };
+  },
+
+  /* 「未拾取」角标：一张 256×64 的贴图 + 一份材质，全场共用。
+   * 每掉一件白装就新建一张 512×128 的贴图是白烧显存，而且这类角标同时存在
+   * 多少个完全取决于「玩家有多懒」，不可控。共享材质走 markShared，
+   * 这样 disposeTree 回收掉落物时不会把它连坐释放掉。 */
+  _holdTagSprite() {
+    if (!this._holdTagMat) {
+      const c = document.createElement('canvas');
+      c.width = 256; c.height = 64;
+      const g2 = c.getContext('2d');
+      g2.font = 'bold 34px "PingFang SC","Microsoft YaHei",sans-serif';
+      g2.textAlign = 'center'; g2.textBaseline = 'middle';
+      g2.lineWidth = 7; g2.strokeStyle = 'rgba(0,0,0,0.85)';
+      g2.strokeText('未拾取', 128, 32);
+      g2.fillStyle = '#9aa0aa';
+      g2.fillText('未拾取', 128, 32);
+      const tex = markShared(new THREE.CanvasTexture(c));
+      this._holdTagMat = markShared(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false }));
+    }
+    const s = new THREE.Sprite(this._holdTagMat);
+    s.scale.set(2.2, 0.55, 1);
+    s.position.y = 1.5;
+    s.renderOrder = 998;
+    return s;
+  },
+
   updateLoot(dt) {
     const pp = this.playerGroup.position;
     /* [S1] 拾取范围：装备上的 pickupRadius 同时放大吸附圈与拾取圈 */
     const pr = this.state.stats.pickupRadius || 0;
     const pullR = 2.4 + pr * 0.55;
     const grabR = 1.3 + pr * 0.3;
+    /* [P04] 够格自动捡的东西吸附圈从 2.4 米放到 4.2 米 —— 怪一死就自己飞过来，
+     * 不用再一个个踩点。**只有够格的那几件享受这个范围**，其余仍走 pullR，
+     * 否则留在地上的白装会跟着玩家满地图跑，看起来像 bug。 */
+    const autoR = 4.2 + pr * 0.6;
+    const cfg = this.pickupCfg();
+    const now = performance.now() / 1000;
     for (let i = this.loot.length - 1; i >= 0; i--) {
       const l = this.loot[i];
       l.t += dt;
       l.obj.position.y = Math.sin(l.t * 3) * 0.1;
       l.box.rotation.y += dt * 2;
+
+      /* 这一件够不够格自动捡 */
+      let auto;
+      if (!cfg.auto) auto = false;
+      else if (l.item) auto = rarityRank(l.item.rarity) >= cfg.minRank;
+      else if (l.rune) auto = cfg.rune;
+      else if (l.mat) auto = cfg.mat;
+      else auto = cfg.gold;               // 金币与玄晶共用一格开关
+
+      /* 「留在地上」必须看得见：开了自动拾取却不捡的装备挂个灰色角标，
+       * 否则玩家会以为东西压根没掉。关掉总开关时不挂 —— 那时候「全都得自己
+       * 走过去」是玩家的主动选择，不是意外，挂满屏幕角标反而是噪音。 */
+      if (l.item && cfg.auto && !auto) {
+        if (!l.tag) { l.tag = this._holdTagSprite(); l.obj.add(l.tag); }
+      } else if (l.tag) {
+        l.obj.remove(l.tag); l.tag = null;
+      }
+
       const d = Math.hypot(pp.x - l.pos.x, pp.z - l.pos.z);
-      if (d < pullR) {
+      if (d < (auto ? autoR : pullR)) {
         // 吸附
         l.pos.x += (pp.x - l.pos.x) * dt * 6;
         l.pos.z += (pp.z - l.pos.z) * dt * 6;
@@ -6367,7 +6430,16 @@ const Game = {
             this.loot.splice(i, 1);
           } else if (l.item) {
             if (this.state.inventory.length >= this.bagCap()) {
-              if (!l.warned) { l.warned = true; UI.log('行囊已满，先清理背包。', 'bad'); }
+              /* 自动拾取因为行囊满而卡住时，一波怪掉 8 件会刷 8 条红字，
+               * 改成 10 秒一次的低频提示。手动捡（走过去踩到的）保持原来的一件一次。 */
+              if (auto) {
+                if (now - (this._autoFullAt || -99) > 10) {
+                  this._autoFullAt = now;
+                  UI.log('行囊已满，自动拾取暂停。', 'bad');
+                }
+              } else if (!l.warned) {
+                l.warned = true; UI.log('行囊已满，先清理背包。', 'bad');
+              }
             } else if (this.addItem(l.item)) {
               SFX.loot(l.item.rarity);
               const col = RARITY[l.item.rarity].color;

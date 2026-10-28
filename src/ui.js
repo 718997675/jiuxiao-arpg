@@ -511,6 +511,22 @@ const UI = {
       opts: [['torch', '火炬之光'], ['classic', '默认俯视'], ['diablo', '暗黑4'], ['fp', '第一人称']] },
     { k: 'shake', label: '镜头震动',
       opts: [['off', '关'], ['weak', '弱'], ['std', '标准'], ['strong', '强']] },
+    /* 拾取分区（P04）：总开关 + 品质门槛 + 三类非装备掉落。
+     * 语义统一是「**自动**拾取」——关掉任何一项都不会让东西捡不起来，
+     * 只是回到「走到脚边才捡」。所以文案写「自动」而不是「拾取」，
+     * 免得玩家以为关了之后金币就永远捡不到了。 */
+    { head: '拾取' },
+    { k: 'autoPickup', label: '自动拾取', bool: true,
+      opts: [['0', '关'], ['1', '开']] },
+    { k: 'pickupMinRarity', label: '装备品质',
+      opts: [['common', '全部'], ['magic', '灵品+'], ['rare', '玄品+'], ['legendary', '神品+'], ['set', '套装+']],
+      sub: 'autoPickup' },
+    { k: 'pickupGold', label: '金币/玄晶', bool: true, sub: 'autoPickup',
+      opts: [['0', '关'], ['1', '开']] },
+    { k: 'pickupMat', label: '匠材', bool: true, sub: 'autoPickup',
+      opts: [['0', '关'], ['1', '开']] },
+    { k: 'pickupRune', label: '符文', bool: true, sub: 'autoPickup',
+      opts: [['0', '关'], ['1', '开']] },
     /* 音频分区：四条滑杆 + 静音。mute 用 bool 标记，值是 Boolean 而不是字符串 */
     { head: '音频' },
     { k: 'mute', label: '静音', bool: true,
@@ -1079,7 +1095,9 @@ const UI = {
       const cur = r.act === 'fs'
         ? ((typeof Game !== 'undefined' && Game.isFullscreen && Game.isFullscreen()) ? '1' : '0')
         : (r.bool ? (d[r.k] ? '1' : '0') : (r.k === 'fps' ? (d.fps ? '1' : '0') : String(d[r.k])));
-      return `<div class="setrow"><span class="setlab">${r.label}</span><div class="setseg">`
+      /* sub = 「总开关」键：总开关关掉时这一行变灰且不可点。
+       * 不做成彻底隐藏 —— 位置一跳，玩家会以为设置项被删了。 */
+      return `<div class="setrow${r.sub && !d[r.sub] ? ' off' : ''}"><span class="setlab">${r.label}</span><div class="setseg">`
         + r.opts.map(([v, t]) =>
           `<button class="sbtn${cur === v ? ' on' : ''}" data-k="${r.k}" data-v="${v}">${t}</button>`).join('')
         + `</div></div>`;
@@ -1097,7 +1115,10 @@ const UI = {
         + '<br>全屏：安卓 Chrome / 桌面浏览器可直接全屏；<b>iPhone 的 Safari 不支持网页全屏</b>，'
         + '请点「分享 → 添加到主屏幕」，从图标启动就没有地址栏，效果等同全屏。'
         + '<br>音频：<b>音效</b>管技能与打击，<b>环境</b>管风声虫鸣，<b>音乐</b>是随战斗切换的三层底乐。'
-        + '若整局无声，先在页面任意处点一下（浏览器要求先有交互才允许播放）。';
+        + '若整局无声，先在页面任意处点一下（浏览器要求先有交互才允许播放）。'
+        + '<br>拾取：<b>自动拾取</b>开时，四米内的掉落会自己飞进包里；关掉就回到「走到脚边才捡」。'
+        + '<b>装备品质</b>只是自动拾取的门槛 —— 低于它的装备会留在原地并标上「未拾取」，'
+        + '走过去照样能捡，不会丢。行囊满了自动拾取会静默暂停，不会刷屏。';
     }
   },
 

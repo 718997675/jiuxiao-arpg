@@ -4,6 +4,19 @@
 
 let ITEM_UID = 1;
 
+/* ---------------- 品质高低 ----------------
+ * 由低到高的规范顺序，**取自 data-core 里 RARITY 的声明顺序**
+ * （凡品 < 灵品 < 玄品 < 神品 < 套装 < 传世）。
+ * 要比较「谁的品质更高」一律走 rarityRank()，别在各处再写一份数组 ——
+ * 以前「一键整理」用 Object.keys(RARITY)、别处用 ['common','magic','rare','legendary']，
+ * 两套顺序对套装/传世的位置判断是相反的。
+ */
+const RARITY_ORDER = Object.keys(RARITY);
+function rarityRank(r) {
+  const i = RARITY_ORDER.indexOf(r);
+  return i < 0 ? 0 : i;
+}
+
 /* ---------------- 唯一装备（传世） ----------------
  * 目录与特性定义在 src/data/data-uniques.js，这里只做查询与生成。
  * 一次性建索引；目录是静态数据，不需要每次掉落都线性扫。
