@@ -26,12 +26,12 @@
  * 【二】不写进 `MAPS[mapId].bosses`。
  *   那张表是「常驻首领」，`spawnBosses()` 每次读档都会按它重生一遍。
  *   世界 Boss 是临时挂上去的，写进去会变成「每次进图都有」，
- *   30 分钟轮转直接失效。
+ *   周期轮转直接失效。
  *
  * 【三】「到点换人」和「击杀后冷却」走同一条出口。
  *   两种情况下 `until` 都是「下一只出现的时刻」，区别只有 `killed`：
  *     · 无人击杀：`until = spawnAt + cycle`，到点**立刻**换下一只（不空窗）
- *     · 被击杀：  `until = killAt  + cycle`，这 30 分钟里地图上什么都没有
+ *     · 被击杀：  `until = killAt  + cycle`，这一个周期里地图上什么都没有
  *   统一成一个判断（`now >= until` → `rollNext`）之后，
  *   状态机只有「有记录 / 没记录」两态，不用维护第三个布尔。
  *
@@ -99,19 +99,21 @@ const WorldBoss = {
     return r;
   },
 
-  /* 滚下一只。规则三条：
-   *   · 不取上一只（连续两次同一只 = 玩家以为没刷新）
-   *   · 候选图优先取玩家**已经去过**的（刷在没解锁的图上，横幅点了是灰的）
-   *   · 落点走 `bossPosOf`，和常驻首领同一套口径（老图坐标 / sanctum 推导） */
-  rollNext() {
+  /* 挑下一只（只算 id / 图 / 落点，**不落地**）。
+   *
+   * 抽出来的唯一理由：`rollNext` 和「击杀后的空窗预告」必须是同一套口径。
+   * 两边各写一遍，迟早出现「顶部条说下一只在幽都，到点却刷在雪岭」——
+   * 玩家会把这条提示当成骗人的装饰，从此再也不看。
+   *
+   * 规则三条（和 rollNext 原本的三条一致）：
+   *   · 不取 `excludeId`（连续两次同一只 = 玩家以为没刷新）
+   *   · 候选图优先取**去过**的（刷在没解锁的图上，点了也进不去）
+   *   · 落点走 `bossPosOf`，和常驻首领同一套口径 */
+  _pick(excludeId) {
     if (typeof Game === 'undefined' || !Game.state) return null;
     const s = Game.state;
-    if ((s.level || 1) < WORLD_BOSS_CFG.minLevel) return null;
-
-    const prev = this.rec();
-    const prevId = prev ? prev.id : null;
     /* 用 ORDER 而不是 Object.keys：顺序固定，压缩/改写后也不会乱 */
-    const pool = WORLD_BOSS_ORDER.filter(id => id !== prevId);
+    const pool = WORLD_BOSS_ORDER.filter(id => id !== excludeId);
     const id = pool[Math.floor(Math.random() * pool.length)] || WORLD_BOSS_ORDER[0];
     const cfg = worldBossById(id);
     if (!cfg) return null;
@@ -124,17 +126,45 @@ const WorldBoss = {
     const pos = (typeof bossPosOf === 'function')
       ? bossPosOf(mapId, id, 0)
       : [0, -30];
+    return { id: id, mapId: mapId, x: pos[0], z: pos[1] };
+  },
+
+  /* 预选记录是否还能用。图被删 / 版本回退 / 手改存档时一律作废重抽，
+   * 而不是带着一个找不到的 id 跑下去（`spawn` 会静默 null）。 */
+  _validNext(n) {
+    if (!n || typeof n !== 'object') return false;
+    if (!worldBossById(n.id)) return false;
+    if (!n.mapId || !MAPS[n.mapId]) return false;
+    if (!isFinite(n.x) || !isFinite(n.z)) return false;
+    return true;
+  },
+
+  /* 滚下一只。规则见 `_pick`；这里只负责「把选好的那只写成新记录」。 */
+  rollNext() {
+    if (typeof Game === 'undefined' || !Game.state) return null;
+    const s = Game.state;
+    if ((s.level || 1) < WORLD_BOSS_CFG.minLevel) return null;
+
+    const prev = this.rec();
+    /* 优先消费击杀时预选的那只（`next`）：空窗期顶部条已经把
+     * 「谁 / 在哪」报给玩家了，到点换一只等于骗人。
+     * 只有预选失效（图被删 / 脏档）才重抽。 */
+    const pre = (prev && prev.killed && this._validNext(prev.next)) ? prev.next : null;
+    const pick = pre || this._pick(prev ? prev.id : null);
+    if (!pick) return null;
+
     const now = Date.now();
     s.worldBoss = {
-      id: id,
-      mapId: mapId,
-      x: pos[0], z: pos[1],
+      id: pick.id,
+      mapId: pick.mapId,
+      x: pick.x, z: pick.z,
       spawnAt: now,
       until: now + WORLD_BOSS_CFG.cycle,
       killed: false,
       /* 图鉴（M18.9）要用「上一只死在哪」做「已讨伐」记录，
        * 但那是另一个字段的事，这里只留击杀时间给 UI 算冷却 */
       killAt: 0
+      /* `next` 不写：新记录已经是「现世」状态，没有空窗期可预告 */
     };
     this._liveId = null;
     return s.worldBoss;
@@ -160,7 +190,14 @@ const WorldBoss = {
     const now = Date.now();
     const should = !!r && !r.killed && now < r.until && r.mapId === s.mapId;
     if (!should) { this.despawn(); return null; }
-    if (this.live()) return this.live();
+    /* 「场上有一只有 wb 标记的」不等于「场上那只就是记录里那只」。
+     * 到点换人后如果新 boss 恰好抽到同一张图，旧实体还挂着 wb 标记，
+     * 只看 live() 的真假会把它当成新 boss —— 表现是横幅/顶部条说换了人，
+     * 眼前站着的还是上一只（名字对不上、血条也不对）。10 分钟周期下
+     * 同图概率约一半，这个 bug 会很显眼。 */
+    const live = this.live();
+    if (live && live.wbId === r.id) return live;
+    if (live) this.despawn();
     return this.spawn();
   },
 
@@ -305,7 +342,13 @@ const WorldBoss = {
     const before = this.rec();
     const prevSpawnAt = before ? before.spawnAt : 0;
     const r = this.ensure();
-    if (!r) { this.despawn(); return; }
+    /* 等级不够 / 存档清空时 ensure 返回 null，这里必须**主动刷一次界面**：
+     * 否则顶部倒计时条会停在上一秒的数字上，玩家盯着一个不动的 09:59。 */
+    if (!r) {
+      this.despawn();
+      if (typeof UI !== 'undefined' && UI.renderWorldBoss) UI.renderWorldBoss(this);
+      return;
+    }
 
     /* 换人了就播报一次。用 spawnAt 判定而不是 id：
      * 同一只被清掉再刷（比如换图回来）不该再播一遍横幅。 */
@@ -458,8 +501,13 @@ const WorldBoss = {
       r.killed = true;
       r.killAt = now;
       /* 击杀后整整一个周期不再刷 —— 这是「打卡」节奏：
-       * 打完这一只，接下来半小时该去干别的。 */
+       * 打完这一只，接下来一个周期该去干别的。 */
       r.until = now + WORLD_BOSS_CFG.cycle;
+      /* [M18.10] 空窗期就把下一只定下来。
+       * 玩家要的是「还有多久、在哪刷」—— 到点才 roll 的话，这 10 分钟里
+       * 顶部条只能写「山海间某处」，等于没提示。预选存在 `next` 里，
+       * `rollNext` 到点直接消费它；存档跟着走，关页面再回来照样知道去哪等。 */
+      r.next = this._pick(r.id) || null;
     }
     this._liveId = null;
     this._seenSpawnAt = 0;
@@ -761,7 +809,7 @@ const WorldBoss = {
    *
    * 封顶在 `cycle`：正常情况永远不会超（until 只可能是 spawnAt/killAt + cycle），
    * 唯一的例外是**系统时钟往回跳**。不封顶的话玩家会看到「61:20 后离去」
-   * 这种明显不对的数字，封顶之后最坏情况只是「显示满 30 分钟」。 */
+   * 这种明显不对的数字，封顶之后最坏情况只是「显示满一个周期」。 */
   remaining() {
     const r = this.rec();
     if (!r) return 0;

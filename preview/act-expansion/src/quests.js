@@ -191,13 +191,20 @@ const QuestSys = {
     return out;
   },
 
-  /* 该发布者名下「已达成待复命」的任务 */
+  /* 该发布者名下「已达成待复命」的任务。
+   *
+   * [P11] 这里原来只按 `q.giver === giverId` 过滤，于是悬赏（`giver: 'board'`）
+   * 永远进不了任何一个 NPC 的复命列表 —— 玩家打完悬赏根本交不掉。
+   * 现在改成按**交付人**匹配（`turnInOf`）：主线/支线仍然是「谁发谁收」，
+   * 悬赏落到本卷录事身上。giver 的匹配留着做兼容（自定义 turnIn 时两边都对得上）。 */
   readyOf(giverId) {
     const st = this.s();
     if (!st) return [];
     return st.active.filter(a => {
       const q = QUESTS[a.id];
-      return q && q.giver === giverId && this.ready(a);
+      if (!q) return false;
+      if (turnInOf(q) !== giverId && q.giver !== giverId) return false;
+      return this.ready(a);
     });
   },
 
@@ -207,8 +214,17 @@ const QuestSys = {
     if (!st) return [];
     return st.active.filter(a => {
       const q = QUESTS[a.id];
-      return q && q.giver === giverId;
+      if (!q) return false;
+      return turnInOf(q) === giverId || q.giver === giverId;
     });
+  },
+
+  /* [P11] 该 NPC 手上「板上有新悬赏」—— 录事头顶要挂标记用。
+   * 悬赏的 giver 是 'board'，`offersOf` 看不到它，所以单独给一个入口。
+   * 只有录事（camp*_side）有这个职能；掌事走 offersOf。 */
+  boardOf(giverId) {
+    if (!/_side$/.test(giverId || '')) return [];
+    return this.boardList(partOfGiver(giverId));
   },
 
   /* 完成任务后的下一环（用于「复命 → 顺势接下一环」的对话） */
@@ -317,9 +333,23 @@ const QuestSys = {
   _announce(a) {
     const q = QUESTS[a.id];
     if (typeof UI === 'undefined') return;
-    const who = (typeof NPCS !== 'undefined' && NPCS[npcIdOfGiver(q.giver)]) ? NPCS[npcIdOfGiver(q.giver)].name : '掌事';
-    UI.toast('委托目标达成 · 回营地复命', 'lv');
+    /* [P11] 播报里点名交付人。原来取的是 `q.giver`，悬赏是 'board'，
+     * 查不到 NPC 就退化成「回掌事处复命」—— 玩家跑到掌事面前，掌事不认账。 */
+    const who = turnInNameOf(q);
+    UI.toast('委托目标达成 · 回' + who + '处复命', 'lv');
     UI.log('【委托】「' + q.name + '」目标已达成，回' + who + '处复命。', 'good');
+  },
+
+  /* [P11] 交付人名字（追踪条 / 面板用）。任务不存在时给空串，调用方好判空。 */
+  turnInName(a) {
+    const q = a ? QUESTS[a.id] : null;
+    return q ? turnInNameOf(q) : '';
+  },
+
+  /* [P11] 这条任务该交给哪个 NPC id（小地图打点用） */
+  turnInNpc(a) {
+    const q = a ? QUESTS[a.id] : null;
+    return q ? turnInNpcOf(q) : null;
   },
 
   /* ---------------- 接 / 复命 ---------------- */

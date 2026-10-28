@@ -282,7 +282,7 @@ const CLASSES = {
       str: { def: 0.6, hpMax: 2 },
       agi: { crit: 0.16, aspd: 0.36, moveSpd: 0.02 },
       vit: { hpMax: 12, def: 0.5 },
-      int: { atk: 1.3, mpMax: 5, mpReg: 0.06, hpRegen: 0.05 }
+      int: { atk: 1.3, mpMax: 5, mpReg: 0.03, hpRegen: 0.05 }
     },
     baseAtk: 8, baseHp: 150, baseMp: 70,
     startWeapon: 'taoist0',
@@ -324,11 +324,31 @@ const BALANCE = {
   /* 暴击：裸装起点。1 级 3% / 125%，靠根基、装备、天赋往上堆 */
   crit: { base: 3, dmg: 125, dmgCap: 500 },
 
-  /* 等级上限（[M6] 60 级口径）：五卷 1~60，卷一 18 / 卷二 12 / 卷三~五 各 10。
-   * 原来没有上限常量 —— 40 级只是「内容到这儿为止」的既成事实，
-   * 一旦 M3 把新图补进来，等级就会自己往上爬，满级天赋点（60 + 任务 10 = 70）
-   * 也会跟着漂。所以在这里钉死一个数，gainXp 到顶就停。 */
-  levelMax: 60,
+  /* 等级上限：**跟难度走**（用户 2026-10-28 定）。
+   *
+   * 为什么不是一刀切一个数：五卷内容只铺到 60 级，给所有难度都封 60 的话，
+   * 高难度玩家打通后没有任何继续变强的理由；反过来给新手也开 99，
+   * 又会让人一路碾压到通关、体验不到该有的压力。
+   * 所以上限挂在难度上：越难，能爬得越高 —— 高难度多出来的那段等级
+   * 就是「多打几遍卷五」的长期目标。
+   *
+   *   novice 60（新手：够用就行，不打折也不加码）
+   *   normal 70
+   *   hard   85
+   *   nightmare 99（顶格）
+   *
+   * 两条硬约定：
+   *   1. **难度开档时定死、中途不可改**（见 ui.js 的 buildDiffCards），
+   *      所以不存在「切回低难度后等级超上限」的降级问题。
+   *   2. `levelMax` 保留为**全难度最高上限**，给不关心难度的调用方
+   *      （dev 脚本、图鉴文案）当兜底；判断某个玩家能到几级一律走
+   *      `levelCapOf(state.difficulty)` / `Game.levelCap()`。
+   *
+   * 60~99 这一段暂时没有新图：五卷的图仍是 51~60 级，玩家能继续练级，
+   * 但打的是同级偏低的怪（`MAPS[mapId].level` 是每图固定值，不跟玩家涨）。
+   * 这是给后续内容留的成长空间，不是 bug。 */
+  levelMax: 99,
+  levelMaxByDiff: { novice: 60, normal: 70, hard: 85, nightmare: 99 },
 
   /* 经验：境界 = xpNext(L) = base × L^pow；
    *      普通怪 = cfg.xp × (1 + 怪物等级 × mobLv)；首领 = 等级 × bossLv */
@@ -427,7 +447,20 @@ const BALANCE = {
    * 结果森林首领 6 秒就死、混沌天魔要打 93 秒 —— 全程没有一场是「刚好」的。
    * 现在改成恒定 4.5 倍，首领战稳定在 22~38 秒（站桩口径），
    * 实战有走位与躲技能，约 35~55 秒。验算：dev/balance-report.js。 */
-  boss: { hpMul: 4.5, dmgLv: 0.28 },
+  /* [P02] 首领的「交战半径」与「拴绳半径」。
+   *
+   * skillRange：技能距离闸。CD 到点后先量距离，超过这个数就**不放**（短 CD 重试）。
+   *   用户报的现象是「Boss 在传送门那边（98 米外）也放技能」—— 根因是
+   *   `bossPattern` 完全不看距离，`slam` 还把落点钉在玩家脚下，于是 98 米外
+   *   的祭坛里照样亮红圈。取 18（略大于激活半径 17）是为了「刚激活就能放」，
+   *   不会出现「走到面前还愣两秒」。
+   *
+   * leash：脱战半径。玩家跑出这个距离 → 首领回位、清 debuff、回满血、脱战。
+   *   这是标准 ARPG 的拴绳机制，同时解决 P10 的「卡位远程磨死 Boss」——
+   *   卡位的核心不是打得远，是「Boss 不会回来」。
+   *
+   * 两个值都按难度可调（预留 diff 覆盖位，目前四档共用）。 */
+  boss: { hpMul: 4.5, dmgLv: 0.28, skillRange: 18, leash: 32 },
   /* [M4] 卷末首领的「次阶地下城钥匙」掉率（计划书 §7.1）。
    * actBoss = 8%：卷一~卷四卷末首领；actBossFinal = 15%：终局混沌真身
    * —— 它没有「下一阶」，是五阶钥匙唯一的首领级来源，8% 会断供。
@@ -466,3 +499,18 @@ function xpToNext(level) {
   const x = (typeof BALANCE !== 'undefined' && BALANCE.xp) ? BALANCE.xp : { base: 180, pow: 1.70 };
   return Math.max(1, Math.round(x.base * Math.pow(Math.max(1, level || 1), x.pow)));
 }
+
+/* 某个难度的等级上限。**这是唯一口径** —— 升级收口、说明页、难度卡、
+ * dev 脚本都调它，别再各自读 `BALANCE.levelMax`（那是全难度最高值，
+ * 只在「不关心难度」的兜底场景用）。
+ *
+ * 难度键不认识（旧档 / 手改存档 / 拼错）时按**默认难度**算，不返回 undefined，
+ * 也不要回落到最高档 —— 那等于给坏存档偷偷开后门。 */
+function levelCapOf(diffKey) {
+  const t = (typeof BALANCE !== 'undefined' && BALANCE.levelMaxByDiff) ? BALANCE.levelMaxByDiff : null;
+  const known = (k) => !!(t && typeof t[k] === 'number' && t[k] > 0);
+  const k = known(diffKey) ? diffKey : (known(DEFAULT_DIFF) ? DEFAULT_DIFF : null);
+  if (k) return t[k];
+  return (typeof BALANCE !== 'undefined' && BALANCE.levelMax) || 60;
+}
+
