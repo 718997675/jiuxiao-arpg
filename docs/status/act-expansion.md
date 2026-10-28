@@ -1,6 +1,6 @@
 # 大型扩展 · 任务台账
 
-- 分支：`feat/act-expansion`（优先级 **高**，先于技能重构合入 main）
+- 分支：`main`（2026-10-28 已由 `feat/act-expansion` 合入，线上即正式站）
 - 计划文档：`docs/ACT-EXPANSION-PLAN.md`（16 节，§15 = 终章重做）
 - 打磨计划：`docs/POLISH-PLAN.md`（用户 2026-10-28 提的 17 项体验 / 平衡，P01~P17，分 4 批）
 - 专题台账：`docs/status/world-boss.md`（M18 世界 Boss，插单，与本线并行；**M18.1~M18.9 全部完成**（含六套骨架 + 两个骨架键 + 掉落 + 说明页），可合 main）
@@ -8,8 +8,9 @@
 - 更新：2026-10-28 17:45
 
 > 当前：M1~M6 已完成（39 张图 · 80 种怪 · 图鉴 5 卷 + 秘境 · 5 阶地下城 · 60 级上限 · 传世 40 件 ·
-> 套装 18 套 · 基底 8 阶）。M7 终章重做（八部天龙）进行中：M7.1 结构 / M7.2 八魔将数据已落地，
-> M7.3 破绽窗口 + M7.4 印掉落待做，见下「M7 小节状态」。另有一条并行线：P 打磨 17 项，
+> 套装 18 套 · 基底 8 阶）。**M18 世界 Boss 九节全完**，已随本线合入 main。
+> M7 终章重做（八部天龙）进行中：M7.1 结构 / M7.2 八魔将数据 / **M7.4 魔将之印**已落地，
+> M7.3 破绽窗口 + M7.5~M7.9 待做，见下「M7 小节状态」。另有一条并行线：P 打磨 17 项，
 > 只出了计划文档（`docs/POLISH-PLAN.md`），代码未动，见下「P 系列」。
 
 ## 一句话现状
@@ -72,7 +73,7 @@ M7 把「打完终 boss 就结束」改成了终局循环：混沌海从战斗�
 | M7.1 | 结构：`ACTS['5-2']` 改成枢纽 + 8 副本图位 + 终 boss 场 | ✅ | `data-world.js`、`data-maps.js`、`ui.js`、`act-check` / `zone-check` / `zone-density` | `act-check` **556 项**（图位 30 → **39**）；`zone-check` / `zone-density` 全绿 |
 | M7.2 | 8 魔将数据（`resist` / `stagger` / `seal` / `animKind`）+ `BAFO_SEALS` 八印表 | ✅ | `data-monsters.js`、`data-world.js`、`game.js`、新建 `dev/check-bafo.js` | `check-bafo` **335 项**（含「8.00 倍差」硬断言） |
 | M7.3 | 弱点与破绽机制 | 🔄 | `game.js` | 抗性侧已成立（`damageEnemy` 读 `boss.resist`）；**破绽窗口未做** |
-| M7.4 | 魔将之印 + 终门 | 🔄 | `game.js`、`core/save.js`、`ui.js` | 印门已拦在 `travelTo` + 山河图；**掉落 / 存档字段 / 八印 UI 未做** |
+| M7.4 | 魔将之印 + 终门 | ✅ | `game.js`、`core/save.js`、`ui.js`、`README.md`、新建 `dev/check-seals.js`、`dev/seal-live.js` | 印门拦在 `travelTo` + 山河图；**印掉落 / 存档 / 播报已接**（`check-seals` **111 项** · `seal-live` **19 项**）；八印总览面板未做（山河图已写「需 8 印（N）」，不阻塞） |
 | M7.5 | 9 个模型 + 专属动画 | ⬜ | `actors.js`、`fx.js` | `verify-perf` 报错 0 |
 | M7.6 | 终 boss 五阶段 + P5 满血变身 | ⬜ | `data-monsters.js`、`game.js` | 阶段与血条重置可复现 |
 | M7.7 | 全传世掉落（0.01% / 0.1%，未收集优先） | ⬜ | `game.js`、`items.js` | 抽样 10 万次验概率 |
@@ -95,6 +96,29 @@ M7 把「打完终 boss 就结束」改成了终局循环：混沌海从战斗�
 | **新增体检** | `dev/check-bafo.js`：八印清单 / 四向对齐 / 8 副本图 / 8 魔将（抗性·破绽·模型·印）/ 无相天 | 335 项全绿 |
 | **顺带修的真 bug** | `SPAWN_SAFE = 20` 是世界图尺度，140 尺寸的副本图里「入口 → 近区」不足 20 米，整片近区刷不出怪（实测 12 只只出 10 只）。改成 `min(20, size × 0.10)`：世界图仍 20（零变化），副本落到 14 | 8 副本全部恢复 12 只 |
 | 回归 | `act-check` 556 · `check-bafo` 335 · `zone-check` ✅ · `zone-density` ✅ · `test-m6` 264 · `test-items` 21 · `test-m4` 25 · `test-m5` 89 · `dungeon-sim` 60 · `test-save` · `check-uniques` · `check-sets` · `check-endgame` · `quest-ref` 39 · `smoke` ERRORS none · `mobile-layout` 全通过 · `verify-perf` 报错 0 | 全绿 |
+
+### M7.4 已交付明细（魔将之印）
+
+合 main 之后才发现的**上线阻塞**：`MAPS.chaossea.finalGate.sealNeed = 8`，
+但印没有任何产出点 —— 玩家打完八只魔将也拿不到印，终章永远进不去。
+「印门拦住了」在 M7.1/M7.2 阶段看起来是对的，合进正式站才暴露成死锁。
+
+| 项 | 落地内容 | 回归 |
+|---|---|---|
+| **印掉落** | `Game.onBossKill(e)`（原本是个空钩子）按 `e.kind` 查 `BAFO_SEALS`，命中就写 `state.seals[key] = 1`。挂在 `onBossKill` 而不是掉落表：印是**进度物**不是装备，不能卖 / 丢 / 重复拿 | `check-seals` 五~八节 |
+| **只掉一次** | `if (s.seals[rec.key]) return;` —— 重打不重复给，也不重复播报、不重复存档 | 连杀两次仍是 1 枚、toast 数不变 |
+| **反馈三件套** | `UI.toast('得 · 天之印')` + 日志「归位（1 / 8）」+ `FX.ring` 印色光圈 + `SFX.cast`；8/8 当场再喊一次「天龙终门已开」+ `FX.flashCircle` | `seal-live` 二 / 四节读真 DOM |
+| **存档三处 + 读档一处** | `Game.newState` 带 `seals: {}`；`normalizeDoc` 补字段并把值**夹成 0/1**；导出白名单 `seals`；**`unpack` 必须搬回 flat state** | `test-save` 79 项 · `check-seals` 十一节 |
+| **踩到的坑** | 只加了前两处（导出）时，盘上明明有 8 枚，**刷新后读回来是 0** —— `unpack` 里漏一行，`state.seals` 永远是 `{}`。这正是「存得进、读不回」，离线脚本打桩测不出来，是 `seal-live` 在浏览器里红了两项才抓到 | `seal-live` 六节：刷新 → `Game.loadSlot(n)` → 仍 8 枚 |
+| **测试入口的坑** | 标题页 `#startBtn` 是**新建角色**（占用下一个空槽），不是「继续」；验读档必须走 `Game.loadSlot(n)`（存档面板那条路）。第一版用 `#startBtn` 验，读到的是 1 级新号，白红两项 | `seal-live` 六节注释 |
+| **说明页** | `renderHelp` 新增「十五 · 终章」：怎么走 / 八印 / 印从哪来 / 怎么打（8 倍差）/ 卡住了。全节实时读 `BAFO_SEALS` + `MAPS.chaossea.finalGate`，改印数自动跟着变 | 浏览器实测 15 个页签、本节 486 字、零 pageerror |
+| **README** | 新增「终章 · 八部天龙」小节（八部 / 魔将殿 / 印 三列表 + 8 倍差说明） | `check-seals` 十二节：八张殿名逐个比对数据，防「靠记忆写殿名」写错字 |
+| **新增体检** | `dev/check-seals.js`（离线 111 项：八印表 / 三向对齐 / 终门门槛 / 真装载 `game.js` 调 `onBossKill` / 老档与脏数据 / 存档三段 / 文案一致）；`dev/seal-live.js`（浏览器 19 项：真 DOM 播报 / 真 localStorage / 刷新读回） | 111 + 19 全绿 |
+| 回归 | `check-bafo` 335 · `act-check` 646 · `test-save` 79 · `check-seals` 111 · `seal-live` 19 · `smoke` ERRORS none | 全绿 |
+
+**剩下没做的**：八印总览面板（主菜单里一页看八枚印的收集情况）。
+山河图那扇门已经写「需 8 印（N）」，玩家不会迷路，所以不阻塞；
+要做的时候只需读 `Game.sealCount()` + `BAFO_SEALS`，别再写第二份清单。
 
 ### M6 交付明细（已完成）
 

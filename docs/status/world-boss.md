@@ -1,6 +1,6 @@
 # 世界 Boss 系统 · 任务台账（M18）
 
-- 分支：`feat/act-expansion`（与本线其它改动一起合入 main）
+- 分支：`main`（2026-10-28 已随 `feat/act-expansion` 合入）
 - 设计文档：`V2-ROADMAP.md` §18（六只设计表 / 刷新机制 / 骨架规范 / **§18.7 与八部天龙去重**）
 - 更新：2026-10-28 17:45
 
@@ -339,13 +339,15 @@ C 段（小地图星标）用「画 / 不画」两张图的差异把星标**单�
 - `README.md`：新增「### 世界 Boss（六只山海经巨兽）」整节（六只表格：领域 / 三阶段 / 骨架），
   匠材表补「魂料 · 世界魂」一行，首段摘要补世界 Boss 并把「9 种匠材」改成「10 种」。
 
-## 下一步（M18 全部完成，可以准备合 main）
+## 下一步（已合入 main，收尾完毕）
 
-1. `./dev/branch.sh --sync`（把 main 的新东西并进来）
-2. `node dev/smoke.js` + `node dev/mobile-layout.js` + 世界 Boss 六个脚本
-3. `./dev/publish-preview.sh feat/act-expansion` 看预览站
-4. 通过之后合 `main` → 线上地址 <https://718997675.github.io/jiuxiao-arpg/>
-5. 合完回来把 `docs/status/act-expansion.md` 与本文的「分支」行改成 main
+1. ~~`./dev/branch.sh --sync`~~ ✅ 已做（`d2712ff` 把 main 并入功能线）
+2. ~~回归 + 预览站~~ ✅ 已做（13 个脚本，10 绿；`m3-check` 的 24 项红为 M7 遗留 + 软件渲染限制，见「卡点」）
+3. ~~合 `main`~~ ✅ 已做（`6cac8d9..d2712ff` 已推 main，线上地址 <https://718997675.github.io/jiuxiao-arpg/>）
+4. ~~改「分支」行~~ ✅ 已做
+5. **待办**：浏览器实测线上正式站（`node dev/live-check.js` / `dev/live-slots.js`），
+   确认 M18 的星标 / 横幅 / 世界 Boss 领域在正式站也正常（Pages 有 CDN 缓存，脚本已带 `?t=`）
+6. **下一批**：`docs/POLISH-PLAN.md` 的 P 系列 17 项打磨（代码尚未动），或 `feat/skill-refactor` 技能重构
 
 ## 卡点
 

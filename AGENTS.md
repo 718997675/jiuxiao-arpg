@@ -198,6 +198,8 @@ node dev/worldboss-fight.js  # 世界 Boss 战斗层（离线）：阶段边界 
 node dev/worldboss-battle-live.js  # 世界 Boss 战斗层（浏览器）：阶段播报 / 预警结算 / 正面格挡 2.5 倍 / 战吼 8 秒归位 / 分身 / 定身 / 九尾展开 / 真身现身 3.3 倍 / 毒沼换图清场
 node dev/check-wbmodels.js   # 世界 Boss 六套骨架（真 three，离线）：尺寸贴数据 / 剪影两两可分 / 面数与材质 / 120 帧动画 / morph / setTails / setGhost（182 项）
 node dev/wbmodels-shot.js    # 六套骨架渲图到 shots/wbm-*.png，人工肉眼验收剪影
+node dev/check-seals.js      # 魔将之印（离线 111 项）：八印表 / 印↔将↔图三向对齐 / 终门门槛 / 真装载 game.js 调 onBossKill / 老档与脏值 / 存档三段（导出·归一·unpack）/ README 殿名比对
+node dev/seal-live.js        # 魔将之印（浏览器 19 项）：真 DOM 播报 / 真 localStorage / 刷新后 Game.loadSlot(n) 读回仍 8 枚
 ```
 
 ## 6. 踩过的坑（改之前先看一眼，能省几小时）
@@ -312,18 +314,31 @@ node dev/wbmodels-shot.js    # 六套骨架渲图到 shots/wbm-*.png，人工肉
 - **`travelTo` 的 `loadMap` 在 120ms 之后**。写回归脚本时 `Object.keys(Game.npcs)` 必须等这个延迟，
   紧跟 `travelTo` 取到的是上一张图的 NPC（空数组）。
 
+### 进度类字段（印 / 星标 / 已通关）
+
+- **新增一个「进度类」字段要同时改四处**：`Game.newState`（新档）→ `SaveManager.normalizeDoc`（补字段 + 夹脏值）
+  → 导出白名单（`pack` 里的 `char` / `world` 段）→ **`unpack`（读档回 flat state）**。
+  只改前三处时，**盘上明明有、刷新后读回来是空** —— M7.4 的 `seals` 就漏了 `unpack` 一行，
+  离线脚本打桩全绿，浏览器里「打完八只魔将 → 刷新 → 印全没了 → 终门又锁死」。
+  验读档一律用 `Game.loadSlot(n)`，**不要点标题页的 `#startBtn`** —— 那是「新建角色」，会占用下一个空槽。
+- **进度物别塞进掉落表**。印这类「不能卖 / 不能丢 / 不能重复拿」的东西走 `state.seals` 布尔位，
+  在 `Game.onBossKill` 里一次性写入；走掉落表反而要额外处理背包满 / 分解 / 重复。
+- **门槛数字只能有一个来源**。终门写 `sealNeed: 8`，印表 `BAFO_SEALS.length` 也是 8 ——
+  `check-seals` 里有硬断言把两者钉在一起，改印数忘了改门槛会红。
+
 ## 7. 当前状态
 
 - 线上版本：见 `git log -1`。
-- **进行中**：大地图扩展 `feat/act-expansion` —— M0（三层结构 + schema v3）、M1（5 营地 + 路标石 +
-  章间出口门）、M2（任务系统 + 任务区域 + 悬赏板 + 老档迁移）已完成。
-  **M3 第一批已落地**：8 种 zone 骨架 + 4 张新图（卷二 2-2/2-3）+ 灰烬地貌 + 小地图 + 密度公式 +
-  40 条任务（新增 2-2/2-3 五条主线）。剩余：5 种地貌只做了 `ash`（还差 snow/bone/void/flood）、
-  21 张新图。进度与卡点看 `docs/status/act-expansion.md`。
-  方案在 `docs/ACT-EXPANSION-PLAN.md`；§14 的 7~10 项仍未拍板，但都不挡 M3。
+- **大地图扩展已合入 `main`（2026-10-28）**：M0~M6 全完（三层世界结构 + 5 营地 + 任务系统 +
+  8 种 zone 骨架 + 39 张图 + 60 级上限 + 5 阶地下城 + 传世 40 件 + 套装 18 套），
+  M18 世界 Boss 九节全完（六只 / 三阶段 / 六套骨架 / 掉落 / 说明页）。
+  **M7 终章重做进行中**：M7.1 结构 / M7.2 八魔将 / M7.4 魔将之印 已落地，
+  剩 M7.3 破绽窗口 + M7.5~M7.9。进度与卡点看 `docs/status/act-expansion.md`，
+  世界 Boss 看 `docs/status/world-boss.md`。`feat/act-expansion` 分支保留作续做线。
 - **暂停中**：技能系统重构（12 技能 → 4~5 个功能位 + 元素混搭 + 发射数量成长）。
   完整方案在 `docs/SKILL-REDESIGN-PLAN.md`，用户已拍板 10 项决策，**等他说开工**。
-  不要主动实施；排期在大型扩展合入 main 之后。
+  排期在大型扩展合入 main 之后 —— 现在这个条件已经满足。
+- **排队中**：`docs/POLISH-PLAN.md` 的 P 系列 17 项打磨（4 批），只出了方案，代码未动。
 
 ## 8. 记忆与日志
 

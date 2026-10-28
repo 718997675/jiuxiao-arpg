@@ -533,6 +533,9 @@ const Game = {
       /* [M0] 世界结构：当前卷 / 章、已解锁营地与大传送门、已抵达的图（回头路直传用） */
       part: 1, act: '1-1', camps: ['campA'], portals: ['portalA'], mapsSeen: ['village'],
       bossKilled: {}, playTime: 0,
+      /* [M7.4] 魔将之印：8 个布尔位 { deva:1, naga:1, ... }。
+       * 只由 onBossKill 写入（八只魔将各掉自己那枚），终门读 sealCount()。 */
+      seals: {},
       /* [S3] 天赋：spent = { 节点id: 级数 }；presets 三套预设（存 spent 快照） */
       talents: { spent: {}, presets: [null, null, null], respecCount: 0 },
       /* [M1] 任务奖励的天赋点（主线四段共 +10，满级 60 → 70） */
@@ -6872,8 +6875,40 @@ const Game = {
     this.updateQuestMarker();
   },
 
+  /* 首领倒地后的一次性结算钩子（现在只有八部魔将用得上）。
+   * [M7.4] 魔将之印：八只魔将各掉自己那一枚，一枚只掉一次。
+   * 为什么挂在 onBossKill 而不是掉落表里：印是**进度物**不是装备，
+   * 不能卖、不能丢、不能重复拿，走 `state.seals` 布尔位最省事，
+   * 也顺手让老档（没有 seals 字段）天然按「0 枚」算。 */
   onBossKill(e) {
-    // 已包含在 onKill 中
+    if (!e || typeof BAFO_SEALS === 'undefined') return;
+    const s = this.state;
+    if (!s) return;
+    const rec = BAFO_SEALS.find((it) => it.boss === e.kind);
+    if (!rec) return;
+    if (!s.seals) s.seals = {};
+    if (s.seals[rec.key]) return;            // 重打不重复给
+    s.seals[rec.key] = 1;
+    const have = this.sealCount();
+    const total = BAFO_SEALS.length;
+    /* 印是终章唯一的钥匙，必须给足反馈：播报 + 音效 + 光柱 */
+    try {
+      UI.toast('得 · ' + rec.name, 'lv');
+      UI.log('魔将已伏，' + rec.name + ' 归位（' + have + ' / ' + total + '）。', 'good');
+      const pp = new THREE.Vector3(this.playerGroup.position.x, 0, this.playerGroup.position.z);
+      FX.ring(pp, 6, rec.color, 1.1, 0.28);
+      SFX.cast();
+    } catch (err) { }
+    if (have >= total) {
+      /* 8/8 当场把「终门已开」喊出来，免得玩家还要自己去数 */
+      try {
+        UI.toast('天 龙 终 门 已 开', 'lv');
+        UI.log('八印齐备，无相之界的大门开了。', 'good');
+        const pp = new THREE.Vector3(this.playerGroup.position.x, 0, this.playerGroup.position.z);
+        FX.flashCircle(pp, 8, 0xffe0a0, 1.2);
+      } catch (err) { }
+    }
+    this.save();
   },
 
   /* ---------------- 出口门开关（M3b-fix） ----------------

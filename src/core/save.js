@@ -256,6 +256,9 @@ const SaveManager = {
     c.maxInv = this._int(c.maxInv, 10, 200, 40);
     c.playTime = this._num(c.playTime, m.playTime);
     c.bossKilled = this._obj(c.bossKilled) || {};
+    /* [M7.4] 魔将之印：8 个布尔位，值一律夹成 0/1，被手改过的档也不会算出 9 枚 */
+    c.seals = this._obj(c.seals) || {};
+    for (const k in c.seals) c.seals[k] = c.seals[k] ? 1 : 0;
     m.level = c.level;
     m.name = c.name;
     m.cls = c.cls;
@@ -424,6 +427,7 @@ const SaveManager = {
         inventory: Array.isArray(s.inventory) ? s.inventory.filter(Boolean) : [],
         maxInv: this._int(s.maxInv, 10, 200, 40),
         bossKilled: this._obj(s.bossKilled) || {},
+        seals: this._obj(s.seals) || {},
         playTime
       },
       world: {
@@ -474,6 +478,9 @@ const SaveManager = {
       skillFlags: c.skillFlags || {},
       equipment: c.equipment, inventory: c.inventory, maxInv: c.maxInv,
       bossKilled: c.bossKilled || {}, playTime: c.playTime || 0,
+      /* [M7.4] 魔将之印：跟着 bossKilled 一起搬。少了这一行就是「存得进、读不回」，
+       * 表现为「打完八只魔将、刷新一下印全没了、终门又关死」—— seal-live.js 抓过。 */
+      seals: this._obj(c.seals) || {},
       quests: w.quests, mapId: w.mapId, playerPos: w.playerPos,
       /* M0：世界结构（normalizeDoc 保证这几个字段一定存在） */
       part: w.part, act: w.act,
@@ -703,7 +710,7 @@ const SaveManager = {
       /* [M0] 世界结构（新档默认停在卷一第 1 章，只到过桃源村） */
       part: 1, act: '1-1', camps: ['campA'], portals: ['portalA'], mapsSeen: ['village'],
       mapCleared: {},
-      bossKilled: {}, playTime: 0
+      bossKilled: {}, seals: {}, playTime: 0
     };
   },
 
