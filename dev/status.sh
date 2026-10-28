@@ -41,7 +41,7 @@ case "${1:-}" in
         *"$Q"*) T="$b"; break ;;
       esac
     done
-    [ -n "$T" ] || die "没有名字含「$Q」的本地分支（./dev/status.sh 看全部）"
+    [ -n "$T" ] || die "没有名字含「${Q}」的本地分支（./dev/status.sh 看全部）"
     c=$(ledger_of "$T")
     [ -n "$c" ] || die "$T 上还没有台账：docs/status/$(slug_of "$T").md"
     echo "${DIM}—— $T · docs/status/$(slug_of "$T").md ——${N}"

@@ -525,8 +525,13 @@ const Game = {
       stash: { items: [], mats: {} },
       /* [试炼] 无尽试炼的永久记录（跨轮保留）：最高波数 / 总轮数 / 达成时间 */
       trial: { best: 0, runs: 0, bestAt: 0 },
-      quests: { active: [], done: [], next: 'q1', announced: {} },
+      /* [M2] 任务：active 里 progress[i] 对应 objectives[i]；
+       * board 是悬赏板（cd = 到期时间戳，count = 完成次数）。
+       * next 只为兼容老档保留，新逻辑按 require 链推导（见 src/quests.js）。 */
+      quests: { active: [], done: [], next: null, announced: {}, board: { cd: {}, count: {} } },
       mapId: 'village', playerPos: { x: 0, z: 10 },
+      /* [M0] 世界结构：当前卷 / 章、已解锁营地与大传送门、已抵达的图（回头路直传用） */
+      part: 1, act: '1-1', camps: ['campA'], portals: ['portalA'], mapsSeen: ['village'],
       bossKilled: {}, playTime: 0,
       /* [S3] 天赋：spent = { 节点id: 级数 }；presets 三套预设（存 spent 快照） */
       talents: { spent: {}, presets: [null, null, null], respecCount: 0 },
@@ -1445,6 +1450,8 @@ const Game = {
       target = r.slot;
     }
     this.state = this.newState(cls, name);
+    /* [M2] 任务结构归一（新档是空跑，老档在 loadSlot 里才真正迁移） */
+    if (typeof QuestSys !== 'undefined') { QuestSys.ensure(); QuestSys.migrate(); }
     this.skillFlags = {};            // 新角色不继承上个角色的技能领悟
     if (typeof UI !== 'undefined') UI.snaps = null;   // 换角色：上一个人的加点草稿作废
     this.savedSlot = target || 1;
@@ -1515,8 +1522,14 @@ const Game = {
     if (this.world) disposeTree(this.world.root);
     this.boss = null; UI.updateBoss(null);
     FX.clear();
+    /* [M18.7] 场地效果（相柳毒沼 / 九尾狐狐火）必须跟着清。
+     * FX.clear 只删了看得见的圆，伤害记账还在 `WBFight._hazards` 里 ——
+     * 不清的话换图后新地图的落脚点上会继续掉血，而且再也找不到源头。 */
+    if (typeof WBFight !== 'undefined') WBFight.clear();
 
     this.buffs = []; this.shield = 0; this.shieldT = 0; this.regen = 0; this.poisonT = 0; this.playerSlow = 0; this.playerSlowT = 0; this.reviveT = 0;
+    /* [M18.7] 定身（九尾狐 P2 尾缚）跟着换图归零 */
+    this.rootT = 0;
     /* 技能树分支叠层（stack）：换图 / 重开都归零 */
     this.behStack = {}; this._drainOn = null; this._follows = null;
     this._recharge = null; this._dragonT = 0; this._autoReviveCd = 0; this._pasT = 0;
@@ -1537,7 +1550,9 @@ const Game = {
     this.sun.color.setHex(m.sun);
     this.sun.intensity = m.sunI * 0.82;
 
-    this.world = buildMap(mapId);
+    /* 出口门要不要这次进图就立起来，取决于「本图首领打过没有」——
+     * 见 world.js 的 makeExitGate / buildMap 注释。 */
+    this.world = buildMap(mapId, { cleared: this.mapCleared(mapId) });
     this.scene.add(this.world.root);
     /* [M12] 出生点取入口区域靠内的位置：从传送阵往地图里挪 6 米，
      * 玩家一进图就站在「门口」，而不是凭空出现在地图中央。
@@ -1558,9 +1573,16 @@ const Game = {
     /* [v1.12.1] 落地保护：进图头几秒不索敌，先让玩家看清地形 */
     this.aggroGrace = (BALANCE.aggro && BALANCE.aggro.grace) || 3;
 
-    if (mapId === 'village') this.spawnNPCs();
+    /* [M1] 以前写死 `mapId === 'village'`，结果 campB~E 的 cfg.npcs 写了也不生成。
+     * 现在只要当前图声明了 npcs 就摆人（营地也有人守着了）。 */
+    if ((m.npcs || []).length) this.spawnNPCs();
     this.spawnEnemies();
     this.spawnBosses();
+    /* [M18.2] 世界 Boss：进图后对齐记录与实体。
+     * 放在 spawnBosses 之后，保证「清场 → 重生」之后它一定在。
+     * **不要**把世界 Boss 写进 MAPS[mapId].bosses：那张表是常驻首领，
+     * 读档会被 spawnBosses 反复重生，30 分钟轮转直接失效。 */
+    if (typeof WorldBoss !== 'undefined') WorldBoss.onMapEnter();
     this.recalc();
     this.applyDoll();
     /* [FIX-TOWN] 回城满血：踏入安全区（桃源村）即回满生命与灵力。
@@ -1576,6 +1598,9 @@ const Game = {
       this.state.mp = st.mpMax;
       this.shield = 0;
       this.poisonT = 0; this.playerSlow = 0; this.playerSlowT = 0; this.shieldT = 0;
+      /* [M18.5] 领域压制一律清掉：换图时 WorldBoss.domainTick 也会归位，
+       * 但这一行是「进图 = 干净状态」的口径，别指望下游兜底 */
+      this.domSlow = 0; this.domAspd = 0;
       if (wasHurt) {
         const pp = new THREE.Vector3(this.playerGroup.position.x, 0, this.playerGroup.position.z);
         FX.ring(pp, 3.2, 0x8ce0a8, 0.8, 0.3);
@@ -1606,9 +1631,22 @@ const Game = {
 
   spawnNPCs() {
     /* [M6] 仓管放在村尾右侧（与左侧的试炼使者一左一右），
-     * 新人从传送阵一路走过来会先见到铁匠药师，最后才见到仓库 —— 顺序合理。 */
-    const pos = { elder: [-7, 2], smith: [7, 7], herbalist: [-10, 14], monk: [9, 15], alchemist: [2, 18], warden: [-6, 20], steward: [9, 22] };
-    for (const id of MAPS.village.npcs) {
+     * 新人从传送阵一路走过来会先见到铁匠药师，最后才见到仓库 —— 顺序合理。
+     * [M1] 坐标表按 npc id 通用（营地缺 elder/warden 也能用），
+     * NPC 名单改读当前图的 cfg.npcs —— 以前硬编码 MAPS.village.npcs，
+     * 营地的 npcs 写了等于没写（实测营地里 0 个 NPC）。 */
+    /* [M2] 坐标表按 npc id 通用。每座营地只有一个掌事 + 一个录事，
+     * 所以它们共用老村长那一对坐标（-7,2 / -14,6）不会打架 ——
+     * 同一张图上不可能同时出现两个营地的发布者。 */
+    const pos = {
+      elder: [-7, 2], smith: [7, 7], herbalist: [-10, 14], monk: [9, 15],
+      alchemist: [2, 18], warden: [-6, 20], steward: [9, 22],
+      campA_side: [-14, 6],
+      campB_main: [-7, 2], campC_main: [-7, 2], campD_main: [-7, 2], campE_main: [-7, 2],
+      campB_side: [-14, 6], campC_side: [-14, 6], campD_side: [-14, 6], campE_side: [-14, 6]
+    };
+    const cfg = MAPS[this.state.mapId] || MAPS.village;
+    for (const id of (cfg.npcs || [])) {
       const a = buildNPC(id);
       /* 位置表漏写就退回原点，别让整张图的 NPC 因为一个坐标缺失全部不生成 */
       const p2 = pos[id] || [0, 0];
@@ -1617,7 +1655,10 @@ const Game = {
       a.group.rotation.y = Math.atan2(-x, -(z - 6));
       this.scene.add(a.group);
       this.npcs[id] = { id, actor: a, group: a.group, pos: new THREE.Vector3(x, 0, z), basesY: 0 };
-      if (id === 'elder') {
+      /* [M2] 所有任务发布者都挂 ! / ? 标记（以前只挂老村长）。
+       * 不挂的话，营地里的掌事和录事看起来跟铁匠药师没区别，
+       * 玩家根本不知道谁是发任务的。 */
+      if (NPCS[id] && NPCS[id].role === 'quest') {
         const ex = makeLabelSprite('!', '#ffd166', 175, 2.4, 1.2);
         ex.position.y = 4.1;
         a.group.add(ex);
@@ -1632,13 +1673,16 @@ const Game = {
   },
 
   updateQuestMarker() {
-    const n = this.npcs.elder;
-    if (!n || !this.state) return;
-    const active = this.state.quests.active;
-    const ready = active.some(a => this.questReady(a));
-    const avail = active.length === 0 && !!QUESTS[this.state.quests.next];
-    if (n.markEx) n.markEx.visible = avail;
-    if (n.markQ) n.markQ.visible = ready;
+    if (!this.state || typeof QuestSys === 'undefined') return;
+    for (const id in this.npcs) {
+      const n = this.npcs[id];
+      if (!n.markEx) continue;
+      const giver = giverOfNpc(id);
+      const ready = QuestSys.readyOf(giver).length > 0;
+      const avail = QuestSys.offersOf(giver).length > 0;
+      n.markEx.visible = avail && !ready;
+      n.markQ.visible = ready;
+    }
   },
 
   spawnEnemies() {
@@ -1650,18 +1694,50 @@ const Game = {
     const zs = (typeof zoneSpawners === 'function') ? zoneSpawners(this.state.mapId) : null;
     if (zs && zs.length) {
       const sp = this.playerGroup.position;
+      /* [M3] 轮转刷怪：所有区一只一只轮着刷，而不是「一个区刷完再刷下一个」。
+       *
+       * 为什么必须改：同屏怪数有硬上限（PC 36 / 触屏 28），
+       * 而 §5.1 要求单图 40~56 只 —— 超出上限的部分一定会被 spawnEnemy 丢掉。
+       * 按区顺序刷的话，被丢掉的永远是最后几个区（后殿道 + 首领场），
+       * 玩家一路打过去会发现北半边是空的，正好是 §5.1 要解决的「大而空」。
+       * 轮转之后每个区都按同一比例被截断，地图密度是均匀的。 */
+      const queues = [];
       for (const z of zs) {
-        const n = z.spawns.count || 0;
-        for (let i = 0; i < n; i++) {
-          const kind = zonePickKind(z, m.spawns);
+        /* [M2] 任务区域：数量 ×1.4（上限 +6），目标怪权重 ×3。
+         * 复命 / 放弃后 QuestSys.activeZones 立刻不再返回这个区，
+         * 所以倍率不会留在图上（§4.3 第 3 条）。 */
+        const qb = (typeof QuestSys !== 'undefined') ? QuestSys.zoneBoost(this.state.mapId, z.id) : null;
+        const base = z.spawns.count || 0;
+        const n = qb ? Math.min(Math.round(base * qb.mult), base + qb.extra) : base;
+        if (n > 0) queues.push({ z: z, left: n, qb: qb });
+      }
+      let total = 0;
+      for (const q of queues) total += q.left;
+      while (total > 0) {
+        for (const q of queues) {
+          if (q.left <= 0) continue;
+          q.left--; total--;
+          const z = q.z, qb = q.qb;
+          /* 权重 ×3 用「75% 概率直接取目标怪」近似：目标怪通常是 2~3 种之一，
+           * 1/3 × 3 = 1 的权重比，换算是成立的，且比写一套加权抽样便宜。 */
+          const kind = (qb && qb.kinds && qb.kinds.length && Math.random() < 0.75)
+            ? qb.kinds[Math.floor(Math.random() * qb.kinds.length)]
+            : zonePickKind(z, m.spawns);
           if (!kind) continue;
           /* [v1.12.1] 别刷在出生点附近。走廊上端与入口区是重叠的，
            * 只把入口区的刷怪数量清零不够 —— 走廊刷出来的怪照样站在玩家脸上。
-           * 连试 8 次都找不到远处的位置就跳过这只（宁可少刷也不刷脸）。 */
+           * 连试 8 次都找不到远处的位置就跳过这只（宁可少刷也不刷脸）。
+           *
+           * [M7] 安全距离按图尺寸缩放：固定 20 米是世界图（290~300）的尺度，
+           * 而 8 张副本图只有 140 —— 入口到「竹径 / 下谷」这些近区的距离
+           * 本来就不足 20 米，结果整片近区一只都刷不出来（实测少 2/12，
+           * 副本里少两只就是「怎么这么空」）。改成 size × 0.10 封顶 20：
+           * 世界图仍是 20（一点没变），副本图落到 14，够远又不至于空。 */
+          const safeD = Math.min(SPAWN_SAFE, (m.size || 240) * 0.10);
           let p = null;
           for (let k = 0; k < 8; k++) {
-            const q = randomPointInZone(z, 2.6);
-            if (Math.hypot(q.x - sp.x, q.z - sp.z) >= SPAWN_SAFE) { p = q; break; }
+            const q2 = randomPointInZone(z, 2.6);
+            if (Math.hypot(q2.x - sp.x, q2.z - sp.z) >= safeD) { p = q2; break; }
           }
           if (!p) continue;
           this.spawnEnemy(kind, p.x, p.z, CHANCE(D.elite));
@@ -1669,7 +1745,12 @@ const Game = {
       }
       return;
     }
-    const count = m.spawnCount || 14;
+    /* spawnCount === 0 是**有效值**：地下城的首领场只放守卫，不放杂兵。
+     * 原来的 `m.spawnCount || 14` 把 0 当成「没配」（0 是 falsy），
+     * 结果首领场凭空刷出 14 只小怪，站在首领旁边一起打玩家。
+     * 只有 undefined / null 才回退到旧图的默认 14。 */
+    const count = (m.spawnCount === undefined || m.spawnCount === null)
+      ? 14 : Math.max(0, m.spawnCount);
     /* [DIFF] 精英出现概率由难度决定：新手 3%，普通 8%，困难 16%，极难 26% */
     for (let i = 0; i < count; i++) {
       const ang = Math.random() * Math.PI * 2;
@@ -1680,7 +1761,10 @@ const Game = {
   },
 
   spawnEnemy(kind, x, z, elite, levelOverride, bossId) {
-    const cfg = bossId ? BOSSES[bossId] : MONSTERS[kind];
+    /* [M18.2] 世界 Boss 是独立表（WORLD_BOSSES），但字段结构兼容 BOSSES，
+     * 所以这里只多一个回退分支，**不复制一份 spawnEnemy**。
+     * 顺序是 BOSSES 优先：万一将来 id 撞了，常驻首领的手感不能变。 */
+    const cfg = bossId ? (BOSSES[bossId] || (typeof WORLD_BOSSES !== 'undefined' ? WORLD_BOSSES[bossId] : null)) : MONSTERS[kind];
     if (!cfg) return null;
     const isBoss = !!bossId;
     /* [v1.0.5] 同屏普通怪硬上限：超过就不再生成（调用方都已处理 null）。
@@ -1740,6 +1824,10 @@ const Game = {
     /* [S5] 族群抗性：正数减伤、负数增伤；元素免疫在此覆盖对应一项 */
     const fam = MON_FAMILIES[cfg.family] || MON_FAMILIES.humanoid;
     const resist = Object.assign({}, fam.resist);
+    /* [M7] 首领自己的抗性覆盖族群表。八魔将的「隐藏弱点」就走这一条 ——
+     * 弱点必须写在 BOSSES 而不是 MON_FAMILIES：族群表是公开的，
+     * 图鉴会把 resist 显示给玩家，写进去等于把答案贴在门上。 */
+    if (cfg.resist) Object.assign(resist, cfg.resist);
     let wardElem = null;
     if (aff.warded) {
       wardElem = PICK(ELITE_WARD_ELEMS);
@@ -1796,6 +1884,11 @@ const Game = {
       spawnPos: new THREE.Vector3(x, 0, z), active: !isBoss, hitT: 0,
       /* [S5] 精英词缀与族群抗性 */
       affixes, aff, resist, wardElem,
+      /* [M18.2] 护甲倍率从 cfg 落到实体上。`damageEnemy` 一直在读
+       * `e.armorMul`，但以前只有地下城词缀会写它；世界 Boss 的数据里
+       * 明写 1.0（不许再乘，见 data-worldboss.js 文件头），这里必须
+       * 真的传下去，否则「数据写了但运行时没读到」这种坑会一直留着。 */
+      armorMul: cfg.armorMul || 1,
       family: cfg.family || 'humanoid',
       /* [S16] 发声用的体型：audio.js 按 1/size^0.55 降调。
        * 精英 +12%、首领再 ×1.35，Boss 一吼就该比小怪沉一个八度。 */
@@ -1893,8 +1986,15 @@ const Game = {
      * 没带武器的半成品模型，radius 会严重偏小，玩家直接走进 Boss 身体（穿模）。 */
     const _fr = measureFootR(a.group);
     const _br = Math.max(0.5, _fr + 0.2);                 // +0.2 冗余，避免贴边穿模
-    e.radius = _br;
-    e.reach = Math.max(cfg.range || 2.2, _br * 1.26 + 0.75);
+    /* [M18.6] 世界 Boss 的模型是**真实米数**（烛九阴 44 米、翼展 60 米的鹏），
+     * 量出来的水平包围有十几米。直接当碰撞半径的话：
+     *   ① 玩家得站在 14 米外才不穿模，战士 reach 3.2 永远够不到；
+     *   ② 分离逻辑会把玩家一路往外推，看起来像「被一堵空气墙挡着」。
+     * 数据里的 `body.radius` 描述的是「主干有多粗」，不是「尾巴甩到多远」，
+     * 用它当上限。没有 `body.radius` 的（老模型）保持原样。 */
+    const wbCap = (cfg.body && cfg.body.radius) || 0;
+    e.radius = wbCap ? Math.min(_br, wbCap) : _br;
+    e.reach = Math.max(cfg.range || 2.2, e.radius * 1.26 + 0.75);
 
     this.enemies.push(e);
     return e;
@@ -1903,17 +2003,27 @@ const Game = {
   spawnBosses() {
     const m = MAPS[this.state.mapId];
     if (!m.bosses || !m.bosses.length) return;
-    for (const bid of m.bosses) {
-      const pos = BOSS_POS[bid] || [0, -30];
-      const b = this.spawnEnemy(null, pos[0], pos[1], false, BOSSES[bid].level, bid);
+    /* [M3] 落点走 bossPosOf(mapId, bid, idx)，不再直读老表。
+     * 老表只有 12 条坐标，且都是按老图（size 130~140）摆的；
+     * 新图 size 290~300、sanctum 位置完全不同，直接套老坐标会把首领
+     * 丢到祭坛外（zone-check 会报「落点在 sanctum 外」）。
+     * bossPosOf 的顺序是「本图覆盖 → 老坐标（若仍落在本图 sanctum 内）→ 按圆心推导」，
+     * 所以老图手感一个像素都没变。 */
+    m.bosses.forEach((bid, idx) => {
+      const cfg = BOSSES[bid];
+      if (!cfg) return;
+      const pos = (typeof bossPosOf === 'function')
+        ? bossPosOf(this.state.mapId, bid, idx)
+        : (BOSS_POS[bid] || [0, -30]);
+      const b = this.spawnEnemy(null, pos[0], pos[1], false, cfg.level, bid);
       if (b) {
-        b.dmg = BOSSES[bid].atk * (1 + BOSSES[bid].level * 0.09);
+        b.dmg = cfg.atk * (1 + cfg.level * 0.09);
         b.patternCd = RND(2.5, 4.5);
         /* [M12] 拴绳锚点：玩家跑出祭坛之后首领要回位，
          * 而不是顶着祭坛的硬墙原地抖（区域化之前圆环是软的，看不出来）。 */
         b.anchor = { x: pos[0], z: pos[1] };
       }
-    }
+    });
   },
 
   /* 用本帧最终相机姿态校正所有血条朝向（详见 animate 里的说明） */
@@ -2381,6 +2491,26 @@ const Game = {
     /* [试炼] 波次状态机：读秒 / 清场判定 / 天雷与嗜血狂潮两条机制祝福。
      * 放在 updateSpawner 之后 —— 试炼场的 spawns 为空，那边会直接返回。 */
     if (typeof Trial !== 'undefined' && Trial.active) Trial.tick(dt);
+    /* [M5] 地下城：无常传送 / HUD 心跳。清场判定走 onKill，不在这里扫。 */
+    if (typeof Dungeon !== 'undefined' && Dungeon.active) Dungeon.update(dt);
+    /* [M18.2] 世界 Boss：每秒一次心跳（到点换人 + 倒计时）。
+     * 放在 Dungeon 之后、updateWorldAnims 之前 —— 它只改实体与 UI 文本，
+     * 不参与本帧的战斗结算，所以放在哪个位置都不影响手感，
+     * 但必须**在 updateEnemies 之后**：tick 里会 despawn 掉敌人，
+     * 在遍历中途改 enemies 数组会漏掉一只。 */
+    if (typeof WorldBoss !== 'undefined') WorldBoss.tick(dt);
+    /* 领域光环的淡入与旋转要按帧走（1 秒节流会一顿一顿）。
+     * 没有光环时内部第一行就判空返回，代价可以忽略。 */
+    if (typeof WorldBoss !== 'undefined') WorldBoss.anim(dt);
+    /* [M18.5] 领域机制：视野 / 毒 / 减速 / 吸力 / 攻速 / 小地图。
+     * 必须按帧走 —— 吸力是位移，1 秒节流会变成「瞬移一下」。
+     * 放在 anim 之后、`hp <= 0 → die()` 之前：
+     * 毒沼把人毒死的那一帧要能正常走死亡流程。 */
+    if (typeof WorldBoss !== 'undefined') WorldBoss.domainTick(dt);
+    /* [M18.7] 场地效果（相柳毒沼 / 九尾狐狐火）每帧结算。
+     * 没有场地时 `tick` 第一行就返回，代价可忽略。
+     * 必须**在 die 判定之前**：站在毒沼里被毒死的那一帧要能走死亡流程。 */
+    if (typeof WBFight !== 'undefined') WBFight.tick(dt);
     this.updateWorldAnims(dt);
     this.updateInteract();
     this.tickAudio(dt);
@@ -2506,6 +2636,13 @@ const Game = {
       this.playerSlowT -= dt;
       if (this.playerSlowT <= 0) this.playerSlow = 0;
     }
+    /* [M18.7] 定身倒计时。冲刺一并作废 —— 不然被定住的瞬间按一下冲刺
+     * 就跑了，「定住」变成一句空话（`dashT` 那段位移不读移速）。 */
+    if (this.rootT > 0) {
+      this.rootT -= dt;
+      if (this.rootT <= 0) this.rootT = 0;
+      this.dashT = 0;
+    }
     // 中毒
     if (this.poisonT > 0) {
       this.poisonT -= dt;
@@ -2559,8 +2696,17 @@ const Game = {
       /* [M1] 行脚套·疾行：击杀后 3 秒移速 +30% */
       const rush = this.lootRushT > 0 ? 1.3 : 1;
       /* 冲刺期间的速度由 dashSpd 单独决定（见下方 dashT 分支），
-       * 这里不再叠 ×4.6 —— 原来按着方向键冲刺比松开冲刺快一截。 */
-      const spd = st.moveSpd * analog * (1 - (this.playerSlow || 0)) * rush;
+       * 这里不再叠 ×4.6 —— 原来按着方向键冲刺比松开冲刺快一截。
+       *
+       * [M18.5] 领域减速用**独立字段** `domSlow`，不并进 `playerSlow`：
+       * 并进去的话，出圈时要把它减掉，而「减掉多少」在敌人也给过减速时
+       * 是算不清的 —— 少减会留永久残留，多减会顺手抹掉冰霜减速。 */
+      const slow = Math.min(0.85, (this.playerSlow || 0) + (this.domSlow || 0));
+      /* [M18.7] 定身（九尾狐 P2「尾缚」）：速度直接归零，不是「减到最慢」。
+       * 不能复用上面的 `slow` —— 它封顶 0.85，拉满也还能走 15%，
+       * 玩家会以为「定身只是变慢」，而数据里 `root: 2.5` 承诺的是「定住」。
+       * 转身与 `moving` 保留：原地挣扎比整个人冻住更像被尾巴缠住。 */
+      const spd = (this.rootT || 0) > 0 ? 0 : st.moveSpd * analog * (1 - slow) * rush;
       pg.position.x += mx * spd * dt;
       pg.position.z += mz * spd * dt;
       this.lastMoveDir = { x: mx, z: mz };
@@ -2673,7 +2819,11 @@ const Game = {
     const aspdK = (this.aspdCritT > 0 ? 1 + (st.aspdOnCrit || 0) / 100 : 1)
       * (1 + 0.04 * ((this.frenzy && this.frenzy.n) || 0))
       /* [M1] 行脚套·疾行：击杀后 3 秒攻速 +15% */
-      * (this.lootRushT > 0 ? 1.15 : 1);
+      * (this.lootRushT > 0 ? 1.15 : 1)
+      /* [M18.5] 战意领域（刑天）：攻速 -15%。
+       * 走独立字段而不是 buffs —— 领域压制不该被「净化」驱散，
+       * 也不该和药水 / 技能的攻速加成互相覆盖。 */
+      * Math.max(0.4, 1 + (this.domAspd || 0) / 100);
     const cdBase = 0.72 / (st.aspd * wpSpeed * aspdK);
     this.atkCd = cdBase;
     this.attacking = 0.32;
@@ -2825,6 +2975,17 @@ const Game = {
     const z = zoneAt(mid, pp.x, pp.z);
     if (!z || z.id === this._zoneId) return;
     this._zoneId = z.id;
+    /* [M2] 任务区域：进区报一次名，并推进 reach 目标。
+     * 放在这里而不是另起一个 tick —— 换区检测已经做了 0.2 秒节流，
+     * 再写一份就是第二份口径，迟早会不一致。 */
+    if (typeof QuestSys !== 'undefined') {
+      const boost = QuestSys.zoneBoost(mid, z.id);
+      if (boost && UI.toast) UI.toast('任务区域 · ' + z.name + (boost.main ? '（主线）' : '（支线）'), 'good');
+      if (QuestSys.onZone(mid, z.id)) {
+        UI.updateQuestTrack();
+        this.updateQuestMarker();
+      }
+    }
     if (typeof UI === 'undefined' || !UI.toast) return;
     /* 首领区加个前缀，让「再往前就是 boss」这件事有预告感 */
     if (z.kind === 'boss') UI.toast('⚔ ' + z.name, 'bad');
@@ -3926,7 +4087,16 @@ const Game = {
     /* [S4] 还魂激活中 */
     if (this.reviveT > 0) out.push({ name: '还魂', dur: this.reviveT, color: '#ffd166', type: 'buff', icon: '魂', desc: '受到致命伤时以 35% 生命存活' });
     if (this.playerSlowT > 0) out.push({ name: '迟滞', dur: this.playerSlowT, color: '#6ab8ff', type: 'debuff', icon: '缓', desc: '移动速度降低 ' + Math.round((this.playerSlow || 0) * 100) + '%' });
+    /* [M18.7] 定身：必须单独一条。它和「迟滞」是两种感受 ——
+     * 迟滞是「走得慢」，定身是「完全走不了」，混在一起玩家会以为没生效。 */
+    if (this.rootT > 0) out.push({ name: '定身', dur: this.rootT, color: '#e0a0ff', type: 'debuff', icon: '缚', desc: '无法移动（仍可攻击与闪避以外的动作）' });
     if (this.poisonT > 0) out.push({ name: '中毒', dur: this.poisonT, color: '#7fbf5a', type: 'debuff', icon: '毒', desc: '每 0.9 秒受到 ' + Math.round(this.poisonDps || 0) + ' 点毒素伤害' });
+    /* [M18.5] 领域压制：站进世界 Boss 的圈里就常驻一条。
+     * 它没有倒计时（出去就没了），所以带 noTimer，UI 不显示秒数。 */
+    if (typeof WorldBoss !== 'undefined' && WorldBoss.domainBuff) {
+      const db = WorldBoss.domainBuff();
+      if (db) out.push(db);
+    }
     if (this.shield > 0 && this.shieldT > 0) out.push({ name: '玄冰护盾', dur: this.shieldT, color: '#9ae0ff', type: 'buff', icon: '盾', desc: '吸收 ' + Math.round(this.shield) + ' 点伤害' });
     return out;
   },
@@ -4008,11 +4178,52 @@ const Game = {
     let final = dmg * (1 + st.skillDmg / 100 * 0.5) * (1 + this.tagBonus(tag) / 100);
 
     /* [S1] 护甲穿透：按比例削减目标有效护甲，最多穿掉 80% */
-    const armor = e.level * 3 + (e.cfg.armorHigh ? e.level * 6 : 0);
+    /* [M5] armorMul：地下城词缀「铁壁」把怪物护甲整体抬一档。
+     * 默认 1，不影响任何现有怪（不写这个乘数的话，护甲是「按等级算出来的」，
+     * 没有地方能挂「+50% 护甲」）。 */
+    const armor = (e.level * 3 + (e.cfg.armorHigh ? e.level * 6 : 0)) * (e.armorMul || 1);
     /* [P2] 破甲（技能树分支挂上的 debuff）：先按穿透削，再按破甲削 */
     const shred = (e.shredT > 0) ? Math.min(80, e.shred || 0) / 100 : 0;
     const effArmor = Math.max(0, armor * (1 - Math.min(0.8, (st.armorPen || 0) / 100)) * (1 - shred));
     final *= 100 / (100 + effArmor);
+
+    /* [M18.7] 刑天 P2「盾」：正面格挡。
+     *
+     * 判的是**玩家站在它正面的哪个角度**，不是「这一击从哪来」——
+     * 本作的伤害大多是范围 / 追踪，没有单一来向，只有站位是玩家能控制的。
+     * boss 的朝向是 `a.group.rotation.y`（`updateBossAI` 末尾每帧转向玩家，
+     * 半衰约 0.16 秒），所以「绕后」是一段**有时限**的操作窗口，不是一句空话。
+     *
+     * 窗口 ±75°（正面 150° 被挡，剩下 210° 安全）：
+     *   - 窗口再大 → 绕到侧面也算正面，等于「永远格挡」，谜题消失；
+     *   - 窗口再小 → 转个身就躲掉了，盾牌变成装饰。
+     * 折减到 40%：挡得很痛但还能打。全免的话 19 万血会拖成十分钟。
+     *
+     * **不分元素**：只挡物理的话，换法术就绕过去了 —— 那又变成「猜元素」，
+     * 和八部天龙的去重直接冲突。这里的答案只有站位。
+     * `silent`（持续伤害）不挡：毒 / 火不认盾牌，而且 DoT 每跳都弹「格挡」
+     * 会把屏幕糊满。 */
+    if (e.wbBlockFront && !opts.silent && this.playerGroup && e.actor && e.actor.group) {
+      const pl = this.playerGroup.position;
+      let da = Math.atan2(pl.x - e.pos.x, pl.z - e.pos.z) - e.actor.group.rotation.y;
+      while (da > Math.PI) da -= Math.PI * 2;
+      while (da < -Math.PI) da += Math.PI * 2;
+      if (Math.abs(da) <= Math.PI * 75 / 180) {
+        final *= 0.4;
+        /* 提示节流 0.4 秒：连击时每一下都弹字，字会叠成一坨 */
+        const now = Date.now();
+        if (!e._blockAt || now - e._blockAt > 400) {
+          e._blockAt = now;
+          FX.text(new THREE.Vector3(e.pos.x, 4.4, e.pos.z), '格挡 · 绕后', 'info', { life: 0.6 });
+        }
+      }
+    }
+
+    /* [M18.7b] 九尾狐 P3「真身现身」：藏进狐火时只吃 60%，
+     * 现身那 5 秒吃 200%。倍率由 `WBFight._revealTick` 每帧写。
+     * 放在格挡之后、抗性之前：它描述的是「有没有打中本体」，
+     * 属于命中层的倍率，和「元素抗性」是两回事，顺序换过来数值也一样。 */
+    if (e.wbVulnMul && e.wbVulnMul !== 1) final *= e.wbVulnMul;
 
     /* [S5] 族群抗性：按本次伤害的元素结算（opts.elem 缺省按物理）。
      * 正数减伤、负数增伤；元素免疫（85%）也走这一条，不另开分支。
@@ -4255,8 +4466,16 @@ const Game = {
     }
   },
 
-  damagePlayer(amount, source) {
+  /* `opts.pierce = true` —— 无视护甲 / 格挡 / 抗性 / 难度 / 被动减伤，
+   * 只保留护盾吸收与免死。
+   *
+   * 为什么需要这个开关：领域 DoT 在数据里写的是「每秒扣最大生命的 0.6%」，
+   * 这是**对玩家的一句承诺**。如果它走常规结算，60 级满装能把它压到 0.19%，
+   * 结果就是「堆防御的人完全无视领域」—— 那领域机制等于不存在。
+   * 常规伤害（怪打你）该吃护甲，环境伤害（站在毒沼里）不该。 */
+  damagePlayer(amount, source, opts) {
     if (this.dead || this.invuln > 0) return;
+    const pierce = !!(opts && opts.pierce);
     const s = this.state, st = s.stats;
 
     /* [S1] 闪避：完全免伤。给 0.2 秒无敌，避免一次群体攻击连续闪出十几条文字 */
@@ -4282,10 +4501,10 @@ const Game = {
     const reduce = Math.min(0.70, st.def / (st.def + 380 + this.state.level * 28));
     /* [DIFF] 玩家承受伤害系数：放在减伤之后，保证「护甲收益」在四档难度里一致，
      * 难度只放大最终结果，不扭曲装备词条的价值。 */
-    let dmg = amount * (1 - reduce) * this.diff().taken;
+    let dmg = pierce ? amount : amount * (1 - reduce) * this.diff().taken;
 
     /* [S1] 格挡：伤害减半（先于抗性结算） */
-    if (st.block && CHANCE(st.block / 100)) {
+    if (!pierce && st.block && CHANCE(st.block / 100)) {
       /* [P3] 舍身（反击变体）：格挡照挡，但这一下不再减半 ——
        * 换的是格挡后 3 秒的伤害加成（onBehCounter 里给） */
       const noDR = !!(this.buffs && this.buffs.some(b => b.noDR));
@@ -4307,17 +4526,19 @@ const Game = {
       if (typeof this.onBehCounter === 'function') this.onBehCounter(source);
     }
 
-    dmg *= (1 - CLAMP(st.allRes, 0, 60) / 200);
-    /* [S1] 单元素抗性：按来源怪物的元素标记取，无标记按物理 */
-    const cfg = source && source.cfg;
-    const oneRes = cfg
-      ? (cfg.fire ? st.fireRes : cfg.ice ? st.iceRes : cfg.poison ? st.poisonRes : st.physRes)
-      : st.physRes;
-    dmg *= (1 - CLAMP(oneRes || 0, 0, 60) / 200);
-    /* [S1] 固定伤害减免 */
-    dmg *= (1 - CLAMP(st.dmgReduce || 0, 0, 40) / 100);
-    /* [P2] 被动的受伤侧改写（霜甲：贴身来源减伤；不动如山走 dmgReduce 通道） */
-    if (typeof this.passiveTakenMul === 'function') dmg *= this.passiveTakenMul(source);
+    if (!pierce) {
+      dmg *= (1 - CLAMP(st.allRes, 0, 60) / 200);
+      /* [S1] 单元素抗性：按来源怪物的元素标记取，无标记按物理 */
+      const cfg = source && source.cfg;
+      const oneRes = cfg
+        ? (cfg.fire ? st.fireRes : cfg.ice ? st.iceRes : cfg.poison ? st.poisonRes : st.physRes)
+        : st.physRes;
+      dmg *= (1 - CLAMP(oneRes || 0, 0, 60) / 200);
+      /* [S1] 固定伤害减免 */
+      dmg *= (1 - CLAMP(st.dmgReduce || 0, 0, 40) / 100);
+      /* [P2] 被动的受伤侧改写（霜甲：贴身来源减伤；不动如山走 dmgReduce 通道） */
+      if (typeof this.passiveTakenMul === 'function') dmg *= this.passiveTakenMul(source);
+    }
 
     if (this.shield > 0) {
       const absorbed = Math.min(this.shield, dmg);
@@ -4463,6 +4684,9 @@ const Game = {
   die() {
     if (this.dead) return;
     this.dead = true;
+    /* [M18.7] 定身必须当场清掉：死亡演出期间 `update` 还在跑，
+     * 带着 2.5 秒定身复活的话，玩家会以为「复活了还是动不了」。 */
+    this.rootT = 0;
     this.actor.anim = 'die';
     this.actor.group.rotation.z = 0;
     SFX.die();
@@ -4472,8 +4696,14 @@ const Game = {
     UI.closeAll();
     /* 试炼里死亡不弹「身陨」框，改弹本轮结算 —— 玩家要看到的是「打到第几波」，
      * 而不是一句「你的道还未走完」。惩罚照旧按难度扣金币。 */
+    const inDungeon = (typeof Dungeon !== 'undefined' && Dungeon.active);
     const inTrial = (typeof Trial !== 'undefined' && Trial.active);
-    if (inTrial) Trial.onPlayerDeath();
+    if (inDungeon) {
+      /* [M5] 地下城死亡：先记账（失败 / 钥匙不返），面板照常用「身陨」——
+       * 它的「回城」按钮是唯一复活入口，真正的换图在 respawn 里做。 */
+      Dungeon.onPlayerDeath();
+      UI.showDeath('你倒在了地脉第 ' + Dungeon.run.layer + ' 层。\n\n钥匙没有回来。');
+    } else if (inTrial) Trial.onPlayerDeath();
     else UI.showDeath('你的道，还未走完。');
     /* [DIFF] 死亡惩罚按难度：新手 0%，普通 10%，困难 15%，极难 25% */
     const rate = this.diff().deathPenalty;
@@ -4503,8 +4733,11 @@ const Game = {
     this.undyingCd = 0; this.stormT = 6; this.talismanT = 10; this.elixirT = 60; this.phoenixKeyT = 0;
     this.talismanCharges = 0;
     this.recalc();
-    this.loadMap('village');
-    UI.toast('于桃源村重生');
+    /* [M5] 地下城里死了回本卷营地（不是村，也不是「最近」）——
+     * onRespawn 顺手把这一把清理掉并返回该去的图 */
+    const dgBack = (typeof Dungeon !== 'undefined' && Dungeon.active) ? Dungeon.onRespawn() : null;
+    this.loadMap(dgBack || 'village');
+    UI.toast(dgBack ? '被抬出地脉裂隙' : '于桃源村重生');
     this.save();
   },
 
@@ -4598,6 +4831,30 @@ const Game = {
         a.group.traverse(o => { if (o.isMesh) o.castShadow = wantShadow; });
       }
       const spd = e.spd * (1 - e.slow) * (e.boss ? (1 + e.phase * 0.12) : 1);
+
+      /* [M3 · §5.4] 远处怪的 AI 降频。
+       *
+       * MOB_CULL_DIST（62 米）之外已经 group.visible=false，看不见了，
+       * 但下面整段 AI 照跑，还带 updateActorAnim 的骨骼动画。
+       * M3 之前一张图 10~12 只怪、size 130，62 米外基本没几只；
+       * M3 之后 37~43 只撒在 ±140 米上，**常态就有十几只在视野外空转**。
+       *
+       * 处理：不可见 + 没仇恨 + 非首领 → 每 3 帧才走一次 AI。
+       *   - 必须有 !e.aggro：被激怒的怪会从 62 米外追过来，降频会让它卡顿。
+       *   - 必须有 !e.boss：首领的 phase / 技能节奏对帧敏感。
+       *   - **不需要补 dt**：中毒 / 流血 / 眩晕 / 各类 debuff 的计时器
+       *     在插入点**之前**就已经按真实 dt 结算过了（见上面的 4611~4647 行），
+       *     这里跳过的只有「移动 + 挥刀 + 骨骼动画」，而 62 米外的怪既不挥刀
+       *     也不可见，少算两帧的 atkCd 没有可观测影响。
+       *   - 也绝不能写成 `dt += ...`：dt 是 updateEnemies 的形参，
+       *     改它会把多出来的时间带给下一只怪，一帧之内越滚越大。 */
+      if (culled && !e.boss && !e.aggro) {
+        e.aiSkip = (e.aiSkip || 0) + 1;
+        if (e.aiSkip % 3 !== 0) {
+          a.moving = false;
+          continue;
+        }
+      }
 
       if (e.boss && !e.active) {
         if (d < 17) {
@@ -5191,18 +5448,24 @@ const Game = {
     if (e.dead) return;
     const a = e.actor;
     const hpRatio = e.hp / e.maxHp;
-    /* [DIFF] 困难/极难：Boss 提前进阶段（75% / 45%），压迫感更强 */
-    const rush = this.diff().bossRush;
-    const newPhase = rush
-      ? (hpRatio < 0.45 ? 2 : (hpRatio < 0.75 ? 1 : 0))
-      : (hpRatio < 0.3 ? 2 : (hpRatio < 0.6 ? 1 : 0));
-    if (newPhase > e.phase) {
-      e.phase = newPhase;
-      UI.toast(e.cfg.name + ' 狂怒', 'lv');
-      SFX.boss(); this.shake = 0.6;
-      if (typeof AudioSys !== 'undefined') AudioSys.mob(e, 'bossPhase');
-      FX.ring(e.pos, 6, 0xff5522, 0.8, 0.3);
-      e.dmg *= 1.15;
+    /* [M18.7] 世界 Boss 的「阶段」走自己的三阶段（血量 1.00 / 0.66 / 0.33，
+     * 见 data-worldboss.js 的 phases），**不是**常驻首领那套 0.6 / 0.3 的「狂怒」。
+     * 两套阈值不同，混用会出现「血条已经是 P2、技能还是 P1」，
+     * 而且「狂怒」这个词是常驻首领的语言（世界 Boss 的阶段有自己的名字）。 */
+    if (!e.wb) {
+      /* [DIFF] 困难/极难：Boss 提前进阶段（75% / 45%），压迫感更强 */
+      const rush = this.diff().bossRush;
+      const newPhase = rush
+        ? (hpRatio < 0.45 ? 2 : (hpRatio < 0.75 ? 1 : 0))
+        : (hpRatio < 0.3 ? 2 : (hpRatio < 0.6 ? 1 : 0));
+      if (newPhase > e.phase) {
+        e.phase = newPhase;
+        UI.toast(e.cfg.name + ' 狂怒', 'lv');
+        SFX.boss(); this.shake = 0.6;
+        if (typeof AudioSys !== 'undefined') AudioSys.mob(e, 'bossPhase');
+        FX.ring(e.pos, 6, 0xff5522, 0.8, 0.3);
+        e.dmg *= 1.15;
+      }
     }
 
     e.patternCd -= dt;
@@ -5214,7 +5477,13 @@ const Game = {
       a.moving = false;
       if (e.windup <= 0 && e.pendingMelee) {
         e.pendingMelee = false;
-        if (DIST2D(e.pos, pp) < e.reach + 2.2) this.damagePlayer(e.dmg * RND(0.9, 1.2), e);
+        if (DIST2D(e.pos, pp) < e.reach + 2.2) {
+          this.damagePlayer(e.dmg * RND(0.9, 1.2), e);
+          /* [M18.7] `enter.rootOnHit`（九尾狐 P2「九尾缚」）：连普攻都定身。
+           * 名字叫 onHit 就真的是 onHit —— 只在技能上生效的话，
+           * 玩家会发现「躲开技能就没事」，那 P2 等于没有。 */
+          if (e.wbRoot) this.rootT = Math.max(this.rootT || 0, e.wbRoot);
+        }
       }
     } else if (e.charging > 0) {
       e.charging -= dt;
@@ -5249,7 +5518,9 @@ const Game = {
 
     // 普攻
     if (e.atkCd <= 0 && d < e.reach + 1.6 && e.windup <= 0 && e.charging <= 0) {
-      e.atkCd = e.cfg.atkCd || 2;
+      /* [M18.7] 攻速阶段加成走 `e.atkCdBase`（`enter.aspdMul` 写进去的）。
+       * 常驻首领没有这个字段，回落到 cfg.atkCd，行为不变。 */
+      e.atkCd = e.atkCdBase || e.cfg.atkCd || 2;
       e.windup = 0.45;
       e.pendingMelee = true;
       a.atkAnim = 1; a.atkType = 'swing'; a.atkSpeed = 2.6;
@@ -5258,7 +5529,14 @@ const Game = {
     }
 
     // 技能
-    if (e.patternCd <= 0) {
+    if (e.wb) {
+      /* [M18.7] 世界 Boss 走自己的 18 个招牌技能（`cfg.skills` + 三阶段过滤），
+       * **不走** `bossPattern()` 的 patterns 招式池 —— 那是八部天龙八只共用的
+       * 语言（slam / roots / ringshot…），撞上就等于「又一只八部」。
+       * 阶段切换也在里面（`phaseOf` → `_enterPhase`），所以上面那段
+       * 「狂怒」不用管它，这里也不按血量再判一次。 */
+      if (typeof WBFight !== 'undefined') WBFight.ai(e, dt, pp);
+    } else if (e.patternCd <= 0) {
       e.patternCd = RND(4.5, 7.5) * (1 - e.phase * 0.12);
       this.bossPattern(e, pp);
     }
@@ -5840,6 +6118,26 @@ const Game = {
     if (!s.codex || typeof s.codex !== 'object') s.codex = { mon: {}, regions: {} };
     if (!s.codex.mon || typeof s.codex.mon !== 'object') s.codex.mon = {};
     if (!s.codex.regions || typeof s.codex.regions !== 'object') s.codex.regions = {};
+    /* [M4] 图鉴从「5 张老图 = 5 区」改成「5 大卷 = 5 区」：老档 regions 里的
+     * 旧 key（forest/swamp/mine/abyss/heaven）一次性搬到新卷 key，然后对
+     * 每卷重跑一次全录检查 —— 已录的怪不丢；旧区全录但新区还缺新怪的，
+     * 等补录完自动补发加成。删掉旧 key，迁移天然幂等（第二次 moved=false）。 */
+    const LEGACY = (typeof CODEX_REGION_LEGACY !== 'undefined') ? CODEX_REGION_LEGACY : null;
+    if (LEGACY) {
+      let moved = false;
+      for (const old in LEGACY) {
+        if (s.codex.regions[old]) {
+          s.codex.regions[LEGACY[old]] = true;
+          delete s.codex.regions[old];
+          moved = true;
+        }
+      }
+      if (moved && typeof CODEX_REGIONS !== 'undefined') {
+        for (const def of CODEX_REGIONS) {
+          try { this.checkCodexRegion(def.id); } catch (err) { /* 面板未就绪时不弹提示 */ }
+        }
+      }
+    }
     return s.codex;
   },
 
@@ -5878,20 +6176,47 @@ const Game = {
     return e;
   },
 
-  /* 一只怪归哪个区：按 MAPS 的声明顺序取第一个刷它的图。
-   * 这样 golem / ghostfire 这类跨区怪只归一个区，不会让两个区都集不齐。 */
+  /* [M4] 一只怪归哪个区（= 哪一卷）：数它在该卷各图怪池里出现的次数，
+   * 归出场最多的那一卷；平局归早（低卷优先）。
+   *
+   * 为什么不用「首次出场」：老怪的怪池跨卷复用（yaoguai 从 1-3 一路
+   * 铺到 3-1），按首次出场会把 38 只都划给卷一、卷五只剩 6 只 ——
+   * 一区要刷 38 只才全录、五区白送。按最多出场是 31/14/13/9/9，
+   * 每卷的图鉴工作量跟游戏进度大致同步。
+   *
+   * 怪池统一声明在 MAPS[id].spawns，一处读全 —— 新图改池只动
+   * data-world.js 一份，这里自动跟上。结果进程内缓存（数据静态）。
+   * 每只怪只属于一个区，不会让两个区都集不齐。 */
   codexRegionOf(kind) {
-    for (const id in MAPS) {
-      const m = MAPS[id];
-      if (m.spawns && m.spawns.indexOf(kind) >= 0) return id;
+    if (typeof ACTS === 'undefined' || typeof MAPS === 'undefined') return null;
+    if (!this._codexRegionCache) this._codexRegionCache = {};
+    if (kind in this._codexRegionCache) return this._codexRegionCache[kind];
+    /* [M5] 地下城专属怪直接归「秘境」：它们不在任何野外图池里，
+     * 走下面的计次统计会得到 null（图鉴里就永远集不齐）。 */
+    const mcfg = (typeof MONSTERS !== 'undefined') ? MONSTERS[kind] : null;
+    if (mcfg && mcfg.dungeon) return (this._codexRegionCache[kind] = 'rift');
+    const cnt = {};
+    for (const aid in ACTS) {
+      const p = ACTS[aid].part;
+      for (const mi of (ACTS[aid].maps || [])) {
+        const m = MAPS[mi.id];
+        if (m && m.spawns && m.spawns.indexOf(kind) >= 0) cnt[p] = (cnt[p] || 0) + 1;
+      }
     }
-    return null;
+    let best = null, bestN = 0;
+    for (let p = 1; p <= 5; p++) {
+      if ((cnt[p] || 0) > bestN) { bestN = cnt[p]; best = 'part' + p; }
+    }
+    this._codexRegionCache[kind] = best;
+    return best;
   },
 
   codexRegionKinds(regionId) {
-    const m = MAPS[regionId];
-    if (!m || !m.spawns) return [];
-    return m.spawns.filter(k => this.codexRegionOf(k) === regionId);
+    const out = [];
+    for (const kind in MONSTERS) {
+      if (this.codexRegionOf(kind) === regionId) out.push(kind);
+    }
+    return out;
   },
 
   checkCodexRegion(regionId) {
@@ -5916,6 +6241,38 @@ const Game = {
       for (const k in def.bonus) out[k] = (out[k] || 0) + def.bonus[k];
     }
     return out;
+  },
+
+  /* ---------------- 地脉钥匙（M5） ----------------
+   * 钥匙的**唯一**读写口。`QuestSys.turnIn` 早在 M2 就写着 `Game.addKey(...)`，
+   * 那时候是空钩子；M5 把它接上，所以任务奖励里的 `rewards.key` 现在真的生效。
+   * 真正的存储与提示在 Dungeon 里（keys 数组 + 日志），这里只做转发 ——
+   * 两处各写一遍迟早会出现「任务给了但背包没涨」。 */
+  addKey(tier, n) {
+    if (typeof Dungeon === 'undefined') return 0;
+    return Dungeon.addKey(tier, n);
+  },
+  keyCount(tier) {
+    if (typeof Dungeon === 'undefined') return 0;
+    return Dungeon.keyCount(tier);
+  },
+
+  /* ---------------- 魔将之印（M7） ----------------
+   * 8 个布尔位，存在 state.seals。这里只读不写 —— 写入在 M7.4 的
+   * 击杀结算里（`grantSeal`）。先留读口是因为 travelTo 的印门要它，
+   * 而印门是「结构」的一部分：没有它，无相天从山河图就能直接点进去，
+   * 8 个副本和 8 枚印全成了摆设。
+   *
+   * 老档没有 state.seals 时按「一枚都没有」算，不抛错。 */
+  sealCount() {
+    const s = (this.state && this.state.seals) || {};
+    if (typeof BAFO_SEALS === 'undefined') return 0;
+    let n = 0;
+    for (const it of BAFO_SEALS) if (s[it.key]) n++;
+    return n;
+  },
+  hasSeal(key) {
+    return !!((this.state && this.state.seals) || {})[key];
   },
 
   onEnemyDeath(e) {
@@ -5985,7 +6342,12 @@ const Game = {
      * 高档图的怪一只给几百点，一小时能从 1 级推到通关。 */
     const XB = (typeof BALANCE !== 'undefined' ? BALANCE.xp : { mobLv: 0.12, bossLv: 30 });
     const baseXp = e.boss ? (e.cfg.level * XB.bossLv) : (e.cfg.xp || 12) * (1 + e.level * XB.mobLv);
-    const xp = Math.round(baseXp * (e.elite ? 2 : 1) * D.xp);
+    /* [M6] 地脉里经验 ×1.8（BALANCE.dungeon.xpMul，计划书 §10.2）：
+     * 钥匙是消耗品，进去这一趟必须比在野外刷同样时间更划算，
+     * 否则没人会去用掉它。首领不吃这个倍率 —— 它自己那条 bossLv 已经很高。 */
+    const dgXp = (typeof Dungeon !== 'undefined' && Dungeon.active && !e.boss
+      && typeof BALANCE !== 'undefined' && BALANCE.dungeon) ? (BALANCE.dungeon.xpMul || 1) : 1;
+    const xp = Math.round(baseXp * (e.elite ? 2 : 1) * D.xp * dgXp);
     this.gainXp(xp);
 
     // 金币
@@ -6041,6 +6403,35 @@ const Game = {
       this.spawnLoot(p, null, 0, { mat: cm });
     }
 
+    /* [M4/M5] 卷末首领的「次阶地下城钥匙」（计划书 §7.1）：8%，终局真身 15%。
+     * keyTier = 本卷 + 1（一阶对一卷：在卷一打到的钥匙开的是二阶门）。
+     * 与下面「本阶钥匙的必掉线」是两条独立线 —— 首领同时吃这两抽。 */
+    const bcfg = e.boss ? e.cfg : null;
+    if (bcfg && bcfg.actEnd && typeof this.addKey === 'function') {
+      const KB = (typeof BALANCE !== 'undefined' && BALANCE.keyDrop) || { actBoss: 0.08, actBossFinal: 0.15 };
+      if (CHANCE(bcfg.final ? KB.actBossFinal : KB.actBoss)) {
+        this.addKey(Math.min(5, bcfg.keyTier || 1), 1);
+      }
+    }
+
+    /* [M5] 钥匙的**常规**供给（§8.1）：小怪 0.6% / 精英 10% / 首领必掉**本阶**。
+     * 阶 = 这张图所在卷（一阶对一卷），所以玩家不用查表。
+     *
+     * 两处刻意排除：
+     *   · 地下城图里的怪不掉 —— 否则「钥匙开地下城、地下城再产钥匙」形成自循环，
+     *     地下城就变成零成本的刷装场（§8.1 要避免的正是这个）。
+     *   · 地下城关卡守卫不走这里 —— 它们的次阶钥匙是通关结算里的 35%（§8.4）。
+     *
+     * 概率写进 BALANCE.keyDrop.mob / .elite，和掉落/经验一样集中在旋钮表里。 */
+    const kmap = MAPS[this.state.mapId];
+    if (kmap && !kmap.dungeon && typeof this.addKey === 'function') {
+      const act = (typeof actOfMap === 'function') ? actOfMap(this.state.mapId) : null;
+      const tier = Math.min(5, Math.max(1, (act && act.part) || this.state.part || 1));
+      const KB2 = (typeof BALANCE !== 'undefined' && BALANCE.keyDrop) || {};
+      const rate = e.boss ? 1 : (e.elite ? (KB2.elite === undefined ? 0.10 : KB2.elite) : (KB2.mob === undefined ? 0.006 : KB2.mob));
+      if (CHANCE(rate * (D.drop || 1))) this.addKey(tier, 1);
+    }
+
     // 击杀回复
     if (sto.killHeal) this.healPlayer(sto.killHeal, true);
     if (sto.mpOnKill) this.state.mp = Math.min(sto.mpMax, this.state.mp + sto.mpOnKill);
@@ -6081,9 +6472,14 @@ const Game = {
     this.onKill(e);
     /* [试炼] 击杀计数（结算面板用） */
     if (typeof Trial !== 'undefined' && Trial.run) Trial.run.kills++;
+    /* [M5] 地下城：清怪进度。首领单独走 onBossDown（它等于通关结算）。 */
+    const inDungeon = (typeof Dungeon !== 'undefined' && Dungeon.active);
+    if (inDungeon && !e.boss) Dungeon.onKill(e);
     if (e.boss) {
       this.state.bossKilled[e.kind] = (this.state.bossKilled[e.kind] || 0) + 1;
       this.onBossKill(e);
+      /* [M3b-fix] 出口门：本图首领第一次倒地才立起来（boss 区北侧），之后永久存在 */
+      this.markCleared(e);
       if (this.boss === e) { this.boss = null; UI.updateBoss(null); }
       UI.toast('击败 ' + e.cfg.name, 'lv');
       this.save();
@@ -6091,7 +6487,21 @@ const Game = {
        * 二来 BOSS_POS 是按大地图坐标写的，重生点会落在擂台的错误位置。
        * 混沌天魔在试炼里也不触发通关结算（那是主线终章的演出）。 */
       const inTrial = (typeof Trial !== 'undefined' && Trial.active);
-      if (inTrial) {
+      /* [M18.2] 世界 Boss 先分流。它**不能**走下面那个 else 分支：
+       * 那里读的是 `BOSSES[bid].level` 与 `BOSS_POS[bid]`，
+       * 而世界 Boss 既不在 BOSSES 里、也不在老坐标表里 ——
+       * 走进去就是 `undefined.level` 直接抛异常，整场战斗结算中断。 */
+      if (e.wb) {
+        if (typeof WorldBoss !== 'undefined') WorldBoss.onKill(e);
+      } else if (inDungeon) {
+        /* [M5] 地下城守卫倒了 = 通关。延后 600ms 再结算：
+         * onEnemyDeath 正在 updateEnemies 的遍历里跑，结算会 loadMap 换图，
+         * 当场换会打断遍历（和「分裂幼体先入队」是同一类问题）。
+         * 顺带给死亡动画与掉落一点时间。 */
+        setTimeout(() => {
+          if (typeof Dungeon !== 'undefined' && Dungeon.active) Dungeon.onBossDown();
+        }, 600);
+      } else if (inTrial) {
         if (e.kind === 'chaos') UI.log('混沌之影散去，台上又起新的杀机。', 'good');
       } else {
         const bid = e.kind, gen = this.mapGen;
@@ -6114,10 +6524,36 @@ const Game = {
     const s = this.state;
     /* [S1] 经验获取加成 */
     amount = Math.round(amount * (1 + (s.stats.expGain || 0) / 100));
+    /* [M6] 满级收口：到 BALANCE.levelMax（60）就停在 60，
+     * 经验不再累积 —— 否则 xpNext 会一直往上算，存档里的经验条也永远差一格。
+     * 注意 while 必须在这里跳出，不然 level 卡在 60 而 xp 不清零会死循环。 */
+    const lvMax = (typeof BALANCE !== 'undefined' && BALANCE.levelMax) || 60;
+    if (s.level >= lvMax) {
+      s.level = lvMax;
+      s.xp = 0;
+      /* 提示只出一次：挂在 Game 上而不是 state 上，
+       * state 会被序列化进存档，多一个 _ 开头的小字段不值得。 */
+      if (!this._maxLvHinted) {
+        this._maxLvHinted = true;
+        UI.log('已至境界上限 · ' + lvMax + ' 级。', 'good');
+      }
+      return;
+    }
     s.xp += amount;
     while (s.xp >= s.xpNext) {
       s.xp -= s.xpNext;
       s.level++;
+      /* 到顶那一级不再发经验条，把溢出的经验丢掉（否则会多出半级） */
+      if (s.level >= lvMax) {
+        s.level = lvMax;
+        s.xp = 0;
+        s.xpNext = (typeof xpToNext === 'function') ? xpToNext(s.level) : 1;
+        this.recalc();
+        UI.toast('境界圆满 · ' + lvMax + ' 级', 'lv');
+        UI.log('已至境界上限 · ' + lvMax + ' 级。', 'good');
+        SFX.levelup();
+        break;
+      }
       /* [v1.10.0] 曲线收进 BALANCE（base × L^pow），升级点与新建角色同一口径 */
       s.xpNext = (typeof xpToNext === 'function') ? xpToNext(s.level) : Math.round(180 * Math.pow(s.level, 1.70));
       this.recalc();
@@ -6227,7 +6663,33 @@ const Game = {
     }
     if (!target && this.world) {
       const p = this.world.portal;
-      if (Math.hypot(pp.x - p.x, pp.z - p.z) < 5) { target = { type: 'portal' }; txt = '使用传送阵'; }
+      if (Math.hypot(pp.x - p.x, pp.z - p.z) < 5) {
+        target = { type: 'portal' };
+        /* [M5] 地下城里的传送阵就是「地脉门」：清够本层才开 */
+        if (typeof Dungeon !== 'undefined' && Dungeon.active) {
+          const dp = Dungeon.progress();
+          if (Dungeon.run.layer >= DUNGEON_LAYERS.length) txt = '地脉门 · 离开';
+          else if (dp.open) txt = '地脉门 · 下一层';
+          else txt = '地脉门 · 尚封（' + Math.round(dp.pct * 100) + '% / ' + Math.round(dp.need * 100) + '%）';
+        } else txt = '使用传送阵';
+      }
+    }
+    /* [M1] 章间出口门 / 路标石：判定半径比传送阵小，挨着站时才抢焦点 */
+    if (!target && this.world && this.world.gate) {
+      const g = this.world.gate;
+      if (Math.hypot(pp.x - g.x, pp.z - g.z) < 4) {
+        const need = MAPS[g.to] ? (MAPS[g.to].unlock || 1) : 1;
+        target = { type: 'gate' };
+        txt = this.state.level >= need ? ('前往 ' + g.name) : (g.name + ' · 需 ' + need + ' 级');
+      }
+    }
+    if (!target && this.world && this.world.waystone) {
+      const w = this.world.waystone;
+      if (Math.hypot(pp.x - w.x, pp.z - w.z) < 3.2) {
+        const c = CAMPS[campOfPart(this.state.part)];
+        target = { type: 'waystone' };
+        txt = '路标石 · 回' + (c ? c.name : '营地');
+      }
     }
     this.interactTarget = target;
     const el = document.getElementById('interact');
@@ -6240,9 +6702,19 @@ const Game = {
     if (!t) return;
     if (t.type === 'npc') this.openNPC(t.id);
     else if (t.type === 'portal') {
-      /* 试炼场里的传送阵就是「退场门」：先确认再走，别让人误触丢进度 */
-      if (typeof Trial !== 'undefined' && Trial.active) Trial.quit();
+      /* 试炼场里的传送阵就是「退场门」：先确认再走，别让人误触丢进度。
+       * [M5] 地下城同理，但它是「地脉门」—— 清够本层就下下一层，末层则是离开。 */
+      if (typeof Dungeon !== 'undefined' && Dungeon.active) Dungeon.usePortal();
+      else if (typeof Trial !== 'undefined' && Trial.active) Trial.quit();
       else UI.openTravel();
+    }
+    /* [M1] 章间出口门：直接去下一章第一张图，等级不够由 travelTo 统一拦（同一条口径） */
+    else if (t.type === 'gate') {
+      if (this.world && this.world.gate) this.travelTo(this.world.gate.to);
+    }
+    /* [M1] 路标石：原地回本卷营地 */
+    else if (t.type === 'waystone') {
+      this.travelTo(campMapOfPart(this.state.part));
     }
   },
 
@@ -6250,8 +6722,13 @@ const Game = {
   openNPC(id) {
     const npc = NPCS[id];
     const s = this.state;
-    if (id === 'elder') {
-      this.openElder();
+    /* [M2] 任务发布者统一走 openGiver —— 老村长（campA_main）与四座营地的
+     * 掌事 / 录事是同一套逻辑，不再是「elder 特判 + 其他不管」。 */
+    if (npc && npc.role === 'quest') {
+      this.openGiver(id);
+    } else if (npc && npc.role === 'dungeon') {
+      /* [M5] 地脉守：5 座营地各一个，进门就是「选阶 → 选类型 → 词缀预告」 */
+      if (typeof Dungeon !== 'undefined') Dungeon.openRift(id);
     } else if (id === 'smith') {
       /* 进货走 ensureShop：5 分钟窗口内反复说话不会换货 */
       this.ensureShop();
@@ -6290,25 +6767,40 @@ const Game = {
     }
   },
 
-  openElder() {
-    const s = this.state;
-    const elder = NPCS.elder;
-    // 有可复命的任务
-    const ready = s.quests.active.find(a => this.questReady(a));
-    if (ready) {
-      const q = QUESTS[ready.id];
-      UI.showDialog(elder.name, `「${q.name}」已了。你的手段，比我想的干净。`, [
+  /* ---------------- 任务发布者对话（M2） ----------------
+   * 五种情形，按优先级：有可复命的 → 有新委托 → 有进行中的 → 只剩悬赏板 → 闲话。
+   * 复命之后顺手把下一环递上来，少一次「再点一次掌事」。 */
+  openGiver(npcId) {
+    const npc = NPCS[npcId] || { name: '掌事', lines: ['……'] };
+    const giver = giverOfNpc(npcId);
+    const boardBtn = { label: '看看悬赏板', action: () => this.openBoard(partOfGiver(giver)) };
+    const closeBtn = { label: '告辞', action: () => UI.closeAll() };
+
+    /* 1. 可复命 */
+    const ready = QuestSys.readyOf(giver);
+    if (ready.length) {
+      const a = ready[0], q = QUESTS[a.id];
+      const tail = q.kind === 'board' ? '赏钱在这儿，点点。' : '你的手段，比我想的干净。';
+      UI.showDialog(npc.name, `「${q.name}」已了。${tail}`, [
         {
           label: '复命领赏', primary: true, action: () => {
-            this.turnInQuest(ready);
-            const next = q.next ? QUESTS[q.next] : null;
-            if (next) {
-              UI.showDialog(elder.name, next.brief, [
-                { label: '接下「' + next.name + '」', primary: true, action: () => { this.acceptQuest(next.id); UI.closeAll(); } },
+            const done = QuestSys.turnIn(a);
+            const nx = QuestSys.nextOf(done);
+            if (nx) {
+              UI.showDialog(npc.name, nx.brief, [
+                { label: '接下「' + nx.name + '」', primary: true, action: () => { QuestSys.accept(nx.id); UI.closeAll(); } },
                 { label: '稍后再说', action: () => UI.closeAll() }
               ]);
             } else {
-              UI.showDialog(elder.name, '九霄已定，山海重归清明。你已是这方天地最后的传说。', [{ label: '（沉默）', action: () => UI.closeAll() }]);
+              const more = QuestSys.offersOf(giver);
+              if (more.length) {
+                UI.showDialog(npc.name, '还有一件事，你听听看。', [
+                  { label: '听听「' + more[0].name + '」', primary: true, action: () => { QuestSys.accept(more[0].id); UI.closeAll(); } },
+                  boardBtn, closeBtn
+                ]);
+              } else {
+                UI.showDialog(npc.name, '这里暂时没别的事了。走走看看，山海的尽头自有答案。', [boardBtn, closeBtn]);
+              }
             }
           }
         },
@@ -6316,98 +6808,109 @@ const Game = {
       ]);
       return;
     }
-    // 进行中
-    if (s.quests.active.length) {
-      const a = s.quests.active[0];
-      const q = QUESTS[a.id];
-      UI.showDialog(elder.name, `「${q.name}」还未了结。\n\n${q.brief}`, [
+
+    /* 2. 有新委托可接 */
+    const offers = QuestSys.offersOf(giver);
+    if (offers.length) {
+      const q = offers[0];
+      UI.showDialog(npc.name, PICK(npc.lines) + '\n\n' + q.brief, [
+        { label: '接下「' + q.name + '」', primary: true, action: () => { QuestSys.accept(q.id); UI.closeAll(); } },
+        boardBtn,
+        { label: '容我想想', action: () => UI.closeAll() }
+      ]);
+      return;
+    }
+
+    /* 3. 有进行中的 */
+    const running = QuestSys.runningOf(giver);
+    if (running.length) {
+      const q = QUESTS[running[0].id];
+      const where = (q && q.map && MAPS[q.map]) ? `（目标：${MAPS[q.map].name}）` : '';
+      UI.showDialog(npc.name, `「${q.name}」还未了结。${where}\n\n${q.brief}`, [
+        boardBtn,
         { label: '知道了', action: () => UI.closeAll() }
       ]);
       return;
     }
-    // 新任务
-    const next = QUESTS[s.quests.next];
-    if (next) {
-      const lines = ['妖气又重了。年轻人，可愿听我一言？', '九霄将倾，总有人要站出来。', '你身上有山海的影子。'];
-      UI.showDialog(elder.name, PICK(lines) + '\n\n' + next.brief, [
-        { label: '接下「' + next.name + '」', primary: true, action: () => { this.acceptQuest(next.id); UI.closeAll(); } },
-        { label: '容我想想', action: () => UI.closeAll() }
+
+    /* 4. 只剩悬赏板 */
+    UI.showDialog(npc.name, PICK(npc.lines) + '\n\n主线的事，去问掌事。我这儿只有零碎的活。', [boardBtn, closeBtn]);
+  },
+
+  /* 悬赏板：一次列 3 条（§4.1），8 分钟刷新（QUEST_BOARD_CD）。
+   * 用对话而不是新面板：木板本身就是「走过去说话」的东西，
+   * 而且手机上少一层面板就少一处溢出风险。 */
+  openBoard(part) {
+    const list = QuestSys.boardTake(part || this.state.part || 1);
+    if (!list.length) {
+      UI.showDialog('悬赏板', '板上的纸都被揭走了，只剩下几个钉孔。\n\n过一会儿再来。', [
+        { label: '离开', action: () => UI.closeAll() }
       ]);
-    } else {
-      UI.showDialog(elder.name, '去吧，山海的尽头，自有答案。', [{ label: '告辞', action: () => UI.closeAll() }]);
+      return;
     }
+    const body = '木板上的纸被风吹得作响。\n\n' +
+      list.map(q => `· ${q.name}（${q.rewards.gold} 金）\n　${q.brief}`).join('\n\n');
+    const btns = list.map(q => ({
+      label: '接下「' + q.name + '」',
+      action: () => { QuestSys.accept(q.id); UI.closeAll(); }
+    }));
+    btns.push({ label: '离开', action: () => UI.closeAll() });
+    UI.showDialog('悬赏板', body, btns);
   },
 
-  /* ---------------- 任务逻辑 ---------------- */
-  acceptQuest(id) {
-    const q = QUESTS[id];
-    this.state.quests.active.push({ id, progress: q.objectives.map(() => 0) });
-    this.state.quests.next = q.next || null;
-    UI.toast('新委托 · ' + q.name);
-    UI.log('【委托】' + q.brief, 'good');
-    SFX.ui();
-    UI.renderQuests(); UI.updateQuestTrack();
-    this.updateQuestMarker();
-    this.save();
-  },
+  /* ---------------- 任务逻辑（M2 起全部委托给 QuestSys） ---------------- */
+  acceptQuest(id) { return QuestSys.accept(id); },
 
-  questReady(a) {
-    const q = QUESTS[a.id];
-    return q.objectives.every((o, i) => (a.progress[i] || 0) >= o.count);
-  },
-
-  turnInQuest(a) {
-    const q = QUESTS[a.id];
-    this.state.gold += q.rewards.gold;
-    this.gainXp(q.rewards.xp);
-    const it = rollItem(q.rewards.ilvl, { cls: this.state.cls, rarity: q.rewards.rarity, magicFind: this.state.stats.magicFind });
-    if (this.addItem(it)) UI.log('获得 ' + it.name, 'good');
-    // [S3] 任务奖励技能书：解锁指定技能（或下一级未解锁技能）
-    if (q.rewards.skill) {
-      const sk = SKILLS[q.rewards.skill];
-      if (sk && !this.skillFlags[q.rewards.skill]) {
-        this.skillFlags[q.rewards.skill] = true;
-        UI.log('获得技能书《' + sk.name + '》，已领悟！', 'lv');
-        SFX.levelup();
-      }
-    }
-    /* [M1] 任务奖励天赋点：主线四段共 +10，满级天赋点 60 → 70 */
-    if (q.rewards.talent) {
-      this.state.talentBonus = (this.state.talentBonus || 0) + q.rewards.talent;
-      UI.log('获得天赋点 +' + q.rewards.talent, 'lv');
-      SFX.levelup();
-    }
-    this.state.quests.active = this.state.quests.active.filter(x => x !== a);
-    this.state.quests.done.push(a.id);
-    UI.toast('委托完成 · ' + q.name, 'lv');
-    UI.log(`【委托完成】${q.name}　+${q.rewards.gold} 金`, 'good');
-    SFX.levelup();
-    UI.renderQuests(); UI.updateQuestTrack();
-    this.updateQuestMarker();
-    this.save();
-  },
+  /* 以下四个是旧调用点的薄包装：其他地方（UI / 存档 / 试炼）还在按老名字调，
+   * 真正的逻辑都在 src/quests.js 的 QuestSys 里，这里只做转发，别再往里写业务。 */
+  questReady(a) { return QuestSys.ready(a); },
+  turnInQuest(a) { return QuestSys.turnIn(a); },
 
   onKill(e) {
-    const s = this.state;
-    for (const a of s.quests.active) {
-      const q = QUESTS[a.id];
-      q.objectives.forEach((o, i) => {
-        if (o.type === 'kill' && o.target === e.tag) a.progress[i] = (a.progress[i] || 0) + 1;
-        if (o.type === 'killAny') a.progress[i] = (a.progress[i] || 0) + 1;
-        if (o.type === 'boss' && o.target === e.kind) a.progress[i] = (a.progress[i] || 0) + 1;
-      });
-      if (this.questReady(a) && !s.quests.announced[a.id]) {
-        s.quests.announced[a.id] = true;
-        UI.toast('委托目标达成 · 回村复命', 'lv');
-        UI.log('【委托】目标达成，回桃源村找村长复命。', 'good');
-      }
-    }
+    QuestSys.onKill(e);
     UI.updateQuestTrack();
     this.updateQuestMarker();
   },
 
   onBossKill(e) {
     // 已包含在 onKill 中
+  },
+
+  /* ---------------- 出口门开关（M3b-fix） ----------------
+   * 门不是一进图就有：**本图首领第一次倒地**才立起来，之后永久存在。
+   * 存档记在 `world.mapCleared[mapId]`（老档由 normalizeDoc 用 bossKilled 反推），
+   * 所以「关掉网页再进来」门还在，不会让玩家以为进度丢了。 */
+  mapCleared(mapId) {
+    const s = this.state;
+    if (!s) return false;
+    const id = mapId || s.mapId;
+    return !!(s.mapCleared && s.mapCleared[id]);
+  },
+
+  /* 首领倒地 → 打上「本图已通关」标记，并把出口门当场立到 boss 区北侧。
+   * 只立一次：重打首领时 world.gate 已存在，直接返回。 */
+  markCleared(e) {
+    const s = this.state;
+    if (!s || !s.mapId) return;
+    /* 世界 Boss 是野图随机刷的，不是本图常驻首领 —— 它倒了不算通关这张图 */
+    if (e && e.wb) return;
+    /* 地下城 / 试炼里的「首领」属于副本流程，通关结算另有其人 */
+    if (typeof Dungeon !== 'undefined' && Dungeon.active) return;
+    if (typeof Trial !== 'undefined' && Trial.active) return;
+    if (!s.mapCleared) s.mapCleared = {};
+    s.mapCleared[s.mapId] = 1;
+    const w = this.world;
+    if (!w || w.gate || !w.gatePending) return;
+    const p = w.gatePending;
+    w.gate = makeExitGate(w.root, p.x, p.z, p.to, w.colliders, w.anims, w.labels);
+    w.gatePending = null;
+    /* 开门演出：玩家刚打完首领，抬头就在 boss 区北侧看见一道金光 */
+    try {
+      FX.flashCircle(new THREE.Vector3(p.x, 0, p.z), 4.5, 0xffd166, 0.9);
+      FX.ring(new THREE.Vector3(p.x, 0, p.z), 6, 0xffd166, 1.2, 0.3);
+      SFX.cast();
+    } catch (err) { }
+    UI.log('前路已开 · ' + p.name, 'good');
   },
 
   victory() {
@@ -7264,11 +7767,58 @@ const Game = {
   travelTo(mapId) {
     if (!MAPS[mapId]) return;
     const m = MAPS[mapId];
-    if (this.state.level < (m.unlock || 1)) { UI.log('境界不足。', 'bad'); return; }
+    /* [M0] 回头路：已经抵达过的图随时能回，不受等级门禁限制
+     * （低等级回高级图是玩家自己的选择；没去过的地方才看境界）。 */
+    const seen = Array.isArray(this.state.mapsSeen) && this.state.mapsSeen.indexOf(mapId) >= 0;
+    /* [M1] 营地「仅限已抵达」：营地是传送网络的中枢，没到过这一卷就走不进去。
+     * 抵达判定 = 存档 camps 里已解锁（save.js 按卷累积）或这张营地本身去过。
+     * 只在营地这一层收口：野图仍走「等级够 或 去过」，因为卷二~卷五还有 25 个图位
+     * id 为 null，把野图也按「仅限已抵达」锁死会让主线无路可走（见台账 M1 决策记录）。 */
+    const campId = (typeof campOfMap === 'function') ? campOfMap(mapId) : null;
+    if (campId) {
+      const unlocked = Array.isArray(this.state.camps) && this.state.camps.indexOf(campId) >= 0;
+      if (!unlocked && !seen) { UI.log('尚未抵达此卷，走不进「' + m.name + '」。', 'bad'); return; }
+    }
+    if (!seen && this.state.level < (m.unlock || 1)) { UI.log('境界不足。', 'bad'); return; }
+    /* [M7] 印门：无相天（终 boss 场）要 8 枚魔将之印才进得去。
+     * 放在 travelTo 这一层而不是只做一道门 —— 山河图也能直接点进去，
+     * 只拦门的话「翻面板传送」就能把整条终章跳过去。
+     * 印没齐时提示差几枚，不然玩家只会以为图坏了。 */
+    if (m.sealNeed) {
+      const have = this.sealCount();
+      if (have < m.sealNeed) {
+        UI.log('天龙终门未开：魔将之印 ' + have + ' / ' + m.sealNeed + '。', 'bad');
+        return;
+      }
+    }
     /* 试炼中不允许直接传送：先把本轮结算掉，否则祝福会跟着人跑到别的地图上 */
     if (typeof Trial !== 'undefined' && Trial.active) {
       Trial.end('quit');
       if (mapId === 'trial') return;
+    }
+    /* [M0] 记录世界进度：去过哪张图、当前在第几卷第几章 */
+    if (Array.isArray(this.state.mapsSeen) && this.state.mapsSeen.indexOf(mapId) < 0) {
+      this.state.mapsSeen.push(mapId);
+    }
+    /* [M1] 进营地也要更新世界进度：营地不属于任何章，章取该卷第一章。
+     * 反过来，进任意一张野图 = 抵达该卷 → 解锁该卷营地（和 save.js「按卷累积」同口径），
+     * 否则玩家打完卷一去了卷二，回营地时 campB 还没解锁，会被判成「没抵达」。 */
+    if (campId && typeof CAMPS !== 'undefined' && CAMPS[campId]) {
+      const part = CAMPS[campId].part;
+      this.state.part = part;
+      const acts = (typeof actsOfPart === 'function') ? actsOfPart(part) : [];
+      if (acts.length) this.state.act = acts[0].id;
+    } else if (typeof actOfMap === 'function') {
+      const a = actOfMap(mapId);
+      if (a && ACTS[a]) { this.state.act = a; this.state.part = ACTS[a].part; }
+    }
+    /* [M1] 营地按卷累积解锁（和 save.js 的 normalizeDoc 同一口径）。
+     * 只 push 当前卷的话，「等级够直接跳卷三」会让 campB 永远解锁不了 ——
+     * 而重开档后 normalizeDoc 又会把 campB 补上，同一个存档两次打开界面不一致。 */
+    if (typeof campsUpToPart === 'function' && Array.isArray(this.state.camps)) {
+      for (const c of campsUpToPart(this.state.part)) {
+        if (this.state.camps.indexOf(c) < 0) this.state.camps.push(c);
+      }
     }
     FX.flashCircle(this.playerGroup.position, 3, 0x88bbff, 0.6);
     SFX.cast();
@@ -7343,11 +7893,35 @@ const Game = {
     const barMissing = !Array.isArray(this.state.skillbar);
     this.normalizeProgress(this.state);
     this.skillBar(barMissing);
-    this.state.quests = this.state.quests || { active: [], done: [], next: 'q1', announced: {} };
-    this.state.quests.announced = this.state.quests.announced || {};
+    /* [M2] 任务：先归一结构，再把老档的 q1~q11 迁到新 id。
+     * 迁移认 legacyId，objectives 逐字一致的直接搬 progress 数组 —— 一条进度不丢。
+     * 迁移有改动就立刻落盘一次，免得玩家在迁移前后关页面又回到 q 号状态。 */
+    if (typeof QuestSys !== 'undefined') {
+      QuestSys.ensure();
+      if (QuestSys.migrate()) {
+        this.save();
+        UI.log('【委托】任务记录已按新体系整理，进度已保留。', 'good');
+      }
+    } else {
+      this.state.quests = this.state.quests || { active: [], done: [], next: null, announced: {}, board: { cd: {}, count: {} } };
+      this.state.quests.announced = this.state.quests.announced || {};
+    }
     /* [试炼] 存档里的 mapId 可能是 trial（在台上被关掉页面）。
      * 试炼的波次进度不落盘（这是 roguelite 的规矩：中途退出即作废），
      * 所以这里把玩家送回村，而不是让他站在一个没有波次的空擂台上。 */
+    /* [地下城] 存档 mapId 可能是 dgn_<类型>_<层>（在地脉里被关掉页面）。
+     * 这些图是运行时注册的，开机时根本不在 MAPS 里 —— 必须**先于**下面那条
+     * 「未知图 → 村」认出来，送回**本卷营地**（人是从营地进的），而不是桃源村。
+     * 进度不落盘是设计：钥匙已经扣了，这一把作废，跟中途退出一个口径。 */
+    if (typeof this.state.mapId === 'string' && this.state.mapId.indexOf('dgn_') === 0) {
+      const back = (typeof campMapOfPart === 'function') ? campMapOfPart(this.state.part) : null;
+      this.state.mapId = (back && MAPS[back]) ? back : 'village';
+      this.state.playerPos = { x: 0, z: 10 };
+      if (typeof Dungeon !== 'undefined') {
+        Dungeon.run = null; Dungeon._t = 0;
+        try { Dungeon.renderHud(false); } catch (e) {}
+      }
+    }
     if (this.state.mapId === 'trial' || !MAPS[this.state.mapId]) {
       this.state.mapId = 'village';
       this.state.playerPos = { x: 0, z: 10 };

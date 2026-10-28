@@ -667,8 +667,8 @@ const UI = {
       .map(k => (RARITY[k] || {}).name || k).join(' → ') || '凡品 → 灵品 → 玄品 → 神品';
     H.push(sec('三 · 装备', `${slotN} 个槽位`, [
       row('槽位', `${slotN} 个：${slotNames.join(' / ')}`),
-      row('基底阶', `${tierN} 阶：${BASE_TIER_NAME.join(' → ')}。同名字的装备阶数越高，基础数值越高。传世不在八阶体系内（见第六节）`),
-      row('物品等级', `每件装备有 ilvl，越高则词缀数值上限越高。怪物等级决定掉落 ilvl，首领额外 +2`),
+      row('基底阶', `${tierN} 阶：${BASE_TIER_NAME.join(' → ')}。同名字的装备阶数越高，基础数值越高。传世不在基底阶体系内（见第六节）`),
+      row('物品等级', `每件装备有 ilvl，越高则词缀数值上限越高。怪物等级决定掉落 ilvl（上限 ${(typeof ILVL_MAX === 'number') ? ILVL_MAX : 60}），首领额外 +2`),
       row('穿戴需求', `两处门槛：<b>境界等级</b> + <b>根基属性</b>（例：需力量 85 / 体质 75）。需求按<b>职业</b>成长曲线折算 —— 同一件胸甲，刀客为「体质 55」、术士为「体质 43」；武器与饰品额外要求主属性。品质越高要求越严：凡品几乎无门槛，神品最严；<b>传世与神品基本持平</b>，仅多一条敏捷印记，该值低于自然成长上限，不额外占用加点`),
       row('穿不上', `行囊里不满足需求的格子会压暗、左上角盖一枚「需」章；悬停可看差在哪一项、当前差多少。补上加点或换掉就恢复常色`),
       row('校验时机', `只在<b>穿戴那一刻</b>校验。已经穿在身上的装备，之后洗点或换装备导致属性下降也不会脱落 —— 免得洗一次点把全身扒光`),
@@ -701,7 +701,7 @@ const UI = {
           + `<span class="hp-n">传世只出在首领身上；「掉落数量」词条只在池内加权，不会把池外品质抽出来</span>`
         : '小怪不掉神品以上，传世只出在首领身上'),
       row('套装（类型）', `绿色边框，${setIds.length} 套。品质固定为「套装」（${RARITY.set.affixes + RARITY.set.fixed} 词条），靠穿够 2 / 3 / 4 / 5 件激活套装效果，不走升品链`),
-      row('传世（类型）', `红色边框，${uniN} 件。固定词条 + 独有特性 + 技能效果，既不在升品链也不在八阶链 —— 详见第六节`),
+      row('传世（类型）', `红色边框，${uniN} 件。固定词条 + 独有特性 + 技能效果，既不在升品链也不在基底阶链 —— 详见第六节`),
       row('词缀池', `共 ${affN} 条：一阶 ${affTier[1]} 条 / 二阶 ${affTier[2]} 条 / 三阶 ${affTier[3]} 条。阶数越高数值越大，掉落权重越低`),
       row('词缀族', `元素伤害（火/冰/雷/毒）、单项与全抗、+N 技能等级、光环（周围减速/持续伤害）、资源、生存、掉落、暴击、攻速、移速`),
       row('洗练', `炼器台「品质」页可以重洗词条；同一条属性不会在一件装备上出现两次`)
@@ -721,7 +721,7 @@ const UI = {
     const clsUniN = uniList.filter(u => u.cls).length;
     H.push(sec('六 · 传世名器', `${uniN} 件 · ${traitN} 条独有特性`, [
       row('是什么', `红色边框的「传世」装备，共 ${uniN} 件（${clsUniN} 件职业专属、${uniN - clsUniN} 件三职业通用）。每件都有固定名字、固定词条区间、独有特性和专属技能效果`),
-      row('不入八阶', `八阶（${BASE_TIER_NAME.join(' → ')}）讲的是「同一件东西被锻造到多好」；传世天生就是这个样子 —— <b>没有阶、不能升阶</b>，炼器台会直接拒绝并说明原因`),
+      row('不入基底阶', `基底阶（${BASE_TIER_NAME.join(' → ')}，共 ${BASE_TIER_NAME.length} 阶）讲的是「同一件东西被锻造到多好」；传世天生就是这个样子 —— <b>没有阶、不能升阶</b>，炼器台会直接拒绝并说明原因`),
       row('特性唯一', `${traitN} 条特性，每条仅属于一件传世，<b>全表不重复</b>。强化某件装备只为其新增专属特性，不复用其他装备的特性`),
       row('属性类特性', `直接进面板，看到多少就是多少：饮血、金刚、巨灵、疾风这类`),      row('触发类特性', `满足条件自动触发：霜噬减速、焚烬爆炸、雷罚连锁、回响不进冷却、血怒击杀加速`),
       row('机制类特性', `独立实现的一次性机制：涅槃复活、收魂回血、狂战、裂魂暴击爆炸`),
@@ -902,6 +902,91 @@ const UI = {
       row('音量', `设置（${K('O')}）里四条滑杆${volumes.length ? '：' + volumes.join(' / ') : ''}，另有一键静音。拖动即时生效，与画质档位分开存（换角色不重设）；切到后台自动暂停，回到页面继续`),
       row('没有声音', `浏览器要求先有用户操作才允许播放：在页面上<b>点一下</b>（或按键）即可解锁。若仍无声，检查是否静音、主音量是否为 0，以及浏览器标签页是否被静音`)
     ]));
+
+    /* ---------------- 12. 地脉裂隙（M5 落地时漏了说明页，M6 补上） ----------------
+     * 全节实时读 data-dungeon.js：加一类、加一阶、加一条词缀，这一页自己跟着变。
+     * 只有 KEY_TIERS 那一句是硬编码依赖 —— 它定义这个玩法存不存在，
+     * 缺了就不渲染这一节，表结构变了也不会炸。 */
+    if (typeof KEY_TIERS !== 'undefined' && KEY_TIERS.length) {
+      const kt = KEY_TIERS;
+      const dTypes = (typeof DUNGEON_TYPES !== 'undefined') ? DUNGEON_TYPES : [];
+      const dLayers = (typeof DUNGEON_LAYERS !== 'undefined') ? DUNGEON_LAYERS : [];
+      const dAff = (typeof DUNGEON_AFFIXES !== 'undefined') ? DUNGEON_AFFIXES : [];
+      const dCodex = (typeof DUNGEON_CODEX !== 'undefined') ? DUNGEON_CODEX : [];
+      const xpMul = (typeof BALANCE !== 'undefined' && BALANCE.dungeon) ? BALANCE.dungeon.xpMul : 1;
+      const maxAff = Math.max.apply(null, kt.map(t => t.affixN || 0));
+      H.push(sec('十三 · 地脉裂隙', `${dTypes.length} 类 × ${kt.length} 阶 × ${dLayers.length} 层 · ${dAff.length} 条词缀`, [
+        row('是什么', `营地里提青灯的<b>地脉守</b>能用<b>钥匙</b>把地脉推开一条缝。里面是<b>三张独立小图</b>，`
+          + `每层要打够一定比例的怪，尽头的<b>地脉门</b>才会开；第三层是首领场 —— 杀了守卫才算走完一趟`),
+        row('钥匙', `${kt.length} 阶，<b>一阶对一卷</b>：`
+          + kt.map(t => `${t.name}（${t.lvFrom}~${t.lvTo} 级）`).join(' / ') + '。'
+          + `来源两条：精英约一成概率、首领必掉本阶`
+          + `，通关还有三成概率再掉一把次阶钥匙`
+          + `<b>地脉内部不掉钥匙</b> —— 否则「开门 → 门里产钥匙」就成了自循环`),
+        row('怎么进', `在营地找<b>地脉守</b> → 选一把钥匙 → 再选<b>类型</b>（${dTypes.map(t => t.name).join(' / ')}）→ 推门。`
+          + `类型是可以随便挑的：<b>钥匙不带类型</b>，它只决定钥匙的阶`),
+        row('三层', dLayers.map(l =>
+          `${l.name}：${l.total ? l.total + ' 只怪、清 <b>' + Math.round(l.need * 100) + '%</b> 开门' : '只有守关的那个，杀了它才算走完'}`
+        ).join(' · ')),
+        row('词缀', `${dAff.length} 条，<b>随阶递增</b>：低阶一条起步，每往上一阶多一条，最高 ${maxAff} 条。`
+          + `同一阶每次进都是<b>从同一份表随机抽</b>的，所以同一趟开两次门的难度不一样：`),
+        `<div class="hp-tags">${dAff.map(a =>
+          `<span class="hp-tag q">${a.name}（${a.minTier} 阶起）</span>`).join('')}</div>`,
+        row('地脉里的怪', `经验是<b>同卷野外的 ${xpMul} 倍</b> —— 这是一把钥匙换来的，不如野外划算就没人推这道门。`
+          + `怪的等级跟着角色走，守卫的血量与伤害按<b>同层小怪的强度反解</b>（不是写死的固定值），所以五阶的尸冢守卫和五阶的坠天守卫是同样难`),
+        row('地脉异闻', `${dCodex.length} 条（${dTypes.length} 类 × ${kt.length} 阶），每一类每一阶<b>首次通关</b>记一条；`
+          + `某一类凑满 ${kt.length} 阶另有加成。加成是<b>永久属性</b>，跟异兽志走同一条 computePlayerStats 通道`),
+        row('死了', `在地脉里死亡<b>进度作废、钥匙不退</b>，回到本卷营地。`
+          + `这就是「消耗品换时间」的意思 —— 进去之前想清楚`),
+        row('中途退出', `关掉页面 = 这一趟作废（钥匙已经扣了）。下次上线会站在<b>本卷营地</b>，不会卡在半道上`),
+        row('悬赏板', `每卷的悬赏里都有一条<b>地脉悬赏</b>：推一趟对应阶的地脉（任一类都算）就够交。`
+          + `钥匙有限，它更多是「顺手做」—— 指望它刷满一条经验线是不行的`)
+      ]));
+    }
+
+    /* ---------------- 13. 世界 Boss（M18 落地，M18.9 补说明页） ----------------
+     * 全节实时读 data-worldboss.js：改一只的名字 / 领域 / 三阶段，这一页自己跟着变。
+     * 只硬编码依赖 `WORLD_BOSSES` 与 `WORLD_BOSS_ORDER` —— 缺了就不渲染这一节。 */
+    if (typeof WORLD_BOSSES !== 'undefined' && typeof WORLD_BOSS_ORDER !== 'undefined') {
+      const ids = WORLD_BOSS_ORDER;
+      const cfg0 = (typeof WORLD_BOSS_CFG !== 'undefined') ? WORLD_BOSS_CFG : {};
+      const cycleMin = Math.round((cfg0.cycle || 1800000) / 60000);
+      const soul = (typeof WORLD_BOSS_MATERIALS !== 'undefined') ? WORLD_BOSS_MATERIALS.worldsoul : null;
+      H.push(sec('十四 · 世界 Boss', `${ids.length} 只 · 每 ${cycleMin} 分钟轮换一只`, [
+        row('是什么', `山海间游荡的<b>六只巨兽</b>，${cfg0.minLevel || 40} 级起能在野图撞见。`
+          + `<b>同一时刻只有一只</b>，${cycleMin} 分钟换一次；没人打就自动走，被打死则冷却一整个周期。`
+          + `它不在任何一张图的固定首领位上 —— 到点在 <b>homeMaps</b> 里挑一张已解锁的图落下`),
+        row('怎么找', `四条线同时指路：<b>屏幕横幅</b>（换人时弹一次）、<b>小地图星标</b>（领域色五角星 + 外发光，`
+          + `与首领红点完全两套标记）、<b>追踪行</b>（常驻倒计时）、<b>山海志</b>（常驻卡，带「前往」直接传过去）`),
+        row('六只', ids.map(id => {
+          const c = WORLD_BOSSES[id];
+          const dn = (c.domain && c.domain.name) || '领域';
+          return `<b>${c.name}</b>（${dn}）`;
+        }).join(' · ')),
+        row('三阶段', `血量降到 <b>66%</b> 与 <b>33%</b> 时各切一次，阶段名与打法都在下面。`
+          + `按<b>血量比例</b>切、不按时间切 —— 打得快不会跳过阶段，打得慢也不会卡在第一段`),
+        row('怎么打', `六只的<b>五项抗性全部持平</b>：没有「弱点元素」可以猜。`
+          + `答案在<b>领域</b>与<b>阶段</b>里 —— 站在圈里会持续难受，切阶段会改规矩（视野 / 攻速 / 分身 / 盾）。`
+          + `这也是它和<b>八部天龙</b>的分工：八部是「猜元素」（一个 −60 洞 + 四条 +80 墙），世界 Boss 是「读场地」`),
+        row('领域', ids.map(id => {
+          const c = WORLD_BOSSES[id], d = c.domain || {};
+          return `<b>${d.name || '领域'}</b>：${d.desc || ''}`;
+        }).join('<br>')),
+        row('三阶段一览', ids.map(id => {
+          const c = WORLD_BOSSES[id];
+          return `<b>${c.name}</b>：` + (c.phases || []).map(p => p.name).join(' → ');
+        }).join('<br>')),
+        row('掉落', `必掉 <b>${cfg0.uniqueMin || 1}~${cfg0.uniqueMax || 3} 件传世</b>（难度越高下限越高，极难 3~5 件），`
+          + `外加三种材料与 <b>2~4 枚符文</b>。战利品落在尸体<b>边缘</b>，不会埋进几十米长的模型里`),
+        row('世界魂', soul
+          ? `六只<b>必掉 1~2 个</b><b>${soul.name}</b>。${soul.desc}`
+          : `材料与符文直接进材料仓，不占行囊格`),
+        row('节奏', `它是<b>打卡</b>，不是刷子：${cycleMin} 分钟一次、一次必出传世。`
+          + `想反复刷装备去<b>地脉裂隙</b>或章节首领；想稳拿传世就来这里等这一只`),
+        row('死了', `世界 Boss 的领域<b>跟着地点不跟着怪</b> —— 它追出圈外，圈里的压制就没了；`
+          + `把它拉出领域打，是正经打法之一`)
+      ]));
+    }
 
     /* 反解短名：'一 · 怎么玩' → '怎么玩'，作为左侧页签文字 */
     const SECTIONS = H.map((html, i) => {
@@ -1277,7 +1362,10 @@ const UI = {
       const c = typeof b.color === 'number' ? '#' + b.color.toString(16).padStart(6, '0') : (b.color || '#d8b25a');
       const icon = b.icon || (b.name ? b.name.slice(0, 1) : '·');
       const desc = b.desc ? ` title="${b.desc}"` : '';
-      return `<div class="buff ${b.type || 'buff'}" style="--c:${c}"${desc}><span class="bi">${icon}</span><span class="bn">${b.name}</span><span class="bt">${Math.max(0, Number(b.dur) || 0).toFixed(1)}s</span></div>`;
+      /* [M18.5] 领域压制没有「剩余秒数」—— 它是「站在圈里就一直有」。
+       * 硬写 0.0s 会让人以为快结束了，所以显示「常驻」。 */
+      const tail = b.noTimer ? '常驻' : Math.max(0, Number(b.dur) || 0).toFixed(1) + 's';
+      return `<div class="buff ${b.type || 'buff'}" style="--c:${c}"${desc}><span class="bi">${icon}</span><span class="bn">${b.name}</span><span class="bt">${tail}</span></div>`;
     }).join('');
   },
 
@@ -1402,7 +1490,7 @@ const UI = {
    * 按区域分页；击杀解锁；集齐一区给永久属性（走 Game.codexBonus）。
    * 未收录的条目只露「？」——留白比剧透更有收集欲。
    * ============================================================ */
-  codexRegion: 'forest',
+  codexRegion: 'part1',
 
   renderCodex() {
     if (!Game.state) return;
@@ -1732,7 +1820,7 @@ const UI = {
         sub: '炼器 / 洗练 / 扩容的通货', desc: '分解装备所得，凡 → 灵 → 玄 → 神 逐阶精纯。',
         qty: Game.crystalTierCount(i + 1)
       }));
-      /* 匠材九种：没有的也占一格（灰显），玩家才知道该去刷什么 */
+      /* 匠材十种（M18.8 加了世界魂）：没有的也占一格（灰显），玩家才知道该去刷什么 */
       for (const id of CRAFT_MAT_ORDER) {
         const d = CRAFT_MATS[id];
         cells.push({
@@ -1782,13 +1870,13 @@ const UI = {
       const done = (s.quests && s.quests.done) || [];
       const cnt = {};
       done.forEach(id => { cnt[id] = (cnt[id] || 0) + 1; });
-      cells = Object.keys(cnt).map(id => {
+      cells = Object.keys(cnt).map((id, i) => {
         const q = QUESTS[id];
         if (!q) return null;
         return {
           icon: matIcon('quest', { size: 30, color: '#d8b25a', glow: true }), color: '#d8b25a',
           name: q.name + '·凭证', sub: '委托完结的凭证', desc: q.brief || '',
-          qty: cnt[id], idx: id.replace(/^q/, '')
+          qty: cnt[id], idx: String(i + 1)
         };
       }).filter(Boolean);
       document.getElementById('invCap').textContent = `任务物品 ${cells.length} 种`;
@@ -2975,43 +3063,159 @@ const UI = {
       : '<span style="color:#6a6458">尚无激活的套装效果</span>';
   },
 
-  /* ---------------- 任务 ---------------- */
+  /* ---------------- 任务（M2：主线 / 支线 / 悬赏三类分栏） ---------------- */
   renderQuests() {
     const s = Game.state;
     const list = document.getElementById('questList');
-    if (!s.quests.active.length) {
-      list.innerHTML = `<div class="quest"><div class="qn">暂无委托</div>
-        <div class="qb">回桃源村找村长，听听最近的怪事。</div></div>`;
+    const tr = QuestSys.track();
+    const all = [];
+    if (tr.main) all.push({ a: tr.main, kind: 'main' });
+    for (const a of tr.sides) all.push({ a: a, kind: 'side' });
+    for (const a of tr.boards) all.push({ a: a, kind: 'board' });
+
+    /* 世界 Boss 卡要留着 —— 它不属于任务链，没接任务时它反而是
+     * 山海志里唯一有内容的一格。
+     * 注意它必须**在空列表分支之前**取：`const` 声明在下面时，
+     * 空列表这条分支会读到 TDZ 里的 `wbCard` 直接抛 ReferenceError
+     * （表现为「任务全交完，一开山海志就报错」）。 */
+    const wbCard = (this.worldBossCard ? this.worldBossCard() : '');
+    if (!all.length) {
+      list.innerHTML = wbCard + `<div class="quest"><div class="qn">暂无委托</div>
+        <div class="qb">回营地找掌事听主线，找录事接支线，任务板上还有悬赏。</div></div>`;
       return;
     }
-    list.innerHTML = s.quests.active.map(a => {
+    const tag = { main: '主线', side: '支线', board: '悬赏' };
+    list.innerHTML = wbCard + all.map(({ a, kind }) => {
       const q = QUESTS[a.id];
-      return `<div class="quest"><div class="qn">${q.name}</div>
-        <div class="qb">${q.brief}</div>
-        ${q.objectives.map((o, i) => {
-        const cur = Math.min(a.progress[i] || 0, o.count);
-        const done = cur >= o.count;
-        return `<div class="qo ${done ? 'done' : ''}">· ${o.label}　${cur}/${o.count}</div>`;
-      }).join('')}
+      if (!q) return '';
+      const rows = QuestSys.lines(a).map(o =>
+        `<div class="qo ${o.done ? 'done' : ''}">· ${o.label}　${o.cur}/${o.count}</div>`
+      ).join('');
+      const where = (q.map && q.map !== 'any' && MAPS[q.map]) ? `<div class="qo" style="color:#7a7466">目标 · ${MAPS[q.map].name}</div>` : '';
+      return `<div class="quest"><div class="qn">${q.name}<span style="color:#7a7466;font-size:11px;margin-left:6px">${tag[kind]}</span></div>
+        <div class="qb">${q.brief}</div>${where}${rows}
         </div>`;
     }).join('');
   },
 
+  /* 追踪三行：1 主线 + 2 支线 + 悬赏计数（§4.4）。
+   * 只显示 active[0] 的话，接了两条支线的玩家永远看不见第二条。 */
   updateQuestTrack() {
     const s = Game.state;
     const el = document.getElementById('questTrack');
-    if (!s || !s.quests.active.length) { el.style.display = 'none'; return; }
+    if (!s) { el.style.display = 'none'; return; }
+    const tr = QuestSys.track();
+    if (!tr.main && !tr.sides.length && !tr.boards.length) { el.style.display = 'none'; return; }
     el.style.display = 'block';
-    const a = s.quests.active[0];
-    const q = QUESTS[a.id];
-    let h = `<b>${q.name}</b>`;
-    q.objectives.forEach((o, i) => {
-      const cur = Math.min(a.progress[i] || 0, o.count);
-      const done = cur >= o.count;
-      h += `<div class="obj ${done ? 'done' : ''}">${o.label} ${cur}/${o.count}</div>`;
-    });
-    if (s.quests.active.length > 1) h += `<div class="obj" style="color:#7a7466">另有 ${s.quests.active.length - 1} 项委托</div>`;
+
+    let h = '';
+    const block = (a, mark) => {
+      const q = QUESTS[a.id];
+      if (!q) return '';
+      let x = `<b>${mark}${q.name}</b>`;
+      QuestSys.lines(a).forEach(o => {
+        x += `<div class="obj ${o.done ? 'done' : ''}">${o.label} ${o.cur}/${o.count}</div>`;
+      });
+      return x;
+    };
+    if (tr.main) h += block(tr.main, '');
+    for (const a of tr.sides) h += block(a, '支线 · ');
+    if (tr.boards.length) {
+      /* 悬赏只报数，不占行 —— 三条悬赏都展开会把追踪框撑到屏幕外 */
+      const done = tr.boards.filter(a => QuestSys.ready(a)).length;
+      h += `<div class="obj" style="color:#c8a86a">悬赏 ${tr.boards.length} 条${done ? ' · ' + done + ' 条可交' : ''}</div>`;
+    }
     el.innerHTML = h;
+  },
+
+  /* ---------------- 世界 Boss（M18.3） ----------------
+   * 三处显示同一份数据（横幅 / 追踪行 / 山海志卡），倒计时全部走
+   * `WorldBoss.timeText()` —— 各写一个 format 迟早出现「一处 12:34、
+   * 一处 12:35」，玩家会以为面板坏了。 */
+
+  /* 现世横幅：屏幕上方 1/3 横贯一条，3.2 秒。
+   * 颜色取领域色（`domain.color`），六只一眼能分出是谁。
+   * 重播要「先摘 show、强制回流、再挂」——否则同一只连刷两次不会动。 */
+  showWorldBossBanner(cfg, mapName) {
+    const el = document.getElementById('wbBanner');
+    if (!el || !cfg) return;
+    const col = (cfg.domain && cfg.domain.color) || '#e0895a';
+    el.style.setProperty('--wbc', col);
+    const nm = document.getElementById('wbbName');
+    if (nm) { nm.textContent = cfg.name; nm.style.color = col; }
+    const sub = document.getElementById('wbbSub');
+    if (sub) sub.textContent = (cfg.title || '') + '　·　' + (mapName || '');
+    el.classList.remove('show');
+    void el.offsetWidth;
+    el.classList.add('show');
+    clearTimeout(this._wbBannerT);
+    this._wbBannerT = setTimeout(() => el.classList.remove('show'),
+      (typeof WORLD_BOSS_CFG !== 'undefined' ? WORLD_BOSS_CFG.bannerT : 3.2) * 1000);
+  },
+
+  /* 追踪行：每秒被 WorldBoss.tick 调一次。
+   * **只改文本、不重建 DOM** —— 每秒重建会让「点一下前往」在
+   * 手指按下与抬起之间失效（手机端尤其明显）。 */
+  renderWorldBoss(wb) {
+    const el = document.getElementById('wbTrack');
+    if (!el) return;
+    const r = (wb && typeof wb.rec === 'function') ? wb.rec() : null;
+    const cfg = r ? worldBossById(r.id) : null;
+    if (!r || !cfg) { el.style.display = 'none'; return; }
+    const dead = !!r.killed;
+    const map = MAPS[r.mapId] || {};
+    el.style.display = 'block';
+    el.classList.toggle('dead', dead);
+    /* 结构只在「换人 / 换图 / 死活变化」时重建，其余时间只改倒计时 */
+    const key = r.id + '|' + r.mapId + '|' + (dead ? 1 : 0);
+    if (this._wbKey !== key) {
+      this._wbKey = key;
+      el.innerHTML =
+        '<div class="wb-k">' + (dead ? '已 讨 伐' : '世 界 Boss') + '</div>' +
+        '<div class="wb-n">' + cfg.name + '</div>' +
+        '<div class="wb-m">' + (map.name || r.mapId) + '</div>' +
+        '<div class="wb-m"><span class="wb-t" id="wbTime">--:--</span>' +
+        (dead ? ' 后再现' : ' 后离去') + '</div>';
+    }
+    const t = document.getElementById('wbTime');
+    if (t) { const txt = wb.timeText(); if (t.textContent !== txt) t.textContent = txt; }
+    /* 山海志开着的时候，卡片里的倒计时也要跟着走 ——
+     * 面板不会每秒重绘（那样会把滚动位置也重置掉）。 */
+    const ct = document.getElementById('wbCardTime');
+    if (ct) { const txt2 = wb.timeText(); if (ct.textContent !== txt2) ct.textContent = txt2; }
+  },
+
+  /* 点追踪行 / 山海志卡片的「前往」。门禁交给 Game.travelTo ——
+   * 那里已经处理了「没抵达 / 境界不足 / 印门」，这里再判一遍必然漂移。 */
+  gotoWorldBoss() {
+    const r = (typeof WorldBoss !== 'undefined') ? WorldBoss.rec() : null;
+    if (!r) return;
+    if (r.killed) { this.toast('这一只已经被讨伐了，等下一只。'); return; }
+    if (!MAPS[r.mapId]) return;
+    if (Game.state.mapId === r.mapId) { this.toast('它就在这张图上。'); return; }
+    this.closeAll();
+    Game.travelTo(r.mapId);
+  },
+
+  /* 山海志顶部的常驻卡。它不属于任何任务链，所以单独拼一段，
+   * 不塞进 QuestSys —— 那个模块只管「接了的事」。 */
+  worldBossCard() {
+    const r = (typeof WorldBoss !== 'undefined') ? WorldBoss.rec() : null;
+    const cfg = r ? worldBossById(r.id) : null;
+    if (!r || !cfg) return '';
+    const dead = !!r.killed;
+    const map = MAPS[r.mapId] || {};
+    const dom = cfg.domain || {};
+    const rows = [
+      '所在 · ' + (map.name || r.mapId),
+      '剩余 · <span id="wbCardTime">' + WorldBoss.timeText() + '</span>' + (dead ? '（讨伐后冷却）' : ''),
+      '领域 · ' + (dom.name || '—') + '　半径 ' + (dom.radius || '—') + ' 米'
+    ].map(t => `<div class="qo">${t}</div>`).join('');
+    return `<div class="quest wbc"><div class="qn">${cfg.name}` +
+      `<span style="color:#c8563a;font-size:11px;margin-left:6px">${dead ? '已讨伐' : '世界 Boss'}</span></div>` +
+      `<div class="qb">${cfg.lore || ''}</div>${rows}` +
+      `<div class="qr" style="color:${dead ? '#6a5a50' : '#c8a86a'};cursor:${dead ? 'default' : 'pointer'}"` +
+      (dead ? '' : ' onclick="UI.gotoWorldBoss()"') + `>${dead ? '—' : '点击前往 ›'}</div></div>`;
   },
 
   /* ---------------- 对话 ---------------- */
@@ -3108,25 +3312,116 @@ const UI = {
     }, 1000);
   },
 
-  /* ---------------- 传送 ---------------- */
+  /* ---------------- 传送 / 山河图 ---------------- */
+  /* [M0] 三层结构：卷 tab → 章分组 → 图列表。
+   * 只做「看」和「去」，不改地图本身 —— 30 个图位里目前只有 6 张有真实地图，
+   * 其余 id 为 null，UI 上显示「未开放」，等 M3 补。 */
+  wmPart: 0,
+
   openTravel() {
+    const p = document.getElementById('travelPanel');
+    if (!p) return;
+    this.closeAll(p);
+    if (!this.wmPart && Game.state) this.wmPart = Game.state.part || 1;
+    this.renderWorldMap();
+    p.classList.add('open');
+  },
+
+  renderWorldMap() {
     const s = Game.state;
-    const list = document.getElementById('travelList');
-    const ids = ['village', 'forest', 'swamp', 'mine', 'abyss', 'heaven'];
-    list.innerHTML = ids.map(id => {
-      const m = MAPS[id];
-      const locked = s.level < (m.unlock || 1);
-      return `<div class="trow ${locked ? 'locked' : ''}">
-        <div><div class="tn">${m.name}</div>
-        <div class="tl">推荐境界 ${m.level}${locked ? ' · 需 ' + m.unlock + ' 级' : ''}</div></div>
-        ${locked ? '<span class="tl">未开启</span>' : `<button class="btn" data-go="${id}" style="padding:4px 14px;font-size:11px">前往</button>`}
+    if (!s) return;
+    const tabs = document.getElementById('wmTabs');
+    const body = document.getElementById('wmBody');
+    if (!tabs || !body) return;
+
+    const cur = this.wmPart || s.part || 1;
+    this.wmPart = cur;
+    const CN = '一二三四五';
+
+    /* ---- 卷 tab：每卷显示「已开放图数 / 图位总数」 ---- */
+    tabs.innerHTML = [1, 2, 3, 4, 5].map(n => {
+      const pt = PARTS[n], cnt = mapCountOfPart(n);
+      const open = this._partOpen(n, s);
+      return `<button class="wm-tab ${n === cur ? 'on' : ''} ${open ? '' : 'off'}" data-part="${n}">
+        <span class="wm-tn">卷${CN[n - 1]}</span>
+        <span class="wm-ts">${pt.name}</span>
+        <span class="wm-tc">${cnt.open}/${cnt.all}</span>
+      </button>`;
+    }).join('');
+    tabs.querySelectorAll('[data-part]').forEach(b => b.addEventListener('click', () => {
+      this.wmPart = +b.dataset.part;
+      this.renderWorldMap();
+    }));
+
+    /* ---- 卷头 ---- */
+    const pt = PARTS[cur], camp = CAMPS[pt.camp];
+    /* [M1] 营地行：已抵达才给「回营地」按钮（和 Game.travelTo 的营地门禁同一口径）。
+     * 没到过这一卷就只显示「未抵达」—— 营地是传送网络的中枢，不能靠等级硬闯。 */
+    const campSeen = (s.camps || []).indexOf(camp.id) >= 0;
+    const inCamp = s.mapId === camp.mapId;
+    const campTail = !camp.mapId ? '<span class="wm-ml">未开放</span>'
+      : inCamp ? '<span class="wm-ml">当前所在</span>'
+        : campSeen ? `<button class="btn wm-go" data-go="${camp.mapId}">回营地</button>`
+          : '<span class="wm-ml">未抵达</span>';
+    let html = `<div class="wm-head">
+      <div class="wm-hn">卷${CN[cur - 1]} · ${pt.name}</div>
+      <div class="wm-hr">${pt.from}–${pt.to} 级 · ${pt.keyName}</div>
+      <div class="wm-camp">营地 <b>${camp.name}</b>${campTail}</div>
+      <div class="wm-hb">${pt.brief}</div>
+    </div>`;
+
+    /* ---- 章 → 图 ---- */
+    html += actsOfPart(cur).map(a => {
+      const maps = a.maps.map(m => {
+        if (!m.id) {
+          return `<div class="wm-map shut"><span class="wm-mn">${m.name}</span><span class="wm-ml">未开放</span></div>`;
+        }
+        const mm = MAPS[m.id];
+        const seen = (s.mapsSeen || []).indexOf(m.id) >= 0;
+        const need = mm.unlock || 1;
+        /* [M7] 印门：无相天要 8 枚魔将之印才进得去。
+         * 这里把「前往」换成「需 8 印（3）」而不是让它点下去再弹一句
+         * 「天龙终门未开」—— 后者看起来像坏了，前者是进度。
+         * 拦截本身在 Game.travelTo 里（山河图之外还有传送阵 / 章间门两条路）。 */
+        const sealNeed = mm.sealNeed || 0;
+        const sealHave = (typeof Game !== 'undefined' && Game.sealCount) ? Game.sealCount() : 0;
+        const sealOk = !sealNeed || sealHave >= sealNeed;
+        /* 回头路：去过的图随时能回，不受等级限制（和 Game.travelTo 同一口径） */
+        const can = (seen || s.level >= need) && sealOk;
+        const here = s.mapId === m.id;
+        const tail = here ? '<span class="wm-ml">当前所在</span>'
+          : !sealOk ? `<span class="wm-ml">需 ${sealNeed} 印（${sealHave}）</span>`
+            : can ? `<button class="btn wm-go" data-go="${m.id}">前往</button>`
+              : `<span class="wm-ml">需 ${need} 级</span>`;
+        return `<div class="wm-map ${can ? '' : 'shut'} ${here ? 'here' : ''}">
+          <span class="wm-mn">${mm.name}</span>
+          <span class="wm-ml">推荐 ${mm.level} 级</span>
+          ${tail}
+        </div>`;
+      }).join('');
+      return `<div class="wm-act">
+        <div class="wm-ah"><b>第${'一二三四五六七八九十'[a.no - 1]}章</b> ${a.name}<span>${a.from}–${a.to} 级</span></div>
+        <div class="wm-maps">${maps}</div>
       </div>`;
     }).join('');
-    list.querySelectorAll('[data-go]').forEach(b => b.addEventListener('click', () => {
-      Game.travelTo(b.dataset.go); this.closeAll();
+
+    body.innerHTML = html;
+    body.querySelectorAll('[data-go]').forEach(b => b.addEventListener('click', () => {
+      Game.travelTo(b.dataset.go);
+      this.closeAll();
     }));
-    this.closeAll(document.getElementById('travelPanel'));
-    document.getElementById('travelPanel').classList.add('open');
+  },
+
+  /* 某卷是否已抵达：卷内任意一张图去过，或等级够得着该卷下限 */
+  _partOpen(n, s) {
+    if (n === 1) return true;
+    if (s.part && s.part >= n) return true;
+    for (const a of actsOfPart(n)) {
+      for (const m of a.maps) {
+        if (m.id && (s.mapsSeen || []).indexOf(m.id) >= 0) return true;
+      }
+    }
+    return s.level >= PARTS[n].from;
   },
 
   /* ---------------- 炼金师（分解 / 升级 / 套装打造） ---------------- */
@@ -3477,7 +3772,7 @@ const UI = {
     if (foot) {
       const free = Math.max(0, cap - all.length);
       const extra = rows.length !== all.length ? ` · 筛出 <b>${rows.length}</b> 件` : '';
-      foot.innerHTML = `<b>仓库跨角色共享</b>，三个角色位读同一份，换号不丢东西 · 剩 <b>${free}</b> 格${extra}<br>
+      foot.innerHTML = `<b>仓库跨角色共享</b>，所有角色位读同一份，换号不丢东西 · 剩 <b>${free}</b> 格${extra}<br>
         左键行囊物品＝存入 · 左键仓库物品＝取回 · 「整理」按 部位 → 品质 → 等级 排序`;
     }
 
@@ -3705,133 +4000,12 @@ const UI = {
     return z ? base + ' · ' + z.name : base;
   },
 
+  /* [M3] 小地图搬到 src/ui-minimap.js —— 见那里的文件头注释。
+   * 这里只保留转发，因为 drawMinimap 在 game.js 的每帧循环里被调用，
+   * 改调用点会让 diff 扩散到无关文件；转发是最小改动面。 */
   drawMinimap() {
-    const s = Game.state;
-    if (!s) return;
-    const cv = document.getElementById('minimap');
-    const g = cv.getContext('2d');
-    const W = cv.width, H = cv.height, R = W / 2;
-    const map = MAPS[s.mapId];
-    /* [v1.12.1] 小地图显示半径不能直接挂 map.size —— 区域放大后 size 跟着涨，
-     * 挂 size 会让小地图一次显示整张图，区域轮廓糊成一团小方块。
-     * 改成按 zone 包围盒算，再夹在 30~58 米之间：
-     * 桃源村（半径 31）刚好能看全，战斗图固定显示身边 ~58 米的局部。 */
-    const zs = (typeof mapZones === 'function') ? mapZones(s.mapId) : null;
-    let span = map.size * 0.5;
-    if (zs) {
-      let mr = 0;
-      for (const z of zs) {
-        const hw = z.type === 'circle' ? z.r : z.w / 2;
-        const hh = z.type === 'circle' ? z.r : z.h / 2;
-        mr = Math.max(mr, Math.hypot(Math.abs(z.x) + hw, Math.abs(z.z) + hh));
-      }
-      span = mr * 1.12;
-    }
-    span = Math.max(30, Math.min(span, 52));
-    const scale = R / span;
-    g.clearRect(0, 0, W, H);
-    g.save();
-    g.beginPath(); g.arc(R, R, R - 3, 0, 7); g.clip();
-    // 底
-    const mapCol = {
-      village: ['#3a3424', '#14120c'], forest: ['#2c3d24', '#0e140c'],
-      swamp: ['#35251f', '#120c0a'], mine: ['#2c2c34', '#0d0d11'],
-      abyss: ['#241a30', '#0b0810'], heaven: ['#3a4658', '#101620']
-    }[s.mapId] || ['#2a2a24', '#0a0a0a'];
-    const grd = g.createRadialGradient(R, R, 10, R, R, R);
-    grd.addColorStop(0, mapCol[0]);
-    grd.addColorStop(1, mapCol[1]);
-    g.fillStyle = grd; g.fillRect(0, 0, W, H);
-
-    const px = s.playerPos.x, pz = s.playerPos.z;
-    const tx = x => R + (x - px) * scale;
-    const tz = z => R + (z - pz) * scale;
-
-    /* [M12] 区域轮廓：矩形房间 / 圆形场地 / 走廊各画一遍。
-     * 走廊用暗一档的填充，房间带描边 —— 玩家能一眼看出「哪是路、哪是屋子」，
-     * 而不是原来那种「一片圆 + 几个点」。 */
-    if (zs) {
-      if (zs.length > 1) {
-        const el = document.getElementById('zoneName');
-        const txt = this.zoneLabel(s);
-        if (el && el.textContent !== txt) el.textContent = txt;
-      }
-      for (const z of zs) {
-        g.beginPath();
-        if (z.type === 'circle') g.arc(tx(z.x), tz(z.z), z.r * scale, 0, 7);
-        else g.rect(tx(z.x - z.w / 2), tz(z.z - z.h / 2), z.w * scale, z.h * scale);
-        const isLink = z.kind === 'link';
-        const isBoss = z.kind === 'boss';
-        g.fillStyle = isLink ? '#332f24' : (isBoss ? '#3d2a2a' : '#45402f');
-        g.fill();
-        g.strokeStyle = isBoss ? 'rgba(255,90,70,.5)' : (isLink ? 'rgba(216,178,90,.16)' : 'rgba(216,178,90,.38)');
-        g.lineWidth = isLink ? 1 : 1.4;
-        g.stroke();
-      }
-    } else {
-      // 网格（没有区域配置的图，例如试炼擂台）
-      g.strokeStyle = 'rgba(216,178,90,.06)'; g.lineWidth = 1;
-      for (let i = -4; i <= 4; i++) {
-        g.beginPath(); g.moveTo(R + i * 40, 0); g.lineTo(R + i * 40, H); g.stroke();
-        g.beginPath(); g.moveTo(0, R + i * 40); g.lineTo(W, R + i * 40); g.stroke();
-      }
-    }
-
-    /* 视野扇形：朝向前方 70°，压在区域上面，用来指示朝向 */
-    {
-      const fa = Math.atan2(Game.playerFace.x, Game.playerFace.z);
-      g.save();
-      g.translate(R, R); g.rotate(fa);
-      const fan = g.createRadialGradient(0, 0, 4, 0, 0, R * 0.62);
-      fan.addColorStop(0, 'rgba(240,224,184,.20)');
-      fan.addColorStop(1, 'rgba(240,224,184,0)');
-      g.fillStyle = fan;
-      g.beginPath(); g.moveTo(0, 0); g.arc(0, 0, R * 0.62, -0.61, 0.61); g.closePath(); g.fill();
-      g.restore();
-    }
-
-    // 传送阵
-    const p = map.portal;
-    if (p) {
-      g.strokeStyle = '#6aa8ff'; g.lineWidth = 2;
-      g.beginPath(); g.arc(tx(p.x), tz(p.z), 7, 0, 7); g.stroke();
-    }
-    // NPC
-    if (map.npcs) {
-      for (const id of map.npcs) {
-        const n = Game.npcs[id];
-        if (!n) continue;
-        g.fillStyle = '#ffd166';
-        g.beginPath(); g.arc(tx(n.pos.x), tz(n.pos.z), 4, 0, 7); g.fill();
-      }
-    }
-    // 敌人
-    for (const e of Game.enemies) {
-      if (e.dead) continue;
-      g.fillStyle = e.boss ? '#ff4a3a' : (e.elite ? '#ff9a3c' : '#c85a4a');
-      const r = e.boss ? 6 : 2.6;
-      g.beginPath(); g.arc(tx(e.pos.x), tz(e.pos.z), r, 0, 7); g.fill();
-    }
-    // 掉落
-    for (const l of Game.loot) {
-      if (l.taken) continue;
-      g.fillStyle = l.item ? RARITY[l.item.rarity].color : '#e8c878';
-      g.fillRect(tx(l.pos.x) - 1.5, tz(l.pos.z) - 1.5, 3, 3);
-    }
-    // 玩家
-    const ang = Math.atan2(Game.playerFace.x, Game.playerFace.z);
-    g.save();
-    g.translate(R, R); g.rotate(ang);
-    g.fillStyle = '#f0e0b8';
-    g.beginPath(); g.moveTo(0, -8); g.lineTo(5, 6); g.lineTo(0, 3); g.lineTo(-5, 6); g.closePath(); g.fill();
-    g.restore();
-    g.restore();
-
-    // 边框
-    g.strokeStyle = 'rgba(216,178,90,.35)'; g.lineWidth = 2;
-    g.beginPath(); g.arc(R, R, R - 3, 0, 7); g.stroke();
-    g.strokeStyle = 'rgba(0,0,0,.8)'; g.lineWidth = 1;
-    g.beginPath(); g.arc(R, R, R - 6, 0, 7); g.stroke();
+    if (typeof Minimap === 'undefined') return;
+    Minimap.draw(Game.state);
   },
 
   /* ============================================================

@@ -107,7 +107,7 @@ if git rev-parse --verify --quiet "refs/heads/$BRANCH" >/dev/null; then
 elif git rev-parse --verify --quiet "refs/remotes/origin/$BRANCH" >/dev/null; then
   REF="origin/$BRANCH"
 else
-  die "找不到分支 $BRANCH（本地和 origin 都没有）"
+  die "找不到分支 ${BRANCH}（本地和 origin 都没有）"
 fi
 SHA=$(git rev-parse --short "$REF")
 
@@ -165,7 +165,7 @@ fi
 # 7. 提交推送
 if [ "$DRY" = 1 ]; then
   echo
-  warn "--dry：已导出到 $OUT，未提交、未推送"
+  warn "--dry：已导出到 ${OUT}，未提交、未推送"
   echo "${DIM}  本地验证：python -m http.server 8765 --bind 127.0.0.1${N}"
   echo "${DIM}            然后打开 http://127.0.0.1:8765/$OUT/${N}"
   exit 0
