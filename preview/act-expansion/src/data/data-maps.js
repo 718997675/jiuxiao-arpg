@@ -208,6 +208,28 @@ function bossPosOf(mapId, bossId, idx) {
   ];
 }
 
+/* 出口门落点：**首领区的最深处**（离入口最远的那一侧）。
+ *
+ * 为什么不放在入口旁（M1 那版的做法）：
+ *   ① 入口旁已经有传送阵（开山河图）和路标石，再塞一扇门，三样东西挤在出生点，
+ *      玩家分不清哪扇是「顺着走下一张」、哪扇是「翻面板」；
+ *   ② 一进图就能穿门跳过整张地图 —— 关卡该是「从入口打到首领，门在首领身后」。
+ *   骨架的约定是「入口在南（+z），首领场在北（−z）」，所以门放在 boss 区
+ *   圆心以北 0.62×可用半径处：打完首领继续往北走，门就在那儿，再往前才是区界。
+ *
+ * 返回 { x, z }；没有 boss 区的图返回 null（调用方回退到入口旁，别让门凭空消失）。 */
+const GATE_EDGE = 4.2;        /* 门离 boss 区边界的最小余量（米），别贴墙 */
+function gatePosOf(mapId) {
+  const zs = mapZones(mapId);
+  if (!zs) return null;
+  const boss = zs.find(z => z.kind === 'boss');
+  if (!boss) return null;
+  /* isles 骨架的首领区 id 叫 nave（祭岛），但 kind 一律是 'boss' —— 按 kind 找，别按 id */
+  const rad = boss.type === 'circle' ? boss.r : Math.min(boss.w, boss.h) * 0.5;
+  const d = Math.max(3, rad - GATE_EDGE) * 0.62;
+  return { x: +(boss.x).toFixed(2), z: +(boss.z - d).toFixed(2) };
+}
+
 /* ============================================================
  * [M3] 骨架系统 —— 25 张新图不再手写 zone 坐标
  *

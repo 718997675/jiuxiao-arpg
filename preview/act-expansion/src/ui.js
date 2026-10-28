@@ -944,6 +944,50 @@ const UI = {
       ]));
     }
 
+    /* ---------------- 13. 世界 Boss（M18 落地，M18.9 补说明页） ----------------
+     * 全节实时读 data-worldboss.js：改一只的名字 / 领域 / 三阶段，这一页自己跟着变。
+     * 只硬编码依赖 `WORLD_BOSSES` 与 `WORLD_BOSS_ORDER` —— 缺了就不渲染这一节。 */
+    if (typeof WORLD_BOSSES !== 'undefined' && typeof WORLD_BOSS_ORDER !== 'undefined') {
+      const ids = WORLD_BOSS_ORDER;
+      const cfg0 = (typeof WORLD_BOSS_CFG !== 'undefined') ? WORLD_BOSS_CFG : {};
+      const cycleMin = Math.round((cfg0.cycle || 1800000) / 60000);
+      const soul = (typeof WORLD_BOSS_MATERIALS !== 'undefined') ? WORLD_BOSS_MATERIALS.worldsoul : null;
+      H.push(sec('十四 · 世界 Boss', `${ids.length} 只 · 每 ${cycleMin} 分钟轮换一只`, [
+        row('是什么', `山海间游荡的<b>六只巨兽</b>，${cfg0.minLevel || 40} 级起能在野图撞见。`
+          + `<b>同一时刻只有一只</b>，${cycleMin} 分钟换一次；没人打就自动走，被打死则冷却一整个周期。`
+          + `它不在任何一张图的固定首领位上 —— 到点在 <b>homeMaps</b> 里挑一张已解锁的图落下`),
+        row('怎么找', `四条线同时指路：<b>屏幕横幅</b>（换人时弹一次）、<b>小地图星标</b>（领域色五角星 + 外发光，`
+          + `与首领红点完全两套标记）、<b>追踪行</b>（常驻倒计时）、<b>山海志</b>（常驻卡，带「前往」直接传过去）`),
+        row('六只', ids.map(id => {
+          const c = WORLD_BOSSES[id];
+          const dn = (c.domain && c.domain.name) || '领域';
+          return `<b>${c.name}</b>（${dn}）`;
+        }).join(' · ')),
+        row('三阶段', `血量降到 <b>66%</b> 与 <b>33%</b> 时各切一次，阶段名与打法都在下面。`
+          + `按<b>血量比例</b>切、不按时间切 —— 打得快不会跳过阶段，打得慢也不会卡在第一段`),
+        row('怎么打', `六只的<b>五项抗性全部持平</b>：没有「弱点元素」可以猜。`
+          + `答案在<b>领域</b>与<b>阶段</b>里 —— 站在圈里会持续难受，切阶段会改规矩（视野 / 攻速 / 分身 / 盾）。`
+          + `这也是它和<b>八部天龙</b>的分工：八部是「猜元素」（一个 −60 洞 + 四条 +80 墙），世界 Boss 是「读场地」`),
+        row('领域', ids.map(id => {
+          const c = WORLD_BOSSES[id], d = c.domain || {};
+          return `<b>${d.name || '领域'}</b>：${d.desc || ''}`;
+        }).join('<br>')),
+        row('三阶段一览', ids.map(id => {
+          const c = WORLD_BOSSES[id];
+          return `<b>${c.name}</b>：` + (c.phases || []).map(p => p.name).join(' → ');
+        }).join('<br>')),
+        row('掉落', `必掉 <b>${cfg0.uniqueMin || 1}~${cfg0.uniqueMax || 3} 件传世</b>（难度越高下限越高，极难 3~5 件），`
+          + `外加三种材料与 <b>2~4 枚符文</b>。战利品落在尸体<b>边缘</b>，不会埋进几十米长的模型里`),
+        row('世界魂', soul
+          ? `六只<b>必掉 1~2 个</b><b>${soul.name}</b>。${soul.desc}`
+          : `材料与符文直接进材料仓，不占行囊格`),
+        row('节奏', `它是<b>打卡</b>，不是刷子：${cycleMin} 分钟一次、一次必出传世。`
+          + `想反复刷装备去<b>地脉裂隙</b>或章节首领；想稳拿传世就来这里等这一只`),
+        row('死了', `世界 Boss 的领域<b>跟着地点不跟着怪</b> —— 它追出圈外，圈里的压制就没了；`
+          + `把它拉出领域打，是正经打法之一`)
+      ]));
+    }
+
     /* 反解短名：'一 · 怎么玩' → '怎么玩'，作为左侧页签文字 */
     const SECTIONS = H.map((html, i) => {
       const m = html.match(/<h4>([^<]*)/);
@@ -1318,7 +1362,10 @@ const UI = {
       const c = typeof b.color === 'number' ? '#' + b.color.toString(16).padStart(6, '0') : (b.color || '#d8b25a');
       const icon = b.icon || (b.name ? b.name.slice(0, 1) : '·');
       const desc = b.desc ? ` title="${b.desc}"` : '';
-      return `<div class="buff ${b.type || 'buff'}" style="--c:${c}"${desc}><span class="bi">${icon}</span><span class="bn">${b.name}</span><span class="bt">${Math.max(0, Number(b.dur) || 0).toFixed(1)}s</span></div>`;
+      /* [M18.5] 领域压制没有「剩余秒数」—— 它是「站在圈里就一直有」。
+       * 硬写 0.0s 会让人以为快结束了，所以显示「常驻」。 */
+      const tail = b.noTimer ? '常驻' : Math.max(0, Number(b.dur) || 0).toFixed(1) + 's';
+      return `<div class="buff ${b.type || 'buff'}" style="--c:${c}"${desc}><span class="bi">${icon}</span><span class="bn">${b.name}</span><span class="bt">${tail}</span></div>`;
     }).join('');
   },
 
@@ -1773,7 +1820,7 @@ const UI = {
         sub: '炼器 / 洗练 / 扩容的通货', desc: '分解装备所得，凡 → 灵 → 玄 → 神 逐阶精纯。',
         qty: Game.crystalTierCount(i + 1)
       }));
-      /* 匠材九种：没有的也占一格（灰显），玩家才知道该去刷什么 */
+      /* 匠材十种（M18.8 加了世界魂）：没有的也占一格（灰显），玩家才知道该去刷什么 */
       for (const id of CRAFT_MAT_ORDER) {
         const d = CRAFT_MATS[id];
         cells.push({
@@ -3026,13 +3073,19 @@ const UI = {
     for (const a of tr.sides) all.push({ a: a, kind: 'side' });
     for (const a of tr.boards) all.push({ a: a, kind: 'board' });
 
+    /* 世界 Boss 卡要留着 —— 它不属于任务链，没接任务时它反而是
+     * 山海志里唯一有内容的一格。
+     * 注意它必须**在空列表分支之前**取：`const` 声明在下面时，
+     * 空列表这条分支会读到 TDZ 里的 `wbCard` 直接抛 ReferenceError
+     * （表现为「任务全交完，一开山海志就报错」）。 */
+    const wbCard = (this.worldBossCard ? this.worldBossCard() : '');
     if (!all.length) {
-      list.innerHTML = `<div class="quest"><div class="qn">暂无委托</div>
+      list.innerHTML = wbCard + `<div class="quest"><div class="qn">暂无委托</div>
         <div class="qb">回营地找掌事听主线，找录事接支线，任务板上还有悬赏。</div></div>`;
       return;
     }
     const tag = { main: '主线', side: '支线', board: '悬赏' };
-    list.innerHTML = all.map(({ a, kind }) => {
+    list.innerHTML = wbCard + all.map(({ a, kind }) => {
       const q = QUESTS[a.id];
       if (!q) return '';
       const rows = QuestSys.lines(a).map(o =>
@@ -3073,6 +3126,96 @@ const UI = {
       h += `<div class="obj" style="color:#c8a86a">悬赏 ${tr.boards.length} 条${done ? ' · ' + done + ' 条可交' : ''}</div>`;
     }
     el.innerHTML = h;
+  },
+
+  /* ---------------- 世界 Boss（M18.3） ----------------
+   * 三处显示同一份数据（横幅 / 追踪行 / 山海志卡），倒计时全部走
+   * `WorldBoss.timeText()` —— 各写一个 format 迟早出现「一处 12:34、
+   * 一处 12:35」，玩家会以为面板坏了。 */
+
+  /* 现世横幅：屏幕上方 1/3 横贯一条，3.2 秒。
+   * 颜色取领域色（`domain.color`），六只一眼能分出是谁。
+   * 重播要「先摘 show、强制回流、再挂」——否则同一只连刷两次不会动。 */
+  showWorldBossBanner(cfg, mapName) {
+    const el = document.getElementById('wbBanner');
+    if (!el || !cfg) return;
+    const col = (cfg.domain && cfg.domain.color) || '#e0895a';
+    el.style.setProperty('--wbc', col);
+    const nm = document.getElementById('wbbName');
+    if (nm) { nm.textContent = cfg.name; nm.style.color = col; }
+    const sub = document.getElementById('wbbSub');
+    if (sub) sub.textContent = (cfg.title || '') + '　·　' + (mapName || '');
+    el.classList.remove('show');
+    void el.offsetWidth;
+    el.classList.add('show');
+    clearTimeout(this._wbBannerT);
+    this._wbBannerT = setTimeout(() => el.classList.remove('show'),
+      (typeof WORLD_BOSS_CFG !== 'undefined' ? WORLD_BOSS_CFG.bannerT : 3.2) * 1000);
+  },
+
+  /* 追踪行：每秒被 WorldBoss.tick 调一次。
+   * **只改文本、不重建 DOM** —— 每秒重建会让「点一下前往」在
+   * 手指按下与抬起之间失效（手机端尤其明显）。 */
+  renderWorldBoss(wb) {
+    const el = document.getElementById('wbTrack');
+    if (!el) return;
+    const r = (wb && typeof wb.rec === 'function') ? wb.rec() : null;
+    const cfg = r ? worldBossById(r.id) : null;
+    if (!r || !cfg) { el.style.display = 'none'; return; }
+    const dead = !!r.killed;
+    const map = MAPS[r.mapId] || {};
+    el.style.display = 'block';
+    el.classList.toggle('dead', dead);
+    /* 结构只在「换人 / 换图 / 死活变化」时重建，其余时间只改倒计时 */
+    const key = r.id + '|' + r.mapId + '|' + (dead ? 1 : 0);
+    if (this._wbKey !== key) {
+      this._wbKey = key;
+      el.innerHTML =
+        '<div class="wb-k">' + (dead ? '已 讨 伐' : '世 界 Boss') + '</div>' +
+        '<div class="wb-n">' + cfg.name + '</div>' +
+        '<div class="wb-m">' + (map.name || r.mapId) + '</div>' +
+        '<div class="wb-m"><span class="wb-t" id="wbTime">--:--</span>' +
+        (dead ? ' 后再现' : ' 后离去') + '</div>';
+    }
+    const t = document.getElementById('wbTime');
+    if (t) { const txt = wb.timeText(); if (t.textContent !== txt) t.textContent = txt; }
+    /* 山海志开着的时候，卡片里的倒计时也要跟着走 ——
+     * 面板不会每秒重绘（那样会把滚动位置也重置掉）。 */
+    const ct = document.getElementById('wbCardTime');
+    if (ct) { const txt2 = wb.timeText(); if (ct.textContent !== txt2) ct.textContent = txt2; }
+  },
+
+  /* 点追踪行 / 山海志卡片的「前往」。门禁交给 Game.travelTo ——
+   * 那里已经处理了「没抵达 / 境界不足 / 印门」，这里再判一遍必然漂移。 */
+  gotoWorldBoss() {
+    const r = (typeof WorldBoss !== 'undefined') ? WorldBoss.rec() : null;
+    if (!r) return;
+    if (r.killed) { this.toast('这一只已经被讨伐了，等下一只。'); return; }
+    if (!MAPS[r.mapId]) return;
+    if (Game.state.mapId === r.mapId) { this.toast('它就在这张图上。'); return; }
+    this.closeAll();
+    Game.travelTo(r.mapId);
+  },
+
+  /* 山海志顶部的常驻卡。它不属于任何任务链，所以单独拼一段，
+   * 不塞进 QuestSys —— 那个模块只管「接了的事」。 */
+  worldBossCard() {
+    const r = (typeof WorldBoss !== 'undefined') ? WorldBoss.rec() : null;
+    const cfg = r ? worldBossById(r.id) : null;
+    if (!r || !cfg) return '';
+    const dead = !!r.killed;
+    const map = MAPS[r.mapId] || {};
+    const dom = cfg.domain || {};
+    const rows = [
+      '所在 · ' + (map.name || r.mapId),
+      '剩余 · <span id="wbCardTime">' + WorldBoss.timeText() + '</span>' + (dead ? '（讨伐后冷却）' : ''),
+      '领域 · ' + (dom.name || '—') + '　半径 ' + (dom.radius || '—') + ' 米'
+    ].map(t => `<div class="qo">${t}</div>`).join('');
+    return `<div class="quest wbc"><div class="qn">${cfg.name}` +
+      `<span style="color:#c8563a;font-size:11px;margin-left:6px">${dead ? '已讨伐' : '世界 Boss'}</span></div>` +
+      `<div class="qb">${cfg.lore || ''}</div>${rows}` +
+      `<div class="qr" style="color:${dead ? '#6a5a50' : '#c8a86a'};cursor:${dead ? 'default' : 'pointer'}"` +
+      (dead ? '' : ' onclick="UI.gotoWorldBoss()"') + `>${dead ? '—' : '点击前往 ›'}</div></div>`;
   },
 
   /* ---------------- 对话 ---------------- */

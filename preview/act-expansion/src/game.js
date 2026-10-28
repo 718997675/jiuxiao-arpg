@@ -1522,8 +1522,14 @@ const Game = {
     if (this.world) disposeTree(this.world.root);
     this.boss = null; UI.updateBoss(null);
     FX.clear();
+    /* [M18.7] 场地效果（相柳毒沼 / 九尾狐狐火）必须跟着清。
+     * FX.clear 只删了看得见的圆，伤害记账还在 `WBFight._hazards` 里 ——
+     * 不清的话换图后新地图的落脚点上会继续掉血，而且再也找不到源头。 */
+    if (typeof WBFight !== 'undefined') WBFight.clear();
 
     this.buffs = []; this.shield = 0; this.shieldT = 0; this.regen = 0; this.poisonT = 0; this.playerSlow = 0; this.playerSlowT = 0; this.reviveT = 0;
+    /* [M18.7] 定身（九尾狐 P2 尾缚）跟着换图归零 */
+    this.rootT = 0;
     /* 技能树分支叠层（stack）：换图 / 重开都归零 */
     this.behStack = {}; this._drainOn = null; this._follows = null;
     this._recharge = null; this._dragonT = 0; this._autoReviveCd = 0; this._pasT = 0;
@@ -1544,7 +1550,9 @@ const Game = {
     this.sun.color.setHex(m.sun);
     this.sun.intensity = m.sunI * 0.82;
 
-    this.world = buildMap(mapId);
+    /* 出口门要不要这次进图就立起来，取决于「本图首领打过没有」——
+     * 见 world.js 的 makeExitGate / buildMap 注释。 */
+    this.world = buildMap(mapId, { cleared: this.mapCleared(mapId) });
     this.scene.add(this.world.root);
     /* [M12] 出生点取入口区域靠内的位置：从传送阵往地图里挪 6 米，
      * 玩家一进图就站在「门口」，而不是凭空出现在地图中央。
@@ -1570,6 +1578,11 @@ const Game = {
     if ((m.npcs || []).length) this.spawnNPCs();
     this.spawnEnemies();
     this.spawnBosses();
+    /* [M18.2] 世界 Boss：进图后对齐记录与实体。
+     * 放在 spawnBosses 之后，保证「清场 → 重生」之后它一定在。
+     * **不要**把世界 Boss 写进 MAPS[mapId].bosses：那张表是常驻首领，
+     * 读档会被 spawnBosses 反复重生，30 分钟轮转直接失效。 */
+    if (typeof WorldBoss !== 'undefined') WorldBoss.onMapEnter();
     this.recalc();
     this.applyDoll();
     /* [FIX-TOWN] 回城满血：踏入安全区（桃源村）即回满生命与灵力。
@@ -1585,6 +1598,9 @@ const Game = {
       this.state.mp = st.mpMax;
       this.shield = 0;
       this.poisonT = 0; this.playerSlow = 0; this.playerSlowT = 0; this.shieldT = 0;
+      /* [M18.5] 领域压制一律清掉：换图时 WorldBoss.domainTick 也会归位，
+       * 但这一行是「进图 = 干净状态」的口径，别指望下游兜底 */
+      this.domSlow = 0; this.domAspd = 0;
       if (wasHurt) {
         const pp = new THREE.Vector3(this.playerGroup.position.x, 0, this.playerGroup.position.z);
         FX.ring(pp, 3.2, 0x8ce0a8, 0.8, 0.3);
@@ -1745,7 +1761,10 @@ const Game = {
   },
 
   spawnEnemy(kind, x, z, elite, levelOverride, bossId) {
-    const cfg = bossId ? BOSSES[bossId] : MONSTERS[kind];
+    /* [M18.2] 世界 Boss 是独立表（WORLD_BOSSES），但字段结构兼容 BOSSES，
+     * 所以这里只多一个回退分支，**不复制一份 spawnEnemy**。
+     * 顺序是 BOSSES 优先：万一将来 id 撞了，常驻首领的手感不能变。 */
+    const cfg = bossId ? (BOSSES[bossId] || (typeof WORLD_BOSSES !== 'undefined' ? WORLD_BOSSES[bossId] : null)) : MONSTERS[kind];
     if (!cfg) return null;
     const isBoss = !!bossId;
     /* [v1.0.5] 同屏普通怪硬上限：超过就不再生成（调用方都已处理 null）。
@@ -1865,6 +1884,11 @@ const Game = {
       spawnPos: new THREE.Vector3(x, 0, z), active: !isBoss, hitT: 0,
       /* [S5] 精英词缀与族群抗性 */
       affixes, aff, resist, wardElem,
+      /* [M18.2] 护甲倍率从 cfg 落到实体上。`damageEnemy` 一直在读
+       * `e.armorMul`，但以前只有地下城词缀会写它；世界 Boss 的数据里
+       * 明写 1.0（不许再乘，见 data-worldboss.js 文件头），这里必须
+       * 真的传下去，否则「数据写了但运行时没读到」这种坑会一直留着。 */
+      armorMul: cfg.armorMul || 1,
       family: cfg.family || 'humanoid',
       /* [S16] 发声用的体型：audio.js 按 1/size^0.55 降调。
        * 精英 +12%、首领再 ×1.35，Boss 一吼就该比小怪沉一个八度。 */
@@ -1962,8 +1986,15 @@ const Game = {
      * 没带武器的半成品模型，radius 会严重偏小，玩家直接走进 Boss 身体（穿模）。 */
     const _fr = measureFootR(a.group);
     const _br = Math.max(0.5, _fr + 0.2);                 // +0.2 冗余，避免贴边穿模
-    e.radius = _br;
-    e.reach = Math.max(cfg.range || 2.2, _br * 1.26 + 0.75);
+    /* [M18.6] 世界 Boss 的模型是**真实米数**（烛九阴 44 米、翼展 60 米的鹏），
+     * 量出来的水平包围有十几米。直接当碰撞半径的话：
+     *   ① 玩家得站在 14 米外才不穿模，战士 reach 3.2 永远够不到；
+     *   ② 分离逻辑会把玩家一路往外推，看起来像「被一堵空气墙挡着」。
+     * 数据里的 `body.radius` 描述的是「主干有多粗」，不是「尾巴甩到多远」，
+     * 用它当上限。没有 `body.radius` 的（老模型）保持原样。 */
+    const wbCap = (cfg.body && cfg.body.radius) || 0;
+    e.radius = wbCap ? Math.min(_br, wbCap) : _br;
+    e.reach = Math.max(cfg.range || 2.2, e.radius * 1.26 + 0.75);
 
     this.enemies.push(e);
     return e;
@@ -2462,6 +2493,24 @@ const Game = {
     if (typeof Trial !== 'undefined' && Trial.active) Trial.tick(dt);
     /* [M5] 地下城：无常传送 / HUD 心跳。清场判定走 onKill，不在这里扫。 */
     if (typeof Dungeon !== 'undefined' && Dungeon.active) Dungeon.update(dt);
+    /* [M18.2] 世界 Boss：每秒一次心跳（到点换人 + 倒计时）。
+     * 放在 Dungeon 之后、updateWorldAnims 之前 —— 它只改实体与 UI 文本，
+     * 不参与本帧的战斗结算，所以放在哪个位置都不影响手感，
+     * 但必须**在 updateEnemies 之后**：tick 里会 despawn 掉敌人，
+     * 在遍历中途改 enemies 数组会漏掉一只。 */
+    if (typeof WorldBoss !== 'undefined') WorldBoss.tick(dt);
+    /* 领域光环的淡入与旋转要按帧走（1 秒节流会一顿一顿）。
+     * 没有光环时内部第一行就判空返回，代价可以忽略。 */
+    if (typeof WorldBoss !== 'undefined') WorldBoss.anim(dt);
+    /* [M18.5] 领域机制：视野 / 毒 / 减速 / 吸力 / 攻速 / 小地图。
+     * 必须按帧走 —— 吸力是位移，1 秒节流会变成「瞬移一下」。
+     * 放在 anim 之后、`hp <= 0 → die()` 之前：
+     * 毒沼把人毒死的那一帧要能正常走死亡流程。 */
+    if (typeof WorldBoss !== 'undefined') WorldBoss.domainTick(dt);
+    /* [M18.7] 场地效果（相柳毒沼 / 九尾狐狐火）每帧结算。
+     * 没有场地时 `tick` 第一行就返回，代价可忽略。
+     * 必须**在 die 判定之前**：站在毒沼里被毒死的那一帧要能走死亡流程。 */
+    if (typeof WBFight !== 'undefined') WBFight.tick(dt);
     this.updateWorldAnims(dt);
     this.updateInteract();
     this.tickAudio(dt);
@@ -2587,6 +2636,13 @@ const Game = {
       this.playerSlowT -= dt;
       if (this.playerSlowT <= 0) this.playerSlow = 0;
     }
+    /* [M18.7] 定身倒计时。冲刺一并作废 —— 不然被定住的瞬间按一下冲刺
+     * 就跑了，「定住」变成一句空话（`dashT` 那段位移不读移速）。 */
+    if (this.rootT > 0) {
+      this.rootT -= dt;
+      if (this.rootT <= 0) this.rootT = 0;
+      this.dashT = 0;
+    }
     // 中毒
     if (this.poisonT > 0) {
       this.poisonT -= dt;
@@ -2640,8 +2696,17 @@ const Game = {
       /* [M1] 行脚套·疾行：击杀后 3 秒移速 +30% */
       const rush = this.lootRushT > 0 ? 1.3 : 1;
       /* 冲刺期间的速度由 dashSpd 单独决定（见下方 dashT 分支），
-       * 这里不再叠 ×4.6 —— 原来按着方向键冲刺比松开冲刺快一截。 */
-      const spd = st.moveSpd * analog * (1 - (this.playerSlow || 0)) * rush;
+       * 这里不再叠 ×4.6 —— 原来按着方向键冲刺比松开冲刺快一截。
+       *
+       * [M18.5] 领域减速用**独立字段** `domSlow`，不并进 `playerSlow`：
+       * 并进去的话，出圈时要把它减掉，而「减掉多少」在敌人也给过减速时
+       * 是算不清的 —— 少减会留永久残留，多减会顺手抹掉冰霜减速。 */
+      const slow = Math.min(0.85, (this.playerSlow || 0) + (this.domSlow || 0));
+      /* [M18.7] 定身（九尾狐 P2「尾缚」）：速度直接归零，不是「减到最慢」。
+       * 不能复用上面的 `slow` —— 它封顶 0.85，拉满也还能走 15%，
+       * 玩家会以为「定身只是变慢」，而数据里 `root: 2.5` 承诺的是「定住」。
+       * 转身与 `moving` 保留：原地挣扎比整个人冻住更像被尾巴缠住。 */
+      const spd = (this.rootT || 0) > 0 ? 0 : st.moveSpd * analog * (1 - slow) * rush;
       pg.position.x += mx * spd * dt;
       pg.position.z += mz * spd * dt;
       this.lastMoveDir = { x: mx, z: mz };
@@ -2754,7 +2819,11 @@ const Game = {
     const aspdK = (this.aspdCritT > 0 ? 1 + (st.aspdOnCrit || 0) / 100 : 1)
       * (1 + 0.04 * ((this.frenzy && this.frenzy.n) || 0))
       /* [M1] 行脚套·疾行：击杀后 3 秒攻速 +15% */
-      * (this.lootRushT > 0 ? 1.15 : 1);
+      * (this.lootRushT > 0 ? 1.15 : 1)
+      /* [M18.5] 战意领域（刑天）：攻速 -15%。
+       * 走独立字段而不是 buffs —— 领域压制不该被「净化」驱散，
+       * 也不该和药水 / 技能的攻速加成互相覆盖。 */
+      * Math.max(0.4, 1 + (this.domAspd || 0) / 100);
     const cdBase = 0.72 / (st.aspd * wpSpeed * aspdK);
     this.atkCd = cdBase;
     this.attacking = 0.32;
@@ -4018,7 +4087,16 @@ const Game = {
     /* [S4] 还魂激活中 */
     if (this.reviveT > 0) out.push({ name: '还魂', dur: this.reviveT, color: '#ffd166', type: 'buff', icon: '魂', desc: '受到致命伤时以 35% 生命存活' });
     if (this.playerSlowT > 0) out.push({ name: '迟滞', dur: this.playerSlowT, color: '#6ab8ff', type: 'debuff', icon: '缓', desc: '移动速度降低 ' + Math.round((this.playerSlow || 0) * 100) + '%' });
+    /* [M18.7] 定身：必须单独一条。它和「迟滞」是两种感受 ——
+     * 迟滞是「走得慢」，定身是「完全走不了」，混在一起玩家会以为没生效。 */
+    if (this.rootT > 0) out.push({ name: '定身', dur: this.rootT, color: '#e0a0ff', type: 'debuff', icon: '缚', desc: '无法移动（仍可攻击与闪避以外的动作）' });
     if (this.poisonT > 0) out.push({ name: '中毒', dur: this.poisonT, color: '#7fbf5a', type: 'debuff', icon: '毒', desc: '每 0.9 秒受到 ' + Math.round(this.poisonDps || 0) + ' 点毒素伤害' });
+    /* [M18.5] 领域压制：站进世界 Boss 的圈里就常驻一条。
+     * 它没有倒计时（出去就没了），所以带 noTimer，UI 不显示秒数。 */
+    if (typeof WorldBoss !== 'undefined' && WorldBoss.domainBuff) {
+      const db = WorldBoss.domainBuff();
+      if (db) out.push(db);
+    }
     if (this.shield > 0 && this.shieldT > 0) out.push({ name: '玄冰护盾', dur: this.shieldT, color: '#9ae0ff', type: 'buff', icon: '盾', desc: '吸收 ' + Math.round(this.shield) + ' 点伤害' });
     return out;
   },
@@ -4108,6 +4186,44 @@ const Game = {
     const shred = (e.shredT > 0) ? Math.min(80, e.shred || 0) / 100 : 0;
     const effArmor = Math.max(0, armor * (1 - Math.min(0.8, (st.armorPen || 0) / 100)) * (1 - shred));
     final *= 100 / (100 + effArmor);
+
+    /* [M18.7] 刑天 P2「盾」：正面格挡。
+     *
+     * 判的是**玩家站在它正面的哪个角度**，不是「这一击从哪来」——
+     * 本作的伤害大多是范围 / 追踪，没有单一来向，只有站位是玩家能控制的。
+     * boss 的朝向是 `a.group.rotation.y`（`updateBossAI` 末尾每帧转向玩家，
+     * 半衰约 0.16 秒），所以「绕后」是一段**有时限**的操作窗口，不是一句空话。
+     *
+     * 窗口 ±75°（正面 150° 被挡，剩下 210° 安全）：
+     *   - 窗口再大 → 绕到侧面也算正面，等于「永远格挡」，谜题消失；
+     *   - 窗口再小 → 转个身就躲掉了，盾牌变成装饰。
+     * 折减到 40%：挡得很痛但还能打。全免的话 19 万血会拖成十分钟。
+     *
+     * **不分元素**：只挡物理的话，换法术就绕过去了 —— 那又变成「猜元素」，
+     * 和八部天龙的去重直接冲突。这里的答案只有站位。
+     * `silent`（持续伤害）不挡：毒 / 火不认盾牌，而且 DoT 每跳都弹「格挡」
+     * 会把屏幕糊满。 */
+    if (e.wbBlockFront && !opts.silent && this.playerGroup && e.actor && e.actor.group) {
+      const pl = this.playerGroup.position;
+      let da = Math.atan2(pl.x - e.pos.x, pl.z - e.pos.z) - e.actor.group.rotation.y;
+      while (da > Math.PI) da -= Math.PI * 2;
+      while (da < -Math.PI) da += Math.PI * 2;
+      if (Math.abs(da) <= Math.PI * 75 / 180) {
+        final *= 0.4;
+        /* 提示节流 0.4 秒：连击时每一下都弹字，字会叠成一坨 */
+        const now = Date.now();
+        if (!e._blockAt || now - e._blockAt > 400) {
+          e._blockAt = now;
+          FX.text(new THREE.Vector3(e.pos.x, 4.4, e.pos.z), '格挡 · 绕后', 'info', { life: 0.6 });
+        }
+      }
+    }
+
+    /* [M18.7b] 九尾狐 P3「真身现身」：藏进狐火时只吃 60%，
+     * 现身那 5 秒吃 200%。倍率由 `WBFight._revealTick` 每帧写。
+     * 放在格挡之后、抗性之前：它描述的是「有没有打中本体」，
+     * 属于命中层的倍率，和「元素抗性」是两回事，顺序换过来数值也一样。 */
+    if (e.wbVulnMul && e.wbVulnMul !== 1) final *= e.wbVulnMul;
 
     /* [S5] 族群抗性：按本次伤害的元素结算（opts.elem 缺省按物理）。
      * 正数减伤、负数增伤；元素免疫（85%）也走这一条，不另开分支。
@@ -4350,8 +4466,16 @@ const Game = {
     }
   },
 
-  damagePlayer(amount, source) {
+  /* `opts.pierce = true` —— 无视护甲 / 格挡 / 抗性 / 难度 / 被动减伤，
+   * 只保留护盾吸收与免死。
+   *
+   * 为什么需要这个开关：领域 DoT 在数据里写的是「每秒扣最大生命的 0.6%」，
+   * 这是**对玩家的一句承诺**。如果它走常规结算，60 级满装能把它压到 0.19%，
+   * 结果就是「堆防御的人完全无视领域」—— 那领域机制等于不存在。
+   * 常规伤害（怪打你）该吃护甲，环境伤害（站在毒沼里）不该。 */
+  damagePlayer(amount, source, opts) {
     if (this.dead || this.invuln > 0) return;
+    const pierce = !!(opts && opts.pierce);
     const s = this.state, st = s.stats;
 
     /* [S1] 闪避：完全免伤。给 0.2 秒无敌，避免一次群体攻击连续闪出十几条文字 */
@@ -4377,10 +4501,10 @@ const Game = {
     const reduce = Math.min(0.70, st.def / (st.def + 380 + this.state.level * 28));
     /* [DIFF] 玩家承受伤害系数：放在减伤之后，保证「护甲收益」在四档难度里一致，
      * 难度只放大最终结果，不扭曲装备词条的价值。 */
-    let dmg = amount * (1 - reduce) * this.diff().taken;
+    let dmg = pierce ? amount : amount * (1 - reduce) * this.diff().taken;
 
     /* [S1] 格挡：伤害减半（先于抗性结算） */
-    if (st.block && CHANCE(st.block / 100)) {
+    if (!pierce && st.block && CHANCE(st.block / 100)) {
       /* [P3] 舍身（反击变体）：格挡照挡，但这一下不再减半 ——
        * 换的是格挡后 3 秒的伤害加成（onBehCounter 里给） */
       const noDR = !!(this.buffs && this.buffs.some(b => b.noDR));
@@ -4402,17 +4526,19 @@ const Game = {
       if (typeof this.onBehCounter === 'function') this.onBehCounter(source);
     }
 
-    dmg *= (1 - CLAMP(st.allRes, 0, 60) / 200);
-    /* [S1] 单元素抗性：按来源怪物的元素标记取，无标记按物理 */
-    const cfg = source && source.cfg;
-    const oneRes = cfg
-      ? (cfg.fire ? st.fireRes : cfg.ice ? st.iceRes : cfg.poison ? st.poisonRes : st.physRes)
-      : st.physRes;
-    dmg *= (1 - CLAMP(oneRes || 0, 0, 60) / 200);
-    /* [S1] 固定伤害减免 */
-    dmg *= (1 - CLAMP(st.dmgReduce || 0, 0, 40) / 100);
-    /* [P2] 被动的受伤侧改写（霜甲：贴身来源减伤；不动如山走 dmgReduce 通道） */
-    if (typeof this.passiveTakenMul === 'function') dmg *= this.passiveTakenMul(source);
+    if (!pierce) {
+      dmg *= (1 - CLAMP(st.allRes, 0, 60) / 200);
+      /* [S1] 单元素抗性：按来源怪物的元素标记取，无标记按物理 */
+      const cfg = source && source.cfg;
+      const oneRes = cfg
+        ? (cfg.fire ? st.fireRes : cfg.ice ? st.iceRes : cfg.poison ? st.poisonRes : st.physRes)
+        : st.physRes;
+      dmg *= (1 - CLAMP(oneRes || 0, 0, 60) / 200);
+      /* [S1] 固定伤害减免 */
+      dmg *= (1 - CLAMP(st.dmgReduce || 0, 0, 40) / 100);
+      /* [P2] 被动的受伤侧改写（霜甲：贴身来源减伤；不动如山走 dmgReduce 通道） */
+      if (typeof this.passiveTakenMul === 'function') dmg *= this.passiveTakenMul(source);
+    }
 
     if (this.shield > 0) {
       const absorbed = Math.min(this.shield, dmg);
@@ -4558,6 +4684,9 @@ const Game = {
   die() {
     if (this.dead) return;
     this.dead = true;
+    /* [M18.7] 定身必须当场清掉：死亡演出期间 `update` 还在跑，
+     * 带着 2.5 秒定身复活的话，玩家会以为「复活了还是动不了」。 */
+    this.rootT = 0;
     this.actor.anim = 'die';
     this.actor.group.rotation.z = 0;
     SFX.die();
@@ -5319,18 +5448,24 @@ const Game = {
     if (e.dead) return;
     const a = e.actor;
     const hpRatio = e.hp / e.maxHp;
-    /* [DIFF] 困难/极难：Boss 提前进阶段（75% / 45%），压迫感更强 */
-    const rush = this.diff().bossRush;
-    const newPhase = rush
-      ? (hpRatio < 0.45 ? 2 : (hpRatio < 0.75 ? 1 : 0))
-      : (hpRatio < 0.3 ? 2 : (hpRatio < 0.6 ? 1 : 0));
-    if (newPhase > e.phase) {
-      e.phase = newPhase;
-      UI.toast(e.cfg.name + ' 狂怒', 'lv');
-      SFX.boss(); this.shake = 0.6;
-      if (typeof AudioSys !== 'undefined') AudioSys.mob(e, 'bossPhase');
-      FX.ring(e.pos, 6, 0xff5522, 0.8, 0.3);
-      e.dmg *= 1.15;
+    /* [M18.7] 世界 Boss 的「阶段」走自己的三阶段（血量 1.00 / 0.66 / 0.33，
+     * 见 data-worldboss.js 的 phases），**不是**常驻首领那套 0.6 / 0.3 的「狂怒」。
+     * 两套阈值不同，混用会出现「血条已经是 P2、技能还是 P1」，
+     * 而且「狂怒」这个词是常驻首领的语言（世界 Boss 的阶段有自己的名字）。 */
+    if (!e.wb) {
+      /* [DIFF] 困难/极难：Boss 提前进阶段（75% / 45%），压迫感更强 */
+      const rush = this.diff().bossRush;
+      const newPhase = rush
+        ? (hpRatio < 0.45 ? 2 : (hpRatio < 0.75 ? 1 : 0))
+        : (hpRatio < 0.3 ? 2 : (hpRatio < 0.6 ? 1 : 0));
+      if (newPhase > e.phase) {
+        e.phase = newPhase;
+        UI.toast(e.cfg.name + ' 狂怒', 'lv');
+        SFX.boss(); this.shake = 0.6;
+        if (typeof AudioSys !== 'undefined') AudioSys.mob(e, 'bossPhase');
+        FX.ring(e.pos, 6, 0xff5522, 0.8, 0.3);
+        e.dmg *= 1.15;
+      }
     }
 
     e.patternCd -= dt;
@@ -5342,7 +5477,13 @@ const Game = {
       a.moving = false;
       if (e.windup <= 0 && e.pendingMelee) {
         e.pendingMelee = false;
-        if (DIST2D(e.pos, pp) < e.reach + 2.2) this.damagePlayer(e.dmg * RND(0.9, 1.2), e);
+        if (DIST2D(e.pos, pp) < e.reach + 2.2) {
+          this.damagePlayer(e.dmg * RND(0.9, 1.2), e);
+          /* [M18.7] `enter.rootOnHit`（九尾狐 P2「九尾缚」）：连普攻都定身。
+           * 名字叫 onHit 就真的是 onHit —— 只在技能上生效的话，
+           * 玩家会发现「躲开技能就没事」，那 P2 等于没有。 */
+          if (e.wbRoot) this.rootT = Math.max(this.rootT || 0, e.wbRoot);
+        }
       }
     } else if (e.charging > 0) {
       e.charging -= dt;
@@ -5377,7 +5518,9 @@ const Game = {
 
     // 普攻
     if (e.atkCd <= 0 && d < e.reach + 1.6 && e.windup <= 0 && e.charging <= 0) {
-      e.atkCd = e.cfg.atkCd || 2;
+      /* [M18.7] 攻速阶段加成走 `e.atkCdBase`（`enter.aspdMul` 写进去的）。
+       * 常驻首领没有这个字段，回落到 cfg.atkCd，行为不变。 */
+      e.atkCd = e.atkCdBase || e.cfg.atkCd || 2;
       e.windup = 0.45;
       e.pendingMelee = true;
       a.atkAnim = 1; a.atkType = 'swing'; a.atkSpeed = 2.6;
@@ -5386,7 +5529,14 @@ const Game = {
     }
 
     // 技能
-    if (e.patternCd <= 0) {
+    if (e.wb) {
+      /* [M18.7] 世界 Boss 走自己的 18 个招牌技能（`cfg.skills` + 三阶段过滤），
+       * **不走** `bossPattern()` 的 patterns 招式池 —— 那是八部天龙八只共用的
+       * 语言（slam / roots / ringshot…），撞上就等于「又一只八部」。
+       * 阶段切换也在里面（`phaseOf` → `_enterPhase`），所以上面那段
+       * 「狂怒」不用管它，这里也不按血量再判一次。 */
+      if (typeof WBFight !== 'undefined') WBFight.ai(e, dt, pp);
+    } else if (e.patternCd <= 0) {
       e.patternCd = RND(4.5, 7.5) * (1 - e.phase * 0.12);
       this.bossPattern(e, pp);
     }
@@ -6328,6 +6478,8 @@ const Game = {
     if (e.boss) {
       this.state.bossKilled[e.kind] = (this.state.bossKilled[e.kind] || 0) + 1;
       this.onBossKill(e);
+      /* [M3b-fix] 出口门：本图首领第一次倒地才立起来（boss 区北侧），之后永久存在 */
+      this.markCleared(e);
       if (this.boss === e) { this.boss = null; UI.updateBoss(null); }
       UI.toast('击败 ' + e.cfg.name, 'lv');
       this.save();
@@ -6335,7 +6487,13 @@ const Game = {
        * 二来 BOSS_POS 是按大地图坐标写的，重生点会落在擂台的错误位置。
        * 混沌天魔在试炼里也不触发通关结算（那是主线终章的演出）。 */
       const inTrial = (typeof Trial !== 'undefined' && Trial.active);
-      if (inDungeon) {
+      /* [M18.2] 世界 Boss 先分流。它**不能**走下面那个 else 分支：
+       * 那里读的是 `BOSSES[bid].level` 与 `BOSS_POS[bid]`，
+       * 而世界 Boss 既不在 BOSSES 里、也不在老坐标表里 ——
+       * 走进去就是 `undefined.level` 直接抛异常，整场战斗结算中断。 */
+      if (e.wb) {
+        if (typeof WorldBoss !== 'undefined') WorldBoss.onKill(e);
+      } else if (inDungeon) {
         /* [M5] 地下城守卫倒了 = 通关。延后 600ms 再结算：
          * onEnemyDeath 正在 updateEnemies 的遍历里跑，结算会 loadMap 换图，
          * 当场换会打断遍历（和「分裂幼体先入队」是同一类问题）。
@@ -6716,6 +6874,43 @@ const Game = {
 
   onBossKill(e) {
     // 已包含在 onKill 中
+  },
+
+  /* ---------------- 出口门开关（M3b-fix） ----------------
+   * 门不是一进图就有：**本图首领第一次倒地**才立起来，之后永久存在。
+   * 存档记在 `world.mapCleared[mapId]`（老档由 normalizeDoc 用 bossKilled 反推），
+   * 所以「关掉网页再进来」门还在，不会让玩家以为进度丢了。 */
+  mapCleared(mapId) {
+    const s = this.state;
+    if (!s) return false;
+    const id = mapId || s.mapId;
+    return !!(s.mapCleared && s.mapCleared[id]);
+  },
+
+  /* 首领倒地 → 打上「本图已通关」标记，并把出口门当场立到 boss 区北侧。
+   * 只立一次：重打首领时 world.gate 已存在，直接返回。 */
+  markCleared(e) {
+    const s = this.state;
+    if (!s || !s.mapId) return;
+    /* 世界 Boss 是野图随机刷的，不是本图常驻首领 —— 它倒了不算通关这张图 */
+    if (e && e.wb) return;
+    /* 地下城 / 试炼里的「首领」属于副本流程，通关结算另有其人 */
+    if (typeof Dungeon !== 'undefined' && Dungeon.active) return;
+    if (typeof Trial !== 'undefined' && Trial.active) return;
+    if (!s.mapCleared) s.mapCleared = {};
+    s.mapCleared[s.mapId] = 1;
+    const w = this.world;
+    if (!w || w.gate || !w.gatePending) return;
+    const p = w.gatePending;
+    w.gate = makeExitGate(w.root, p.x, p.z, p.to, w.colliders, w.anims, w.labels);
+    w.gatePending = null;
+    /* 开门演出：玩家刚打完首领，抬头就在 boss 区北侧看见一道金光 */
+    try {
+      FX.flashCircle(new THREE.Vector3(p.x, 0, p.z), 4.5, 0xffd166, 0.9);
+      FX.ring(new THREE.Vector3(p.x, 0, p.z), 6, 0xffd166, 1.2, 0.3);
+      SFX.cast();
+    } catch (err) { }
+    UI.log('前路已开 · ' + p.name, 'good');
   },
 
   victory() {
