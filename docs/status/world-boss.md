@@ -345,8 +345,8 @@ C 段（小地图星标）用「画 / 不画」两张图的差异把星标**单�
 2. ~~回归 + 预览站~~ ✅ 已做（13 个脚本，10 绿；`m3-check` 的 24 项红为 M7 遗留 + 软件渲染限制，见「卡点」）
 3. ~~合 `main`~~ ✅ 已做（`6cac8d9..d2712ff` 已推 main，线上地址 <https://718997675.github.io/jiuxiao-arpg/>）
 4. ~~改「分支」行~~ ✅ 已做
-5. **待办**：浏览器实测线上正式站（`node dev/live-check.js` / `dev/live-slots.js`），
-   确认 M18 的星标 / 横幅 / 世界 Boss 领域在正式站也正常（Pages 有 CDN 缓存，脚本已带 `?t=`）
+5. ~~**待办**：浏览器实测线上正式站~~ ✅ 已做（2026-10-28）：`live-check` HTTP 200 / 零 pageerror；
+   `seal-live --url https://718997675.github.io/jiuxiao-arpg/` 19 项全绿（M18 的星标 / 横幅 / 领域未受影响）
 6. **下一批**：`docs/POLISH-PLAN.md` 的 P 系列 17 项打磨（代码尚未动），或 `feat/skill-refactor` 技能重构
 
 ## 卡点
