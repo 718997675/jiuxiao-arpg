@@ -2,9 +2,9 @@
 
 - 分支：`feat/act-expansion`（与本线其它改动一起合入 main）
 - 设计文档：`V2-ROADMAP.md` §18（六只设计表 / 刷新机制 / 骨架规范 / **§18.7 与八部天龙去重**）
-- 更新：2026-10-28 17:10
+- 更新：2026-10-28 17:30
 
-> 当前：M18.1 ~ M18.7（含 M18.6 六套骨架、M18.7b 两个骨架键）完成并全绿，下一步 M18.8 掉落
+> 当前：M18.1 ~ M18.8 全部完成并全绿，只剩 M18.9 说明页 / 图鉴 / README
 
 ## 一句话现状
 
@@ -12,9 +12,9 @@
 被击杀则冷却一个周期），小地图四层组合星标（领域色 / 信标环 / 双层五角星 / 发光）
 + 场景领域光环 + 屏幕横幅 + 山海志常驻卡，**六种玩家侧领域压制**，
 **三阶段战斗 + 18 个招牌技能 + 六套专属程序化骨架**，
-必掉 1~3 件传世（M18.8 待接）。
-数据层 / 运行时 / 通知面板 / 小地图与光环 / 领域机制 / 多阶段战斗 / 六套骨架已落地；
-**只剩掉落与说明页**。
+**必掉 1~3 件传世 + 三种材料（含世界魂）+ 2~4 符文**。
+数据层 / 运行时 / 通知面板 / 小地图与光环 / 领域机制 / 多阶段战斗 / 六套骨架 / 掉落全部落地；
+**只剩说明页与图鉴文案**。
 
 **与八部天龙（M7）已强制去重**：八部 = 一个 −60 洞 + 四条 +80 墙（猜元素，8 倍差）；
 世界 Boss = 五项抗性同值（零缺口）、答案在领域与阶段里。见 §18.7 与本文「决策记录」。
@@ -31,7 +31,7 @@
 | M18.6 | 六套全新骨架 + 专属动画 | ✅ | 新建 `src/wbmodels.js`（约 900 行）、`dev/check-wbmodels.js`、`dev/wbmodels-shot.js`；改 `src/actors.js`（分派 + `noAutoScale`）、`src/game.js`（`body.radius` 夹碰撞）、`src/data/data-worldboss.js`（六只补 `radius`）、`index.html` | 本次提交 |
 | M18.7a | 多阶段战斗：3 阶段切换 + 18 招牌技能（7 种 shape）+ `enter` 14 键落地 + 定身 / 格挡 / 场地 | ✅ | 新建 `src/worldboss-fight.js`、`dev/worldboss-fight.js`、`dev/worldboss-battle-live.js`；改 `src/game.js`、`src/worldboss.js`、`src/data/data-worldboss.js`、`index.html` | `611c45f` |
 | M18.7b | 骨架相关 `enter`：`tails`（九尾展开）/ `revealVuln`（真身现身受伤 ×2） | ✅ | `src/wbmodels.js`（`setTails` / `setGhost`）、`src/worldboss-fight.js`（`_revealTick` / `_setRevealState`）、`src/game.js`（`wbVulnMul`） | 本次提交 |
-| M18.8 | 掉落：必掉 1~3 传世 + 稀有材料 + 世界魂接入 | ⬜ | `src/game.js`、`src/items.js`、`src/data/data-craft.js` | — |
+| M18.8 | 掉落：必掉 1~3 传世 + 稀有材料 + 世界魂接入 | ✅ | `src/worldboss.js`（`grantLoot` / `_lootAnchor` / `_scatter`）、`src/data/data-worldboss.js`（六只补 `craft_worldsoul`、去掉 `pending`）、`src/data/data-craft.js`（`CRAFT_MATS.worldsoul`）、新建 `dev/worldboss-loot.js` | 本次提交 |
 | M18.9 | 说明页 / 图鉴 / README 同步 | ⬜ | `src/ui.js`、`README.md` | — |
 
 ## M18.1 已交付明细
@@ -271,6 +271,7 @@ C 段（小地图星标）用「画 / 不画」两张图的差异把星标**单�
 |---|---|---|
 | `node dev/check-wbmodels.js` | **182** | 真 three（r128 UMD）在 vm 里跑：六套骨架建得出来 / `group.scale===1` / 尺寸贴 `body.len·height·wingspan` / 脚不陷地 / **剪影两两点距 > 0.10** / 面数 < 9000 / 材质全注册 / 120 帧动画不抛异常 / 鲲鹏三档 morph / `setTails` 展开后包围盒变宽 + 摆动不被覆盖 / `setGhost` 全材质一起变且能完整还原 |
 | `node dev/worldboss-fight.js` | **252** | 离线（vm + THREE/FX/Game/WBModels 桩）：9 个血量点 × 6 只的阶段边界、cd / 夜间限定 / 距离门槛、7 种 shape 的命中与**不**命中、场地节拍与 `pierce`、定身两个来源、`enter` 每个键的消费点（**pending 已清零**）、`tails`/`revealVuln` 的调用与倍率、接线断言 |
+| `node dev/worldboss-loot.js` | **191** | 掉落专项：六只 × 四难度必掉件数（1-3 / 2-4 / 2-4 / 3-5）、**120 次击杀大样本 235 件全是传世**（`rollItem` 里两个 2% 独立入口是陷阱）、材料/符文/世界魂数量区间、落点必须在模型半径外、玩家重合时不除零、幂等（重入不发两遍）、`onKill → grantLoot` 接线 |
 | `node dev/worldboss-battle-live.js` | 浏览器 8 段 | 刑天三阶段真的按 1.00/0.66/0.33 切且播报阶段名、预警真的结算掉血、**正面 37.5 / 背后 93.75（2.5 倍）**、战吼 1s→0.667s→8 秒后回 1s、九尾狐 2 个分身（血 6% / 不带 boss·wb 标记 / 出生就追人）+ 尾缚定身 2.5 秒 + **P2 九尾展开 tailFlare=1**、相柳毒沼 2.6 秒掉 1754 血 + 出圈停手 + 换图清场、**P3 真身现身：藏 112.5 → 现身 375 伤害（×3.33），透明度 0.42 ↔ 1** |
 | `node dev/worldboss-live.js` | 浏览器 | M18.2~M18.5 的老回归，本次改动后复跑仍全绿 |
 | `node dev/wbmodels-shot.js` | 6 张 | 独立 canvas 渲六只特写 + 合影到 `shots/wbm-*.png`，人工肉眼验收剪影 |
@@ -311,18 +312,32 @@ C 段（小地图星标）用「画 / 不画」两张图的差异把星标**单�
 - `Game.damageEnemy`：`final *= e.wbVulnMul`（放在格挡之后、抗性之前）。
 - `_resetCombat` 一并清 `wbTailsOut / wbReveal / wbVulnMul` 并调 `setTails(0)` / `setGhost(false)`。
 
-## 下一步（只剩 M18.8 + M18.9）
+## M18.8 已交付明细（掉落）
 
-**M18.8 掉落**
+1. **`WorldBoss.grantLoot(e)`**（`src/worldboss.js`）：由 `onKill` 调，**不直接写背包** ——
+   全部走 `Game.spawnLoot`，这样拾取吸附、拾取半径词条、自动拾取（P04）、`UI.log` 都还能吃到。
+   - 传世：`worldBossUniqueCount(cfg, difficulty)` → 普通 1~3 / 困难·噩梦 2~4 / 极难 3~5，
+     每件 `rollItem(ilvl 62, { rarity:'unique', cls: 随机职业 })`
+   - 材料：`loot.mats` 逐条发。`xuanjing` 走 `{crystal}` 通道，`craft_*` 走 `{mat:{id,n}}` 通道
+   - 符文：`rollRune(62)` × 2~4
+   - 汇总日志「遗落：传世 ×N · 材料 ×N · 符文 ×N」+ 一圈闪光
+2. **落点** `_lootAnchor`：从尸体中心朝玩家方向推到 `body.radius + 1.5` 米，
+   `_scatter` 用黄金角散开。**不能掉在中心** —— 烛九阴盘起来 14 米、鲲鹏翼展 60 米，
+   埋在模型里玩家撞不进去，光柱在那儿但捡不到。
+3. **`CRAFT_MATS.worldsoul`**（`data-craft.js`，tier 3 神料）+ 进 `CRAFT_MAT_ORDER`；
+   六只的 `loot.mats` 各加 `craft_worldsoul 1~2`；`WORLD_BOSS_MATERIALS.worldsoul.pending` 删除。
+4. **`dev/worldboss-loot.js`**（191 项）+ `dev/worldboss-live.js` 的 F 段扩了 5 条实测断言
+   （真击杀后地上 17 件 / 传世 2 件 / 世界魂距中心 7.8 米 > 半径 5 / 踩上去材料仓 +1）。
 
-1. `WorldBoss.onKill` 现在只播报 + 记冷却，**没发奖**。接 `WORLD_BOSSES[*].loot`：
-   `uniqueMin-Max` 必掉传世 1~3 件（`data-uniques.js` 里 ilvl ≥ 40 的池子）、
-   `mats` 三种材料、`rune` 2~4 个。
-2. 传世掉落池按 `ilvl` 过滤已经写好（40 级前为空），**不要加额外开关**。
-3. `WORLD_BOSS_MATERIALS.worldsoul`（世界魂）`pending: 'M18.8'`，要进 `CRAFT_MATS`。
-4. 掉落走已有的 `Game.dropLoot` 路径，别新写一套（自动拾取 P04 要统一读它）。
+## 下一步（只剩 M18.9）
 
-**M18.9 说明页 / 图鉴 / README**：六只的名字、领域、三阶段、掉落一句话，写进游戏内说明页与 README。
+**M18.9 说明页 / 图鉴 / README**
+
+- 游戏内说明页加一节「世界 Boss」：六只的名字、领域、三阶段、掉落一句话；
+  `WORLD_BOSSES[*].lines` 是六只的台词，图鉴卡直接用。
+- `README.md` 的功能清单同步（六套骨架 / 三阶段 / 必掉传世 / 世界魂）。
+- 台账收尾：`docs/status/world-boss.md` 全部 ✅ 之后，本线（`feat/act-expansion`）就可以走
+  `--sync` → 回归 → 预览站 → 合 main 的流程了。
 
 ## 卡点
 
@@ -391,3 +406,9 @@ C 段（小地图星标）用「画 / 不画」两张图的差异把星标**单�
 | 2026-10-28 | 现身窗口用「藏 0.6 倍 / 现 2 倍」，**不做无敌** | 175000 血的 boss 如果只在 5 秒窗口里可打，一场要十几分钟，玩家会以为卡住了。「打得到但很亏」才会自己挑窗口爆发 |
 | 2026-10-28 | 现身节奏放 `ai` 里每帧推进，不用 `setTimeout` | 换图 / 击杀 / 暂停时 setTimeout 还在跑，会把倍率带到下一只 boss 身上 |
 | 2026-10-28 | `setGhost` 用**材质透明度**而不是 `visible=false` | 藏起来会让玩家以为 boss 消失了，还丢掉「打中的是影子」这层意思 |
+| 2026-10-28 | 传世用 `opts.rarity = 'unique'`，**不用** `pool: [['unique',1]]` | `rollItem` 在选品质之前还有两个 2% 的独立入口（法器 / 命格），只看 `!opts.rarity`。传 `pool` 时那两掷照样发生，命中就直接 return 一件法器 ——「必掉传世」当场断掉。大样本 120 次验证过 |
+| 2026-10-28 | 掉落落点推到 `body.radius + 1.5` 米，不在尸体中心 | 烛九阴盘起来 14 米、鲲鹏翼展 60 米。掉在中心 = 掉在模型里，玩家撞不进模型，光柱在那儿但永远捡不到 |
+| 2026-10-28 | 玄晶走 `{crystal}` 通道，其余匠材走 `{mat:{id,n}}` | 两条拾取分支的落点不同：`crystal` → `stash.mats.xuanjing`，`mat` → `craft_<id>`。混着发会变成「捡了但背包没涨」 |
+| 2026-10-28 | 世界魂挂在 `CRAFT_MATS` 的 tier 3，不新开第 4 档 | 炼器台按 tier 分栏，开第 4 档要连带改 UI 与排序；它在本作里就是「最高阶的神料」 |
+| 2026-10-28 | 传世职业**随机**，不按玩家职业过滤 | 世界 Boss 是全职业共享的打卡点；按职业发等于「换个职业就得重打一次 40 级」 |
+| 2026-10-28 | `grantLoot` 用 `e.wbLooted` 记账 | 击杀链路在 `onEnemyDeath` 里，重入一次就发两遍。世界 Boss 是全作唯一稳定产出传世的入口，发重了等于半个赛季的产出作废 |

@@ -342,6 +342,30 @@ const ok = (cond, msg, extra) => {
     Game.damageEnemy(e, hp * 60, false);
     await new Promise(res => setTimeout(res, 400));
     const rec = WorldBoss.rec();
+
+    /* [M18.8] 战利品：击杀链路跑完之后地上应该有一堆东西。
+     * 这里只数「有什么」，不数「有多少」—— 通用首领掉落（金币 / 2 件随机装 /
+     * 符文 / 玄晶 / 匠材）也会往同一张地上掉，数总量会互相干扰。
+     * 真正只可能来自 grantLoot 的信号是 **世界魂**（`mat.id === 'worldsoul'`）。 */
+    const pick = Game.loot.map(l => l.item ? 'item:' + l.item.rarity
+      : (l.rune ? 'rune' : (l.crystal ? 'crystal' : (l.mat ? 'mat:' + l.mat.id : 'gold'))));
+    const lootN = Game.loot.length;
+    const uniques = Game.loot.filter(l => l.item && l.item.rarity === 'unique').length;
+    const soul = Game.loot.find(l => l.mat && l.mat.id === 'worldsoul');
+    /* 落点必须在模型外：玩家撞不进 44 米的蛇，埋在肚子里就永远捡不到 */
+    const rad = (e.cfg && e.cfg.body && e.cfg.body.radius) || 3;
+    const soulDist = soul ? Math.hypot(soul.pos.x - e.pos.x, soul.pos.z - e.pos.z) : -1;
+
+    /* 真捡一次：把玩家挪到世界魂上，跑几帧拾取逻辑，看材料仓有没有涨 */
+    const soulBefore = Game.matCount('craft_worldsoul');
+    let soulPicked = 0;
+    if (soul) {
+      Game.playerGroup.position.x = soul.pos.x;
+      Game.playerGroup.position.z = soul.pos.z;
+      for (let i = 0; i < 6; i++) Game.updateLoot(0.2);
+      soulPicked = Game.matCount('craft_worldsoul') - soulBefore;
+    }
+
     return {
       skip: false, hp,
       dead: !!e.dead,
@@ -349,7 +373,9 @@ const ok = (cond, msg, extra) => {
       cd: rec.until - rec.killAt,
       aura: !!WorldBoss._aura,
       track: document.getElementById('wbTrack').textContent.replace(/\s+/g, ' '),
-      bossBar: document.getElementById('bossbar').style.display
+      bossBar: document.getElementById('bossbar').style.display,
+      lootN, uniques, pick: pick.slice(0, 14), soulDist, rad, soulPicked,
+      hasSoul: !!soul
     };
   });
   if (F.skip) {
@@ -359,7 +385,15 @@ const ok = (cond, msg, extra) => {
     ok(F.cd === 30 * 60 * 1000, 'F: 冷却不是一个完整周期', F.cd);
     ok(!F.aura, 'F: 击杀后领域光环没撤（玩家会以为效果还在）');
     ok(F.track.indexOf('后再现') >= 0, 'F: 追踪行没切成「后再现」', F.track);
+    /* [M18.8] 掉落 */
+    ok(F.lootN > 0, 'F: 击杀后地上没有战利品', F.lootN);
+    ok(F.uniques >= 1, 'F: 至少掉了一件传世（M18.8 必掉 1~3）', F.uniques);
+    ok(F.hasSoul, 'F: 没有世界魂（grantLoot 没被调到）', F.pick);
+    ok(F.soulDist > F.rad * 0.9, 'F: 世界魂掉在模型里面了（捡不到）', { 距中心: +F.soulDist.toFixed(1), 半径: F.rad });
+    ok(F.soulPicked >= 1, 'F: 世界魂踩上去没有进材料仓（拾取链路断了）', F.soulPicked);
     console.log('  击杀后追踪行：' + F.track);
+    console.log('  战利品 ' + F.lootN + ' 件（传世 ' + F.uniques + '，世界魂距中心 ' +
+      F.soulDist.toFixed(1) + ' 米 / 半径 ' + F.rad + '）→ 捡到世界魂 ×' + F.soulPicked);
   }
 
   console.log('\n【G】领域机制（M18.5 · 六种玩家侧效果）');

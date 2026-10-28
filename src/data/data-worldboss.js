@@ -117,8 +117,10 @@ const WORLD_BOSS_MATERIALS = {
     id: 'worldsoul', name: '世界魂', key: 'craft_worldsoul',
     color: '#e0c8ff', icon: 'soul', glow: true,
     from: '世界 Boss · 必掉',
-    desc: '巨兽散于天地间的那口气，凝而不散。传世之器再往上炼，只认这个。',
-    pending: 'M18.8'
+    desc: '巨兽散于天地间的那口气，凝而不散。传世之器再往上炼，只认这个。'
+    /* [M18.8] 已接：`CRAFT_MATS.worldsoul` 就位，六只的 `loot.mats` 各加一条
+     * `craft_worldsoul 1~2`，由 `WorldBoss.grantLoot` 发放。
+     * **不要**再给它加 `pending` —— 那个字段只表示「数据先行、代码未接」。 */
   }
 };
 
@@ -201,7 +203,8 @@ const WORLD_BOSSES = {
       mats: [
         { key: 'xuanjing', min: 80, max: 160 },
         { key: 'craft_soul', min: 2, max: 4 },
-        { key: 'craft_meteor', min: 1, max: 3 }
+        { key: 'craft_meteor', min: 1, max: 3 },
+        { key: 'craft_worldsoul', min: 1, max: 2 }
       ],
       rune: { min: 2, max: 4 }
     },
@@ -262,7 +265,8 @@ const WORLD_BOSSES = {
       mats: [
         { key: 'xuanjing', min: 80, max: 160 },
         { key: 'craft_soul', min: 2, max: 4 },
-        { key: 'craft_scale', min: 2, max: 5 }
+        { key: 'craft_scale', min: 2, max: 5 },
+        { key: 'craft_worldsoul', min: 1, max: 2 }
       ],
       rune: { min: 2, max: 4 }
     },
@@ -327,7 +331,8 @@ const WORLD_BOSSES = {
       mats: [
         { key: 'xuanjing', min: 80, max: 160 },
         { key: 'craft_soul', min: 2, max: 4 },
-        { key: 'craft_meteor', min: 1, max: 3 }
+        { key: 'craft_meteor', min: 1, max: 3 },
+        { key: 'craft_worldsoul', min: 1, max: 2 }
       ],
       rune: { min: 2, max: 4 }
     },
@@ -386,7 +391,8 @@ const WORLD_BOSSES = {
       mats: [
         { key: 'xuanjing', min: 80, max: 160 },
         { key: 'craft_soul', min: 2, max: 4 },
-        { key: 'craft_scale', min: 2, max: 5 }
+        { key: 'craft_scale', min: 2, max: 5 },
+        { key: 'craft_worldsoul', min: 1, max: 2 }
       ],
       rune: { min: 2, max: 4 }
     },
@@ -450,7 +456,8 @@ const WORLD_BOSSES = {
       mats: [
         { key: 'xuanjing', min: 80, max: 160 },
         { key: 'craft_soul', min: 2, max: 4 },
-        { key: 'craft_meteor', min: 1, max: 3 }
+        { key: 'craft_meteor', min: 1, max: 3 },
+        { key: 'craft_worldsoul', min: 1, max: 2 }
       ],
       rune: { min: 2, max: 4 }
     },
@@ -509,7 +516,8 @@ const WORLD_BOSSES = {
       mats: [
         { key: 'xuanjing', min: 80, max: 160 },
         { key: 'craft_soul', min: 2, max: 4 },
-        { key: 'craft_scale', min: 2, max: 5 }
+        { key: 'craft_scale', min: 2, max: 5 },
+        { key: 'craft_worldsoul', min: 1, max: 2 }
       ],
       rune: { min: 2, max: 4 }
     },

@@ -1776,7 +1776,7 @@ const UI = {
         sub: '炼器 / 洗练 / 扩容的通货', desc: '分解装备所得，凡 → 灵 → 玄 → 神 逐阶精纯。',
         qty: Game.crystalTierCount(i + 1)
       }));
-      /* 匠材九种：没有的也占一格（灰显），玩家才知道该去刷什么 */
+      /* 匠材十种（M18.8 加了世界魂）：没有的也占一格（灰显），玩家才知道该去刷什么 */
       for (const id of CRAFT_MAT_ORDER) {
         const d = CRAFT_MATS[id];
         cells.push({

@@ -340,6 +340,115 @@ const WorldBoss = {
     }
   },
 
+  /* ============================================================
+   * 掉落（M18.8）
+   *
+   * 必掉 1~3 件传世 + 材料 + 符文，全部走 `Game.spawnLoot` ——
+   * **不要直接写 `state.inventory` / `addCraftMat`**。地上那堆东西还要经过
+   * 拾取吸附、拾取半径词条、自动拾取（P04）与 `UI.log` 提示；
+   * 绕过它，玩家看不到「打出来了什么」，词条也白拿。
+   *
+   * 三条坑，改之前先看：
+   *
+   * 【一】传世用 `opts.rarity = 'unique'`，**不要**用 `pool: [['unique', 1]]`。
+   *   `rollItem` 在选品质之前还有两个独立入口：2% 法器、2% 命格，
+   *   它们只看 `!opts.rarity`。传 `pool` 时那两掷照样发生，
+   *   一旦命中就直接 return 一件法器 —— 「必掉传世」当场断掉。
+   *
+   * 【二】落点必须挪到**尸体边缘**。烛九阴盘起来 14 米、鲲鹏翼展 60 米，
+   *   掉在 `e.pos` 就是掉在模型里面：玩家撞不进模型，眼睁睁看着光柱捡不到。
+   *
+   * 【三】`e.wbLooted` 记账。击杀链路在 `onEnemyDeath` 里，
+   *   重入一次就发两遍奖 —— 世界 Boss 是全作唯一稳定产出传世的入口，
+   *   发重了等于半个赛季的产出作废。
+   * ============================================================ */
+  grantLoot(e) {
+    const g = (typeof Game !== 'undefined') ? Game : null;
+    if (!e || !g || !g.spawnLoot) return null;
+    if (e.wbLooted) return null;
+    const cfg = worldBossById(e.wbId);
+    const L = cfg && cfg.loot;
+    if (!L) return null;
+    e.wbLooted = true;
+
+    const ilvl = (typeof WORLD_BOSS_CFG !== 'undefined' && WORLD_BOSS_CFG.ilvl) || 62;
+    const diffKey = (g.state && g.state.difficulty) || 'normal';
+    const out = { unique: 0, mats: 0, runes: 0, names: [] };
+
+    /* 尸体边缘的落点：从中心朝玩家方向推出 `radius + 1.5` 米 */
+    const base = this._lootAnchor(e, g);
+
+    /* ---- 传世：必掉 1~3 件（难度加成走 diffBonus） ---- */
+    const cnt = (typeof worldBossUniqueCount === 'function')
+      ? worldBossUniqueCount(cfg, diffKey)
+      : { min: L.uniqueMin || 1, max: L.uniqueMax || 3 };
+    const n = RNDI(cnt.min, Math.max(cnt.min, cnt.max));
+    const classes = (typeof classPackIds === 'function') ? classPackIds() : ['warrior', 'mage', 'taoist'];
+    for (let i = 0; i < n; i++) {
+      /* 职业随机，不按玩家职业过滤：世界 Boss 是全职业共享的打卡点，
+       * 按职业发等于「换个职业就得重打一次 40 级」。 */
+      const it = rollItem(ilvl, { rarity: 'unique', cls: PICK(classes) });
+      if (!it) continue;
+      g.spawnLoot(this._scatter(base, i, 2.4), it, 0);
+      out.unique++;
+      out.names.push(it.name);
+    }
+
+    /* ---- 材料：三种，含世界魂与玄晶 ----
+     * 玄晶走 `crystal` 通道（进 `stash.mats.xuanjing`），
+     * 其余走 `mat` 通道（进 `craft_<id>`）—— 两条通道的拾取分支不一样，
+     * 混着发会变成「捡了但背包没涨」。 */
+    let k = 0;
+    for (const m of (L.mats || [])) {
+      const num = RNDI(m.min, Math.max(m.min, m.max));
+      if (m.key === 'xuanjing') {
+        g.spawnLoot(this._scatter(base, k++, 2.0), null, 0, { crystal: num });
+      } else if (m.key.indexOf('craft_') === 0) {
+        g.spawnLoot(this._scatter(base, k++, 2.0), null, 0, { mat: { id: m.key.slice(6), n: num } });
+      } else {
+        continue;
+      }
+      out.mats++;
+    }
+
+    /* ---- 符文 2~4 个 ---- */
+    const rn = L.rune ? RNDI(L.rune.min, Math.max(L.rune.min, L.rune.max)) : 0;
+    for (let i = 0; i < rn; i++) {
+      g.spawnLoot(this._scatter(base, k++, 2.0), null, 0, { rune: rollRune(ilvl) });
+      out.runes++;
+    }
+
+    if (typeof UI !== 'undefined' && UI.log) {
+      UI.log('【世界 Boss】' + (cfg.name || '巨兽') + ' 遗落：传世 ×' + out.unique +
+        ' · 材料 ×' + out.mats + ' · 符文 ×' + out.runes + '。', 'good');
+    }
+    if (typeof FX !== 'undefined' && FX.flashCircle) {
+      FX.flashCircle(new THREE.Vector3(base.x, 0, base.z), 6, 0xffe6a0, 0.6);
+    }
+    return out;
+  },
+
+  /* 掉落落点：尸体中心 → 朝玩家方向推到模型边缘外 1.5 米。
+   * 拿不到玩家位置时退回中心（总比不发强）。 */
+  _lootAnchor(e, g) {
+    const p = e.pos || { x: 0, z: 0 };
+    const pl = g.playerGroup && g.playerGroup.position;
+    if (!pl) return { x: p.x, z: p.z };
+    const dx = pl.x - p.x, dz = pl.z - p.z;
+    const d = Math.hypot(dx, dz);
+    if (d < 0.01) return { x: p.x, z: p.z };
+    const rad = (e.cfg && e.cfg.body && e.cfg.body.radius) || e.radius || 3;
+    const push = Math.min(d, rad + 1.5);
+    return { x: p.x + dx / d * push, z: p.z + dz / d * push };
+  },
+
+  /* 一堆掉落别叠在同一个点上：按序号在半径 `r` 的圈上散开 */
+  _scatter(base, i, r) {
+    const a = i * 2.399963;           // 黄金角，序号连续时也不会排成一条线
+    const rr = r * Math.sqrt((i % 7 + 1) / 7);
+    return { x: base.x + Math.cos(a) * rr, z: base.z + Math.sin(a) * rr };
+  },
+
   /* 击杀记账。由 game.js 的 onKill 转发（不要在那里直接改 state）。 */
   onKill(e) {
     if (!e || !e.wb) return false;
@@ -364,6 +473,9 @@ const WorldBoss = {
      * 本尊倒地了地上还在掉血，玩家会以为「打赢了还在扣血是 bug」。 */
     if (typeof WBFight !== 'undefined') WBFight.clear();
     const cfg = worldBossById(e.wbId);
+    /* [M18.8] 掉落。放在播报之后：先「已被讨伐」，再「遗落：…」，
+     * 聊天框的顺序和玩家看到的顺序一致（先死，再掉）。 */
+    const loot = this.grantLoot(e);
     if (typeof UI !== 'undefined') {
       UI.log('【世界 Boss】' + (cfg ? cfg.name : '巨兽') + ' 已被讨伐。' +
         Math.round(WORLD_BOSS_CFG.cycle / 60000) + ' 分钟后山海间另起一只。', 'good');

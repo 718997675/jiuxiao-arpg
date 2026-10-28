@@ -39,6 +39,7 @@ const WB = g('WORLD_BOSSES'), ORDER = g('WORLD_BOSS_ORDER'), CFG = g('WORLD_BOSS
 const MATS = g('WORLD_BOSS_MATERIALS');
 const MAPS = g('MAPS'), BOSSES = g('BOSSES');
 const CRAFT_MATS = g('CRAFT_MATS');
+const CRAFT_MAT_ORDER = g('CRAFT_MAT_ORDER');
 const WB_ELEMS = g('WB_ELEMS'), WB_SHAPES = g('WB_SHAPES');
 const phaseAt = g('worldBossPhaseAt'), skillsOf = g('worldBossSkillsOf');
 const skillsAt = g('worldBossSkillsAt'), domainOf = g('worldBossDomain');
@@ -449,11 +450,18 @@ for (const id of ORDER) {
 head('九·c、世界魂（worldsoul）');
 ok(!!MATS.worldsoul, 'WORLD_BOSS_MATERIALS.worldsoul 已定义');
 eq('世界魂键名带 craft_ 前缀', MATS.worldsoul.key, 'craft_worldsoul');
-ok(!CRAFT_MATS.worldsoul, '世界魂**没有**混进 CRAFT_MATS（强化系统还没做，先进去会让背包多一格永远为 0）');
-eq('世界魂标了 pending 阶段', MATS.worldsoul.pending, 'M18.8');
+/* [M18.8] 已接：世界魂进 CRAFT_MATS，六只各掉 1~2。
+ * 2026-10-28 之前的断言是「**不许**进 CRAFT_MATS」——那是 M18.1 的占位约定，
+ * 强化系统没做时提前进去会让背包多一格永远为 0。现在反过来了：
+ * 它必须进去，否则掉出来也没地方放。 */
+ok(!!CRAFT_MATS.worldsoul, '世界魂已进 CRAFT_MATS（M18.8 接上，否则掉出来没地方放）');
+eq('世界魂 id 与 CRAFT_MATS 一致', CRAFT_MATS.worldsoul && CRAFT_MATS.worldsoul.id, 'worldsoul');
+eq('世界魂不再标 pending', MATS.worldsoul.pending, undefined);
+ok(CRAFT_MAT_ORDER.indexOf('worldsoul') >= 0, '世界魂在 CRAFT_MAT_ORDER 里（炼器台按它排序）');
 for (const id of ORDER) {
-  ok(!(WB[id].loot.mats || []).some(m => m.key === MATS.worldsoul.key),
-    `${id} 没有提前掉世界魂（M18.8 才接）`);
+  const ws = (WB[id].loot.mats || []).filter(m => m.key === MATS.worldsoul.key);
+  ok(ws.length === 1, `${id} 掉落表里有且只有一条世界魂`, ws.length);
+  if (ws.length) ok(ws[0].min >= 1 && ws[0].max >= ws[0].min, `${id} 世界魂 1~2`, ws[0]);
 }
 
 /* ============================================================

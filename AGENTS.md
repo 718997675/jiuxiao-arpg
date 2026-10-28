@@ -174,7 +174,7 @@ cat docs/status/act-expansion.md             # 细看这条线的节点表 / 下
 | 出口门落点 / 开门时机 | 落点 `src/data/data-maps.js` 的 `gatePosOf(mapId)`（boss 区最深处）；时机 `src/game.js` 的 `mapCleared`/`markCleared` + `src/world.js` 的 `makeExitGate` |
 | 世界 Boss 骨架（六套程序化巨兽 + 动画 + morph） | `src/wbmodels.js`（`WBModels`：`build`/`anim`/`setMorph`/`setTails`/`setGhost`）。三条硬约定：①按**真实米数**建、`group.scale===1`、返回 `noAutoScale`（数据里的 `scale:4.6~5.6` 是给 2 米人形的旧口径，再乘一次就是 238 米的蛇）②`parts.torso` 必须是**内层 group**（`updateActorAnim` 无条件写它，指根节点会抹掉世界坐标）③碰撞半径由 `body.radius` 夹住 `measureFootR`。材质 `metalness` 一律 ≤ 0.45（没有环境贴图，高了渲成黑块） |
 | 世界 Boss 战斗（三阶段 / 18 招牌技能 / 场地 / 定身 / 格挡 / 现身） | `src/worldboss-fight.js`（`WBFight`：`ai`/`cast`/`_enterPhase`/`_applyEnter`/`_revealTick`/`tick`/`clear`）。**不走 `bossPattern()` 的 patterns 池**（那是八部天龙共用的招式池，撞上就等于「又一只八部」）；阶段字段先进 `_resetCombat` 打回基线再重算，否则 P3 会带着 P2 的盾。`enter` 加新键必须先写进 `dev/check-worldboss.js` 的 `ENTER_KEYS`，否则脚本会红。现身节奏（`REVEAL_EVERY/DUR/HIDE_MUL`）是常量，**别写成无敌** |
-| 世界 Boss（数据 / 刷新 / 通知 / 星标 / 领域） | 数据 `src/data/data-worldboss.js`（`WORLD_BOSSES` 6 只 + `WORLD_BOSS_CFG`）；运行时 `src/worldboss.js`（`WorldBoss`：`ensure`/`rollNext`/`sync`/`tick`/`onKill`/`makeAura`/`domainTick`）。**不要把世界 Boss 写进 `MAPS[mapId].bosses`** —— 那张表是常驻首领，读档会被 `spawnBosses` 反复重生。领域压制写**独立字段**（`Game.domSlow`/`domAspd`），别并进 `playerSlow`/`poisonT`，否则出圈算不清该清多少 |
+| 世界 Boss（数据 / 刷新 / 通知 / 星标 / 领域 / 掉落） | 数据 `src/data/data-worldboss.js`（`WORLD_BOSSES` 6 只 + `WORLD_BOSS_CFG`）；运行时 `src/worldboss.js`（`WorldBoss`：`ensure`/`rollNext`/`sync`/`tick`/`onKill`/`grantLoot`/`makeAura`/`domainTick`）。**不要把世界 Boss 写进 `MAPS[mapId].bosses`** —— 那张表是常驻首领，读档会被 `spawnBosses` 反复重生。领域压制写**独立字段**（`Game.domSlow`/`domAspd`），别并进 `playerSlow`/`poisonT`，否则出圈算不清该清多少。掉落走 `Game.spawnLoot`（别直接写背包），传世用 `opts.rarity='unique'`（用 `pool` 会被法器/命格那两个 2% 入口截胡），落点推到 `body.radius+1.5` 米外（否则埋在 44 米的模型里捡不到） |
 | 八部天龙（8 魔将 + 八印 + 终门） | 数据 `src/data/data-monsters.js` 的 `bafo_*`（`resist` 一个 −60 洞 + `stagger` + `patterns`）+ `dev/check-bafo.js`。**与世界 Boss 是互斥的两套语言**，见 `V2-ROADMAP.md` §18.7 |
 
 ## 5. 回归脚本（改完必跑）
@@ -192,6 +192,7 @@ node dev/mobile-layout.js --live   # 线上版布局回归
 node dev/preview-check.js --url <预览地址>   # 预览站：能开局 + 资源不越界 + 存档隔离
 node dev/check-worldboss.js  # 世界 Boss 数据层：抗性平坦 / 三阶段 / 领域 / 掉落 / **与八部去重**（1152 项）
 node dev/worldboss-run.js    # 世界 Boss 运行时：30 分钟轮转（时间打桩）、击杀冷却、跨会话、存档往返（76 项）
+node dev/worldboss-loot.js   # 世界 Boss 掉落：必掉件数 × 四难度 / 120 次大样本全传世 / 材料符文世界魂区间 / 落点在模型外 / 幂等 / onKill 接线（191 项）
 node dev/worldboss-live.js   # 世界 Boss 浏览器实测：实体/光环/横幅/星标/真实击杀链路/六种领域效果（可加 --shot 截图）
 node dev/worldboss-fight.js  # 世界 Boss 战斗层（离线）：阶段边界 / 7 种 shape 命中与否 / 场地 / 定身 / enter 消费点 / 接线断言（252 项）
 node dev/worldboss-battle-live.js  # 世界 Boss 战斗层（浏览器）：阶段播报 / 预警结算 / 正面格挡 2.5 倍 / 战吼 8 秒归位 / 分身 / 定身 / 九尾展开 / 真身现身 3.3 倍 / 毒沼换图清场
