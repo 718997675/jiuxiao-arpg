@@ -3037,7 +3037,7 @@ const Game = {
     /* [S1] 技能消耗降低；传世还能再减该技能的消耗。
      * [P3] 常驻（变体）自动施放不收资源 —— 它已经用「数值减半」付过账了，
      * 再扣资源会变成背包里的隐形扣血。 */
-    const cost = autoCast ? 0
+    const cost = (autoCast || this._freeCast) ? 0
       : Math.max(1, Math.round(this.skillCost(sk) * (1 - (smod && smod.cost ? smod.cost : 0) / 100)));
     /* 资源名读职业表：刀客怒气 / 术士灵力 / 符师道力。写死「灵力」会让符师的提示说错 */
     if (s.mp < cost) { UI.log(((CLASSES[s.cls] || {}).res || '资源') + '不足'); SFX.ui(); return; }
@@ -3258,9 +3258,6 @@ const Game = {
         FX.burst(new THREE.Vector3(pp.x, 1.2, pp.z), bc, 26, { speed: 3, size: 0.12, life: 0.8, gravity: -2, additive: true });
         SFX.cast();
         UI.toast(sk.name);
-        /* [P2b] 台阶 Lv3「施法瞬间回复 12% 生命」：三只增益都吃。
-         * 走 healPlayer —— 治疗加成、血条钳制、弹字全在那一处。 */
-        if (bBeh && bBeh.healOnCast) this.healPlayer(st.hpMax * bBeh.healOnCast / 100);
         /* [S4] 解毒：立即清除自身中毒与减速 */
         if (id === 'antidote') {
           this.playerSlowT = 0; this.playerSlow = 0; this.poisonT = 0;
@@ -4175,6 +4172,11 @@ const Game = {
     if (typeof this.castFormFx === 'function') {
       this.castFormFx(id, { pp, aim, dir, spow, srad });
     }
+    /* [P2b] 台阶「施法瞬间回复 N% 生命」：**通用**，放在 switch 之后 ——
+     * 原来写在增益 case 里，结果 heal / revive 这类非增益技能永远吃不到
+     * （面板写着「瞬回 8%」，血条纹丝不动）。走 healPlayer：治疗加成、
+     * 血条钳制、弹字全在那一处。 */
+    if (bBeh && bBeh.healOnCast) this.healPlayer(st.hpMax * bBeh.healOnCast / 100);
     /* [P2] 技能树分支的行为层（减速 / 破甲 / 余震 / 回资源…）。
      * 同样放在 switch 之后：它只追加效果，不参与本发技能自己的伤害结算，
      * 所以「这发技能吃不到自己挂的易伤」—— 否则易伤等于当场双倍。 */

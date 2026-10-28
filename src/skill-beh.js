@@ -762,6 +762,25 @@ const SKILL_BEH = {
     /* 由 castSkill 的增益 case 消费：buff.dur += tierDur */
   } },
 
+  /* [P2b] 低血自动施放（回春位 Lv10）：值 = 生命百分比阈值。
+   * 消费点在 tickBeh（帧级），**不是** autoTrigger —— 那是 revive 变体「替身」
+   * 的键（致命伤时自动触发），语义是「死了才救」；这一条是「快死了先救」。 */
+  lowHpCast: { ph: 'hook', label: '低血自动施放', run() {
+    /* 由 tickBeh 消费：扫动作条，低于阈值的带这个键的技能替玩家放一次 */
+  } },
+
+  /* [P2b] 持续回复（回春位 Lv5）：值 = 每秒回复的最大生命百分比，共 6 跳。
+   * **不复用 hotPct** —— 那是 heal 精研「余春」的键，而且它的值是「治疗量的百分比」，
+   * 与本条的口径（最大生命的百分比）根本不是一个东西，硬加会算错。
+   * 另开一个键，两条各按各的口径回血。 */
+  tierHot: { ph: 'self', label: '持续回复（台阶）', run(c, v, b) {
+    const pct = Math.max(0, Number(v) || 0) / 100;
+    if (!pct) return;
+    c.tick(Math.max(1, Math.round(behDur(b, 6))), () => {
+      c.G.healPlayer(c.G.state.stats.hpMax * pct, true);
+    });
+  } },
+
   detonate: { ph: 'hook', label: '引爆剩余伤害', run() {
     /* 由 Game.onBehKill 消费：带持续伤害的目标死亡时原地引爆 */
   } },
@@ -1168,7 +1187,28 @@ Object.assign(Game, {
     let any = false;
     for (const src of parts) {
       if (!src) continue;
-      for (const k in src) { out[k] = src[k]; any = true; }
+      for (const k in src) {
+        /* 台阶的叠加键不落进 out（它不是真键名），下面单独算 */
+        if (src === tbh && k.charAt(0) === '+') continue;
+        out[k] = src[k]; any = true;
+      }
+    }
+    /* [P2b] 「+键」= **叠加通道**（台阶专用）。
+     * 同名键撞上分支时，玩家期望的是「等级白送的 + 花点选的两份都拿到」，
+     * 而不是花点那份把等级那份顶掉 —— 顶掉就等于这一级对选过分支的人不存在。
+     * 但形态类键（`move` / `follow` / `ring`…）必须保持「分支覆盖台阶」，
+     * 所以不能全局改成相加。折中：台阶里写 `'+hotPct': 0.02` 的键在合并**之后**
+     * 再加一遍，其余键行为一字不变。 */
+    if (tbh) {
+      for (const k in tbh) {
+        if (k.charAt(0) !== '+') continue;
+        const base = k.slice(1);
+        const v = tbh[k];
+        const cur = out[base];
+        if (typeof v === 'number' && typeof cur === 'number') out[base] = cur + v;
+        else if (cur === undefined) out[base] = v;
+        any = true;
+      }
     }
     return any ? out : null;
   },
@@ -1231,6 +1271,31 @@ Object.assign(Game, {
     }
     /* 替身（还魂变体）内置冷却 */
     if ((this._autoReviveCd || 0) > 0) this._autoReviveCd -= dt;
+
+    /* [P2b] 回春位 Lv10「生命低于 N% 时自动施放」。
+     * 扫**动作条**而不是写死技能：这一位躺着治疗 / 解毒 / 还魂三只，
+     * 玩家放哪只就该自动放哪只（阈值也读各自的 beh，不写死 30）。
+     * 放的是哪只都不收资源 —— 救命技能卡在「蓝不够」上等于这一级没做。
+     * 冷却照走（castSkill 自己会置），所以不会刷屏。
+     * 0.25 秒节流：branchBeh 每次要合并三份 beh，每帧扫满 5 格纯属浪费。 */
+    this._lowHpT = (this._lowHpT || 0) - dt;
+    if (this._lowHpT <= 0 && this.state.stats && typeof this.skillBar === 'function') {
+      this._lowHpT = 0.25;
+      const st0 = this.state.stats;
+      const pct = st0.hpMax > 0 ? (this.state.hp / st0.hpMax) * 100 : 100;
+      for (const sid of this.skillBar()) {
+        if (!sid || (this.cooldowns[sid] || 0) > 0.02) continue;
+        const lb = this.branchBeh(sid);
+        if (!lb || !lb.lowHpCast) continue;
+        if (pct > lb.lowHpCast) continue;
+        this._freeCast = true;
+        try { this.castSkill(sid); } finally { this._freeCast = false; }
+        const nm = (typeof SKILLS !== 'undefined' && SKILLS[sid]) ? SKILLS[sid].name : sid;
+        FX.text(new THREE.Vector3(this.playerGroup.position.x, 3.1, this.playerGroup.position.z),
+          '自动施放 · ' + nm, 'good', { life: 1.1 });
+        break;                       // 一帧只救一次，别把三只救命技能一起倒出来
+      }
+    }
     /* 化龙（青龙变体）：变身期间每 0.6 秒对身边喷一口 */
     if ((this._dragonT || 0) > 0) {
       this._dragonT -= dt;

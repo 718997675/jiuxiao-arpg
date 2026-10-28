@@ -3,7 +3,7 @@
 - 分支：`feat/skill-refactor`（优先级 **低**，排在大型扩展之后）
 - 计划文档：`docs/SKILL-REDESIGN-PLAN.md`（16 节）
 - 预览站：暂不发（2026-10-27 用户口径：本地验证即可，别再折腾线上）
-- 更新：2026-10-28 · P2b 进化台阶 **7/15 位**（21/45 条）· **收工点：下次从 A 档「法师 ③ 火墙」接**
+- 更新：2026-10-28 · P2b 进化台阶 **8/15 位**（24/45 条）· **收工点：下次从 A 档「法师 ③ 火墙」接**
 
 > 当前：**P0 + P1a + P1b + P1c + P1d + P2a 完成，P2b 进行中**。动作条 5 格、格位 = 功能位；
 > 技能树已按「三线并行」结算 —— 没有必点主干、没有主动↔被动二选一，
@@ -13,8 +13,8 @@
 > 技能点供给 = 等级 × 1.5（40 级 60 点）**。
 > 台阶也接进战斗了：Lv3 / Lv7 走 `smod.count`（多发带 0.85^n 递减）——**10 个技能全接**
 > （毒雾是这一批补进来的）；Lv5 / Lv9 / Lv10 走行为键，**已接 7 个位**
-> （刀客 ①②③④、法师 ①、道士 ①②），15 个位 × 3 级 = 45 条里完成 **21 条**。
-> 剩 8 个位仍是文案，面板上带「待」角标 —— **别把「P2b 完成」读成 45 条都做了**。
+> （刀客 ①②③④、法师 ①、道士 ①②④），15 个位 × 3 级 = 45 条里完成 **24 条**。
+> 剩 7 个位仍是文案，面板上带「待」角标 —— **别把「P2b 完成」读成 45 条都做了**。
 
 ## 一句话现状
 
@@ -36,7 +36,7 @@ P1 起才动 `SKILL_BAR_SLOTS` 与面板的三列树。
 | P1c | **取消二选一**：三线并行结算（等级门 `reqLv` + 关键被动软前置 `needPts`），`levelUpSkill` / `levelUpPassive` 的 fork 拦截整块删除，面板去掉「或/锁」标记与互斥虚线，说明页同步 | ✅ | `data-skill-tree.js`、`game.js`、`skill-passive.js`、`ui-skills.js`、`ui.js`、`index.html` | `dev/test-skill-p1c.js` 353 · `dev/probe-skill-p1c.js` 23 |
 | P1d | 面板**视觉**重排：一条线一列、列内按 `reqLv` 递增，被动小一圈挂在主动右边，只留同线淡引导线；手机上三条线分页签、一页一列 | ✅ | `ui-skills.js`（`skTreeLayout` / `skTreeHTML` / `renderSkillTreeDOM` / `skTreeTabsHTML`）、`index.html`（SKG + 被动腰围）、`ui.js`（说明页「技能树布局」） | `dev/probe-skill-p1d.js` 36 |
 | P2a | **等级上限 5 → 10** + 分段曲线真的进战斗（`skillLvMul` 取代旧「每级固定 8%」）+ 点数供给 等级 × 1.5；面板 10 格 / 满级金环 / 洗点全额退回 | ✅ | `data-skills.js`（`SKILL_LV_MAX` / `SKILL_POINT_RATE` / `skillPointPool`）、`data-skill-tree.js`（`lvMax` 同源）、`game.js`（`castSkill` / `skillPoints`）、`ui-skills.js`、`ui.js`、`index.html` | `dev/test-skill-p2.js` 41 · `dev/probe-skill-p2.js` 26 |
-| P2b | **数量 / 形态台阶接进 `castSkill`**。①数量：Lv3 / Lv7 各 +1，接 `smod.count`（10 个技能消费），第 n 发 ×0.85^n 防三倍伤害。②进化：新建 `SKILL_TIER_EVO`（挂**技能 id** 不挂技能位），合并顺序 **台阶最前 → 精研 / 取向 / 变体覆盖同名键**（花点的选择必须盖过等级送的）。**已接 7 个位 / 21 条**：刀客①旋风斩、法师①火球、道士①符箓、道士②毒雾、刀客②地裂、刀客③剑阵、刀客④血怒 —— 细则见下面「P2b 收口要点」。**⚠ 只接了 7/15 个位（21/45 条），剩 8 位仍是文案** | 🟡 | `data-skills.js`（`SKILL_TIER_EVO` / `skillTierEvo` / `skillTierMods` / `skillTierBeh`）、`skill-beh.js`（`branchBeh` 台阶排最前 + `killProlong` / `lifesteal` / `ccImmune` / `healOnCast` / `tierDur`）、`game.js`（autoTarget / rageMul / firePatch / swordField / applyPlayerSlow / ccImmuneNow）、`ui.js`（说明页读数现算）、`ui-skills.js` | `dev/test-skill-p2b.js` 300 · `dev/probe-skill-p2b.js` 114 |
+| P2b | **数量 / 形态台阶接进 `castSkill`**。①数量：Lv3 / Lv7 各 +1，接 `smod.count`（10 个技能消费），第 n 发 ×0.85^n 防三倍伤害。②进化：新建 `SKILL_TIER_EVO`（挂**技能 id** 不挂技能位），合并顺序 **台阶最前 → 精研 / 取向 / 变体覆盖同名键**（花点的选择必须盖过等级送的）。**已接 8 个位 / 24 条**：刀客①旋风斩、法师①火球、道士①符箓、道士②毒雾、刀客②地裂、刀客③剑阵、刀客④血怒、道士④回春 —— 细则见下面「P2b 收口要点」。**⚠ 只接了 8/15 个位（24/45 条），剩 7 位仍是文案** | 🟡 | `data-skills.js`（`SKILL_TIER_EVO` / `skillTierEvo` / `skillTierMods` / `skillTierBeh`）、`skill-beh.js`（`branchBeh` 台阶排最前 + `killProlong` / `lifesteal` / `ccImmune` / `healOnCast` / `tierDur`）、`game.js`（autoTarget / rageMul / firePatch / swordField / applyPlayerSlow / ccImmuneNow）、`ui.js`（说明页读数现算）、`ui-skills.js` | `dev/test-skill-p2b.js` 377 · `dev/probe-skill-p2b.js` 136 |
 | P2c | 精通层 11~20：光效随等级变亮、Lv15 精通小质变（统一三选一模板），不新增形态 | ⬜ | `src/fx.js`、`skill-beh.js` | — |
 | P3 | 元素注入 + 反应表：伤害管线支持双元素、特效混色、词缀口径 | ⬜ | 战斗 + 词缀 + `src/fx.js` | — |
 | P4 | 三职业独立 ⑤ 号位：刀客兵形/刃势、法师法相、道士召唤 | ⬜ | `src/fx.js`、`src/charforge.js` | — |
@@ -121,10 +121,25 @@ P1 起才动 `SKILL_BAR_SLOTS` 与面板的三列树。
     挡不住「2 秒后那一下」——到点它会重新 filter 一遍**新**的假怪，然后拿真 `damageEnemy`
     去摸没有 `cfg` 的怪（`reading 'armorHigh'`）。凡 `await` 过且带定时器的段，
     收尾一律 `mapGen++` + 清数组。
+22. **「+键」= 台阶专用的叠加通道**。同名数值键撞上精研 / 取向时，玩家期望的是
+    「等级送的 + 花点选的两份都拿到」，而不是后者把前者顶掉。但形态类键
+    （`move` / `follow` / `ring`…）必须保持「分支覆盖台阶」，不能全局改相加。
+    折中：台阶里写 `'+drPct': 15`，`branchBeh` 在合并**之后**再把这份加上去。
+    目前只有回春位 Lv7 用它（`drPct` 是 antidote 精研「固元」的键）。
+23. **口径不同的量不能借同一个键**。回春位 Lv5 一开始想用 `+hotPct`，但 heal 精研
+    「余春」的 `hotPct: 25` 意思是「治疗量的 25%」，而台阶要的是「最大生命的 2%」——
+    两者相加会算成每秒 27%，而消费方还按 `<1 才算比例` 判断，直接退化成 2%。
+    所以另开 `tierHot`（每秒最大生命百分比 × 6 跳）。
+24. **`healOnCast` 是通用收尾，不许写在某个 case 里**。它原先写在增益 case 内，
+    结果 heal / revive 这类非增益技能永远吃不到 —— 面板写着「瞬回 8%」、血条纹丝不动。
+    现在放在 `switch` 之后、`applySkillBeh` 之前，对所有技能生效。
+25. **`_freeCast`：低血自动施放不收资源**。救命技能卡在「蓝不够」上等于没做；
+    冷却照走（`castSkill` 自己置），所以不会刷。
 
-## P2b 剩余：8 个位的进化台阶（24 条）
 
-已接 7 个位：刀客 ①②③④、法师 ①、道士 ①②。剩下的按「要不要新写相位」分三档：
+## P2b 剩余：7 个位的进化台阶（21 条）
+
+已接 8 个位：刀客 ①②③④、法师 ①、道士 ①②④。剩下的按「要不要新写相位」分三档：
 
 **A 档 · 复用现成键（可以直接接着做）**
 
@@ -133,7 +148,13 @@ P1 起才动 `SKILL_BAR_SLOTS` 与面板的三列树。
 | 法师 ③ 火墙 | 持续火环 / 跟随 / 结束爆炸 | `zone` / `follow` / `endBurst`（case 消费） |
 | 法师 ④ 护盾 | 反伤 / 爆发 / 破碎冰冻 | `reflect` / **新写「护盾到期炸」** / `breakNova`（hook 已有） |
 | 道士 ③ 太极 | 推开 / 内减伤 / 内回血 | `knock` / `drPct` / `hotPct` |
-| 道士 ④ 回春 | 持续回复 / 瞬驱 / 低于 30% 自动触发 | `hotPct` / `cleanse` / `autoTrigger`（hook 已有） |
+
+> ⚠ **A 档这三位的键「看着能用，其实全撞」**（2026-10-28 核查）：
+> 法师 ③ 火墙的 `grow / ring / follow / endBurst` 全是**该技能自己的精研 / 取向 / 变体**，
+> 法师 ④ 护盾的 `reflect`（霜甲、冰甲）与 `breakNova`（冰刺）同理，
+> 道士 ③ 太极的 `knock`（两仪）/ `drPct`（阴阳、太极、绵劲、无极）同理。
+> 照原表直接接 = 三条台阶全被花点的选择顶掉。**动手前先按第 22 条选路**：
+> 数值类走 `+键` 叠加，形态类必须换一个消费点不同的新语义（参考血怒位与回春位）。
 
 **A- 档 · 有前提没解开（别直接开工）**
 
@@ -474,3 +495,35 @@ arch 29 · smoke ERRORS none。
 ② `reading 'armorHigh'` 的根因不是「假怪没 cfg」，而是**余震定时器在 `await` 之后才到点**
 （`c.later` 判 mapGen，只清数组挡不住）——收尾一律 `mapGen++` + 清数组；
 ③ 顺手让探针的 `pageerror` 带前 4 行栈，否则这条错永远只能猜到 handler 名字。
+
+### 2026-10-28 · P2b 道士 ④ 回春（治疗 / 解毒 / 还魂 共用一个位）
+
+同血怒位：一个格位只放一只，三条台阶必须三只都接。这一位真正麻烦的是**撞键**比血怒位深 ——
+`hotPct` 是 heal 精研「余春」的、`drPct` 是 antidote 精研「固元」的、`autoTrigger` 是
+revive 变体「替身」的，照原稿接等于三条全被花点的选择顶掉。
+
+- **新增「+键」叠加通道**：`branchBeh` 合并完之后，把台阶里 `'+xxx'` 的数值再加一遍。
+  形态类键（`move`/`follow`/`ring`）仍然保持「分支覆盖台阶」，所以没动既有语义。
+  Lv7 减伤因此写成 `'+drPct': 15` —— 选过「固元」的玩家是 15+15，没选的是 15。
+- **Lv3 瞬回 8%**（原稿「队友共享」是空话）、**Lv7 减伤 15%**（原稿「范围扩大」也是空话）。
+  `healOnCast` 顺手从增益 case 挪到 `switch` 之后：原来只有增益类技能吃得到，
+  heal / revive 面板写着「瞬回」实际不回。
+- **Lv5 持续回复**另开 `tierHot`（每秒 2% 最大生命 × 6 跳），**没有**借用 `hotPct`：
+  余春那条的值 25 是「治疗量的百分比」、消费方还按「<1 才算比例」判断，
+  硬加会算成每秒 27% 却退化成 2%。
+- **Lv9 瞬驱 + 1.5 秒无敌**：`cleanse` + `immune`（两者都是现成的 self 相位 handler）。
+  对 antidote 来说是「本来就驱散、多一层无敌」，对 heal / revive 是「终于能驱散了」。
+- **Lv10 低血自动施放**：新键 `lowHpCast`（阈值百分比），消费点在 `tickBeh`（0.25 秒节流），
+  扫**动作条**而不是写死技能 —— 玩家放哪只就自动放哪只。施放走 `_freeCast`（不收资源），
+  冷却照走。不是 `autoTrigger`：那是「死了才救」，这一条是「快死了先救」。
+
+**验证**：`test-skill-p2b` 377/0（+ 撞键铁律把 `+键` 视为合法、回春 15 条、面板无「待」）、
+`probe-skill-p2b` 136/0（新增「九、道士 ④ 回春」22 条：三只 × 瞬回 / tierHot / 减伤 / 驱散 +
+无敌，外加真等一跳量持续回复、Lv10 蓝 0 自动施放）。
+回归：p0 248 · p1 52 · p1c 353 · p2 41 · p2b 377 · items 17 · save 79 · arch 29 · smoke ERRORS none。
+
+**踩坑**：① heal 的 `regen` 跨施法累加（每次 +3%/秒，4 秒后自己减回去），
+探针连着量两段会量成「两发的和」—— 每段先把 `Game.regen` 清零；
+② 变体必须显式选「无副作用」的那只：heal 的 0 号是「春霖」（改地面区域）、
+1 号是「血偿」（扣 12% 生命），量治疗量时用 2 号「回春诀」；
+③ 等待帧的段落要把 `Game.enemies` 清空，否则假怪进帧循环报 `reading 'time'`。

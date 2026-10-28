@@ -999,8 +999,133 @@ const ok = (c, m, d) => {
     ok(todo.join(',') === '', '刀客 ④ 面板不再有「待」角标', todo);
   }
 
-  /* ---------------- 9. 零报错 ---------------- */
-  console.log('九、控制台');
+  /* ---------------- 9. 道士 ④ 回春：治疗 / 解毒 / 还魂 共用一个位 ----------------
+   * 同血怒位：放哪只就该吃到哪只的台阶。这一位另有两条「+键」叠加台阶
+   * （Lv5 hotPct / Lv7 drPct），必须证明**精研已经给了的时候还能再加**。 */
+  console.log('九、道士 ④ 回春（三条台阶 × 三只）');
+  const healTiers = await p.evaluate(async () => {
+    const out = {};
+    const cast = (id, lv, form) => {
+      Game.mapGen = (Game.mapGen || 0) + 1;
+      Game.state.cls = 'taoist';
+      Game.state.skills = { [id]: { lv: lv } };
+      if (form != null) Game.state.skills[id].f = form;
+      window.__mkClean();
+      window.__mkEnemies(1);
+      Game.recalc();
+      Game.state.stats.skillLv = 0;
+      Game.state.stats.skillRank = {};
+      Game.state.stats.skillMods = {};
+      Game.buffs = [];
+      Game.cooldowns = {};
+      Game.state.mp = 99999;
+      Game.dead = false;
+      /* 起手带一份减速：Lv9 该把它驱散掉 */
+      Game.playerSlow = 0.5; Game.playerSlowT = 2.5; Game.invuln = 0;
+      /* heal 的 regen 会跨施法累加（每次 +3%/秒，4 秒后自己减回去）——
+       * 不清零的话第二段量到的是两发的和 */
+      Game.regen = 0;
+      Game.state.hp = Math.round(Game.state.stats.hpMax * 0.5);
+      const before = Game.state.hp;
+      Game.castSkill(id);
+      const beh = Game.branchBeh(id);
+      return {
+        heal: Math.round(Game.state.hp - before),
+        hpMax: Game.state.stats.hpMax,
+        dr: Math.round(Game.state.stats.dmgReduce || 0),
+        slowT: Math.round((Game.playerSlowT || 0) * 100) / 100,
+        invuln: Math.round((Game.invuln || 0) * 100) / 100,
+        hot: beh ? beh.tierHot : undefined
+      };
+    };
+    for (const id of ['heal', 'antidote', 'revive']) {
+      const o = {};
+      /* 变体统一用 2 号（回春诀 / 灵台 / 逆命）：0 号带 zone、替身，
+       * 会把「治疗量」量成别的技能的效果 */
+      for (const lv of [2, 3, 5, 7, 9, 10]) o['lv' + lv] = cast(id, lv, 2);
+      out[id] = o;
+    }
+    /* Lv5 持续回复：真等一跳。heal case 自带每秒 3% 的 regen，
+     * 所以 Lv4 / Lv5 各量一次再比 —— 差值才是台阶那一份。 */
+    {
+      const wait = ms => new Promise(r => setTimeout(r, ms));
+      const hotRun = async (lv) => {
+        cast('heal', lv, 2);
+        const h0 = Game.state.hp;
+        Game.enemies = [];        // 等帧的时候别让假怪进帧循环
+        await wait(1150);
+        return Math.round(Game.state.hp - h0);
+      };
+      out.hot4 = await hotRun(4);
+      out.hot5 = await hotRun(5);
+      Game.mapGen = (Game.mapGen || 0) + 1;
+    }
+    /* Lv10 低血自动施放：放进 ④ 号位（下标 3），血拉到 20%，蓝设为 0 ——
+     * 「免费」这条必须验，否则救命技能会被蓝条卡住。 */
+    {
+      Game.mapGen = (Game.mapGen || 0) + 1;
+      Game.state.cls = 'taoist';
+      Game.state.skills = { heal: { lv: 10 } };
+      window.__mkClean();
+      window.__mkEnemies(1);
+      const bar = Game.skillBar();
+      bar[3] = 'heal';
+      Game.recalc();
+      Game.state.stats.skillLv = 0; Game.state.stats.skillRank = {}; Game.state.stats.skillMods = {};
+      Game.buffs = []; Game.cooldowns = {}; Game.dead = false;
+      Game.state.mp = 0;                                  // 蓝见底
+      Game.state.hp = Math.round(Game.state.stats.hpMax * 0.2);
+      const before = Game.state.hp;
+      for (let i = 0; i < 8; i++) Game.tickBeh(0.1);       // 0.25 秒节流，跑够一轮
+      out.auto = {
+        heal: Math.round(Game.state.hp - before),
+        cd: Math.round((Game.cooldowns.heal || 0) * 10) / 10,
+        mp: Game.state.mp
+      };
+      bar[3] = null;
+    }
+    window.__mkClean();
+    Game.enemies = [];
+    return out;
+  });
+  for (const id of ['heal', 'antidote', 'revive']) {
+    const o = healTiers[id];
+    ok(o.lv3.heal - o.lv2.heal >= o.lv3.hpMax * 0.07,
+      id + ' Lv3 多回 8% 最大生命（Lv2 没有这一份）', { lv2: o.lv2.heal, lv3: o.lv3.heal });
+    ok(o.lv5.hot === 2 && o.lv2.hot === undefined,
+      id + ' Lv5 才带 tierHot（每秒 2% 最大生命）', { lv2: o.lv2.hot, lv5: o.lv5.hot });
+    ok(o.lv7.dr > o.lv5.dr, id + ' Lv7 多一层 15% 减伤', { lv5: o.lv5.dr, lv7: o.lv7.dr });
+    ok(o.lv9.slowT === 0, id + ' Lv9 已经把身上的减速驱散', o.lv9);
+    ok(o.lv9.invuln >= 1.4, id + ' Lv9 同时给 1.5 秒无敌', o.lv9.invuln);
+    /* antidote 本来就会驱散（case 里写死），所以只有 heal / revive 能证明「Lv9 才驱散」 */
+    if (id !== 'antidote') {
+      ok(o.lv7.slowT > 0, id + ' Lv7 还驱散不了（对照）', o.lv7.slowT);
+    }
+  }
+  ok(healTiers.hot5 - healTiers.hot4 > 0,
+    'Lv5 每秒真的多回一份（Lv4 只有 case 自带的 3% regen）',
+    { lv4: healTiers.hot4, lv5: healTiers.hot5 });
+  ok(healTiers.auto.heal > 0, 'Lv10 血量 20% 时真的自动施放了一次', healTiers.auto);
+  ok(healTiers.auto.mp === 0, '自动施放不收资源（蓝 0 也放得出来）', healTiers.auto);
+  ok(healTiers.auto.cd > 0, '自动施放照走冷却（不会每帧刷）', healTiers.auto);
+
+  {
+    const todo = await p.evaluate(() => {
+      Game.state.cls = 'taoist';
+      Game.state.skills = {};
+      Game.recalc();
+      UI.renderSkillPanel();
+      const arch = document.querySelector('#skList .sk-arch');
+      if (arch) arch.setAttribute('open', '');
+      const c = [...document.querySelectorAll('#skList .sk-ac')][3];   // ④ 号位
+      return [...c.querySelectorAll('.sk-as')]
+        .filter(s => s.classList.contains('todo')).map(s => (s.querySelector('i') || {}).textContent);
+    });
+    ok(todo.join(',') === '', '道士 ④ 面板不再有「待」角标', todo);
+  }
+
+  /* ---------------- 10. 零报错 ---------------- */
+  console.log('十、控制台');
   ok(errs.length === 0, '全程零控制台报错', errs.slice(0, 3));
 
   console.log('\n' + (fail === 0 ? '✓' : '✗') + ' P2b 探针：' + pass + ' 通过 / ' + fail + ' 失败');

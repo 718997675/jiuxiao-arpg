@@ -352,7 +352,11 @@ const behSrc = readSrc('src/skill-beh.js');
   for (const id of ids) {
     for (const lv of Object.keys(SKILL_TIER_EVO[id])) {
       const beh = (SKILL_TIER_EVO[id][lv] || {}).beh || {};
-      for (const k in beh) if (!known.has(k)) badKeys.push(id + ' Lv' + lv + ' ' + k);
+      /* `+键` 是叠加通道的前缀标记，真键名要剥掉前缀再查 */
+      for (const k in beh) {
+        const real = k.charAt(0) === '+' ? k.slice(1) : k;
+        if (!known.has(real)) badKeys.push(id + ' Lv' + lv + ' ' + k);
+      }
     }
   }
   ok(badKeys.length === 0, 'evo 用到的行为键都已在 SKILL_BEH 登记（否则静默失效）', badKeys);
@@ -387,7 +391,8 @@ const behSrc = readSrc('src/skill-beh.js');
       (br.form || []).forEach(eat);
       for (const lv of Object.keys(SKILL_TIER_EVO[id])) {
         const beh = (SKILL_TIER_EVO[id][lv] || {}).beh || {};
-        const keys = Object.keys(beh);
+        /* `+键` 是叠加通道：它按定义就不该被分支顶掉，因此不算撞键 */
+        const keys = Object.keys(beh).filter(k => k.charAt(0) !== '+');
         if (!keys.length) continue;
         if (keys.every(k => own.has(k))) hits.push(id + ' Lv' + lv + ' → ' + keys.join('/'));
       }
@@ -440,6 +445,47 @@ const behSrc = readSrc('src/skill-beh.js');
     for (const cls of ['warrior']) {
       const todo = [1, 3, 5, 7, 9, 10].filter(lv => !skillSlotTierDone(cls, 4, lv));
       ok(todo.length === 0, '刀客 ④ 面板不再有「待」角标', todo);
+    }
+  }
+
+  /* --- 道士 ④ 回春：治疗 / 解毒 / 还魂 共用一个位，同样是三只都要接 ---
+   * 这一位的两条数值台阶撞了精研（hotPct = heal「余春」、drPct = antidote「固元」），
+   * 所以走 `+键` 叠加通道 —— 花点选的与等级送的都拿到。 */
+  {
+    const slot4 = ['heal', 'antidote', 'revive'];
+    for (const id of slot4) {
+      const e = SKILL_TIER_EVO[id];
+      ok(!!e && !!e[3] && !!e[5] && !!e[7] && !!e[9] && !!e[10],
+        id + ' 五条台阶都在（回春位只放一只，漏一只就是假话）');
+      ok(e && e[3].beh.healOnCast === 8, id + ' Lv3 施法瞬回 8%', e && e[3].beh);
+      ok(e && e[5].beh.tierHot === 2,
+        id + ' Lv5 走 tierHot（不撞「余春」的 hotPct，口径也不同）', e && e[5].beh);
+      ok(e && e[7].beh['+drPct'] === 15, id + ' Lv7 走 +drPct 叠加键', e && e[7].beh);
+      ok(e && e[9].beh.cleanse === 1 && e[9].beh.immune === 1.5,
+        id + ' Lv9 驱散 + 1.5 秒无敌', e && e[9].beh);
+      ok(e && e[10].beh.lowHpCast === 30, id + ' Lv10 走 lowHpCast（不是替身的 autoTrigger）', e && e[10].beh);
+    }
+    /* 为什么非要 `+`：drPct 在 antidote 取向里已经占了，直接写同名键会被合并顺序顶掉 */
+    const healBr = skillBranches('heal');
+    ok(!!(healBr && healBr.core && healBr.core.beh && 'hotPct' in healBr.core.beh),
+      'hotPct 确实是 heal 精研「余春」的键 —— 所以持续回复另开了 tierHot（口径也不同）',
+      healBr && healBr.core && healBr.core.name);
+    ok(!/\+hotPct/.test(JSON.stringify(SKILL_TIER_EVO)),
+      '回春位不许用 +hotPct（余春那条的 25 是「治疗量的百分比」，硬加会算成每秒 27%）');
+    const antiBr = skillBranches('antidote');
+    const antiHasDr = !!(antiBr && (antiBr.pick || []).some(o => o.beh && 'drPct' in o.beh));
+    ok(antiHasDr, 'drPct 确实是 antidote 取向的键（所以要 + 前缀）');
+    ok(!/beh: \{ autoTrigger/.test(JSON.stringify(SKILL_TIER_EVO)),
+      'evo 表里不许出现 autoTrigger（那是 revive 变体「替身」的键）');
+    /* 叠加通道本身：合并**之后**再加一遍，且只认 `+` 前缀 */
+    ok(/k\.charAt\(0\) !== '\+'\) continue;/.test(behSrc) && /out\[base\] = cur \+ v/.test(behSrc),
+      'branchBeh 里有「+键」叠加通道（合并之后再相加）');
+    ok(/lb\.lowHpCast/.test(behSrc) && /_freeCast = true/.test(behSrc),
+      'lowHpCast 真的在 tickBeh 里消费，且免费施放');
+    ok(/_freeCast/.test(game), 'castSkill 认 _freeCast（救命技能不收资源）');
+    for (const cls of ['taoist']) {
+      const todo = [1, 3, 5, 7, 9, 10].filter(lv => !skillSlotTierDone(cls, 4, lv));
+      ok(todo.length === 0, '道士 ④ 面板不再有「待」角标', todo);
     }
   }
 
