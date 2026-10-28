@@ -90,9 +90,13 @@ const UI = {
     if (!this.selectedDiff) this.selectedDiff = DEFAULT_DIFF;
     wrap.innerHTML = DIFF_ORDER.map(k => {
       const d = DIFFS[k];
+      /* 等级上限跟难度走（见 BALANCE.levelMaxByDiff）。这一行必须写在卡片上：
+       * 它直接决定「这个档位能练到几级」，玩家选难度时最该看到的就是它。 */
+      const cap = (typeof levelCapOf === 'function') ? levelCapOf(k) : '';
       return `<div class="cdiff ${k === this.selectedDiff ? 'sel' : ''}" data-diff="${k}">
         <div class="dn" style="color:${d.color}">${d.name}</div>
         <div class="dt2" style="color:${d.color}">${d.tag}</div>
+        <div class="dlv">上限 ${cap} 级</div>
       </div>`;
     }).join('');
     this.renderDiffDesc();
@@ -110,7 +114,8 @@ const UI = {
     const el = document.getElementById('diffDesc');
     if (!el) return;
     const d = getDiff(this.selectedDiff);
-    el.innerHTML = d.desc;
+    const cap = (typeof levelCapOf === 'function') ? levelCapOf(this.selectedDiff) : '';
+    el.innerHTML = d.desc + (cap ? `<br><b>本档等级上限 ${cap} 级</b>（难度越高能爬得越高）。` : '');
     el.style.color = d.color;
     el.style.opacity = '.9';
   },
@@ -808,7 +813,9 @@ const UI = {
 
     /* ---------------- 7. 天赋与协同 ---------------- */
     H.push(sec('八 · 天赋与协同', `${talentN} 个节点`, [
-      row('天赋点', `每级 1 点，另加任务奖励 10 点，满级共 70 点`),
+      row('天赋点', `每级 1 点，另加任务奖励 10 点。满级点数<b>跟难度走</b>`
+        + `（新手 70 / 普通 80 / 困难 95 / 极难 109）—— 上限越高，能点的点越多，`
+        + `但节点表本身没扩容，点完所有节点后剩余点会挂在「可用点数」上`),
       row('页签', `三职业系各 10 节点 + 通用「通达」+ 协同「星位」，共 5 页`),
       row('节点层级', `小节点可投 5 级 · 中节点 1 级（需本系先投 5 点）· 大节点是质变（需本系 5 点且等级达标）`),
       row('加点方式', `左键加点 · <b>Shift + 左键</b> 退 1 级（触屏用底部的「退 1 点」，退的是最后点过的那个节点；后置节点还点着时不给退，先退它们）。改动先进「未确认」条，确认才写存档`),
@@ -852,9 +859,16 @@ const UI = {
     ]));
 
     /* ---------------- 10. 难度 ---------------- */
-    H.push(sec('十一 · 难度', '开局选择，中途不可改', diffList.map(d =>
-      row(`<span style="color:${d.color}">${d.name}</span>`, `${d.desc}${d.deathPenalty ? `（死亡损失 ${Math.round(d.deathPenalty * 100)}% 金币）` : '（死亡不掉金币）'}`)
-    ).join('') + `<div class="hp-note">难度影响怪物生命 / 伤害 / 速度、掉落与经验倍率、精英出现率、是否带元素伤害。</div>`));
+    H.push(sec('十一 · 难度', '开局选择，中途不可改', diffList.map(d => {
+      /* 等级上限挂在难度上（BALANCE.levelMaxByDiff），这一节必须写出来 ——
+       * 它是选难度时仅次于怪物强度的决策依据。 */
+      const cap = (typeof levelCapOf === 'function') ? levelCapOf(d.key) : '';
+      return row(`<span style="color:${d.color}">${d.name}</span>`,
+        `${d.desc}${d.deathPenalty ? `（死亡损失 ${Math.round(d.deathPenalty * 100)}% 金币）` : '（死亡不掉金币）'}`
+        + (cap ? `<br><b>等级上限 ${cap} 级</b>` : ''));
+    }).join('')
+      + `<div class="hp-note">难度影响怪物生命 / 伤害 / 速度、掉落与经验倍率、精英出现率、是否带元素伤害，`
+      + `以及<b>等级上限</b>（新手 60 / 普通 70 / 困难 85 / 极难 99）—— 越难能爬得越高。</div>`));
 
     /* ---------------- 11. 声音（S16） ---------------- */
     /* 全节按数据表生成：加族 / 加图 / 调预算，这一页自己跟着变。

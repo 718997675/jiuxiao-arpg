@@ -150,6 +150,7 @@ cat docs/status/act-expansion.md             # 细看这条线的节点表 / 下
 | 要改什么 | 动哪里 |
 |---|---|
 | 数值平衡（伤害/经验/掉落/移速…） | `src/data/data-core.js` 的 `BALANCE` |
+| 等级上限（**跟难度走**） | `src/data/data-core.js` 的 `BALANCE.levelMaxByDiff` + `levelCapOf(diffKey)`。判断「这个玩家能到几级」一律走 `Game.levelCap()`，**不要读 `BALANCE.levelMax`**（那是全难度最高值，只在兜底场景用）。难度开档定死、中途不可改，所以不用处理降级 |
 | 属性封顶（暴击率、冷却缩减 = 100%） | `src/items.js` 的 `STAT_CAPS` |
 | 主菜单 / 行囊 / 天赋 / 设置 UI | `src/ui.js` |
 | 术法（技能树、变体） | `src/ui-skills.js` |
@@ -349,8 +350,10 @@ node dev/skill-ref.js        # 技能射程与消耗（离线 + 浏览器 38 项
 
 - 线上版本：见 `git log -1`。
 - **大地图扩展已合入 `main`（2026-10-28）**：M0~M6 全完（三层世界结构 + 5 营地 + 任务系统 +
-  8 种 zone 骨架 + 39 张图 + 60 级上限 + 5 阶地下城 + 传世 40 件 + 套装 18 套），
-  M18 世界 Boss 九节全完（六只 / 三阶段 / 六套骨架 / 掉落 / 说明页）。
+  8 种 zone 骨架 + 39 张图 + 5 阶地下城 + 传世 40 件 + 套装 18 套），
+  **等级上限跟难度走**（新手 60 / 普通 70 / 困难 85 / 极难 99，见 `BALANCE.levelMaxByDiff`；
+  内容只铺到 60，60 以上是给高难度的长期成长段），
+  M18 世界 Boss 九节全完（六只 / 三阶段 / 六套骨架 / 掉落 / 说明页 / 10 分钟轮转 + 顶部倒计时）。
   **M7 终章重做进行中**：M7.1 结构 / M7.2 八魔将 / M7.4 魔将之印 已落地，
   剩 M7.3 破绽窗口 + M7.5~M7.9。进度与卡点看 `docs/status/act-expansion.md`，
   世界 Boss 看 `docs/status/world-boss.md`。`feat/act-expansion` 分支保留作续做线。

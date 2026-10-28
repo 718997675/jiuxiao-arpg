@@ -755,7 +755,7 @@ const Game = {
    * 同部位同品质再按评分兜底，保证「点两次结果一样」，玩家不会觉得按钮坏了。 */
   stashSort() {
     const d = this.stashData();
-    const rk = Object.keys(RARITY);
+    const rk = RARITY_ORDER;   // 品质顺序只有 items.js 里那一份
     const slotIdx = (it) => {
       const i = SLOT_ORDER.indexOf(it.slot === 'ring' ? 'ring1' : it.slot);
       return i < 0 ? 99 : i;
@@ -1023,7 +1023,9 @@ const Game = {
     return s.talents;
   },
 
-  /* 可用天赋点：每级 1 点 + 任务奖励点（[M1] 满级 60 + 主线 10 = 70） */
+  /* 可用天赋点：每级 1 点 + 任务奖励点。
+   * [2026-10-28] 满级点数跟难度走（等级上限 60/70/85/99），所以
+   * 「满级 = 70 点」这句话只对新手难度成立 —— 别再当成定值写进文案。 */
   talentPoints() {
     const s = this.state;
     const sp = this.talentState().spent;
@@ -6844,14 +6846,24 @@ const Game = {
     }
   },
 
+  /* 当前难度能到的等级上限（[2026-10-28] 跟难度走：新手 60 / 普通 70 /
+   * 困难 85 / 极难 99）。难度开档时定死、中途不可改，所以这里不用处理
+   * 「切回低难度后等级超上限」的降级 —— 真要做难度切换，必须先想清楚
+   * 掉级会不会回收属性点/天赋点。 */
+  levelCap() {
+    const k = this.state && this.state.difficulty;
+    if (typeof levelCapOf === 'function') return levelCapOf(k);
+    return (typeof BALANCE !== 'undefined' && BALANCE.levelMax) || 60;
+  },
+
   gainXp(amount) {
     const s = this.state;
     /* [S1] 经验获取加成 */
     amount = Math.round(amount * (1 + (s.stats.expGain || 0) / 100));
-    /* [M6] 满级收口：到 BALANCE.levelMax（60）就停在 60，
-     * 经验不再累积 —— 否则 xpNext 会一直往上算，存档里的经验条也永远差一格。
-     * 注意 while 必须在这里跳出，不然 level 卡在 60 而 xp 不清零会死循环。 */
-    const lvMax = (typeof BALANCE !== 'undefined' && BALANCE.levelMax) || 60;
+    /* 满级收口：到**当前难度**的上限就停，经验不再累积 ——
+     * 否则 xpNext 会一直往上算，存档里的经验条也永远差一格。
+     * 注意 while 必须在这里跳出，不然 level 卡在上限而 xp 不清零会死循环。 */
+    const lvMax = this.levelCap();
     if (s.level >= lvMax) {
       s.level = lvMax;
       s.xp = 0;

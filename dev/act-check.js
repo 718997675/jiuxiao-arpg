@@ -38,7 +38,11 @@ const campOfPart = g('campOfPart'), campMapOfPart = g('campMapOfPart');
 const isChapterTail = g('isChapterTail'), nextChapterMap = g('nextChapterMap');
 const nextMapInWorld = g('nextMapInWorld');
 
-const LV_MAX = (BALANCE && BALANCE.levelMax) || 60;
+/* 内容等级上限：五卷一共铺到几级。
+ * **不要**拿 `BALANCE.levelMax` 当这个用 —— 自 2026-10-28 起那是「全难度最高上限」
+ * （极难 99），而内容只铺到 60。上限跟着难度走之后，这两个数不再相等。 */
+const CONTENT_LV_MAX = 60;
+const levelCapOf = g('levelCapOf'), DIFF_ORDER = g('DIFF_ORDER');
 const PART_IDS = Object.keys(PARTS).map(Number).sort((a, b) => a - b);
 const ACT_IDS = Object.keys(ACTS);
 const MAP_IDS = Object.keys(MAPS);
@@ -93,11 +97,24 @@ for (const p of PART_IDS) {
 }
 
 eq('第 1 卷从 1 级起', PARTS[1].from, 1);
-eq('最后一卷盖到等级上限', PARTS[PART_IDS[PART_IDS.length - 1]].to, LV_MAX);
+eq('最后一卷盖到内容等级上限', PARTS[PART_IDS[PART_IDS.length - 1]].to, CONTENT_LV_MAX);
 for (let i = 1; i < PART_IDS.length; i++) {
   const prev = PARTS[PART_IDS[i - 1]], cur = PARTS[PART_IDS[i]];
   eq(`卷 ${prev.id}→${cur.id} 级数首尾相接（不空档不重叠）`, cur.from, prev.to + 1);
 }
+
+head('一·b、等级上限跟难度走');
+/* 2026-10-28 定：越难能爬得越高。这一节盯三件事 ——
+ * 阶梯严格递增、最高档就是 BALANCE.levelMax、每档都不低于内容上限（不能出现
+ * 「普通难度还没打完内容就满级了」）。 */
+const CAPS = DIFF_ORDER.map(k => levelCapOf(k));
+ok(CAPS.every(v => typeof v === 'number' && v > 0), '每档难度都有数值上限', CAPS);
+ok(CAPS.every((v, i) => i === 0 || v > CAPS[i - 1]), '难度越高上限越高（严格递增）',
+  DIFF_ORDER.map((k, i) => k + ':' + CAPS[i]));
+eq('最高难度上限 = BALANCE.levelMax', CAPS[CAPS.length - 1], BALANCE.levelMax);
+ok(CAPS.every(v => v >= CONTENT_LV_MAX), '每档上限都不低于内容上限（不会没打完就封顶）',
+  DIFF_ORDER.map((k, i) => k + ':' + CAPS[i]));
+eq('不认识的难度键回落到默认档上限', levelCapOf('no_such_diff'), levelCapOf('normal'));
 
 /* ============================================================
  * 二、章
