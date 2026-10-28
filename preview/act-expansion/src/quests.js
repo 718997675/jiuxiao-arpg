@@ -436,9 +436,17 @@ const QuestSys = {
     });
   },
 
-  /* 任务板一次列 3 条（§4.1「一次列 3~5 条」） */
+  /* 任务板一次列 3 条（§4.1「一次列 3~5 条」）。
+   * [M6] 每卷现在是 4 条（3 killAny + 1 地脉）—— 若继续按对象顺序 slice(0,3)，
+   * 第 4 条要等前三条同时冷却才会露面，等于没有。改成候选里随机挑 3 条，
+   * 四条就会轮换起来，玩家每次开板看到的组合都不一样。 */
   boardTake(part) {
-    return this.boardList(part).slice(0, 3);
+    const list = this.boardList(part).slice();
+    for (let i = list.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      const t = list[i]; list[i] = list[j]; list[j] = t;
+    }
+    return list.slice(0, 3);
   },
 
   /* ---------------- 任务区域 ---------------- */

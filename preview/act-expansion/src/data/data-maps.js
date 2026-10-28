@@ -36,12 +36,12 @@ const MAP_ZONES = {
     zones: [
       { id: 'gate', name: '林口', type: 'rect', x: 0, z: 40.6, w: 37.7, h: 26.1, kind: 'entry' },
       { id: 'path', name: '竹径', type: 'rect', x: 0, z: 17.4, w: 15.9, h: 23.2, kind: 'path',
-        spawns: { kinds: ['bat', 'hornet'], count: 2 } },
+        spawns: { kinds: ['bat', 'hornet', 'stonecrow'], count: 2 } },
       { id: 'hall', name: '林中空地', type: 'rect', x: 0, z: -11.6, w: 43.5, h: 37.7, kind: 'hall',
-        spawns: { kinds: ['halfork', 'wolf', 'skelarch'], count: 4 } },
+        spawns: { kinds: ['halfork', 'wolf', 'skelarch', 'cliffram'], count: 4 } },
       { id: 'westLink', name: '西廊', type: 'rect', x: -21.8, z: -11.6, w: 14.5, h: 11.6, kind: 'link' },
       { id: 'west', name: '西坡', type: 'rect', x: -39.1, z: -11.6, w: 24.6, h: 29, kind: 'wing',
-        spawns: { kinds: ['bamboo', 'fox'], count: 2 } },
+        spawns: { kinds: ['bamboo', 'fox', 'foxfire'], count: 2 } },
       { id: 'eastLink', name: '东廊', type: 'rect', x: 21.8, z: -11.6, w: 14.5, h: 11.6, kind: 'link' },
       { id: 'east', name: '东坡', type: 'rect', x: 39.1, z: -11.6, w: 24.6, h: 29, kind: 'wing',
         spawns: { kinds: ['shigandang', 'hornet'], count: 2 } },
@@ -55,15 +55,15 @@ const MAP_ZONES = {
     zones: [
       { id: 'gate', name: '沼泽渡口', type: 'rect', x: 0, z: 46.4, w: 40.6, h: 26.1, kind: 'entry' },
       { id: 'path', name: '泥沼栈道', type: 'rect', x: 0, z: 20.3, w: 17.4, h: 29, kind: 'path',
-        spawns: { kinds: ['spider', 'wasp'], count: 2 } },
+        spawns: { kinds: ['spider', 'wasp', 'leechqueen'], count: 2 } },
       { id: 'hall', name: '血月滩', type: 'rect', x: 0, z: -13, w: 46.4, h: 43.5, kind: 'hall',
         spawns: { kinds: ['boar', 'snake', 'zombie'], count: 5 } },
       { id: 'westLink', name: '西廊', type: 'rect', x: -24.6, z: -13, w: 17.4, h: 13, kind: 'link' },
       { id: 'west', name: '枯林西泽', type: 'rect', x: -43.5, z: -13, w: 26.1, h: 31.9, kind: 'wing',
-        spawns: { kinds: ['drowned', 'bogwitch'], count: 2 } },
+        spawns: { kinds: ['drowned', 'bogwitch', 'mirehorror'], count: 2 } },
       { id: 'eastLink', name: '东廊', type: 'rect', x: 24.6, z: -13, w: 17.4, h: 13, kind: 'link' },
       { id: 'east', name: '毒潭东岸', type: 'rect', x: 43.5, z: -13, w: 26.1, h: 31.9, kind: 'wing',
-        spawns: { kinds: ['scorpion', 'brood'], count: 2 } },
+        spawns: { kinds: ['scorpion', 'brood', 'bonefisher'], count: 2 } },
       { id: 'sanctum', name: '酋长祭坛', type: 'circle', x: 0, z: -43.5, r: 18.8, kind: 'boss' }
     ]
   },
@@ -74,12 +74,12 @@ const MAP_ZONES = {
     zones: [
       { id: 'gate', name: '矿口', type: 'rect', x: 0, z: 43.5, w: 37.7, h: 23.2, kind: 'entry' },
       { id: 'path', name: '主巷道', type: 'rect', x: 0, z: 17.4, w: 15.9, h: 31.9, kind: 'path',
-        spawns: { kinds: ['ironbeetle', 'ghostfire'], count: 2 } },
+        spawns: { kinds: ['ironbeetle', 'ghostfire', 'ironmaw'], count: 2 } },
       { id: 'hall', name: '采掘大厅', type: 'rect', x: 0, z: -14.5, w: 43.5, h: 37.7, kind: 'hall',
-        spawns: { kinds: ['golem', 'yaoguai', 'statue'], count: 5 } },
+        spawns: { kinds: ['golem', 'yaoguai', 'statue', 'cinderhand'], count: 5 } },
       { id: 'westLink', name: '西廊', type: 'rect', x: -21.8, z: -14.5, w: 14.5, h: 11.6, kind: 'link' },
       { id: 'west', name: '废矿西坑', type: 'rect', x: -39.1, z: -14.5, w: 24.6, h: 29, kind: 'wing',
-        spawns: { kinds: ['minerghost', 'magma'], count: 2 } },
+        spawns: { kinds: ['minerghost', 'magma', 'forgemaster'], count: 2 } },
       { id: 'eastLink', name: '东廊', type: 'rect', x: 21.8, z: -14.5, w: 14.5, h: 11.6, kind: 'link' },
       { id: 'east', name: '熔脉东窟', type: 'rect', x: 39.1, z: -14.5, w: 24.6, h: 29, kind: 'wing',
         spawns: { kinds: ['magma', 'runesmith'], count: 2 } },
@@ -93,15 +93,15 @@ const MAP_ZONES = {
     zones: [
       { id: 'gate', name: '地宫甬道', type: 'rect', x: 0, z: 44.9, w: 37.7, h: 23.2, kind: 'entry' },
       { id: 'path', name: '引魂廊', type: 'rect', x: 0, z: 18.8, w: 15.9, h: 31.9, kind: 'path',
-        spawns: { kinds: ['shade', 'crane'], count: 2 } },
+        spawns: { kinds: ['shade', 'crane', 'wantern'], count: 2 } },
       { id: 'hall', name: '白骨大殿', type: 'rect', x: 0, z: -14.5, w: 43.5, h: 37.7, kind: 'hall',
         spawns: { kinds: ['golem', 'yaoguai', 'headless'], count: 5 } },
       { id: 'westLink', name: '西廊', type: 'rect', x: -21.8, z: -14.5, w: 14.5, h: 11.6, kind: 'link' },
       { id: 'west', name: '西侧耳室', type: 'rect', x: -39.1, z: -14.5, w: 24.6, h: 29, kind: 'wing',
-        spawns: { kinds: ['bonewright', 'bloodlord'], count: 2 } },
+        spawns: { kinds: ['bonewright', 'bloodlord', 'papereffigy'], count: 2 } },
       { id: 'eastLink', name: '东廊', type: 'rect', x: 21.8, z: -14.5, w: 14.5, h: 11.6, kind: 'link' },
       { id: 'east', name: '东侧耳室', type: 'rect', x: 39.1, z: -14.5, w: 24.6, h: 29, kind: 'wing',
-        spawns: { kinds: ['ironmaiden', 'ghostfire'], count: 3 } },
+        spawns: { kinds: ['ironmaiden', 'ghostfire', 'soulgaoler'], count: 3 } },
       { id: 'sanctum', name: '忘川祭坛', type: 'circle', x: 0, z: -42, r: 19.6, kind: 'boss' }
     ]
   },
@@ -114,15 +114,15 @@ const MAP_ZONES = {
     zones: [
       { id: 'gate', name: '水牢铁门', type: 'rect', x: 0, z: 44.9, w: 37.7, h: 23.2, kind: 'entry' },
       { id: 'path', name: '沉骨囚廊', type: 'rect', x: 0, z: 18.8, w: 15.9, h: 31.9, kind: 'path',
-        spawns: { kinds: ['drowned', 'toad'], count: 2 } },
+        spawns: { kinds: ['drowned', 'toad', 'frozenwidow'], count: 2 } },
       { id: 'hall', name: '寒潭大厅', type: 'rect', x: 0, z: -14.5, w: 43.5, h: 37.7, kind: 'hall',
         spawns: { kinds: ['drowned', 'bogwitch', 'zombie'], count: 5 } },
       { id: 'westLink', name: '西廊', type: 'rect', x: -21.8, z: -14.5, w: 14.5, h: 11.6, kind: 'link' },
       { id: 'west', name: '西侧水牢', type: 'rect', x: -39.1, z: -14.5, w: 24.6, h: 29, kind: 'wing',
-        spawns: { kinds: ['ghost', 'snake'], count: 2 } },
+        spawns: { kinds: ['ghost', 'snake', 'frostwraith'], count: 2 } },
       { id: 'eastLink', name: '东廊', type: 'rect', x: 21.8, z: -14.5, w: 14.5, h: 11.6, kind: 'link' },
       { id: 'east', name: '东侧水牢', type: 'rect', x: 39.1, z: -14.5, w: 24.6, h: 29, kind: 'wing',
-        spawns: { kinds: ['bogwitch', 'ghost'], count: 3 } },
+        spawns: { kinds: ['bogwitch', 'ghost', 'iceveil'], count: 3 } },
       /* r 收到 19.0：size 130 的可走上限是 61.1，19.6 会让最远点 61.6 越界 */
       { id: 'sanctum', name: '冰魄祭坛', type: 'circle', x: 0, z: -42, r: 19.0, kind: 'boss' }
     ]
@@ -134,15 +134,15 @@ const MAP_ZONES = {
     zones: [
       { id: 'gate', name: '湖岸渡口', type: 'rect', x: 0, z: 46.4, w: 40.6, h: 26.1, kind: 'entry' },
       { id: 'path', name: '冰上栈道', type: 'rect', x: 0, z: 20.3, w: 17.4, h: 29, kind: 'path',
-        spawns: { kinds: ['wasp', 'spider'], count: 2 } },
+        spawns: { kinds: ['wasp', 'spider', 'frozenwidow'], count: 2 } },
       { id: 'hall', name: '冰湖中心', type: 'rect', x: 0, z: -13, w: 46.4, h: 43.5, kind: 'hall',
         spawns: { kinds: ['drowned', 'brood', 'bogwitch'], count: 5 } },
       { id: 'westLink', name: '西廊', type: 'rect', x: -24.6, z: -13, w: 17.4, h: 13, kind: 'link' },
       { id: 'west', name: '西岸残林', type: 'rect', x: -43.5, z: -13, w: 26.1, h: 31.9, kind: 'wing',
-        spawns: { kinds: ['toad', 'spider'], count: 2 } },
+        spawns: { kinds: ['toad', 'spider', 'iceveil'], count: 2 } },
       { id: 'eastLink', name: '东廊', type: 'rect', x: 24.6, z: -13, w: 17.4, h: 13, kind: 'link' },
       { id: 'east', name: '东岸冰窟', type: 'rect', x: 43.5, z: -13, w: 26.1, h: 31.9, kind: 'wing',
-        spawns: { kinds: ['brood', 'drowned'], count: 3 } },
+        spawns: { kinds: ['brood', 'drowned', 'frostwraith'], count: 3 } },
       { id: 'sanctum', name: '冰魄神殿', type: 'circle', x: 0, z: -43.5, r: 18.8, kind: 'boss' }
     ]
   },
@@ -153,15 +153,15 @@ const MAP_ZONES = {
     zones: [
       { id: 'gate', name: '南天门', type: 'rect', x: 0, z: 44.9, w: 37.7, h: 23.2, kind: 'entry' },
       { id: 'path', name: '云阶', type: 'rect', x: 0, z: 18.8, w: 15.9, h: 31.9, kind: 'path',
-        spawns: { kinds: ['fallen', 'swordwraith'], count: 2 } },
+        spawns: { kinds: ['fallen', 'swordwraith', 'feathered'], count: 2 } },
       { id: 'hall', name: '残阙广场', type: 'rect', x: 0, z: -14.5, w: 43.5, h: 37.7, kind: 'hall',
-        spawns: { kinds: ['golem', 'yaoguai', 'voidbeast'], count: 5 } },
+        spawns: { kinds: ['golem', 'yaoguai', 'voidbeast', 'thunderdrum'], count: 5 } },
       { id: 'westLink', name: '西廊', type: 'rect', x: -21.8, z: -14.5, w: 14.5, h: 11.6, kind: 'link' },
       { id: 'west', name: '西偏殿', type: 'rect', x: -39.1, z: -14.5, w: 24.6, h: 29, kind: 'wing',
-        spawns: { kinds: ['jadeguard', 'bloodlord'], count: 2 } },
+        spawns: { kinds: ['jadeguard', 'bloodlord', 'cloudserpent'], count: 2 } },
       { id: 'eastLink', name: '东廊', type: 'rect', x: 21.8, z: -14.5, w: 14.5, h: 11.6, kind: 'link' },
       { id: 'east', name: '东偏殿', type: 'rect', x: 39.1, z: -14.5, w: 24.6, h: 29, kind: 'wing',
-        spawns: { kinds: ['swordwraith', 'thunderbird'], count: 3 } },
+        spawns: { kinds: ['swordwraith', 'thunderbird', 'feathered'], count: 3 } },
       { id: 'sanctum', name: '九霄之巅', type: 'circle', x: 0, z: -42, r: 19.6, kind: 'boss' }
     ]
   }
@@ -331,16 +331,26 @@ const ZONE_ARCHETYPES = {
     { id: 'westHall', name: '西大牢', type: 'rect', x: -0.26, z: 0.18, w: 0.40, h: 0.44, kind: 'hall' },
     { id: 'wCell', name: '西侧囚室', type: 'rect', x: -0.54, z: 0.18, w: 0.20, h: 0.26, kind: 'wing' },
     { id: 'wLow', name: '西下囚室', type: 'rect', x: -0.26, z: -0.10, w: 0.30, h: 0.18, kind: 'wing' },
+    /* [M3b] 西深层 / 东深层：twin 原来只有 10 个区，达不到 §5.1 的「12~16 区」。
+     * 加两间「深层囚室」而不是把 threshold 放宽 —— 10 个区的图跑起来确实偏小，
+     * 放宽指标只是把问题藏起来。内沿压进西下囚室 0.07R，不是贴边（贴边=相切=进不去）。 */
+    { id: 'wHigh', name: '西深层', type: 'rect', x: -0.46, z: -0.10, w: 0.24, h: 0.24, kind: 'wing' },
     { id: 'bridge', name: '窄桥', type: 'rect', x: 0, z: 0.18, w: 0.22, h: 0.16, kind: 'path' },
     { id: 'eastHall', name: '东大牢', type: 'rect', x: 0.26, z: 0.18, w: 0.40, h: 0.44, kind: 'hall' },
     { id: 'eCell', name: '东侧囚室', type: 'rect', x: 0.54, z: 0.18, w: 0.20, h: 0.26, kind: 'wing' },
     { id: 'eLow', name: '东下囚室', type: 'rect', x: 0.26, z: -0.10, w: 0.30, h: 0.18, kind: 'wing' },
+    { id: 'eHigh', name: '东深层', type: 'rect', x: 0.46, z: -0.10, w: 0.24, h: 0.24, kind: 'wing' },
     { id: 'nave', name: '水牢甬道', type: 'rect', x: 0.26, z: -0.28, w: 0.24, h: 0.24, kind: 'path' },
     { id: 'sanctum', name: '刑房', type: 'circle', x: 0.26, z: -0.52, r: 0.18, kind: 'boss' }
   ]),
 
   /* ---------------- isles：多圆岛 + 窄桥 ----------------
-   * 沼泽 / 兽窟。几块陆地用桥串起来，桥窄，怪多。 */
+   * 沼泽 / 兽窟。几块陆地用桥串起来，桥窄，怪多。
+   *
+   * ⚠️ 唯一一个**首领区不叫 sanctum** 的骨架：它叫 `nave`（祭岛）。
+   *    任务/传送/调试里写 zone: 'sanctum' 的 isles 图会静默失效
+   *    （dev/quest-ref.js 就是专门抓这个的）。判定首领区请用
+   *    `zones.find(z => z.kind === 'boss')`，不要按 id 找。 */
   isles: () => ([
     { id: 'gate', name: '渡口', type: 'circle', x: 0, z: 0.52, r: 0.18, kind: 'entry' },
     { id: 'b1', name: '南桥', type: 'rect', x: 0, z: 0.36, w: 0.12, h: 0.20, kind: 'link' },
@@ -400,7 +410,12 @@ const ARCHETYPE_SPAWN_WEIGHT = { hall: 1.15, wing: 1.0, path: 0.85, entry: 0, li
  * 数值由 dev/zone-density.js 采样实测得出。 */
 const ARCHETYPE_COVERAGE = {
   cross: 0.2346, spiral: 0.2157, canyon: 0.2165, radial: 0.2183,
-  ring: 0.2116, twin: 0.1963, isles: 0.2012, terrace: 0.2126
+  ring: 0.2116,
+  /* [M3b] twin 从 0.1963 涨到 0.2128：M3b 给它补了「西深层 / 东深层」两个区
+   * （原来只有 10 区，够不到 §5.1 的 12 区下限）。覆盖率变了，这里的数
+   * 必须跟着重测 —— 它直接决定 suggestSpawnTotal 推导出的刷怪数，
+   * 忘了改的话新 twin 图会比目标稀 8%（306 尺寸下 41 只 vs 44 只）。 */
+  twin: 0.2128, isles: 0.2012, terrace: 0.2126
 };
 
 /* 目标密度：§5.1 的 380~450 取中值 400㎡/只 */
@@ -427,23 +442,245 @@ const MAP_SPECS = {
   /* ---------------- 卷二 2-2 / 2-3（M3 第一批，把卷二打通） ---------------- */
   magmagully: {
     archetype: 'spiral', size: 290, ground: 'rock',
-    kinds: ['magma', 'ironbeetle', 'golem', 'runesmith', 'ghostfire'],
+    kinds: ['magma', 'ironbeetle', 'golem', 'runesmith', 'ghostfire', 'ashhound', 'flamepriest', 'magmaworm'],
     names: { gate: '熔脉井口', s0: '矿工井台', s1: '上层回廊', s2: '东转井', e2: '东岔洞', s3: '中段窄道', s4: '西转井', w2: '西岔洞', s5: '下层回廊', nw: '塌方角', hub: '井底大厅', sanctum: '熔心祭坛' }
   },
   ashfield: {
     archetype: 'canyon', size: 295, ground: 'ash',
-    kinds: ['magma', 'ghostfire', 'ironbeetle', 'runesmith', 'golem'],
+    kinds: ['magma', 'ghostfire', 'ironbeetle', 'runesmith', 'golem', 'ashhound', 'flamepriest', 'magmaworm'],
     names: { gate: '荒原谷口', c1: '下谷灰道', c2: '中谷', c3: '上谷', c4: '谷底', w1: '西侧焦洞', e1: '东侧焦洞', w2: '西侧灰窟', e2: '东侧灰窟', w3: '西侧塌洞', e3: '东侧塌洞', sanctum: '灰烬祭坛' }
   },
   flamecanyon: {
     archetype: 'canyon', size: 300, ground: 'ash',
-    kinds: ['magma', 'ghostfire', 'runesmith', 'golem', 'statue'],
+    kinds: ['magma', 'ghostfire', 'runesmith', 'golem', 'statue', 'sootwraith', 'emberhound', 'cinderlord'],
     names: { gate: '峡谷隘口', c1: '赤岩下谷', c2: '赤岩中谷', c3: '赤岩上谷', c4: '焚风谷底', w1: '西侧火窟', e1: '东侧火窟', w2: '西侧熔洞', e2: '东侧熔洞', w3: '西侧焦穴', e3: '东侧焦穴', sanctum: '焚风祭坛' }
   },
   flamealtar: {
     archetype: 'radial', size: 295, ground: 'ash',
-    kinds: ['magma', 'ghostfire', 'statue', 'runesmith', 'golem'],
+    kinds: ['magma', 'ghostfire', 'statue', 'runesmith', 'golem', 'sootwraith', 'emberhound', 'cinderlord'],
     names: { hub: '焚天中庭', gate: '祭坛山门', wingW: '西配殿', wingE: '东配殿', outW: '西火殿', outE: '东火殿', wingNW: '西北廊', wingNE: '东北廊', outNW: '西北火塔', outNE: '东北火塔', nave: '焚天神道', sanctum: '焚天祭坛' }
+  },
+
+  /* ============================================================
+   * [M3b] 卷一 ~ 卷五 的 19 张新图 —— 一次把全部图位填满
+   *
+   * 尺寸全部落在 294~306，不是随手取的：
+   *   骨架只覆盖可走方框的 19.6%~23.5%，size 240 时实际可走面积只有
+   *   ~11,000㎡，够不到 §5.1 的 16,000㎡ 下限；反过来 44 只怪摊在 11,000㎡
+   *   上是 250㎡/只，比 380~450 的目标密得多。294~306 是「面积达标 +
+   *   密度达标」同时成立的区间，isles / twin 覆盖率最低，所以它们的 size
+   *   反而要更大（302 / 306）—— 这就是为什么尺寸不是整齐的 300。
+   *
+   * spawnCount 一律由 suggestSpawnTotal() 反推，不手填（手填一定会偏，
+   * M3a 的 twin@300 就是 332㎡/只 的例子）。
+   * ============================================================ */
+
+  /* ---------------- 卷一 · 竹林妖氛 / 血月压境 / 铁山无声 ---------------- */
+  /* 落霞坡：夕阳下的缓坡，三段台地一级级往上。
+   * 用 terrace 而不是 cross —— 卷一前半段全是平地图，这里第一次让玩家「往上走」。 */
+  sunset: {
+    archetype: 'terrace', size: 294, ground: 'dirt',
+    kinds: ['halfork', 'wolf', 'fox', 'hornet', 'lantern', 'foxfire', 'cliffram', 'stonecrow'],
+    names: {
+      gate: '坡脚', t1: '落霞台', t1w: '西枫台', t1e: '东枫台', r1: '第一坡',
+      t2: '半坡台', t2w: '西草台', t2e: '东草台', r2: '第二坡',
+      t3: '晚照台', nave: '望霞石阶', sanctum: '霞顶'
+    }
+  },
+  /* 沉骨滩：河滩上一层层骨头堆成的岛。isles 的窄桥负责「一岛一岛往前推」。 */
+  bonestrand: {
+    archetype: 'isles', size: 302, ground: 'bone',
+    kinds: ['boar', 'snake', 'scorpion', 'zombie', 'drowned', 'toad', 'mirehorror', 'leechqueen', 'bonefisher'],
+    names: {
+      gate: '骨滩渡口', b1: '南栈桥', isleS: '沉骨岛', b2: '西栈桥', isleW: '西骨岛',
+      b3: '东栈桥', isleE: '东骨岛', b4: '北栈桥', isleN: '白骨岛',
+      b5: '西北栈桥', isleNW: '西北骨丘', b6: '东北栈桥', isleNE: '东北骨丘', nave: '骨滩祭岛'
+    }
+  },
+  /* 骨塔祭场：绕着骨塔螺旋往上（骨架是螺旋，叙事上是「盘塔」）。
+   * 怪种只取卷一档（骷髅 / 僵尸 / 幽魂 / 狼 / 蝙蝠），不放 lv28 才该出现的骨匠。 */
+  bonetower: {
+    archetype: 'spiral', size: 294, ground: 'bone',
+    kinds: ['skelarch', 'zombie', 'ghost', 'wolf', 'bat', 'ironmaw', 'cinderhand', 'forgemaster'],
+    names: {
+      gate: '塔门', s0: '塔前井台', s1: '塔外回廊', s2: '东转阶', e2: '东侧骨龛',
+      s3: '中段窄梯', s4: '西转阶', w2: '西侧骨龛', s5: '塔内回廊', nw: '塌骨角',
+      hub: '骨塔大厅', sanctum: '祭场'
+    }
+  },
+  /* 铁山绝顶：卷一收尾。雪线以上，三段台地 + 绝顶。
+   * 首任用 golemking（石甲巨魔 · 玄铁山的守望者，lv15）—— 名字与地点天然对得上，
+   * 不用新写一个「铁山山神」。 */
+  ironpeak: {
+    archetype: 'terrace', size: 296, ground: 'snow',
+    kinds: ['golem', 'ghostfire', 'ironbeetle', 'minerghost', 'statue', 'ironmaw', 'cinderhand', 'forgemaster'],
+    names: {
+      gate: '铁山脚', t1: '铁山坪', t1w: '西矿台', t1e: '东矿台', r1: '铁索坡',
+      t2: '半山台', t2w: '西风口', t2e: '东风口', r2: '雪坡',
+      t3: '绝顶台', nave: '登顶石阶', sanctum: '铁山之巅'
+    }
+  },
+
+  /* ---------------- 卷三 · 九幽地宫 / 黄泉无渡 ---------------- */
+  /* 白骨长廊：环形回廊，绕一圈回到大殿 —— 「走了很久却回到原地」是这一章的情绪。 */
+  bonehall: {
+    archetype: 'ring', size: 297, ground: 'bone',
+    kinds: ['skelarch', 'bonewright', 'ghostfire', 'shade', 'headless', 'soulgaoler', 'papereffigy', 'wantern'],
+    names: {
+      gate: '长廊口', inlet: '前甬道', hall: '白骨大殿', ringS: '南回廊', ringE: '东回廊',
+      ringN: '北回廊', ringW: '西回廊', se: '东南骨室', ne: '东北骨室',
+      nw: '西北骨室', sw: '西南骨室', nave: '后殿骨道', sanctum: '骨廊尽头'
+    }
+  },
+  /* 忘川河滩：浅水 + 岛。isles 的桥在这里是「踩着石头过河」。 */
+  forgetshore: {
+    archetype: 'isles', size: 302, ground: 'flood',
+    kinds: ['drowned', 'bogwitch', 'toad', 'ghost', 'shade', 'zombie', 'soulgaoler', 'papereffigy', 'wantern'],
+    names: {
+      gate: '渡头', b1: '南木桥', isleS: '河滩南', b2: '西木桥', isleW: '西浅滩',
+      b3: '东木桥', isleE: '东浅滩', b4: '北木桥', isleN: '忘川北滩',
+      b5: '西北木桥', isleNW: '西北苇荡', b6: '东北木桥', isleNE: '东北苇荡', nave: '忘川祭滩'
+    }
+  },
+  /* 九幽深渊：螺旋往下，越走越黑。void 地貌 + void 道具，地面几乎看不见。 */
+  abyssdeep: {
+    archetype: 'spiral', size: 298, ground: 'void',
+    kinds: ['voidbeast', 'shade', 'ghostfire', 'yaoguai', 'ironmaiden', 'tidewretch', 'scalekeeper', 'wraithlord'],
+    names: {
+      gate: '深渊口', s0: '坠台', s1: '上层悬廊', s2: '东折悬台', e2: '东侧裂口',
+      s3: '中层窄廊', s4: '西折悬台', w2: '西侧裂口', s5: '下层悬廊', nw: '断崖角',
+      hub: '深渊大厅', sanctum: '深渊之底'
+    }
+  },
+  /* 黄泉渡：卷三收尾。峡谷 + 浅水 —— 两岸都是滩，中间一条水。
+   * 首任用新首领「黄泉主宰」，不沿用 lv30 的冥河渡者（等级差 10 级会被直接跳过）。 */
+  yellowferry: {
+    archetype: 'canyon', size: 300, ground: 'flood',
+    kinds: ['drowned', 'shade', 'toad', 'ghost', 'bogwitch', 'tidewretch', 'scalekeeper', 'wraithlord'],
+    names: {
+      gate: '渡口', c1: '黄泉浅道', c2: '中渡', c3: '上游窄道', c4: '渡头',
+      w1: '西岸滩', e1: '东岸滩', w2: '西岸苇荡', e2: '东岸苇荡',
+      w3: '西岸塌坡', e3: '东岸塌坡', sanctum: '黄泉渡口'
+    }
+  },
+
+  /* ---------------- 卷四 · 万剑归冢 / 云海断阙 ---------------- */
+  /* 天罡剑冢：中庭放射。剑冢是一座「埋剑的墓」，所以用 bone 骨色地面 + 骨道具，
+   * 底下埋的全是剑客的骨头。 */
+  swordtomb: {
+    archetype: 'radial', size: 296, ground: 'bone',
+    kinds: ['swordwraith', 'ghost', 'statue', 'golem', 'shade', 'swordhusk', 'bladewisp', 'duelist'],
+    names: {
+      hub: '剑冢中庭', gate: '冢门', wingW: '西剑廊', wingE: '东剑廊',
+      outW: '西偏冢', outE: '东偏冢', wingNW: '西北剑廊', wingNE: '东北剑廊',
+      outNW: '西北剑台', outNE: '东北剑台', nave: '剑冢神道', sanctum: '天罡剑冢'
+    }
+  },
+  /* 万剑坑：一个被剑砸出来的大坑。canyon 的长条沟在这里读作「坑道」。 */
+  swordpit: {
+    archetype: 'canyon', size: 297, ground: 'ash',
+    kinds: ['swordwraith', 'statue', 'golem', 'ghostfire', 'ironbeetle', 'swordhusk', 'bladewisp', 'duelist'],
+    names: {
+      gate: '坑口', c1: '下坑道', c2: '中坑', c3: '上坑道', c4: '坑底',
+      w1: '西侧剑窟', e1: '东侧剑窟', w2: '西侧残坑', e2: '东侧残坑',
+      w3: '西侧塌坑', e3: '东侧塌坑', sanctum: '万剑坑底'
+    }
+  },
+  /* 剑冢绝巅：卷四上半收尾。雪线 + 三段台地，形状和铁山绝顶同构，
+   * 但怪种换成剑魂 / 雷鸟 —— 「同一种地形，不同的敌人」比换地形更省预算也更像真实世界。 */
+  swordapex: {
+    archetype: 'terrace', size: 300, ground: 'snow',
+    kinds: ['swordwraith', 'thunderbird', 'fallen', 'statue', 'golem', 'swordhusk', 'bladewisp', 'duelist'],
+    names: {
+      gate: '绝巅山脚', t1: '剑冢台', t1w: '西剑台', t1e: '东剑台', r1: '第一剑坡',
+      t2: '半巅台', t2w: '西风口', t2e: '东风口', r2: '第二剑坡',
+      t3: '绝巅前庭', nave: '登巅剑阶', sanctum: '剑冢绝巅'
+    }
+  },
+  /* 云海断桥：twin 双厅 + 中间窄桥 —— 这是 twin 骨架最贴切的用法，
+   * 「桥断了」这件事只能发生在「两座厅之间只有一条桥」的地图上。 */
+  cloudbridge: {
+    archetype: 'twin', size: 306, ground: 'heaven',
+    kinds: ['fallen', 'thunderbird', 'jadeguard', 'voidbeast', 'ghostfire', 'cloudserpent', 'thunderdrum', 'feathered'],
+    names: {
+      gate: '云海桥头', westHall: '西云台', wCell: '西云室', wLow: '西下云台', wHigh: '西深层云台',
+      bridge: '断桥', eastHall: '东云台', eCell: '东云室', eLow: '东下云台', eHigh: '东深层云台',
+      nave: '云海甬道', sanctum: '断桥尽头'
+    }
+  },
+  /* 南天残门：卷四收尾。放射中庭 + 两座阙楼。 */
+  southgate: {
+    archetype: 'radial', size: 298, ground: 'heaven',
+    kinds: ['jadeguard', 'fallen', 'thunderbird', 'swordwraith', 'voidbeast', 'cloudserpent', 'thunderdrum', 'feathered'],
+    names: {
+      hub: '南天中庭', gate: '南天山门', wingW: '西阙廊', wingE: '东阙廊',
+      outW: '西残阙', outE: '东残阙', wingNW: '西北阙廊', wingNE: '东北阙廊',
+      outNW: '西北阙楼', outNE: '东北阙楼', nave: '南天神道', sanctum: '南天残门'
+    }
+  },
+
+  /* ---------------- 卷五 · 无相镜渊 / 终焉之门 ---------------- */
+  /* 玉京废墟：环形回廊。玉京是「天庭的都城」，废墟就该是绕不出去的宫城。 */
+  jadecapital: {
+    archetype: 'ring', size: 297, ground: 'void',
+    kinds: ['jadeguard', 'voidbeast', 'shade', 'thunderbird', 'ironmaiden', 'jadepuppet', 'starfaller', 'silkweaver'],
+    names: {
+      gate: '玉京门', inlet: '前朝道', hall: '玉京大殿', ringS: '南玉廊', ringE: '东玉廊',
+      ringN: '北玉廊', ringW: '西玉廊', se: '东南玉室', ne: '东北玉室',
+      nw: '西北玉室', sw: '西南玉室', nave: '后殿玉道', sanctum: '玉京深处'
+    }
+  },
+  /* 星陨台：放射。陨星砸出来的辐射状裂口，从中央向四周散开。 */
+  starfall: {
+    archetype: 'radial', size: 299, ground: 'void',
+    kinds: ['voidbeast', 'thunderbird', 'fallen', 'shade', 'swordwraith', 'jadepuppet', 'starfaller', 'silkweaver'],
+    names: {
+      hub: '星陨中庭', gate: '陨台山门', wingW: '西陨廊', wingE: '东陨廊',
+      outW: '西陨台', outE: '东陨台', wingNW: '西北陨廊', wingNE: '东北陨廊',
+      outNW: '西北星台', outNE: '东北星台', nave: '星陨神道', sanctum: '星陨台'
+    }
+  },
+  /* 无相幻境：十字主轴 —— 唯一一张 cross。玩家在卷五连走四张螺旋/环形之后，
+   * 回到「一眼看得懂的四向结构」反而会觉得不对劲，这正是「幻境」要的效果。 */
+  mirrorrealm: {
+    archetype: 'cross', size: 298, ground: 'void',
+    kinds: ['shade', 'voidbeast', 'swordwraith', 'thunderbird', 'jadeguard', 'jadepuppet', 'starfaller', 'silkweaver'],
+    names: {
+      gate: '幻境口', path: '幻径', hall: '无相主厅', westLink: '西幻廊', west: '西幻翼',
+      eastLink: '东幻廊', east: '东幻翼', nwLink: '西北幻廊', nw: '西北幻角',
+      neLink: '东北幻廊', ne: '东北幻角', nave: '幻境后道', sanctum: '无相之核'
+    }
+  },
+  /* 镜渊：螺旋。镜面往下沉，一层一层都是自己的影子。 */
+  mirrorabyss: {
+    archetype: 'spiral', size: 299, ground: 'void',
+    kinds: ['voidbeast', 'shade', 'swordwraith', 'fallen', 'ironmaiden', 'jadepuppet', 'starfaller', 'silkweaver'],
+    names: {
+      gate: '镜口', s0: '镜台', s1: '上层镜廊', s2: '东折镜厅', e2: '东侧镜龛',
+      s3: '中层镜廊', s4: '西折镜厅', w2: '西侧镜龛', s5: '下层镜廊', nw: '碎镜角',
+      hub: '镜渊大厅', sanctum: '镜渊之底'
+    }
+  },
+  /* 九霄之巅：卷五倒数第二张。雪 + 三段台地，全作最高处。 */
+  nineapex: {
+    archetype: 'terrace', size: 301, ground: 'snow',
+    kinds: ['thunderbird', 'jadeguard', 'fallen', 'swordwraith', 'voidbeast', 'jadepuppet', 'starfaller', 'silkweaver'],
+    names: {
+      gate: '九霄山脚', t1: '九霄台', t1w: '西天门台', t1e: '东天门台', r1: '第一霄坡',
+      t2: '半霄台', t2w: '西风口', t2e: '东风口', r2: '第二霄坡',
+      t3: '九霄前庭', nave: '登霄石阶', sanctum: '九霄之巅'
+    }
+  },
+  /* 混沌海：全作最后一张，只有一张图的一章。isles —— 几块碎岛漂在混沌里，
+   * 桥是唯一的路，退无可退。 */
+  chaossea: {
+    archetype: 'isles', size: 303, ground: 'void',
+    kinds: ['voidbeast', 'shade', 'fallen', 'thunderbird', 'jadeguard', 'mirrortwin', 'maskweaver', 'voidmoth'],
+    names: {
+      gate: '混沌岸', b1: '南浮桥', isleS: '混沌南岛', b2: '西浮桥', isleW: '西浮岛',
+      b3: '东浮桥', isleE: '东浮岛', b4: '北浮桥', isleN: '混沌北岛',
+      b5: '西北浮桥', isleNW: '西北碎岛', b6: '东北浮桥', isleNE: '东北碎岛', nave: '混沌祭岛'
+    }
   }
 };
 
@@ -474,7 +711,13 @@ function buildZones(mapId, spec) {
    * 摊不匀的零头补给权重最大的区，保证总数精确等于 spawnTotal ——
    * zone-density 校验的就是这个数，不能「大约 44」。 */
   const pool = spec.kinds || [];
-  const total = spec.spawnTotal || suggestSpawnTotal(spec.archetype, spec.size);
+  /* spawnTotal === 0 是**有效值**：地下城的首领场只放守卫、不放杂兵。
+   * 原来的 `spec.spawnTotal || 公式` 把 0 当成「没传」（0 是 falsy），
+   * 结果首领场悄悄按公式刷了 40 只，而 run.total 记的是 1 —— 清怪进度永远 0%。
+   * 只有 undefined / null 才走公式。 */
+  const total = (spec.spawnTotal === undefined || spec.spawnTotal === null)
+    ? suggestSpawnTotal(spec.archetype, spec.size)
+    : Math.max(0, spec.spawnTotal);
   const weightSum = zones.reduce((a, z) => a + (ARCHETYPE_SPAWN_WEIGHT[z.kind] || 0), 0);
   let used = 0;
   zones.forEach((z, i) => {

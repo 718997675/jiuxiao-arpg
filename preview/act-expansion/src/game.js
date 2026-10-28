@@ -1722,7 +1722,12 @@ const Game = {
       }
       return;
     }
-    const count = m.spawnCount || 14;
+    /* spawnCount === 0 是**有效值**：地下城的首领场只放守卫，不放杂兵。
+     * 原来的 `m.spawnCount || 14` 把 0 当成「没配」（0 是 falsy），
+     * 结果首领场凭空刷出 14 只小怪，站在首领旁边一起打玩家。
+     * 只有 undefined / null 才回退到旧图的默认 14。 */
+    const count = (m.spawnCount === undefined || m.spawnCount === null)
+      ? 14 : Math.max(0, m.spawnCount);
     /* [DIFF] 精英出现概率由难度决定：新手 3%，普通 8%，困难 16%，极难 26% */
     for (let i = 0; i < count; i++) {
       const ang = Math.random() * Math.PI * 2;
@@ -2444,6 +2449,8 @@ const Game = {
     /* [试炼] 波次状态机：读秒 / 清场判定 / 天雷与嗜血狂潮两条机制祝福。
      * 放在 updateSpawner 之后 —— 试炼场的 spawns 为空，那边会直接返回。 */
     if (typeof Trial !== 'undefined' && Trial.active) Trial.tick(dt);
+    /* [M5] 地下城：无常传送 / HUD 心跳。清场判定走 onKill，不在这里扫。 */
+    if (typeof Dungeon !== 'undefined' && Dungeon.active) Dungeon.update(dt);
     this.updateWorldAnims(dt);
     this.updateInteract();
     this.tickAudio(dt);
@@ -4082,7 +4089,10 @@ const Game = {
     let final = dmg * (1 + st.skillDmg / 100 * 0.5) * (1 + this.tagBonus(tag) / 100);
 
     /* [S1] 护甲穿透：按比例削减目标有效护甲，最多穿掉 80% */
-    const armor = e.level * 3 + (e.cfg.armorHigh ? e.level * 6 : 0);
+    /* [M5] armorMul：地下城词缀「铁壁」把怪物护甲整体抬一档。
+     * 默认 1，不影响任何现有怪（不写这个乘数的话，护甲是「按等级算出来的」，
+     * 没有地方能挂「+50% 护甲」）。 */
+    const armor = (e.level * 3 + (e.cfg.armorHigh ? e.level * 6 : 0)) * (e.armorMul || 1);
     /* [P2] 破甲（技能树分支挂上的 debuff）：先按穿透削，再按破甲削 */
     const shred = (e.shredT > 0) ? Math.min(80, e.shred || 0) / 100 : 0;
     const effArmor = Math.max(0, armor * (1 - Math.min(0.8, (st.armorPen || 0) / 100)) * (1 - shred));
@@ -4546,8 +4556,14 @@ const Game = {
     UI.closeAll();
     /* 试炼里死亡不弹「身陨」框，改弹本轮结算 —— 玩家要看到的是「打到第几波」，
      * 而不是一句「你的道还未走完」。惩罚照旧按难度扣金币。 */
+    const inDungeon = (typeof Dungeon !== 'undefined' && Dungeon.active);
     const inTrial = (typeof Trial !== 'undefined' && Trial.active);
-    if (inTrial) Trial.onPlayerDeath();
+    if (inDungeon) {
+      /* [M5] 地下城死亡：先记账（失败 / 钥匙不返），面板照常用「身陨」——
+       * 它的「回城」按钮是唯一复活入口，真正的换图在 respawn 里做。 */
+      Dungeon.onPlayerDeath();
+      UI.showDeath('你倒在了地脉第 ' + Dungeon.run.layer + ' 层。\n\n钥匙没有回来。');
+    } else if (inTrial) Trial.onPlayerDeath();
     else UI.showDeath('你的道，还未走完。');
     /* [DIFF] 死亡惩罚按难度：新手 0%，普通 10%，困难 15%，极难 25% */
     const rate = this.diff().deathPenalty;
@@ -4577,8 +4593,11 @@ const Game = {
     this.undyingCd = 0; this.stormT = 6; this.talismanT = 10; this.elixirT = 60; this.phoenixKeyT = 0;
     this.talismanCharges = 0;
     this.recalc();
-    this.loadMap('village');
-    UI.toast('于桃源村重生');
+    /* [M5] 地下城里死了回本卷营地（不是村，也不是「最近」）——
+     * onRespawn 顺手把这一把清理掉并返回该去的图 */
+    const dgBack = (typeof Dungeon !== 'undefined' && Dungeon.active) ? Dungeon.onRespawn() : null;
+    this.loadMap(dgBack || 'village');
+    UI.toast(dgBack ? '被抬出地脉裂隙' : '于桃源村重生');
     this.save();
   },
 
@@ -5938,6 +5957,26 @@ const Game = {
     if (!s.codex || typeof s.codex !== 'object') s.codex = { mon: {}, regions: {} };
     if (!s.codex.mon || typeof s.codex.mon !== 'object') s.codex.mon = {};
     if (!s.codex.regions || typeof s.codex.regions !== 'object') s.codex.regions = {};
+    /* [M4] 图鉴从「5 张老图 = 5 区」改成「5 大卷 = 5 区」：老档 regions 里的
+     * 旧 key（forest/swamp/mine/abyss/heaven）一次性搬到新卷 key，然后对
+     * 每卷重跑一次全录检查 —— 已录的怪不丢；旧区全录但新区还缺新怪的，
+     * 等补录完自动补发加成。删掉旧 key，迁移天然幂等（第二次 moved=false）。 */
+    const LEGACY = (typeof CODEX_REGION_LEGACY !== 'undefined') ? CODEX_REGION_LEGACY : null;
+    if (LEGACY) {
+      let moved = false;
+      for (const old in LEGACY) {
+        if (s.codex.regions[old]) {
+          s.codex.regions[LEGACY[old]] = true;
+          delete s.codex.regions[old];
+          moved = true;
+        }
+      }
+      if (moved && typeof CODEX_REGIONS !== 'undefined') {
+        for (const def of CODEX_REGIONS) {
+          try { this.checkCodexRegion(def.id); } catch (err) { /* 面板未就绪时不弹提示 */ }
+        }
+      }
+    }
     return s.codex;
   },
 
@@ -5976,20 +6015,47 @@ const Game = {
     return e;
   },
 
-  /* 一只怪归哪个区：按 MAPS 的声明顺序取第一个刷它的图。
-   * 这样 golem / ghostfire 这类跨区怪只归一个区，不会让两个区都集不齐。 */
+  /* [M4] 一只怪归哪个区（= 哪一卷）：数它在该卷各图怪池里出现的次数，
+   * 归出场最多的那一卷；平局归早（低卷优先）。
+   *
+   * 为什么不用「首次出场」：老怪的怪池跨卷复用（yaoguai 从 1-3 一路
+   * 铺到 3-1），按首次出场会把 38 只都划给卷一、卷五只剩 6 只 ——
+   * 一区要刷 38 只才全录、五区白送。按最多出场是 31/14/13/9/9，
+   * 每卷的图鉴工作量跟游戏进度大致同步。
+   *
+   * 怪池统一声明在 MAPS[id].spawns，一处读全 —— 新图改池只动
+   * data-world.js 一份，这里自动跟上。结果进程内缓存（数据静态）。
+   * 每只怪只属于一个区，不会让两个区都集不齐。 */
   codexRegionOf(kind) {
-    for (const id in MAPS) {
-      const m = MAPS[id];
-      if (m.spawns && m.spawns.indexOf(kind) >= 0) return id;
+    if (typeof ACTS === 'undefined' || typeof MAPS === 'undefined') return null;
+    if (!this._codexRegionCache) this._codexRegionCache = {};
+    if (kind in this._codexRegionCache) return this._codexRegionCache[kind];
+    /* [M5] 地下城专属怪直接归「秘境」：它们不在任何野外图池里，
+     * 走下面的计次统计会得到 null（图鉴里就永远集不齐）。 */
+    const mcfg = (typeof MONSTERS !== 'undefined') ? MONSTERS[kind] : null;
+    if (mcfg && mcfg.dungeon) return (this._codexRegionCache[kind] = 'rift');
+    const cnt = {};
+    for (const aid in ACTS) {
+      const p = ACTS[aid].part;
+      for (const mi of (ACTS[aid].maps || [])) {
+        const m = MAPS[mi.id];
+        if (m && m.spawns && m.spawns.indexOf(kind) >= 0) cnt[p] = (cnt[p] || 0) + 1;
+      }
     }
-    return null;
+    let best = null, bestN = 0;
+    for (let p = 1; p <= 5; p++) {
+      if ((cnt[p] || 0) > bestN) { bestN = cnt[p]; best = 'part' + p; }
+    }
+    this._codexRegionCache[kind] = best;
+    return best;
   },
 
   codexRegionKinds(regionId) {
-    const m = MAPS[regionId];
-    if (!m || !m.spawns) return [];
-    return m.spawns.filter(k => this.codexRegionOf(k) === regionId);
+    const out = [];
+    for (const kind in MONSTERS) {
+      if (this.codexRegionOf(kind) === regionId) out.push(kind);
+    }
+    return out;
   },
 
   checkCodexRegion(regionId) {
@@ -6014,6 +6080,20 @@ const Game = {
       for (const k in def.bonus) out[k] = (out[k] || 0) + def.bonus[k];
     }
     return out;
+  },
+
+  /* ---------------- 地脉钥匙（M5） ----------------
+   * 钥匙的**唯一**读写口。`QuestSys.turnIn` 早在 M2 就写着 `Game.addKey(...)`，
+   * 那时候是空钩子；M5 把它接上，所以任务奖励里的 `rewards.key` 现在真的生效。
+   * 真正的存储与提示在 Dungeon 里（keys 数组 + 日志），这里只做转发 ——
+   * 两处各写一遍迟早会出现「任务给了但背包没涨」。 */
+  addKey(tier, n) {
+    if (typeof Dungeon === 'undefined') return 0;
+    return Dungeon.addKey(tier, n);
+  },
+  keyCount(tier) {
+    if (typeof Dungeon === 'undefined') return 0;
+    return Dungeon.keyCount(tier);
   },
 
   onEnemyDeath(e) {
@@ -6083,7 +6163,12 @@ const Game = {
      * 高档图的怪一只给几百点，一小时能从 1 级推到通关。 */
     const XB = (typeof BALANCE !== 'undefined' ? BALANCE.xp : { mobLv: 0.12, bossLv: 30 });
     const baseXp = e.boss ? (e.cfg.level * XB.bossLv) : (e.cfg.xp || 12) * (1 + e.level * XB.mobLv);
-    const xp = Math.round(baseXp * (e.elite ? 2 : 1) * D.xp);
+    /* [M6] 地脉里经验 ×1.8（BALANCE.dungeon.xpMul，计划书 §10.2）：
+     * 钥匙是消耗品，进去这一趟必须比在野外刷同样时间更划算，
+     * 否则没人会去用掉它。首领不吃这个倍率 —— 它自己那条 bossLv 已经很高。 */
+    const dgXp = (typeof Dungeon !== 'undefined' && Dungeon.active && !e.boss
+      && typeof BALANCE !== 'undefined' && BALANCE.dungeon) ? (BALANCE.dungeon.xpMul || 1) : 1;
+    const xp = Math.round(baseXp * (e.elite ? 2 : 1) * D.xp * dgXp);
     this.gainXp(xp);
 
     // 金币
@@ -6139,6 +6224,35 @@ const Game = {
       this.spawnLoot(p, null, 0, { mat: cm });
     }
 
+    /* [M4/M5] 卷末首领的「次阶地下城钥匙」（计划书 §7.1）：8%，终局真身 15%。
+     * keyTier = 本卷 + 1（一阶对一卷：在卷一打到的钥匙开的是二阶门）。
+     * 与下面「本阶钥匙的必掉线」是两条独立线 —— 首领同时吃这两抽。 */
+    const bcfg = e.boss ? e.cfg : null;
+    if (bcfg && bcfg.actEnd && typeof this.addKey === 'function') {
+      const KB = (typeof BALANCE !== 'undefined' && BALANCE.keyDrop) || { actBoss: 0.08, actBossFinal: 0.15 };
+      if (CHANCE(bcfg.final ? KB.actBossFinal : KB.actBoss)) {
+        this.addKey(Math.min(5, bcfg.keyTier || 1), 1);
+      }
+    }
+
+    /* [M5] 钥匙的**常规**供给（§8.1）：小怪 0.6% / 精英 10% / 首领必掉**本阶**。
+     * 阶 = 这张图所在卷（一阶对一卷），所以玩家不用查表。
+     *
+     * 两处刻意排除：
+     *   · 地下城图里的怪不掉 —— 否则「钥匙开地下城、地下城再产钥匙」形成自循环，
+     *     地下城就变成零成本的刷装场（§8.1 要避免的正是这个）。
+     *   · 地下城关卡守卫不走这里 —— 它们的次阶钥匙是通关结算里的 35%（§8.4）。
+     *
+     * 概率写进 BALANCE.keyDrop.mob / .elite，和掉落/经验一样集中在旋钮表里。 */
+    const kmap = MAPS[this.state.mapId];
+    if (kmap && !kmap.dungeon && typeof this.addKey === 'function') {
+      const act = (typeof actOfMap === 'function') ? actOfMap(this.state.mapId) : null;
+      const tier = Math.min(5, Math.max(1, (act && act.part) || this.state.part || 1));
+      const KB2 = (typeof BALANCE !== 'undefined' && BALANCE.keyDrop) || {};
+      const rate = e.boss ? 1 : (e.elite ? (KB2.elite === undefined ? 0.10 : KB2.elite) : (KB2.mob === undefined ? 0.006 : KB2.mob));
+      if (CHANCE(rate * (D.drop || 1))) this.addKey(tier, 1);
+    }
+
     // 击杀回复
     if (sto.killHeal) this.healPlayer(sto.killHeal, true);
     if (sto.mpOnKill) this.state.mp = Math.min(sto.mpMax, this.state.mp + sto.mpOnKill);
@@ -6179,6 +6293,9 @@ const Game = {
     this.onKill(e);
     /* [试炼] 击杀计数（结算面板用） */
     if (typeof Trial !== 'undefined' && Trial.run) Trial.run.kills++;
+    /* [M5] 地下城：清怪进度。首领单独走 onBossDown（它等于通关结算）。 */
+    const inDungeon = (typeof Dungeon !== 'undefined' && Dungeon.active);
+    if (inDungeon && !e.boss) Dungeon.onKill(e);
     if (e.boss) {
       this.state.bossKilled[e.kind] = (this.state.bossKilled[e.kind] || 0) + 1;
       this.onBossKill(e);
@@ -6189,7 +6306,15 @@ const Game = {
        * 二来 BOSS_POS 是按大地图坐标写的，重生点会落在擂台的错误位置。
        * 混沌天魔在试炼里也不触发通关结算（那是主线终章的演出）。 */
       const inTrial = (typeof Trial !== 'undefined' && Trial.active);
-      if (inTrial) {
+      if (inDungeon) {
+        /* [M5] 地下城守卫倒了 = 通关。延后 600ms 再结算：
+         * onEnemyDeath 正在 updateEnemies 的遍历里跑，结算会 loadMap 换图，
+         * 当场换会打断遍历（和「分裂幼体先入队」是同一类问题）。
+         * 顺带给死亡动画与掉落一点时间。 */
+        setTimeout(() => {
+          if (typeof Dungeon !== 'undefined' && Dungeon.active) Dungeon.onBossDown();
+        }, 600);
+      } else if (inTrial) {
         if (e.kind === 'chaos') UI.log('混沌之影散去，台上又起新的杀机。', 'good');
       } else {
         const bid = e.kind, gen = this.mapGen;
@@ -6212,10 +6337,36 @@ const Game = {
     const s = this.state;
     /* [S1] 经验获取加成 */
     amount = Math.round(amount * (1 + (s.stats.expGain || 0) / 100));
+    /* [M6] 满级收口：到 BALANCE.levelMax（60）就停在 60，
+     * 经验不再累积 —— 否则 xpNext 会一直往上算，存档里的经验条也永远差一格。
+     * 注意 while 必须在这里跳出，不然 level 卡在 60 而 xp 不清零会死循环。 */
+    const lvMax = (typeof BALANCE !== 'undefined' && BALANCE.levelMax) || 60;
+    if (s.level >= lvMax) {
+      s.level = lvMax;
+      s.xp = 0;
+      /* 提示只出一次：挂在 Game 上而不是 state 上，
+       * state 会被序列化进存档，多一个 _ 开头的小字段不值得。 */
+      if (!this._maxLvHinted) {
+        this._maxLvHinted = true;
+        UI.log('已至境界上限 · ' + lvMax + ' 级。', 'good');
+      }
+      return;
+    }
     s.xp += amount;
     while (s.xp >= s.xpNext) {
       s.xp -= s.xpNext;
       s.level++;
+      /* 到顶那一级不再发经验条，把溢出的经验丢掉（否则会多出半级） */
+      if (s.level >= lvMax) {
+        s.level = lvMax;
+        s.xp = 0;
+        s.xpNext = (typeof xpToNext === 'function') ? xpToNext(s.level) : 1;
+        this.recalc();
+        UI.toast('境界圆满 · ' + lvMax + ' 级', 'lv');
+        UI.log('已至境界上限 · ' + lvMax + ' 级。', 'good');
+        SFX.levelup();
+        break;
+      }
       /* [v1.10.0] 曲线收进 BALANCE（base × L^pow），升级点与新建角色同一口径 */
       s.xpNext = (typeof xpToNext === 'function') ? xpToNext(s.level) : Math.round(180 * Math.pow(s.level, 1.70));
       this.recalc();
@@ -6325,7 +6476,16 @@ const Game = {
     }
     if (!target && this.world) {
       const p = this.world.portal;
-      if (Math.hypot(pp.x - p.x, pp.z - p.z) < 5) { target = { type: 'portal' }; txt = '使用传送阵'; }
+      if (Math.hypot(pp.x - p.x, pp.z - p.z) < 5) {
+        target = { type: 'portal' };
+        /* [M5] 地下城里的传送阵就是「地脉门」：清够本层才开 */
+        if (typeof Dungeon !== 'undefined' && Dungeon.active) {
+          const dp = Dungeon.progress();
+          if (Dungeon.run.layer >= DUNGEON_LAYERS.length) txt = '地脉门 · 离开';
+          else if (dp.open) txt = '地脉门 · 下一层';
+          else txt = '地脉门 · 尚封（' + Math.round(dp.pct * 100) + '% / ' + Math.round(dp.need * 100) + '%）';
+        } else txt = '使用传送阵';
+      }
     }
     /* [M1] 章间出口门 / 路标石：判定半径比传送阵小，挨着站时才抢焦点 */
     if (!target && this.world && this.world.gate) {
@@ -6355,8 +6515,10 @@ const Game = {
     if (!t) return;
     if (t.type === 'npc') this.openNPC(t.id);
     else if (t.type === 'portal') {
-      /* 试炼场里的传送阵就是「退场门」：先确认再走，别让人误触丢进度 */
-      if (typeof Trial !== 'undefined' && Trial.active) Trial.quit();
+      /* 试炼场里的传送阵就是「退场门」：先确认再走，别让人误触丢进度。
+       * [M5] 地下城同理，但它是「地脉门」—— 清够本层就下下一层，末层则是离开。 */
+      if (typeof Dungeon !== 'undefined' && Dungeon.active) Dungeon.usePortal();
+      else if (typeof Trial !== 'undefined' && Trial.active) Trial.quit();
       else UI.openTravel();
     }
     /* [M1] 章间出口门：直接去下一章第一张图，等级不够由 travelTo 统一拦（同一条口径） */
@@ -6377,6 +6539,9 @@ const Game = {
      * 掌事 / 录事是同一套逻辑，不再是「elder 特判 + 其他不管」。 */
     if (npc && npc.role === 'quest') {
       this.openGiver(id);
+    } else if (npc && npc.role === 'dungeon') {
+      /* [M5] 地脉守：5 座营地各一个，进门就是「选阶 → 选类型 → 词缀预告」 */
+      if (typeof Dungeon !== 'undefined') Dungeon.openRift(id);
     } else if (id === 'smith') {
       /* 进货走 ensureShop：5 分钟窗口内反复说话不会换货 */
       this.ensureShop();
@@ -7509,6 +7674,19 @@ const Game = {
     /* [试炼] 存档里的 mapId 可能是 trial（在台上被关掉页面）。
      * 试炼的波次进度不落盘（这是 roguelite 的规矩：中途退出即作废），
      * 所以这里把玩家送回村，而不是让他站在一个没有波次的空擂台上。 */
+    /* [地下城] 存档 mapId 可能是 dgn_<类型>_<层>（在地脉里被关掉页面）。
+     * 这些图是运行时注册的，开机时根本不在 MAPS 里 —— 必须**先于**下面那条
+     * 「未知图 → 村」认出来，送回**本卷营地**（人是从营地进的），而不是桃源村。
+     * 进度不落盘是设计：钥匙已经扣了，这一把作废，跟中途退出一个口径。 */
+    if (typeof this.state.mapId === 'string' && this.state.mapId.indexOf('dgn_') === 0) {
+      const back = (typeof campMapOfPart === 'function') ? campMapOfPart(this.state.part) : null;
+      this.state.mapId = (back && MAPS[back]) ? back : 'village';
+      this.state.playerPos = { x: 0, z: 10 };
+      if (typeof Dungeon !== 'undefined') {
+        Dungeon.run = null; Dungeon._t = 0;
+        try { Dungeon.renderHud(false); } catch (e) {}
+      }
+    }
     if (this.state.mapId === 'trial' || !MAPS[this.state.mapId]) {
       this.state.mapId = 'village';
       this.state.playerPos = { x: 0, z: 10 };

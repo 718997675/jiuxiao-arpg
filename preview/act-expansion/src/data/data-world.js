@@ -10,42 +10,42 @@ const MAPS = {
     id: 'village', name: '桃源村', safe: true, level: 1, camp: 'campA',
     ground: 'dirt', sky: 0x9fc7d9, fog: 0xa8c8d8, fogNear: 45, fogFar: 120,
     size: 70, ambient: 0xbfd9e6, sun: 0xffe6b8, sunI: 1.05, props: 'village',
-    npcs: ['elder', 'smith', 'herbalist', 'monk', 'alchemist', 'warden', 'steward', 'campA_side'],
+    npcs: ['elder', 'smith', 'herbalist', 'monk', 'alchemist', 'warden', 'steward', 'rift', 'campA_side'],
     spawns: [], bosses: [], portal: { x: 0, z: -18 }, music: 'calm'
   },
   forest: {
     id: 'forest', name: '幽篁林', safe: false, level: 4,
     ground: 'bamboo', sky: 0x7fae8f, fog: 0x93b89c, fogNear: 42, fogFar: 132,
     size: 130, ambient: 0xa8d0b0, sun: 0xd8f0c0, sunI: 0.95, props: 'bamboo',
-    spawns: ['halfork', 'bat', 'skelarch', 'wolf', 'hornet', 'fox', 'lantern', 'bamboo', 'shigandang'], spawnCount: 10, bosses: ['treeking', 'batking'],
+    spawns: ['halfork', 'bat', 'skelarch', 'wolf', 'hornet', 'fox', 'lantern', 'bamboo', 'shigandang', 'foxfire', 'cliffram', 'stonecrow'], spawnCount: 10, bosses: ['treeking', 'batking'],
     portal: { x: 0, z: 49.3 }, unlock: 1
   },
   swamp: {
     id: 'swamp', name: '血月沼泽', safe: false, level: 12,
     ground: 'swamp', sky: 0x5a3a3a, fog: 0x6b3f3f, fogNear: 39, fogFar: 126,
     size: 140, ambient: 0x8a6a6a, sun: 0xff9a7a, sunI: 0.8, props: 'swamp',
-    spawns: ['spider', 'boar', 'snake', 'scorpion', 'zombie', 'drowned', 'brood', 'wasp', 'toad', 'bogwitch'], spawnCount: 11,
+    spawns: ['spider', 'boar', 'snake', 'scorpion', 'zombie', 'drowned', 'brood', 'wasp', 'toad', 'bogwitch', 'mirehorror', 'leechqueen', 'bonefisher'], spawnCount: 11,
     bosses: ['chief', 'golemking', 'snakequeen'], portal: { x: 0, z: 55.1 }, unlock: 8
   },
   mine: {
     id: 'mine', name: '玄铁矿洞', safe: false, level: 20,
     ground: 'rock', sky: 0x2a2a33, fog: 0x2e2a2a, fogNear: 31, fogFar: 105,
     size: 130, ambient: 0x6a6a78, sun: 0xffbb66, sunI: 0.7, props: 'mine',
-    spawns: ['golem', 'ghost', 'yaoguai', 'ghostfire', 'statue', 'scorpking', 'minerghost', 'magma', 'ironbeetle', 'runesmith'], spawnCount: 11,
-    bosses: ['ghostlord', 'firegeneral', 'icequeen'], portal: { x: 0, z: 52.2 }, unlock: 16
+    spawns: ['golem', 'ghost', 'yaoguai', 'ghostfire', 'statue', 'scorpking', 'minerghost', 'magma', 'ironbeetle', 'runesmith', 'ironmaw', 'cinderhand', 'forgemaster'], spawnCount: 11,
+    bosses: ['ghostlord', 'icequeen'], portal: { x: 0, z: 52.2 }, unlock: 16
   },
   abyss: {
     id: 'abyss', name: '九幽地宫', safe: false, level: 28,
     ground: 'abyss', sky: 0x1a1420, fog: 0x1e1626, fogNear: 28, fogFar: 98,
     size: 134, ambient: 0x6a5a7a, sun: 0x9a6aff, sunI: 0.65, props: 'abyss',
-    spawns: ['ghostfire', 'bloodlord', 'yaoguai', 'golem', 'headless', 'crane', 'bonewright', 'shade', 'ironmaiden'], spawnCount: 12,
+    spawns: ['ghostfire', 'bloodlord', 'yaoguai', 'golem', 'headless', 'crane', 'bonewright', 'shade', 'ironmaiden', 'soulgaoler', 'papereffigy', 'wantern'], spawnCount: 12,
     bosses: ['spidermother', 'ferryman', 'swordlord'], portal: { x: 0, z: 53.7 }, unlock: 24
   },
   heaven: {
     id: 'heaven', name: '天阙残境', safe: false, level: 35,
     ground: 'heaven', sky: 0x2a3a5a, fog: 0x40527a, fogNear: 36, fogFar: 119,
     size: 134, ambient: 0x9ab0e0, sun: 0xffe0a0, sunI: 0.95, props: 'heaven',
-    spawns: ['bloodlord', 'ghostfire', 'golem', 'yaoguai', 'fallen', 'voidbeast', 'swordwraith', 'thunderbird', 'jadeguard'], spawnCount: 12,
+    spawns: ['bloodlord', 'ghostfire', 'golem', 'yaoguai', 'fallen', 'voidbeast', 'swordwraith', 'thunderbird', 'jadeguard', 'cloudserpent', 'thunderdrum', 'feathered'], spawnCount: 12,
     bosses: ['chaos'], portal: { x: 0, z: 53.7 }, unlock: 32
   },
   /* ---------------- 卷二 · 血月焚天（M2 前置） ----------------
@@ -59,14 +59,14 @@ const MAPS = {
     id: 'frost', name: '寒潭水牢', safe: false, level: 20,
     ground: 'ice', sky: 0x2a3e52, fog: 0x3a5468, fogNear: 33, fogFar: 108,
     size: 130, ambient: 0x8aa8c0, sun: 0xbcdcff, sunI: 0.75, props: 'mine',
-    spawns: ['drowned', 'bogwitch', 'toad', 'ghost', 'snake', 'zombie'], spawnCount: 12,
-    bosses: ['icequeen'], portal: { x: 0, z: 52.2 }, unlock: 19
+    spawns: ['drowned', 'bogwitch', 'toad', 'ghost', 'snake', 'zombie', 'frostwraith', 'iceveil', 'frozenwidow'], spawnCount: 12,
+    bosses: ['icequeen', 'firegeneral'], portal: { x: 0, z: 52.2 }, unlock: 19
   },
   icelake: {
     id: 'icelake', name: '冰魄湖', safe: false, level: 22,
     ground: 'ice', sky: 0x3a5570, fog: 0x4a6a88, fogNear: 38, fogFar: 120,
     size: 140, ambient: 0x9ac0d8, sun: 0xd8f0ff, sunI: 0.85, props: 'swamp',
-    spawns: ['drowned', 'toad', 'bogwitch', 'brood', 'spider', 'wasp'], spawnCount: 12,
+    spawns: ['drowned', 'toad', 'bogwitch', 'brood', 'spider', 'wasp', 'frostwraith', 'iceveil', 'frozenwidow'], spawnCount: 12,
     bosses: ['spidermother'], portal: { x: 0, z: 55.1 }, unlock: 21
   },
   /* ---------------- 卷二 · 血月焚天 2-2 / 2-3（M3 第一批） ----------------
@@ -85,29 +85,182 @@ const MAPS = {
     id: 'magmagully', name: '熔脉深沟', safe: false, level: 24,
     ground: 'rock', sky: 0x2e1a14, fog: 0x3a2018, fogNear: 52, fogFar: 178,
     size: 290, ambient: 0x9a6a58, sun: 0xff8a4a, sunI: 0.8, props: 'mine',
-    spawns: ['magma', 'ironbeetle', 'golem', 'runesmith', 'ghostfire'], spawnCount: 40,
+    spawns: ['magma', 'ironbeetle', 'golem', 'runesmith', 'ghostfire', 'ashhound', 'flamepriest', 'magmaworm'], spawnCount: 40,
     bosses: ['magmalord'], portal: { x: 0, z: 75 }, unlock: 23
   },
   ashfield: {
     id: 'ashfield', name: '灰烬荒原', safe: false, level: 26,
     ground: 'ash', sky: 0x3a2e26, fog: 0x46362a, fogNear: 56, fogFar: 186,
     size: 295, ambient: 0xa8846a, sun: 0xffb070, sunI: 0.86, props: 'mine',
-    spawns: ['magma', 'ghostfire', 'ironbeetle', 'runesmith', 'golem'], spawnCount: 42,
+    spawns: ['magma', 'ghostfire', 'ironbeetle', 'runesmith', 'golem', 'ashhound', 'flamepriest', 'magmaworm'], spawnCount: 42,
     bosses: ['ashwarden'], portal: { x: 0, z: 77.6 }, unlock: 25
   },
   flamecanyon: {
     id: 'flamecanyon', name: '赤炎峡谷', safe: false, level: 28,
     ground: 'ash', sky: 0x40180e, fog: 0x4e2010, fogNear: 58, fogFar: 194,
     size: 300, ambient: 0xb06a4a, sun: 0xff9a50, sunI: 0.9, props: 'mine',
-    spawns: ['magma', 'ghostfire', 'runesmith', 'golem', 'statue'], spawnCount: 43,
+    spawns: ['magma', 'ghostfire', 'runesmith', 'golem', 'statue', 'sootwraith', 'emberhound', 'cinderlord'], spawnCount: 43,
     bosses: ['flamewraith'], portal: { x: 0, z: 79 }, unlock: 27
   },
   flamealtar: {
     id: 'flamealtar', name: '焚天祭坛', safe: false, level: 30,
     ground: 'ash', sky: 0x50140a, fog: 0x5e1c0c, fogNear: 60, fogFar: 190,
     size: 295, ambient: 0xc07a52, sun: 0xffb060, sunI: 0.95, props: 'heaven',
-    spawns: ['magma', 'ghostfire', 'statue', 'runesmith', 'golem'], spawnCount: 42,
+    spawns: ['magma', 'ghostfire', 'statue', 'runesmith', 'golem', 'sootwraith', 'emberhound', 'cinderlord'], spawnCount: 42,
     bosses: ['flameemperor'], portal: { x: 0, z: 58.2 }, unlock: 29
+  },
+  /* ---------------- 卷一 ~ 卷五：19 张新图（M3b） ----------------
+   * 图位一次性填满：卷三 4 / 卷四 5 / 卷五 6 / 卷一补 4。
+   *
+   * 这里只声明「用什么骨架 + 多大 + 什么地貌 + 什么道具 + 谁当首领」，
+   * zone 坐标、刷怪分配、首领落点全部由 data-maps.js 自动展开 ——
+   * 所以一条记录只有 6 行，19 张图不到 150 行。
+   *
+   * 几个必须对齐的数字（改之前先看 data-maps.js 的 MAP_SPECS 注释）：
+   *   size       —— 与 MAP_SPECS 完全一致。两边不一致的话 zone-check 会报
+   *                 「portal 不在入口 zone 内」（因为 R 变了，gate 跟着移位）
+   *   spawnCount —— 必须等于 buildZones 推导值，zone-check 逐张核对
+   *   portal.z   —— 入口 zone 的圆心 z（= 骨架里的 gate.z × R）。
+   *                 twin 的 gate 还偏在 x=−0.26，所以 cloudbridge 的 portal.x 是 −37
+   *   雾距        —— 290+ 的大图必须 154~196，否则远处是一块纯色
+   */
+  /* 卷一 */
+  sunset: {
+    id: 'sunset', name: '落霞坡', safe: false, level: 6,
+    ground: 'dirt', sky: 0xd08a5a, fog: 0xc08a6a, fogNear: 52, fogFar: 176,
+    size: 294, ambient: 0xc09a7a, sun: 0xffb070, sunI: 0.95, props: 'bamboo',
+    spawns: ['halfork', 'wolf', 'fox', 'hornet', 'lantern', 'foxfire', 'cliffram', 'stonecrow'], spawnCount: 41,
+    bosses: ['batking'], portal: { x: 0, z: 76 }, unlock: 5
+  },
+  bonestrand: {
+    id: 'bonestrand', name: '沉骨滩', safe: false, level: 11,
+    ground: 'bone', sky: 0x5a5048, fog: 0x6a5e52, fogNear: 50, fogFar: 172,
+    size: 302, ambient: 0xa89a84, sun: 0xd8c0a0, sunI: 0.8, props: 'bone',
+    spawns: ['boar', 'snake', 'scorpion', 'zombie', 'drowned', 'toad', 'mirehorror', 'leechqueen', 'bonefisher'], spawnCount: 41,
+    bosses: ['chief'], portal: { x: 0, z: 74 }, unlock: 10
+  },
+  bonetower: {
+    id: 'bonetower', name: '骨塔祭场', safe: false, level: 13,
+    ground: 'bone', sky: 0x4a4438, fog: 0x5a5244, fogNear: 48, fogFar: 168,
+    size: 294, ambient: 0x9a8e78, sun: 0xc8b088, sunI: 0.78, props: 'bone',
+    spawns: ['skelarch', 'zombie', 'ghost', 'wolf', 'bat', 'ironmaw', 'cinderhand', 'forgemaster'], spawnCount: 41,
+    bosses: ['boneabbot'], portal: { x: 0, z: 72 }, unlock: 12
+  },
+  ironpeak: {
+    id: 'ironpeak', name: '铁山绝顶', safe: false, level: 18,
+    ground: 'snow', sky: 0x9ab4cc, fog: 0xb8ccdd, fogNear: 55, fogFar: 184,
+    size: 296, ambient: 0xc0d4e4, sun: 0xf0f8ff, sunI: 1.0, props: 'snow',
+    spawns: ['golem', 'ghostfire', 'ironbeetle', 'minerghost', 'statue', 'ironmaw', 'cinderhand', 'forgemaster'], spawnCount: 41,
+    bosses: ['golemking'], portal: { x: 0, z: 77 }, unlock: 17
+  },
+  /* 卷三 */
+  bonehall: {
+    id: 'bonehall', name: '白骨长廊', safe: false, level: 34,
+    ground: 'bone', sky: 0x2e2a24, fog: 0x3a3428, fogNear: 46, fogFar: 166,
+    size: 297, ambient: 0x8a7e68, sun: 0xb0a080, sunI: 0.7, props: 'bone',
+    spawns: ['skelarch', 'bonewright', 'ghostfire', 'shade', 'headless', 'soulgaoler', 'papereffigy', 'wantern'], spawnCount: 41,
+    bosses: ['marrowlord'], portal: { x: 0, z: 78 }, unlock: 33
+  },
+  forgetshore: {
+    id: 'forgetshore', name: '忘川河滩', safe: false, level: 35,
+    ground: 'flood', sky: 0x1e2e38, fog: 0x283a46, fogNear: 44, fogFar: 164,
+    size: 302, ambient: 0x7a92a0, sun: 0x9ac0d0, sunI: 0.72, props: 'flood',
+    spawns: ['drowned', 'bogwitch', 'toad', 'ghost', 'shade', 'zombie', 'soulgaoler', 'papereffigy', 'wantern'], spawnCount: 41,
+    bosses: ['riverwraith'], portal: { x: 0, z: 74 }, unlock: 34
+  },
+  abyssdeep: {
+    id: 'abyssdeep', name: '九幽深渊', safe: false, level: 37,
+    ground: 'void', sky: 0x140e1c, fog: 0x1a1222, fogNear: 40, fogFar: 158,
+    size: 298, ambient: 0x6a5a80, sun: 0x9a6aff, sunI: 0.6, props: 'void',
+    spawns: ['voidbeast', 'shade', 'ghostfire', 'yaoguai', 'ironmaiden', 'tidewretch', 'scalekeeper', 'wraithlord'], spawnCount: 42,
+    bosses: ['abysswyrm'], portal: { x: 0, z: 73 }, unlock: 36
+  },
+  yellowferry: {
+    id: 'yellowferry', name: '黄泉渡', safe: false, level: 40,
+    ground: 'flood', sky: 0x2a2018, fog: 0x34281c, fogNear: 48, fogFar: 170,
+    size: 300, ambient: 0x9a8468, sun: 0xd8a060, sunI: 0.75, props: 'flood',
+    spawns: ['drowned', 'shade', 'toad', 'ghost', 'bogwitch', 'tidewretch', 'scalekeeper', 'wraithlord'], spawnCount: 43,
+    bosses: ['yellowspring'], portal: { x: 0, z: 79 }, unlock: 39
+  },
+  /* 卷四 */
+  swordtomb: {
+    id: 'swordtomb', name: '天罡剑冢', safe: false, level: 42,
+    ground: 'bone', sky: 0x3a3428, fog: 0x46402e, fogNear: 50, fogFar: 174,
+    size: 296, ambient: 0xa89a78, sun: 0xe0c890, sunI: 0.85, props: 'bone',
+    spawns: ['swordwraith', 'ghost', 'statue', 'golem', 'shade', 'swordhusk', 'bladewisp', 'duelist'], spawnCount: 42,
+    bosses: ['swordguardian'], portal: { x: 0, z: 56 }, unlock: 41
+  },
+  swordpit: {
+    id: 'swordpit', name: '万剑坑', safe: false, level: 44,
+    ground: 'ash', sky: 0x322a22, fog: 0x3e3428, fogNear: 50, fogFar: 176,
+    size: 297, ambient: 0x9a8a72, sun: 0xd8b070, sunI: 0.8, props: 'mine',
+    spawns: ['swordwraith', 'statue', 'golem', 'ghostfire', 'ironbeetle', 'swordhusk', 'bladewisp', 'duelist'], spawnCount: 42,
+    bosses: ['bladelord'], portal: { x: 0, z: 78 }, unlock: 43
+  },
+  swordapex: {
+    id: 'swordapex', name: '剑冢绝巅', safe: false, level: 45,
+    ground: 'snow', sky: 0x8aa4c0, fog: 0xa8c0d4, fogNear: 56, fogFar: 186,
+    size: 300, ambient: 0xb8cce0, sun: 0xf0f8ff, sunI: 1.02, props: 'snow',
+    spawns: ['swordwraith', 'thunderbird', 'fallen', 'statue', 'golem', 'swordhusk', 'bladewisp', 'duelist'], spawnCount: 42,
+    bosses: ['swordemperor'], portal: { x: 0, z: 78 }, unlock: 44
+  },
+  cloudbridge: {
+    id: 'cloudbridge', name: '云海断桥', safe: false, level: 49,
+    ground: 'heaven', sky: 0x3a5070, fog: 0x506a8c, fogNear: 58, fogFar: 190,
+    size: 306, ambient: 0xa8bcd8, sun: 0xffe8b8, sunI: 0.98, props: 'heaven',
+    spawns: ['fallen', 'thunderbird', 'jadeguard', 'voidbeast', 'ghostfire', 'cloudserpent', 'thunderdrum', 'feathered'], spawnCount: 44,
+    /* twin 骨架的入口偏在西侧（gate x=−0.26R），portal 必须跟着偏，否则落在墙外 */
+    bosses: ['cloudwarden'], portal: { x: -37, z: 72 }, unlock: 48
+  },
+  southgate: {
+    id: 'southgate', name: '南天残门', safe: false, level: 50,
+    ground: 'heaven', sky: 0x2e4462, fog: 0x445c80, fogNear: 58, fogFar: 192,
+    size: 298, ambient: 0x9cb0d0, sun: 0xffdca0, sunI: 1.0, props: 'heaven',
+    spawns: ['jadeguard', 'fallen', 'thunderbird', 'swordwraith', 'voidbeast', 'cloudserpent', 'thunderdrum', 'feathered'], spawnCount: 43,
+    bosses: ['heavenguard'], portal: { x: 0, z: 56 }, unlock: 49
+  },
+  /* 卷五 */
+  jadecapital: {
+    id: 'jadecapital', name: '玉京废墟', safe: false, level: 52,
+    ground: 'void', sky: 0x1a1424, fog: 0x221a2e, fogNear: 42, fogFar: 160,
+    size: 297, ambient: 0x7a6a96, sun: 0xb89aff, sunI: 0.68, props: 'void',
+    spawns: ['jadeguard', 'voidbeast', 'shade', 'thunderbird', 'ironmaiden', 'jadepuppet', 'starfaller', 'silkweaver'], spawnCount: 41,
+    bosses: ['jadeemperor'], portal: { x: 0, z: 78 }, unlock: 51
+  },
+  starfall: {
+    id: 'starfall', name: '星陨台', safe: false, level: 54,
+    ground: 'void', sky: 0x140e20, fog: 0x1c1428, fogNear: 44, fogFar: 164,
+    size: 299, ambient: 0x706090, sun: 0xa080ff, sunI: 0.7, props: 'void',
+    spawns: ['voidbeast', 'thunderbird', 'fallen', 'shade', 'swordwraith', 'jadepuppet', 'starfaller', 'silkweaver'], spawnCount: 43,
+    bosses: ['starlord'], portal: { x: 0, z: 56 }, unlock: 53
+  },
+  mirrorrealm: {
+    id: 'mirrorrealm', name: '无相幻境', safe: false, level: 56,
+    ground: 'void', sky: 0x1c1828, fog: 0x241e34, fogNear: 42, fogFar: 162,
+    size: 298, ambient: 0x8072a0, sun: 0xc0a8ff, sunI: 0.72, props: 'void',
+    spawns: ['shade', 'voidbeast', 'swordwraith', 'thunderbird', 'jadeguard', 'jadepuppet', 'starfaller', 'silkweaver'], spawnCount: 46,
+    bosses: ['mirrordemon'], portal: { x: 0, z: 70 }, unlock: 55
+  },
+  mirrorabyss: {
+    id: 'mirrorabyss', name: '镜渊', safe: false, level: 57,
+    ground: 'void', sky: 0x12101c, fog: 0x181626, fogNear: 40, fogFar: 158,
+    size: 299, ambient: 0x6a6090, sun: 0x9a80e0, sunI: 0.66, props: 'void',
+    spawns: ['voidbeast', 'shade', 'swordwraith', 'fallen', 'ironmaiden', 'jadepuppet', 'starfaller', 'silkweaver'], spawnCount: 43,
+    bosses: ['mirrorlord'], portal: { x: 0, z: 73 }, unlock: 56
+  },
+  nineapex: {
+    id: 'nineapex', name: '九霄之巅', safe: false, level: 58,
+    ground: 'snow', sky: 0x7a94b8, fog: 0x9cb4d0, fogNear: 60, fogFar: 196,
+    size: 301, ambient: 0xc0d0e8, sun: 0xffffff, sunI: 1.08, props: 'snow',
+    spawns: ['thunderbird', 'jadeguard', 'fallen', 'swordwraith', 'voidbeast', 'jadepuppet', 'starfaller', 'silkweaver'], spawnCount: 43,
+    bosses: ['nineheaven'], portal: { x: 0, z: 78 }, unlock: 57
+  },
+  chaossea: {
+    id: 'chaossea', name: '混沌海', safe: false, level: 60,
+    ground: 'void', sky: 0x0e0a14, fog: 0x140e1e, fogNear: 38, fogFar: 154,
+    size: 303, ambient: 0x60507a, sun: 0x8a6ae0, sunI: 0.62, props: 'void',
+    spawns: ['voidbeast', 'shade', 'fallen', 'thunderbird', 'jadeguard', 'mirrortwin', 'maskweaver', 'voidmoth'], spawnCount: 41,
+    bosses: ['chaosavatar'], portal: { x: 0, z: 74 }, unlock: 59
   },
   /* ---------------- 营地 B~E（M1） ----------------
    * 复用村的布局（props: 'village'），只换地面纹理与色调 ——
@@ -121,28 +274,28 @@ const MAPS = {
     id: 'campB', name: '玄铁关', safe: true, level: 19, camp: 'campB',
     ground: 'rock', sky: 0x4a3230, fog: 0x5a3a34, fogNear: 40, fogFar: 118,
     size: 78, ambient: 0xa87a68, sun: 0xff9a6a, sunI: 0.85, props: 'village',
-    npcs: ['smith', 'herbalist', 'monk', 'alchemist', 'steward', 'campB_main', 'campB_side'],
+    npcs: ['smith', 'herbalist', 'monk', 'alchemist', 'steward', 'rift', 'campB_main', 'campB_side'],
     spawns: [], bosses: [], portal: { x: 0, z: -18 }
   },
   campC: {
     id: 'campC', name: '忘川渡', safe: true, level: 31, camp: 'campC',
     ground: 'abyss', sky: 0x1e2438, fog: 0x28304a, fogNear: 38, fogFar: 112,
     size: 76, ambient: 0x7a86b8, sun: 0x9ab0ff, sunI: 0.7, props: 'village',
-    npcs: ['smith', 'herbalist', 'monk', 'alchemist', 'steward', 'campC_main', 'campC_side'],
+    npcs: ['smith', 'herbalist', 'monk', 'alchemist', 'steward', 'rift', 'campC_main', 'campC_side'],
     spawns: [], bosses: [], portal: { x: 0, z: -18 }
   },
   campD: {
     id: 'campD', name: '南天关', safe: true, level: 41, camp: 'campD',
     ground: 'heaven', sky: 0x3a4a6a, fog: 0x50628a, fogNear: 42, fogFar: 126,
     size: 80, ambient: 0xa8bcd8, sun: 0xfff0c8, sunI: 1.0, props: 'village',
-    npcs: ['smith', 'herbalist', 'monk', 'alchemist', 'steward', 'campD_main', 'campD_side'],
+    npcs: ['smith', 'herbalist', 'monk', 'alchemist', 'steward', 'rift', 'campD_main', 'campD_side'],
     spawns: [], bosses: [], portal: { x: 0, z: -18 }
   },
   campE: {
     id: 'campE', name: '九霄台', safe: true, level: 51, camp: 'campE',
     ground: 'trial', sky: 0x2a1e3e, fog: 0x38264e, fogNear: 40, fogFar: 120,
     size: 78, ambient: 0xb8a4dc, sun: 0xffd890, sunI: 1.05, props: 'village',
-    npcs: ['smith', 'herbalist', 'monk', 'alchemist', 'steward', 'campE_main', 'campE_side'],
+    npcs: ['smith', 'herbalist', 'monk', 'alchemist', 'steward', 'rift', 'campE_main', 'campE_side'],
     spawns: [], bosses: [], portal: { x: 0, z: -18 }
   },
   /* ---------------- 无尽试炼场（v2.0） ----------------
@@ -177,6 +330,15 @@ const NPCS = {
     id: 'steward', name: '仓管·玄贮', glyph: '贮', color: 0x7a9aa8, role: 'stash',
     lines: ['东西交给我，丢不了。三个身份共用一间库房，你换个人来也认得出。',
       '库里空着的时候最安静，满了就要收拾了。']
+  },
+  /* [M5] 地脉守：地下城的入口。五座营地共用同一个 id（和铁匠药师一样）——
+   * 同一张图上只会出现一个营地，所以「地脉裂隙」在哪儿都是同一个人守着。
+   * 位置在营地西侧偏后，和掌事、录事、仓库都不挨着，玩家绕一圈能看全。 */
+  rift: {
+    id: 'rift', name: '地脉守·幽提', glyph: '脉', color: 0x4fa898, role: 'dungeon',
+    lines: ['地底下有缝，缝里有东西在喘气。',
+      '钥匙在妖物身上。一阶对一卷，别拿三阶的钥匙去撬一阶的门 —— 撬不开，只会把门弄塌。',
+      '五道地缝，各有各的死法。进去之前先想好，走哪一道。']
   },
 
   /* ---------------- [M2] 营地任务发布者 ----------------
@@ -296,17 +458,17 @@ const PARTS = {
 const ACTS = {
   '1-1': {
     id: '1-1', part: 1, no: 1, name: '竹林妖氛', from: 1, to: 6,
-    maps: [{ id: 'forest', name: '幽篁林', lv: 3 }, { id: null, name: '落霞坡', lv: 6 }],
+    maps: [{ id: 'forest', name: '幽篁林', lv: 3 }, { id: 'sunset', name: '落霞坡', lv: 6 }],
     boss: 'treeking', sub: 'batking'
   },
   '1-2': {
     id: '1-2', part: 1, no: 2, name: '血月压境', from: 7, to: 12,
-    maps: [{ id: 'swamp', name: '血月沼泽', lv: 8 }, { id: null, name: '沉骨滩', lv: 11 }],
+    maps: [{ id: 'swamp', name: '血月沼泽', lv: 8 }, { id: 'bonestrand', name: '沉骨滩', lv: 11 }],
     boss: 'chief', sub: 'snakequeen'
   },
   '1-3': {
     id: '1-3', part: 1, no: 3, name: '铁山无声', from: 13, to: 18,
-    maps: [{ id: null, name: '骨塔祭场', lv: 13 }, { id: 'mine', name: '玄铁矿洞', lv: 16 }, { id: null, name: '铁山绝顶', lv: 18 }],
+    maps: [{ id: 'bonetower', name: '骨塔祭场', lv: 13 }, { id: 'mine', name: '玄铁矿洞', lv: 16 }, { id: 'ironpeak', name: '铁山绝顶', lv: 18 }],
     boss: 'golemking', sub: 'ghostlord'
   },
   '2-1': {
@@ -326,37 +488,37 @@ const ACTS = {
   },
   '3-1': {
     id: '3-1', part: 3, no: 1, name: '九幽地宫', from: 31, to: 35,
-    maps: [{ id: 'abyss', name: '九幽地宫', lv: 32 }, { id: null, name: '白骨长廊', lv: 34 }, { id: null, name: '忘川河滩', lv: 35 }],
-    boss: null, sub: null
+    maps: [{ id: 'abyss', name: '九幽地宫', lv: 32 }, { id: 'bonehall', name: '白骨长廊', lv: 34 }, { id: 'forgetshore', name: '忘川河滩', lv: 35 }],
+    boss: 'marrowlord', sub: 'riverwraith'
   },
   '3-2': {
     id: '3-2', part: 3, no: 2, name: '黄泉无渡', from: 36, to: 40,
-    maps: [{ id: null, name: '九幽深渊', lv: 37 }, { id: null, name: '黄泉渡', lv: 40 }],
-    boss: 'ferryman', sub: null
+    maps: [{ id: 'abyssdeep', name: '九幽深渊', lv: 37 }, { id: 'yellowferry', name: '黄泉渡', lv: 40 }],
+    boss: 'yellowspring', sub: 'abysswyrm'
   },
   '4-1': {
     id: '4-1', part: 4, no: 1, name: '万剑归冢', from: 41, to: 45,
-    maps: [{ id: null, name: '天罡剑冢', lv: 42 }, { id: null, name: '万剑坑', lv: 44 }, { id: null, name: '剑冢绝巅', lv: 45 }],
-    boss: 'swordlord', sub: null
+    maps: [{ id: 'swordtomb', name: '天罡剑冢', lv: 42 }, { id: 'swordpit', name: '万剑坑', lv: 44 }, { id: 'swordapex', name: '剑冢绝巅', lv: 45 }],
+    boss: 'swordemperor', sub: 'swordguardian'
   },
   '4-2': {
     id: '4-2', part: 4, no: 2, name: '云海断阙', from: 46, to: 50,
-    maps: [{ id: 'heaven', name: '天阙残境', lv: 47 }, { id: null, name: '云海断桥', lv: 49 }, { id: null, name: '南天残门', lv: 50 }],
-    boss: null, sub: null
+    maps: [{ id: 'heaven', name: '天阙残境', lv: 47 }, { id: 'cloudbridge', name: '云海断桥', lv: 49 }, { id: 'southgate', name: '南天残门', lv: 50 }],
+    boss: 'heavenguard', sub: 'cloudwarden'
   },
   '5-1': {
     id: '5-1', part: 5, no: 1, name: '无相镜渊', from: 51, to: 58,
     maps: [
-      { id: null, name: '玉京废墟', lv: 52 }, { id: null, name: '星陨台', lv: 54 },
-      { id: null, name: '无相幻境', lv: 56 }, { id: null, name: '镜渊', lv: 57 },
-      { id: null, name: '九霄之巅', lv: 58 }
+      { id: 'jadecapital', name: '玉京废墟', lv: 52 }, { id: 'starfall', name: '星陨台', lv: 54 },
+      { id: 'mirrorrealm', name: '无相幻境', lv: 56 }, { id: 'mirrorabyss', name: '镜渊', lv: 57 },
+      { id: 'nineapex', name: '九霄之巅', lv: 58 }
     ],
-    boss: null, sub: null
+    boss: 'nineheaven', sub: 'mirrorlord'
   },
   '5-2': {
     id: '5-2', part: 5, no: 2, name: '终焉之门', from: 59, to: 60,
-    maps: [{ id: null, name: '混沌海', lv: 60 }],
-    boss: 'chaos', sub: null
+    maps: [{ id: 'chaossea', name: '混沌海', lv: 60 }],
+    boss: 'chaosavatar', sub: null
   }
 };
 

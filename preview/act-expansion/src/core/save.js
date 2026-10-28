@@ -116,6 +116,32 @@ const SaveManager = {
     for (const k in rawReg) if (rawReg[k]) regions[k] = true;
     return { mon, regions };
   },
+  /* [M5] 地脉钥匙：固定长度 5 的整数数组，下标 = 阶 − 1。
+   * 旧档没有这个字段 → 全新 5 个 0（不是「送一把一阶」，钥匙必须打出来）。
+   * 手改档塞进字符串 / 超长数组 / 负数一律收敛：keys[i] 会被 UI 直接当数字显示，
+   * 出现 NaN 就是「钥匙 ×NaN」这种脏面板。 */
+  _keys(v) {
+    const out = [0, 0, 0, 0, 0];
+    if (!Array.isArray(v)) return out;
+    for (let i = 0; i < 5; i++) out[i] = this._int(v[i], 0, 99, 0);
+    return out;
+  },
+
+  /* [M5] 地下城进度：{ cleared: { 'tomb1': true, … }, runs, wins }
+   * cleared 的 key 是「类型 + 阶」（见 data-dungeon.js 的 dungeonCodexId），
+   * 这里不校验 key 是否合法 —— 类型表以后会扩，删掉的条目也只是查不到而已。 */
+  _dungeonRec(v) {
+    const src = this._obj(v) || {};
+    const cleared = {};
+    const raw = this._obj(src.cleared) || {};
+    for (const k in raw) if (raw[k]) cleared[k] = true;
+    return {
+      cleared,
+      runs: this._int(src.runs, 0, 999999, 0),
+      wins: this._int(src.wins, 0, 999999, 0)
+    };
+  },
+
   /* 难度白名单校验：认不出的值（含旧档缺失）统一回落默认档，绝不让脏值进存档 */
   _difficulty(v) {
     const def = (typeof DEFAULT_DIFF !== 'undefined') ? DEFAULT_DIFF : 'normal';
@@ -363,6 +389,9 @@ const SaveManager = {
       talentBonus: this._int(s.talentBonus, 0, 40, 0),
       attrAlloc: this._attrAlloc(s.attrAlloc),
       trial: this._trialRec(s.trial),
+      /* [M5] 地脉钥匙（长度 5，下标 = 阶 − 1）+ 地下城进度 */
+      keys: this._keys(s.keys),
+      dungeon: this._dungeonRec(s.dungeon),
       /* S4：技能等级 / 变体 / 技能条 8 格 × 2 套（id 或 null） */
       skills: this._obj(s.skills) || {},
       skillbar: this._bar(s.skillbar),
@@ -396,6 +425,8 @@ const SaveManager = {
       talentBonus: this._int(doc.talentBonus, 0, 40, 0),
       attrAlloc: this._attrAlloc(doc.attrAlloc),
       trial: this._trialRec(doc.trial),
+      keys: this._keys(doc.keys),
+      dungeon: this._dungeonRec(doc.dungeon),
       skills: doc.skills || {},
       skillbar: this._bar(doc.skillbar),
       skillbar2: this._bar(doc.skillbar2),
