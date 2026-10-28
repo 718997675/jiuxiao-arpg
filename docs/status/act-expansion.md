@@ -3,7 +3,7 @@
 - 分支：`feat/act-expansion`（优先级 **高**，先于技能重构合入 main）
 - 计划文档：`docs/ACT-EXPANSION-PLAN.md`（15 节）
 - 预览站：<https://718997675.github.io/jiuxiao-arpg/preview/act-expansion/>
-- 更新：2026-10-28 09:45
+- 更新：2026-10-28 10:05
 
 > 当前：**M1~M6 全部完成**（30 张图 · 80 种怪 · 图鉴 5 卷 + 秘境 · 5 阶地下城 · 60 级上限 ·
 > 传世 40 件 · 套装 18 套 · 基底 8 阶）。下一步：合入 `main`。
@@ -46,7 +46,7 @@ M5 把「钥匙」变成了第二套循环：`KEY_TIERS` 5 阶（一阶对一卷
 | M3b | 地图扩容第二批：4 种地貌（snow/bone/void/flood）、**19 张新图**、16 只新首领、23 条新任务 | ✅ | `src/data/data-maps.js`、`src/data/data-world.js`、`src/data/data-monsters.js`、`src/data/data-quests.js`、`src/world.js` | 本次 |
 | M4 | 怪物 / 首领：**36 只新怪**（全量，非 24）；图鉴改 5 大卷；5 个卷末首领强化 | ✅ | `src/data/data-monsters.js`、`src/data/data-world.js`、`src/data/data-maps.js`、`src/game.js`、`src/ui.js`、`src/data/data-core.js`、`dev/test-m4.js` | 本次 |
 | M5 | 地下城：`dungeon.js`；5 类 × 5 阶；词缀；图鉴加成；钥匙掉落 | ✅ | 新建 `src/dungeon.js`、`src/data/data-dungeon.js`、`dev/test-m5.js`、`dev/dungeon-sim.js`、`dev/probe-dungeon.js`；改 `index.html`、`src/game.js`、`src/core/save.js`、`src/items.js`、`src/world.js`、`src/data/data-monsters.js`、`src/data/data-world.js`、`src/data/data-core.js`、`src/data/data-maps.js` | 本次 |
-| M6 | 平衡 / 打磨：60 级曲线复算；**基底保持 8 阶**（否决 12 阶）+ ilvl 终局加速；传世 40 件；套装 18 套；性能实测；手机端回归 | ✅ | `src/data/data-core.js`、`data-uniques.js`、`data-items.js`、`src/items.js`、`src/actors.js` | 本次（见下） |
+| M6 | 平衡 / 打磨：60 级曲线复算；**基底保持 8 阶**（否决 12 阶）+ ilvl 终局加速；传世 40 件；套装 18 套；**终局难度回补**；世界结构体检；性能实测；手机端回归 | ✅ | `src/data/data-core.js`、`data-uniques.js`、`data-items.js`、`data-monsters.js`、`data-maps.js`、`data-world.js`、`src/items.js`、`src/actors.js`、`dev/act-check.js` | 本次（见下） |
 
 ### M6 交付明细（已完成）
 
@@ -65,8 +65,10 @@ M5 把「钥匙」变成了第二套循环：`KEY_TIERS` 5 阶（一阶对一卷
 | 特性表 | `UNIQUE_TRAITS` 27 → **47 条**，新增 20 条纯 `stats` 型，全表 id 唯一 | `check-uniques` 唯一性 |
 | 套装 12 → 18 套 | 新增断岳 / 焚世 / 黄泉（三职业各 1）+ 山海 / 九霄（5 件）/ 归墟（通用 3）；`SET_TYPES` 每职业 4 条 + 通用 6 条 | `check-sets` ✓ 战士 4 / 术士 4 / 道人 4 / 通用 6 |
 | **关键 bug** | `items.js` 的 `ILVL_MAX` 40 → 60 —— 传世掉不出来的真凶不是池子过滤，而是 `rollItem` 把 ilvl CLAMP 在 40 | `check-endgame` 逐部位穿传世 3/11 → **11/11** |
-| 新增体检 | `dev/check-uniques.js`、`dev/check-sets.js`、`dev/check-endgame.js`（真浏览器：60 级 600 次掉落抽样、逐部位 recalc、图鉴 18 张卡、说明页件数文案） | 三个脚本全绿 |
-| 回归 | `test-m6` 264/264 · `test-items` 21/21 · `check-uniques` ✓ · `check-sets` ✓ · `check-endgame` ✓ · `smoke` ERRORS none · `mobile-layout` 全通过 · `verify-perf` 报错 0 | 见 `docs/status` 各节 |
+| 新增体检 | `dev/check-uniques.js`、`dev/check-sets.js`、`dev/check-endgame.js`（真浏览器：60 级 600 次掉落抽样、逐部位 recalc、图鉴 18 张卡、说明页件数文案）、`dev/act-check.js`（世界结构 486 项） | 四个脚本全绿 |
+| **世界结构体检** | 补上挂了很久的 `dev/act-check.js`：5 卷 / 12 章 / 30 图位的结构等式 —— 卷级数首尾相接盖满 1~60、章号每卷从 1 连续、图位无 `null` 无重复无孤儿、章间门只在本卷内（卷末回营地）、章首领真的摆在本章某张图上、图里的怪与首领都在各自表里 | 486 项全通过；顺带确认「卷末章不出跨卷门」是 M1 的设计而非 bug |
+| **终局难度回补** | `balance-report` 的逐图表暴露「终章反而最好打」：混沌海 TTK 1.7s、卷五三首领 14.7/16.6/17.0s，而卷四首领是 31~36s。三处修正：① 卷五首领血量 ×2（`mirrorlord` 83800→170000、`nineheaven` 86200→175000、`chaosavatar` 91000→195000）；② 混沌海怪池把 130 血的卷三杂兵 `shade` 换成同卷 `jadepuppet`（430 血）；③ 混沌海专属三只怪抬档（`mirrortwin` 330→420、`maskweaver` 300→400、`voidmoth` 280→380） | 混沌海 TTK 1.7s → **2.1s**；卷五首领 31.2 / 35.6 / 36.7s，与卷四（28~32s）同档 |
+| 回归 | `test-m6` 264/264 · `test-items` 21/21 · `act-check` 486 · `zone-check` ✅ · `zone-density` ✓ · `test-m4` 25 · `test-m5` 89 · `dungeon-sim` 60 · `check-uniques` ✓ · `check-sets` ✓ · `check-endgame` ✓ · `smoke` ERRORS none · `mobile-layout` 全通过 · `verify-perf` 报错 0 | 见 `docs/status` 各节 |
 
 ### M4 交付明细（已完成）
 
@@ -361,7 +363,7 @@ M1~M6 全部落地，剩下的都是「合并 + 验收」，不再有新功能�
 3. **合完后收紧野图门禁**：M3 已经把 30 个图位填满（`id: null` 归零），
    M1 留下的「野图仍是等级够 或 去过」这条妥协可以收回成「仅限已抵达」——
    改 `ui.js` 的 `can` 一行即可。
-4. **`dev/act-check.js` 仍不存在**，见下「仍未处理的旧账」。
+4. **`dev/act-check.js` 已在 M6 补齐**（486 项），见下「仍未处理的旧账」。
 
 ## M3b 开工清单（已完成，留档）
 
@@ -381,10 +383,12 @@ M1~M6 全部落地，剩下的都是「合并 + 验收」，不再有新功能�
 
 ### 仍未处理的旧账
 
-- **`dev/act-check.js` 至今不存在**（M0/M1 就没建）。§12 的验收清单里还写着它。
-  本次没有补 —— 因为 `zone-check` + `zone-density` + `m3-check` 已经覆盖了它原本想验的内容
-  （图位是否都有实体图、章间门是否可达、任务是否有图可落）。**建议把 §12 里这条删掉**，
-  而不是再写一个功能重叠的脚本。等你拍板。
+- ~~**`dev/act-check.js` 至今不存在**~~ → **M6 已补**（`node dev/act-check.js`，486 项）。
+  当初不建的理由是「图位没填满、写了也验不出东西」，M3 把 30 个图位填满之后这条就不成立了。
+  现在它验的是**结构等式**，与 `zone-check`（地形连通）/ `zone-density`（密度）不重叠：
+  卷的级数首尾相接、章号连续、图无孤儿、章间门只在本卷内、章首领真的摆在某张图上。
+  过程中顺带确认了一条 M1 的设计：**卷末章不出跨卷门**（回营地走大传送门），
+  所以 `nextChapterMap()` 在卷末返回 `null` 是正确行为，不是 bug。
 - **任务目标数**：现在 40 条（主线 20 / 支线 5 / 悬赏 15）。计划书的 42 主线 / 40 支线是最终目标，
   剩下的要等 M3b 把图补完 —— 无图可落的任务写出来也验不了。
 
@@ -438,6 +442,9 @@ M1~M6 全部落地，剩下的都是「合并 + 验收」，不再有新功能�
 | 2026-10-28 | 另一条线（`e067c11`）的 8 件终局传世**不并入** | 那 8 件的词条是旧 20 件尺度（ilvl 48 的 `atkPct` 只 18~26），而新目录 ilvl 44 已是 24~42 —— 并进去会变成「同 ilvl 严格更差、掉了也不捡」的死件。设计仍可从该提交取回 |
 | 2026-10-28 | 曲线 `205 / 1.83` **不动**，只抬 `levelMax` | 1→60 是 1→40 的 3.19×，五卷占比最高 37.1%（<45%），曲线本身不需要改 |
 | 2026-10-28 | `ILVL_MAX` 40 → 60 | 不改这一处，40 件传世有 20 件永远掉不出来（`rollItem` 先把 ilvl 夹到 40 再查池） |
+| 2026-10-28 | 补 `dev/act-check.js`，不删 §12 那条 | 当初不建是因为 25 个图位是 `id: null`、验不出东西；M3 填满 30 图后这条理由消失了。它验的是「结构等式」，与 `zone-check`（地形连通）/ `zone-density`（密度）不重叠 |
+| 2026-10-28 | 卷末章**不出跨卷门**，`nextChapterMap()` 在卷末返回 `null` 是对的 | 卷与卷之间靠营地 + 大传送门。补 act-check 时一度以为是 bug，查 M1 实现后确认是设计，脚本按「本卷内验、卷末验 null」写 |
+| 2026-10-28 | 卷五首领血量 ×2、混沌海怪池换掉 130 血的 `shade` | 终章反而最好打（TTK 1.7s、首领 14.7s，卷四首领 31~36s）。玩家 DPS 在 58→60 有 1.5× 跳升（满级堆满天赋/技能/词条），而首领 `cfg.hp` 只比卷四高 30% |
 | 2026-10-27 | 老档卷章按 `mapId` **反推**，不是「一律落卷一」；且以「章」为准回写「卷」 | 已在九幽地宫的老档不能被降级；手改档出现「卷三 / 第 1-1 章」时以章为准修正 |
 | 2026-10-27 | 营地 / 传送门**按卷累积**反推（卷三 → campA/B/C） | 老档到过卷三却没解锁 campC，等 M1 做完营地会被误判成「没解锁」 |
 | 2026-10-27 | 回头路口径统一为 `seen \|\| level >= unlock`，UI 与 `travelTo` 同一判定 | 两处口径不一致会出现「UI 能点、点了没反应」 |
