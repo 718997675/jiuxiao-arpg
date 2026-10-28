@@ -6337,10 +6337,36 @@ const Game = {
     const s = this.state;
     /* [S1] 经验获取加成 */
     amount = Math.round(amount * (1 + (s.stats.expGain || 0) / 100));
+    /* [M6] 满级收口：到 BALANCE.levelMax（60）就停在 60，
+     * 经验不再累积 —— 否则 xpNext 会一直往上算，存档里的经验条也永远差一格。
+     * 注意 while 必须在这里跳出，不然 level 卡在 60 而 xp 不清零会死循环。 */
+    const lvMax = (typeof BALANCE !== 'undefined' && BALANCE.levelMax) || 60;
+    if (s.level >= lvMax) {
+      s.level = lvMax;
+      s.xp = 0;
+      /* 提示只出一次：挂在 Game 上而不是 state 上，
+       * state 会被序列化进存档，多一个 _ 开头的小字段不值得。 */
+      if (!this._maxLvHinted) {
+        this._maxLvHinted = true;
+        UI.log('已至境界上限 · ' + lvMax + ' 级。', 'good');
+      }
+      return;
+    }
     s.xp += amount;
     while (s.xp >= s.xpNext) {
       s.xp -= s.xpNext;
       s.level++;
+      /* 到顶那一级不再发经验条，把溢出的经验丢掉（否则会多出半级） */
+      if (s.level >= lvMax) {
+        s.level = lvMax;
+        s.xp = 0;
+        s.xpNext = (typeof xpToNext === 'function') ? xpToNext(s.level) : 1;
+        this.recalc();
+        UI.toast('境界圆满 · ' + lvMax + ' 级', 'lv');
+        UI.log('已至境界上限 · ' + lvMax + ' 级。', 'good');
+        SFX.levelup();
+        break;
+      }
       /* [v1.10.0] 曲线收进 BALANCE（base × L^pow），升级点与新建角色同一口径 */
       s.xpNext = (typeof xpToNext === 'function') ? xpToNext(s.level) : Math.round(180 * Math.pow(s.level, 1.70));
       this.recalc();
