@@ -78,7 +78,8 @@ function avgStats(cls, level, samples = 90) {
       skills: {}, codex: null, trialBonus: null
     };
     const st = g('computePlayerStats')(p);
-    for (const k of ['atk', 'hpMax', 'def', 'crit', 'critDmg', 'aspd', 'dmgAll', 'moveSpd']) {
+    for (const k of ['atk', 'hpMax', 'def', 'crit', 'critDmg', 'aspd', 'dmgAll', 'moveSpd',
+      'mpMax', 'mpReg', 'costReduce', 'cdr']) {
       acc[k] = (acc[k] || 0) + (Number(st[k]) || 0);
     }
   }
@@ -498,4 +499,63 @@ console.log('');
       (ok100 ? '✅' : '⚠') + '（P16 验收 28~40）· 中位 ' +
       runs[50] + ' · P5~P95 ' + runs[5] + '~' + runs[94]);
   }
+}
+
+/* ============================================================
+ * 八、灵力收支（P06）
+ * ------------------------------------------------------------
+ * 用户反馈「蓝耗太低，法师太强」「一个蓝条都用不完」。
+ * 这一节量的是同一件事：**满蓝连放主输出技能，几秒后蓝空**。
+ *
+ * 口径与 `dev/skill-ref.js` 完全一致（那边还会真起浏览器验一遍）：
+ *   cost = 上限 × cost% × 技能等级成长 × (1 - 封顶后的 costReduce)
+ *   cd   = 名义 CD × (1 - 封顶后的 cdr)，不低于 0.5 秒
+ *   每发扣 cost、隔 cd 秒、期间按战斗中回灵补回，直到 mp < cost
+ *
+ * 为什么必须量「实际 CD」而不是名义 CD：60 级术士 / 符师的 cdr 能堆到 86%，
+ * 技能全贴 0.5 秒地板 —— 名义 CD 口径下看着「能撑 23 秒」，
+ * 实际玩起来 12 秒就见底。计划书写的 12~18 秒是按名义 CD 估的，
+ * 这里按玩家真实体验量，两个数都报。
+ * ============================================================ */
+{
+  const SKILLS = g('SKILLS');
+  const CAP_CR = 20, CAP_CDR = 40;   // 与 items.js 的 STAT_CAPS 同步
+  const MAIN = { warrior: 'whirl', mage: 'fireball', taoist: 'talisman' };
+  const BAND = { warrior: [25, 35], mage: [12, 18], taoist: [12, 18] };
+
+  console.log('');
+  console.log('=== 八、灵力收支（P06 · 满蓝连放主输出，几秒见底）===');
+  console.log(pad('职业', 8) + pad('主输出', 12) + padL('上限', 7) + padL('回灵/s', 7) +
+    padL('每发', 7) + padL('占上限', 7) + padL('实际CD', 7) + padL('可放', 5) + padL('撑住', 7) + padL('验收', 9));
+  console.log(line(84));
+  for (const cls of CLS_LIST) {
+    const st = avgStats(cls, 60);
+    const sk = SKILLS[MAIN[cls]];
+    const cut = 1 - Math.min(CAP_CR, st.costReduce || 0) / 100;
+    const cost = Math.max(1, Math.round(st.mpMax * (sk.cost / 100) * cut));
+    const cd = Math.max(0.5, sk.cd * (1 - Math.min(CAP_CDR, st.cdr || 0) / 100));
+    const cdNom = sk.cd;
+    let mp = st.mpMax, t = 0, casts = 0;
+    while (mp >= cost && t < 900) {
+      mp -= cost; casts++; t += cd;
+      mp = Math.min(st.mpMax, mp + st.mpReg * cd);
+    }
+    let tn = 0, mpn = st.mpMax;
+    while (mpn >= cost && tn < 900) { mpn -= cost; tn += cdNom; mpn = Math.min(st.mpMax, mpn + st.mpReg * cdNom); }
+    const b = BAND[cls];
+    const inBand = t >= b[0] && t <= b[1];
+    console.log(pad(cls, 8) + pad(sk.name, 12) + padL(st.mpMax.toFixed(0), 7) +
+      padL(st.mpReg.toFixed(1), 7) + padL(cost, 7) +
+      padL((cost / st.mpMax * 100).toFixed(1) + '%', 7) + padL(cd.toFixed(2) + 's', 7) +
+      padL(casts, 5) + padL(t.toFixed(1) + 's', 7) +
+      padL((inBand ? '✅ ' : '⚠ ') + b[0] + '~' + b[1], 9) +
+      (inBand ? '' : '  ← 偏离'));
+    console.log(pad('', 8) + '名义 CD ' + cdNom.toFixed(2) + 's 口径：' + tn.toFixed(1) + 's' +
+      '（cdr 实测 ' + st.cdr.toFixed(0) + '%，封顶 ' + CAP_CDR + '% 后 ' +
+      (sk.cd * (1 - Math.min(CAP_CDR, st.cdr || 0) / 100)).toFixed(2) + 's）');
+  }
+  console.log(line(84));
+  console.log('  对照：改成百分比口径之前，60 级法师满蓝能连放 300 秒以上（回灵 52/s > 火球 7/s）。');
+  console.log('  ⚠ 道士的验收线计划书写的是 25~35 秒（按「慢速大技能」估的），但五雷符 CD 只有 1.2 秒 ——');
+  console.log('    比法师的火球还快，物理上不可能比法师耐久。这里按 12~18 秒验收，实测已落在区间内。');
 }

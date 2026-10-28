@@ -282,7 +282,7 @@ const CLASSES = {
       str: { def: 0.6, hpMax: 2 },
       agi: { crit: 0.16, aspd: 0.36, moveSpd: 0.02 },
       vit: { hpMax: 12, def: 0.5 },
-      int: { atk: 1.3, mpMax: 5, mpReg: 0.06, hpRegen: 0.05 }
+      int: { atk: 1.3, mpMax: 5, mpReg: 0.03, hpRegen: 0.05 }
     },
     baseAtk: 8, baseHp: 150, baseMp: 70,
     startWeapon: 'taoist0',

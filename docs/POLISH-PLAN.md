@@ -1,7 +1,8 @@
 # 体验与平衡优化计划（17 项）
 
 > 来源：用户 2026-10-28 一次性提的 17 条体验 / 平衡问题。
-> 状态：**第 1 批（P01 P02 P03 P09 P11 P12 P16）已落地**，第 2~4 批未开工。
+> 状态：**第 1 批（P01 P02 P03 P09 P11 P12 P16）+ 第 2 批前两项（P06 P10）已落地**，
+> 第 2 批剩余（P04 P07 P08 P17）与第 3~4 批未开工。
 > 5 项待拍板已全部落定（见 §3），无阻塞项。
 > 逐条落地时把状态改成 ✅ 并补提交号。
 > 关联：`docs/ACT-EXPANSION-PLAN.md`（世界结构）、`docs/SKILL-REDESIGN-PLAN.md`（技能重构，另一条线）。
@@ -32,11 +33,11 @@
 | P03 | 小地图方向 / 箭头不对；不能放大 | 真 bug + 功能 | **P0** | `src/ui-minimap.js`、`index.html` | 1 天 ✅ |
 | P04 | 自动拾取 + 品质筛选 | 新功能 | P2 | `src/game.js` `updateLoot`、`src/core/settings.js` | 1 天 |
 | P05 | 每图怪种太多，图鉴集齐太快；怪物总数扩到 120 | 内容 / 数据 | P3 | `src/data/data-monsters.js`、`data-world.js` | 3~5 天 |
-| P06 | 蓝耗太低 + 法师射程太远 | 数值 | **P1** | `src/data/data-core.js`、`data-skills.js`、`src/game.js` | 1.5 天 |
+| P06 | 蓝耗太低 + 法师射程太远 | 数值 | **P1** | `src/data/data-core.js`、`data-skills.js`、`src/game.js` | 1.5 天 ✅ |
 | P07 | 悬赏板样式粗糙，分不清条目 | UI | P2 | `src/ui.js` `renderBoardPanel`、`index.html` | 1 天 |
 | P08 | 任务奖励看不到，要先交才知道 | UI | P2 | `src/ui.js` `openGiver` / 对话、`renderQuests` | 1 天 |
 | P09 | 多 Boss 时血条显示错的那只 | **真 bug** | **P0** | `src/game.js` `updateEnemies`、`src/ui.js` `updateBoss` | 0.5 天 ✅ |
-| P10 | 卡位远程打死 Boss；法师技能几乎全图 | 数值 + 机制 | **P1** | `src/data/data-skills.js`、`src/game.js` 施法校验 | 1.5 天 |
+| P10 | 卡位远程打死 Boss；法师技能几乎全图 | 数值 + 机制 | **P1** | `src/data/data-skills.js`、`src/game.js` 施法校验 | 1.5 天 ✅ |
 | P11 | 悬赏完成不知道交给谁，NPC 也没提示 | **真 bug** | **P0** | `src/quests.js`、`src/game.js` `openGiver` | 1 天 ✅ |
 | P12 | 试炼升级太快 → 难度随等级涨 + 传世挂高波 | 数值 / 规则 | **P1** | `src/data/data-trial.js`、`src/trial.js` | 1.5 天 ✅ |
 | P13 | 每章地图长得一样，没辨识度 | 内容 | P3 | `src/data/data-maps.js` `ZONE_ARCHETYPES` | 3~4 天 |
@@ -50,7 +51,7 @@
 | 批次 | 内容 | 理由 |
 |---|---|---|
 | **第 1 批**（4~5 天） | P02、P09、P11、P03、P16、P01、P12 | 前四条是真 bug（玩家以为游戏坏了）；P01 / P16 改数字就见效；P12 是规则改动（动态难度 + 经验衰减 + 传世掉落），最花时间但收益最大 |
-| **第 2 批**（4~5 天） | P06、P10、P04、P07、P08、P17 | 战斗手感 + UI。P06/P10 必须一起做（都是战斗数值，分开调会互相打脸） |
+| **第 2 批**（4~5 天） | ~~P06、P10~~ ✅、P04、P07、P08、P17 | 战斗手感 + UI。P06/P10 已一起做完（都是战斗数值，分开调会互相打脸） |
 | **第 3 批**（5~7 天） | P05、P14 | 数据量活。P05 要写 40 种怪，P14 要重排首领落点 |
 | **第 4 批**（6~8 天） | P13、P15 | 内容创作，需要先出设计稿再写代码 |
 
@@ -331,6 +332,31 @@ if (e.patternCd <= 0) {
 - 打一场普通图（40 只怪）需要**主动喝 1~2 次蓝药**，而不是全程满蓝。
 - 法师站在 14 米外点 Boss → 提示「距离太远」，技能不进 CD、不扣蓝。
 
+**落地（2026-10-28）** ✅
+
+- **改的是口径，不是数值**：`SKILLS[x].cost` 从「固定点数」变成「**占灵力上限的百分比**」。
+  固定点数是常数、灵力上限随 `int` 线性涨到 60 级 4400+，比值只会越拉越大 ——
+  40 级以后任何调参都救不回来。实测旧口径满蓝能连放 **332 秒**，这就是「一个蓝条都用不完」。
+  改完之后「一管蓝 = 十来发」是常数，换等级换装备都不漂。
+- 射程按表砍：火球 16→12、炎爆 16→13、冰锥 14→11、雷弧链 / 火墙 / 暴雪 12→10、冰霜新星 9→8；
+  表里没列的星陨 18→13、雷云 14→13、雷罚 16→13。道士符咒类同步 ≤12
+  （五雷符 / 符箭 / 万剑 / 天师符 / 毒雾）。**法师最远 13 < 首领技能 14**。
+- 消耗：主输出 8~10%（一管蓝 16 发火球 / 12 发旋风斩），大招 34~43%。
+- **三条没照计划书做**（都是实测后改的，别按文档改回去）：
+  1. 「法师火球 10→16」没做。百分比口径下 16% = 一管 6 发、5 秒见底，比验收线短一半。
+     最终 8% → 16 发 / 13.7 秒。
+  2. 「战士 / 道士 ×1.25」没做。战士在百分比口径下本来就落在 25~35 秒，×1.25 会掉到 20 秒。
+  3. 「装备词缀回灵砍半」没做。回灵现在只占上限的 ~1%/秒，砍它不会让蓝更快见底；
+     「持续施法压力」已经由百分比消耗承担。只把道士 `int → 回灵` 的成长 0.06→0.03 砍了。
+- **额外加了两条封顶**（计划书没有，但不加 P06 就不成立）：`STAT_CAPS.cdr 100→40`、
+  `costReduce` 封 20%。实测 60 级术士 / 符师 cdr 能堆到 **86~87%**，技能全贴 0.5 秒地板 ——
+  百分比消耗下 CD 越短每秒掉蓝越快，不封顶法师 4 秒空蓝，比改之前更难受。
+- 验收：`node dev/skill-ref.js`（38 项）· `node dev/balance-report.js` 第八节
+  （60 级：法师 13.7s / 战士 28.6s / 道士 12.9s，全部落在区间内）。
+- 副作用（如实记）：一管蓝 16 发，一张 40 只的图约要 2~3 瓶蓝药（药水回 55%，
+  24 金一瓶），比计划书的「1~2 次」多一档 —— 这是「满蓝 12~18 秒见底」的必然结果，
+  两条验收线本身差 5 倍，只能二选一。
+
 ---
 
 ### P07 · 悬赏板样式粗糙，分不清条目
@@ -484,6 +510,22 @@ if (this.boss === e) UI.updateBoss(e);    // 只有 this.boss 那只更新血条
 - 站在 30 米外对 Boss 点火球 → 提示「距离太远」，不扣蓝、不进 CD。
 - 卡在石头上打 Boss，Boss 走不过来 → 8 秒后回位并回满血（日志「XX 已退回祭坛」）。
 - 法师技能面板能看到射程（`ui-skills.js:654` 已支持），且最大值 ≤ 13（P06 定的数）。
+
+**落地（2026-10-28）** ✅
+
+- `game.js` 新增 `castRangeFail(sk)`，在**扣蓝之前**拦一道：够不着就 `UI.log('距离太远。')`
+  直接 return —— 不扣蓝、不进 CD、不触发任何后续结算。
+- 三种 `cast` 分开判，不能图省事写成一个：
+  · `self` 不判（自身范围技能没有「太远」这回事）；
+  · `dir` 判**最近敌人**，不是点击位置 —— 朝朝向飞出去的技能点哪儿都无所谓，
+    附近一个怪都没有时**放行**（空放是玩家自己的事，连按都按不出来会让人以为技能坏了）；
+  · `ground` / `enemy` 判落点距离。容差 5%（落点由屏幕射线反算，差一点点正常）。
+- `resolveCast` 去掉 `const maxR = range || 99` → `range > 0 ? range : 0`：
+  没写 `castRange` 就是不能自动锁敌，不再是「白送 99 米」。
+- Boss leash 与 P02 合并做（`BALANCE.boss.leash = 32`），已随第 1 批落地。
+- 验收：`node dev/skill-ref.js` 第三节（30 米外拒绝 / 不扣蓝 / 不进 CD / 射程内正常扣蓝进 CD）。
+  **注意**：测「30 米外打首领」必须先把杂兵标死 —— `dir` 类技能判的是最近敌人，
+  身边有杂兵时闸门本来就不该触发（火球确实打得到杂兵，那不是 bug）。
 
 
 ---
@@ -852,7 +894,7 @@ node dev/quest-ref.js        # 任务引用完整性
 node dev/mobile-layout.js    # 移动端布局（P03/P07/P17 必跑）
 ```
 
-新增的脚本（第 1 批已落地四个，剩 `skill-ref` / `log-check` 跟第 2 批一起做）：
+新增的脚本（第 1 批落地四个，P06/P10 又加了一个 `skill-ref`，只剩 `log-check` 跟 P17 一起做）：
 
 | 脚本 | 覆盖 | 用在 | 状态 |
 |---|---|---|---|
@@ -860,12 +902,13 @@ node dev/mobile-layout.js    # 移动端布局（P03/P07/P17 必跑）
 | `dev/probe-boss.js` | Boss 技能距离闸 / 脱战 / 血条归属 / 落点夹取 | P02、P09、P10 | ✅ 22 项 |
 | `dev/trial-check.js` | 等级乘区 / 经验衰减 / 传世掉落 / 接线 | P12 | ✅ 53 项 |
 | `dev/respawn-check.js` | 清空后补位 / 上限 / 距离 / 任务量对齐 | P01 | ✅ 14 项 |
-| `dev/skill-ref.js` | 所有主动技能都有 `castRange` | P10 | ⬜ 第 2 批 |
+| `dev/skill-ref.js` | 射程表 / 消耗表 / 硬拒绝真的生效 / 满蓝连放几秒见底 | P06、P10 | ✅ 38 项 |
 | `dev/log-check.js` | 日志环形缓冲 / 滚动跟随 / 200 条上限 | P17 | ⬜ 第 2 批 |
 
-另外三处**改**了已有脚本（没有新建）：
+另外几处**改**了已有脚本（没有新建）：
 `dev/test-quest.js` 加【11】悬赏交付人（13 项）、`dev/balance-report.js` 加「符文期望」段（数字从
-`game.js` 源码解析，不另抄一份）、`dev/trial-balance.js` 加「各等级最远波数 / 同波强度」两段。
+`game.js` 源码解析，不另抄一份）与「灵力收支」第八节、`dev/trial-balance.js` 加
+「各等级最远波数 / 同波强度」两段。
 
 ---
 
@@ -886,18 +929,21 @@ src/items.js            rollUnique 的 ilvl 下限 / 「未收集优先」复用
 src/data/data-core.js   BALANCE.boss.skillRange / leash
 ```
 
-**第 2 批**
+**第 2 批**（P06 / P10 ✅ 已落地，其余未开工）
 
 ```
-src/data/data-skills.js 法师 8 个技能 castRange 下调（12/11/13/10/10/10/8）、cost 上调；
-                        道士远程收到 ≤12
-src/game.js             skillCost 加技能等级成长、castSkill 硬拒绝（距离太远不扣蓝）、
-                        resolveCast 去掉 ||99 兜底、updateLoot 自动拾取
-src/data/data-core.js   mpReg 成长减半（int 0.06 → 0.03）
-src/core/settings.js    autoPickup / pickupMinRarity / pickup* 开关
-src/ui.js               renderRewards、renderBoardPanel、openGiver 交付对话
-src/ui-skills.js        消耗显示（自动跟随 skillCost）
-index.html              #boardPanel、设置页拾取块、#log 改结构
+src/data/data-skills.js 法师射程 12/13/11/10/10/10/8/13/13/13、道士远程 ≤12；
+                        cost 改成「占灵力上限的百分比」口径（抬头有长注释）
+src/game.js             skillCost 改百分比口径 + 技能等级成长；
+                        新增 castRangeFail（射程硬拒绝）；resolveCast 去掉 ||99 兜底；
+                        [未做] updateLoot 自动拾取
+src/items.js            STAT_CAPS 加 cdr: 40 / costReduce: 20
+src/data/data-core.js   道士 int → 回灵成长 0.06 → 0.03
+src/core/settings.js    [未做] autoPickup / pickupMinRarity / pickup* 开关
+src/ui.js               [未做] renderRewards、renderBoardPanel、openGiver 交付对话
+src/ui-skills.js        [未做] 消耗显示（已经自动跟随 skillCost，无需改）
+index.html              [未做] #boardPanel、设置页拾取块、#log 改结构
+dev/skill-ref.js        新增（38 项）
 ```
 
 **第 3 批**
@@ -925,4 +971,5 @@ src/game.js                playBossIntro、state.bossIntro 落盘
 |---|---|
 | 2026-10-28 | 建档：17 条需求 → P01~P17，分 4 批，含 5 个待拍板问题 |
 | 2026-10-28 | **用户拍板 5 项**（见 §3）：P05 = 种类 120 · P12 改「难度随等级涨 + 经验按波数衰减 + 传世挂高波」· P06 砍射程 + 加大耗蓝 · P14 副 Boss ×0.7 接受 · P15 只播一次。P06 / P12 工期上调，合计 21~25 → 23~27 天 |
-| 2026-10-28 | **第 1 批落地**：P01 P02 P03 P09 P11 P12 P16 七项全完。三处按实测偏离计划书（P01 补位批量 1~2 → 5、P09 就近切血条 → 粘性、P12 线性 pace → 三次方），都写在对应条目的「落地」段里。新增四个验收脚本，`test-quest` / `balance-report` / `trial-balance` 各扩一段 |
+| 2026-10-28 | **第 1 批落地**（提交 `26dcd7c`）：P01 P02 P03 P09 P11 P12 P16 七项全完。三处按实测偏离计划书（P01 补位批量 1~2 → 5、P09 就近切血条 → 粘性、P12 线性 pace → 三次方），都写在对应条目的「落地」段里。新增四个验收脚本，`test-quest` / `balance-report` / `trial-balance` 各扩一段 |
+| 2026-10-28 | **第 2 批前两项落地**：P06 + P10（必须一起做的那一对）。核心改动是**换口径**：`SKILLS[x].cost` 从固定点数改成「占灵力上限的百分比」—— 固定点数是常数、上限线性涨，比值必然越来越大，这是「一个蓝条都用不完」的真正原因（旧口径实测满蓝连放 332 秒）。配套把 `cdr` 封 40%、`costReduce` 封 20%（不封的话百分比消耗会被这两个属性放大回无限蓝）。射程按表砍到法师 ≤13 / 道士 ≤12，并新增射程**硬拒绝**（够不着不扣蓝不进 CD）。新增 `dev/skill-ref.js`（38 项），`balance-report` 加第八节 |

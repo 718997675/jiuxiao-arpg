@@ -3015,12 +3015,33 @@ const Game = {
   },
 
   /* ---------------- 技能 ---------------- */
-  /* [S1] 技能实际消耗（装备的 costReduce 生效后）。技能栏显示与施放判定共用这一个入口，
-   * 否则会出现「按钮显示 12，实际扣 10」或者「明明够蓝却提示灵力不足」。 */
+  /* [P06] 技能实际消耗 = **灵力上限的百分比**，不是固定点数。
+   *
+   * 原来的写法 `sk.cost * (1 - costReduce)` 是固定点数：火球 10 点、
+   * 灵力上限 60 级 3700+ —— 一管蓝 370 发，用户的原话是「一个蓝条都用不完」。
+   * 根因不是数值调小了，是**口径错了**：消耗是常数、蓝量是线性成长，
+   * 比值只会越拉越大，40 级以后任何调参都救不回来。
+   *
+   * 现在 `SKILLS[x].cost` 的含义是「占上限的百分之几」（见 data-skills.js 抬头），
+   * 于是「一管蓝能放几发」是常数，不随等级/装备漂移。
+   *
+   * 三处乘区，顺序不能换：
+   *   ① 上限 × 百分比        —— 主项
+   *   ② × 技能等级成长        —— 1 级 1.00、10 级 1.54（和伤害的 +8%/级 对冲，
+   *                              否则技能升级等于白送续航）
+   *   ③ × (1 - costReduce)    —— 装备 / 传世的消耗缩减，封顶见 STAT_CAPS.costReduce
+   *
+   * 技能栏显示与施放判定共用这一个入口，否则会出现「按钮显示 12，实际扣 10」
+   * 或者「明明够蓝却提示灵力不足」。 */
   skillCost(sk) {
     const st = this.state && this.state.stats;
     if (!st) return sk.cost;      // 开始界面构建技能栏时还没有 state
-    return Math.max(1, Math.round(sk.cost * (1 - (st.costReduce || 0) / 100)));
+    const pct = (sk.cost || 0) / 100;
+    /* 技能等级：读不到（还没建 state.skills）时按 1 级算，不抛错 */
+    const lv = (typeof this.skillLevel === 'function') ? Math.max(1, this.skillLevel(sk.id)) : 1;
+    const lvMul = 1 + 0.06 * (lv - 1);
+    const cut = 1 - (st.costReduce || 0) / 100;
+    return Math.max(1, Math.round((st.mpMax || 0) * pct * lvMul * cut));
   },
 
   /* [S1] cdrFlat 是固定秒数缩减，优先级高于百分比；冷却不低于 0.5 秒防止无限连 */
@@ -3144,7 +3165,10 @@ const Game = {
       return out;
     }
     if (sk.cast === 'enemy') {
-      const maxR = range || 99;
+      /* [P10] 原来是 `range || 99`：castRange 为 0 / 未写时自动锁敌半径变 99 米。
+       * 当前没有技能触发（全都显式写了），但这是「以后新增技能必踩的坑」——
+       * 忘写一个 castRange 就等于给了一个全图锁敌。没射程就是不能自动锁敌。 */
+      const maxR = range > 0 ? range : 0;
       let target = this.nearestEnemy(aim, maxR);
       if (target && DIST2D(target.pos, pp) > maxR) target = null;
       if (!target) target = this.nearestEnemy(pp, maxR);
@@ -3154,6 +3178,37 @@ const Game = {
     else if (dist < 0.6) out.copy(pp);
     out.y = 0;
     return out;
+  },
+
+  /* [P10] 射程够不够得着。返回 null = 可以放，返回字符串 = 拒绝原因。
+   *
+   * 为什么需要它：射程原来只用来**裁剪落点** —— 站在 30 米外点火球，落点被夹到
+   * 12 米、技能照放（扣蓝、进 CD），只是打空；`cast:'enemy'` 还会自动改锁最近的
+   * 敌人。于是「射程」对玩家不构成任何约束，卡位远程磨死首领就是这么来的。
+   * 现在射程是**否决条件**：够不着就放不出来，不扣蓝、不进 CD、不触发结算。
+   *
+   * 三种 cast 判的东西不一样，别图省事写成一个：
+   *   · self        —— 不判（自身范围技能没有「太远」这回事）
+   *   · dir         —— 判**最近敌人**，不是点击位置：朝朝向飞出去的技能，
+   *                    玩家点哪儿都无所谓，真正决定「打不打得到」的是最近的怪。
+   *                    附近一个怪都没有时**放行**（空放是玩家自己的事，
+   *                    连按都按不出来会让人以为技能坏了）。
+   *   · ground/enemy—— 判落点距离（enemy 的落点本来就会被锁到敌人身上）。
+   * 5% 容差：落点是从屏幕射线反算的，和真实距离差一点点很正常。 */
+  castRangeFail(sk) {
+    const R = sk.castRange || 0;
+    if (sk.cast === 'self' || R <= 0) return null;
+    const pg = this.playerGroup;
+    if (!pg) return null;
+    const pp = new THREE.Vector3(pg.position.x, 0, pg.position.z);
+    if (sk.cast === 'dir') {
+      const e = this.nearestEnemy(pp, R * 3);
+      if (!e) return null;
+      return DIST2D(e.pos, pp) > R * 1.05 ? '距离太远。' : null;
+    }
+    const aim = this.aimPoint;
+    if (!aim) return null;
+    return DIST2D(pp, aim) > R * 1.05 ? '距离太远。' : null;
   },
 
   /* 施法瞬间在地上画一条方向线 + 落点圈，让玩家看清本次判定的方向和最远距离 */
@@ -3200,6 +3255,11 @@ const Game = {
      * 再扣资源会变成背包里的隐形扣血。 */
     const cost = autoCast ? 0
       : Math.max(1, Math.round(this.skillCost(sk) * (1 - (smod && smod.cost ? smod.cost : 0) / 100)));
+    /* [P10] 射程硬拒绝：够不着就别放。放在扣蓝之前 —— 被拒绝的施法
+     * 不扣蓝、不进 CD、不触发任何后续结算，只给一句提示。
+     * 原来射程只裁剪落点，30 米外点火球照样扣蓝进 CD，射程形同虚设。 */
+    const tooFar = this.castRangeFail(sk);
+    if (tooFar) { UI.log(tooFar, 'bad'); SFX.ui(); return; }
     /* 资源名读职业表：刀客怒气 / 术士灵力 / 符师道力。写死「灵力」会让符师的提示说错 */
     if (s.mp < cost) { UI.log(((CLASSES[s.cls] || {}).res || '资源') + '不足'); SFX.ui(); return; }
     s.mp -= cost;
