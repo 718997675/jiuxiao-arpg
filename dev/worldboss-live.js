@@ -65,11 +65,23 @@ const ok = (cond, msg, extra) => {
     hasTrack: !!document.getElementById('wbTrack'),
     trackShown: document.getElementById('wbTrack').style.display,
     trackText: document.getElementById('wbTrack').textContent.trim(),
-    status: WorldBoss.statusText()
+    status: WorldBoss.statusText(),
+    /* [M18.10] 顶部倒计时条 */
+    hasTop: !!document.getElementById('wbTop'),
+    topShown: document.getElementById('wbTop') ? getComputedStyle(document.getElementById('wbTop')).display : '',
+    topText: document.getElementById('wbTop') ? document.getElementById('wbTop').textContent.replace(/\s+/g, ' ').trim() : '',
+    topName: document.getElementById('wtName') ? document.getElementById('wtName').textContent : '',
+    topMap: document.getElementById('wtMap') ? document.getElementById('wtMap').textContent : '',
+    topRect: (() => {
+      const el = document.getElementById('wbTop');
+      if (!el) return null;
+      const b = el.getBoundingClientRect();
+      return { x: Math.round(b.x), y: Math.round(b.y), w: Math.round(b.width), h: Math.round(b.height) };
+    })()
   }));
   ok(A.has, 'A: WorldBoss 没挂到全局（index.html 少一行 script？）');
   ok(!!A.rec, 'A: 60 级开局没有滚出世界 Boss');
-  ok(A.rec && A.rec.until - A.rec.spawnAt === A.cfgCycle, 'A: until − spawnAt ≠ 30 分钟',
+  ok(A.rec && A.rec.until - A.rec.spawnAt === A.cfgCycle, 'A: until − spawnAt ≠ 一个周期',
     A.rec && (A.rec.until - A.rec.spawnAt));
   ok(A.hasBanner, 'A: 缺少 #wbBanner');
   ok(A.hasTrack, 'A: 缺少 #wbTrack');
@@ -77,6 +89,85 @@ const ok = (cond, msg, extra) => {
   ok(A.trackText.indexOf('世 界 Boss') >= 0, 'A: 追踪行没写标题', A.trackText);
   ok(/\d+:\d\d/.test(A.trackText), 'A: 追踪行没有倒计时', A.trackText);
   console.log('  追踪行：' + A.trackText.replace(/\s+/g, ' '));
+
+  console.log('\n【A2】顶部倒计时条（M18.10）');
+  ok(A.hasTop, 'A2: 缺少 #wbTop');
+  ok(A.topShown === 'flex', 'A2: 顶部条没显示', A.topShown);
+  ok(/\d+:\d\d/.test(A.topText), 'A2: 顶部条没有倒计时', A.topText);
+  ok(A.topText.indexOf('世界Boss') >= 0, 'A2: 顶部条标签不是「世界Boss」', A.topText);
+  ok(A.topName.length >= 2, 'A2: 顶部条没写 boss 名', A.topName);
+  ok(A.topMap.length >= 2, 'A2: 顶部条没写「在哪」', A.topMap);
+  ok(A.topText.indexOf('后离去') >= 0, 'A2: 现世态后缀应该是「后离去」', A.topText);
+  /* 位置：必须在屏幕上半部分、水平居中。跑到下半屏或贴边就是 CSS 写错了 */
+  ok(A.topRect && A.topRect.y >= 0 && A.topRect.y < 800 * 0.35,
+    'A2: 顶部条不在画面上方', A.topRect);
+  ok(A.topRect && Math.abs((A.topRect.x + A.topRect.w / 2) - 640) <= 4,
+    'A2: 顶部条没有水平居中', A.topRect);
+  console.log('  顶部条：' + A.topText + '　（位置 ' + JSON.stringify(A.topRect) + '）');
+
+  console.log('\n【A3】最后一分钟的呼吸态');
+  const A3 = await page.evaluate(() => {
+    const r = WorldBoss.rec();
+    const old = r.until;
+    r.until = Date.now() + 30 * 1000;
+    WorldBoss._acc = 9; WorldBoss.tick(0.1);
+    const el = document.getElementById('wbTop');
+    const soon = el.classList.contains('soon');
+    const txt = document.getElementById('wtTime').textContent;
+    /* 拉回原值，确认类会被撤掉（只加不撤 = 一直在闪，等于没有提醒） */
+    r.until = old;
+    WorldBoss._acc = 9; WorldBoss.tick(0.1);
+    return { soon, txt, after: el.classList.contains('soon') };
+  });
+  ok(A3.soon, 'A3: 最后一分钟顶部条没有呼吸态', A3.txt);
+  ok(/^0:\d\d$/.test(A3.txt), 'A3: 剩余不到一分钟时倒计时格式不对', A3.txt);
+  ok(!A3.after, 'A3: 倒计时拉回去之后 soon 类没有撤销');
+
+  console.log('\n【A4】打首领时让位（不能和 #bossbar 叠在一起）');
+  const A4 = await page.evaluate(async () => {
+    /* 用假 boss 喂 updateBoss，只为把 #bossbar 撑起来量高度 ——
+     * 真打起来时这条规则和现在量到的完全一样（纯 CSS + body 类）。
+     *
+     * 两件必须做的事，缺一条这个断言就是假的：
+     *  1. **掐掉 #wbTop 的 top 过渡**。那是给玩家看的 0.2 秒缓动，
+     *     同步量会拿到过渡起点（6px），测出来永远「重叠」。
+     *  2. **不能等**。游戏主循环每帧都在调 updateBoss，没有活着的首领时
+     *     它会把 body 类撤掉 —— 等 320ms 再量，量到的是「没打首领」的状态。
+     * 所以：关过渡 → 一口气量完 → 复原。 */
+    const tp = document.getElementById('wbTop');
+    const bbEl = document.getElementById('bossbar');
+    tp.style.transition = 'none';
+    UI.updateBoss({ cfg: { name: '试炼首领', title: '测高用' }, hp: 500, maxHp: 1000 });
+    const wired = document.body.classList.contains('wb-has-boss');
+    const bb = bbEl.getBoundingClientRect();
+    const t1 = tp.getBoundingClientRect();
+    const cp = document.getElementById('charplate').getBoundingClientRect();
+    const varv = getComputedStyle(document.body).getPropertyValue('--bossbar-bottom').trim();
+    const out = {
+      wired: wired, varv: varv,
+      overlap: t1.y < bb.bottom && t1.y + t1.height > bb.y,
+      bossBottom: Math.round(bb.bottom), topY: Math.round(t1.y),
+      overChar: t1.x < cp.right && t1.y < cp.bottom
+    };
+    /* 让位值必须是**量出来的**，不是写死的：把血条撑高（模拟 P09 的多首领
+     * 小血条行），让位值要跟着长。写死 90px 的那版就是在这里露馅的。 */
+    const peers = document.getElementById('bossPeers');
+    peers.style.display = 'flex';
+    peers.innerHTML = '<div class="peer"><i style="width:50%"></i></div>';
+    UI._syncBossBarBottom();
+    out.varGrown = parseInt(getComputedStyle(document.body).getPropertyValue('--bossbar-bottom'), 10);
+    peers.style.display = 'none'; peers.innerHTML = '';
+    UI.updateBoss(null);
+    tp.style.transition = '';
+    return out;
+  });
+  ok(A4.wired, 'A4: updateBoss 没有给 body 挂 wb-has-boss', A4);
+  ok(!A4.overlap, 'A4: 打首领时顶部条压在 #bossbar 上', A4);
+  ok(!A4.overChar, 'A4: 顶部条压在角色板上', A4);
+  ok(A4.varv === A4.bossBottom + 'px', 'A4: --bossbar-bottom 不是实测底边（又被写死了？）', A4);
+  ok(A4.varGrown > parseInt(A4.varv, 10), 'A4: 血条长高后让位值没跟着长', A4);
+  console.log('  bossbar 底 ' + A4.bossBottom + 'px（' + A4.varv + '），顶部条顶 ' +
+    A4.topY + 'px；撑高后让位值 ' + A4.varGrown + 'px');
 
   console.log('\n【B】走到它的图上 → 实体 + 领域光环');
   const B = await page.evaluate(async () => {
@@ -302,7 +393,7 @@ const ok = (cond, msg, extra) => {
   const E = await page.evaluate(async () => {
     const before = JSON.parse(JSON.stringify(WorldBoss.rec()));
     const realNow = Date.now;
-    const offset = 31 * 60 * 1000;
+    const offset = WORLD_BOSS_CFG.cycle + 60 * 1000;
     Date.now = () => realNow() + offset;
     WorldBoss._acc = 9;
     WorldBoss.tick(0.1);
@@ -318,7 +409,7 @@ const ok = (cond, msg, extra) => {
       killed: after.killed
     };
   });
-  ok(E.changed, 'E: 快进 31 分钟没有换人');
+  ok(E.changed, 'E: 快进一个周期没有换人');
   ok(!E.sameId, 'E: 换成了同一只（连续两次同一只 = 玩家以为没刷新）', E);
   ok(!E.killed, 'E: 新记录不应该是 killed 状态');
   if (E.liveId) ok(E.liveId === E.afterId, 'E: 场上的实体还是上一只', E);
@@ -373,6 +464,14 @@ const ok = (cond, msg, extra) => {
       cd: rec.until - rec.killAt,
       aura: !!WorldBoss._aura,
       track: document.getElementById('wbTrack').textContent.replace(/\s+/g, ' '),
+      /* [M18.10] 空窗期顶部条：应切成「下一只 · 名 · 图 · 后现世」 */
+      topText: document.getElementById('wbTop').textContent.replace(/\s+/g, ' ').trim(),
+      topDead: document.getElementById('wbTop').classList.contains('dead'),
+      topName: document.getElementById('wtName').textContent,
+      nextId: rec.next ? rec.next.id : null,
+      nextMap: rec.next ? rec.next.mapId : null,
+      nextMapName: rec.next ? ((MAPS[rec.next.mapId] || {}).name || rec.next.mapId) : '',
+      cycle: WORLD_BOSS_CFG.cycle,
       bossBar: document.getElementById('bossbar').style.display,
       lootN, uniques, pick: pick.slice(0, 14), soulDist, rad, soulPicked,
       hasSoul: !!soul
@@ -382,9 +481,16 @@ const ok = (cond, msg, extra) => {
     console.log('  （跳过：这只不在当前图 / 没刷出来）');
   } else {
     ok(F.killed, 'F: 打死之后记录没有标记 killed');
-    ok(F.cd === 30 * 60 * 1000, 'F: 冷却不是一个完整周期', F.cd);
+    ok(F.cd === F.cycle, 'F: 冷却不是一个完整周期', F.cd);
     ok(!F.aura, 'F: 击杀后领域光环没撤（玩家会以为效果还在）');
     ok(F.track.indexOf('后再现') >= 0, 'F: 追踪行没切成「后再现」', F.track);
+    /* [M18.10] 空窗期顶部条：说得出「下一只在哪」 */
+    ok(F.nextId, 'F: 击杀后没有预选下一只（顶部条写不出「在哪」）');
+    ok(F.topDead, 'F: 空窗期顶部条没有切到 dead 态', F.topText);
+    ok(F.topText.indexOf('下一只') >= 0, 'F: 空窗期顶部条标签不是「下一只」', F.topText);
+    ok(F.topText.indexOf('后现世') >= 0, 'F: 空窗期顶部条后缀应该是「后现世」', F.topText);
+    ok(!!F.nextMap && F.topText.indexOf(F.nextMapName) >= 0,
+      'F: 顶部条没写出下一只的地图', { nextMap: F.nextMap, text: F.topText });
     /* [M18.8] 掉落 */
     ok(F.lootN > 0, 'F: 击杀后地上没有战利品', F.lootN);
     ok(F.uniques >= 1, 'F: 至少掉了一件传世（M18.8 必掉 1~3）', F.uniques);
@@ -392,6 +498,7 @@ const ok = (cond, msg, extra) => {
     ok(F.soulDist > F.rad * 0.9, 'F: 世界魂掉在模型里面了（捡不到）', { 距中心: +F.soulDist.toFixed(1), 半径: F.rad });
     ok(F.soulPicked >= 1, 'F: 世界魂踩上去没有进材料仓（拾取链路断了）', F.soulPicked);
     console.log('  击杀后追踪行：' + F.track);
+    console.log('  击杀后顶部条：' + F.topText);
     console.log('  战利品 ' + F.lootN + ' 件（传世 ' + F.uniques + '，世界魂距中心 ' +
       F.soulDist.toFixed(1) + ' 米 / 半径 ' + F.rad + '）→ 捡到世界魂 ×' + F.soulPicked);
   }

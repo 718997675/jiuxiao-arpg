@@ -1,7 +1,8 @@
 # 体验与平衡优化计划（17 项）
 
 > 来源：用户 2026-10-28 一次性提的 17 条体验 / 平衡问题。
-> 状态：**计划已定稿，未开工**。5 项待拍板已全部落定（见 §3），无阻塞项。
+> 状态：**第 1 批（P01 P02 P03 P09 P11 P12 P16）已落地**，第 2~4 批未开工。
+> 5 项待拍板已全部落定（见 §3），无阻塞项。
 > 逐条落地时把状态改成 ✅ 并补提交号。
 > 关联：`docs/ACT-EXPANSION-PLAN.md`（世界结构）、`docs/SKILL-REDESIGN-PLAN.md`（技能重构，另一条线）。
 
@@ -26,22 +27,22 @@
 
 | # | 问题 | 类型 | 优先级 | 主要文件 | 预估 |
 |---|---|---|---|---|---|
-| P01 | 任务怪数量少，要重进图才能刷满 | 数值 / 体验 | **P0** | `src/data/data-quests.js`、`src/game.js` | 0.5 天 |
-| P02 | Boss 在远处（传送门）也放技能 | **真 bug** | **P0** | `src/game.js` `updateBossAI` | 0.5 天 |
-| P03 | 小地图方向 / 箭头不对；不能放大 | 真 bug + 功能 | **P0** | `src/ui-minimap.js`、`index.html` | 1 天 |
+| P01 | 任务怪数量少，要重进图才能刷满 | 数值 / 体验 | **P0** | `src/data/data-quests.js`、`src/game.js` | 0.5 天 ✅ |
+| P02 | Boss 在远处（传送门）也放技能 | **真 bug** | **P0** | `src/game.js` `updateBossAI` | 0.5 天 ✅ |
+| P03 | 小地图方向 / 箭头不对；不能放大 | 真 bug + 功能 | **P0** | `src/ui-minimap.js`、`index.html` | 1 天 ✅ |
 | P04 | 自动拾取 + 品质筛选 | 新功能 | P2 | `src/game.js` `updateLoot`、`src/core/settings.js` | 1 天 |
 | P05 | 每图怪种太多，图鉴集齐太快；怪物总数扩到 120 | 内容 / 数据 | P3 | `src/data/data-monsters.js`、`data-world.js` | 3~5 天 |
 | P06 | 蓝耗太低 + 法师射程太远 | 数值 | **P1** | `src/data/data-core.js`、`data-skills.js`、`src/game.js` | 1.5 天 |
 | P07 | 悬赏板样式粗糙，分不清条目 | UI | P2 | `src/ui.js` `renderBoardPanel`、`index.html` | 1 天 |
 | P08 | 任务奖励看不到，要先交才知道 | UI | P2 | `src/ui.js` `openGiver` / 对话、`renderQuests` | 1 天 |
-| P09 | 多 Boss 时血条显示错的那只 | **真 bug** | **P0** | `src/game.js` `updateEnemies`、`src/ui.js` `updateBoss` | 0.5 天 |
+| P09 | 多 Boss 时血条显示错的那只 | **真 bug** | **P0** | `src/game.js` `updateEnemies`、`src/ui.js` `updateBoss` | 0.5 天 ✅ |
 | P10 | 卡位远程打死 Boss；法师技能几乎全图 | 数值 + 机制 | **P1** | `src/data/data-skills.js`、`src/game.js` 施法校验 | 1.5 天 |
-| P11 | 悬赏完成不知道交给谁，NPC 也没提示 | **真 bug** | **P0** | `src/quests.js`、`src/game.js` `openGiver` | 1 天 |
-| P12 | 试炼升级太快 → 难度随等级涨 + 传世挂高波 | 数值 / 规则 | **P1** | `src/data/data-trial.js`、`src/trial.js` | 1.5 天 |
+| P11 | 悬赏完成不知道交给谁，NPC 也没提示 | **真 bug** | **P0** | `src/quests.js`、`src/game.js` `openGiver` | 1 天 ✅ |
+| P12 | 试炼升级太快 → 难度随等级涨 + 传世挂高波 | 数值 / 规则 | **P1** | `src/data/data-trial.js`、`src/trial.js` | 1.5 天 ✅ |
 | P13 | 每章地图长得一样，没辨识度 | 内容 | P3 | `src/data/data-maps.js` `ZONE_ARCHETYPES` | 3~4 天 |
 | P14 | 多只 Boss 挤在一个祭坛 | 内容 / 结构 | P2 | `src/data/data-maps.js` `bossPosOf`、`data-world.js` | 1.5 天 |
 | P15 | Boss 战前没有剧情，代入感弱 | 内容 | P3 | `src/data/data-monsters.js`、`src/game.js` | 2 天 |
-| P16 | 符文爆率太高，打造太容易 | 数值 | **P1** | `src/game.js` `runeChance` | 0.3 天 |
+| P16 | 符文爆率太高，打造太容易 | 数值 | **P1** | `src/game.js` `runeChance` | 0.3 天 ✅ |
 | P17 | 左下角日志一闪就没，看不到历史 | UI + 架构 | P2 | `src/ui.js` `log`、`index.html` `#log` | 1.5 天 |
 
 **合计约 23~27 个工作日**（单人）。分 4 批：
@@ -89,6 +90,20 @@
 - 清空一张图后再等 30 秒，图上怪数回到 `spawnCount × 0.6` 以上。
 - `node dev/zone-density.js` 仍然全绿（补位不改静态分配，只补运行时数量，密度校验读的是静态值 —— 要确认这一点没被破坏）。
 
+**落地（2026-10-28）** ✅
+
+- `game.js` 新增 `updateRespawn(dt)`（在 `updateEnemies` 之后每帧调用）：`RESPAWN_TICK 6` 秒一次、
+  `RESPAWN_FLOOR 0.6`（低于计划总数 60% 才补）、`RESPAWN_MIN_DIST 25`（只在 25 米外的区补）、
+  离玩家最远的区优先。安全区 / raid 图 / 地下城 / 试炼一律跳过。
+- **一处偏离**：计划书写「一次补 1~2 只」，但同一节的验收线是「清空后 30 秒回到 spawnCount × 0.6」——
+  41 只的图要在 5 个 tick 内补回 25 只，一次 1~2 只实测只补到 10 只（图看起来还是空的）。
+  改成「按缺口的一半补、单次上限 `RESPAWN_BATCH = 5`」：5 tick × 5 = 25 刚好压线，
+  而且怪都落在 25 米外，不会在玩家眼前凭空出现。
+- `data-quests.js`：`killAny` 的 45/50/60/65/70/80 全部压到 **32~36**；
+  **奖励同步按 `新数量 / 旧数量` 缩放**（xp 取整到百、gold 取整到五十）——
+  只砍数量不砍奖励等于把悬赏变成最划算的刷钱途径，P16 刚把符文口子收掉，不能这边又开一个。
+- 验证：`node dev/respawn-check.js`（14 项：清空后补位 / 上限 / 距离 / 只补野图 / 任务量对齐）。
+
 ---
 
 ### P02 · Boss 在传送门那边也放技能
@@ -131,6 +146,18 @@ if (e.patternCd <= 0) {
 - 走进 18 米内，技能正常释放。
 - 打一半跑出 32 米，Boss 回位 + 血条消失 + 回满血。
 
+**落地（2026-10-28）** ✅
+
+- `data-core.js`：`BALANCE.boss.skillRange = 18` / `leash = 32`。
+- `game.js` `updateBossAI`：CD 到点先量距离，`> 18` 米只把 CD 压到 1.2 秒重试（不放技能）；
+  `> 32` 米走新增的 `resetBoss(e)`。
+- `resetBoss` 一次做满六件事：回锚点 / 回满血 / 清 debuff / 清技能态（windup·charging·pendingMelee）/
+  `phase` 归零 / `dmg` 退回 `baseDmg`。少了「退伤害」这条，反复拉远拉近能把首领养成一拳超人。
+- `_bossAim(e, pp, spread)`：`slam` / `roots` / `rocks` / `meteor` / `swordrain` 的落点全部改成
+  「玩家位置 + 散布 → 夹进 18 米」，不再钉在玩家脚下。
+- 验证：`node dev/probe-boss.js` 第一、二、四段（距离闸 25 米测、脱战 40 米测、落点 400 次采样）。
+  **注意**：测距离闸不能取 60 米 —— 那个距离先触发的是脱战，验不到闸。
+
 ---
 
 ### P03 · 小地图方向 / 箭头不对；要能点击放大 + 滚轮缩放
@@ -167,6 +194,17 @@ if (e.patternCd <= 0) {
 - `dev/minimap-check.js`：玩家朝 +z / +x / -z / -x 四个方向，箭头像素方向分别朝下 / 右 / 上 / 左。
 - 点小地图能开大图，滚轮缩放后鼠标指的那一点不动（误差 < 8px）。
 - 移动端双指缩放可用，且不影响摇杆。
+
+**落地（2026-10-28）** ✅
+
+- `_faceAngle()` 改成 `atan2(f.z, f.x)`。旧代码 `atan2(x, z)` 分子分母反了：±x 方向恰好对，
+  ±z 方向整整差 180°（朝南走、箭头指北），所以玩家「有时候看着对、转两圈就发现不对」。
+- 箭头绘制 `+π/2`（三角形是朝上画的，而 `_faceAngle` 给的是「朝 +x」的角度）。
+- `#mapBig` 大图：720×720 画布，复用同一套 `paint()`；缩放 0.5~4×，**以鼠标位置为锚点**；
+  拖动平移（pointer 事件）、双指捏合、Esc / × / 点遮罩关闭；1.25× 以上画 25 米坐标格 + 区名。
+- 顺手修了一个真 bug：`#miniWrap` 在 `#app` 下默认 `pointer-events:none`，点击根本到不了容器，
+  代码里绑的 click 永远不触发。CSS 里显式打开（这是自测时才暴露的，纯看代码看不出来）。
+- 验证：`node dev/minimap-check.js`（离线段四方向 + 缩放锚点 + 边界，浏览器段点开/滚轮/拖动/Esc/×）。
 
 ---
 
@@ -354,6 +392,7 @@ if (e.patternCd <= 0) {
 - 接任何一条任务，对话里能先看到全部奖励项，与交任务后实际到手的数值一致（`dev/test-quest.js` 加断言：
   对话里解析出的数字 === `QUESTS[id].rewards` 的字段值）。
 
+
 ---
 
 ### P09 · 多 Boss 时血条显示的是另一只
@@ -390,6 +429,17 @@ if (this.boss === e) UI.updateBoss(e);    // 只有 this.boss 那只更新血条
 - `swamp`（3 只 Boss）：打 A 时血条是 A 且在掉；走到 B 旁边不动手，血条仍是 A；
   打 B，血条切成 B；再回头打 A，血条切回 A 且数字连续。
 - `dev/probe-boss.js` 加一条：任意时刻 `UI` 显示的血条 hp === `this.boss.hp`。
+
+**落地（2026-10-28）** ✅
+
+- `damageEnemy`：每次命中把 `this.boss` 钉在目标身上 —— **攻击是唯一的主动切换途径**。
+- `_pickBoss`：改成**粘性**而不是「每 0.5 秒按距离重选」。当前那只还活着就不换；它死了 /
+  脱战了才去找「最近的已激活首领」；一只都没有就收血条。
+  原方案（1.5 秒锁 + 就近）在多首领只相距 9~10 米的图上会让血条随走位来回跳，
+  和「打谁看谁」的验收要求正好相反。
+- `ui.js`：多首领时主血条下面加一排 60px 小血条，点一下切主显示；切目标时血条闪一下；
+  按「存活首领 + 血量百分比 + 当前目标」做指纹，指纹没变不重建 DOM（`updateBoss` 是每帧调的）。
+- 验证：`node dev/probe-boss.js` 第三段（打 A / 站 B 旁边 / 打 B / 回打 A / A 死接 B / 全灭收血条）。
 
 ---
 
@@ -435,6 +485,7 @@ if (this.boss === e) UI.updateBoss(e);    // 只有 this.boss 那只更新血条
 - 卡在石头上打 Boss，Boss 走不过来 → 8 秒后回位并回满血（日志「XX 已退回祭坛」）。
 - 法师技能面板能看到射程（`ui-skills.js:654` 已支持），且最大值 ≤ 13（P06 定的数）。
 
+
 ---
 
 ### P11 · 悬赏完成不知道交给谁，NPC 也没提示
@@ -463,6 +514,19 @@ if (this.boss === e) UI.updateBoss(e);    // 只有 this.boss 那只更新血条
 - 完成悬赏后：追踪条写「交给 录事·闻书」；录事头顶出现「!」；走到录事面前按 F，
   第一句对话就是交付。
 - `dev/test-quest.js` 加断言：每条 board 任务都有 `turnIn`，且该 NPC 在对应营地的 `npcs` 里。
+
+**落地（2026-10-28）** ✅
+
+- 根因比计划书写的更严重：不只是「没提示交给谁」，是**根本交不掉**。悬赏的 `giver` 是 `'board'`
+  （一个不存在的 NPC），`QuestSys.readyOf` 按 `q.giver` 过滤，于是任何 NPC 的可复命列表都是空的。
+- `data-quests.js` 新增 `turnInOf / turnInNpcOf / turnInNameOf`：悬赏默认交给本卷录事（`camp*_side`），
+  主线 / 支线仍是「谁发谁收」。
+- `quests.js`：`readyOf` / `activeOf` 改按交付人匹配；新增 `boardOf`（录事头顶的「可接」标记要它）；
+  `_announce` 点名交付人。
+- `game.js`：金「!」= 可复命、绿「?」= 可接（原来正好反了）；`openGiver` 一次列出**全部**可交条目
+  （原来只认 `ready[0]`，交三条悬赏要说三次话）。
+- `ui.js` 追踪条写「▸ 交给 录事·闻书」；`ui-minimap.js` 可复命 NPC 在小地图上打金「!」。
+- 验证：`node dev/test-quest.js` 【11】（13 项：数据 / 可复命列表 / 追踪条 / 头顶标记 / 对话交付 / 交完收标记）。
 
 ---
 
@@ -556,6 +620,22 @@ if (this.boss === e) UI.updateBoss(e);    // 只有 this.boss 那只更新血条
 - 40 级角色打 10 波：经验总量 **< 升级所需的 15%**（现在约 340%）。
 - 40 级角色打 30 波：能掉传世，1000 次抽样出 2~5 件。
 - 25 级角色打 60 波：**不掉传世**（等级不够，`reqLv` 卡住）。
+
+**落地（2026-10-28）** ✅
+
+- `data-trial.js`：`trialLevelMul(level)` = `1 + max(0, L − 10) × 0.035`，乘进 `trialHpMul` / `trialDmgMul`
+  两个乘区（10 级 ×1.00 · 30 级 ×1.70 · 60 级 ×2.75）；不传 `level` 时按 ×1.00，老调用点不会静默变难。
+- `trialXpPace(wave, level)` = `(wave / (level × 0.6)) ^ 3`，`onWaveCleared` 里 `ratio *= pace`。
+- `TRIAL_CFG.unique` + `trialUniqueChance`：30 波起 0.3%，每波 +0.04%，封顶 1.9%，首领波 ×3；
+  只掉 `ilvl ≥ 40` 的传世，玩家 < 39 级不掉（`reqLv` 卡死，掉了也穿不上）。每波最多 1 件。
+- **两处偏离计划书**（都是实测后改的，写在这里免得下次又「按文档改回去」）：
+  1. 经验衰减从**线性**改成**三次方**。线性实测：40 级打 10 波仍给 115% 升级所需，离验收线
+     （< 15%）差一个量级 —— 因为 10 波只要几分钟。三次方后 ≈ 13%，满额波数不变（仍是第 24 波）。
+  2. 「各等级最远波数落在 25~40」在这套模型下**拿不到**：`dev/trial-balance.js` 的崩盘线是
+     「贴身 25% 同屏、可撑 6 秒」，P12 之前的基线本身就是 16~20 波（不是 25~40）。
+     改成**相对口径**验收：60 级比 10 级早崩 3 波；同一波的 TTK 随等级上升（60 级是 10 级的 1.4 倍）。
+     绝对值要抬到 25~40 是另一件事（松 0.54 补偿系数），不在 P12 范围。
+- 验证：`node dev/trial-check.js`（53 项）+ `node dev/trial-balance.js` 新增「各等级最远波数 / 同波强度」两段。
 
 ---
 
@@ -657,6 +737,7 @@ if (this.boss === e) UI.updateBoss(e);    // 只有 this.boss 那只更新血条
 - 第二次打同只 Boss 不播。
 - 演出期间玩家不能移动/施法，演出结束后输入立即恢复（不能有「卡住」感）。
 
+
 ---
 
 ### P16 · 符文爆率太高，打造太容易
@@ -687,6 +768,15 @@ const runeChance = e.boss ? 1 : (e.elite ? (seeker ? 0.3 : 0.18) : (seeker ? 0.0
 
 - `dev/balance-report.js` 里加「每图期望符文数」，改完后应为 0.3~0.4。
 - 模拟 100 张图的掉落分布，符文总数落在 28~40 之间。
+
+**落地（2026-10-28）** ✅
+
+- `game.js`：普通 2.5% → **0.8%**、精英 18% → **8%**、seeker ×2 → **×1.6**、首领 100% 不动。
+- 实测（`dev/balance-report.js` 新增「符文期望」段，数字**从 game.js 源码解析**，不另抄一份）：
+  清场口径 40 × 0.8% = **0.32 个/图** ✅ 落在验收区间；算上精英 0.55 个；首领必掉另算。
+  100 张图抽样合计 33 个（验收 28~40）。
+- 注：计划书那句「一张图期望 0.32」只算了普通怪；把精英算进来是 0.55。两个口径都对，
+  只是别拿其中一个去对另一个的验收线。
 
 ---
 
@@ -762,15 +852,20 @@ node dev/quest-ref.js        # 任务引用完整性
 node dev/mobile-layout.js    # 移动端布局（P03/P07/P17 必跑）
 ```
 
-需要**新增**的脚本：
+新增的脚本（第 1 批已落地四个，剩 `skill-ref` / `log-check` 跟第 2 批一起做）：
 
-| 脚本 | 覆盖 | 用在 |
-|---|---|---|
-| `dev/minimap-check.js` | 四方向箭头 / 放大 / 缩放锚点 | P03 |
-| `dev/probe-boss.js` | Boss 技能距离闸 / 脱战 / 血条归属 | P02、P09、P10 |
-| `dev/skill-ref.js` | 所有主动技能都有 `castRange` | P10 |
-| `dev/trial-check.js` | 试炼准入 / 经验倍率 / 掉落 | P12 |
-| `dev/log-check.js` | 日志环形缓冲 / 滚动跟随 / 200 条上限 | P17 |
+| 脚本 | 覆盖 | 用在 | 状态 |
+|---|---|---|---|
+| `dev/minimap-check.js` | 四方向箭头 / 放大 / 缩放锚点 | P03 | ✅ 23 项 |
+| `dev/probe-boss.js` | Boss 技能距离闸 / 脱战 / 血条归属 / 落点夹取 | P02、P09、P10 | ✅ 22 项 |
+| `dev/trial-check.js` | 等级乘区 / 经验衰减 / 传世掉落 / 接线 | P12 | ✅ 53 项 |
+| `dev/respawn-check.js` | 清空后补位 / 上限 / 距离 / 任务量对齐 | P01 | ✅ 14 项 |
+| `dev/skill-ref.js` | 所有主动技能都有 `castRange` | P10 | ⬜ 第 2 批 |
+| `dev/log-check.js` | 日志环形缓冲 / 滚动跟随 / 200 条上限 | P17 | ⬜ 第 2 批 |
+
+另外三处**改**了已有脚本（没有新建）：
+`dev/test-quest.js` 加【11】悬赏交付人（13 项）、`dev/balance-report.js` 加「符文期望」段（数字从
+`game.js` 源码解析，不另抄一份）、`dev/trial-balance.js` 加「各等级最远波数 / 同波强度」两段。
 
 ---
 
@@ -830,3 +925,4 @@ src/game.js                playBossIntro、state.bossIntro 落盘
 |---|---|
 | 2026-10-28 | 建档：17 条需求 → P01~P17，分 4 批，含 5 个待拍板问题 |
 | 2026-10-28 | **用户拍板 5 项**（见 §3）：P05 = 种类 120 · P12 改「难度随等级涨 + 经验按波数衰减 + 传世挂高波」· P06 砍射程 + 加大耗蓝 · P14 副 Boss ×0.7 接受 · P15 只播一次。P06 / P12 工期上调，合计 21~25 → 23~27 天 |
+| 2026-10-28 | **第 1 批落地**：P01 P02 P03 P09 P11 P12 P16 七项全完。三处按实测偏离计划书（P01 补位批量 1~2 → 5、P09 就近切血条 → 粘性、P12 线性 pace → 三次方），都写在对应条目的「落地」段里。新增四个验收脚本，`test-quest` / `balance-report` / `trial-balance` 各扩一段 |

@@ -957,14 +957,15 @@ const UI = {
     if (typeof WORLD_BOSSES !== 'undefined' && typeof WORLD_BOSS_ORDER !== 'undefined') {
       const ids = WORLD_BOSS_ORDER;
       const cfg0 = (typeof WORLD_BOSS_CFG !== 'undefined') ? WORLD_BOSS_CFG : {};
-      const cycleMin = Math.round((cfg0.cycle || 1800000) / 60000);
+      const cycleMin = Math.round((cfg0.cycle || 600000) / 60000);
       const soul = (typeof WORLD_BOSS_MATERIALS !== 'undefined') ? WORLD_BOSS_MATERIALS.worldsoul : null;
       H.push(sec('十四 · 世界 Boss', `${ids.length} 只 · 每 ${cycleMin} 分钟轮换一只`, [
         row('是什么', `山海间游荡的<b>六只巨兽</b>，${cfg0.minLevel || 40} 级起能在野图撞见。`
           + `<b>同一时刻只有一只</b>，${cycleMin} 分钟换一次；没人打就自动走，被打死则冷却一整个周期。`
           + `它不在任何一张图的固定首领位上 —— 到点在 <b>homeMaps</b> 里挑一张已解锁的图落下`),
-        row('怎么找', `四条线同时指路：<b>屏幕横幅</b>（换人时弹一次）、<b>小地图星标</b>（领域色五角星 + 外发光，`
-          + `与首领红点完全两套标记）、<b>追踪行</b>（常驻倒计时）、<b>山海志</b>（常驻卡，带「前往」直接传过去）`),
+        row('怎么找', `五条线同时指路：<b>屏幕顶部倒计时条</b>（常驻，写着「谁 · 在哪 · 还有多久」，最后一分钟会呼吸）、`
+          + `<b>屏幕横幅</b>（换人时弹一次）、<b>小地图星标</b>（领域色五角星 + 外发光，与首领红点完全两套标记）、`
+          + `<b>追踪行</b>（右上角常驻倒计时）、<b>山海志</b>（常驻卡，带「前往」直接传过去）`),
         row('六只', ids.map(id => {
           const c = WORLD_BOSSES[id];
           const dn = (c.domain && c.domain.name) || '领域';
@@ -1399,8 +1400,25 @@ const UI = {
 
   updateBoss(boss) {
     const bar = document.getElementById('bossbar');
-    if (!boss) { bar.style.display = 'none'; return; }
+    if (!boss) {
+      bar.style.display = 'none';
+      this._bossShown = null;
+      /* [M18.10] 顶部世界 Boss 倒计时条要让位给首领血条，否则两只名字叠在
+       * 屏幕正中上方。用 body 上的类而不是直接改 #wbTop 的 top：
+       * 那条的显示/隐藏由 renderWorldBoss 管，两边都写 style 必然互相覆盖。 */
+      document.body.classList.remove('wb-has-boss');
+      return;
+    }
     bar.style.display = 'block';
+    document.body.classList.add('wb-has-boss');
+    /* [P09] 换了主显示目标就闪一下。多首领的图里血条会在几只之间来回切，
+     * 不闪的话玩家只看到「名字和数字突然变了」，会以为是显示错乱。 */
+    if (this._bossShown && this._bossShown !== boss) {
+      bar.classList.remove('swap');
+      void bar.offsetWidth;          // 强制回流，否则重复加同一个类不会重放动画
+      bar.classList.add('swap');
+    }
+    this._bossShown = boss;
     document.getElementById('bossName').textContent = boss.cfg.name;
     document.getElementById('bossTitle').textContent = boss.cfg.title || '';
     document.getElementById('bossFill').style.width = CLAMP(boss.hp / boss.maxHp * 100, 0, 100) + '%';
@@ -1415,6 +1433,77 @@ const UI = {
     const ph = hr <= t2 ? 2 : (hr <= t1 ? 1 : 0);
     document.getElementById('bossPhase').innerHTML = '<i class="on"></i>' +
       `<i class="${ph >= 1 ? 'on' : ''}"></i><i class="${ph >= 2 ? 'on' : ''}"></i>`;
+    this.renderBossPeers(boss);
+    this._syncBossBarBottom();
+  },
+
+  /* [M18.10 × P09] 把 #bossbar 的实测底边写进 CSS 变量 `--bossbar-bottom`。
+   *
+   * 顶部世界 Boss 倒计时条要给首领血条让位，但血条高度**不是常数**：
+   * P09 的多首领小血条行（`.peers`）会再撑高 15px 左右。原来 CSS 里写死
+   * `top:90px` 是按「单首领 64px」量的，一进多首领图就叠在一起 —— 这个
+   * 回归是 dev/worldboss-live.js 的 A4 抓到的。
+   *
+   * 量相对 offsetParent 的底边（不是视口坐标）：#wbTop 和 #bossbar 都是
+   * 绝对定位的兄弟节点，用同一套坐标才不会因为容器有偏移而错位。
+   * 隐藏时写 0，让 CSS 的兜底值生效。 */
+  _syncBossBarBottom() {
+    const bar = document.getElementById('bossbar');
+    if (!bar) return;
+    if (bar.style.display === 'none') {
+      document.body.style.removeProperty('--bossbar-bottom');
+      return;
+    }
+    const par = bar.offsetParent;
+    const base = par ? par.getBoundingClientRect().top : 0;
+    const bottom = Math.round(bar.getBoundingClientRect().bottom - base);
+    document.body.style.setProperty('--bossbar-bottom', bottom + 'px');
+  },
+
+  /* [P09] 同场多首领时的小血条行。
+   *
+   * 用户报的现象：「多 Boss 时血条显示的是另一只，实际打的在掉血、血条不动」。
+   * 根因是 `Game.boss` 只是一个引用，谁先走进 17 米谁占住它 —— 玩家回头打
+   * 第一只，第一只在掉血，但 `this.boss !== 第一只`，血条根本不更新。
+   *
+   * 修法见 game.js 的 `_pickBoss`（打谁看谁）。这里补的是另一半：
+   * **让玩家看得见还有几只**，并且点一下就能切过去。
+   *
+   * 只有一只首领时不渲染（`display:none`），普通图的 HUD 一个像素不变。
+   * 性能：`updateBoss` 每帧都调，所以这里按「存活首领 + 血量百分比 + 当前目标」
+   * 做一个指纹，指纹没变就直接返回 —— 不然后面每帧重建一次 innerHTML。 */
+  renderBossPeers(cur) {
+    const box = document.getElementById('bossPeers');
+    if (!box) return;
+    const list = (typeof Game !== 'undefined' && Game.enemies)
+      ? Game.enemies.filter(o => o.boss && !o.dead && o.active) : [];
+    if (list.length < 2) {
+      if (this._peerKey !== '') { this._peerKey = ''; box.style.display = 'none'; box.innerHTML = ''; }
+      return;
+    }
+    const key = list.map(o => (o.uid || 0) + ':' + Math.round(CLAMP(o.hp / o.maxHp, 0, 1) * 100) +
+      (o === cur ? '*' : '')).join(',');
+    if (key === this._peerKey) return;
+    this._peerKey = key;
+    box.style.display = 'flex';
+    box.innerHTML = list.map((o, i) => {
+      const pct = CLAMP(o.hp / o.maxHp * 100, 0, 100);
+      return `<div class="peer${o === cur ? ' on' : ''}" data-i="${i}" title="${o.cfg.name}">` +
+        `<i style="width:${pct}%"></i></div>`;
+    }).join('');
+    if (box._bound) return;
+    box._bound = true;
+    box.addEventListener('click', ev => {
+      const el = ev.target.closest('.peer');
+      if (!el) return;
+      /* 用同一套过滤条件重算，保证下标和渲染时一致 */
+      const arr = Game.enemies.filter(o => o.boss && !o.dead && o.active);
+      const t = arr[Number(el.dataset.i)];
+      if (!t) return;
+      Game.boss = t;
+      this.updateBoss(t);
+      SFX.ui();
+    });
   },
 
   /* ---------------- 主菜单（v1.6.0） ----------------
@@ -1603,6 +1692,8 @@ const UI = {
   closeAll(except) {
     /* 关面板时把商店倒计时停掉，否则每秒还在跑一个 setInterval */
     if (this.shopTimer) { clearInterval(this.shopTimer); this.shopTimer = null; }
+    /* [P03] 大图是独立全屏层（不在 .panel 里），要单独收 */
+    if (typeof Minimap !== 'undefined' && Minimap.big && Minimap.big.open) Minimap.closeBig();
     document.querySelectorAll('.panel').forEach(p => { if (p !== except) p.classList.remove('open'); });
     /* 菜单外壳若已被关掉，子面板必须归位，否则下次打开还嵌在上一次的容器里 */
     const mp = document.getElementById('menuPanel');
@@ -3140,18 +3231,27 @@ const UI = {
     const block = (a, mark) => {
       const q = QUESTS[a.id];
       if (!q) return '';
+      const ok = QuestSys.ready(a);
       let x = `<b>${mark}${q.name}</b>`;
       QuestSys.lines(a).forEach(o => {
         x += `<div class="obj ${o.done ? 'done' : ''}">${o.label} ${o.cur}/${o.count}</div>`;
       });
+      /* [P11] 可交时必须写「交给谁」。原来只写「可交」，玩家拿着悬赏满营地找 NPC，
+       * 而悬赏的发布者是任务板（'board'），根本不存在这个 NPC。 */
+      if (ok) x += `<div class="obj" style="color:#f0d8a8">▸ 交给 ${QuestSys.turnInName(a)}</div>`;
       return x;
     };
     if (tr.main) h += block(tr.main, '');
     for (const a of tr.sides) h += block(a, '支线 · ');
     if (tr.boards.length) {
-      /* 悬赏只报数，不占行 —— 三条悬赏都展开会把追踪框撑到屏幕外 */
-      const done = tr.boards.filter(a => QuestSys.ready(a)).length;
-      h += `<div class="obj" style="color:#c8a86a">悬赏 ${tr.boards.length} 条${done ? ' · ' + done + ' 条可交' : ''}</div>`;
+      /* 悬赏只报数，不占行 —— 三条悬赏都展开会把追踪框撑到屏幕外。
+       * [P11] 有可交的就把交付人点出来（同卷录事只有一位，不会歧义）。 */
+      const readyOnes = tr.boards.filter(a => QuestSys.ready(a));
+      h += `<div class="obj" style="color:#c8a86a">悬赏 ${tr.boards.length} 条` +
+        (readyOnes.length ? ` · ${readyOnes.length} 条可交` : '') + `</div>`;
+      if (readyOnes.length) {
+        h += `<div class="obj" style="color:#f0d8a8">▸ 交给 ${QuestSys.turnInName(readyOnes[0])}</div>`;
+      }
     }
     el.innerHTML = h;
   },
@@ -3181,17 +3281,26 @@ const UI = {
       (typeof WORLD_BOSS_CFG !== 'undefined' ? WORLD_BOSS_CFG.bannerT : 3.2) * 1000);
   },
 
-  /* 追踪行：每秒被 WorldBoss.tick 调一次。
+  /* 追踪行 + 顶部倒计时条：每秒被 WorldBoss.tick 调一次。
    * **只改文本、不重建 DOM** —— 每秒重建会让「点一下前往」在
    * 手指按下与抬起之间失效（手机端尤其明显）。 */
   renderWorldBoss(wb) {
     const el = document.getElementById('wbTrack');
-    if (!el) return;
+    const top = document.getElementById('wbTop');
     const r = (wb && typeof wb.rec === 'function') ? wb.rec() : null;
     const cfg = r ? worldBossById(r.id) : null;
-    if (!r || !cfg) { el.style.display = 'none'; return; }
+    /* 没记录（等级不够 / 新档）两块都要收起来 —— 只藏一块会留下
+     * 一个停在上一秒数字上的顶部条，玩家会以为界面卡死了。 */
+    if (!r || !cfg) {
+      if (el) el.style.display = 'none';
+      if (top) top.style.display = 'none';
+      return;
+    }
     const dead = !!r.killed;
     const map = MAPS[r.mapId] || {};
+    if (top) this._renderWbTop(top, wb, r, dead);
+
+    if (!el) return;
     el.style.display = 'block';
     el.classList.toggle('dead', dead);
     /* 结构只在「换人 / 换图 / 死活变化」时重建，其余时间只改倒计时 */
@@ -3213,12 +3322,56 @@ const UI = {
     if (ct) { const txt2 = wb.timeText(); if (ct.textContent !== txt2) ct.textContent = txt2; }
   },
 
+  /* 顶部倒计时条（M18.10）。两态两套口径：
+   *   现世 → 「世界Boss · 玄冥 · 幽都 · 09:59 后离去」
+   *   空窗 → 「下一只 · 玄冥 · 幽都 · 09:59 后现世」
+   *
+   * 空窗期的名字/地图取 `rec.next`（击杀时预选的），**不能取 r**：
+   * r 是刚被打死的那只，照抄就成了「它 9 分钟后在自己那张图又刷一遍」。
+   * 老存档没有 next（M18.10 之前存的），降级成「下一只 · 山海间」——
+   * 不编一个假地名，玩家按提示跑过去会扑空。 */
+  _renderWbTop(top, wb, r, dead) {
+    const src = dead ? (r.next || null) : r;
+    const scfg = src ? worldBossById(src.id) : null;
+    const smap = src ? (MAPS[src.mapId] || {}) : {};
+    top.style.display = 'flex';
+    top.classList.toggle('dead', dead);
+    /* 名字/地图只在「换人 / 换图 / 死活变化」时写，倒计时每秒写 */
+    const key = (dead ? 'd:' : 'a:') + (src ? src.id + '|' + src.mapId : '-');
+    if (this._wbTopKey !== key) {
+      this._wbTopKey = key;
+      const k = document.getElementById('wtK');
+      const n = document.getElementById('wtName');
+      const m = document.getElementById('wtMap');
+      const s = document.getElementById('wtSuf');
+      if (k) k.textContent = dead ? '下一只' : '世界Boss';
+      if (n) n.textContent = scfg ? scfg.name : '山海间';
+      if (m) m.textContent = src ? (smap.name || src.mapId) : '待定';
+      if (s) s.textContent = dead ? '后现世' : '后离去';
+    }
+    const tt = document.getElementById('wtTime');
+    const txt = wb.timeText();
+    if (tt && tt.textContent !== txt) tt.textContent = txt;
+    /* 最后一分钟呼吸：10 分钟周期下这一分钟刚好是「该动身了」的窗口 */
+    top.classList.toggle('soon', wb.remaining() <= 60000);
+  },
+
   /* 点追踪行 / 山海志卡片的「前往」。门禁交给 Game.travelTo ——
    * 那里已经处理了「没抵达 / 境界不足 / 印门」，这里再判一遍必然漂移。 */
   gotoWorldBoss() {
     const r = (typeof WorldBoss !== 'undefined') ? WorldBoss.rec() : null;
     if (!r) return;
-    if (r.killed) { this.toast('这一只已经被讨伐了，等下一只。'); return; }
+    if (r.killed) {
+      /* 空窗期点它，给的是「下一只在哪、还有多久」而不是一句「等下一只」——
+       * 顶部条已经把这条信息摆出来了，toast 说得含糊等于自相矛盾。 */
+      const nx = (r.next && worldBossById(r.next.id)) ? r.next : null;
+      const nxName = nx ? worldBossById(nx.id).name : '';
+      const nxMap = nx ? ((MAPS[nx.mapId] || {}).name || nx.mapId) : '';
+      this.toast(nx
+        ? '这一只已被讨伐。' + WorldBoss.timeText() + ' 后「' + nxName + '」在 ' + nxMap + ' 现世。'
+        : '这一只已被讨伐，' + WorldBoss.timeText() + ' 后另起一只。');
+      return;
+    }
     if (!MAPS[r.mapId]) return;
     if (Game.state.mapId === r.mapId) { this.toast('它就在这张图上。'); return; }
     this.closeAll();

@@ -427,3 +427,75 @@ console.log('  ⚠ 地脉受**钥匙供给**限制（小怪 0.6% / 精英 10% / 
 console.log('    上表按「钥匙管够」算，实际它只是把刷怪的一部分时间换成了更高密度。');
 
 console.log('');
+/* ============================================================
+ * 符文期望（P16）
+ * ------------------------------------------------------------
+ * 用户反馈「符文爆率太高，打造太容易」：原来普通怪 2.5%、精英 18%，
+ * 一张 40 只的图期望掉 1 个符文，清两张图就够一次打造 ——
+ * 打造本该是「攒」出来的，不是顺手就有的。
+ *
+ * 这里的数字**从 src/game.js 的掉落段解析**，不在脚本里抄一份：
+ * 抄一份的下场是「改了代码、报告还是绿的」，那这份报告就成了装饰。
+ * ============================================================ */
+{
+  const src = fs.readFileSync(path.join(ROOT, 'src/game.js'), 'utf8');
+  /* 认的是 `const runeBase = ...` 那一行 —— 泛匹配 `e.elite ? a : b`
+   * 会先撞上别处的三元表达式（比如 seeker ? 2 : 1），算出来 200% 的荒谬值。 */
+  const m = src.match(/const runeBase = e\.boss \? 1 : \(e\.elite \? ([\d.]+) : ([\d.]+)\)/);
+  const seekerM = src.match(/runeBase \* \(seeker \? ([\d.]+) : 1\)/);
+  if (!m) {
+    console.log('⚠ 符文掉率解析失败（src/game.js 的掉落段可能改过写法），跳过这一段');
+  } else {
+    const eliteP = parseFloat(m[1]);
+    const normalP = parseFloat(m[2]);
+    const seeker = seekerM ? parseFloat(seekerM[1]) : 1;
+    const D = g('BALANCE').diff;
+    const eliteRate = (D && D.normal && D.normal.elite) || 0.08;
+
+    console.log('');
+    console.log('=== 符文期望（P16 · 数字读自 src/game.js）===');
+    console.log('  普通怪 ' + (normalP * 100).toFixed(2) + '%　精英 ' + (eliteP * 100).toFixed(1) +
+      '%　首领 100%　寻宝词缀 ×' + seeker);
+
+    /* 一张标准世界图：40 只小怪（其中 8% 是精英）+ 图内首领 */
+    const MOBS = 40;
+    const mapNames = Object.keys(g('MAPS')).filter(id => {
+      const mp = g('MAPS')[id];
+      return !mp.safe && !mp.raid && (mp.spawnCount || 0) >= 30;
+    });
+    const bossCounts = mapNames.map(id => (g('MAPS')[id].bosses || []).length);
+    const avgBoss = bossCounts.length ? bossCounts.reduce((a, b) => a + b, 0) / bossCounts.length : 0;
+
+    const eliteN = MOBS * eliteRate;
+    const fromNormal = (MOBS - eliteN) * normalP;
+    const fromElite = eliteN * eliteP;
+    const total = fromNormal + fromElite;
+
+    console.log('  一张 40 只的野图（普通难度，精英率 ' + (eliteRate * 100).toFixed(0) + '%）：');
+    console.log('    普通怪 ' + fromNormal.toFixed(2) + ' + 精英 ' + fromElite.toFixed(2) +
+      ' = ' + total.toFixed(2) + ' 个（不含首领必掉）');
+    console.log('    首领 ' + avgBoss.toFixed(1) + ' 只 × 必掉 = ' + avgBoss.toFixed(1) + ' 个（确定性回报，不动）');
+
+    /* 计划书 P16 的验收口径「每图 0.3~0.4」只算普通怪清场 —— 对齐着报一次 */
+    const plainOnly = MOBS * normalP;
+    const okPlain = plainOnly >= 0.28 && plainOnly <= 0.4;
+    console.log('  清场口径（40 × 普通怪掉率）= ' + plainOnly.toFixed(2) + ' 个/图 ' +
+      (okPlain ? '✅ 落在 P16 验收区间 0.28~0.40' : '⚠ 不在 P16 验收区间 0.28~0.40'));
+
+    /* 100 张图的抽样分布：确认不是「平均对、方差离谱」。
+     * 只抽普通怪 —— P16 的验收口径（28~40 / 100 张图）就是按「40 只 × 0.8%」
+     * 定的，把精英算进来会变成 55 个，跟验收线对不上（口径不同，不是数值错）。 */
+    const runs = [];
+    for (let map = 0; map < 100; map++) {
+      let hits = 0;
+      for (let i = 0; i < MOBS; i++) if (Math.random() < normalP) hits++;
+      runs.push(hits);
+    }
+    runs.sort((a, b) => a - b);
+    const sum = runs.reduce((a, b) => a + b, 0);
+    const ok100 = sum >= 28 && sum <= 40;
+    console.log('  100 张图抽样（只算普通怪）：合计 ' + sum + ' 个 ' +
+      (ok100 ? '✅' : '⚠') + '（P16 验收 28~40）· 中位 ' +
+      runs[50] + ' · P5~P95 ' + runs[5] + '~' + runs[94]);
+  }
+}

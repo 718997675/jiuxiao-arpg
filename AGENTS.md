@@ -201,6 +201,10 @@ node dev/wbmodels-shot.js    # 六套骨架渲图到 shots/wbm-*.png，人工肉
 node dev/check-seals.js      # 魔将之印（离线 111 项）：八印表 / 印↔将↔图三向对齐 / 终门门槛 / 真装载 game.js 调 onBossKill / 老档与脏值 / 存档三段（导出·归一·unpack）/ README 殿名比对
 node dev/seal-live.js        # 魔将之印（浏览器 19 项）：真 DOM 播报 / 真 localStorage / 刷新后 Game.loadSlot(n) 读回仍 8 枚
 node dev/input-keys.js       # 键盘与输入框（浏览器 21 项）：三框 autocomplete=off / e.key===undefined 不崩 / 打字不点亮游戏按键 / 打字不触发热键
+node dev/probe-boss.js       # 首领（浏览器 22 项）：技能距离闸 / 脱战回位 / 血条归属（打谁看谁）/ 招式落点夹取。P02 P09 必跑
+node dev/minimap-check.js    # 小地图（离线 + 浏览器 23 项）：四方向箭头 / 缩放锚点 / 点开放大 / 拖动 / Esc 关闭。P03 必跑
+node dev/respawn-check.js    # 地图内补位（浏览器 14 项）：清空后回填 / 上限 / 距离 / 只补野图 / 任务量对齐。P01 必跑
+node dev/trial-check.js      # 试炼（离线 53 项）：等级乘区 / 经验衰减 / 传世掉落概率表 / 运行时接线。P12 必跑
 ```
 
 ## 6. 踩过的坑（改之前先看一眼，能省几小时）
@@ -352,7 +356,10 @@ node dev/input-keys.js       # 键盘与输入框（浏览器 21 项）：三框
 - **暂停中**：技能系统重构（12 技能 → 4~5 个功能位 + 元素混搭 + 发射数量成长）。
   完整方案在 `docs/SKILL-REDESIGN-PLAN.md`，用户已拍板 10 项决策，**等他说开工**。
   排期在大型扩展合入 main 之后 —— 现在这个条件已经满足。
-- **排队中**：`docs/POLISH-PLAN.md` 的 P 系列 17 项打磨（4 批），只出了方案，代码未动。
+- **打磨第 1 批已完成（2026-10-28）**：`docs/POLISH-PLAN.md` 的 P01 P02 P03 P09 P11 P12 P16 七项
+  （补位刷怪 / 首领距离闸 + 脱战 / 小地图箭头 + 大图 / 血条归属 / 悬赏交付人 / 试炼等级难度 + 经验衰减 +
+  传世挂高波 / 符文掉率）。新增 4 个验收脚本（`probe-boss` / `minimap-check` / `respawn-check` / `trial-check`）。
+  **第 2 批（P06 P10 P04 P07 P08 P17）未开工** —— P06 与 P10 必须一起做（都是战斗数值）。
 
 ## 8. 记忆与日志
 

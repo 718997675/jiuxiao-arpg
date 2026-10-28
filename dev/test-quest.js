@@ -252,6 +252,88 @@ const ok = (name, cond, extra) => {
   ok('营地 NPC 总数 8（原 5 + 掌事 + 录事 + 地脉守）', r.npcCount === 8, r.npcCount);
   ok('抵达卷二后 campB 已解锁', r.camps.indexOf('campB') >= 0, r.camps);
 
+  /* ---------------- 11. 悬赏交付人（P11） ---------------- */
+  console.log('\n【11】悬赏交付人');
+  r = await page.evaluate(() => {
+    Game.state.quests = { active: [], done: [], next: null, announced: {}, board: { cd: {}, count: {} } };
+    /* ① 数据层：每条悬赏都得有一个真实存在的交付人，而且那个人得站在
+     *    本卷营地里 —— 否则玩家跑过去会扑空（旧实现 giver 是 'board'，
+     *    一个不存在的 NPC，悬赏根本交不掉）。 */
+    const boardIds = Object.keys(QUESTS).filter(id => QUESTS[id].kind === 'board');
+    const bad = [];
+    for (const id of boardIds) {
+      const q = QUESTS[id];
+      const npc = turnInNpcOf(q);
+      if (!npc || !NPCS[npc]) { bad.push(id + '→' + npc); continue; }
+      const camp = CAMPS['camp' + 'ABCDE'[q.part - 1]];
+      const mapNpcs = (camp && MAPS[camp.mapId] && MAPS[camp.mapId].npcs) || [];
+      if (mapNpcs.indexOf(npc) < 0) bad.push(id + '→' + npc + ' 不在 ' + camp.mapId);
+    }
+    return { n: boardIds.length, bad, sample: boardIds.slice(0, 3).map(id => id + '→' + turnInNameOf(QUESTS[id])) };
+  });
+  ok('每条悬赏都有交付人（' + r.n + ' 条）', r.bad.length === 0, r.bad);
+  ok('交付人是本卷录事', /录事/.test(r.sample[0] || ''), r.sample);
+
+  r = await page.evaluate(() => {
+    /* ② 运行时：完成一条卷二悬赏 → 录事手上必须「可复命」。
+     *    旧实现 readyOf 只认 q.giver === 'board'，任何 NPC 都匹配不到，
+     *    所以这里是 0 —— 玩家打完悬赏在营地里找不到人交。 */
+    const id = Object.keys(QUESTS).find(k => QUESTS[k].kind === 'board' && QUESTS[k].part === 2);
+    QuestSys.accept(id);
+    const a = QuestSys.activeOf(id);
+    const q = QUESTS[id];
+    a.progress = q.objectives.map(o => o.count);
+    const readySide = QuestSys.readyOf('campB_side').map(x => x.id);
+    const readyMain = QuestSys.readyOf('campB_main').map(x => x.id);
+
+    /* ③ 追踪条要写「交给谁」 */
+    UI.updateQuestTrack();
+    const track = document.getElementById('questTrack').textContent;
+    return { id, readySide, readyMain, track, name: turnInNameOf(q) };
+  });
+  ok('完成的悬赏出现在录事的可复命列表', r.readySide.indexOf(r.id) >= 0, r.readySide);
+  ok('不会跑到掌事头上（掌事不收悬赏）', r.readyMain.indexOf(r.id) < 0, r.readyMain);
+  ok('追踪条写明「交给 ' + r.name + '」', r.track.indexOf('交给') >= 0 && r.track.indexOf(r.name) >= 0, r.track);
+
+  r = await page.evaluate(() => {
+    /* ④ 营地里的录事头顶要挂金「!」（可复命），不是绿的「?」。
+     * 标记不是每帧重算的 —— 只在接取 / 进度变化 / 复命时由 QuestSys 调一次
+     * （Game.updateQuestMarker）。上面是手工把进度写满的，所以要手工刷一次，
+     * 模拟「玩家刚打完最后一只怪」那个时刻。 */
+    Game.updateQuestMarker();
+    const n = Game.npcs['campB_side'];
+    const marks = n ? { ex: !!(n.markEx && n.markEx.visible), q: !!(n.markQ && n.markQ.visible) } : null;
+    return { marks, mapId: Game.state.mapId };
+  });
+  ok('录事头顶挂金「!」（可复命）', r.marks && r.marks.ex === true, r.marks);
+  ok('同时不再显示绿「?」', r.marks && r.marks.q === false, r.marks);
+
+  r = await page.evaluate(() => {
+    /* ⑤ 对话第一句就是交付，而且点一下就能交掉 */
+    Game.openGiver('campB_side');
+    const text = document.getElementById('dlgText').textContent;
+    const btns = Array.from(document.querySelectorAll('#dlgBtns .btn')).map(b => b.textContent);
+    const idx = btns.findIndex(b => b.indexOf('复命') >= 0);
+    if (idx >= 0) document.querySelectorAll('#dlgBtns .btn')[idx].click();
+    const q = Game.state.quests;
+    const npc = Game.npcs['campB_side'];
+    const after = { ex: !!(npc.markEx && npc.markEx.visible) };
+    const ids = Object.keys(q.board.count);
+    UI.closeAll();
+    /* 悬赏是 repeat 任务：交掉不进 done，而是记完成次数 + 进冷却（见 turnIn）。 */
+    return {
+      text, btns, active: q.active.map(a => a.id), after,
+      counted: ids.map(id => id + '×' + q.board.count[id]),
+      cdSet: ids.some(id => (q.board.cd[id] || 0) > Date.now())
+    };
+  });
+  ok('录事对话有「复命」按钮', r.btns.some(b => b.indexOf('复命') >= 0), r.btns);
+  ok('对话点明是来领赏的', /赏|了结|已了/.test(r.text), r.text.slice(0, 60));
+  ok('点完真的交掉（移出进行中）', r.active.every(id => !/^b2_/.test(id)), r.active);
+  ok('记了完成次数', r.counted.some(x => /×1$/.test(x)), r.counted);
+  ok('进了冷却', r.cdSet === true, r.cdSet);
+  ok('交完金「!」收起', r.after.ex === false, r.after);
+
   console.log('\n' + (fail ? '❌ ' + fail + ' 项失败' : '✅ 全部通过') + `（${pass} 项）`);
   if (errs.length) { console.log('\n运行时错误：'); errs.slice(0, 10).forEach(e => console.log('  ' + e)); }
   else console.log('ERRORS none');

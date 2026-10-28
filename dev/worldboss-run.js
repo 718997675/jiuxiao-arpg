@@ -88,6 +88,9 @@ const ok = (c, msg, extra) => {
 const eq = (msg, a, b) => ok(a === b, msg, { got: a, want: b });
 const head = (t) => console.log('\n=== ' + t + ' ===');
 const MIN = 60 * 1000;
+/* 周期断言全部从 CFG.cycle 派生，**不要写死分钟数** ——
+ * 2026-10-28 把 30 分钟改成 10 分钟时，写死的 29/31 分钟让整段测试静默失效。 */
+const CYC = CFG.cycle;
 
 /* 把时钟推进 n 毫秒，并跑一次心跳（tick 内部 1 秒节流，喂 1.1 秒保证触发） */
 function advance(ms) {
@@ -100,7 +103,7 @@ head('一、首次 ensure：滚一只出来');
 /* 玩家在桃源村（安全区），没有记录 */
 let r = WB.ensure();
 ok(!!r, 'ensure() 建出了一条记录');
-eq('周期 = 30 分钟真实时间', CFG.cycle, 30 * 60 * 1000);
+eq('周期 = 10 分钟真实时间', CFG.cycle, 10 * 60 * 1000);
 eq('until = spawnAt + cycle', r.until - r.spawnAt, CFG.cycle);
 eq('新记录 killed = false', r.killed, false);
 ok(ORDER.indexOf(r.id) >= 0, 'id 在 WORLD_BOSS_ORDER 里', r.id);
@@ -129,12 +132,12 @@ eq('重复 sync 不会刷第二只', (WB.sync(), ctx.Game.enemies.filter(e => e.
 /* ============================================================ */
 head('二、到点换人（无人击杀 → 立刻换，不空窗）');
 const idA = r.id, spawnA = r.spawnAt;
-advance(29 * MIN);
-eq('29 分钟时还是同一只', WB.rec().id, idA);
-eq('29 分钟时实体还在', ctx.Game.enemies.filter(e => e.wb).length, 1);
-advance(2 * MIN);                     // 越过 30:00
+advance(CYC - MIN);
+eq('周期差 1 分钟时还是同一只', WB.rec().id, idA);
+eq('周期差 1 分钟时实体还在', ctx.Game.enemies.filter(e => e.wb).length, 1);
+advance(2 * MIN);                     // 越过一个完整周期
 const r2 = WB.rec();
-ok(r2.spawnAt !== spawnA, '30 分钟到点换了记录', { old: spawnA, now: r2.spawnAt });
+ok(r2.spawnAt !== spawnA, '到点换了记录', { old: spawnA, now: r2.spawnAt });
 ok(r2.id !== idA, '换的不是同一只（连续两次同一只 = 玩家以为没刷新）',
   { old: idA, now: r2.id });
 eq('新记录 killed = false（不是「死了等复活」）', r2.killed, false);
@@ -153,7 +156,7 @@ head('三、连滚 60 次：顺序与去重');
 let sameInRow = 0, seenAll = {};
 for (let i = 0; i < 60; i++) {
   const prev = WB.rec().id;
-  advance(31 * MIN);
+  advance(CYC + MIN);
   const now = WB.rec();
   if (now.id === prev) sameInRow++;
   seenAll[now.id] = (seenAll[now.id] || 0) + 1;
@@ -177,9 +180,9 @@ eq('记录标记 killed', afterKill.killed, true);
 eq('冷却 = 一个完整周期（从击杀时刻算）', afterKill.until - afterKill.killAt, CFG.cycle);
 eq('击杀时间戳 = 当前时钟', afterKill.killAt, CLOCK);
 eq('击杀后立刻 sync 不会重生', (WB.sync(), ctx.Game.enemies.filter(e => e.wb).length), 0);
-advance(29 * MIN);
-eq('29 分钟后仍然没有', (WB.sync(), ctx.Game.enemies.filter(e => e.wb).length), 0);
-eq('29 分钟后记录仍是 killed', WB.rec().killed, true);
+advance(CYC - MIN);
+eq('周期差 1 分钟时仍然没有', (WB.sync(), ctx.Game.enemies.filter(e => e.wb).length), 0);
+eq('周期差 1 分钟时记录仍是 killed', WB.rec().killed, true);
 advance(2 * MIN);
 eq('冷却满 → 换下一只', WB.rec().killed, false);
 ok(WB.rec().id !== afterKill.id, '换的不是刚杀的那只');
@@ -302,6 +305,43 @@ eq('cur() 取到配置', WB.cur().id, r9.id);
 WB.onKill({ wb: true, wbId: r9.id });
 eq('击杀后 alive() 为 false', WB.alive(), false);
 ok(WB.statusText().indexOf('后再现') >= 0, '击杀后文案变成「后再现」', WB.statusText());
+
+/* ============================================================ */
+head('十、空窗期预选（M18.10 顶部倒计时条的数据源）');
+/* 顶部条要写「下一只在哪」，所以击杀那一刻就得把下一只定下来。
+ * 这一节盯的是：预选存在 → 合法 → 到点真的刷它 → 用完即弃。 */
+const g10 = makeGame();
+ctx.Game = g10;
+WB._seenSpawnAt = 0;
+const r10 = WB.ensure();
+ctx.Game.state.mapId = r10.mapId;
+WB.onMapEnter();
+WB.onKill(ctx.Game.enemies.find(e => e.wb));
+const k10 = WB.rec();
+ok(!!k10.next, '击杀后立刻预选下一只（顶部条才有「在哪」可写）');
+ok(WB._validNext(k10.next), '预选记录通过 _validNext', k10.next);
+ok(k10.next.id !== k10.id, '预选的不可能是刚打死的那只');
+ok((WBD[k10.next.id].homeMaps || []).indexOf(k10.next.mapId) >= 0,
+  '预选地图在这只的主题图里', k10.next);
+const preId = k10.next.id, preMap = k10.next.mapId;
+advance(CYC + MIN);
+const r11 = WB.rec();
+eq('到点刷的就是预选的那只', r11.id, preId);
+eq('到点刷在预选的那张图', r11.mapId, preMap);
+eq('新记录不带 next（已现世，没有空窗要预告）', r11.next, undefined);
+
+head('十·b、预选被改坏 → 重抽，不带着坏坐标跑');
+const g11 = makeGame();
+ctx.Game = g11;
+WB._seenSpawnAt = 0;
+const r12 = WB.ensure();
+ctx.Game.state.mapId = r12.mapId;
+WB.onMapEnter();
+WB.onKill(ctx.Game.enemies.find(e => e.wb));
+WB.rec().next = { id: 'zhulong', mapId: 'no_such_map', x: 0, z: 0 };
+advance(CYC + MIN);
+ok(WB._valid(WB.rec()), '预选地图不存在 → 重抽一条合法记录', WB.rec());
+ok(WB.rec().id !== 'zhulong' || WB.rec().mapId !== 'no_such_map', '没沿用坏掉的地图');
 
 /* ============================================================ */
 console.log('\n' + '='.repeat(56));

@@ -515,6 +515,17 @@ const QUESTS = {
    * 花一把钥匙进去出来，任务板一点不动。
    * 不给 dtype：KEY_TIERS 的钥匙不带类型，5 类是门口自选的，
    * 写死某一类会让「手上只有这一类能打」的玩家接了做不了。
+   *
+   * [P01-A2] 击杀量上限 = 单图一轮能打完的数量（spawnCount × 0.8 ≈ 32~36）。
+   *
+   * 原来最大的三条是 60 / 70 / 80 —— 而一张图只刷 40~56 只、死了不补，
+   * 于是「杀 80 只」必然要出图重进三次（用户原话「要开地图几次才能刷满」）。
+   * 现在野图有了补位器（game.js 的 updateRespawn），理论上 80 只也能一张图打完，
+   * 但那要原地磨六七分钟 —— 悬赏是「顺手接的零活」，不该变成单图刷怪场。
+   *
+   * **奖励同步按比例缩了**：任务量砍到 45% 而奖励不动，等于 XP/金币 单价翻倍，
+   * 会把悬赏变成最划算的刷钱途径（P16 刚把符文砍下来，不能这边又开一个口子）。
+   * 缩放口径：`新奖励 = 旧奖励 × 新数量 / 旧数量`，xp 取整到百、gold 取整到五十。
    * ========================================================== */
   b1_1: {
     id: 'b1_1', part: 1, kind: 'board', name: '悬赏·肃清',
@@ -531,8 +542,8 @@ const QUESTS = {
   b1_3: {
     id: 'b1_3', part: 1, kind: 'board', name: '悬赏·夜不收',
     giver: 'board', map: 'any', zone: null, brief: '夜里出关的，一个都别放回来。',
-    objectives: [{ type: 'killAny', count: 50, label: '斩杀任意妖物' }],
-    rewards: { xp: 2400, gold: 1800 }, repeat: true, require: null
+    objectives: [{ type: 'killAny', count: 34, label: '斩杀任意妖物' }],
+    rewards: { xp: 1600, gold: 1200 }, repeat: true, require: null
   },
   b1_4: {
     id: 'b1_4', part: 1, kind: 'board', name: '悬赏·裂隙',
@@ -550,14 +561,14 @@ const QUESTS = {
   b2_2: {
     id: 'b2_2', part: 2, kind: 'board', name: '悬赏·冰下',
     giver: 'board', map: 'any', zone: null, brief: '冰湖上的渔户不敢下网了。谁让湖面安静下来，谁领钱。',
-    objectives: [{ type: 'killAny', count: 40, label: '斩杀任意妖物' }],
-    rewards: { xp: 3800, gold: 2400 }, repeat: true, require: null
+    objectives: [{ type: 'killAny', count: 32, label: '斩杀任意妖物' }],
+    rewards: { xp: 3000, gold: 1900 }, repeat: true, require: null
   },
   b2_3: {
     id: 'b2_3', part: 2, kind: 'board', name: '悬赏·关外',
     giver: 'board', map: 'any', zone: null, brief: '关外三十里，见者皆敌。不必带回证据，回来就算。',
-    objectives: [{ type: 'killAny', count: 60, label: '斩杀任意妖物' }],
-    rewards: { xp: 5200, gold: 3400 }, repeat: true, require: null
+    objectives: [{ type: 'killAny', count: 36, label: '斩杀任意妖物' }],
+    rewards: { xp: 3100, gold: 2050 }, repeat: true, require: null
   },
   b2_4: {
     id: 'b2_4', part: 2, kind: 'board', name: '悬赏·裂隙',
@@ -575,14 +586,14 @@ const QUESTS = {
   b3_2: {
     id: 'b3_2', part: 3, kind: 'board', name: '悬赏·黄泉',
     giver: 'board', map: 'any', zone: null, brief: '黄泉路上不收活人的钱。收活人的命。',
-    objectives: [{ type: 'killAny', count: 45, label: '斩杀任意妖物' }],
-    rewards: { xp: 8200, gold: 4800 }, repeat: true, require: null
+    objectives: [{ type: 'killAny', count: 34, label: '斩杀任意妖物' }],
+    rewards: { xp: 6200, gold: 3650 }, repeat: true, require: null
   },
   b3_3: {
     id: 'b3_3', part: 3, kind: 'board', name: '悬赏·无名',
     giver: 'board', map: 'any', zone: null, brief: '这一条没有署名，也没有理由。接了就别问。',
-    objectives: [{ type: 'killAny', count: 65, label: '斩杀任意妖物' }],
-    rewards: { xp: 11000, gold: 6400 }, repeat: true, require: null
+    objectives: [{ type: 'killAny', count: 36, label: '斩杀任意妖物' }],
+    rewards: { xp: 6100, gold: 3550 }, repeat: true, require: null
   },
   b3_4: {
     id: 'b3_4', part: 3, kind: 'board', name: '悬赏·裂隙',
@@ -600,14 +611,14 @@ const QUESTS = {
   b4_2: {
     id: 'b4_2', part: 4, kind: 'board', name: '悬赏·断阙',
     giver: 'board', map: 'any', zone: null, brief: '南天的砖一块都不能少。少了，就有人替你补。',
-    objectives: [{ type: 'killAny', count: 50, label: '斩杀任意妖物' }],
-    rewards: { xp: 16000, gold: 8600 }, repeat: true, require: null
+    objectives: [{ type: 'killAny', count: 35, label: '斩杀任意妖物' }],
+    rewards: { xp: 11200, gold: 6000 }, repeat: true, require: null
   },
   b4_3: {
     id: 'b4_3', part: 4, kind: 'board', name: '悬赏·拾遗',
     giver: 'board', map: 'any', zone: null, brief: '遗物归位之前，先清场。',
-    objectives: [{ type: 'killAny', count: 70, label: '斩杀任意妖物' }],
-    rewards: { xp: 21000, gold: 11000 }, repeat: true, require: null
+    objectives: [{ type: 'killAny', count: 36, label: '斩杀任意妖物' }],
+    rewards: { xp: 10800, gold: 5650 }, repeat: true, require: null
   },
   b4_4: {
     id: 'b4_4', part: 4, kind: 'board', name: '悬赏·裂隙',
@@ -619,20 +630,20 @@ const QUESTS = {
   b5_1: {
     id: 'b5_1', part: 5, kind: 'board', name: '悬赏·九霄',
     giver: 'board', map: 'any', zone: null, brief: '最后一页册子上，只写了一个字：杀。',
-    objectives: [{ type: 'killAny', count: 40, label: '斩杀任意妖物' }],
-    rewards: { xp: 24000, gold: 12000 }, repeat: true, require: null
+    objectives: [{ type: 'killAny', count: 36, label: '斩杀任意妖物' }],
+    rewards: { xp: 21600, gold: 10800 }, repeat: true, require: null
   },
   b5_2: {
     id: 'b5_2', part: 5, kind: 'board', name: '悬赏·终焉',
     giver: 'board', map: 'any', zone: null, brief: '走到这里的人不需要理由了。',
-    objectives: [{ type: 'killAny', count: 60, label: '斩杀任意妖物' }],
-    rewards: { xp: 32000, gold: 16000 }, repeat: true, require: null
+    objectives: [{ type: 'killAny', count: 36, label: '斩杀任意妖物' }],
+    rewards: { xp: 19200, gold: 9600 }, repeat: true, require: null
   },
   b5_3: {
     id: 'b5_3', part: 5, kind: 'board', name: '悬赏·无相',
     giver: 'board', map: 'any', zone: null, brief: '镜渊照不出人影了。照不出，就都清掉。',
-    objectives: [{ type: 'killAny', count: 80, label: '斩杀任意妖物' }],
-    rewards: { xp: 42000, gold: 21000 }, repeat: true, require: null
+    objectives: [{ type: 'killAny', count: 36, label: '斩杀任意妖物' }],
+    rewards: { xp: 18900, gold: 9450 }, repeat: true, require: null
   },
   b5_4: {
     id: 'b5_4', part: 5, kind: 'board', name: '悬赏·裂隙',
@@ -673,4 +684,38 @@ function questByLegacyId(legacyId) {
 function npcIdOfGiver(giverId) {
   if (typeof NPC_ALIAS !== 'undefined' && NPC_ALIAS[giverId]) return NPC_ALIAS[giverId];
   return giverId;
+}
+
+/* ---------------- 交付人（P11） ----------------
+ *
+ * 为什么需要单独一张「交付人」而不是直接用 `giver`：
+ *
+ *   主线 / 支线：谁发的交给谁，`giver` 就够了。
+ *   **悬赏：`giver` 写的是 `'board'`** —— 任务板不是 NPC，`npcIdOfGiver('board')`
+ *   还是 `'board'`，而 `QuestSys.readyOf()` 是按 `q.giver === giverId` 过滤的，
+ *   于是「录事手上可复命的悬赏」永远是空数组。
+ *
+ * 这一条就是 P11 的根因，而且比用户描述的更严重：不只是「没提示交给谁」，
+ * 是**根本交不掉** —— 悬赏完成后没有任何 NPC 认这条账，玩家只能放弃重接。
+ *
+ * 悬赏是「卷」级的（`part: 1~5`），录事也是「卷」级的（`campA_side`~`campE_side`），
+ * 两者天然一一对应，所以默认交付人 = 本卷录事。真需要特例时在任务上写 `turnIn` 覆盖。
+ */
+function turnInOf(q) {
+  if (!q) return null;
+  if (q.turnIn) return q.turnIn;
+  if (q.kind === 'board') {
+    const letter = 'ABCDE'[Math.max(0, Math.min(4, (q.part || 1) - 1))];
+    return 'camp' + letter + '_side';
+  }
+  return q.giver || null;
+}
+
+/** 交付人 → 真正的 NPC id（campA_main → elder） */
+function turnInNpcOf(q) { return npcIdOfGiver(turnInOf(q)); }
+
+/** 交付人显示名。追踪条 / 对话 / 面板三处共用，避免三处各写一套。 */
+function turnInNameOf(q) {
+  const id = turnInNpcOf(q);
+  return (typeof NPCS !== 'undefined' && NPCS[id]) ? NPCS[id].name : '掌事';
 }
