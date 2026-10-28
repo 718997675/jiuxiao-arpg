@@ -66,6 +66,51 @@
   #questTrack .obj.done{color:#5ce08a;text-decoration:line-through}
   #goldRow{font-size:12px;color:#e8c878;letter-spacing:1px;display:flex;gap:14px;text-shadow:0 1px 3px #000}
 
+  /* ---------- 世界 Boss · 追踪行（M18.3） ----------
+   * 和任务追踪框分开两块：任务三行是「你接了的事」，
+   * 世界 Boss 是「世界正在发生的事」。混在一起玩家会以为那是一条任务，
+   * 然后去山海志里找它的复命按钮。 */
+  #wbTrack{width:210px;display:none;cursor:pointer;padding:6px 10px 7px;
+    background:linear-gradient(90deg,rgba(46,16,10,.86),rgba(10,7,6,.74));
+    border-left:2px solid #c8563a;box-shadow:0 0 16px rgba(200,60,30,.16)}
+  #wbTrack:hover{border-left-color:#ff8a5a;box-shadow:0 0 22px rgba(255,90,50,.3)}
+  #wbTrack .wb-k{font-size:9.5px;letter-spacing:3px;color:#e0895a}
+  #wbTrack .wb-n{font-family:"STKaiti","KaiTi",serif;font-size:14.5px;letter-spacing:2px;
+    color:#ffd0a8;text-shadow:0 0 12px rgba(220,80,40,.55);line-height:1.35}
+  #wbTrack .wb-m{font-size:11px;color:#a89a88;letter-spacing:.5px}
+  #wbTrack .wb-t{color:#ffb070;font-variant-numeric:tabular-nums;letter-spacing:1px}
+  /* 已讨伐：整块降饱和，鼠标也不该再给「可点」的暗示 */
+  #wbTrack.dead{border-left-color:#5a4a42;cursor:default;
+    background:linear-gradient(90deg,rgba(28,24,22,.8),rgba(10,9,8,.7));box-shadow:none}
+  #wbTrack.dead .wb-n{color:#9a8a80;text-shadow:none}
+  #wbTrack.dead .wb-k{color:#7a6a60}
+
+  /* ---------- 世界 Boss · 现世横幅（M18.3） ----------
+   * 位置在屏幕上方 26%（约 1/3 处），横贯整幅 —— 和试炼的中央大字
+   * 刻意区分：那个是「你正在经历的事」，这个是「世界发生的事」。
+   * 颜色由 JS 写进 --wbc（取领域色），六只一眼能分出是谁。 */
+  #wbBanner{position:absolute;left:0;right:0;top:26%;display:none;pointer-events:none;z-index:13;
+    text-align:center;padding:16px 0 18px;opacity:0}
+  #wbBanner.show{display:block;animation:wbbanner 3.2s ease-out forwards}
+  #wbBanner::before,#wbBanner::after{content:'';position:absolute;left:0;right:0;height:1px;
+    background:linear-gradient(90deg,transparent,var(--wbc,#e0895a) 30%,var(--wbc,#e0895a) 70%,transparent);opacity:.85}
+  #wbBanner::before{top:0}
+  #wbBanner::after{bottom:0}
+  #wbBanner .wbb-bg{position:absolute;inset:0;
+    background:linear-gradient(90deg,rgba(10,6,4,0),rgba(10,6,4,.74) 20%,rgba(12,7,5,.86) 50%,rgba(10,6,4,.74) 80%,rgba(10,6,4,0))}
+  #wbBanner .wbb-in{position:relative}
+  #wbBanner .wbb-kicker{font-size:10.5px;letter-spacing:8px;color:var(--wbc,#e0895a);opacity:.9}
+  #wbBanner .wbb-name{font-family:"STKaiti","KaiTi",serif;font-size:clamp(28px,4.2vw,46px);
+    letter-spacing:12px;line-height:1.25;margin-top:2px;
+    text-shadow:0 0 30px currentColor,0 3px 8px #000}
+  #wbBanner .wbb-sub{font-size:11.5px;letter-spacing:3px;color:#c8b8a4;margin-top:2px}
+  @keyframes wbbanner{
+    0%{opacity:0;transform:translateY(-16px)}
+    11%{opacity:1;transform:translateY(0)}
+    76%{opacity:1;transform:translateY(0)}
+    100%{opacity:0;transform:translateY(-6px)}
+  }
+
   /* ---------- Boss 血条 ---------- */
   #bossbar{position:absolute;left:50%;top:22px;transform:translateX(-50%);width:min(560px,52vw);display:none;text-align:center}
   #bossbar .bn{font-family:"STKaiti","KaiTi",serif;font-size:19px;letter-spacing:4px;color:#f0d8a8;
@@ -2378,6 +2423,7 @@
   <div id="topright">
     <div id="miniWrap"><canvas id="minimap" width="336" height="336"></canvas><div id="zoneName">桃源村</div></div>
     <div id="goldRow"><span id="goldTxt">金 0</span><span id="potionTxt">药 0</span></div>
+    <div id="wbTrack" onclick="UI.gotoWorldBoss()"></div>
     <div id="questTrack"></div>
   </div>
 
@@ -2422,6 +2468,16 @@
     <div class="dh-affix" id="dgAffix">无词缀</div>
     <div class="dh-bar"><i id="dgBar"></i></div>
     <button class="dh-quit" onclick="Dungeon.quit()">退 出 地 脉</button>
+  </div>
+
+  <!-- 世界 Boss 现世横幅（M18.3）：横贯屏幕上方 1/3，3.2 秒 -->
+  <div id="wbBanner">
+    <div class="wbb-bg"></div>
+    <div class="wbb-in">
+      <div class="wbb-kicker">世 界 Boss 现 世</div>
+      <div class="wbb-name" id="wbbName">烛九阴</div>
+      <div class="wbb-sub" id="wbbSub">钟山之神　·　九霄之巅</div>
+    </div>
   </div>
 
   <!-- 每波开场大字 -->
@@ -2850,6 +2906,8 @@
 <script src="src/data/data-trial.js"></script>
 <!-- M5 地下城：钥匙阶 / 层 / 类型 / 词缀 / 地脉异闻，dungeon.js 全靠它 -->
 <script src="src/data/data-dungeon.js"></script>
+<!-- M18 世界 Boss：6 只巨兽 + 刷新配置 + 掉落表。纯数据，worldboss.js 与 game.js 读它 -->
+<script src="src/data/data-worldboss.js"></script>
 <!-- 逻辑层 -->
 <script src="src/weapons.js"></script>
 <script src="src/items.js"></script>
@@ -2866,6 +2924,7 @@
 <script src="src/ui-minimap.js"></script>
 <script src="src/trial.js"></script>
 <script src="src/dungeon.js"></script>
+<script src="src/worldboss.js"></script>
 <script src="src/mobile.js"></script>
 <script src="src/ui-save.js"></script>
 <script src="src/game.js"></script>

@@ -24,6 +24,20 @@ docs/status/skill-refactor.md     ← feat/skill-refactor 的台账
 
 **那怎么看全局**：`./dev/status.sh` —— 它会直接从各分支的 git 对象里读，不用切分支。
 
+## 专题台账：一条线干到一半插进来的大块活
+
+有些活不是「这条线的下一个节点」，而是**插单的独立系统**（例：`world-boss.md` = M18，
+9 个节点 + 6 张设计表 + 17 个字段词表）。塞进分支台账会把主线进度淹掉，
+所以允许在**同一个分支**上另开 `docs/status/<专题>.md`：
+
+```
+docs/status/act-expansion.md      ← 分支台账（M1~M7）
+docs/status/world-boss.md         ← 专题台账（M18 世界 Boss，同分支）
+```
+
+`status.sh` 会把「文件名不是任何分支 slug」的文件归到「专题台账」一栏，
+所以不会隐身。专题做完后合进分支台账、删掉专题文件，别长期并存两份。
+
 ## 格式约定（脚本会解析，别改结构）
 
 | 元素 | 写法 | 说明 |

@@ -100,5 +100,35 @@ if [ "${1:-}" = "--check" ]; then
     warn "$MISSING 条线缺台账"
   fi
 fi
+
+# ---------- 专题台账 ----------
+# 一条线干到一半插进来一个大专题（比如 M18 世界 Boss，9 个节点 6 张设计表）时，
+# 塞进分支台账会把主线进度淹掉，所以允许另开一个 docs/status/<专题>.md。
+# 这里把它们也列出来 —— 否则「一分支一份」的约定会让这些台账在总览里隐身。
+EXTRAS=""
+for f in docs/status/*.md; do
+  [ -e "$f" ] || continue
+  s=$(basename "$f" .md)
+  [ "$s" = "README" ] && continue
+  is_branch=0
+  for b in $LIST; do [ "$(slug_of "$b")" = "$s" ] && is_branch=1 && break; done
+  [ "$is_branch" -eq 1 ] && continue
+  EXTRAS="$EXTRAS $s"
+done
+if [ -n "$EXTRAS" ]; then
+  echo
+  echo "  ${B}专题台账${N} ${DIM}（当前分支上的附加任务线，不属于任何分支）${N}"
+  for s in $EXTRAS; do
+    c=$(cat "docs/status/$s.md" 2>/dev/null || true)
+    total=$(printf '%s\n' "$c" | grep -cE '^\|[^|]+\|[^|]+\| *(✅|🔄|⬜|⏸|❌)' || true)
+    done_n=$(printf '%s\n' "$c" | grep -cE '^\|[^|]+\|[^|]+\| *✅' || true)
+    cur=$(printf '%s\n' "$c" | grep -m1 '^> 当前：' | sed 's/^> 当前：//' || true)
+    [ -z "$cur" ] && cur="（台账缺「> 当前：」行）"
+    printf '  %-26s %-9s %s\n' "$s" "${done_n}/${total}" "$cur"
+    printf '  %-26s %-9s %s\n' "" "" "${DIM}└ docs/status/$s.md${N}"
+  done
+fi
+
+echo
 echo "  ${DIM}看全文：./dev/status.sh act ｜ 切分支：./dev/branch.sh act${N}"
 echo "  ${DIM}规矩：每次任务收尾更新台账（和写日志同等重要），格式见 docs/status/README.md${N}"

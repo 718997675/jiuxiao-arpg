@@ -902,6 +902,14 @@ function buildMonster(kind, cfg) {
       }
     }
   }
+  /* [M18] 兜底缩放：上面只有 brute / demon 那两支写了 g.scale.setScalar(s)，
+   * 于是 `model: 'humanoid'` 的条目**从来不缩放**。受影响的既有首领 5 只
+   * （swordlord 2.2 / boneabbot 1.9 / swordguardian 2.1 / bladelord 2.1 /
+   * swordemperor 2.5）实际一直是 2.17 米 —— 和普通小怪一样高，
+   * 而数据里写的是 2 倍。M18 的世界 Boss 用的是 `wb_*` 新键，
+   * 骨架没做之前也走这条兜底，不修就会得到「5 倍缩放的巨人变成普通人」。
+   * 放在最后统一设一次：brute / demon 已经设过同值，setScalar 是幂等的。 */
+  if (a.group) a.group.scale.setScalar(s);
   return setFootR(a);
 }
 

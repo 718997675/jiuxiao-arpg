@@ -239,6 +239,10 @@ const Minimap = {
     /* ---------- 敌人 ---------- */
     for (const e of Game.enemies) {
       if (e.dead) continue;
+      /* [M18.4] 世界 Boss 不画这个红点 —— 它有自己的星标（`drawWorldBoss`）。
+       * 不跳过的话星标底下会压着一颗 6px 的红点，
+       * 玩家看到的就是「一个带红底的金星」，和常驻首领的标记分不开。 */
+      if (e.wb) continue;
       g.fillStyle = e.boss ? '#ff4a3a' : (e.elite ? '#ff9a3c' : '#c85a4a');
       const r = e.boss ? 6 : 2.6;
       g.beginPath(); g.arc(tx(e.pos.x), tz(e.pos.z), r, 0, 7); g.fill();
@@ -250,6 +254,11 @@ const Minimap = {
       g.fillStyle = (l.item && typeof RARITY !== 'undefined') ? RARITY[l.item.rarity].color : '#e8c878';
       g.fillRect(tx(l.pos.x) - 1.5, tz(l.pos.z) - 1.5, 3, 3);
     }
+
+    /* ---------- 世界 Boss 星标（M18.4）----------
+     * 放在敌人 / 掉落**之后**画：它是全图唯一的事件级目标，
+     * 被一只路过的小怪红点盖住就白做了。 */
+    this.drawWorldBoss(g, tx, tz, scale);
 
     /* ---------- 玩家箭头 ---------- */
     const ang = Math.atan2(Game.playerFace.x, Game.playerFace.z);
@@ -281,5 +290,143 @@ const Minimap = {
       g.moveTo(x - 5, z - 5); g.lineTo(x + 2, z - 1); g.lineTo(x - 2, z + 2); g.lineTo(x + 5, z + 5);
       g.stroke();
     }
+  },
+
+  /* ============================================================
+   * 世界 Boss 星标（M18.4）
+   *
+   * 为什么必须和别的标记长得不一样：小地图上已经有红点（首领）、
+   * 橙点（精英）、黄点（NPC）、蓝钻（路标石）、绿三角（章出口）。
+   * 世界 Boss 是全图唯一的事件级目标，用「又一个红点」表达，
+   * 玩家会把它和常驻首领当成同一类东西，找不到也记不住。
+   *
+   * 所以它是一套**组合标记**，四层叠起来，任何单层都不与已有标记撞：
+   *   ① 领域虚线圆 —— 和场景里那圈地面光环同半径，说「范围」
+   *   ② 旋转刻度环 —— 实线细环 + 4 个缓慢公转的刻度，说「这是信标」
+   *   ③ 双层五角星 —— 领域色实心 + 深色描边 + 白色高光心，说「这是谁」
+   *   ④ 外发光 —— 颜色就是 ③ 的颜色，让它在满屏 zone 框里跳出来
+   *
+   * 颜色取 `cfg.domain.color`：六只各一色（金 / 绿 / 蓝 / 褐 / 红 / 紫），
+   * 所以玩家在追踪行看到「毒沼领域」再打开地图，颜色是对得上的。
+   *
+   * 只画在**它当前所在的那张图**上。跨图不画边缘箭头 ——
+   * 每张图的坐标系是各自独立的（size 140~300），跨图算出来的方向
+   * 是假的，指错方向比不指更糟。「它在哪张图」交给追踪行说。
+   *
+   * 位置直接读 `WorldBoss.rec()` 的 (x,z)，与实体落点同源 ——
+   * 不要读 `Game.enemies` 里那只的位置：它被吸引/击退后会移动，
+   * 而星标要标的是「领域中心」。
+   *
+   * 尺寸说明：canvas 内部分辨率 336，CSS 显示 168（触屏 98 / 82）。
+   * 所以这里的 1px 在手机上只有 0.24 CSS px —— 星标半径给到 15，
+   * 缩到 82px 面板上还有 3.7 CSS px，比 6px 的红点（1.5 CSS px）大得多。
+   * ============================================================ */
+
+  /* 五角星路径：10 个顶点交替外/内半径。抽出来是因为要画两层
+   * （外层领域色 + 内层高光），两次必须严格同形，否则会出现毛边。 */
+  _starPath(g, x, z, rOut, rIn) {
+    g.beginPath();
+    for (let i = 0; i < 10; i++) {
+      const a = -Math.PI / 2 + i * Math.PI / 5;
+      const rr = (i % 2 === 0) ? rOut : rIn;
+      const px = x + Math.cos(a) * rr, pz = z + Math.sin(a) * rr;
+      if (i === 0) g.moveTo(px, pz); else g.lineTo(px, pz);
+    }
+    g.closePath();
+  },
+
+  /* 把 #rrggbb 往白色混 t（0~1）。
+   * 只给星标填充用 —— 领域色是给横幅、光环、图鉴用的，
+   * 那些地方面积大、看得清；星标只有 17px，饕餮的 #c07a3a
+   * 压在小地图深褐底色上会糊成一团。提亮 18% 就够，不要改成另一个颜色。 */
+  _lift(hex, t) {
+    const n = parseInt(hex.slice(1), 16);
+    const ch = [(n >> 16) & 255, (n >> 8) & 255, n & 255]
+      .map(v => Math.round(v + (255 - v) * t));
+    return 'rgb(' + ch.join(',') + ')';
+  },
+
+  drawWorldBoss(g, tx, tz, scale) {
+    if (typeof WorldBoss === 'undefined' || !WorldBoss.rec) return;
+    const r = WorldBoss.rec();
+    if (!r) return;
+    if (!Game.state || Game.state.mapId !== r.mapId) return;
+    const cfg = (typeof worldBossById === 'function') ? worldBossById(r.id) : null;
+    if (!cfg) return;
+    if (r.killed) return;                // 已讨伐：地图上不该再有标记
+
+    const dom = cfg.domain || {};
+    const col = dom.color || '#ffd166';
+    const x = tx(r.x), z = tz(r.z);
+
+    const now = (typeof performance !== 'undefined' && performance.now)
+      ? performance.now() : Date.now();
+    /* 呼吸：0.88~1.12 倍，2.6 秒一个来回。
+     * 静态五角星在满屏 zone 框里很容易被当成装饰，动起来才是「事件」。 */
+    const k = 1 + Math.sin(now / 1000 * 2.4) * 0.12;
+
+    /* ① 领域圈：和场景里那圈地面光环同一个半径，
+     * 让「小地图上踩进去了」和「屏幕上踩进去了」是同一件事 */
+    if (dom.radius) {
+      g.save();
+      g.globalAlpha = 0.5;
+      g.strokeStyle = col;
+      g.lineWidth = 1.6;
+      g.setLineDash([7, 6]);
+      g.beginPath(); g.arc(x, z, dom.radius * scale, 0, 7); g.stroke();
+      g.restore();
+    }
+
+    /* ② 信标环 + 公转刻度
+     * 环是实线（虚线已经给了领域圈，两个都虚线就分不出层次）。
+     * 环压到 alpha .32：它是「底座」，不能比星标抢眼 ——
+     * 第一版环太亮、刻度太长，缩到 82px 的面板上看着像罗盘不像标记。 */
+    g.save();
+    g.globalAlpha = 0.32;
+    g.strokeStyle = col;
+    g.lineWidth = 1.6;
+    g.beginPath(); g.arc(x, z, 22.5 * k, 0, 7); g.stroke();
+    g.globalAlpha = 0.8;
+    g.lineWidth = 2.6;
+    g.lineCap = 'round';
+    const spin = -now / 1000 * 0.7;
+    for (let i = 0; i < 4; i++) {
+      const a = spin + i * Math.PI / 2;
+      g.beginPath();
+      g.moveTo(x + Math.cos(a) * 24.5 * k, z + Math.sin(a) * 24.5 * k);
+      g.lineTo(x + Math.cos(a) * 28 * k, z + Math.sin(a) * 28 * k);
+      g.stroke();
+    }
+    g.restore();
+
+    /* ③ 双层五角星
+     * 外层先铺一圈深色底再填领域色：小地图底色是深褐/深绿/深蓝，
+     * 单靠填充色在「褐色地面 + 褐色领域」时（饕餮 · #c07a3a）会糊掉，
+     * 加一圈墨色描边就永远有轮廓。
+     * 尺寸 17.5 / 7.7（比值 0.44）：比值越小星角越细，
+     * 0.38 的「标准五角星」填起来像一堆细刺，0.44 才像一枚徽章。 */
+    g.save();
+    g.shadowColor = col;
+    g.shadowBlur = 14;
+    this._starPath(g, x, z, 17.5 * k, 7.7 * k);
+    g.fillStyle = '#120a06';
+    g.fill();
+    g.restore();
+
+    this._starPath(g, x, z, 17.5 * k, 7.7 * k);
+    g.fillStyle = this._lift(col, 0.18);
+    g.fill();
+    g.strokeStyle = 'rgba(18,10,6,.92)';
+    g.lineWidth = 2;
+    g.stroke();
+
+    /* 内层高光心：同形缩到 48%，暖白色半透明。
+     * 作用是「这颗星有芯」—— 纯色块看起来像图标，有芯看起来像光源。 */
+    g.save();
+    g.globalAlpha = 0.45;
+    this._starPath(g, x, z, 8.4 * k, 3.7 * k);
+    g.fillStyle = '#fff6e2';
+    g.fill();
+    g.restore();
   },
 };

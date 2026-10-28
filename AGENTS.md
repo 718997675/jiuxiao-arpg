@@ -144,6 +144,8 @@ git fetch origin                 # 分支都在远程，clone 完就全能看到
 | 地貌（地表贴图 + 道具撒点） | `src/world.js`：`_makeGroundTexture` 的 `conf` 表 + 裂缝/雪粒/水纹分支；`buildMap` 里 `cfg.props` 的 `else if` 链 |
 | 首领落点 | `src/data/data-maps.js` 的 `bossPosOf(mapId, bossId, idx)`。**不要再往 `MAP_BOSS_POS` 里加坐标**，那是老图的表 |
 | 出口门落点 / 开门时机 | 落点 `src/data/data-maps.js` 的 `gatePosOf(mapId)`（boss 区最深处）；时机 `src/game.js` 的 `mapCleared`/`markCleared` + `src/world.js` 的 `makeExitGate` |
+| 世界 Boss（数据 / 刷新 / 通知 / 星标） | 数据 `src/data/data-worldboss.js`（`WORLD_BOSSES` 6 只 + `WORLD_BOSS_CFG`）；运行时 `src/worldboss.js`（`WorldBoss`：`ensure`/`rollNext`/`sync`/`tick`/`onKill`/`makeAura`）。**不要把世界 Boss 写进 `MAPS[mapId].bosses`** —— 那张表是常驻首领，读档会被 `spawnBosses` 反复重生 |
+| 八部天龙（8 魔将 + 八印 + 终门） | 数据 `src/data/data-monsters.js` 的 `bafo_*`（`resist` 一个 −60 洞 + `stagger` + `patterns`）+ `dev/check-bafo.js`。**与世界 Boss 是互斥的两套语言**，见 `V2-ROADMAP.md` §18.7 |
 
 ## 5. 回归脚本（改完必跑）
 
@@ -158,6 +160,9 @@ node dev/mobile-layout.js    # 6 视口 × 10 页签：键位重叠/出屏/裁�
 node dev/live-check.js       # 线上能否开局（推完 30~60s 后跑）
 node dev/mobile-layout.js --live   # 线上版布局回归
 node dev/preview-check.js --url <预览地址>   # 预览站：能开局 + 资源不越界 + 存档隔离
+node dev/check-worldboss.js  # 世界 Boss 数据层：抗性平坦 / 三阶段 / 领域 / 掉落 / **与八部去重**（1152 项）
+node dev/worldboss-run.js    # 世界 Boss 运行时：30 分钟轮转（时间打桩）、击杀冷却、跨会话、存档往返（76 项）
+node dev/worldboss-live.js   # 世界 Boss 浏览器实测：实体/光环/横幅/星标/真实击杀链路（可加 --shot 截图）
 ```
 
 ## 6. 踩过的坑（改之前先看一眼，能省几小时）
@@ -215,10 +220,14 @@ node dev/preview-check.js --url <预览地址>   # 预览站：能开局 + 资�
 - 门的三条边界：**卷末章不出门**（回营地走大传送门）、**终章 `linear:false` 不出门**
   （混沌海是枢纽，8 张副本走坛上的 8 道门 + 8 印开终门）、`id: null` 的图位跳过。
 - **出口门立在首领区最深处**（`gatePosOf`，`data-maps.js`）：boss 区圆心以北 0.62×可用半径，
+  离区界留 4.2 米。**不要放回入口旁** —— 入口已经有传送阵 + 路标石，再挤一扇门玩家分不清；
+  而且一进图就能穿门跳过整张地图。骨架的约定是「入口在南（+z），首领场在北（−z）」。
 - **门要等本图首领第一次倒地才出现**（`Game.markCleared` + `state.mapCleared[mapId]`）：
   进图时没打过就只记落点（`world.gatePending`），首领倒地那一瞬间由 `makeExitGate`
   当场立在 boss 区（带闪光 + 日志）；之后永久存在，存档里记 `world.mapCleared`，
   重进图 / 重开页面都还在。`world.js` 的两个出生时机必须共用 `makeExitGate`。
+  老档由 `save.js:normalizeDoc` 用 `bossKilled` 反推（偏差方向是「多给门」，可接受）。
+- 门和传送阵只差 0.72 缩放、长得几乎一样 → **门上必须挂名牌**（`→ 目标图名`）。
 - **`ui.js:renderQuests` 的 `wbCard` 必须在「无任务」分支之前取**。`const` 写在分支后面时，
   任务全交完再打开山海志会读到 TDZ 直接抛 `Cannot access 'wbCard' before initialization`。
 - **营地按卷累积解锁**（`campsUpToPart`），和 `save.js` 的 `normalizeDoc` 同一口径。

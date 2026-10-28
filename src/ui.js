@@ -3026,13 +3026,19 @@ const UI = {
     for (const a of tr.sides) all.push({ a: a, kind: 'side' });
     for (const a of tr.boards) all.push({ a: a, kind: 'board' });
 
+    /* 世界 Boss 卡要留着 —— 它不属于任务链，没接任务时它反而是
+     * 山海志里唯一有内容的一格。
+     * 注意它必须**在空列表分支之前**取：`const` 声明在下面时，
+     * 空列表这条分支会读到 TDZ 里的 `wbCard` 直接抛 ReferenceError
+     * （表现为「任务全交完，一开山海志就报错」）。 */
+    const wbCard = (this.worldBossCard ? this.worldBossCard() : '');
     if (!all.length) {
-      list.innerHTML = `<div class="quest"><div class="qn">暂无委托</div>
+      list.innerHTML = wbCard + `<div class="quest"><div class="qn">暂无委托</div>
         <div class="qb">回营地找掌事听主线，找录事接支线，任务板上还有悬赏。</div></div>`;
       return;
     }
     const tag = { main: '主线', side: '支线', board: '悬赏' };
-    list.innerHTML = all.map(({ a, kind }) => {
+    list.innerHTML = wbCard + all.map(({ a, kind }) => {
       const q = QUESTS[a.id];
       if (!q) return '';
       const rows = QuestSys.lines(a).map(o =>
@@ -3073,6 +3079,96 @@ const UI = {
       h += `<div class="obj" style="color:#c8a86a">悬赏 ${tr.boards.length} 条${done ? ' · ' + done + ' 条可交' : ''}</div>`;
     }
     el.innerHTML = h;
+  },
+
+  /* ---------------- 世界 Boss（M18.3） ----------------
+   * 三处显示同一份数据（横幅 / 追踪行 / 山海志卡），倒计时全部走
+   * `WorldBoss.timeText()` —— 各写一个 format 迟早出现「一处 12:34、
+   * 一处 12:35」，玩家会以为面板坏了。 */
+
+  /* 现世横幅：屏幕上方 1/3 横贯一条，3.2 秒。
+   * 颜色取领域色（`domain.color`），六只一眼能分出是谁。
+   * 重播要「先摘 show、强制回流、再挂」——否则同一只连刷两次不会动。 */
+  showWorldBossBanner(cfg, mapName) {
+    const el = document.getElementById('wbBanner');
+    if (!el || !cfg) return;
+    const col = (cfg.domain && cfg.domain.color) || '#e0895a';
+    el.style.setProperty('--wbc', col);
+    const nm = document.getElementById('wbbName');
+    if (nm) { nm.textContent = cfg.name; nm.style.color = col; }
+    const sub = document.getElementById('wbbSub');
+    if (sub) sub.textContent = (cfg.title || '') + '　·　' + (mapName || '');
+    el.classList.remove('show');
+    void el.offsetWidth;
+    el.classList.add('show');
+    clearTimeout(this._wbBannerT);
+    this._wbBannerT = setTimeout(() => el.classList.remove('show'),
+      (typeof WORLD_BOSS_CFG !== 'undefined' ? WORLD_BOSS_CFG.bannerT : 3.2) * 1000);
+  },
+
+  /* 追踪行：每秒被 WorldBoss.tick 调一次。
+   * **只改文本、不重建 DOM** —— 每秒重建会让「点一下前往」在
+   * 手指按下与抬起之间失效（手机端尤其明显）。 */
+  renderWorldBoss(wb) {
+    const el = document.getElementById('wbTrack');
+    if (!el) return;
+    const r = (wb && typeof wb.rec === 'function') ? wb.rec() : null;
+    const cfg = r ? worldBossById(r.id) : null;
+    if (!r || !cfg) { el.style.display = 'none'; return; }
+    const dead = !!r.killed;
+    const map = MAPS[r.mapId] || {};
+    el.style.display = 'block';
+    el.classList.toggle('dead', dead);
+    /* 结构只在「换人 / 换图 / 死活变化」时重建，其余时间只改倒计时 */
+    const key = r.id + '|' + r.mapId + '|' + (dead ? 1 : 0);
+    if (this._wbKey !== key) {
+      this._wbKey = key;
+      el.innerHTML =
+        '<div class="wb-k">' + (dead ? '已 讨 伐' : '世 界 Boss') + '</div>' +
+        '<div class="wb-n">' + cfg.name + '</div>' +
+        '<div class="wb-m">' + (map.name || r.mapId) + '</div>' +
+        '<div class="wb-m"><span class="wb-t" id="wbTime">--:--</span>' +
+        (dead ? ' 后再现' : ' 后离去') + '</div>';
+    }
+    const t = document.getElementById('wbTime');
+    if (t) { const txt = wb.timeText(); if (t.textContent !== txt) t.textContent = txt; }
+    /* 山海志开着的时候，卡片里的倒计时也要跟着走 ——
+     * 面板不会每秒重绘（那样会把滚动位置也重置掉）。 */
+    const ct = document.getElementById('wbCardTime');
+    if (ct) { const txt2 = wb.timeText(); if (ct.textContent !== txt2) ct.textContent = txt2; }
+  },
+
+  /* 点追踪行 / 山海志卡片的「前往」。门禁交给 Game.travelTo ——
+   * 那里已经处理了「没抵达 / 境界不足 / 印门」，这里再判一遍必然漂移。 */
+  gotoWorldBoss() {
+    const r = (typeof WorldBoss !== 'undefined') ? WorldBoss.rec() : null;
+    if (!r) return;
+    if (r.killed) { this.toast('这一只已经被讨伐了，等下一只。'); return; }
+    if (!MAPS[r.mapId]) return;
+    if (Game.state.mapId === r.mapId) { this.toast('它就在这张图上。'); return; }
+    this.closeAll();
+    Game.travelTo(r.mapId);
+  },
+
+  /* 山海志顶部的常驻卡。它不属于任何任务链，所以单独拼一段，
+   * 不塞进 QuestSys —— 那个模块只管「接了的事」。 */
+  worldBossCard() {
+    const r = (typeof WorldBoss !== 'undefined') ? WorldBoss.rec() : null;
+    const cfg = r ? worldBossById(r.id) : null;
+    if (!r || !cfg) return '';
+    const dead = !!r.killed;
+    const map = MAPS[r.mapId] || {};
+    const dom = cfg.domain || {};
+    const rows = [
+      '所在 · ' + (map.name || r.mapId),
+      '剩余 · <span id="wbCardTime">' + WorldBoss.timeText() + '</span>' + (dead ? '（讨伐后冷却）' : ''),
+      '领域 · ' + (dom.name || '—') + '　半径 ' + (dom.radius || '—') + ' 米'
+    ].map(t => `<div class="qo">${t}</div>`).join('');
+    return `<div class="quest wbc"><div class="qn">${cfg.name}` +
+      `<span style="color:#c8563a;font-size:11px;margin-left:6px">${dead ? '已讨伐' : '世界 Boss'}</span></div>` +
+      `<div class="qb">${cfg.lore || ''}</div>${rows}` +
+      `<div class="qr" style="color:${dead ? '#6a5a50' : '#c8a86a'};cursor:${dead ? 'default' : 'pointer'}"` +
+      (dead ? '' : ' onclick="UI.gotoWorldBoss()"') + `>${dead ? '—' : '点击前往 ›'}</div></div>`;
   },
 
   /* ---------------- 对话 ---------------- */

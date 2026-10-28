@@ -142,6 +142,39 @@ const SaveManager = {
     };
   },
 
+  /* [M18.2] 世界 Boss：一条记录（当前那只 / 冷却中的那一只）。
+   *
+   * 为什么整形到这么严：这是**唯一**「不玩也在走」的数据，
+   * 时间戳被写成字符串 / NaN 的话，`ensure()` 会永远判「已过期」，
+   * 每次 tick 都滚一只新的 —— 表现是「世界 Boss 每秒换一只」。
+   * 认不出的一律收敛成 null，让 WorldBoss 自己重新 roll。
+   *
+   * 不写迁移函数：老档没有这个字段，补 null 之后 `ensure()` 会滚一只，
+   * 跟新档第一次开局完全同一条路径。 */
+  _worldBossRec(v) {
+    const src = this._obj(v);
+    if (!src) return null;
+    if (typeof src.id !== 'string' || !src.id) return null;
+    if (typeof src.mapId !== 'string' || !src.mapId) return null;
+    /* 这里用 Number 而不是 this._num：`_num` 的兜底是 `def || 0`，
+     * 传 NaN 进去会得到 0 —— 于是「坏时间戳」会变成一个合法的 1970 年，
+     * 下面那条区间检查就形同虚设。 */
+    const x = Number(src.x), z = Number(src.z);
+    const spawnAt = Number(src.spawnAt), until = Number(src.until);
+    if (!isFinite(x) || !isFinite(z) || !isFinite(spawnAt) || !isFinite(until)) return null;
+    /* 时间戳必须落在合理区间：2001 年之后、2100 年之前。
+     * 秒级时间戳（少三位）会落在这里被拦下 —— 那是最常见的复制粘贴错误。 */
+    if (spawnAt < 1e12 || spawnAt > 4.1e12 || until < 1e12 || until > 4.1e12) return null;
+    if (until < spawnAt) return null;
+    return {
+      id: src.id, mapId: src.mapId,
+      x: x, z: z,
+      spawnAt: spawnAt, until: until,
+      killed: !!src.killed,
+      killAt: this._num(src.killAt, 0)
+    };
+  },
+
   /* 难度白名单校验：认不出的值（含旧档缺失）统一回落默认档，绝不让脏值进存档 */
   _difficulty(v) {
     const def = (typeof DEFAULT_DIFF !== 'undefined') ? DEFAULT_DIFF : 'normal';
@@ -324,6 +357,10 @@ const SaveManager = {
       q.done = q.done.filter(id => typeof id === 'string');
     }
 
+    /* [M18.2] 世界 Boss：放 world 段（它是「世界状态」，不是角色状态）。
+     * 老档补 null，不写迁移 —— 见 _worldBossRec 的注释。 */
+    w.worldBoss = this._worldBossRec(w.worldBoss);
+
     /* ---- V2 预留分区（S1/S3/S6/S7 会往这里加东西） ---- */
     d.stash = this._obj(d.stash) || { items: [], mats: {} };
     if (!Array.isArray(d.stash.items)) d.stash.items = [];
@@ -401,6 +438,8 @@ const SaveManager = {
         mapsSeen: Array.isArray(s.mapsSeen) ? s.mapsSeen.slice() : undefined,
         /* [M3b-fix] 出口门开关（本图首领打过才立门），整形在 normalizeDoc 里 */
         mapCleared: this._obj(s.mapCleared) || {},
+        /* [M18.2] 世界 Boss：一条记录，整形交给 _worldBossRec */
+        worldBoss: this._worldBossRec(s.worldBoss)
       },
       stash: this._obj(s.stash) || { items: [], mats: {} },
       /* v1.0.4 商店刷新窗口 { at, items, rolls }。
@@ -443,6 +482,7 @@ const SaveManager = {
       mapsSeen: Array.isArray(w.mapsSeen) ? w.mapsSeen.slice() : ['village'],
       mapCleared: this._obj(w.mapCleared) || {},
       /* [M18.2] 世界 Boss（normalizeDoc 已经整形过，这里只是搬位置） */
+      worldBoss: this._worldBossRec(w.worldBoss),
       stash: doc.stash || { items: [], mats: {} },
       shop: (doc.shop && Array.isArray(doc.shop.items)) ? doc.shop : null,
       codex: this._codex(doc.codex),

@@ -1572,6 +1572,11 @@ const Game = {
     if ((m.npcs || []).length) this.spawnNPCs();
     this.spawnEnemies();
     this.spawnBosses();
+    /* [M18.2] 世界 Boss：进图后对齐记录与实体。
+     * 放在 spawnBosses 之后，保证「清场 → 重生」之后它一定在。
+     * **不要**把世界 Boss 写进 MAPS[mapId].bosses：那张表是常驻首领，
+     * 读档会被 spawnBosses 反复重生，30 分钟轮转直接失效。 */
+    if (typeof WorldBoss !== 'undefined') WorldBoss.onMapEnter();
     this.recalc();
     this.applyDoll();
     /* [FIX-TOWN] 回城满血：踏入安全区（桃源村）即回满生命与灵力。
@@ -1747,7 +1752,10 @@ const Game = {
   },
 
   spawnEnemy(kind, x, z, elite, levelOverride, bossId) {
-    const cfg = bossId ? BOSSES[bossId] : MONSTERS[kind];
+    /* [M18.2] 世界 Boss 是独立表（WORLD_BOSSES），但字段结构兼容 BOSSES，
+     * 所以这里只多一个回退分支，**不复制一份 spawnEnemy**。
+     * 顺序是 BOSSES 优先：万一将来 id 撞了，常驻首领的手感不能变。 */
+    const cfg = bossId ? (BOSSES[bossId] || (typeof WORLD_BOSSES !== 'undefined' ? WORLD_BOSSES[bossId] : null)) : MONSTERS[kind];
     if (!cfg) return null;
     const isBoss = !!bossId;
     /* [v1.0.5] 同屏普通怪硬上限：超过就不再生成（调用方都已处理 null）。
@@ -1867,6 +1875,11 @@ const Game = {
       spawnPos: new THREE.Vector3(x, 0, z), active: !isBoss, hitT: 0,
       /* [S5] 精英词缀与族群抗性 */
       affixes, aff, resist, wardElem,
+      /* [M18.2] 护甲倍率从 cfg 落到实体上。`damageEnemy` 一直在读
+       * `e.armorMul`，但以前只有地下城词缀会写它；世界 Boss 的数据里
+       * 明写 1.0（不许再乘，见 data-worldboss.js 文件头），这里必须
+       * 真的传下去，否则「数据写了但运行时没读到」这种坑会一直留着。 */
+      armorMul: cfg.armorMul || 1,
       family: cfg.family || 'humanoid',
       /* [S16] 发声用的体型：audio.js 按 1/size^0.55 降调。
        * 精英 +12%、首领再 ×1.35，Boss 一吼就该比小怪沉一个八度。 */
@@ -2464,6 +2477,15 @@ const Game = {
     if (typeof Trial !== 'undefined' && Trial.active) Trial.tick(dt);
     /* [M5] 地下城：无常传送 / HUD 心跳。清场判定走 onKill，不在这里扫。 */
     if (typeof Dungeon !== 'undefined' && Dungeon.active) Dungeon.update(dt);
+    /* [M18.2] 世界 Boss：每秒一次心跳（到点换人 + 倒计时）。
+     * 放在 Dungeon 之后、updateWorldAnims 之前 —— 它只改实体与 UI 文本，
+     * 不参与本帧的战斗结算，所以放在哪个位置都不影响手感，
+     * 但必须**在 updateEnemies 之后**：tick 里会 despawn 掉敌人，
+     * 在遍历中途改 enemies 数组会漏掉一只。 */
+    if (typeof WorldBoss !== 'undefined') WorldBoss.tick(dt);
+    /* 领域光环的淡入与旋转要按帧走（1 秒节流会一顿一顿）。
+     * 没有光环时内部第一行就判空返回，代价可以忽略。 */
+    if (typeof WorldBoss !== 'undefined') WorldBoss.anim(dt);
     this.updateWorldAnims(dt);
     this.updateInteract();
     this.tickAudio(dt);
@@ -6339,7 +6361,13 @@ const Game = {
        * 二来 BOSS_POS 是按大地图坐标写的，重生点会落在擂台的错误位置。
        * 混沌天魔在试炼里也不触发通关结算（那是主线终章的演出）。 */
       const inTrial = (typeof Trial !== 'undefined' && Trial.active);
-      if (inDungeon) {
+      /* [M18.2] 世界 Boss 先分流。它**不能**走下面那个 else 分支：
+       * 那里读的是 `BOSSES[bid].level` 与 `BOSS_POS[bid]`，
+       * 而世界 Boss 既不在 BOSSES 里、也不在老坐标表里 ——
+       * 走进去就是 `undefined.level` 直接抛异常，整场战斗结算中断。 */
+      if (e.wb) {
+        if (typeof WorldBoss !== 'undefined') WorldBoss.onKill(e);
+      } else if (inDungeon) {
         /* [M5] 地下城守卫倒了 = 通关。延后 600ms 再结算：
          * onEnemyDeath 正在 updateEnemies 的遍历里跑，结算会 loadMap 换图，
          * 当场换会打断遍历（和「分裂幼体先入队」是同一类问题）。
