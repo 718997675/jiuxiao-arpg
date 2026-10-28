@@ -143,6 +143,7 @@ git fetch origin                 # 分支都在远程，clone 完就全能看到
 | zone 拓扑 / 骨架 / 刷怪分配 | `src/data/data-maps.js` 的 `ZONE_ARCHETYPES` + `MAP_SPECS` + `buildZones`/`suggestSpawnTotal` |
 | 地貌（地表贴图 + 道具撒点） | `src/world.js`：`_makeGroundTexture` 的 `conf` 表 + 裂缝/雪粒/水纹分支；`buildMap` 里 `cfg.props` 的 `else if` 链 |
 | 首领落点 | `src/data/data-maps.js` 的 `bossPosOf(mapId, bossId, idx)`。**不要再往 `MAP_BOSS_POS` 里加坐标**，那是老图的表 |
+| 出口门落点 / 开门时机 | 落点 `src/data/data-maps.js` 的 `gatePosOf(mapId)`（boss 区最深处）；时机 `src/game.js` 的 `mapCleared`/`markCleared` + `src/world.js` 的 `makeExitGate` |
 
 ## 5. 回归脚本（改完必跑）
 
@@ -213,8 +214,11 @@ node dev/preview-check.js --url <预览地址>   # 预览站：能开局 + 资�
   计划书 §3.6 的原话是「章的边界是门，不是按钮」。
 - 门的三条边界：**卷末章不出门**（回营地走大传送门）、**终章 `linear:false` 不出门**
   （混沌海是枢纽，8 张副本走坛上的 8 道门 + 8 印开终门）、`id: null` 的图位跳过。
-- 门在 `px-7`、传送阵在 `px`，两扇门长得一样 → **门上必须挂名牌**（`→ 目标图名`），
-  否则玩家分不清「这扇是去下一张」还是「这扇是开山河图」。
+- **出口门立在首领区最深处**（`gatePosOf`，`data-maps.js`）：boss 区圆心以北 0.62×可用半径，
+- **门要等本图首领第一次倒地才出现**（`Game.markCleared` + `state.mapCleared[mapId]`）：
+  进图时没打过就只记落点（`world.gatePending`），首领倒地那一瞬间由 `makeExitGate`
+  当场立在 boss 区（带闪光 + 日志）；之后永久存在，存档里记 `world.mapCleared`，
+  重进图 / 重开页面都还在。`world.js` 的两个出生时机必须共用 `makeExitGate`。
 - **`ui.js:renderQuests` 的 `wbCard` 必须在「无任务」分支之前取**。`const` 写在分支后面时，
   任务全交完再打开山海志会读到 TDZ 直接抛 `Cannot access 'wbCard' before initialization`。
 - **营地按卷累积解锁**（`campsUpToPart`），和 `save.js` 的 `normalizeDoc` 同一口径。

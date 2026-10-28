@@ -56,7 +56,7 @@ M7 把「打完终 boss 就结束」改成了终局循环：混沌海从战斗�
 | M5 | 地下城：`dungeon.js`；5 类 × 5 阶；词缀；图鉴加成；钥匙掉落 | ✅ | 新建 `src/dungeon.js`、`src/data/data-dungeon.js`、`dev/test-m5.js`、`dev/dungeon-sim.js`、`dev/probe-dungeon.js`；改 `index.html`、`src/game.js`、`src/core/save.js`、`src/items.js`、`src/world.js`、`src/data/data-monsters.js`、`src/data/data-world.js`、`src/data/data-core.js`、`src/data/data-maps.js` | 本次 |
 | M6 | 平衡 / 打磨：60 级曲线复算；**基底保持 8 阶**（否决 12 阶）+ ilvl 终局加速；传世 40 件；套装 18 套；**终局难度回补**；世界结构体检；性能实测；手机端回归 | ✅ | `src/data/data-core.js`、`data-uniques.js`、`data-items.js`、`data-monsters.js`、`data-maps.js`、`data-world.js`、`src/items.js`、`src/actors.js`、`dev/act-check.js` | 本次（见下） |
 | M7 | **终章重做 · 八部天龙**：8 魔将副本 + 8 魔将之印 + 终门 + 五阶段终 boss + 9 个专属模型 + 全传世掉落 | 🔄 | `data-world.js`、`data-maps.js`、`data-monsters.js`、`game.js`、`ui.js`、`dev/check-bafo.js` | 见下「M7 小节状态」 |
-| M3b-fix | **图间门**：一章里第 2 张起的图（落霞坡 / 沉骨滩 / 玄铁矿洞 / 万剑坑 …）在游戏里没有入口 —— M1 只给章尾挂了门。补 `nextMapInWorld`（章内先串、章尾再跨章），门加名牌 | ✅ | `src/data/data-world.js`、`src/world.js`、`dev/act-check.js`（+59 项） | 本次 |
+| M3b-fix | **图间门**：一章里第 2 张起的图（落霞坡 / 沉骨滩 / 玄铁矿洞 / 万剑坑 …）在游戏里没有入口 —— M1 只给章尾挂了门。补 `nextMapInWorld`（章内先串、章尾再跨章）；门立在**首领区最深处**、**首领第一次倒地才出现**（`state.mapCleared`），门加名牌 | ✅ | `src/data/data-world.js`、`src/data/data-maps.js`、`src/world.js`、`src/game.js`、`src/core/save.js`、`dev/act-check.js`、`dev/zone-check.js` | 本次 |
 
 ### M7 小节状态（终章重做 · 换账号按这张表继续）
 
@@ -488,6 +488,8 @@ M7 把「打完终 boss 就结束」改成了终局循环：混沌海从战斗�
 | 2026-10-28 | 出口门从「章间门」改成「**图间门**」（`nextMapInWorld`）：章内先串下一张，章尾才跨章 | 用户报「落霞坡还有其他新地图没有入口」。M1 只给章尾挂门，一章里第 2 张起的图（落霞坡 / 沉骨滩 / 玄铁矿洞 / 万剑坑 / 忘川河滩 …）在上一张图里怎么走都走不过去，只能翻山河图 —— 而计划书 §3.6 写的是「章的边界是门，不是按钮」，指每一张图都有门 |
 | 2026-10-28 | 门的三种「不出」保留：卷末章（回营地）、终章 `linear:false`（八部坛走 8 道门 + 8 印）、`id:null` 图位跳过 | 卷间靠营地 + 大传送门；八部是枢纽不是走廊，线性门会把「一坛八门」走成一条走廊 |
 | 2026-10-28 | 门上挂「→ 目标图名」名牌 | 门（`px-7`）和传送阵（`px`）长得一样，只差缩放 0.72；不加名牌玩家分不清「去下一张」和「开山河图」 |
+| 2026-10-28 | 出口门**移到首领区最深处**（`gatePosOf`：boss 区圆心以北 0.62×可用半径），不再放入口旁 | 用户：「到下一张地图的传送门应该设置在地图的最后一个区域，地图都是这么设计的」。入口已经有传送阵 + 路标石，三样挤在出生点；而且一进图就能穿门跳过整张图 |
+| 2026-10-28 | 出口门**本图首领第一次倒地才出现**，之后永久存在（`state.mapCleared[mapId]`） | 用户：「第一次首领死了才显示才对，以后就一直显示」。门在 boss 区，不打首领就走不到；标记按**图**记而不是按首领（同一只首领出现在多张图上，按 bossKilled 判会把两张图的门一起开）。老档用 `bossKilled` 反推，偏差方向是「多给门」 |
 | 2026-10-28 | `renderQuests` 的 `wbCard` 提到「无任务」分支之前 | 顺带修的真 bug：`const` 声明在分支之后，任务全交完再开山海志会读到 TDZ 抛 `Cannot access 'wbCard' before initialization`（`test-quest` §3 复命那步直接崩） |
 | 2026-10-27 | 结构定为三层：**卷(5) → 章(12) → 图(30)** | 用户提出「大章节套小章节，每个大章一营地一传送门」 |
 | 2026-10-27 | 卷的级数**不均分**（18/12/10/10/10），按暗黑 2 的节奏 | 均分会让卷一只有 20 分钟；经验曲线决定了后期天然更慢 |

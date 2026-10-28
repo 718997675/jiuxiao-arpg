@@ -283,6 +283,27 @@ const SaveManager = {
     if (w.mapsSeen.indexOf('village') < 0) w.mapsSeen.push('village');
     if (w.mapId && w.mapsSeen.indexOf(w.mapId) < 0) w.mapsSeen.push(w.mapId);
 
+    /* [M3b-fix] 出口门的开关：本图首领第一次倒地才立门，之后永久存在。
+     * 记的是「按图」而不是「按首领」—— 同一只首领可能出现在多张图上
+     * （chief 在血月沼泽和沉骨滩各一只），按 bossKilled 判会把两张图的门一起开。
+     *
+     * 老档没有这个字段，用 bossKilled 尽力反推（本图任一首领有击杀记录即算打过）。
+     * 反推的偏差方向是「多给门」：老档在血月沼泽杀过 chief，沉骨滩的门会提前出现。
+     * 比起「打过的图门不出现、玩家以为卡关」，这个方向的错更能接受；
+     * 新档一律走精确的 per-map 标记，不受影响。 */
+    const mc = this._obj(w.mapCleared);
+    if (mc) w.mapCleared = mc;
+    else {
+      w.mapCleared = {};
+      const bk = this._obj(c.bossKilled) || {};
+      if (typeof MAPS !== 'undefined') {
+        for (const id in MAPS) {
+          const bs = MAPS[id].bosses || [];
+          for (const b of bs) if (bk[b] > 0) { w.mapCleared[id] = 1; break; }
+        }
+      }
+    }
+
     const q = this._obj(w.quests);
     if (!q) {
       w.quests = { active: [], done: [], next: null, announced: {}, board: { cd: {}, count: {} } };
@@ -377,7 +398,9 @@ const SaveManager = {
         act: s.act,
         camps: Array.isArray(s.camps) ? s.camps.slice() : undefined,
         portals: Array.isArray(s.portals) ? s.portals.slice() : undefined,
-        mapsSeen: Array.isArray(s.mapsSeen) ? s.mapsSeen.slice() : undefined
+        mapsSeen: Array.isArray(s.mapsSeen) ? s.mapsSeen.slice() : undefined,
+        /* [M3b-fix] 出口门开关（本图首领打过才立门），整形在 normalizeDoc 里 */
+        mapCleared: this._obj(s.mapCleared) || {},
       },
       stash: this._obj(s.stash) || { items: [], mats: {} },
       /* v1.0.4 商店刷新窗口 { at, items, rolls }。
@@ -418,6 +441,8 @@ const SaveManager = {
       camps: Array.isArray(w.camps) ? w.camps.slice() : ['campA'],
       portals: Array.isArray(w.portals) ? w.portals.slice() : ['portalA'],
       mapsSeen: Array.isArray(w.mapsSeen) ? w.mapsSeen.slice() : ['village'],
+      mapCleared: this._obj(w.mapCleared) || {},
+      /* [M18.2] 世界 Boss（normalizeDoc 已经整形过，这里只是搬位置） */
       stash: doc.stash || { items: [], mats: {} },
       shop: (doc.shop && Array.isArray(doc.shop.items)) ? doc.shop : null,
       codex: this._codex(doc.codex),
@@ -637,6 +662,7 @@ const SaveManager = {
       mapId: 'village', playerPos: { x: 0, z: 10 },
       /* [M0] 世界结构（新档默认停在卷一第 1 章，只到过桃源村） */
       part: 1, act: '1-1', camps: ['campA'], portals: ['portalA'], mapsSeen: ['village'],
+      mapCleared: {},
       bossKilled: {}, playTime: 0
     };
   },

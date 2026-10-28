@@ -32,6 +32,7 @@ const MAPS = g('MAPS'), ZONES = g('MAP_ZONES'), BOSSES = g('BOSSES'), NPCS = g('
 const MAP_SPECS = g('MAP_SPECS');
 const zoneContains = g('zoneContains'), mapZones = g('mapZones');
 const zonesOfMap = g('zonesOfMap'), bossPosOf = g('bossPosOf');
+const gatePosOf = g('gatePosOf'), nextMapInWorld = g('nextMapInWorld'), zonesContain = g('zonesContain');
 
 /* [M3] 要校验的图 = 手写 MAP_ZONES + 骨架展开 MAP_SPECS。
  * 以前只遍历 MAP_ZONES，所以骨架图（4 张新图，将来 25 张）一张都验不到 ——
@@ -137,6 +138,38 @@ for (const mapId of ALL_MAPS) {
         if (!p) { fail('首领 ' + bid + ' 没有落点'); return; }
         if (!zoneContains(sanctum, p[0], p[1])) fail('首领 ' + bid + ' 落点 (' + p[0] + ',' + p[1] + ') 在 sanctum 外');
       });
+    }
+  }
+
+  /* 5b. 出口门在**首领区最深处**（M3b-fix）
+   * 门是「顺着走下一张」的入口，必须放在打穿整张图之后才到得了的地方。
+   * M1 那版把它放在入口旁（px-7），结果一进图就能穿门跳过全图，而且和传送阵、
+   * 路标石三样挤在出生点。四条判据：① 在 boss 区内 ② 不贴区界 ③ 不压首领
+   * ④ 离入口传送阵足够远。 */
+  const gateTo = nextMapInWorld(mapId);
+  if (gateTo) {
+    const gp = gatePosOf(mapId);
+    if (!gp) fail('有下一张图 ' + gateTo + '，但没有 boss 区，出口门无处可挂');
+    else {
+      if (!zonesContain(mapId, gp.x, gp.z)) fail('出口门 (' + gp.x + ',' + gp.z + ') 不在可走区内');
+      if (!sanctum) fail('出口门没有 boss 区可挂');
+      else {
+        if (!zoneContains(sanctum, gp.x, gp.z)) fail('出口门 (' + gp.x + ',' + gp.z + ') 在 boss 区「' + sanctum.id + '」外');
+        const dEdge = sanctum.type === 'circle'
+          ? sanctum.r - Math.hypot(gp.x - sanctum.x, gp.z - sanctum.z)
+          : Math.min(sanctum.w * 0.5 - Math.abs(gp.x - sanctum.x), sanctum.h * 0.5 - Math.abs(gp.z - sanctum.z));
+        if (dEdge < 2) fail('出口门离 boss 区边界只有 ' + dEdge.toFixed(1) + ' 米，贴墙了');
+        for (let i = 0; i < (cfg.bosses || []).length; i++) {
+          const bp = bossPosOf(mapId, cfg.bosses[i], i);
+          if (!bp) continue;
+          const db = Math.hypot(gp.x - bp[0], gp.z - bp[1]);
+          if (db < 4) fail('出口门离首领 ' + cfg.bosses[i] + ' 只有 ' + db.toFixed(1) + ' 米，打起来会互相挡');
+        }
+      }
+      if (cfg.portal) {
+        const de = Math.hypot(gp.x - cfg.portal.x, gp.z - cfg.portal.z);
+        if (de < 20) fail('出口门离入口传送阵只有 ' + de.toFixed(1) + ' 米 —— 又放回出生点旁边了');
+      }
     }
   }
 

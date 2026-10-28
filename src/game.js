@@ -1544,7 +1544,9 @@ const Game = {
     this.sun.color.setHex(m.sun);
     this.sun.intensity = m.sunI * 0.82;
 
-    this.world = buildMap(mapId);
+    /* 出口门要不要这次进图就立起来，取决于「本图首领打过没有」——
+     * 见 world.js 的 makeExitGate / buildMap 注释。 */
+    this.world = buildMap(mapId, { cleared: this.mapCleared(mapId) });
     this.scene.add(this.world.root);
     /* [M12] 出生点取入口区域靠内的位置：从传送阵往地图里挪 6 米，
      * 玩家一进图就站在「门口」，而不是凭空出现在地图中央。
@@ -6328,6 +6330,8 @@ const Game = {
     if (e.boss) {
       this.state.bossKilled[e.kind] = (this.state.bossKilled[e.kind] || 0) + 1;
       this.onBossKill(e);
+      /* [M3b-fix] 出口门：本图首领第一次倒地才立起来（boss 区北侧），之后永久存在 */
+      this.markCleared(e);
       if (this.boss === e) { this.boss = null; UI.updateBoss(null); }
       UI.toast('击败 ' + e.cfg.name, 'lv');
       this.save();
@@ -6716,6 +6720,43 @@ const Game = {
 
   onBossKill(e) {
     // 已包含在 onKill 中
+  },
+
+  /* ---------------- 出口门开关（M3b-fix） ----------------
+   * 门不是一进图就有：**本图首领第一次倒地**才立起来，之后永久存在。
+   * 存档记在 `world.mapCleared[mapId]`（老档由 normalizeDoc 用 bossKilled 反推），
+   * 所以「关掉网页再进来」门还在，不会让玩家以为进度丢了。 */
+  mapCleared(mapId) {
+    const s = this.state;
+    if (!s) return false;
+    const id = mapId || s.mapId;
+    return !!(s.mapCleared && s.mapCleared[id]);
+  },
+
+  /* 首领倒地 → 打上「本图已通关」标记，并把出口门当场立到 boss 区北侧。
+   * 只立一次：重打首领时 world.gate 已存在，直接返回。 */
+  markCleared(e) {
+    const s = this.state;
+    if (!s || !s.mapId) return;
+    /* 世界 Boss 是野图随机刷的，不是本图常驻首领 —— 它倒了不算通关这张图 */
+    if (e && e.wb) return;
+    /* 地下城 / 试炼里的「首领」属于副本流程，通关结算另有其人 */
+    if (typeof Dungeon !== 'undefined' && Dungeon.active) return;
+    if (typeof Trial !== 'undefined' && Trial.active) return;
+    if (!s.mapCleared) s.mapCleared = {};
+    s.mapCleared[s.mapId] = 1;
+    const w = this.world;
+    if (!w || w.gate || !w.gatePending) return;
+    const p = w.gatePending;
+    w.gate = makeExitGate(w.root, p.x, p.z, p.to, w.colliders, w.anims, w.labels);
+    w.gatePending = null;
+    /* 开门演出：玩家刚打完首领，抬头就在 boss 区北侧看见一道金光 */
+    try {
+      FX.flashCircle(new THREE.Vector3(p.x, 0, p.z), 4.5, 0xffd166, 0.9);
+      FX.ring(new THREE.Vector3(p.x, 0, p.z), 6, 0xffd166, 1.2, 0.3);
+      SFX.cast();
+    } catch (err) { }
+    UI.log('前路已开 · ' + p.name, 'good');
   },
 
   victory() {
