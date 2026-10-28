@@ -3459,6 +3459,11 @@ const Game = {
         const cp = aim.clone();
         /* [S4] 双重变体：1 + sextra 片新星，副新星在主轴附近随机偏移 */
         const n = 1 + Math.max(0, sextra);
+        /* [P2b] 台阶 Lv9 易伤 / Lv5 持续伤害。新星是瞬发，所以直接挂在命中上 ——
+         * 元素用冰（'霜蚀'），不能借通用 hit 通道的 burnPct（那个写死火焰灼烧）。 */
+        const fnVuln = Math.max(0, (bBeh && bBeh.vuln) || 0);
+        const fnDot = Math.max(0, (bBeh && bBeh.tierDot) || 0);
+        const fnGen = this.mapGen;
         const novaAt = c2 => {
           const hits = this.enemies.filter(e => !e.dead && DIST2D(e.pos, c2) < 6 * srad + e.radius);
           for (const e of hits) {
@@ -3467,12 +3472,29 @@ const Game = {
             e.slow = 0.45; e.slowT = 3.5 + sdur;
             /* 寒冰系大节点 / 星阙旧档：冰霜新星命中的敌人被冻结 */
             if (st.flags.novaFreeze) { e.slow = 1; e.slowT = Math.max(e.slowT, 1.2); }
+            if (fnVuln) {
+              e.vuln = Math.max(e.vuln || 0, fnVuln);
+              e.vulnT = Math.max(e.vulnT || 0, 4);
+            }
+            if (fnDot && !e.dead && (e.dotT || 0) < 0.75) {
+              this.applySkillDot(e, st.atk * fnDot / 100 * spow, 3, 'ice', '霜蚀');
+            }
           }
           FX.ring(c2, 6 * srad, 0x8ad8ff, 0.7, 0.3);
           FX.flashCircle(c2, 6 * srad, 0x8ad8ff, 0.45);
           for (let i = 0; i < 30; i++) {
             const ang = Math.random() * 7, r = RND(1, 6);
             FX.burst(new THREE.Vector3(c2.x + Math.cos(ang) * r, RND(0.1, 1), c2.z + Math.sin(ang) * r), 0xaae8ff, 2, { speed: 2, size: 0.12, life: 0.8, gravity: -1, additive: true });
+          }
+          /* [P2b] 台阶 Lv10「收尾爆燃」：新星没有「结束」这一说，所以落点
+           * 0.6 秒后再炸一发 —— 与变体「霜爆」的 aftershock 是同族观感，
+           * 但走的是 endBurst 这个键，两条会叠加而不是互相顶掉。 */
+          if (bBeh && bBeh.endBurst) {
+            setTimeout(() => {
+              if (this.mapGen !== fnGen || this.dead) return;
+              this.explodeAt(c2.clone(), 6 * srad * 0.9,
+                st.atk * (bBeh.endBurst / 100) * spow, 0x8ad8ff, false, true, 'aoe');
+            }, 600);
           }
         };
         for (let i = 0; i < n; i++) {
@@ -3650,24 +3672,49 @@ const Game = {
         const dur = 4 + sdur;
         const rad = 3 * srad;
         const segs = [], wfx = [];
+        /* [P2b] 数量台阶「双段 / 三段」：1 + sextra 道火墙，沿垂直于施法方向的
+         * 一条线并排铺开。间距取 0.95 倍半径 —— 这个数不是拍脑袋：
+         * 数量轴的伤害折算（skillCountDmgPct）是按「每段都打得中同一个目标」算的，
+         * 间距一旦大过半径，站中间的目标只吃到一道，却要背单发 -7.5% 的惩罚，
+         * 三段的实际伤害反而比一段低。0.95 保证中间的目标吃到全部 N 道，
+         * 总伤正好是 Σ0.85^n（1.85 / 2.57 倍）。 */
+        const walls = 1 + Math.max(0, sextra);
+        const perp = new THREE.Vector3(-dir.z, 0, dir.x);
+        /* 第 w 道火墙的起点（围火变体用它外层数，普通形态用它做横向偏移） */
+        const wallOff = w => (w - (walls - 1) / 2) * rad * 0.95;
         /* [P3] 围火（变体）：不再是朝前的火带，改成绕自己一圈的火墙 ——
-         * 防守向的用法，怪一贴身就在烧 */
+         * 防守向的用法，怪一贴身就在烧。多道时是同心环（半径逐层外扩），
+         * 因为绕着人一圈的墙往旁边平移没有意义。 */
         const ringFire = !!(bBeh && bBeh.ring);
         if (ringFire) {
-          const nSeg = 6, rr = Math.max(2.4, rad * 1.2);
-          for (let i = 0; i < nSeg; i++) {
-            const a = (i / nSeg) * Math.PI * 2;
-            const c = new THREE.Vector3(pp.x + Math.cos(a) * rr, 0, pp.z + Math.sin(a) * rr);
-            segs.push(c);
-            wfx.push(FX.area(c, rad, 0xff5522, dur, { opacity: 0.22 }));
+          const nSeg = 6;
+          for (let w = 0; w < walls; w++) {
+            const rr = Math.max(2.4, rad * 1.2) * (1 + w * 0.6);
+            for (let i = 0; i < nSeg; i++) {
+              const a = (i / nSeg) * Math.PI * 2;
+              const c = new THREE.Vector3(pp.x + Math.cos(a) * rr, 0, pp.z + Math.sin(a) * rr);
+              segs.push(c);
+              wfx.push(FX.area(c, rad, 0xff5522, dur, { opacity: 0.22 }));
+            }
           }
         } else {
-          for (let i = 0; i < 4; i++) {
-            const c = new THREE.Vector3(aim.x + dir.x * i * 2.6, 0, aim.z + dir.z * i * 2.6);
-            segs.push(c);
-            wfx.push(FX.area(c, rad, 0xff5522, dur, { opacity: 0.22 }));
+          for (let w = 0; w < walls; w++) {
+            const off = wallOff(w);
+            const o0 = new THREE.Vector3(aim.x + perp.x * off, 0, aim.z + perp.z * off);
+            for (let i = 0; i < 4; i++) {
+              const c = new THREE.Vector3(o0.x + dir.x * i * 2.6, 0, o0.z + dir.z * i * 2.6);
+              segs.push(c);
+              wfx.push(FX.area(c, rad, 0xff5522, dur, { opacity: 0.22 }));
+            }
           }
         }
+        /* [P2b] 台阶 Lv9 场内易伤 / Lv5 命中挂持续伤害。
+         * 领域类技能不能靠通用 hit 通道：那个只在施法瞬间、以准星为圆心结算一次，
+         * 而怪是**后来走进火里**的。所以两条都在每一跳上结算。
+         * 持续伤害只在快烧完时补一次（dotT < 0.75）—— 每跳都调 applySkillDot
+         * 会每 0.5 秒刷一行飘字，看着像卡了。 */
+        const fwVuln = Math.max(0, (bBeh && bBeh.vuln) || 0);
+        const fwDot = Math.max(0, (bBeh && bBeh.tierDot) || 0);
         /* [P3] 追随（变体）：整条火带跟着人走（四段锚点 + 四块网格一起挪） */
         if (bBeh && bBeh.follow) this.attachFollow(segs, wfx, dur);
         let ticks = 0;
@@ -3675,7 +3722,6 @@ const Game = {
         /* [P2] 蔓延（精研）：每秒向施法点两侧各延长 1 码，最多 +N 码。
          * 新段与旧段共用 segs 数组 —— 伤害循环节点 iterates 同一份，自动跟上 */
         if (bBeh && bBeh.grow) {
-          const perp = new THREE.Vector3(-dir.z, 0, dir.x);
           const growMax = Math.max(1, Math.round(bBeh.grow));
           let grown = 0;
           const growIv = setInterval(() => {
@@ -3699,13 +3745,21 @@ const Game = {
               if (DIST2D(e.pos, c) < rad + e.radius) {
                 const { dmg } = this.rollDamage(st.atk * 0.55 * spow);
                 this.damageEnemy(e, dmg, false, { silent: true, elem: 'fire' });
+                if (fwVuln) {
+                  e.vuln = Math.max(e.vuln || 0, fwVuln);
+                  e.vulnT = Math.max(e.vulnT || 0, 4);
+                }
+                if (fwDot && (e.dotT || 0) < 0.75) {
+                  this.applySkillDot(e, st.atk * fwDot / 100 * spow, 3, 'fire', '灼烧');
+                }
               }
             }
           }
           if (ticks >= Math.ceil(dur / 0.5)) {
             clearInterval(iv);
-            /* [P3] 爆燃（变体）：火墙烧完在每段原地炸一发。
-             * 放在收尾而不是另开定时器 —— 时段必须跟火墙本体对得上 */
+            /* [P3] 爆燃（变体）/ [P2b] 台阶 Lv10「收尾爆燃」：火墙烧完在每段原地炸一发。
+             * 放在收尾而不是另开定时器 —— 时段必须跟火墙本体对得上。
+             * 台阶用 `+endBurst` 叠加：选了爆燃变体是 120 + 60，没选的是 60。 */
             if (bBeh && bBeh.endBurst) {
               const burst = st.atk * (bBeh.endBurst / 100) * spow;
               for (const c of segs) this.explodeAt(c.clone(), rad * 1.1, burst, 0xff7a30, false, true, 'aoe');
@@ -3739,36 +3793,69 @@ const Game = {
       case 'thundercloud': {
         this.actor.atkAnim = 1; this.actor.atkType = 'cast';
         SFX.thunder();
-        const c = aim.clone();
         const rad = 7 * srad;
         const dur = 6 + sdur;
-        const zona = FX.area(c, rad, 0x8a7aff, dur, { opacity: 0.2 });
-        /* [P3] 随身（变体）：雷云跟着人走 */
-        if (bBeh && bBeh.follow) this.attachFollow([c], [zona], dur);
-        let ticks = 0;
+        /* [P2b] 数量台阶「双段 / 三段」：1 + sextra 朵雷云，围着落点散开。
+         * 偏移取 0.55 倍半径：完全叠在一起看不出是两朵（白给），散太开又变成
+         * 三个谁也罩不住怪的小云。这与毒雾多团用的是同一个比例。
+         * 每朵各自维护 ticks / rampN / 定时器 —— 共用一个会让三朵同步跳、
+         * 蓄电也互相串味。 */
+        const clouds = 1 + Math.max(0, sextra);
+        /* [P2b] 台阶 Lv9 易伤 / Lv5 持续伤害：领域类靠每一跳结算，
+         * 不走通用 hit 通道（那个只在施法瞬间、以准星为圆心结算一次）。 */
+        const tcVuln = Math.max(0, (bBeh && bBeh.vuln) || 0);
+        const tcDot = Math.max(0, (bBeh && bBeh.tierDot) || 0);
         const gen = this.mapGen;
-        /* [P2] 蓄电（精研）：玩家停在云里每 1 秒，落雷频率 +15%。
-         * 「频率」落成每跳多劈几道（3 道 × 15% × 驻留秒数），上限 +6 道，
-         * 走出云就清零 —— 换来的增频只在站桩引导时成立 */
-        let rampN = 0;
-        const iv = setInterval(() => {
-          if (this.mapGen !== gen) { clearInterval(iv); return; }
-          ticks++;
-          const inZone = this.enemies.filter(e => !e.dead && DIST2D(e.pos, c) < rad + e.radius);
-          if (bBeh && bBeh.ramp) {
-            const pg = this.playerGroup.position;
-            rampN = DIST2D(pg, c) < rad + 2 ? Math.min(rampN + 1, 20) : 0;
-          }
-          const extra = (bBeh && bBeh.ramp) ? Math.min(6, Math.floor(rampN * 3 * 0.15)) : 0;
-          const bolts = Math.min(inZone.length, Math.min(3, inZone.length) + extra);
-          for (let i = 0; i < bolts; i++) {
-            const e = inZone[Math.floor(Math.random() * inZone.length)];
-            FX.beam(new THREE.Vector3(e.pos.x, 7, e.pos.z), new THREE.Vector3(e.pos.x, 1, e.pos.z), 0xa9c8ff, 0.18);
-            const { dmg, crit } = this.rollDamage(st.atk * 1.1 * spow);
-            this.damageEnemy(e, dmg, crit, { elem: 'lightning', silent: true });
-          }
-          if (ticks >= Math.ceil(dur / 1)) clearInterval(iv);
-        }, 1000);
+        for (let ci = 0; ci < clouds; ci++) {
+          const ang = (ci / clouds) * Math.PI * 2;
+          const off = clouds === 1 ? 0 : rad * 0.55;
+          const c = new THREE.Vector3(aim.x + Math.cos(ang) * off, 0, aim.z + Math.sin(ang) * off);
+          const zona = FX.area(c, rad, 0x8a7aff, dur, { opacity: 0.2 });
+          /* [P3] 随身（变体）：雷云跟着人走 */
+          if (bBeh && bBeh.follow) this.attachFollow([c], [zona], dur);
+          let ticks = 0;
+          /* [P2] 蓄电（精研）：玩家停在云里每 1 秒，落雷频率 +15%。
+           * 「频率」落成每跳多劈几道（3 道 × 15% × 驻留秒数），上限 +6 道，
+           * 走出云就清零 —— 换来的增频只在站桩引导时成立 */
+          let rampN = 0;
+          const iv = setInterval(() => {
+            if (this.mapGen !== gen) { clearInterval(iv); return; }
+            ticks++;
+            const inZone = this.enemies.filter(e => !e.dead && DIST2D(e.pos, c) < rad + e.radius);
+            if (bBeh && bBeh.ramp) {
+              const pg = this.playerGroup.position;
+              rampN = DIST2D(pg, c) < rad + 2 ? Math.min(rampN + 1, 20) : 0;
+            }
+            const extra = (bBeh && bBeh.ramp) ? Math.min(6, Math.floor(rampN * 3 * 0.15)) : 0;
+            const bolts = Math.min(inZone.length, Math.min(3, inZone.length) + extra);
+            for (let i = 0; i < bolts; i++) {
+              const e = inZone[Math.floor(Math.random() * inZone.length)];
+              if (!e || e.dead) continue;
+              FX.beam(new THREE.Vector3(e.pos.x, 7, e.pos.z), new THREE.Vector3(e.pos.x, 1, e.pos.z), 0xa9c8ff, 0.18);
+              const { dmg, crit } = this.rollDamage(st.atk * 1.1 * spow);
+              this.damageEnemy(e, dmg, crit, { elem: 'lightning', silent: true });
+              if (tcVuln) {
+                e.vuln = Math.max(e.vuln || 0, tcVuln);
+                e.vulnT = Math.max(e.vulnT || 0, 4);
+              }
+              if (tcDot && !e.dead && (e.dotT || 0) < 0.75) {
+                this.applySkillDot(e, st.atk * tcDot / 100 * spow, 3, 'lightning', '雷灼');
+              }
+            }
+            if (ticks >= Math.ceil(dur / 1)) {
+              clearInterval(iv);
+              /* [P2b] 台阶 Lv10「收尾爆燃」：云散的时候在云心炸一发。
+               * 雷云本来没有收尾，这一级给它一个「云散了还要挨一下」。
+               * 与火墙共用 endBurst 键（都走 `+` 叠加，不吃变体）。 */
+              if (bBeh && bBeh.endBurst) {
+                this.explodeAt(c.clone(), rad * 0.9,
+                  st.atk * (bBeh.endBurst / 100) * spow, 0xa9c8ff, false, true, 'aoe');
+                if (ci === 0) FX.text(new THREE.Vector3(c.x, 2.8, c.z), '雷爆', 'lv', { life: 0.9 });
+                this.shake = Math.max(this.shake, 0.24);
+              }
+            }
+          }, 1000);
+        }
         break;
       }
       /* [S4] 雷罚：单体天罚巨雷，对首领 +30% */

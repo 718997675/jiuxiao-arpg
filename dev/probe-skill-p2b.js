@@ -1124,8 +1124,173 @@ const ok = (c, m, d) => {
     ok(todo.join(',') === '', '道士 ④ 面板不再有「待」角标', todo);
   }
 
-  /* ---------------- 10. 零报错 ---------------- */
-  console.log('十、控制台');
+  /* ---------------- 10. 法师 ③ 火墙（火墙 / 冰霜新星 / 雷云 共用一个位） ---------------- */
+  console.log('十、法师 ③ 火墙（三条台阶 × 三只）');
+  const fireTiers = await p.evaluate(async () => {
+    const out = {};
+    const wait = ms => new Promise(r => setTimeout(r, ms));
+    /* 假怪必须带上帧循环要读的字段：anim.time（挥砍计时）、spd / atkCd（AI） */
+    const mkFoe = (x, z, id) => ({
+      pos: new THREE.Vector3(x, 0, z), radius: 0.5, dead: false,
+      hp: 1e9, maxHp: 1e9, id: id, anim: { time: 0 }, spd: 0, atkCd: 999, stun: 0
+    });
+    const setup = (id, lv, form, aimZ) => {
+      Game.mapGen = (Game.mapGen || 0) + 1;
+      Game.state.cls = 'mage';
+      Game.state.skills = { [id]: { lv: lv } };
+      if (form != null) Game.state.skills[id].f = form;
+      window.__mkClean();
+      Game.recalc();
+      /* recalc 会把 skillLv / skillRank / skillMods 算一遍 —— 必须在它**之后**清，
+       * 否则量到的是「等级 + 装备」的乘积，不是台阶那一份 */
+      Game.state.stats.skillLv = 0;
+      Game.state.stats.skillRank = {};
+      Game.state.stats.skillMods = {};
+      Game.buffs = []; Game.cooldowns = {}; Game.dead = false;
+      Game.state.mp = 99999;
+      const pp = Game.playerGroup.position;
+      Game.aimDir.set(0, 0, 1);
+      Game.aimPoint.set(pp.x, 0, pp.z + (aimZ || 6));
+      return pp;
+    };
+    /* 一次施法：数 FX.area（每段/每朵一次）、数 explodeAt（收尾爆燃）、
+     * 数每个假怪挨了几下。rollDamage 定死 = 基数，免得暴击把读数抖掉。
+     *
+     * 假怪只摆在三个横向位置：正中（0）、4 码、6 码。
+     * 火墙是「沿施法方向的火带、宽 = 半径 3、段距 2.6」，所以正中会同时被
+     * 相邻两段罩住（唯一一道墙就是 2 下）—— 多一道墙在正中是否多一层，
+     * 正好用来验「双段真的叠上了」；4 / 6 码则是验「变宽了」。
+     *
+     * 等跳的时候把 running 关掉：假怪没有 actor，帧循环 updateEnemies 一碰
+     * 就抛「reading 'time'」（x47 那种），而区域的跳是 setInterval，不依赖帧循环。 */
+    const run = async (id, lv, form, aimZ, waitMs) => {
+      const pp = setup(id, lv, form, aimZ);
+      const z = id === 'firewall' ? pp.z + 12 : pp.z + (aimZ || 6);
+      const es = [0, 4, 6].map((dx, i) => mkFoe(pp.x + dx, z, i));
+      Game.enemies = es;
+      let areas = 0, bursts = 0;
+      const oldArea = FX.area, oldExp = Game.explodeAt;
+      FX.area = function () { areas++; return oldArea.apply(FX, arguments); };
+      Game.explodeAt = function () { bursts++; return oldExp.apply(Game, arguments); };
+      const per = [0, 0, 0];
+      const oldHit = Game.damageEnemy, oldRoll = Game.rollDamage;
+      Game.damageEnemy = e => { if (e && e.id >= 0 && e.id < 3) per[e.id]++; };
+      Game.rollDamage = base => ({ dmg: base, crit: false });
+      Game.castSkill(id);
+      Game.running = false;              // 等跳期间别让帧循环碰假怪
+      await wait(waitMs);
+      Game.running = true;
+      FX.area = oldArea; Game.explodeAt = oldExp;
+      Game.damageEnemy = oldHit; Game.rollDamage = oldRoll;
+      const e0 = es[0];
+      const r = {
+        areas, per, bursts,
+        vuln: Math.round(e0.vuln || 0),
+        dot: Math.round((e0.dotT || 0) * 10) / 10,
+        dotLabel: e0.dotLabel || ''
+      };
+      Game.enemies = [];
+      Game.mapGen = (Game.mapGen || 0) + 1;
+      return r;
+    };
+
+    /* 火墙：cast:'dir'，落点恒在射程尽头（12），假怪就摆在 12 处 */
+    out.fw1 = await run('firewall', 1, 1, 6, 620);
+    out.fw3 = await run('firewall', 3, 1, 6, 620);
+    out.fw7 = await run('firewall', 7, 1, 6, 620);
+    out.fw5 = await run('firewall', 5, 1, 6, 620);
+    out.fw9 = await run('firewall', 9, 1, 6, 620);
+    /* Lv10 的收尾爆燃要等火墙烧完（4 秒）+ 一格容错 */
+    out.fw10 = await run('firewall', 10, 1, 6, 4600);
+    out.fw9no = await run('firewall', 9, 1, 6, 4600);
+
+    /* 冰霜新星：瞬发，只有一击 —— 台阶全落在这一击上 */
+    out.fn1 = await run('frostnova', 1, 1, 4, 120);
+    out.fn5 = await run('frostnova', 5, 1, 4, 120);
+    out.fn9 = await run('frostnova', 9, 1, 4, 120);
+    out.fn10 = await run('frostnova', 10, 1, 4, 900);
+
+    /* 雷云：dur 6 秒，等 6.6 秒看收尾 */
+    out.tc1 = await run('thundercloud', 1, 1, 6, 120);
+    out.tc3 = await run('thundercloud', 3, 1, 6, 120);
+    out.tc7 = await run('thundercloud', 7, 1, 6, 120);
+    out.tc10 = await run('thundercloud', 10, 1, 6, 6600);
+
+    /* Lv10 的 `+endBurst` 必须与变体「爆燃」叠加，而不是被它顶掉：
+     * 变体 2 = 爆燃（endBurst 120），台阶再 +60 → 180 */
+    {
+      const eb = (lv, form) => {
+        Game.state.cls = 'mage';
+        Game.state.skills = { firewall: { lv: lv, f: form } };
+        Game.recalc();
+        const beh = Game.branchBeh('firewall');
+        return beh ? beh.endBurst : undefined;
+      };
+      out.endBurst = { lv9f2: eb(9, 2), lv10f1: eb(10, 1), lv10f2: eb(10, 2) };
+    }
+    window.__mkClean();
+    Game.enemies = [];
+    Game.mapGen = (Game.mapGen || 0) + 1;
+    return out;
+  });
+  /* 数量：每道火墙 4 段、每朵雷云 1 块地 */
+  ok(fireTiers.fw1.areas === 4, 'Lv1 火墙 = 4 段', fireTiers.fw1.areas);
+  ok(fireTiers.fw3.areas === 8, 'Lv3 真的铺出 2 道（8 段）', fireTiers.fw3.areas);
+  ok(fireTiers.fw7.areas === 12, 'Lv7 真的铺出 3 道（12 段）', fireTiers.fw7.areas);
+  /* 伤害形态：正中「多一道墙就多一层」，横向「多一道墙就更宽」。
+   * 为什么不是「N 道就打 N 下」：火带本身段距 2.6 < 半径 3，相邻两段本来就
+   * 同时罩住正中的目标 —— 一道墙就是 2 下。所以判据是「加墙有没有真的加码」。 */
+  ok(fireTiers.fw1.per[0] === 2 && fireTiers.fw3.per[0] === 4,
+    'Lv1 正中挨 2 下（相邻两段），Lv3 挨 4 下 —— 双段在正中真的叠了一层',
+    { lv1: fireTiers.fw1.per, lv3: fireTiers.fw3.per });
+  ok(fireTiers.fw1.per[1] === 0 && fireTiers.fw3.per[1] > 0,
+    '双段把火墙变宽了：4 码外一道打不到、两道能打到',
+    { lv1: fireTiers.fw1.per, lv3: fireTiers.fw3.per });
+  ok(fireTiers.fw1.per[2] === 0 && fireTiers.fw7.per[2] > 0,
+    '三段更宽：6 码外一段 / 两道都打不到，三段能打到',
+    { lv1: fireTiers.fw1.per, lv7: fireTiers.fw7.per });
+  /* 进化台阶 */
+  ok(fireTiers.fw1.dot === 0, 'Lv1 不挂持续伤害（对照）', fireTiers.fw1);
+  ok(fireTiers.fw5.dot > 0 && fireTiers.fw5.dotLabel === '灼烧',
+    'Lv5 命中真的挂上「灼烧」', fireTiers.fw5);
+  ok(fireTiers.fw1.vuln === 0 && fireTiers.fw9.vuln === 12,
+    'Lv9 场内目标真的带 12% 易伤', { lv1: fireTiers.fw1.vuln, lv9: fireTiers.fw9.vuln });
+  ok(fireTiers.fw9no.bursts === 0, 'Lv9 烧完不炸（对照）', fireTiers.fw9no.bursts);
+  ok(fireTiers.fw10.bursts > 0, 'Lv10 烧完真的在每段原地炸了', fireTiers.fw10.bursts);
+  ok(fireTiers.endBurst.lv9f2 === 120 && fireTiers.endBurst.lv10f1 === 60
+    && fireTiers.endBurst.lv10f2 === 180,
+    'Lv10 的 +endBurst 与变体「爆燃」叠加（120 → 180），不是被顶掉',
+    fireTiers.endBurst);
+  /* 冰霜新星：瞬发也要吃到三条 */
+  ok(fireTiers.fn5.dot > 0 && fireTiers.fn5.dotLabel === '霜蚀',
+    'Lv5 冰霜新星挂的是「霜蚀」（按自己的元素，不是一律灼烧）', fireTiers.fn5);
+  ok(fireTiers.fn9.vuln === 12, 'Lv9 冰霜新星也给易伤', fireTiers.fn9.vuln);
+  ok(fireTiers.fn1.bursts === 0 && fireTiers.fn10.bursts > 0,
+    'Lv10 新星 0.6 秒后补炸一发', { lv1: fireTiers.fn1.bursts, lv10: fireTiers.fn10.bursts });
+  /* 雷云 */
+  ok(fireTiers.tc1.areas === 1, 'Lv1 只有一朵云', fireTiers.tc1.areas);
+  ok(fireTiers.tc3.areas === 2, 'Lv3 真的铺出 2 朵', fireTiers.tc3.areas);
+  ok(fireTiers.tc7.areas === 3, 'Lv7 真的铺出 3 朵', fireTiers.tc7.areas);
+  ok(fireTiers.tc10.bursts > 0, 'Lv10 雷云散了也会炸（以前没有收尾）', fireTiers.tc10.bursts);
+
+  /* 面板：法师 ③ 号位不许再有「待」 */
+  {
+    const todo = await p.evaluate(() => {
+      Game.state.cls = 'mage';
+      Game.state.skills = {};
+      Game.recalc();
+      UI.renderSkillPanel();
+      const arch = document.querySelector('#skList .sk-arch');
+      if (arch) arch.setAttribute('open', '');
+      const c = [...document.querySelectorAll('#skList .sk-ac')][2];   // ③ 号位
+      return [...c.querySelectorAll('.sk-as')]
+        .filter(s => s.classList.contains('todo')).map(s => (s.querySelector('i') || {}).textContent);
+    });
+    ok(todo.join(',') === '', '法师 ③ 面板不再有「待」角标', todo);
+  }
+
+  /* ---------------- 11. 零报错 ---------------- */
+  console.log('十一、控制台');
   ok(errs.length === 0, '全程零控制台报错', errs.slice(0, 3));
 
   console.log('\n' + (fail === 0 ? '✓' : '✗') + ' P2b 探针：' + pass + ' 通过 / ' + fail + ' 失败');

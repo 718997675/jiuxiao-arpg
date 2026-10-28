@@ -781,6 +781,15 @@ const SKILL_BEH = {
     });
   } },
 
+  /* [P2b] 命中挂持续伤害（火墙位 Lv5）：值 = 每秒的攻击力百分比，共 3 秒。
+   * **不复用 burnPct**：那是通用 hit 通道的键 —— 圆心是准星、元素写死火、
+   * 而且只在施法瞬间给一次。这一位躺着火墙 / 冰霜新星 / 雷云三只，
+   * 冰新星挂一层「灼烧」既错元素又错时机（领域类的怪是后来才走进来的）。
+   * 所以由三只各自的 case 在**每一次命中**上按自己的元素调用 applySkillDot。 */
+  tierDot: { ph: 'hook', label: '持续伤害（台阶）', run() {
+    /* 由 firewall / frostnova / thundercloud 的 case 消费 */
+  } },
+
   detonate: { ph: 'hook', label: '引爆剩余伤害', run() {
     /* 由 Game.onBehKill 消费：带持续伤害的目标死亡时原地引爆 */
   } },

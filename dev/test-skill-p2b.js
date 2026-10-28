@@ -489,6 +489,61 @@ const behSrc = readSrc('src/skill-beh.js');
     }
   }
 
+  /* --- 法师 ③ 火墙：火墙 / 冰霜新星 / 雷云 共用一个位 ---
+   * 原稿三条台阶里两条撞 firewall **自己的变体**（追随 = follow、爆燃 = endBurst），
+   * 一条撞「围火」的 ring —— 三条全撞，选了变体的玩家点了等于没点。
+   * 这里钉住「换成三只都能兑现的说法」，以及数量通道真的接上（不是只有文案）。 */
+  {
+    for (const id of ['firewall', 'frostnova', 'thundercloud']) {
+      const e = SKILL_TIER_EVO[id];
+      ok(!!e && !!e[5] && !!e[9] && !!e[10],
+        id + ' 三条进化台阶都在（火墙位只放一只，漏一只就是假话）');
+      ok(e && e[5].beh.tierDot === 25,
+        id + ' Lv5 走 tierDot（按自己的元素挂持续伤害，不借 burnPct）', e && e[5].beh);
+      ok(e && e[9].beh.vuln === 12, id + ' Lv9 场内易伤 12%', e && e[9].beh);
+      ok(e && e[10].beh['+endBurst'] === 60,
+        id + ' Lv10 走 +endBurst 叠加键（和变体「爆燃」相加，不是被顶掉）', e && e[10].beh);
+    }
+    /* 数量台阶：双段 = 两道火墙 / 两朵雷云，必须真的读 sextra */
+    ok(skillCountCapable('firewall') && SKILL_COUNT_BASE.firewall === 1,
+      '火墙进数量通道（基数 1 道）', SKILL_COUNT_BASE.firewall);
+    ok(skillCountCapable('thundercloud') && SKILL_COUNT_BASE.thundercloud === 1,
+      '雷云进数量通道（基数 1 朵）', SKILL_COUNT_BASE.thundercloud);
+    ok(countInSrc.firewall && countInSrc.firewall.uses, 'firewall case 真的读 sextra');
+    ok(countInSrc.thundercloud && countInSrc.thundercloud.uses, 'thundercloud case 真的读 sextra');
+    ok(countInSrc.frostnova && countInSrc.frostnova.uses, 'frostnova case 真的读 sextra（本来就吃）');
+    /* 撞键复查：这三个键确实是 firewall 自己的分支键 */
+    {
+      const fwBr = skillBranches('firewall');
+      const own = new Set();
+      const eat = o => { if (o && o.beh) for (const k in o.beh) own.add(k); };
+      if (fwBr) { eat(fwBr.core); (fwBr.pick || []).forEach(eat); (fwBr.form || []).forEach(eat); }
+      ok(own.has('follow') && own.has('endBurst') && own.has('ring'),
+        '追随 / 爆燃 / 围火 确实占了 follow / endBurst / ring（台阶不能再写这三个）', [...own]);
+    }
+    ok(!/beh: \{ follow/.test(JSON.stringify(SKILL_TIER_EVO)),
+      'evo 表里不许出现 follow（会顶掉「追随 / 随身」变体）');
+    ok(!/beh: \{ ring/.test(JSON.stringify(SKILL_TIER_EVO)),
+      'evo 表里不许出现 ring（那是「围火」变体的键）');
+    ok(/tierDot: \{ ph: 'hook'/.test(behSrc), 'tierDot 已在 SKILL_BEH 登记');
+    /* 三只 case 都要真的消费，不是只登记了键 */
+    ok(/fwDot/.test(game) && /tcDot/.test(game) && /fnDot/.test(game),
+      '三只 case 都消费了 tierDot');
+    ok(/fwVuln/.test(game) && /tcVuln/.test(game) && /fnVuln/.test(game),
+      '三只 case 都消费了 vuln');
+    ok(game.indexOf("'霜蚀'") >= 0 && game.indexOf("'雷灼'") >= 0,
+      '持续伤害按各自的元素挂（冰=霜蚀 / 雷=雷灼），不是一律「灼烧」');
+    /* 火墙多道：并排铺开而不是原地叠（叠着看不出是两道，等于只有伤害没有形态） */
+    ok(/const walls = 1 \+ Math\.max\(0, sextra\)/.test(game), '火墙按 sextra 铺多道');
+    ok(/const wallOff = /.test(game) && /rad \* 0\.95/.test(game),
+      '多道沿垂线错开（间距 0.95 倍半径：站中间的目标要吃满 N 道，否则低于 Σ0.85^n）');
+    ok(/const clouds = 1 \+ Math\.max\(0, sextra\)/.test(game), '雷云按 sextra 铺多朵');
+    for (const cls of ['mage']) {
+      const todo = [1, 3, 5, 7, 9, 10].filter(lv => !skillSlotTierDone(cls, 3, lv));
+      ok(todo.length === 0, '法师 ③ 面板不再有「待」角标', todo);
+    }
+  }
+
   /* --- 刀客 ③ 剑阵：三条台阶都要「阵在哪 + 人在不在阵里」，所以接线三件套 --- */
   ok(/bBeh\.slowField/.test(game), '剑阵 case 必须消费 slowField（阵内减速）');
   ok(game.indexOf('this.swordField =') >= 0, '剑阵要铺一份运行时场地给 damagePlayer 用');
