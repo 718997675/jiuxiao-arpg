@@ -784,6 +784,87 @@ console.log('八、法师 ② 陨石（发数 5 / 7）');
   }
 }
 
+/* ============================================================
+ * 九、道士 ⑤ 召灵兽
+ *
+ * 这一位改的是**地基**，不是接个行为键：
+ *   · 灵兽有了 hp / maxHp / 血条，怪会真打到它身上（嘲讽终于有代价）
+ *   · 上限 3 → 8（手机 6），撞上限**不再顶掉**在场的
+ *   · 伤害继承暴击 / 爆伤 / 通用增伤，并改成「现算」而不是召唤时定死
+ *
+ * 所以这一节既查台阶（三只 × 五档），也查那三件地基没被回退 ——
+ * 地基一退，五条台阶立刻全部变成文案。
+ * ============================================================ */
+console.log('九、道士 ⑤ 召灵兽');
+{
+  const s5 = skillArchSlot('taoist', 5);
+  ok(s5.inherit.join(',') === 'summon,whitetiger,azuredragon',
+    '⑤ 位继承三只召唤技能（灵狼 / 白虎 / 青龙）', s5.inherit);
+
+  /* 一个格位只放一只，所以三只都必须接满五档 */
+  for (const id of s5.inherit) {
+    const pack = SKILL_TIER_EVO[id] || {};
+    for (const lv of [3, 5, 7, 9, 10]) {
+      ok(!!pack[lv], id + ' Lv' + lv + ' 已登记（漏一只就是假话）');
+    }
+  }
+
+  /* 撞键复查：台阶的 **beh** 键不许与三只自己的分支 beh 重名。
+   * mods 通道允许重名 —— 它是累加（「双生」+1 与台阶 +1 叠成 3 只），
+   * 下面单独断言这个前提成立。 */
+  const tierBeh = new Set();
+  for (const id of s5.inherit) {
+    for (const lv of [3, 5, 7, 9, 10]) {
+      for (const k in ((SKILL_TIER_EVO[id][lv] || {}).beh || {})) tierBeh.add(k);
+    }
+  }
+  const clash = [];
+  for (const id of s5.inherit) {
+    const b = skillBranches(id);
+    if (!b) continue;
+    for (const row of [b.core].concat(b.pick, b.form)) {
+      for (const k in ((row && row.beh) || {})) if (tierBeh.has(k)) clash.push(id + '.' + k);
+    }
+  }
+  ok(clash.length === 0, '台阶行为键与三只的分支键零重叠（撞了 = 花点覆盖台阶）', clash);
+
+  /* count 是 mods 通道：必须**累加**。这条一破，选过「双生」的玩家 3 级就白给。 */
+  const merge = pick('mergeSkillMods');
+  const merged = merge({}, null, { count: 1 }, skillTierMods('summon', 3));
+  ok(merged.count === 2, '「双生」的 +1 与台阶 Lv3 的 +1 累加成 2（不是互相顶掉）', merged);
+  ok(!(skillTierMods('summon', 1) || {}).count, 'Lv1 没有召唤数量加成');
+
+  /* 面板：五档全部转绿 */
+  ok([3, 5, 7, 9, 10].every(lv => skillSlotTierDone('taoist', 5, lv)),
+    '道士 ⑤ 五个台阶全部已实装（面板不带「待」角标）');
+
+  /* ---- 地基三件，逐条钉源码 ---- */
+  ok(/_summonMods\(skillId\)[\s\S]{0,300}effSkillMods\(skillId\)/.test(game),
+    '_summonMods 读 effSkillMods（用 skillMod 时精研 / 变体的 dmg 全是哑的）');
+  ok(/base \+ mod\.count/.test(game), 'summonWolf 的数量读 mod.count');
+  ok(/count: 1 \+ mod\.count/.test(game), 'summonBeast 的数量读 mod.count');
+  ok(/this\.rollDamage\(st\.atk \* al\.coef/.test(game),
+    '灵兽出手走 rollDamage（继承暴击率 / 暴击伤害 / 通用增伤）');
+  ok(/hp: maxHp, maxHp, bar/.test(game), '灵兽带 hp / maxHp / 血条');
+  ok(/damageAlly\(al, e\.dmg/.test(game), '近战怪真扣灵兽的血（嘲讽不再是空打）');
+  ok(/damageAlly\(al, p\.dmg/.test(game), '远程怪真扣灵兽的血');
+  ok(/ALLY_CAP_BASE = 8/.test(game) && /ALLY_CAP_TOUCH = 6/.test(game),
+    '灵兽上限抬到 8（手机 6）');
+
+  /* 召唤路径里不许再出现「顶掉最老的」 */
+  const spawnBody = game.slice(game.indexOf('_spawnAlly(preset, opt)'), game.indexOf('灵兽受伤'));
+  ok(spawnBody.length > 200 && !/allies\.shift/.test(spawnBody),
+    '召唤路径里没有「顶掉最老的」（shift 只留在 trimAllies）');
+
+  ok(/BEAST_PRESET = \{[\s\S]{0,300}wolf:[\s\S]{0,220}tiger:[\s\S]{0,220}dragon:/.test(game),
+    '三型参数收敛成一张 BEAST_PRESET（台阶补召用同一份，不抄第二遍）');
+
+  /* 台阶四件的行为键必须都已登记（第七节通用检查之外，这里点名一次） */
+  for (const k of ['allyAoe', 'allyEscort', 'allyGuard', 'allyFour']) {
+    ok(new RegExp('^ {2}' + k + ': \\{ ph:', 'm').test(behSrc), '新键 ' + k + ' 已登记（否则静默 plain）');
+  }
+}
+
 /* ---------------- 汇总 ---------------- */
 console.log('\n' + (fail === 0 ? '✓' : '✗') + ' P2b 契约：' + pass + ' 通过 / ' + fail + ' 失败');
 process.exit(fail === 0 ? 0 : 1);

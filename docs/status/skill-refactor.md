@@ -3,7 +3,7 @@
 - 分支：`feat/skill-refactor`（优先级 **低**，排在大型扩展之后）
 - 计划文档：`docs/SKILL-REDESIGN-PLAN.md`（16 节）
 - 预览站：暂不发（2026-10-27 用户口径：本地验证即可，别再折腾线上）
-- 更新：2026-10-28 · P2b 进化台阶 **13/15 位**（37/45 条）· **收工点：只剩刀客 ⑤ 兵形 / 法师 ⑤ 法相 / 道士 ⑤ 召灵兽（都要新写机制）**
+- 更新：2026-10-29 · P2b 进化台阶 **13/15 位**（38/45 条）· **收工点：只剩刀客 ⑤ 兵形 / 法师 ⑤ 法相（都要新写机制）**
 
 > 当前：**P0 + P1a + P1b + P1c + P1d + P2a 完成，P2b 进行中**。动作条 5 格、格位 = 功能位；
 > 技能树已按「三线并行」结算 —— 没有必点主干、没有主动↔被动二选一，
@@ -14,8 +14,8 @@
 > 台阶也接进战斗了：数量台阶走 `smod.count`（多发带 0.85^n 递减）——**12 个技能全接**
 > （毒雾、火墙、雷云是后两批补进来的）。**节奏不是全局 3 / 7**：法师 ② 在 5 / 7
 > （3 级是「溅射」），按技能覆盖见 `SKILL_COUNT_TIER`。Lv5 / Lv9 / Lv10 走行为键，
-> **已接 13 个位**（刀客 ①②③④、法师 ①②③④、道士 ①②③④），45 条里完成 **37 条**。
-> 剩 3 个 ⑤ 号位仍是文案，面板上带「待」角标 —— 那三位都要**新写机制**
+> **已接 13 个位**（刀客 ①②③④、法师 ①②③④、道士 ①②③④⑤），45 条里完成 **38 条**。
+> 剩 2 个 ⑤ 号位仍是文案，面板上带「待」角标 —— 刀客⑤ 兵形、法师⑤ 法相都要**新写机制**
 > （刃势记账 / 一整只技能 / 三兽调度），不是接个行为键就完事的。
 > **别把「P2b 完成」读成 45 条都做了**。
 
@@ -39,7 +39,7 @@ P1 起才动 `SKILL_BAR_SLOTS` 与面板的三列树。
 | P1c | **取消二选一**：三线并行结算（等级门 `reqLv` + 关键被动软前置 `needPts`），`levelUpSkill` / `levelUpPassive` 的 fork 拦截整块删除，面板去掉「或/锁」标记与互斥虚线，说明页同步 | ✅ | `data-skill-tree.js`、`game.js`、`skill-passive.js`、`ui-skills.js`、`ui.js`、`index.html` | `dev/test-skill-p1c.js` 353 · `dev/probe-skill-p1c.js` 23 |
 | P1d | 面板**视觉**重排：一条线一列、列内按 `reqLv` 递增，被动小一圈挂在主动右边，只留同线淡引导线；手机上三条线分页签、一页一列 | ✅ | `ui-skills.js`（`skTreeLayout` / `skTreeHTML` / `renderSkillTreeDOM` / `skTreeTabsHTML`）、`index.html`（SKG + 被动腰围）、`ui.js`（说明页「技能树布局」） | `dev/probe-skill-p1d.js` 36 |
 | P2a | **等级上限 5 → 10** + 分段曲线真的进战斗（`skillLvMul` 取代旧「每级固定 8%」）+ 点数供给 等级 × 1.5；面板 10 格 / 满级金环 / 洗点全额退回 | ✅ | `data-skills.js`（`SKILL_LV_MAX` / `SKILL_POINT_RATE` / `skillPointPool`）、`data-skill-tree.js`（`lvMax` 同源）、`game.js`（`castSkill` / `skillPoints`）、`ui-skills.js`、`ui.js`、`index.html` | `dev/test-skill-p2.js` 41 · `dev/probe-skill-p2.js` 26 |
-| P2b | **数量 / 形态台阶接进 `castSkill`**。①数量：默认 Lv3 / Lv7 各 +1，接 `smod.count`（13 个技能消费），第 n 发 ×0.85^n 防三倍伤害；**发数节奏可按技能覆盖**（`SKILL_COUNT_TIER`，法师 ② 在 Lv5 / Lv7）。②进化：新建 `SKILL_TIER_EVO`（挂**技能 id** 不挂技能位），合并顺序 **台阶最前 → 精研 / 取向 / 变体覆盖同名键**（花点的选择必须盖过等级送的）。**已接 13 个位 / 37 条**：刀客①旋风斩、法师①火球、道士①符箓、道士②毒雾、刀客②地裂、刀客③剑阵、刀客④血怒、道士④回春、法师③火墙、法师④护盾、道士③太极、法师②陨石（3 溅射 / 5 双陨 / 7 三连落）—— 细则见下面「P2b 收口要点」。**⚠ 12/15 个位：法师 ② 的 9 / 10 与三个 ⑤ 号位还没接（11/45 条）** | 🟡 | `data-skills.js`（`SKILL_TIER_EVO` / `SKILL_COUNT_TIER` / `skillTierEvo` / `skillTierMods` / `skillTierBeh`）、`skill-beh.js`（`branchBeh` 台阶排最前 + `killProlong` / `lifesteal` / `ccImmune` / `healOnCast` / `tierDur` / `splash`）、`game.js`（autoTarget / rageMul / firePatch / swordField / applyPlayerSlow / ccImmuneNow / behTierNova / shieldT+sdur / 符阵 dur+tierDur / meteor·blizzard·judgement·starfall 多发 / spawnTierField 落点领域）、`ui.js`（说明页读数现算）、`ui-skills.js` | `dev/test-skill-p2b.js` 654 · `dev/probe-skill-p2b.js` 211 |
+| P2b | **数量 / 形态台阶接进 `castSkill`**。①数量：默认 Lv3 / Lv7 各 +1，接 `smod.count`（13 个技能消费），第 n 发 ×0.85^n 防三倍伤害；**发数节奏可按技能覆盖**（`SKILL_COUNT_TIER`，法师 ② 在 Lv5 / Lv7）。②进化：新建 `SKILL_TIER_EVO`（挂**技能 id** 不挂技能位），合并顺序 **台阶最前 → 精研 / 取向 / 变体覆盖同名键**（花点的选择必须盖过等级送的）。**已接 13 个位 / 38 条**：刀客①旋风斩、法师①火球、道士①符箓、道士②毒雾、刀客②地裂、刀客③剑阵、刀客④血怒、道士④回春、法师③火墙、法师④护盾、道士③太极、法师②陨石（3 溅射 / 5 双陨 / 7 三连落）、道士⑤召灵兽（三只各召各的）—— 细则见下面「P2b 收口要点」。**⚠ 13/15 个位：只剩刀客 ⑤ 兵形、法师 ⑤ 法相（各 3 条），两位都要新写机制** | 🟡 | `data-skills.js`（`SKILL_TIER_EVO` / `SKILL_COUNT_TIER` / `skillTierEvo` / `skillTierMods` / `skillTierBeh`）、`skill-beh.js`（`branchBeh` 台阶排最前 + `killProlong` / `lifesteal` / `ccImmune` / `healOnCast` / `tierDur` / `splash`）、`game.js`（autoTarget / rageMul / firePatch / swordField / applyPlayerSlow / ccImmuneNow / behTierNova / shieldT+sdur / 符阵 dur+tierDur / meteor·blizzard·judgement·starfall 多发 / spawnTierField 落点领域）、`ui.js`（说明页读数现算）、`ui-skills.js` | `dev/test-skill-p2b.js` 739 · `dev/probe-skill-p2b.js` 227 |
 | P2c | 精通层 11~20：光效随等级变亮、Lv15 精通小质变（统一三选一模板），不新增形态 | ⬜ | `src/fx.js`、`skill-beh.js` | — |
 | P3 | 元素注入 + 反应表：伤害管线支持双元素、特效混色、词缀口径 | ⬜ | 战斗 + 词缀 + `src/fx.js` | — |
 | P4 | 三职业独立 ⑤ 号位：刀客兵形/刃势、法师法相、道士召唤 | ⬜ | `src/fx.js`、`src/charforge.js` | — |
@@ -657,3 +657,50 @@ arch 29 · p2 26 · smoke ERRORS none。
 仍然把 `damageEnemy` 挡掉，只量玩家侧的账（瞬回 / 三条属性 / 定身）；
 ③ 焚天的 1 号变体「献祭」扣 20% 生命、0 号「火焰新星」打三段，量「瞬回多少」时
 必须选 2 号「燎原」，否则量到的是别的账。
+
+### 2026-10-29 · P2b 道士 ⑤ 召灵兽（灵狼 / 白虎 / 青龙 共用一个位）
+
+用户开工前给了四条口径，其中两条决定了这一位的做法：
+**以量取胜不许顶掉在场者**、**数值要综合所有攻击类属性**。另外两条（光环继承、
+道士辅助改被动）另开单子。岔路上拍板：**灵兽加血条、做成真单位**。
+
+- **真正的 bug 不在台阶，在 `_summonMods`**：它读的是 `skillMod`（只含装备），
+  精研 / 取向 / 变体的 `mods.dmg` 一个都没进 —— 「凶兽 +30%」「虎威 +30%」「真龙 +30%」
+  「兽王 +50%」「龙神 +60%」写了一年多全是哑的。改读 `effSkillMods` 后一并生效。
+  **规矩：召唤物 / 持续物的数值一律走 `effSkillMods`**。
+- **召唤物不吃暴击**也是同一类错：出手时固定传 `crit=false`，绕开了 `rollDamage`。
+  改成 `this.rollDamage(st.atk * al.coef * …)` 后，暴击率 / 爆伤 / `dmgAll` / 浮动全继承。
+  同时 `al.dmg` 从**绝对值**改成 `al.coef` **系数** —— 换装备立刻生效，不用重召。
+- **「加血」以前无法兑现**：灵兽只有倒计时、怪也从没打过它。补 `hp / maxHp / bar` +
+  `damageAlly()`，嘲讽从「怪白打几秒」变成「灵兽替你扛」。`mobMeleeSwing` 与
+  `enemyRangedAttack` 两个入口都真的扣血（后者原来只有一句 `if (taunted) return`）。
+- **取消「顶掉最老的」**：撞上限就新召唤失败并提示；上限 3 → 8（手机 6）。
+  灵兽现在有「死亡」这个天然终点，不再需要顶替来控节奏。
+  `trimAllies` 保留，只在上限变小时用。
+- **`mods.count` 通道长期没人消费**：「双生 / 双虎 / 双龙」写了 count 却从未生效。
+  现在真的多一只，且与台阶 Lv3 的 +1 **累加**（双生 + 台阶 = 3 只）。
+- 五条台阶（三只各登记一份，内容相同）：
+  Lv3 `mods.count +1` · Lv5 `allyAoe 2.6`（灵兽攻击带范围）· Lv7 `allyEscort 1`（额外唤一只灵狼）
+  · Lv9 `allyGuard 10`（在场时自身受伤 −10%，取场上最大值，死光自然失效）
+  · Lv10 `allyFour 1`（一次凑齐三种）。
+- `allyEmpower` 的 `c.life` 从「+N 秒存在时间」改成「回复 N% 最大生命」——
+  存在时间那条在「永久存在直到死亡」的口径下已经没有意义。
+- 顺手清掉四处过时文案：`data-skill-tree.js` 的「舍身 / 收魂 · 续命 8 秒」→「回复 8% 生命」、
+  `t_beast`「消散」→「阵亡」、`ui.js`「道士限时召唤」、`game.js` / `skill-beh.js` 里三处
+  「灵兽没有血条」。
+
+**验证**：`test-skill-p2b` 705→**739 通过 / 0 失败**（新增第九节约 34 条：三只 × 五档登记、
+撞键复查（beh 通道零重叠）、`mergeSkillMods` 累加、「`_spawnAlly` 体内无 `allies.shift`」、
+面板五档全绿）、`probe-skill-p2b` 211→**227 通过 / 0 失败**（第十五节 16 条真机读数）。
+回归全绿：p0 248 · p1 52 · p1c 353 · p2 41 · p2b 739 · items 17 · save 79 ·
+arch 29 · p2 26 · p1c 23 · smoke ERRORS none。
+
+**踩坑**：① `ALLY_CAP_BASE = IS_TOUCH ? 6 : 8` 会踩 TDZ —— `index.html` 先加载 `game.js`
+再加载 `mobile.js`，模块顶层读不到 `IS_TOUCH`。拆成两个常量，平台判定挪进 `allyCap()`。
+② 探针量「召了几只」之前必须清 **万兽天赋 `specials.wolfPack`** 与**变体 0 号**（双生 / 双虎），
+两者各带 count +1，否则 Lv1 会量成 2 只、白虎位量成 2 只。兽契还有 30% 概率当场重召，
+量「被打死会消失」时要把 `passiveLv` 挡成 0。
+③ `Game.rollDamage = (base) => oldRoll(base)` 脱离对象调用丢了 `this` →
+`reading 'stats'`，要 `oldRoll.call(Game, base)`。
+④ 「灵兽出手走 rollDamage」会量到 ≥2 次（同一帧多只灵兽选中同一只假怪），断言写 `>= 1`。
+⑤ 契约里 `new RegExp('^ {2}' + k + ': \\{ ph:')` 少 `m` 标志就永远不匹配，四条「新键已登记」假红。

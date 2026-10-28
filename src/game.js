@@ -5,12 +5,33 @@
 /* 铁匠铺免费刷新周期：5 分钟（v1.0.4） */
 const SHOP_REFRESH_MS = 5 * 60 * 1000;
 
-/* 场上灵兽上限（P3 收尾）。
- * 以前没有上限：召狼 + 白虎 + 青龙 + 双生 + 双虎 叠在一起能站 6~7 只，
- * 召唤流的收益直接失控，关键被动「灵兽上限 +1」也就无从谈起。
- * 上限是按「场上总数」算的，不是每只技能各算一份 —— 玩家感知得到
- * 「我最多带 3 只，多召一只老的就消散」，而不是一堆互相独立的配额。 */
-const ALLY_CAP_BASE = 3;
+/* 场上灵兽上限。
+ *
+ * [P2b·兽群] 从 3 抬到 8（手机 6），并且**不再顶掉老的**。
+ * 原来的 3 是按「灵兽没有血条、只能靠时间自然退场」定的：那时多招一只就得
+ * 踢掉一只，否则永远不减少。现在灵兽有血、会被怪打死，寿命有了天然的终点，
+ * 数量就该放开 —— 召唤流本来就是「以量取胜」，一边召一边消失是反直觉的。
+ *
+ * 上限仍然存在，因为每只灵兽 = 一个 actor + 每帧一次寻敌/移动/攻击，
+ * 是实打实的 draw call。超限时**新召唤失败并提示**，不静默顶掉在场的。
+ * 关键被动「兽契」照旧 +1。
+ *
+ * 注意：这里**不能**用 IS_TOUCH 求值 —— index.html 先加载 game.js 再加载
+ * mobile.js，顶层读它会在 TDZ 里抛 ReferenceError。平台差异放在 allyCap() 里。 */
+const ALLY_CAP_BASE = 8;
+const ALLY_CAP_TOUCH = 6;
+
+/* 灵兽血条：颜色与怪物血条区分开（灵兽是队友，不能看成一只要打的怪）。 */
+const ALLY_BAR_COLOR = 0x6ad0ff;
+
+/* 灵兽三型的固定参数。以前白虎/青龙的参数写在 castSkill 的 case 里，
+ * 台阶「四象同场」需要凭空补召另外两种，就得把同一份数字抄第二遍 ——
+ * 抄一遍就有一遍漂移的机会，所以收敛成一张表。 */
+const BEAST_PRESET = {
+  wolf: { skill: 'summon', scale: 0.9, color: 0x8affc0, cloth: 0x3a6a50, inherit: 0.6, atkRate: 1.1, name: '灵狼', hpPct: 0.30 },
+  tiger: { skill: 'whitetiger', scale: 1.25, color: 0xffe0b0, cloth: 0xc8a060, inherit: 0.7, atkRate: 0.75, name: '白虎', hpPct: 0.45 },
+  dragon: { skill: 'azuredragon', scale: 1.6, color: 0x6ac8ff, cloth: 0x2a5a8a, inherit: 0.8, atkRate: 1.3, aoe: true, name: '青龙', hpPct: 0.55 }
+};
 
 /**
  * 线段 a→b 与圆 (cx,cz,r) 的首次相交参数 t ∈ [0,1]，不相交返回 -1。
@@ -1992,6 +2013,11 @@ const Game = {
     if (!this.camera || typeof faceHpBar !== 'function') return;
     for (const e of this.enemies) {
       if (e.bar && e.bar.group.visible) faceHpBar(e.bar, this.camera);
+    }
+    /* [P2b·兽群] 灵兽也有血条了，同一帧一起校正 —— 漏掉的话它们的血条
+     * 会随模型转身被甩开（就是怪物血条当年那个 bug）。 */
+    for (const al of (this.allies || [])) {
+      if (al.bar && al.bar.group.visible) faceHpBar(al.bar, this.camera);
     }
   },
 
@@ -4214,7 +4240,9 @@ const Game = {
       case 'whitetiger': {
         this.actor.atkAnim = 1; this.actor.atkType = 'cast';
         SFX.heal(); SFX.boss();
-        this.summonBeast({ skill: 'whitetiger', scale: 1.25, color: 0xffe0b0, cloth: 0xc8a060, inherit: 0.7, life: 20, atkRate: 0.75, name: '白虎' });
+        /* 参数统一读 BEAST_PRESET（台阶「四象同场」要凭空补召同一只，
+         * 数字抄第二遍就多一处漂移的机会） */
+        this.summonBeast({ kind: 'tiger' });
         FX.flashCircle(pp, 3, 0xffe0b0, 0.5);
         break;
       }
@@ -4234,7 +4262,7 @@ const Game = {
           UI.toast('化龙 · ' + Math.round(this._dragonT) + ' 秒');
           break;
         }
-        this.summonBeast({ skill: 'azuredragon', scale: 1.6, color: 0x6ac8ff, cloth: 0x2a5a8a, inherit: 0.8, life: 18, atkRate: 1.3, aoe: true, name: '青龙' });
+        this.summonBeast({ kind: 'dragon' });
         /* [P2] 龙息（取向）：青龙在场时每 N 秒喷吐一次范围伤害。
          * 标记在召唤物身上，updateAllies 里逐帧倒数 */
         if (bBeh && bBeh.breath && this.allies.length) {
@@ -4893,6 +4921,13 @@ const Game = {
     if (inSword && sf.dr > 0) dmg *= (1 - sf.dr / 100);
     /* [P2] 被动的受伤侧改写（霜甲：贴身来源减伤；不动如山走 dmgReduce 通道） */
     if (typeof this.passiveTakenMul === 'function') dmg *= this.passiveTakenMul(source);
+    /* [P2b·兽群] 召灵兽 Lv9：灵兽在场时护主减伤。取场上最大值（多只不叠加）；
+     * 灵兽死光自然失效 —— 这条不需要「持续几秒」的账，它的条件就是「有没有灵兽」。 */
+    let allyGuard = 0;
+    for (const al of (this.allies || [])) {
+      if (al.hp > 0 && (al.guard || 0) > allyGuard) allyGuard = al.guard;
+    }
+    if (allyGuard > 0) dmg *= (1 - CLAMP(allyGuard, 0, 40) / 100);
 
     if (this.shield > 0) {
       const absorbed = Math.min(this.shield, dmg);
@@ -5143,7 +5178,7 @@ const Game = {
       if (e.fearT > 0) e.fearT = Math.max(0, e.fearT - dt);
       if (e.tauntT > 0) {
         e.tauntT = Math.max(0, e.tauntT - dt);
-        if (e.tauntT <= 0) e.tauntPt = null;
+        if (e.tauntT <= 0) { e.tauntPt = null; e.tauntAlly = null; }
       }
       if (e.poisonT > 0) {
         e.poisonT -= dt;
@@ -5207,8 +5242,8 @@ const Game = {
         continue;
       }
       /* [P3] 被嘲讽的怪改打灵兽：目标点换成嘲讽点，其它逻辑原样走。
-       * 灵兽没有血条，所以「打到灵兽身上」= 这几秒玩家不掉血，
-       * 这是嘲讽在这套引擎里唯一诚实的收益。 */
+       * [P2b·兽群] 灵兽有血之后，这一刀会真的扣在它身上（见 mobMeleeSwing）——
+       * 以前只是「玩家这几秒不掉血」，现在是「它替你挨」。 */
       const tg = (e.tauntT > 0 && e.tauntPt) ? e.tauntPt : pp;
       const dtg = DIST2D(e.pos, tg);
       if (e.boss) { this.updateBossAI(e, dt, d, pp); }
@@ -5400,10 +5435,13 @@ const Game = {
     if (e.windup > 0) {
       e.windup -= dt;
       if (e.windup <= 0 && DIST2D(e.pos, pp) < e.reach + 1.4) {
-        /* [P3] 被嘲讽的怪这一刀落在灵兽身上：伤害不结算到玩家，
-         * 只给一簇火花。灵兽没有血条，所以「扛这一下」等于「这几秒白打」。 */
+        /* [P2b·兽群] 被嘲讽的怪这一刀落在灵兽身上 —— 现在是**真的扣血**。
+         * 以前灵兽没有血，这里只放一簇火花，于是「群嘲」等于「怪白打几秒」；
+         * 现在灵兽会替你把这一刀吃下去，也可能因此死掉。 */
         if (e.tauntT > 0 && e.tauntPt) {
-          FX.spark(new THREE.Vector3(e.tauntPt.x, 1.2, e.tauntPt.z), 0xffd8a0, 7);
+          const al = e.tauntAlly || this.allyNear(e.tauntPt, 6);
+          if (al) this.damageAlly(al, e.dmg * RND(0.9, 1.1), e);
+          else FX.spark(new THREE.Vector3(e.tauntPt.x, 1.2, e.tauntPt.z), 0xffd8a0, 7);
         } else {
           this.damagePlayer(e.dmg * RND(0.9, 1.1), e);
           if (e.cfg.poison) this.playerPoison(e.dmg * 0.15);
@@ -5761,9 +5799,15 @@ const Game = {
       dmg: e.dmg, life: 2.4, elem: e.cfg.poison ? 'poison' : null,
       onHit: (target, p) => {
         /* [P3] 被嘲讽时这一发是射向灵兽的：即便飞行途中扫到玩家判定圈，
-         * 也不结算伤害（否则「嘲讽」就成了把怪的攻击浪费在空中的假效果）。 */
+         * 也不结算到玩家身上。
+         * [P2b·兽群] 但它现在会真的扣灵兽的血 —— 以前是「直接 return」，
+         * 那等于嘲讽让这一箭凭空消失。 */
         FX.burst(p.pos.clone(), proj.color, 8, { speed: 4, size: 0.08, life: 0.3, additive: true });
-        if (taunted) return;
+        if (taunted) {
+          const al = e.tauntAlly || this.allyNear(e.tauntPt, 5);
+          if (al) this.damageAlly(al, p.dmg, e);
+          return;
+        }
         this.damagePlayer(p.dmg, e);
         if (e.cfg.poison) this.playerPoison(e.dmg * 0.12);
       }
@@ -6058,11 +6102,22 @@ const Game = {
 
   /* ---------------- 召唤物 ---------------- */
   /* [S4] 变体 / 天赋对召唤的修正：skillMods[技能id] 的 dmg → 伤害，dur → 存活 */
+  /* [P2b·兽群] 必须读 effSkillMods 而不是 skillMod。
+   *
+   * skillMod 只含**装备词条**，精研 / 取向 / 变体的 mods 全漏在外面 ——
+   * 于是「凶兽 +30%」「虎威 +30%」「真龙 +30%」「兽王 +50%」「龙神 +60%」
+   * 这些写进数据的加成，打出来一个都没生效（召唤流弱的真正原因）。
+   * 换成 effSkillMods 之后，分支与台阶的 mods 一并进来；
+   * 台阶「召唤数量 +1」也走同一条路（见 SKILL_TIER_EVO[summon].3.mods.count）。
+   *
+   * lifeAdd 现在没有消费点了（灵兽不再靠倒计时退场），保留字段只为
+   * 不破坏还写着 dur 的分支数据 —— 它们改由 allyEmpower 折算成回血。 */
   _summonMods(skillId) {
-    const sm = this.skillMod(skillId);
+    const sm = this.effSkillMods(skillId) || {};
     return {
-      dmgMul: 1 + (sm ? (sm.dmg || 0) : 0) / 100,
-      lifeAdd: sm ? (sm.dur || 0) : 0
+      dmgMul: 1 + (sm.dmg || 0) / 100,
+      lifeAdd: sm.dur || 0,
+      count: Math.max(0, Math.round(sm.count || 0))
     };
   },
 
@@ -6074,28 +6129,36 @@ const Game = {
     /* [S3] 召唤系：中节点灵狼继承 75%；青符 5 件 90% */
     const inherit = (st.specials && st.specials.wolfPrime) ? 0.9
       : ((st.specials && st.specials.wolfStrong) ? 0.75 : 0.6);
-    const dmg = st.atk * inherit * (1 + st.summonDmg / 100) * mod.dmgMul;
-    const life = 25 + mod.lifeAdd;
-    /* [S3] 召唤系大节点·万兽：一次召出 2 头 */
-    const count = (typeof force === 'number') ? Math.max(1, force)
-      : ((st.specials && st.specials.wolfPack) ? 2 : 1);
-    for (let i = 0; i < count; i++) {
-      const a = buildMonster('beast', { scale: 0.9, color: 0x8affc0, cloth: 0x3a6a50 });
-      const off = count > 1 ? (i === 0 ? -1.4 : 1.4) : 0;
-      a.group.position.set(this.playerGroup.position.x + off, 0, this.playerGroup.position.z + 0.8);
-      this.scene.add(a.group);
-      this.allies.push({
-        actor: a, pos: a.group.position.clone(), life, atkCd: 0, dmg, atkRate: 1.1,
-        skill: 'summon',           // 灵兽自己所属的技能：恐惧 / 嘲讽 / 死亡重召都按它查分支
-        revive: { wolf: 1 }        // 万兽重召用的配方
-      });
+    /* [S3] 召唤系大节点·万兽：一次召出 2 头。
+     * [P2b·兽群] 台阶 / 变体 / 装备的 count 叠加在天赋之上 ——
+     * 「双生」那条变体写了一年多的 mods.count，但从来没有消费点，
+     * 选了它还是只召 1 只；现在真的多一只。 */
+    const base = (st.specials && st.specials.wolfPack) ? 2 : 1;
+    const count = (typeof force === 'number') ? Math.max(1, force) : base + mod.count;
+    const made = this._spawnAlly(BEAST_PRESET.wolf, { count, inherit, dmgMul: mod.dmgMul, kind: 'wolf' });
+    if (made > 0) {
+      UI.log(inherit > 0.6
+        ? '灵狼应召而来（继承 ' + Math.round(inherit * 100) + '% 攻击力' + (made > 1 ? ' ×' + made : '') + '）'
+        : '灵狼应召而来' + (made > 1 ? ' ×' + made : ''));
     }
-    this.trimAllies();
-    UI.log(inherit > 0.6 ? '灵狼应召而来（继承 ' + Math.round(inherit * 100) + '% 攻击力' + (count > 1 ? ' ×2' : '') + '）' : '灵狼应召而来');
+    return made;
   },
 
-  /* 灵兽上限：超出时最老的一只当场消散（不是「召唤失败」——
-   * 失败会让人以为技能坏了；消散是看得见的，代价也清楚）。 */
+  /* 灵兽上限的判定已挪进 _spawnAlly（撞上限就少召一只并给提示），
+   * 「顶掉最老的」这条规则整条删除 —— 见 trimAllies 的注释。 */
+
+  /* [P2b·兽群] 上限从 3 抬到 8（手机 6）：灵兽有了血、会被怪打死，
+   * 寿命有了天然终点，数量就该放开。这里仍要按平台分档 ——
+   * 每只灵兽是一个 actor + 每帧寻敌/移动/攻击，是真实开销。 */
+  allyCap() {
+    let cap = (typeof IS_TOUCH !== 'undefined' && IS_TOUCH) ? ALLY_CAP_TOUCH : ALLY_CAP_BASE;
+    /* 关键被动「兽契」：灵兽上限 +1 */
+    if (typeof this.passiveLv === 'function' && this.passiveLv('t_beast') > 0) cap += 1;
+    return cap;
+  },
+
+  /* 收缩到当前上限。**只在「上限变小」时需要**（洗点退掉兽契、换平台）——
+   * 召唤时由 _spawnAlly 直接判 cap，不会再走这里顶掉刚召的那只。 */
   trimAllies() {
     const cap = this.allyCap();
     while (this.allies.length > cap) {
@@ -6105,31 +6168,149 @@ const Game = {
     }
   },
 
-  allyCap() {
-    let cap = ALLY_CAP_BASE;
-    /* 关键被动「兽契」：灵兽上限 +1 */
-    if (typeof this.passiveLv === 'function' && this.passiveLv('t_beast') > 0) cap += 1;
-    return cap;
+  presetOf(kind) {
+    return BEAST_PRESET[kind] || BEAST_PRESET.wolf;
   },
 
-  /* [S4] 白虎 / 青龙：同框架不同参数（攻速 / 群攻） */
-  summonBeast(o) {
+  /* 造灵兽的唯一入口：三型共用，血条 / 血量 / 偏移 / 上限判定只写一遍。
+   *
+   * 两条与旧实现的关键差别：
+   *   1. 伤害存**系数**（coef）而不是绝对值 —— 召唤之后换装备、加点、
+   *      吃增益，灵兽的每一刀都要跟着变，而不是永远停在召唤那一刻。
+   *   2. 每只都带 hp / maxHp / 血条。以前灵兽没有血，只能靠 life 倒计时退场，
+   *      于是「多召一只」就必须顶掉一只；现在它会被怪打死，倒计时就不再需要。
+   *
+   * 返回真正召出来的只数（撞上限时小于 count，不再静默替换在场的）。 */
+  _spawnAlly(preset, opt) {
+    const o = Object.assign({}, preset, opt || {});
     const st = this.state.stats;
-    const mod = this._summonMods(o.skill);
-    const a = buildMonster('beast', { scale: o.scale, color: o.color, cloth: o.cloth });
-    a.group.position.copy(this.playerGroup.position);
-    this.scene.add(a.group);
-    this.allies.push({
-      actor: a, pos: a.group.position.clone(),
-      life: (o.life || 20) + mod.lifeAdd, atkCd: 0,
-      dmg: st.atk * o.inherit * (1 + st.summonDmg / 100) * mod.dmgMul,
-      atkRate: o.atkRate || 1.1, aoe: !!o.aoe,
-      skill: o.skill || null,
-      /* 万兽重召：留一份配方（不含运行时字段），死了照着再召一只 */
-      revive: Object.assign({}, o)
-    });
-    this.trimAllies();
-    UI.log(o.name + '应召而来');
+    const dmgMul = (opt && opt.dmgMul) || 1;
+    const inherit = (opt && typeof opt.inherit === 'number') ? opt.inherit : (preset.inherit || 0.6);
+    const coef = inherit * (1 + (st.summonDmg || 0) / 100) * dmgMul;
+    const maxHp = Math.max(1, Math.round((st.hpMax || 100) * (preset.hpPct || 0.3)));
+    const count = Math.max(1, Math.round(o.count || 1));
+    const cap = this.allyCap();
+    const pp = this.playerGroup.position;
+    let made = 0;
+    for (let i = 0; i < count; i++) {
+      if (this.allies.length >= cap) break;
+      const a = buildMonster('beast', { scale: o.scale, color: o.color, cloth: o.cloth });
+      const off = count > 1 ? (i - (count - 1) / 2) * 1.5 : 0;
+      a.group.position.set(pp.x + off, 0, pp.z + 0.8);
+      this.scene.add(a.group);
+      const bar = (typeof makeHpBar === 'function') ? makeHpBar(a.group, { gap: 0.42 }) : null;
+      if (bar) {
+        /* 队友的血条不该长得像怪的：蓝底蓝条，一眼分得开 */
+        bar.fill.material.color.setHex(ALLY_BAR_COLOR);
+        bar.bg.material.color.setHex(0x0a1a22);
+      }
+      this.allies.push({
+        actor: a, pos: a.group.position.clone(),
+        kind: o.kind || 'wolf', skill: o.skill || 'summon',
+        hp: maxHp, maxHp, bar,
+        coef, dmgMul,
+        atkRate: o.atkRate || 1.1, aoe: !!o.aoe,
+        atkCd: 0,
+        revive: { kind: o.kind || 'wolf' }
+      });
+      made++;
+    }
+    if (made < count) {
+      UI.log('灵兽已满 ' + cap + ' 只，' + (o.name || '这一只') + '没能应召');
+    }
+    return made;
+  },
+
+  /* 灵兽受伤。以前这只角色不存在（灵兽没有血），现在怪会真打到它身上 ——
+   * 于是「群嘲」终于有了代价：它替你挨的每一刀都会真的扣在它身上。 */
+  damageAlly(al, amount, source) {
+    if (!al || al.hp <= 0) return;
+    const dmg = Math.max(1, amount);
+    al.hp -= dmg;
+    FX.text(new THREE.Vector3(al.pos.x, 2.0, al.pos.z), '-' + Math.round(dmg), 'bad', { life: 0.55 });
+    FX.burst(new THREE.Vector3(al.pos.x, 1.1, al.pos.z), 0xffd0a0, 6, { speed: 3, size: 0.09, life: 0.3, additive: true });
+    if (al.actor) al.actor.flash = 0.12;
+    /* 死亡不在这里处理：统一由 updateAllies 收尸（那里才有 splice 与重召队列），
+     * 否则一发 AOE 会同时触发两次重召判定。 */
+  },
+
+  /* 找一只离某点最近的活着的灵兽（嘲讽 / 远程弹道落地时用） */
+  allyNear(pt, range) {
+    let best = null, bd = range || 8;
+    for (const al of this.allies) {
+      if (!al || al.hp <= 0) continue;
+      const d = DIST2D(al.pos, pt);
+      if (d < bd) { bd = d; best = al; }
+    }
+    return best;
+  },
+
+  /* [P2b·兽群] 台阶 Lv5「灵兽攻击附带范围伤害」。
+   * 直接给 al.aoe / al.aoeR —— 那是青龙原本就在用的那套字段，不另开一条判定。
+   * 两套溅射写在不同地方，迟早出现「青龙能溅射、白虎不能」这种半成品。 */
+  grantAllyAoe(rad) {
+    const R = Math.max(1, rad || 2.6);
+    let n = 0;
+    for (const al of this.allies) {
+      if (!al || al.hp <= 0) continue;
+      al.aoe = true;
+      al.aoeR = Math.max(al.aoeR || 0, R);
+      n++;
+    }
+    return n;
+  },
+
+  /* [P2b·兽群] 台阶 Lv9「灵兽在场时自身受伤 -N%」。
+   * 减伤记在**灵兽身上**、damagePlayer 取最大值 —— 记在玩家身上就要再管
+   * 「持续多久」，而这条的语义本来就是「有灵兽替你扛着」，灵兽死光就该没有。 */
+  grantAllyGuard(pct) {
+    const v = CLAMP(pct || 10, 0, 40);
+    let n = 0;
+    for (const al of this.allies) {
+      if (!al || al.hp <= 0) continue;
+      al.guard = Math.max(al.guard || 0, v);
+      n++;
+    }
+    return n;
+  },
+
+  /* [P2b·兽群] 台阶 Lv10「四象同场」：按一次，场上凑齐三种灵兽。
+   * 缺哪只补哪只；每种只补 1 只，不按 count 翻倍 ——
+   * 否则「四象同场」会变成「六只狼 + 一只虎」，恰恰看不到三种。 */
+  summonFour() {
+    const have = {};
+    for (const al of this.allies) if (al && al.hp > 0) have[al.kind] = (have[al.kind] || 0) + 1;
+    let made = 0;
+    for (const kind of ['wolf', 'tiger', 'dragon']) {
+      if (have[kind]) continue;
+      made += (kind === 'wolf')
+        ? this._spawnAlly(BEAST_PRESET.wolf, { count: 1, kind })
+        : this.summonBeast({ kind });
+    }
+    if (made) {
+      const pp = this.playerGroup.position;
+      FX.ring(new THREE.Vector3(pp.x, 0.2, pp.z), 5.5, 0x9ad8ff, 0.6, 0.3);
+      FX.text(new THREE.Vector3(pp.x, 3.0, pp.z), '四象同场', 'lv', { life: 1.2 });
+    }
+    return made;
+  },
+
+  /* [S4] 白虎 / 青龙：同框架不同参数（攻速 / 群攻）。
+   * `allyPair`（青龙变体「双龙」）也走这里，参数是按「同门小弟」给的覆盖值 ——
+   * 所以这里的 preset 合并顺序是「三型默认 → 调用方覆盖」。 */
+  summonBeast(o) {
+    const kind = o.kind || (o.skill === 'whitetiger' ? 'tiger'
+      : (o.skill === 'azuredragon' ? 'dragon' : 'wolf'));
+    const preset = Object.assign({}, this.presetOf(kind), o);
+    /* 分支 / 装备修正按**合并后的** skill 查：只传 { kind } 调用的那些地方
+     * （case 与「四象同场」）没有 o.skill，用 o.skill 会把加成整条丢掉。 */
+    const mod = this._summonMods(preset.skill);
+    /* [P2b·兽群] 数量 = 1 + 台阶/变体/装备的 count（「双虎」「双龙」终于生效） */
+    const made = this._spawnAlly(preset, { count: 1 + mod.count, dmgMul: mod.dmgMul, kind });
+    if (made > 0) {
+      UI.log((o.name || preset.name) + '应召而来' + (made > 1 ? ' ×' + made : ''));
+    }
+    return made;
   },
 
   updateAllies(dt) {
@@ -6140,16 +6321,20 @@ const Game = {
     for (let i = this.allies.length - 1; i >= 0; i--) {
       const al = this.allies[i];
       /* [P3] 灵兽增益（allyBuff）：伤害 / 出手间隔 / 存续流失三样。
-       * 灵兽没有血条，「上盾 / 回血」只能翻译成这三样，否则就是假机制。 */
+       * [P2b·兽群] 灵兽现在有血了 —— 「drain」从「烧寿命」改成「持续掉血」，
+       * 描述里的「持续流失」才有了字面意思。 */
       if (al.emp && al.emp.t > 0) {
         al.emp.t -= dt;
         if (al.emp.t <= 0) { al.emp.dmg = 1; al.emp.atk = 1; al.emp.drain = 1; }
       }
       const emp = al.emp || null;
-      al.life -= dt * (emp && emp.drain ? emp.drain : 1);
-      if (al.life <= 0) {
+      if (emp && emp.drain && emp.drain !== 1) al.hp -= dt * al.maxHp * (emp.drain - 1) * 0.05;
+      /* 死亡只有一个条件：血被打空。倒计时已经删掉 —— 那本来只是
+       * 「灵兽不会被打死」时期的替代品，两套生命周期并存玩家会看不懂。 */
+      if (al.hp <= 0) {
         this.scene.remove(al.actor.group);
-        /* [P2] 护主（取向）：灵兽消散时为主人回复生命 */
+        FX.burst(new THREE.Vector3(al.pos.x, 1.0, al.pos.z), 0x9ad8ff, 14, { speed: 3, size: 0.1, life: 0.6, additive: true });
+        /* [P2] 护主（取向）：灵兽死亡时为主人回复生命 */
         if (typeof this.onBehAllyDeath === 'function') this.onBehAllyDeath();
         /* [P3] 兽契（关键被动）：30% 概率当场照配方重召一只。
          * 概率写在数据描述里（30%），这里不另加隐藏系数。 */
@@ -6158,6 +6343,13 @@ const Game = {
           (reviveQ || (reviveQ = [])).push(al.revive);
         }
         this.allies.splice(i, 1); continue;
+      }
+      /* 血条：和怪物血条同一套（面向相机 / 屏幕上尺寸恒定），只是颜色不同 */
+      if (al.bar && this.camera) {
+        const cp = this.camera.position;
+        const bd2 = Math.hypot(al.pos.x - cp.x, 1.2 - cp.y, al.pos.z - cp.z);
+        al.bar.group.visible = bd2 < 36;
+        updateHpBar(al.bar, al.hp / al.maxHp, bd2, this.camera);
       }
       /* [P2] 龙息（取向）：灵兽自己的周期性吐息（只有青龙带 breath 标记） */
       if (al.breath) {
@@ -6170,7 +6362,8 @@ const Game = {
           SFX.fire();
           for (const e of this.enemies) {
             if (e.dead || DIST2D(e.pos, al.pos) >= R + e.radius) continue;
-            this.damageEnemy(e, al.dmg * 2.4, false, { silent: true, tag: 'aoe', elem: 'lightning' });
+            const t = this.rollDamage(st.atk * al.coef * 2.4);
+            this.damageEnemy(e, t.dmg, t.crit, { silent: true, tag: 'aoe', elem: 'lightning' });
           }
         }
       }
@@ -6196,8 +6389,12 @@ const Game = {
              * atk 是「出手更快」的倍率，除在间隔上 */
             al.atkCd = (al.atkRate || 1.1) / (emp && emp.atk ? emp.atk : 1);
             al.actor.atkAnim = 1; al.actor.atkType = 'swing';
-            const dmg = al.dmg * (emp && emp.dmg ? emp.dmg : 1) * RND(0.9, 1.1);
-            this.damageEnemy(target, dmg, false, {});
+            /* [P2b·兽群] 灵兽的每一刀都走玩家的 rollDamage：
+             * 暴击率 / 暴击伤害 / 通用增伤（dmgAll）从此全部继承。
+             * 之前固定传 `false`，等于召唤物天生不会暴击 —— 堆暴击的召唤流
+             * 把一半词条白扔了。基础值现算（st.atk × al.coef），换装备立刻生效。 */
+            const { dmg, crit } = this.rollDamage(st.atk * al.coef * (emp && emp.dmg ? emp.dmg : 1));
+            this.damageEnemy(target, dmg, crit, {});
             FX.spark(new THREE.Vector3(target.pos.x, 1.2, target.pos.z), 0x8affc0, 6);
             /* [P3] 恐惧：这只灵兽所属技能带 fear 时，每次出手按概率吓退目标。
              * 走「出手」而不是「施法」，数据描述写的就是「每次攻击 N%」。 */
@@ -6237,8 +6434,8 @@ const Game = {
     }
     if (reviveQ) {
       for (const r of reviveQ) {
-        if (r.wolf) this.summonWolf(1);
-        else this.summonBeast(r);
+        /* 兽契重召：只按种类补一只（不再按 count 翻倍，否则死一只补三只） */
+        this._spawnAlly(this.presetOf(r.kind), { count: 1, kind: r.kind });
         FX.text(new THREE.Vector3(this.playerGroup.position.x, 2.9, this.playerGroup.position.z),
           '兽契·重召', 'good', { life: 1 });
       }

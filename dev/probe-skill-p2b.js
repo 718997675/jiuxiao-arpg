@@ -1836,8 +1836,130 @@ const ok = (c, m, d) => {
       '面板：1 / 3 / 5 / 7 / 9 / 10 六档全部已生效', mage2.panel);
   }
 
-  /* ---------------- 14. 零报错 ---------------- */
-  console.log('十四、控制台');
+  /* ---------------- 15. 道士 ⑤ 召灵兽 ---------------- */
+  console.log('十五、道士 ⑤ 召灵兽');
+  const ally = await p.evaluate(() => {
+    /* 每次量完都要把真灵兽从场景里摘掉：它们有 actor，帧循环会一直驱动，
+     * 下一段量「召了几只」时就会把上一段的算进去。 */
+    const clear = () => {
+      for (const a of Game.allies) Game.scene.remove(a.actor.group);
+      Game.allies = [];
+      Game.enemies = [];
+      Game.mapGen = (Game.mapGen || 0) + 1;
+    };
+    const cast = (id, lv, form) => {
+      clear();
+      window.__mkClean();
+      /* 两个都要显式关掉，否则量到的是「天赋 + 变体 + 台阶」的乘积：
+       *   specials.wolfPack  万兽（旧天赋）一次召 2 头
+       *   form 0             召唤系的 0 号变体就是「双生 / 双虎」，自带 count +1
+       * 本节要量的是**台阶自己**贡献了几只，所以基准用「兽王 / 虎威」（无 count）。 */
+      Game.state.stats.specials = {};
+      Game.state.skills = {};
+      Game.state.skills[id] = { lv: lv, f: (typeof form === 'number' ? form : 1) };
+      Game.running = true;
+      Game.castSkill(id);
+      return Game.allies.map(a => ({
+        kind: a.kind, hp: a.hp, maxHp: a.maxHp,
+        aoe: !!a.aoe, bar: !!a.bar, guard: a.guard || 0
+      }));
+    };
+    const out = {};
+    out.lv1 = cast('summon', 1);
+    out.lv2 = cast('summon', 2);
+    out.lv3 = cast('summon', 3);
+    out.lv5 = cast('summon', 5);
+    out.lv7 = cast('summon', 7);
+    out.lv9 = cast('summon', 9);
+    out.lv10 = cast('summon', 10);
+    /* 0 号变体「双生」自带 count +1：与台阶叠加应为 3 只（累加，不是顶掉） */
+    out.dual = cast('summon', 3, 0);
+    out.tiger1 = cast('whitetiger', 1);
+    out.dragon10 = cast('azuredragon', 10);
+
+    /* 灵兽出手走的是玩家的 rollDamage —— 这是「继承暴击 / 爆伤 / 通用增伤」的入口 */
+    clear();
+    window.__mkClean();
+    Game.state.stats.specials = {};
+    Game.state.skills = { summon: { lv: 1, f: 1 } };
+    Game.running = true;
+    Game.castSkill('summon');
+    const foe = window.__mkEnemies(1)[0];
+    const a0 = Game.allies[0];
+    a0.pos.set(foe.pos.x - 1, 0, foe.pos.z);
+    a0.atkCd = 0;
+    let rolled = 0, hit = 0;
+    const oldRoll = Game.rollDamage, oldHit = Game.damageEnemy;
+    Game.rollDamage = (base) => { rolled++; return oldRoll.call(Game, base); };
+    Game.damageEnemy = () => { hit++; };
+    Game.updateAllies(0.016);
+    Game.rollDamage = oldRoll; Game.damageEnemy = oldHit;
+    out.strike = { rolled: rolled, hit: hit };
+
+    /* 灵兽会被打死（以前没有血，只能等倒计时自己消失） */
+    clear();
+    window.__mkClean();
+    Game.state.stats.specials = {};
+    Game.state.skills = { summon: { lv: 1, f: 1 } };
+    Game.castSkill('summon');
+    const before = Game.allies.length;
+    /* 关键被动「兽契」有 30% 概率当场重召 —— 不挡掉的话这条断言会偶发变红
+     * （死一只、立刻补一只，量到的就是「没死」）。 */
+    const oldPassive = Game.passiveLv;
+    Game.passiveLv = () => 0;
+    Game.damageAlly(Game.allies[0], Game.allies[0].maxHp + 1, null);
+    Game.updateAllies(0.016);
+    Game.passiveLv = oldPassive;
+    out.death = { before: before, after: Game.allies.length };
+
+    /* 上限：连按 12 次，停在 cap，且**第一只没有被顶掉** */
+    clear();
+    window.__mkClean();
+    Game.state.stats.specials = {};
+    Game.state.skills = { summon: { lv: 1, f: 1 } };
+    Game.castSkill('summon');
+    const first = Game.allies[0];
+    for (let i = 0; i < 11; i++) {
+      Game.cooldowns = {}; Game.state.mp = 99999; Game.castSkill('summon');
+    }
+    out.cap = {
+      cap: Game.allyCap(), n: Game.allies.length,
+      keptFirst: Game.allies.indexOf(first) >= 0
+    };
+    clear();
+    return out;
+  });
+  {
+    const a = ally;
+    ok(a.lv1.length === 1, 'Lv1 只召 1 只', a.lv1);
+    ok(a.lv2.length === 1, 'Lv2 是纯数值级，不额外召', a.lv2);
+    ok(a.lv3.length === 2, 'Lv3「召唤数量 +1」真的多一只（不是文案）', a.lv3.length);
+    ok(a.dual.length === 3, '变体「双生」的 +1 与台阶的 +1 叠成 3 只（累加，不互相顶掉）', a.dual.length);
+    ok(a.lv1[0] && a.lv1[0].hp > 0 && a.lv1[0].maxHp > 0,
+      '灵兽有独立生命值（以前没有血，只有倒计时）', a.lv1[0]);
+    ok(a.lv1[0] && a.lv1[0].bar === true, '灵兽带血条', a.lv1[0] && a.lv1[0].bar);
+    ok(a.lv5.length >= 1 && a.lv5.every(x => x.aoe), 'Lv5 每只灵兽都带范围攻击', a.lv5);
+    ok(a.lv7.some(x => x.kind === 'wolf') && a.lv7.length >= 2,
+      'Lv7 额外唤出一只灵狼（其它两只也吃）', a.lv7.map(x => x.kind));
+    ok(a.lv9.length >= 1 && a.lv9.every(x => x.guard === 10),
+      'Lv9 灵兽身上挂护主减伤 10%', a.lv9);
+    const kinds = new Set(a.lv10.map(x => x.kind));
+    ok(kinds.has('wolf') && kinds.has('tiger') && kinds.has('dragon'),
+      'Lv10 一次召出三种灵兽（四象同场）', a.lv10.map(x => x.kind));
+    ok(a.tiger1.length === 1 && a.tiger1[0].kind === 'tiger',
+      '白虎位同样走这套（台阶不是只给灵狼写的）', a.tiger1);
+    ok(a.dragon10.length >= 2 && a.dragon10.some(x => x.kind === 'dragon'),
+      '青龙位 Lv10 也凑齐三种', a.dragon10.map(x => x.kind));
+    ok(a.strike.rolled >= 1 && a.strike.hit >= 1,
+      '灵兽出手走 rollDamage（暴击 / 爆伤 / 通用增伤从此继承）', a.strike);
+    ok(a.death.before >= 1 && a.death.after === 0,
+      '灵兽被打死会真的消失（不是只掉血）', a.death);
+    ok(a.cap.n === a.cap.cap, '连按 12 次停在上限', a.cap);
+    ok(a.cap.keptFirst === true, '撞上限时**不顶掉**已经在场的', a.cap);
+  }
+
+  /* ---------------- 16. 零报错 ---------------- */
+  console.log('十六、控制台');
   ok(errs.length === 0, '全程零控制台报错', errs.slice(0, 3));
 
   console.log('\n' + (fail === 0 ? '✓' : '✗') + ' P2b 探针：' + pass + ' 通过 / ' + fail + ' 失败');

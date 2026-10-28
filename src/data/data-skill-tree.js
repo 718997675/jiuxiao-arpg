@@ -521,7 +521,7 @@ const SKILL_TREE = {
       ],
       form: [
         ['静心', '改为每 20 秒自动触发的常驻被动', { mods: { cd: -20 }, beh: { passive: true } }],
-        ['舍身', '药力全部转移给灵兽：灵兽伤害 +80%、续命 8 秒；施法者损失 8% 生命', { beh: { allyBuff: { dmg: 80, life: 8 }, hpCost: 8 } }],
+        ['舍身', '药力全部转移给灵兽：灵兽伤害 +80%、回复 8% 生命；施法者损失 8% 生命', { beh: { allyBuff: { dmg: 80, life: 8 }, hpCost: 8 } }],
         ['灵台', '期间技能冷却 −20%', { beh: { cdr: 20 } }]
       ]
     },
@@ -593,7 +593,7 @@ const SKILL_TREE = {
       ],
       form: [
         ['替身', '改为受到致命伤时自动触发，冷却 +100%', { mods: { cd: -100 }, beh: { autoTrigger: true } }],
-        ['收魂', '复活时灵兽续命 8 秒、伤害 +20%', { beh: { allyBuff: { life: 8, dmg: 20 } } }],
+        ['收魂', '复活时灵兽回复 8% 生命、伤害 +20%', { beh: { allyBuff: { life: 8, dmg: 20 } } }],
         ['逆命', '复活后 8 秒内伤害 +60%，之后 5 秒 −20%', { beh: { afterBuff: 60, afterDebuff: 20 } }]
       ]
     }
@@ -636,7 +636,7 @@ const SKILL_TREE = {
     t_bond: { name: '通灵', desc: '灵兽伤害 +10%/级', max: 3, icon: 'passive' },
     /* 名字不能叫「万兽」：召唤系天赋里已经有一个「万兽」节点（一次召 2 头），
      * 同名两个不同效果，玩家会以为点了天赋就该有这个被动。改叫兽契。 */
-    t_beast: { name: '兽契', desc: '场上灵兽上限 +1；灵兽消散时 30% 概率当场重召', max: 1, key: true, icon: 'key' },
+    t_beast: { name: '兽契', desc: '场上灵兽上限 +1；灵兽阵亡时 30% 概率当场重召', max: 1, key: true, icon: 'key' },
     /* 符师 · 丹道 */
     t_merid: { name: '脉络', desc: '治疗量 +10%/级', max: 3, icon: 'passive' },
     t_toxin: { name: '毒经', desc: '毒伤害 +12%/级', max: 3, icon: 'passive' },

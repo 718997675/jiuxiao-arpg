@@ -880,17 +880,33 @@ const SKILL_BEH = {
   fear: { ph: 'hook', label: '恐惧', run() { /* 由 updateAllies 的灵兽出手消费 */ } },
 
   /* 嘲讽：灵兽每 N 秒把周围敌人拉到自己身上一次。
-   * 灵兽没有血条，所以嘲讽的真实收益是「这几秒里怪不来打你」，
-   * 而不是「灵兽扛伤」—— 说成扛伤就是假机制。 */
+   * [P2b·兽群] 灵兽现在有血：被拉过来的怪挥刀时会真的扣它的血，
+   * 所以这条终于从「怪白打几秒」变成「替你扛伤」。 */
   taunt: { ph: 'hook', label: '嘲讽', run() { /* 由 tickBeh 的灵兽节拍消费 */ } },
 
   dur: { ph: 'self', label: '时长', run() { /* 由 behDur(b) 读取，各 handler 自己消费 */ } },
 
-  /* 灵兽同享：灵兽没有血条，只有「伤害 / 出手间隔 / 存在时间」三样 ——
-   * 所以「加攻 / 上盾 / 回血」一律翻译成这三样，不假装它有血条。
-   * v = { dmg: %, atk: %, life: 秒, drain: 流失倍率, dur: 秒 } */
+  /* 灵兽同享：灵兽有血之后，「加攻 / 上盾 / 回血」都能落到真字段上 ——
+   * dmg / atk 走 emp 倍率，life 折算成回血，drain 变成持续掉血。
+   * v = { dmg: %, atk: %, life: %, drain: 流失倍率, dur: 秒 } */
   allyBuff: { ph: 'self', label: '灵兽同享', run(c, v, b) {
     if (typeof c.G.allyEmpower === 'function') c.G.allyEmpower(v || {}, b);
+  } },
+
+  /* ---------------- 召灵兽位台阶四件（Lv5 / 7 / 9 / 10） ----------------
+   * 灵兽有血、有数量之后这四条才有落点。三条作用在**场上已有的**灵兽身上，
+   * Lv7 例外（它补一只新的），所以都是 self 相位、施法之后执行。 */
+  allyAoe: { ph: 'self', label: '灵兽范围伤害', run(c, v) {
+    if (typeof c.G.grantAllyAoe === 'function') c.G.grantAllyAoe(v || 2.6);
+  } },
+  allyEscort: { ph: 'self', label: '召唤随行灵狼', run(c) {
+    if (typeof c.G.summonWolf === 'function') c.G.summonWolf(1);
+  } },
+  allyGuard: { ph: 'self', label: '灵兽护主减伤', run(c, v) {
+    if (typeof c.G.grantAllyGuard === 'function') c.G.grantAllyGuard(v || 10);
+  } },
+  allyFour: { ph: 'self', label: '四象同场', run(c) {
+    if (typeof c.G.summonFour === 'function') c.G.summonFour();
   } },
 
   /* 常驻：不用按，冷却一好就自动开一次（数值减半、持续拉满到下次冷却）。
@@ -1374,6 +1390,9 @@ Object.assign(Game, {
           if (DIST2D(e.pos, al.pos) >= R + (e.radius || 0)) continue;
           e.tauntT = Math.max(e.tauntT || 0, dur);
           e.tauntPt = { x: al.pos.x, z: al.pos.z };
+          /* [P2b·兽群] 记下具体是哪只灵兽：怪挥刀时要扣它的血，
+           * 光有坐标只能「朝那个方向砍一刀」——灵兽挪开半步就打空了。 */
+          e.tauntAlly = al;
           n++;
         }
         if (n) {
@@ -1412,10 +1431,9 @@ Object.assign(Game, {
   /* ============================================================
    * 灵兽三件套（第三批）：增益 / 体型 / 双生
    *
-   * 灵兽没有血条，所以「上盾」「回血」这类写法在这套引擎里没有落点。
-   * 它真正能变的三样是：伤害、出手间隔、还能存在多久 —— 全部翻译成
-   * 这三样，玩家看到的差别才是真的。没有灵兽时明确说一声「场上没有灵兽」，
-   * 不静默吞掉。
+   * [P2b·兽群] 灵兽有了血与血条之后，「上盾 / 回血」不再只能翻译成
+   * 「多活几秒」了：life 折算成回血、drain 变成持续掉血、dmg / atk 仍是倍率。
+   * 没有灵兽时明确说一声「场上没有灵兽」，不静默吞掉。
    * ============================================================ */
   allyEmpower(cfg, b) {
     const c = cfg || {};
@@ -1433,8 +1451,10 @@ Object.assign(Game, {
       if (c.atk) e.atk = Math.max(e.atk, 1 + c.atk / 100);
       if (c.drain) e.drain = Math.min(e.drain, c.drain);
       if (dur > 0) e.t = Math.max(e.t, dur);
-      /* life 是「续命秒数」：灵兽只有存在时间，回血就等于是这个 */
-      if (c.life) al.life += c.life;
+      /* [P2b·兽群] 灵兽有血之后，「续命」变成真回血。
+       * 旧口径是「+N 秒存在时间」（那时灵兽没有血，只能拿时长代替）；
+       * 现在按「回复 N% 最大生命」结算，数值不变、语义换成玩家看得见的那条。 */
+      if (c.life) al.hp = Math.min(al.maxHp, al.hp + al.maxHp * CLAMP(c.life, 0, 50) / 100);
     }
     FX.ring(new THREE.Vector3(pp.x, 0.2, pp.z), 4, 0x9ad8ff, 0.5, 0.25);
     FX.text(new THREE.Vector3(pp.x, 2.9, pp.z), '灵兽同享', 'good', { life: 1 });
