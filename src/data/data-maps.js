@@ -672,10 +672,13 @@ const MAP_SPECS = {
     }
   },
   /* 混沌海：全作最后一张，只有一张图的一章。isles —— 几块碎岛漂在混沌里，
-   * 桥是唯一的路，退无可退。 */
+   * 桥是唯一的路，退无可退。
+   * [M6] 怪池原来混了 `shade`（影魅，130 血的三卷杂兵）—— 它是全终局最弱的一只，
+   * 把整图 TTK 拉到 1.7s（比九霄之巅还软，终章反而最好打）。
+   * 换成同卷的 `jadepuppet`（玉傀，430 血）。 */
   chaossea: {
     archetype: 'isles', size: 303, ground: 'void',
-    kinds: ['voidbeast', 'shade', 'fallen', 'thunderbird', 'jadeguard', 'mirrortwin', 'maskweaver', 'voidmoth'],
+    kinds: ['voidbeast', 'jadepuppet', 'fallen', 'thunderbird', 'jadeguard', 'mirrortwin', 'maskweaver', 'voidmoth'],
     names: {
       gate: '混沌岸', b1: '南浮桥', isleS: '混沌南岛', b2: '西浮桥', isleW: '西浮岛',
       b3: '东浮桥', isleE: '东浮岛', b4: '北浮桥', isleN: '混沌北岛',

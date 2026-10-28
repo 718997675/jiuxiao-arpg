@@ -255,11 +255,14 @@ const MAPS = {
     spawns: ['thunderbird', 'jadeguard', 'fallen', 'swordwraith', 'voidbeast', 'jadepuppet', 'starfaller', 'silkweaver'], spawnCount: 43,
     bosses: ['nineheaven'], portal: { x: 0, z: 78 }, unlock: 57
   },
+  /* [M6] 怪池原来混了 `shade`（影魅，130 血的三卷杂兵），把终章 TTK 拉到 1.7s
+   * —— 全作最后一张图反而最好打。换成同卷的 `jadepuppet`（玉傀，430 血）。
+   * 注意：MAP_SPECS（data-maps.js）里同一张图的 kinds 要同步改，两处都读。 */
   chaossea: {
     id: 'chaossea', name: '混沌海', safe: false, level: 60,
     ground: 'void', sky: 0x0e0a14, fog: 0x140e1e, fogNear: 38, fogFar: 154,
     size: 303, ambient: 0x60507a, sun: 0x8a6ae0, sunI: 0.62, props: 'void',
-    spawns: ['voidbeast', 'shade', 'fallen', 'thunderbird', 'jadeguard', 'mirrortwin', 'maskweaver', 'voidmoth'], spawnCount: 41,
+    spawns: ['voidbeast', 'jadepuppet', 'fallen', 'thunderbird', 'jadeguard', 'mirrortwin', 'maskweaver', 'voidmoth'], spawnCount: 41,
     bosses: ['chaosavatar'], portal: { x: 0, z: 74 }, unlock: 59
   },
   /* ---------------- 营地 B~E（M1） ----------------
