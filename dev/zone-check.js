@@ -158,8 +158,11 @@ for (const mapId of ALL_MAPS) {
     if (c > 0) { zmax = Math.max(zmax, c); zmin = Math.min(zmin, c); }
   }
   if (!cfg.safe) {
-    if (total === 0) fail('没有任何区域配了刷怪');
-    else {
+    /* [M7] boss 场（无相天）没有小怪：`arena: true` 单独豁免。
+     * 它和「安全区」不是一回事 —— 安全区是进得去出得来的地方，
+     * boss 场是进去就开打的地方，只是不打杂兵。 */
+    if (total === 0 && !cfg.arena) fail('没有任何区域配了刷怪');
+    else if (total > 0) {
       /* 骨架图的刷怪数是推导出来的，必须与 MAPS.spawnCount 完全一致；
        * 手写图是手工填的，只做「别比旧值少太多」的软提醒。 */
       if (MAP_SPECS[mapId]) {
@@ -175,11 +178,14 @@ for (const mapId of ALL_MAPS) {
      * 只对骨架图（40~56 只）硬性要求：老图整图才 12 只，摊到 5 个刷怪区
      * 必然是 5/2 或 4/2，比值天生 2.0~2.5 —— 这个指标是给「大图会不会
      * 中间空、边上挤」设计的，12 只的图上没有统计意义，硬判等于逼着
-     * 为了凑比值去打乱老图手感。所以老图只给提醒，不判失败。 */
+     * 为了凑比值去打乱老图手感。所以老图只给提醒，不判失败。
+     *
+     * [M7] 副本图同理豁免：12 只摊 6 个区，本来就是 2/2/2/2/2/2 或 3/2/2/2/2/1，
+     * 差一只比值就跳，硬判只会逼着把刷怪数往上加 —— 而副本要的就是「少而精」。 */
     if (zmin < Infinity && zmax / zmin > 1.6) {
       const msg = '区内刷怪 max/min = ' + (zmax / zmin).toFixed(2) + '（' + zmax + '/' + zmin + '）> 1.6';
-      if (MAP_SPECS[mapId]) fail(msg + '，密度不均');
-      else soft(msg + '，老图怪少可接受');
+      if (MAP_SPECS[mapId] && !cfg.raid) fail(msg + '，密度不均');
+      else soft(msg + '，怪少（副本 / 老图）可接受');
     }
   }
 

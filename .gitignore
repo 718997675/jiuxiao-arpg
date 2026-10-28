@@ -9,6 +9,9 @@
 shots/
 dev/shot-*.png
 
+# 一次性探针脚本（查完就删，长期有用的都进 dev/）
+.probe/
+
 # 音频素材的生成源与试听产物：运行时用的是 audio/**/*.wav|m4a（已入库），
 # wav-src 是 MIDI + 未压缩波形（29M），_meta 是试听图与报告，都只服务生成工具链。
 audio/bgm/wav-src/

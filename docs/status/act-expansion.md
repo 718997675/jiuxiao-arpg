@@ -3,10 +3,11 @@
 - 分支：`feat/act-expansion`（优先级 **高**，先于技能重构合入 main）
 - 计划文档：`docs/ACT-EXPANSION-PLAN.md`（16 节，§15 = 终章重做）
 - 预览站：<https://718997675.github.io/jiuxiao-arpg/preview/act-expansion/>
-- 更新：2026-10-28 10:20
+- 更新：2026-10-28 15:40
 
-> 当前：**M1~M6 已完成**（30 张图 · 80 种怪 · 图鉴 5 卷 + 秘境 · 5 阶地下城 · 60 级上限 ·
-> 传世 40 件 · 套装 18 套 · 基底 8 阶）。**M7 终章重做（八部天龙）进行中**，见下「M7 小节状态」。
+> 当前：**M1~M6 已完成**（39 张图 · 80 种怪 · 图鉴 5 卷 + 秘境 · 5 阶地下城 · 60 级上限 ·
+> 传世 40 件 · 套装 18 套 · 基底 8 阶）。**M7 终章重做（八部天龙）进行中**：
+> M7.1 结构 / M7.2 八魔将数据已落地，M7.3 破绽窗口 + M7.4 印掉落待做，见下「M7 小节状态」。
 
 ## 一句话现状
 
@@ -30,7 +31,14 @@ M5 把「钥匙」变成了第二套循环：`KEY_TIERS` 5 阶（一阶对一卷
 `MONSTERS` → **80**（+4 只地下城专属怪），图鉴加第 6 区「秘境 · 地脉裂隙」，
 另有一套独立的 25 条地脉异闻（5 类 × 5 阶，单类全清给一类加成、25 条全清给终局加成）。
 
-**剩下的**：M6（60 级曲线 + 平衡收口）。
+M7 把「打完终 boss 就结束」改成了终局循环：混沌海从战斗图变成**枢纽**（安全区，
+八部坛四面开 8 道门），门后是 8 张独立副本图（各用一种骨架，12 护卫 + 1 魔将），
+8 位魔将各掉一枚**魔将之印**；8 印齐开天龙终门 → 终 boss 场「无相天」。
+图位 30 → **39**。8 位魔将的弱点**不进图鉴**，只写在 `BOSSES.resist` 里，
+玩家只能靠伤害数字自己摸 —— 打错吃 20%、打对吃 160%，正好 8 倍。
+
+**剩下的**：M7.3 破绽窗口 → M7.4 印掉落与 UI → M7.5 九个模型 → M7.6 五阶段终 boss
+→ M7.7 全传世掉落 → M7.8 二周目 → M7.9 文案同步，然后才走「合入 main」。
 
 ## 节点表
 
@@ -47,7 +55,7 @@ M5 把「钥匙」变成了第二套循环：`KEY_TIERS` 5 阶（一阶对一卷
 | M4 | 怪物 / 首领：**36 只新怪**（全量，非 24）；图鉴改 5 大卷；5 个卷末首领强化 | ✅ | `src/data/data-monsters.js`、`src/data/data-world.js`、`src/data/data-maps.js`、`src/game.js`、`src/ui.js`、`src/data/data-core.js`、`dev/test-m4.js` | 本次 |
 | M5 | 地下城：`dungeon.js`；5 类 × 5 阶；词缀；图鉴加成；钥匙掉落 | ✅ | 新建 `src/dungeon.js`、`src/data/data-dungeon.js`、`dev/test-m5.js`、`dev/dungeon-sim.js`、`dev/probe-dungeon.js`；改 `index.html`、`src/game.js`、`src/core/save.js`、`src/items.js`、`src/world.js`、`src/data/data-monsters.js`、`src/data/data-world.js`、`src/data/data-core.js`、`src/data/data-maps.js` | 本次 |
 | M6 | 平衡 / 打磨：60 级曲线复算；**基底保持 8 阶**（否决 12 阶）+ ilvl 终局加速；传世 40 件；套装 18 套；**终局难度回补**；世界结构体检；性能实测；手机端回归 | ✅ | `src/data/data-core.js`、`data-uniques.js`、`data-items.js`、`data-monsters.js`、`data-maps.js`、`data-world.js`、`src/items.js`、`src/actors.js`、`dev/act-check.js` | 本次（见下） |
-| M7 | **终章重做 · 八部天龙**：8 魔将副本 + 8 魔将之印 + 终门 + 五阶段终 boss + 9 个专属模型 + 全传世掉落 | 🔄 | `data-world.js`、`data-monsters.js`、`actors.js`、`game.js` | 见下「M7 小节状态」 |
+| M7 | **终章重做 · 八部天龙**：8 魔将副本 + 8 魔将之印 + 终门 + 五阶段终 boss + 9 个专属模型 + 全传世掉落 | 🔄 | `data-world.js`、`data-maps.js`、`data-monsters.js`、`game.js`、`ui.js`、`dev/check-bafo.js` | 见下「M7 小节状态」 |
 
 ### M7 小节状态（终章重做 · 换账号按这张表继续）
 
@@ -56,15 +64,32 @@ M5 把「钥匙」变成了第二套循环：`KEY_TIERS` 5 阶（一阶对一卷
 
 | 编号 | 小节 | 状态 | 产物 | 验收 |
 |---|---|---|---|---|
-| M7.1 | 结构：`ACTS['5-2']` 改成枢纽 + 8 副本图位 | ⬜ | `data-world.js`、`data-maps.js` | `act-check` 通过（图位 30 → 38） |
-| M7.2 | 8 魔将数据（`resist` / `stagger` / `seal`） | ⬜ | `data-monsters.js` | `dev/check-bafo.js` |
-| M7.3 | 弱点与破绽机制 | ⬜ | `game.js` | 命中弱点 ≈ 8 倍差 |
-| M7.4 | 魔将之印 + 终门 | ⬜ | `game.js`、`core/save.js`、`ui.js` | 老档补字段不丢档 |
+| M7.1 | 结构：`ACTS['5-2']` 改成枢纽 + 8 副本图位 + 终 boss 场 | ✅ | `data-world.js`、`data-maps.js`、`ui.js`、`act-check` / `zone-check` / `zone-density` | `act-check` **556 项**（图位 30 → **39**）；`zone-check` / `zone-density` 全绿 |
+| M7.2 | 8 魔将数据（`resist` / `stagger` / `seal` / `animKind`）+ `BAFO_SEALS` 八印表 | ✅ | `data-monsters.js`、`data-world.js`、`game.js`、新建 `dev/check-bafo.js` | `check-bafo` **335 项**（含「8.00 倍差」硬断言） |
+| M7.3 | 弱点与破绽机制 | 🔄 | `game.js` | 抗性侧已成立（`damageEnemy` 读 `boss.resist`）；**破绽窗口未做** |
+| M7.4 | 魔将之印 + 终门 | 🔄 | `game.js`、`core/save.js`、`ui.js` | 印门已拦在 `travelTo` + 山河图；**掉落 / 存档字段 / 八印 UI 未做** |
 | M7.5 | 9 个模型 + 专属动画 | ⬜ | `actors.js`、`fx.js` | `verify-perf` 报错 0 |
 | M7.6 | 终 boss 五阶段 + P5 满血变身 | ⬜ | `data-monsters.js`、`game.js` | 阶段与血条重置可复现 |
 | M7.7 | 全传世掉落（0.01% / 0.1%，未收集优先） | ⬜ | `game.js`、`items.js` | 抽样 10 万次验概率 |
 | M7.8 | 二周目最小闭环 | ⬜ | `game.js`、`core/save.js`、`ui.js` | 轮回后强度与掉率生效 |
 | M7.9 | 说明页 / 图鉴 / README 同步 | ⬜ | `ui.js`、`README.md` | 文案与实际一致 |
+
+### M7 已交付明细（M7.1 + M7.2）
+
+| 项 | 落地内容 | 回归 |
+|---|---|---|
+| **章结构** | `ACTS['5-2'].maps` 从 1 个图位改成 **10 个**：混沌海（枢纽）→ 8 副本 → 无相天。首图仍是混沌海，「前往本章」落点不变 | `act-check` 图位 39 |
+| **混沌海改枢纽** | 安全区、`spawns: []`、`bosses: []`、`hub: true`；骨架 `isles 303` → **`radial 220`**：8 间侧室正好一室一门，中庭是八部坛，北端 `sanctum` 是天龙终门 | `zone-check` 连通 / 门坐标在可走区内 |
+| **8 张副本图** | 各用一种骨架（radial/spiral/twin/ring/canyon/terrace/cross/isles），尺寸 138~144，`spawnTotal` **写死 12**，`raid: true` | 实测每图 12 护卫 + 1 魔将 |
+| **无相天** | 手写 2 个 zone（入口道 + r=58 大圆），`arena: true`（只有 boss 不刷杂兵），size 180 | `check-bafo` boss 区半径 ≥ 40 |
+| **8 魔将** | `BOSSES` 新增 `bafo_*` 8 条：hp 134k~150k、lv60、各自 `weak` / `resist` / `stagger` / `seal` / `animKind` | `check-bafo` 335 项 |
+| **抗性 8 倍差** | 弱点元素 `resist = −60`（吃 160%）、其余四元素 `+80`（吃 20%）。`−60` 是 `damageEnemy` 的夹取下限，`1 − (−60)/100 = 1.6` 是唯一写法 | 硬断言 `弱点/非弱点 = 8.00` |
+| **弱点不进族群表** | 只写 `BOSSES[id].resist`，`MON_FAMILIES` 不动（图鉴会公开显示 resist）。`spawnEnemy` 加 `if (cfg.resist) Object.assign(resist, cfg.resist)` | `check-bafo` 族群表无 ±70 量级抗性 |
+| **八印表** | 新建 `BAFO_SEALS`（8 条：key / name / part / map / boss / color），是 UI、印门、掉落、校验的**唯一清单** | 印 ↔ 门 ↔ 图位 ↔ 魔将 四向对齐 |
+| **印门** | `MAPS.wuxiang.sealNeed = 8`；拦截放在 **`travelTo`** 而不是只做一道门 —— 山河图 / 传送阵 / 章间门三条路都能进图 | 无印进不去、8 印能进 |
+| **新增体检** | `dev/check-bafo.js`：八印清单 / 四向对齐 / 8 副本图 / 8 魔将（抗性·破绽·模型·印）/ 无相天 | 335 项全绿 |
+| **顺带修的真 bug** | `SPAWN_SAFE = 20` 是世界图尺度，140 尺寸的副本图里「入口 → 近区」不足 20 米，整片近区刷不出怪（实测 12 只只出 10 只）。改成 `min(20, size × 0.10)`：世界图仍 20（零变化），副本落到 14 | 8 副本全部恢复 12 只 |
+| 回归 | `act-check` 556 · `check-bafo` 335 · `zone-check` ✅ · `zone-density` ✅ · `test-m6` 264 · `test-items` 21 · `test-m4` 25 · `test-m5` 89 · `dungeon-sim` 60 · `test-save` · `check-uniques` · `check-sets` · `check-endgame` · `quest-ref` 39 · `smoke` ERRORS none · `mobile-layout` 全通过 · `verify-perf` 报错 0 | 全绿 |
 
 ### M6 交付明细（已完成）
 

@@ -1,17 +1,19 @@
 /* ============================================================
- * dev/act-check.js —— 世界结构体检：5 卷 / 12 章 / 30 图（离线，node 直跑）
+ * dev/act-check.js —— 世界结构体检：5 卷 / 12 章 / 39 图（离线，node 直跑）
  *
  * 这个脚本在 §12 的验收清单里挂了很久没建，原因很实在：
  * M0/M1 时代 25 个图位是 `id: null`，校验器只能验「已开放的那 6 张」，
  * 剩下的全是空壳，写了也验不出东西。M3 把 30 个图位填满之后才真正可写。
+ * [M7] 终章加了 9 个图位（8 副本 + 终 boss 场），总数 30 → 39。
  *
  * 它验的是**结构**，不是地形（地形归 zone-check / zone-density）：
  *
  *   一、卷：5 条、营地真实存在、级数首尾相接且盖满 1..levelMax
- *   二、章：12 条、每卷章号连续、章级数首尾相接、图数 1~5、双首领齐
- *   三、图：30 张、无 null、无重复、无孤儿、非安全区必有怪与首领
+ *   二、章：12 条、每卷章号连续、章级数首尾相接、图数 1~5（终章 10）、双首领齐
+ *   三、图：39 张、无 null、无重复、无孤儿、非安全区必有怪与首领
  *   四、连通：章间门能一路走到头、章尾判定只在每章最后一张
  *   五、引用：图里的怪 / 首领都在各自表里，章首领真的摆在某张图上
+ *   六、图鉴区域：每张图都归得进某一卷
  *
  * 为什么值得单独一个脚本：这些错在浏览器里表现为「传送点进去是黑屏」
  * 「打完首领不开门」「主线指向一张不存在的图」，全都很难一眼看出来，
@@ -125,8 +127,12 @@ for (const id of SORTED_ACTS) {
   ok(!!a.name, `章 ${id} 有名字`);
   ok(a.from <= a.to, `章 ${id} 级数区间合法`, [a.from, a.to]);
 
-  /* 图数 1~5（计划书 §5.3） */
-  ok(a.maps.length >= 1 && a.maps.length <= 5, `章 ${id} 图数在 1~5`, a.maps.length);
+  /* 图数 1~5（计划书 §5.3）。
+   * [M7] 终章例外：5-2 从「一张图」改成「枢纽 + 8 副本 + 终 boss 场」，
+   * 一共 10 个图位 —— 这不是「一章塞了十张世界图」，而是 1 张枢纽图
+   * 背后挂 9 个入口，章的长度没变（还是 59~60 级）。 */
+  const maxMaps = (id === LAST_ACT) ? 10 : 5;
+  ok(a.maps.length >= 1 && a.maps.length <= maxMaps, `章 ${id} 图数在 1~${maxMaps}`, a.maps.length);
 
   /* 双首领：主首领必须有；副首领允许为空，但只允许出现在最后一章 */
   ok(!!BOSSES[a.boss], `章 ${id} 主首领 ${a.boss} 存在于 BOSSES`);
@@ -160,7 +166,9 @@ for (const id of SORTED_ACTS) {
 }
 const realRefs = referenced.filter(Boolean);
 
-eq('图位总数 30（计划书 §5）', referenced.length, 30);
+/* [M7] 30 → 39：终章新增 8 张副本图 + 终 boss 场「无相天」。
+ * 混沌海本体还在（变成枢纽），所以是 +9 而不是 +10。 */
+eq('图位总数 39（计划书 §5 + §15.1）', referenced.length, 39);
 eq('图位里没有 id: null', realRefs.length, referenced.length);
 eq('同一张图不被两章引用', new Set(realRefs).size, realRefs.length);
 
@@ -180,7 +188,11 @@ if (orphan.length) console.log('    孤儿：' + orphan.join(', '));
 for (const id of realRefs) {
   const m = MAPS[id];
   if (!m) continue;
-  ok(Array.isArray(m.spawns) && m.spawns.length > 0, `图 ${id} 有刷怪池`, (m.spawns || []).length);
+  /* [M7] 安全区（营地 / 八部坛枢纽）与 boss 场（无相天）本来就没有小怪 ——
+   * 要求它们「有刷怪池」等于要求村口站两只狼。 */
+  if (!m.safe && !m.arena) {
+    ok(Array.isArray(m.spawns) && m.spawns.length > 0, `图 ${id} 有刷怪池`, (m.spawns || []).length);
+  }
   const badSpawn = (m.spawns || []).filter(k => !MONSTERS[k]);
   eq(`图 ${id} 的刷怪都在 MONSTERS 里`, badSpawn.length, 0);
   if (badSpawn.length) console.log('    缺：' + badSpawn.join(', '));
@@ -280,7 +292,7 @@ if (CODEX_REGIONS) {
 console.log('\n' + '='.repeat(52));
 const partInfo = PART_IDS.map(p => PARTS[p].name + '(' + PARTS[p].from + '~' + PARTS[p].to + ')').join(' · ');
 console.log('5 卷：' + partInfo);
-console.log('12 章 · 30 图位 · 30 张实体图 · 5 营地 · ' + MAP_IDS.length + ' 张 MAPS 条目');
+console.log('12 章 · ' + referenced.length + ' 图位 · ' + realRefs.length + ' 张实体图 · 5 营地 · ' + MAP_IDS.length + ' 张 MAPS 条目');
 const perPart = PART_IDS.map(p => actsOfPart(p).length + ' 章/' +
   actsOfPart(p).reduce((s, a) => s + a.maps.length, 0) + ' 图').join(' · ');
 console.log('每卷：' + perPart);

@@ -1710,11 +1710,18 @@ const Game = {
           if (!kind) continue;
           /* [v1.12.1] 别刷在出生点附近。走廊上端与入口区是重叠的，
            * 只把入口区的刷怪数量清零不够 —— 走廊刷出来的怪照样站在玩家脸上。
-           * 连试 8 次都找不到远处的位置就跳过这只（宁可少刷也不刷脸）。 */
+           * 连试 8 次都找不到远处的位置就跳过这只（宁可少刷也不刷脸）。
+           *
+           * [M7] 安全距离按图尺寸缩放：固定 20 米是世界图（290~300）的尺度，
+           * 而 8 张副本图只有 140 —— 入口到「竹径 / 下谷」这些近区的距离
+           * 本来就不足 20 米，结果整片近区一只都刷不出来（实测少 2/12，
+           * 副本里少两只就是「怎么这么空」）。改成 size × 0.10 封顶 20：
+           * 世界图仍是 20（一点没变），副本图落到 14，够远又不至于空。 */
+          const safeD = Math.min(SPAWN_SAFE, (m.size || 240) * 0.10);
           let p = null;
           for (let k = 0; k < 8; k++) {
             const q2 = randomPointInZone(z, 2.6);
-            if (Math.hypot(q2.x - sp.x, q2.z - sp.z) >= SPAWN_SAFE) { p = q2; break; }
+            if (Math.hypot(q2.x - sp.x, q2.z - sp.z) >= safeD) { p = q2; break; }
           }
           if (!p) continue;
           this.spawnEnemy(kind, p.x, p.z, CHANCE(D.elite));
@@ -1798,6 +1805,10 @@ const Game = {
     /* [S5] 族群抗性：正数减伤、负数增伤；元素免疫在此覆盖对应一项 */
     const fam = MON_FAMILIES[cfg.family] || MON_FAMILIES.humanoid;
     const resist = Object.assign({}, fam.resist);
+    /* [M7] 首领自己的抗性覆盖族群表。八魔将的「隐藏弱点」就走这一条 ——
+     * 弱点必须写在 BOSSES 而不是 MON_FAMILIES：族群表是公开的，
+     * 图鉴会把 resist 显示给玩家，写进去等于把答案贴在门上。 */
+    if (cfg.resist) Object.assign(resist, cfg.resist);
     let wardElem = null;
     if (aff.warded) {
       wardElem = PICK(ELITE_WARD_ELEMS);
@@ -6096,6 +6107,24 @@ const Game = {
     return Dungeon.keyCount(tier);
   },
 
+  /* ---------------- 魔将之印（M7） ----------------
+   * 8 个布尔位，存在 state.seals。这里只读不写 —— 写入在 M7.4 的
+   * 击杀结算里（`grantSeal`）。先留读口是因为 travelTo 的印门要它，
+   * 而印门是「结构」的一部分：没有它，无相天从山河图就能直接点进去，
+   * 8 个副本和 8 枚印全成了摆设。
+   *
+   * 老档没有 state.seals 时按「一枚都没有」算，不抛错。 */
+  sealCount() {
+    const s = (this.state && this.state.seals) || {};
+    if (typeof BAFO_SEALS === 'undefined') return 0;
+    let n = 0;
+    for (const it of BAFO_SEALS) if (s[it.key]) n++;
+    return n;
+  },
+  hasSeal(key) {
+    return !!((this.state && this.state.seals) || {})[key];
+  },
+
   onEnemyDeath(e) {
     if (e.dead) return;
     e.dead = true;
@@ -7556,6 +7585,17 @@ const Game = {
       if (!unlocked && !seen) { UI.log('尚未抵达此卷，走不进「' + m.name + '」。', 'bad'); return; }
     }
     if (!seen && this.state.level < (m.unlock || 1)) { UI.log('境界不足。', 'bad'); return; }
+    /* [M7] 印门：无相天（终 boss 场）要 8 枚魔将之印才进得去。
+     * 放在 travelTo 这一层而不是只做一道门 —— 山河图也能直接点进去，
+     * 只拦门的话「翻面板传送」就能把整条终章跳过去。
+     * 印没齐时提示差几枚，不然玩家只会以为图坏了。 */
+    if (m.sealNeed) {
+      const have = this.sealCount();
+      if (have < m.sealNeed) {
+        UI.log('天龙终门未开：魔将之印 ' + have + ' / ' + m.sealNeed + '。', 'bad');
+        return;
+      }
+    }
     /* 试炼中不允许直接传送：先把本轮结算掉，否则祝福会跟着人跑到别的地图上 */
     if (typeof Trial !== 'undefined' && Trial.active) {
       Trial.end('quit');

@@ -157,6 +157,16 @@ for (const r of rows) {
 console.log('\n【骨架图硬指标】§5.1：面积 16000~24000㎡ · 密度 380~450㎡/只 · 刷怪 40~56 · 区数 12~16');
 for (const r of rows) {
   if (!MAP_SPECS[r.id]) continue;
+  /* [M7] 三类图不适用世界图指标，直接跳过（不是「放宽」，是「另一把尺子」）：
+   *   safe  —— 营地 / 八部坛枢纽：0 只怪，密度无意义；
+   *   arena —— 无相天：只有 boss，0 只怪；
+   *   raid  —— 8 张副本图：140 尺寸 / 12 只护卫，本来就只有世界图的四分之一。 */
+  const cfg = MAPS[r.id] || {};
+  if (cfg.safe || cfg.arena || cfg.raid) {
+    console.log('  – ' + r.name + '（' + (cfg.safe ? '安全区' : cfg.arena ? 'boss 场' : '副本') +
+      '）不适用世界图指标：' + r.area.toFixed(0) + '㎡ · ' + r.total + ' 只');
+    continue;
+  }
   const errs = [];
   if (r.area < T.areaMin) errs.push('面积 ' + r.area.toFixed(0) + ' < ' + T.areaMin);
   if (r.area > T.areaMax) errs.push('面积 ' + r.area.toFixed(0) + ' > ' + T.areaMax);

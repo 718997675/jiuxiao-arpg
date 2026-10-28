@@ -255,15 +255,121 @@ const MAPS = {
     spawns: ['thunderbird', 'jadeguard', 'fallen', 'swordwraith', 'voidbeast', 'jadepuppet', 'starfaller', 'silkweaver'], spawnCount: 43,
     bosses: ['nineheaven'], portal: { x: 0, z: 78 }, unlock: 57
   },
-  /* [M6] 怪池原来混了 `shade`（影魅，130 血的三卷杂兵），把终章 TTK 拉到 1.7s
-   * —— 全作最后一张图反而最好打。换成同卷的 `jadepuppet`（玉傀，430 血）。
-   * 注意：MAP_SPECS（data-maps.js）里同一张图的 kinds 要同步改，两处都读。 */
+  /* ============================================================
+   * [M7] 终章 · 八部天龙 —— 枢纽 + 8 副本 + 终 boss 场
+   *
+   * 原来的混沌海是「最后一张战斗图」，打完就结束，没有终局内容。
+   * 现在它变成**枢纽**：安全区、不刷怪，八部坛四面开八道门，
+   * 每道门后是一张独立副本图（3~5 分钟一局），北端是天龙终门。
+   *
+   * 为什么副本是 8 张独立小图，而不是一张图里的 8 个区域：
+   *   1) 同屏体量：一个魔将 + 12 护卫已经是手机端的上限；
+   *   2) 独立重生 / 独立掉落：印是按「哪个魔将掉的」记的，混在一张图里
+   *      要靠坐标反查，改一次地形就得重算一遍；
+   *   3) 独立地貌：8 种骨架 + 8 种地面，进门就知道换了地方。
+   *
+   * `raid: true` 是给校验器的标记（zone-check / zone-density 豁免）：
+   * 副本图的尺子（12 只怪 / 140 尺寸）和世界图（40~56 只 / 290~300）不同，
+   * 用世界图的尺子量副本必然全红。
+   * ============================================================ */
   chaossea: {
-    id: 'chaossea', name: '混沌海', safe: false, level: 60,
+    id: 'chaossea', name: '混沌海 · 八部坛', safe: true, level: 60,
+    hub: true,
     ground: 'void', sky: 0x0e0a14, fog: 0x140e1e, fogNear: 38, fogFar: 154,
-    size: 303, ambient: 0x60507a, sun: 0x8a6ae0, sunI: 0.62, props: 'void',
-    spawns: ['voidbeast', 'jadepuppet', 'fallen', 'thunderbird', 'jadeguard', 'mirrortwin', 'maskweaver', 'voidmoth'], spawnCount: 41,
-    bosses: ['chaosavatar'], portal: { x: 0, z: 74 }, unlock: 59
+    size: 220, ambient: 0x60507a, sun: 0x8a6ae0, sunI: 0.62, props: 'void',
+    spawns: [], spawnCount: 0, bosses: [], portal: { x: 0, z: 41 }, unlock: 59,
+    /* 八道门：radial 的 8 间侧室各一扇。坐标 = 侧室圆心（size 220, R=103.4）。
+     * 顺序就是八部顺序（天 / 龙 / 夜叉 / 乾闼婆 / 阿修罗 / 迦楼罗 / 紧那罗 / 摩睺罗迦），
+     * 前四扇在西侧、后四扇在东侧 —— 站在坛心一眼能数清「哪边还没打」。 */
+    gates: [
+      { seal: 'deva', map: 'bafo_deva', x: -26.9, z: -22.7 },
+      { seal: 'naga', map: 'bafo_naga', x: -47.6, z: -37.2 },
+      { seal: 'yaksa', map: 'bafo_yaksa', x: -37.2, z: 0 },
+      { seal: 'gandharva', map: 'bafo_gandharva', x: -57.9, z: 0 },
+      { seal: 'asura', map: 'bafo_asura', x: 57.9, z: 0 },
+      { seal: 'garuda', map: 'bafo_garuda', x: 37.2, z: 0 },
+      { seal: 'kimnara', map: 'bafo_kimnara', x: 26.9, z: -22.7 },
+      { seal: 'mahoraga', map: 'bafo_mahoraga', x: 47.6, z: -37.2 }
+    ],
+    /* 天龙终门：8 印齐才开。`sealNeed` 由 travelTo 兜底拦截，
+     * 免得「印没齐也能从山河图直接传进去」把整条终章跳过去。 */
+    finalGate: { x: 0, z: -53.8, map: 'wuxiang', sealNeed: 8, name: '天龙终门' }
+  },
+
+  /* ---- 1. 天部 · 帝释殿 ---- */
+  bafo_deva: {
+    id: 'bafo_deva', name: '帝释殿', safe: false, level: 60, raid: true,
+    ground: 'heaven', sky: 0x2e4462, fog: 0x445c80, fogNear: 34, fogFar: 118,
+    size: 140, ambient: 0x9cb0d0, sun: 0xffdca0, sunI: 1.0, props: 'heaven',
+    spawns: ['thunderbird', 'jadeguard', 'starfaller', 'swordwraith'], spawnCount: 12,
+    bosses: ['bafo_deva'], portal: { x: 0, z: 26 }, unlock: 59
+  },
+  /* ---- 2. 龙部 · 难陀渊 ---- */
+  bafo_naga: {
+    id: 'bafo_naga', name: '难陀渊', safe: false, level: 60, raid: true,
+    ground: 'flood', sky: 0x1e2e38, fog: 0x283a46, fogNear: 34, fogFar: 120,
+    size: 140, ambient: 0x7a92a0, sun: 0x9ac0d0, sunI: 0.72, props: 'flood',
+    spawns: ['voidbeast', 'fallen', 'mirrortwin', 'voidmoth'], spawnCount: 12,
+    bosses: ['bafo_naga'], portal: { x: 0, z: 34 }, unlock: 59
+  },
+  /* ---- 3. 夜叉部 · 毗沙窟 ---- */
+  bafo_yaksa: {
+    id: 'bafo_yaksa', name: '毗沙窟', safe: false, level: 60, raid: true,
+    ground: 'bone', sky: 0x2a2620, fog: 0x36302a, fogNear: 32, fogFar: 112,
+    size: 138, ambient: 0x9a8c78, sun: 0xd8c0a0, sunI: 0.8, props: 'bone',
+    spawns: ['jadepuppet', 'fallen', 'maskweaver', 'swordwraith'], spawnCount: 12,
+    bosses: ['bafo_yaksa'], portal: { x: -16.9, z: 32 }, unlock: 59
+  },
+  /* ---- 4. 乾闼婆 · 乐天 ---- */
+  bafo_gandharva: {
+    id: 'bafo_gandharva', name: '乐天', safe: false, level: 60, raid: true,
+    ground: 'void', sky: 0x161022, fog: 0x1e1630, fogNear: 32, fogFar: 110,
+    size: 140, ambient: 0x7a6aa0, sun: 0xb08ae0, sunI: 0.7, props: 'void',
+    spawns: ['maskweaver', 'silkweaver', 'voidmoth', 'starfaller'], spawnCount: 12,
+    bosses: ['bafo_gandharva'], portal: { x: 0, z: 37 }, unlock: 59
+  },
+  /* ---- 5. 阿修罗 · 罗睺狱 ---- */
+  bafo_asura: {
+    id: 'bafo_asura', name: '罗睺狱', safe: false, level: 60, raid: true,
+    ground: 'ash', sky: 0x2a1a16, fog: 0x3a241c, fogNear: 34, fogFar: 116,
+    size: 142, ambient: 0xa87a5a, sun: 0xff8a50, sunI: 0.86, props: 'mine',
+    spawns: ['fallen', 'voidbeast', 'jadepuppet', 'mirrortwin'], spawnCount: 12,
+    bosses: ['bafo_asura'], portal: { x: 0, z: 37 }, unlock: 59
+  },
+  /* ---- 6. 迦楼罗 · 金翅崖 ---- */
+  bafo_garuda: {
+    id: 'bafo_garuda', name: '金翅崖', safe: false, level: 60, raid: true,
+    ground: 'snow', sky: 0x7a94b8, fog: 0x9cb4d0, fogNear: 36, fogFar: 126,
+    size: 144, ambient: 0xc0d0e8, sun: 0xffffff, sunI: 1.06, props: 'snow',
+    spawns: ['thunderbird', 'voidmoth', 'swordwraith', 'starfaller'], spawnCount: 12,
+    bosses: ['bafo_garuda'], portal: { x: 0, z: 37 }, unlock: 59
+  },
+  /* ---- 7. 紧那罗 · 鹿鸣林 ---- */
+  bafo_kimnara: {
+    id: 'bafo_kimnara', name: '鹿鸣林', safe: false, level: 60, raid: true,
+    ground: 'bamboo', sky: 0x3a5240, fog: 0x4a6a52, fogNear: 32, fogFar: 108,
+    size: 140, ambient: 0x9ac0a0, sun: 0xd8f0c0, sunI: 0.9, props: 'bamboo',
+    spawns: ['silkweaver', 'maskweaver', 'jadeguard', 'voidmoth'], spawnCount: 12,
+    bosses: ['bafo_kimnara'], portal: { x: 0, z: 32 }, unlock: 59
+  },
+  /* ---- 8. 摩睺罗迦 · 蟒腹 ---- */
+  bafo_mahoraga: {
+    id: 'bafo_mahoraga', name: '蟒腹', safe: false, level: 60, raid: true,
+    ground: 'abyss', sky: 0x14101e, fog: 0x1c1628, fogNear: 30, fogFar: 104,
+    size: 140, ambient: 0x6a5a80, sun: 0x9a6ad0, sunI: 0.66, props: 'abyss',
+    spawns: ['voidbeast', 'mirrortwin', 'jadepuppet', 'voidmoth'], spawnCount: 12,
+    bosses: ['bafo_mahoraga'], portal: { x: 0, z: 34 }, unlock: 59
+  },
+  /* ---- 终 boss 场 · 无相天 ----
+   * 只有 boss、没有小怪（`arena: true`）：五阶段里 P3 要「场地塌缩」，
+   * 场上多 40 只杂兵会变成「躲怪」而不是「躲技能」。
+   * 手写两个 zone（见 data-maps.js 末尾），一个能塌缩的大圆 + 一条进门的道。 */
+  wuxiang: {
+    id: 'wuxiang', name: '无相天', safe: false, level: 60, arena: true,
+    ground: 'void', sky: 0x0a0810, fog: 0x120c1a, fogNear: 46, fogFar: 178,
+    size: 180, ambient: 0x50406a, sun: 0x7a4ad0, sunI: 0.58, props: 'void',
+    spawns: [], spawnCount: 0, bosses: ['chaosavatar'],
+    portal: { x: 0, z: 62 }, unlock: 60, sealNeed: 8
   },
   /* ---------------- 营地 B~E（M1） ----------------
    * 复用村的布局（props: 'village'），只换地面纹理与色调 ——
@@ -520,7 +626,22 @@ const ACTS = {
   },
   '5-2': {
     id: '5-2', part: 5, no: 2, name: '终焉之门', from: 59, to: 60,
-    maps: [{ id: 'chaossea', name: '混沌海', lv: 60 }],
+    /* [M7] 终章不再是「一张图一个首领」，而是「枢纽 + 8 副本 + 终 boss 场」。
+     * 首图仍是混沌海（`firstMapOfAct` 取第一个有 id 的），所以「前往本章」
+     * 落点不变；8 张副本排在中间，山河图里展开成一排八部之门；
+     * 末图是无相天（章尾判定落在它身上，而最后一章的章尾门本来就不出现）。 */
+    maps: [
+      { id: 'chaossea', name: '混沌海 · 八部坛', lv: 59 },
+      { id: 'bafo_deva', name: '帝释殿', lv: 60 },
+      { id: 'bafo_naga', name: '难陀渊', lv: 60 },
+      { id: 'bafo_yaksa', name: '毗沙窟', lv: 60 },
+      { id: 'bafo_gandharva', name: '乐天', lv: 60 },
+      { id: 'bafo_asura', name: '罗睺狱', lv: 60 },
+      { id: 'bafo_garuda', name: '金翅崖', lv: 60 },
+      { id: 'bafo_kimnara', name: '鹿鸣林', lv: 60 },
+      { id: 'bafo_mahoraga', name: '蟒腹', lv: 60 },
+      { id: 'wuxiang', name: '无相天', lv: 60 }
+    ],
     boss: 'chaosavatar', sub: null
   }
 };
@@ -533,6 +654,26 @@ const CAMPS = {
   campD: { id: 'campD', part: 4, name: '南天关', mapId: 'campD', portal: 'portalD' },
   campE: { id: 'campE', part: 5, name: '九霄台', mapId: 'campE', portal: 'portalE' }
 };
+
+/* ---------------- [M7] 八部天龙 · 八印 ----------------
+ * 8 枚印的**唯一清单**：UI 的八印格、travelTo 的印门、掉落判定、
+ * dev/check-bafo.js 全读这一份。三处各写一遍迟早会出现
+ * 「掉了印但门不开」或者「门开了但 UI 少一格」。
+ *
+ * 顺序 = 八部顺序（天 / 龙 / 夜叉 / 乾闼婆 / 阿修罗 / 迦楼罗 / 紧那罗 / 摩睺罗迦），
+ * 也是 MAPS.chaossea.gates 的顺序，也是 5-2 章里 8 张副本图的顺序 ——
+ * 三者对齐之后，「第 i 扇门 → 第 i 张图 → 第 i 只魔将 → 第 i 枚印」
+ * 就成了一条不用查表的直线。 */
+const BAFO_SEALS = [
+  { key: 'deva', name: '天之印', part: '天', map: 'bafo_deva', boss: 'bafo_deva', color: 0xffe0a0 },
+  { key: 'naga', name: '龙之印', part: '龙', map: 'bafo_naga', boss: 'bafo_naga', color: 0x7fe0c0 },
+  { key: 'yaksa', name: '夜叉之印', part: '夜叉', map: 'bafo_yaksa', boss: 'bafo_yaksa', color: 0xc0c0b0 },
+  { key: 'gandharva', name: '乾闼婆之印', part: '乾闼婆', map: 'bafo_gandharva', boss: 'bafo_gandharva', color: 0xd8b0ff },
+  { key: 'asura', name: '阿修罗之印', part: '阿修罗', map: 'bafo_asura', boss: 'bafo_asura', color: 0xff9080 },
+  { key: 'garuda', name: '迦楼罗之印', part: '迦楼罗', map: 'bafo_garuda', boss: 'bafo_garuda', color: 0xffd060 },
+  { key: 'kimnara', name: '紧那罗之印', part: '紧那罗', map: 'bafo_kimnara', boss: 'bafo_kimnara', color: 0xa0e090 },
+  { key: 'mahoraga', name: '摩睺罗迦之印', part: '摩睺罗迦', map: 'bafo_mahoraga', boss: 'bafo_mahoraga', color: 0x90b070 }
+];
 
 /* ---------------- 查询辅助（纯函数，不改数据） ---------------- */
 
