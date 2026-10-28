@@ -1064,11 +1064,10 @@ function applyPaperDoll(p) {
  * （tierIndex 返回 5/6/7）拿到 metal=undefined → palette 是 undefined
  * → `palette[0]` 抛 TypeError，一穿上就崩；而且读档走 applyDoll 是同一个
  * 函数，所以崩过一次之后连存档都进不去（东西没坏，是渲染崩）。
- * 名字对应十二阶：凡兵 / 精铁 / 玄铁 / 地煞 / 天罡 / 仙品 / 神兵 / 太初 /
- *                玄天 / 太虚 / 混元 / 无极。
+ * 名字对应八阶：凡兵 / 精铁 / 玄铁 / 地煞 / 天罡 / 仙品 / 神兵 / 太初。
+ * （[M6] 基底保持 8 阶不扩；ilvl 41~60 由 tierIndex 夹到第 7 档「太初」。）
  * dev/test-m6.js 会断言 TIER_METAL.length === BASE_TIERS —— 扩档漏改会立刻红。 */
-const TIER_METAL = ['cloth', 'leather', 'iron', 'darkiron', 'steel', 'jade', 'gold', 'dragon',
-  'star', 'voidsteel', 'primal', 'chaos'];
+const TIER_METAL = ['cloth', 'leather', 'iron', 'darkiron', 'steel', 'jade', 'gold', 'dragon'];
 const METAL_PALETTE = {
   cloth:     [0x6b5a4a, 0x4a3c30, 0.05],
   leather:   [0x7a5a3a, 0x533c26, 0.1],

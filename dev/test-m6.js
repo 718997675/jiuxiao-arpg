@@ -66,12 +66,14 @@ const ok = (cond, msg, extra) => {
 const eq = (msg, a, b) => ok(a === b, msg, { got: a, want: b });
 
 /* ============================================================
- * 1. 基底 12 阶
+ * 1. 基底 8 阶（[M6] 决定不扩，见 docs/status/act-expansion.md）
  * ============================================================ */
-console.log('\n【1】基底 12 阶');
-eq('BASE_TIERS = 12', BASE_TIERS, 12);
+console.log('\n【1】基底 8 阶（不扩）');
+eq('BASE_TIERS = 8（用户明确「基地就8阶 不要弄12阶」）', BASE_TIERS, 8);
 eq('TIER_LEVELS 仍是 5（每 5 级一档）', TIER_LEVELS, 5);
-eq('BASE_TIERS × TIER_LEVELS 覆盖 ilvl 上限', BASE_TIERS * TIER_LEVELS, ILVL_MAX);
+/* 8 阶 × 5 级只覆盖到 40；41~60 由 tierIndex 夹到第 7 档「太初」，强度靠 ilvlScale 的终局加速 */
+eq('BASE_TIERS × TIER_LEVELS 覆盖到 40 级', BASE_TIERS * TIER_LEVELS, 40);
+eq('ilvl 上限 60 由终局加速承担，不靠加阶', ILVL_MAX, 60);
 eq('BASE_TIER_NAME 与 BASE_TIERS 同长', BASE_TIER_NAME.length, BASE_TIERS);
 eq('TIER_METAL 与 BASE_TIERS 同长（扩档漏加材质 = 穿上就崩）', TIER_METAL.length, BASE_TIERS);
 ok(TIER_METAL.every(m => METAL_PALETTE[m]), '每种材质都有配色',
@@ -107,7 +109,7 @@ eq('ILVL_MAX = 60', ILVL_MAX, 60);
 eq('ilvl 1 → 第 0 档', tierIndex(1), 0);
 eq('ilvl 5 → 第 0 档（分档左闭右闭）', tierIndex(5), 0);
 eq('ilvl 6 → 第 1 档', tierIndex(6), 1);
-eq('ilvl 60 → 第 11 档', tierIndex(60), BASE_TIERS - 1);
+eq('ilvl 60 → 第 7 档（顶档太初）', tierIndex(60), BASE_TIERS - 1);
 eq('ilvl 999 被夹到顶档（不越界）', tierIndex(999), BASE_TIERS - 1);
 eq('ilvl 0 被夹到底档', tierIndex(0), 0);
 for (const lv of [1, 30, 59, 60, 99]) {
@@ -159,8 +161,9 @@ for (const cls in OFFHAND_BASES) {
 /* ============================================================
  * 4. 传世
  * ============================================================ */
-console.log('\n【4】传世（28 件 · ilvl 8~60）');
-eq('传世总数 28', UNIQUE_ITEMS.length, 28);
+console.log('\n【4】传世（40 件 · ilvl 40~60 · 初期不掉）');
+eq('传世总数 40', UNIQUE_ITEMS.length, 40);
+eq('传世全部 ilvl ≥ 40（初期不掉）', UNIQUE_ITEMS.every(u => u.ilvl >= 40), true);
 const late = UNIQUE_ITEMS.filter(u => u.ilvl >= 41);
 ok(late.length >= 6, '41~60 级段至少 6 件（终局有可追的红装）', late.length);
 ok(UNIQUE_ITEMS.every(u => u.ilvl >= 1 && u.ilvl <= ILVL_MAX), '所有传世 ilvl 在上限内',

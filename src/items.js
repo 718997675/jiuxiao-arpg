@@ -428,18 +428,40 @@ function normalizeItem(item) {
 const ILVL_MAX = 60;
 
 /* [M1] 基底 5 档 → 8 档：每 5 级一换皮。
- * [M6] 8 档 → 12 档：等级上限 40 → 60（计划书 §10.3），ilvl 1-60 → 0..11。
- * 顶档仍是「同一档里数值最高」，只是多垫了玄天 / 太虚 / 混元 / 无极四层。
- *
- * 为什么 8~11 档的主数值只微涨（护甲 ×1.05、武器 ×1.09）而不是照前 8 档的 ×1.4：
- * 基础数值的公式是 `base × (1 + ilvl × k)`，ilvl 从 40 涨到 60 时
- * 那个系数本身就从 6.2 倍涨到 8.8 倍（护甲 k=0.13）/ 5 倍涨到 7 倍（武器 k=0.10）。
- * 两条乘性成长叠加才是真正的成长曲线，档位再翻一倍会直接失控。
+ * [M6] **保持 8 阶不扩**（用户明确「基地就8阶 不要弄12阶」）。
+ * 等级上限虽然到了 60，但 ilvl 41~60 会被 tierIndex() 夹到第 7 档「太初」：
+ * 基础数值的公式是 `base × (1 + ilvl × k)`，ilvl 40→60 那个系数本身就从
+ * 6.2 倍涨到 8.8 倍（护甲 k=0.13）/ 5 倍涨到 7 倍（武器 k=0.10），
+ * 成长全部由 ilvl 项承担，档位只负责换皮与固有属性，不需要再加 4 层。
  * 验算：dev/balance-report.js 的「装备成长」一节 + dev/test-items.js 的单调性断言。 */
-const BASE_TIERS = 12;
+const BASE_TIERS = 8;
 const TIER_LEVELS = 5;
 function tierIndex(ilvl) {
   return CLAMP(Math.floor((ilvl - 1) / TIER_LEVELS), 0, BASE_TIERS - 1);
+}
+
+/* [M6] 等级缩放：`1 + ilvl × k` 再乘一段「终局加速」。
+ *
+ * 为什么需要这一段：怪物血量是二次的（`hpBase + lv×hpLv + lv²×hpLv2`），
+ * 40→60 涨 2.05 倍；而装备的 ilvl 项是线性的，40→60 只有 1.40 倍。
+ * 差出来的 46% 会全部变成「越到后期越打不动」（TTK 从 3.9s 涨到 6.0s）。
+ *
+ * 12 阶基底那条线是靠「多垫 4 层基底 + 每层 ×1.05/×1.09」补上这 46% 的，
+ * 但用户明确要求**基地就 8 阶**，所以改成让 ilvl 项自己承担：
+ * 40 级以下完全不动，40→60 线性加一段 ×1.464 的缓起加速。
+ *
+ * 为什么写成「乘一段系数」而不是「加一个二次项」：
+ * 二次项要做到同样倍率，系数会随 k 变（k=0.055 与 0.13 差一倍），
+ * 而乘系数与 k 无关 —— 任何 k 在 40→60 都恰好放大 1.464 倍，
+ * 武器 / 护甲 / 词缀 / 打造重算四条路天然同步。
+ *
+ * 验算：dev/test-items.js（40→60 应落在 1.5~2.6 倍）+ dev/balance-report.js 第四节。 */
+const TERM_FROM = 40;      // 加速起点（此级及以下完全不受影响）
+const TERM_TO = 60;        // 加速终点（= 等级上限）
+const TERM_GAIN = 0.464;   // 终点处的额外倍率（1.40 × 1.464 ≈ 2.05，对上怪物血量）
+function ilvlScale(ilvl, k) {
+  const t = CLAMP((ilvl - TERM_FROM) / (TERM_TO - TERM_FROM), 0, 1);
+  return (1 + ilvl * k) * (1 + TERM_GAIN * t * t);
 }
 
 function itemPower(item) {
@@ -461,7 +483,7 @@ function itemValue(item) {
 function affixValue(a, ilvl, q) {
   const quality = q || 1;
   const mul = quality === 4 ? 1.30 : quality === 3 ? 1.18 : quality === 2 ? 1.08 : 1.0;
-  const v = RND(a.min, a.max) * (1 + ilvl * 0.055) * mul;
+  const v = RND(a.min, a.max) * ilvlScale(ilvl, 0.055) * mul;
   return Math.max(1, Math.round(v));
 }
 
@@ -594,8 +616,7 @@ function baseTierFor(slot, ilvl) {
  * 于是数值曲线天然是连续的（下一档 A 变体 vs 这一档 A 变体）。
  *
  * baseTier / baseVar 在 rollItem 时落库；旧档没有这两个字段时按 ilvl 反推。 */
-const BASE_TIER_NAME = ['凡兵', '精铁', '玄铁', '地煞', '天罡', '仙品', '神兵', '太初',
-  '玄天', '太虚', '混元', '无极'];
+const BASE_TIER_NAME = ['凡兵', '精铁', '玄铁', '地煞', '天罡', '仙品', '神兵', '太初'];
 
 function itemBaseList(item) {
   if (!item) return null;
@@ -666,8 +687,8 @@ function upgradeItemBaseTier(item) {
     const base = tierList[vi];
     item.baseName = base.name;
     item.baseDmg = [
-      Math.round(base.dmg[0] * (1 + item.ilvl * 0.100) * rm),
-      Math.round(base.dmg[1] * (1 + item.ilvl * 0.100) * rm)
+      Math.round(base.dmg[0] * ilvlScale(item.ilvl, 0.100) * rm),
+      Math.round(base.dmg[1] * ilvlScale(item.ilvl, 0.100) * rm)
     ];
     item.speed = base.speed;
     item.shape = base.shape || item.shape;
@@ -675,7 +696,7 @@ function upgradeItemBaseTier(item) {
   } else {
     const [bn, barm, ik, iv] = tierList[vi];
     item.baseName = bn;
-    item.baseArmor = Math.round(barm * (1 + item.ilvl * (item.slot === 'offhand' ? 0.1 : 0.13)) * rm);
+    item.baseArmor = Math.round(barm * ilvlScale(item.ilvl, item.slot === 'offhand' ? 0.1 : 0.13) * rm);
     item.implicit = ik ? { key: ik, val: iv } : null;
   }
   if (!item.setId && item.rarity !== 'unique') item.name = item.baseName;
@@ -686,7 +707,7 @@ function upgradeItemBaseTier(item) {
 }
 
 
-/* 生成一件装备 */
+/* 生成一件装备（ILVL_MAX 与基底阶在文件上半部分统一定义，这里不再重复声明） */
 function rollItem(ilvl, opts = {}) {
   ilvl = CLAMP(Math.round(ilvl), 1, ILVL_MAX);
   let slot = opts.slot || PICK(['helm', 'chest', 'shoulders', 'cloak', 'gloves', 'boots', 'belt', 'amulet', 'ring', 'weapon', 'offhand']);
@@ -766,8 +787,8 @@ function rollItem(ilvl, opts = {}) {
     /* [B5] 记住基底阶与变体：升阶要换「同变体的下一档」，而不是随机换一个 */
     item.baseTier = tier; item.baseVar = bi;
     const rm = RARITY[rarity].mul;
-    const lo = base.dmg[0] * (1 + ilvl * 0.100) * rm;
-    const hi = base.dmg[1] * (1 + ilvl * 0.100) * rm;
+    const lo = base.dmg[0] * ilvlScale(ilvl, 0.100) * rm;
+    const hi = base.dmg[1] * ilvlScale(ilvl, 0.100) * rm;
     item.baseName = base.name;
     item.shape = base.shape;
     /* v1.3.0 握持：同档三变体按均伤排（最轻双持 / 居中单手 / 最重双手） */
@@ -784,7 +805,7 @@ function rollItem(ilvl, opts = {}) {
     const [bn, barm, ik, iv] = list[tier][vi];
     item.baseTier = tier; item.baseVar = vi;
     item.baseName = bn;
-    item.baseArmor = Math.round(barm * (1 + ilvl * 0.088) * RARITY[rarity].mul);
+    item.baseArmor = Math.round(barm * ilvlScale(ilvl, 0.088) * RARITY[rarity].mul);
     item.cls = cls;
     item.name = bn;
     item.kind = '副手';
@@ -797,14 +818,14 @@ function rollItem(ilvl, opts = {}) {
     const [bn, barm, ik, iv] = list[tier][vi];
     item.baseTier = tier; item.baseVar = vi;
     item.baseName = bn;
-    item.baseArmor = Math.round(barm * (1 + ilvl * 0.112) * RARITY[rarity].mul);
+    item.baseArmor = Math.round(barm * ilvlScale(ilvl, 0.112) * RARITY[rarity].mul);
     item.name = bn;
     item.kind = SLOTS[slot].name;
     if (ik) item.implicit = { key: ik, val: iv };
   }
   if (isRing) { item.slot = 'ring'; }
 
-  /* ---- 套装（v1.2.2：9 套职业套装，部位精确匹配） ---- */
+  /* ---- 套装（[M6] 18 套：职业套 12 + 通用套 6，部位精确匹配） ---- */
   if (rarity === 'set') {
     const cands = Object.values(SETS).filter(s => s.slots.indexOf(slot) >= 0 && (!s.cls || s.cls === cls));
     if (cands.length) {
