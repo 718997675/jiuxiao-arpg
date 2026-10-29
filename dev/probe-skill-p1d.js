@@ -19,8 +19,9 @@ const path = require('path');
 const fs = require('fs');
 
 const wait = ms => new Promise(r => setTimeout(r, ms));
-const exe = ['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-  'C:/Program Files/Google/Chrome/Application/chrome.exe'].find(f => fs.existsSync(f));
+/* 浏览器路径走跨平台探测（AGENTS.md §3）：写死 macOS / Chrome 路径的话，
+   Windows 上（常常只装了 Edge）这个探针连启动都起不来 */
+const exe = require('./_chrome');
 
 let pass = 0, fail = 0;
 const ok = (c, m, d) => { if (c) { pass++; console.log('  ✓', m); } else { fail++; console.log('  ✗', m, d === undefined ? '' : JSON.stringify(d)); } };
