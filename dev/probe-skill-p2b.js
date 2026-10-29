@@ -1958,8 +1958,219 @@ const ok = (c, m, d) => {
     ok(a.cap.keptFirst === true, '撞上限时**不顶掉**已经在场的', a.cap);
   }
 
-  /* ---------------- 16. 零报错 ---------------- */
-  console.log('十六、控制台');
+  /* ---------------- 16. 刀客 ⑤ 兵形 ---------------- */
+  console.log('十六、刀客 ⑤ 兵形');
+  const blade = await p.evaluate(async () => {
+    const out = {};
+    const wait = ms => new Promise(r => setTimeout(r, ms));
+    /* 假怪只在这一段同步窗口里活着：它有 pos / radius / cfg / actor，
+     * 但没有 anim / spd —— 一旦跨帧就会被 updateEnemies 摸到（reading 'time'）。
+     * 所以凡是要 await 的段落（摧城三波）一律不放假怪，改截 explodeAt。 */
+    const mkFoe = () => {
+      const pp = Game.playerGroup.position;
+      return {
+        pos: new THREE.Vector3(pp.x + 2, 0, pp.z), radius: 0.5, dead: false,
+        hp: 1e9, maxHp: 1e9, level: 10, boss: false, cfg: { armorHigh: false },
+        actor: { flash: 0 }, anim: { time: 0 }, spd: 0, atkCd: 999, id: 99
+      };
+    };
+    const reset = (lv) => {
+      Game.enemies = [];
+      Game.allies = [];
+      Game.mapGen = (Game.mapGen || 0) + 1;   // 定时器（余震 / 剑阵 / 领域）全部作废
+      Game.buffs = [];
+      Game.state.cls = 'warrior';
+      Game.state.level = 40;                   // 40 级：avatar 的 unlock 是 26
+      Game.state.skills = { avatar: { lv: lv } };
+      Game.state.stats.specials = {};
+      Game.blade = { i: 0, mask: 0 };
+      window.__mkClean();
+      Game.running = true; Game.dead = false;
+      Game.recalc();
+    };
+    const snap = () => ({
+      dmgAll: Game.state.stats.dmgAll || 0, dr: Game.state.stats.dmgReduce || 0,
+      block: Game.state.stats.block || 0, pen: Game.state.stats.armorPen || 0
+    });
+
+    /* --- 一、三种刀式真的进 stats --- */
+    reset(7);
+    Game.blade = { i: 0, mask: 0 }; Game.recalc(); out.s0 = snap();
+    Game.blade = { i: 1, mask: 0 }; Game.recalc(); out.s1 = snap();
+    Game.blade = { i: 2, mask: 0 }; Game.recalc(); out.s2 = snap();
+
+    /* --- 二、解锁档：Lv1 一式 / Lv3 两式 / Lv7 三式，换式跳过未解锁的 --- */
+    reset(2); out.count2 = Game.bladeStanceCount();
+    reset(3); out.count3 = Game.bladeStanceCount();
+    reset(7); out.count7 = Game.bladeStanceCount();
+    const cycle = () => {
+      Game.cooldowns = {}; Game.state.mp = 9999;
+      Game.castSkill('avatar');
+      return Game.bladeStance();
+    };
+    reset(3); out.cyc3 = [cycle(), cycle(), cycle()];      // 0 → 1 → 0 → 1
+    reset(7); out.cyc7 = [cycle(), cycle(), cycle(), cycle()];  // 0 → 1 → 2 → 0 → 1
+
+    /* --- 三、没领悟剑神降世就没有刀式（26 级之前白拿 +15% 是 bug） --- */
+    reset(7);
+    Game.state.level = 25; Game.recalc(); out.lockedMods = Game.bladeMods();
+    Game.state.level = 40; Game.recalc(); out.unlockedMods = !!Game.bladeMods();
+
+    /* --- 四、刃势按格位记账 --- */
+    reset(5);
+    const seq = [];
+    for (const id of ['whirl', 'quake', 'riposte', 'bloodrage']) {
+      Game.cooldowns = {}; Game.state.mp = 9999;
+      Game.castSkill(id);
+      seq.push(Game.bladeEdge());
+    }
+    out.edgeSeq = seq;
+    /* 同一个格位重复放不加（① 是左键，能一秒点十次） */
+    reset(5);
+    Game.cooldowns = {}; Game.castSkill('whirl');
+    Game.cooldowns = {}; Game.castSkill('whirl');
+    Game.cooldowns = {}; Game.castSkill('whirl');
+    out.edgeRepeat = Game.bladeEdge();
+    /* ⑤ 自己不积：直接问记账口（不能靠「放一次 ⑤ 看层数变没变」——
+     * 换式本身就会清空刃势，那样量到的是 bladeCycle 的账，不是记账口的账） */
+    reset(5);
+    Game.blade = { i: 0, mask: 1 };
+    out.edgeFifth = { r: Game.bladeAddEdge('avatar'), edge: Game.bladeEdge() };
+    /* 5 级之前不记账（攒满了也没出口） */
+    reset(4);
+    Game.cooldowns = {}; Game.castSkill('whirl');
+    out.edgeLv4 = Game.bladeEdge();
+
+    /* --- 五、换式：清空 / 保留刃势，且不收怒气、只吃 1.2 秒冷却 --- */
+    reset(7);
+    Game.blade = { i: 0, mask: 0b0111 };
+    Game.cooldowns = {};
+    /* 怒气取**上限的一半**：__mkClean 把 mp 拉到 99999，超过 mpMax 的话
+     * 退回来的那点会被 Math.min(mpMax, …) 夹掉，看起来像「没退」 */
+    Game.state.mp = Math.floor(Game.state.stats.mpMax * 0.5);
+    const mpBefore = Game.state.mp;
+    Game.castSkill('avatar');
+    out.switch7 = { i: Game.bladeStance(), mask: Game.blade.mask, cd: Game.cooldowns['avatar'], mpBefore: mpBefore, mp: Game.state.mp };
+    reset(9);
+    Game.blade = { i: 0, mask: 0b0111 };
+    Game.cooldowns = {}; Game.castSkill('avatar');
+    out.switch9 = { i: Game.bladeStance(), mask: Game.blade.mask };
+
+    /* --- 六、满层 → 断岳斩（斩锋 = 单体处决） --- */
+    const fin = (lv, stance) => {
+      reset(lv);
+      Game.enemies = [mkFoe()];
+      Game.blade = { i: stance, mask: 0b1111 };
+      let hits = 0, total = 0;
+      const oldHit = Game.damageEnemy, oldRoll = Game.rollDamage;
+      Game.damageEnemy = (en, dmg) => { hits++; total += dmg; };
+      Game.rollDamage = (base) => ({ dmg: base, crit: false });
+      Game.castSkill('avatar');
+      Game.damageEnemy = oldHit; Game.rollDamage = oldRoll;
+      const r = { hits: hits, total: total, mask: Game.blade.mask, cd: Game.cooldowns['avatar'],
+        buffs: Game.buffs.filter(b => b.key === 'skill:avatar').length };
+      Game.enemies = [];
+      Game.mapGen = (Game.mapGen || 0) + 1;
+      return r;
+    };
+    out.fin5 = fin(5, 0);
+    out.fin4 = (() => {
+      /* 4 级：同样满层，但只换式，不打伤害 */
+      reset(4);
+      Game.enemies = [mkFoe()];
+      Game.blade = { i: 0, mask: 0b1111 };
+      let hits = 0;
+      const oldHit = Game.damageEnemy;
+      Game.damageEnemy = () => { hits++; };
+      Game.cooldowns = {}; Game.state.mp = 9999;
+      Game.castSkill('avatar');
+      Game.damageEnemy = oldHit;
+      const r = { hits: hits, mask: Game.blade.mask };
+      Game.enemies = [];
+      Game.mapGen = (Game.mapGen || 0) + 1;
+      return r;
+    })();
+    out.fin9 = fin(9, 0);
+    out.fin10 = fin(10, 0);
+
+    /* --- 七、摧城式 → 三段崩击（截 explodeAt：要跨帧等，不能留假怪） --- */
+    reset(7);
+    Game.blade = { i: 2, mask: 0b1111 };
+    const oldEx = Game.explodeAt;
+    const waves = [];
+    Game.explodeAt = (pos, rad) => { waves.push(rad); };
+    Game.cooldowns = {}; Game.state.mp = 9999;
+    Game.castSkill('avatar');
+    await wait(1500);
+    Game.explodeAt = oldEx;
+    out.tri = { n: waves.length, rad: waves[0] || 0, mask: Game.blade.mask };
+
+    /* --- 八、摧城式「无视 30% 护甲 + 对护甲目标 +20%」真的进伤害 --- */
+    reset(7);
+    const dmgWith = (stance) => {
+      Game.blade = { i: stance, mask: 0 }; Game.recalc();
+      const f = mkFoe();
+      const before = f.hp;
+      Game.damageEnemy(f, 1000, false, { silent: true, tag: 'aoe' });
+      return before - f.hp;
+    };
+    out.armor = { s0: dmgWith(0), s1: dmgWith(1), s2: dmgWith(2) };
+    Game.enemies = [];
+    Game.mapGen = (Game.mapGen || 0) + 1;
+    return out;
+  });
+  {
+    const b = blade;
+    /* 刀式：三种各改一组属性，且互相不串 */
+    ok(b.s0.dmgAll - b.s1.dmgAll === 15 && b.s0.dmgAll - b.s2.dmgAll === 15,
+      '斩锋式：伤害 +15%（镇岳 / 摧城都没有这条）', { s0: b.s0, s1: b.s1, s2: b.s2 });
+    ok(b.s1.dr - b.s0.dr === 20, '镇岳式：减伤 +20% 真的进了 stats', b.s1);
+    ok(b.s1.block - b.s0.block === 15, '镇岳式：格挡 +15%', b.s1);
+    ok(b.s2.pen - b.s0.pen === 30, '摧城式：无视 30% 护甲（armorPen）', b.s2);
+
+    ok(b.count2 === 1 && b.count3 === 2 && b.count7 === 3,
+      '解锁档：Lv1 一式 / Lv3 两式 / Lv7 三式', [b.count2, b.count3, b.count7]);
+    ok(b.cyc3.join(',') === '1,0,1', 'Lv3 只在斩锋 / 镇岳之间循环（摧城还没解锁）', b.cyc3);
+    ok(b.cyc7.join(',') === '1,2,0,1', 'Lv7 三式循环 斩锋 → 镇岳 → 摧城 → 斩锋', b.cyc7);
+
+    ok(b.lockedMods === null, '26 级之前没有刀式加成（没领悟剑神降世）', b.lockedMods);
+    ok(b.unlockedMods === true, '领悟之后刀式生效', b.unlockedMods);
+
+    ok(b.edgeSeq.join(',') === '1,2,3,4', '①②③④ 各施放一次积 1 层（4 层满）', b.edgeSeq);
+    ok(b.edgeRepeat === 1, '同一个格位重复放不加层（左键一秒十次也没用）', b.edgeRepeat);
+    ok(b.edgeFifth.r === 0 && b.edgeFifth.edge === 1,
+      '⑤ 自己不积刃势（否则一层刃势能自己喂自己）', b.edgeFifth);
+    ok(b.edgeLv4 === 0, '5 级之前不记账（攒满了也没出口）', b.edgeLv4);
+
+    ok(b.switch7.i === 1, '换式：斩锋 → 镇岳', b.switch7);
+    ok(b.switch7.mask === 0, 'Lv9 之前换式清空刃势（这是那一级台阶买到的东西）', b.switch7);
+    ok(b.switch9.mask === 7, 'Lv9 起换式保留刃势', b.switch9);
+    ok(b.switch7.mp === b.switch7.mpBefore, '换式不收怒气（怒气是打出来的，不花在换姿势上）', b.switch7);
+    ok(Math.abs(b.switch7.cd - 1.2) < 1e-6, '换式只吃 1.2 秒冷却（否则换一次式要等一分钟）', b.switch7);
+
+    ok(b.fin4.hits === 0 && b.fin4.mask === 0,
+      'Lv4：刃势满也不出断岳斩，只走换式（换式顺手清空刃势）', b.fin4);
+    ok(b.fin5.hits === 1 && b.fin5.mask === 0,
+      'Lv5 满层 → 断岳斩：单体处决打 1 下，刃势清零', b.fin5);
+    ok(b.fin5.total > 0, '断岳斩真的结算了伤害', b.fin5);
+    ok(b.fin5.cd >= 8, '终结技吃技能自己的冷却（不是换式那 1.2 秒）', b.fin5.cd);
+    ok(b.fin5.buffs === 0 && b.fin9.buffs === 0,
+      'Lv5 / Lv9 的断岳斩不带剑神降世（那是 Lv10 的奖励）', { lv5: b.fin5.buffs, lv9: b.fin9.buffs });
+    ok(b.fin10.buffs === 1, 'Lv10 断岳斩附带剑神降世（12 秒全强化）', b.fin10);
+
+    ok(b.tri.n === 3, '摧城式 → 三段崩击（真的震了三波）', b.tri);
+    ok(b.tri.rad > 4.9 && b.tri.rad < 5.1, '每波半径 5 码（底子 skysfall）', b.tri);
+    ok(b.tri.mask === 0, '三段崩击也把刃势清零（一层只放一次）', b.tri);
+
+    const ratio2 = b.armor.s2 / b.armor.s0;
+    ok(ratio2 > 1.25 && ratio2 < 1.35,
+      '摧城式对护甲目标：穿甲 + 20% 一起算下来约 1.29 倍（不是文案）', { r: ratio2, ...b.armor });
+    ok(Math.abs(b.armor.s1 / b.armor.s0 - 1) < 1e-6,
+      '镇岳式不加伤害（守就是守）', b.armor);
+  }
+
+  /* ---------------- 17. 零报错 ---------------- */
+  console.log('十七、控制台');
   ok(errs.length === 0, '全程零控制台报错', errs.slice(0, 3));
 
   console.log('\n' + (fail === 0 ? '✓' : '✗') + ' P2b 探针：' + pass + ' 通过 / ' + fail + ' 失败');

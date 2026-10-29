@@ -1536,6 +1536,9 @@ const Game = {
     }
     this.state = this.newState(cls, name);
     this.skillFlags = {};            // 新角色不继承上个角色的技能领悟
+    /* [P2b·刀客⑤] 兵形归零：换角色 / 开新档从斩锋式起手（换图不清 ——
+     * 刀式是这一局的姿态，不是一张地图的临时状态） */
+    this.blade = { i: 0, mask: 0 };
     if (typeof UI !== 'undefined') UI.snaps = null;   // 换角色：上一个人的加点草稿作废
     this.savedSlot = target || 1;
     this.recalc();
@@ -2986,6 +2989,136 @@ const Game = {
       tierMods);
   },
 
+  /* ============================================================
+   * [P2b·刀客 ⑤] 兵形 / 刃势
+   *
+   * 这一位不是「一个行为键」：⑤ 位只有一只技能（`avatar`，剑神降世），而它的
+   * 新身份是**状态机** —— 三件东西叠在一起：
+   *
+   *   刀式（bladeStance）  三种，改的是自身属性，不是「施法时算一次」。
+   *                        走 recalc 的同一张 BUFF 表（bladeMods），所以与装备 /
+   *                        增益 / 套装的结算顺序完全一致，不用另开一条乘区。
+   *   刃势（bladeEdge）    ①②③④ 各用一次积 1 层（按**格位**记账，同一个位重复
+   *                        放不加），满 4 层才有出口。用位而不是用「命中次数」，
+   *                        是因为 ① 是左键、可以一秒点十次 —— 数次数等于白送。
+   *   断岳斩（finisher）   刃势满时 ⑤ 从「换式」切成「终结技」，形态随刀式：
+   *                        斩锋 / 镇岳 = 单体处决（底子 execute，残血翻倍），
+   *                        摧城 = 三段崩击（底子 skysfall，半径 5）。
+   *
+   * 三个「解锁」都读数据层（SKILL_TIER_EVO.avatar 的四个 beh 键），
+   * 不在这里写死「Lv3 解锁镇岳」—— 写死之后改台阶表就等于改了两处。
+   *
+   * 为什么刀式不进存档：它是「这一局怎么打」的临场选择，换图 / 重开都该回到
+   * 斩锋式；而存档 schema 现在是三条线争用的地方（见台账「卡点 2」），
+   * 为一个可一键切回的状态再加字段不划算。
+   * ============================================================ */
+
+  /* 兵形状态（刀式下标 + 刃势位掩码）。懒初始化：中途载入 / 老存档也能用 */
+  bladeState() {
+    if (!this.blade || typeof this.blade !== 'object') this.blade = { i: 0, mask: 0 };
+    if (typeof this.blade.i !== 'number' || !isFinite(this.blade.i)) this.blade.i = 0;
+    if (typeof this.blade.mask !== 'number' || !isFinite(this.blade.mask)) this.blade.mask = 0;
+    return this.blade;
+  },
+
+  /* ⑤ 的台阶行为（只读数据层；非刀客 / 还没领悟 剑神降世 时给空对象） */
+  bladeBeh() {
+    if (!this.state || this.state.cls !== 'warrior') return {};
+    if (!this.skillUnlocked('avatar')) return {};
+    const b = (typeof this.branchBeh === 'function') ? this.branchBeh('avatar') : null;
+    return b || {};
+  },
+
+  /* 已解锁的刀式数量：Lv1 一式（斩锋）、Lv3 两式（+镇岳）、Lv7 三式（+摧城） */
+  bladeStanceCount() {
+    const n = Math.round(this.bladeBeh().stanceUnlock || 0);
+    return 1 + CLAMP(n, 0, 2);
+  },
+
+  /* 当前刀式下标：0 斩锋 / 1 镇岳 / 2 摧城。台阶掉档（洗点）时回落到 0 */
+  bladeStance() {
+    const st = this.bladeState();
+    const max = this.bladeStanceCount() - 1;
+    if (st.i > max) st.i = 0;
+    return st.i;
+  },
+
+  /* 刀式对属性的修正 —— 当成一份「内置增益」，由 recalc 走同一张 BUFF_MUL/ADD 表。
+   * 摧城式的「无视 30% 护甲」走 armorPen（damageEnemy 里按比例削目标护甲），
+   * 那 +20% 的「对护甲目标」在 damageEnemy 里单独结算（要判目标有没有护甲）。 */
+  bladeMods() {
+    if (!this.state || this.state.cls !== 'warrior') return null;
+    /* 没领悟 剑神降世 就没有兵形 —— 否则 26 级之前白拿「伤害 +15%、攻速 +10%」 */
+    if (!this.skillUnlocked('avatar')) return null;
+    const i = this.bladeStance();
+    if (i === 1) return { dmgReduce: 20, block: 15 };   // 镇岳：减伤 20%、格挡 +15%
+    if (i === 2) return { armorPen: 30 };               // 摧城：无视 30% 护甲
+    return { dmgAll: 15, aspd: 10 };                    // 斩锋：伤害 +15%、攻速 +10%
+  },
+
+  /* 刃势：满 4 层。层数 = 掩码里置位的个数（不是「放过几次」） */
+  bladeEdgeMax() { return 4; },
+  bladeEdge() {
+    const m = this.bladeState().mask;
+    let n = 0;
+    for (let b = 0; b < this.bladeEdgeMax(); b++) if (m & (1 << b)) n++;
+    return n;
+  },
+  bladeFinisherOn() { return !!this.bladeBeh().edgeFinisher; },
+
+  /* 刃势记账：一次施放 → 一格位点亮。
+   * 只认 ①~④（`skillArchSlotOf` 返回 1~4），⑤ 自己与传世秘技不积 ——
+   * 否则「放 ⑤ 也攒刃势」会变成自己喂自己，一层刃势能无限续。
+   * 5 级之前不记：没有断岳斩，攒满了也没有出口，只会让玩家以为坏了。 */
+  bladeAddEdge(id) {
+    if (!this.state || this.state.cls !== 'warrior') return 0;
+    if (!this.bladeFinisherOn()) return 0;
+    const slot = (typeof skillArchSlotOf === 'function') ? skillArchSlotOf('warrior', id) : 0;
+    if (slot < 1 || slot > 4) return 0;
+    const st = this.bladeState();
+    const bit = 1 << (slot - 1);
+    if (st.mask & bit) return 0;                       // 同一个位重复放不加
+    st.mask |= bit;
+    const n = this.bladeEdge();
+    const pp = this.playerGroup.position;
+    FX.text(new THREE.Vector3(pp.x, 2.9, pp.z), '刃势 ' + n + '/' + this.bladeEdgeMax(), 'info', { life: 0.7 });
+    if (n >= this.bladeEdgeMax()) {
+      FX.text(new THREE.Vector3(pp.x, 3.3, pp.z), '刃势满 · 断岳斩', 'lv', { life: 1 });
+    }
+    if (typeof UI !== 'undefined' && UI.syncBladeBadge) UI.syncBladeBadge();
+    return 1;
+  },
+
+  /* 换式：斩锋 → 镇岳 → 摧城 → 斩锋，未解锁的式跳过。
+   * Lv9 之前换式会把刃势一起扔掉（这是那一级台阶真正买到的东西）；
+   * Lv9 起保留，于是「先攒满再换摧城打三段」才成立。 */
+  bladeCycle() {
+    const st = this.bladeState();
+    const max = this.bladeStanceCount() - 1;
+    const from = this.bladeStance();
+    st.i = from >= max ? 0 : from + 1;
+    if (!this.bladeBeh().edgeKeep) st.mask = 0;
+    this.recalc();
+    const pp = this.playerGroup.position;
+    const nm = this.bladeFormName(st.i);
+    FX.ring(new THREE.Vector3(pp.x, 0.2, pp.z), 2.4, 0xffd166, 0.5, 0.25);
+    FX.text(new THREE.Vector3(pp.x, 2.6, pp.z), nm, 'lv', { life: 0.9 });
+    UI.toast('兵形 · ' + nm);
+    return st.i;
+  },
+
+  /* 刀式名（从数据表取，面板 / 角标 / 提示三处共用同一个来源） */
+  bladeFormName(i) {
+    const slot = (typeof skillArchSlot === 'function') ? skillArchSlot('warrior', 5) : null;
+    const f = ((slot && slot.forms) || [])[i];
+    return f ? f.name : '刀式';
+  },
+
+  /* 动作条角标的读数：`斩锋式 · 刃势 2/4` */
+  bladeTip() {
+    return this.bladeFormName(this.bladeStance()) + ' · 刃势 ' + this.bladeEdge() + '/' + this.bladeEdgeMax();
+  },
+
   /* 技能落点：ground / enemy 自动夹在施法距离内，dir 用当前朝向，self 以自身为中心 */
   resolveCast(sk, pp, aim, dir) {
     const out = aim.clone();
@@ -3430,26 +3563,104 @@ const Game = {
         }, i * 70);
         break;
       }
+      /* [P2b·刀客⑤] 兵形 / 刃势：整只技能从「召唤剑神」改成一台刀式状态机。
+       *
+       * 一个按键、两种模式，靠**刃势**分流（不是靠冷却 —— 换式要能随时换）：
+       *   · 刃势满 4 层 + 已解锁（Lv5）→ 断岳斩：斩锋 / 镇岳 = 单体处决，
+       *     摧城 = 三段崩击。放完清零，一层刃势只放一次。
+       *   · 其余情况 → 换式：斩锋 → 镇岳 → 摧城 → 斩锋（未解锁的跳过）。
+       *
+       * 冷却与资源按模式改写，**必须写在 case 里**（castSkill 早在 switch 之前
+       * 就把 `this.cooldowns[id]` 和怒气扣掉了）：
+       *   换式 = 战术动作，1.2 秒冷却、不收怒气（把刚扣掉的退回去）；
+       *   终结技 = 吃技能自己的冷却（60 秒 × 冷却修正）。
+       * 不这么分的话，换一次式要等一分钟 —— 那三把刀等于只有一把能用。
+       *
+       * 另外两处「以前顺手写在这里、现在不能留」的东西：
+       *   · `avatarResetThrust`（破军大节点·剑神）必须挪进终结技分支：
+       *     换式冷却只有 1.2 秒，留在外面等于突刺无限刷新。
+       *   · 12 秒全强化（`sk.buff`）改成 Lv10 台阶（`edgeUltimate`）的奖励，
+       *     否则「剑神降世」这一档在面板上写着、实际每级都有。 */
       case 'avatar': {
-        this.actor.atkAnim = 1; this.actor.atkType = 'slam';
-        SFX.boss(); this.shake = 0.8; this.hitstop = 120;
-        /* [S3] 破军系大节点·剑神：释放时立刻刷新烈焰突刺冷却 */
-        if (st.specials && st.specials.avatarResetThrust) {
-          this.cooldowns.thrust = 0;
-          FX.text(new THREE.Vector3(pp.x, 2.8, pp.z), '突刺已续', 'info', { life: 0.9 });
+        const bBlade = this.bladeBeh();
+        const edgeFull = this.bladeEdge() >= this.bladeEdgeMax();
+        if (bBlade.edgeFinisher && edgeFull) {
+          /* ---------------- 断岳斩 ---------------- */
+          const stance = this.bladeStance();
+          this.bladeState().mask = 0;              // 一层刃势只放一次
+          if (typeof UI !== 'undefined' && UI.syncBladeBadge) UI.syncBladeBadge();
+          /* 破军系大节点·剑神：终结技立刻刷新烈焰突刺冷却 */
+          if (st.specials && st.specials.avatarResetThrust) {
+            this.cooldowns.thrust = 0;
+            FX.text(new THREE.Vector3(pp.x, 2.8, pp.z), '突刺已续', 'info', { life: 0.9 });
+          }
+          if (stance === 2) {
+            /* 摧城式 → 三段崩击（底子 skysfall）：以自身为心连震三波，
+             * 每波落点小幅抖动 —— 三波完全同心会让人以为只炸了一下。 */
+            this.actor.atkAnim = 1; this.actor.atkType = 'slam';
+            SFX.explode(); this.shake = 0.7; this.hitstop = 100;
+            const gen = this.mapGen;
+            const rad = 5 * srad;
+            const ctr = pp.clone();
+            FX.telegraph(ctr, rad * 1.15, 1.2, () => {}, 0xffaa60);
+            for (let i = 0; i < 3; i++) {
+              setTimeout(() => {
+                if (this.dead || this.mapGen !== gen) return;
+                const t = new THREE.Vector3(ctr.x + RND(-1.8, 1.8), 0, ctr.z + RND(-1.8, 1.8));
+                this.explodeAt(t, rad, st.atk * 2.4 * spow, 0xffaa60, true);
+                SFX.explode();
+              }, 140 + i * 260);
+            }
+            UI.toast('断岳斩 · 摧城三段', 'lv');
+          } else {
+            /* 斩锋 / 镇岳 → 单体处决（底子 execute）：一刀点杀，残血翻倍 */
+            this.actor.atkAnim = 1; this.actor.atkType = 'swing'; this.actor.atkSpeed = 2.2;
+            SFX.swing(); SFX.hit(); this.shake = 0.45; this.hitstop = 110;
+            const target = this.nearestEnemy(pp, 9) || this.nearestEnemy(this.aimPoint, 9);
+            if (target) {
+              const lowHp = target.hp < target.maxHp * 0.3;
+              const { dmg, crit } = this.rollDamage(st.atk * 6.0 * (lowHp ? 2 : 1) * spow);
+              this.damageEnemy(target, dmg, crit, { knock: 1.8 });
+              FX.flashCircle(target.pos, 2.4, lowHp ? 0xff3b3b : 0xffd166, 0.32);
+              FX.burst(new THREE.Vector3(target.pos.x, 1.2, target.pos.z),
+                lowHp ? 0xff3b3b : 0xffd166, 24, { speed: 7, size: 0.12, life: 0.55, additive: true });
+              FX.text(new THREE.Vector3(target.pos.x, 2.6, target.pos.z), lowHp ? '断岳 · 处决' : '断岳斩', 'lv', { life: 0.9 });
+            } else {
+              FX.flashCircle(pp, 3.4, 0xffd166, 0.28);
+              UI.log('断岳斩 · 身前没有目标');
+            }
+            UI.toast('断岳斩 · ' + this.bladeFormName(stance), 'lv');
+          }
+          /* Lv10：断岳斩附带 12 秒剑神降世（改造自 avatar 原来的「巨伤 + 增益」） */
+          if (bBlade.edgeUltimate && sk.buff) {
+            this.addBuff(sk.name, Object.assign({}, sk.buff, { dur: (sk.buff.dur || 12) + sdur }),
+              0xffd166, { type: 'buff', icon: sk.glyph, key: 'skill:avatar', refresh: true });
+            FX.ring(pp, 7, 0xffd166, 0.9, 0.4);
+            for (let i = 0; i < 24; i++) {
+              FX.burst(new THREE.Vector3(pp.x + RND(-4, 4), RND(0, 3), pp.z + RND(-4, 4)),
+                0xffd166, 2, { speed: 4, size: 0.14, life: 0.9, gravity: -4, additive: true });
+            }
+            FX.text(new THREE.Vector3(pp.x, 3.2, pp.z), '剑 神 降 世', 'lv', { life: 1.2 });
+          }
+          /* 终结技吃技能自己的冷却（与 castSkill 入口那套同口径，含冷却修正） */
+          this.cooldowns[id] = Math.max(8, this.skillCd(sk) * (1 - (smod && smod.cd ? smod.cd : 0) / 100));
+        } else {
+          /* ---------------- 换式 ---------------- */
+          this.actor.atkAnim = 1; this.actor.atkType = 'cast'; this.actor.atkSpeed = 1.6;
+          SFX.ui(); SFX.cast();
+          this.bladeCycle();
+          this.cooldowns[id] = 1.2;
+          /* 换式不收资源：怒气是打出来的，不该花在「换个姿势」上 */
+          s.mp = Math.min(st.mpMax, s.mp + cost);
+          if (!bBlade.edgeFinisher) {
+            UI.log('兵形 · 刃势满层（5 级解锁断岳斩）');
+          }
+          /* 动作条上挂着「刀式 + 刃势」角标，换式后必须重画一次 */
+          if (typeof UI !== 'undefined' && UI.buildActionBar) UI.buildActionBar();
         }
-        const hits = this.enemies.filter(e => !e.dead && DIST2D(e.pos, pp) < 9 + e.radius);
-        for (const e of hits) {
-          const { dmg, crit } = this.rollDamage(st.atk * 6.5 * spow);
-          this.damageEnemy(e, dmg, crit, { knock: 3 });
-        }
-        this.addBuff(sk.name, Object.assign({}, sk.buff), 0xffd166, { type: 'buff', icon: sk.glyph, key: 'skill:avatar', refresh: true });
-        FX.ring(pp, 9, 0xffd166, 0.9, 0.4);
-        FX.flashCircle(pp, 9, 0xffe0a0, 0.5);
-        for (let i = 0; i < 40; i++) FX.burst(new THREE.Vector3(pp.x + RND(-6, 6), RND(0, 3), pp.z + RND(-6, 6)), 0xffd166, 2, { speed: 4, size: 0.14, life: 0.9, gravity: -4, additive: true });
-        UI.toast('剑 神 降 世', 'lv');
         break;
       }
+
       /* 法师 */
       case 'fireball': {
         this.actor.atkAnim = 1; this.actor.atkType = 'cast';
@@ -4398,6 +4609,10 @@ const Game = {
     /* [P3] 不竭是「本次施放才开闸」的：上面的冷却赋值发生在行为层之前，
      * 所以这里补一刀 —— 否则开启的那一下还要等满冷却，手感像没生效。 */
     if (this._drainOn && this._drainOn[id]) this.cooldowns[id] = 0.2;
+    /* [P2b·刀客⑤] 刃势记账：①②③④ 各施放一次点亮一格（⑤ 自己与秘技不积）。
+     * 放在 switch 之后、标记清零之前：这一发已经结算完，记的是「用过了」，
+     * 与「打没打中」无关 —— ① 是左键、一秒能点十次，按命中数记账等于白送。 */
+    if (typeof this.bladeAddEdge === 'function') this.bladeAddEdge(id);
     this._tag = null;      // [S1] 技能结算完毕，标记归零，避免污染普攻
     this._castSkill = null;   // [P2] 击杀来源标记同步清零（见施法入口的注释）
     UI.renderHUD();
@@ -4478,9 +4693,8 @@ const Game = {
     const st = s.stats;
     /* [S4] 增益结算走 BUFF_MUL / BUFF_ADD 两张表（items.js），
      * 新增增益属性只需要往表里加 key，不用再改这里。 */
-    for (const b of this.buffs) {
-      const bs = b.stats;
-      if (!bs) continue;
+    const applyMods = (bs) => {
+      if (!bs) return;
       for (const k in bs) {
         if (k === 'dur') continue;
         const v = bs[k];
@@ -4488,7 +4702,13 @@ const Game = {
         if (BUFF_MUL[k]) st[BUFF_MUL[k]] *= 1 + v / 100;
         else if (BUFF_ADD.indexOf(k) >= 0) st[k] = (st[k] || 0) + v;
       }
-    }
+    };
+    for (const b of this.buffs) applyMods(b.stats);
+    /* [P2b·刀客⑤] 刀式（兵形）当成一份内置增益：走同一张表，结算顺序与装备 /
+     * 增益完全一致，不另开乘区。它在 buffs 之后，所以增益换不掉刀式 ——
+     * 刀式是「姿态」，不该被一瓶药顶掉。 */
+    if (typeof this.bladeMods === 'function') applyMods(this.bladeMods());
+
     s.setCount = st.setCount;
     if (s.hp > st.hpMax) s.hp = st.hpMax;
     if (s.mp > st.mpMax) s.mp = st.mpMax;
@@ -4528,6 +4748,11 @@ const Game = {
     const shred = (e.shredT > 0) ? Math.min(80, e.shred || 0) / 100 : 0;
     const effArmor = Math.max(0, armor * (1 - Math.min(0.8, (st.armorPen || 0) / 100)) * (1 - shred));
     final *= 100 / (100 + effArmor);
+    /* [P2b·刀客⑤] 摧城式「对护甲目标 +20%」：判的是**目标本来有没有护甲**，
+     * 不是穿完之后还剩多少 —— 穿甲堆满 80% 的玩家也不该因此丢掉这 20%。
+     * 放在护甲结算之后、抗性之前，是一个独立乘区。 */
+    if (armor > 0 && this.state.cls === 'warrior'
+      && typeof this.bladeStance === 'function' && this.bladeStance() === 2) final *= 1.2;
 
     /* [S5] 族群抗性：按本次伤害的元素结算（opts.elem 缺省按物理）。
      * 正数减伤、负数增伤；元素免疫（85%）也走这一条，不另开分支。

@@ -110,12 +110,18 @@ git fetch origin                 # 分支都在远程，clone 完就全能看到
 
 - 用户在 **Windows** 上开发。仓库早期在 macOS 写的，部分 `dev/*.js` 仍硬编码 macOS Chrome 路径。
 - **新增脚本用 `require('./_chrome')`** 取浏览器路径（`dev/_chrome.js` 跨平台探测）。
+- **clone 完先 `git config core.autocrlf false`**：仓库里是 LF，Windows 默认把它转成 CRLF，
+  而 `dev/test-skill-*.js` 里不少契约是**按 `\n` 写的正则**（切 case 块、抓 SKILL_BEH 登记），
+  CRLF 下会莫名其妙假红（实测 p2b 739 条里红 4 条）。已经转了的话：
+  `git rm -r --cached . -q && git reset --hard`。
 - 跑 puppeteer 脚本必须带环境变量：
   ```
   NODE_PATH=C:/Users/Administrator/.workbuddy-ai/binaries/node/workspace/node_modules
   ```
 - headless 启动参数固定：`--no-sandbox --enable-unsafe-swiftshader --use-gl=angle --use-angle=swiftshader`
 - 本地临时起 HTTP 服务（测 http 语义时用）：`python -m http.server 8765 --bind 127.0.0.1`
+  （`dev/test-save-browser.js` 固定用 8123，起服务要用后台任务，不能用 `&` 挂——shell 退出会带走它）
+- 部分探针会把截图写到 `/tmp/xxx.png`，在 Windows 上解析成 `D:\tmp`，先 `mkdir -p /d/tmp`。
 
 ## 4. 改动入口速查
 
@@ -188,9 +194,11 @@ node dev/preview-check.js --url <预览地址>   # 预览站：能开局 + 资�
 ## 7. 当前状态
 
 - 线上版本：见 `git log -1`。
-- **暂停中**：技能系统重构（12 技能 → 4~5 个功能位 + 元素混搭 + 发射数量成长）。
-  完整方案在 `docs/SKILL-REDESIGN-PLAN.md`，用户已拍板 10 项决策，**等他说开工**。
-  不要主动实施。
+- **进行中**：技能系统重构（12 技能 → 5 个功能位 + 元素混搭 + 1→10 台阶）。
+  方案在 `docs/SKILL-REDESIGN-PLAN.md`，进度台账在 `docs/status/skill-refactor.md`
+  （**开工前先读台账，那里有逐位进度与 50 条踩坑**）。
+  当前：P0 / P1a-d / P2a 完成，P2b 进化台阶 **14/15 位**（42/45 条）；
+  只剩**法师 ⑤ 元素法相**——它在游戏里还是一只没实现的技能（`isNew: true`）。
 - **待拍板**：大地图扩展（12 章 / 80 怪 / 24 首领 / 12 营地 + 任务网 / 5 类地下城 × 5 阶钥匙）。
   方案在 `docs/ACT-EXPANSION-PLAN.md`（2026-10-27 草案，**未动代码**）。
   §14 有 10 项待拍板，**拍板前不要开工**。

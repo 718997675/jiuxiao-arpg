@@ -1247,6 +1247,17 @@ const UI = {
     if (typeof Mobile !== 'undefined' && Mobile.on) Mobile.syncHud();
   },
 
+  /* [P2b·刀客⑤] 兵形角标就地刷新。
+   * 不重建整条动作条 —— 刃势每点亮一格就 buildActionBar 一次，会把冷却遮罩
+   * 与按钮的按压态一起冲掉；换式（刀式名变了）才值得整条重画。 */
+  syncBladeBadge() {
+    if (!Game.state || Game.state.cls !== 'warrior') return;
+    const el = document.querySelector('#actionbar .skill[data-skill="avatar"] .bl');
+    if (!el || typeof Game.bladeEdge !== 'function') return;
+    el.textContent = Game.bladeFormName(Game.bladeStance()).slice(0, 1) + Game.bladeEdge();
+    el.classList.toggle('full', Game.bladeEdge() >= Game.bladeEdgeMax());
+  },
+
   buildActionBar() {
     const s = Game.state;
     const bar = document.getElementById('actionbar');
@@ -1269,8 +1280,16 @@ const UI = {
       const vv = Game.skillVariant(id);
       const vName = (typeof skillFormName === 'function') ? skillFormName(id, vv) : '';
       const vBadge = `<span class="vb" style="${vv > 0 ? '' : 'display:none'}">${['Ⅰ', 'Ⅱ', 'Ⅲ'][vv] || ''}</span>`;
-      return `<div class="skill" data-skill="${id}" title="${sk.name}${vName ? ' · ' + vName : ''} · ${castLabel}${rangeLabel}">
-        <span class="k">${keyOf(i)}</span>${vBadge}<div class="g">${skillIconSvg(id, 26)}</div>
+      /* [P2b·刀客⑤] 兵形读数：刀式首字 + 刃势层数。只在 ⑤ 号位（avatar）出现，
+       * 满层时翻金 —— 满层 = 下一发 ⑤ 是断岳斩，这个提示不能靠玩家自己数。 */
+      let bladeBadge = '';
+      if (s.cls === 'warrior' && id === 'avatar' && typeof Game.bladeTip === 'function') {
+        const bn = Game.bladeFormName(Game.bladeStance());
+        const full = Game.bladeEdge() >= Game.bladeEdgeMax();
+        bladeBadge = `<span class="bl${full ? ' full' : ''}">${bn.slice(0, 1)}${Game.bladeEdge()}</span>`;
+      }
+      return `<div class="skill" data-skill="${id}" title="${sk.name}${vName ? ' · ' + vName : ''} · ${castLabel}${rangeLabel}${bladeBadge ? ' · ' + Game.bladeTip() : ''}">
+        <span class="k">${keyOf(i)}</span>${vBadge}${bladeBadge}<div class="g">${skillIconSvg(id, 26)}</div>
         <span class="cost">${Game.skillCost(sk)}</span><div class="cd"></div></div>`;
     }).join('') +
       `<div class="barset" data-barset="1" title="切换快捷栏（${SKILL_BAR_SET_LABEL}，或 ${SKILL_BAR_SET_KEY_ALT}）· 共 ${SKILL_BAR_SETS} 套 · 当前第 ${setIdx + 1} 套">${barSetIcon(setIdx, 16)}<span class="bs-n">${setIdx + 1}/${SKILL_BAR_SETS}</span></div>` +

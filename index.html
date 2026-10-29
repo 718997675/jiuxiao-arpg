@@ -93,6 +93,13 @@
     color:#1a1510;background:linear-gradient(180deg,#e8cf8a,#c8a24a);border-radius:2px;
     font-weight:600;pointer-events:none;z-index:2}
   .skill .cost{position:absolute;right:3px;bottom:1px;font-size:9px;color:#7fb0e8}
+  /* [P2b·刀客⑤] 兵形角标：左下角一格「刀式首字 + 刃势层数」。
+     换式是 1.2 秒冷却的战术动作，没有常驻读数的话玩家只能靠一次 toast 记住
+     自己现在是哪把刀 —— 手机端连 hover 都没有。 */
+  .skill .bl{position:absolute;left:2px;bottom:1px;font-size:9px;line-height:1;padding:0 2px;
+    color:#ffe9a8;background:rgba(60,40,16,.78);border:1px solid rgba(216,178,90,.55);
+    border-radius:2px;pointer-events:none;z-index:2;letter-spacing:0}
+  .skill .bl.full{color:#1a1510;background:linear-gradient(180deg,#ffe9a8,#d8b25a);border-color:#ffe9a8}
   /* [M1] 快捷栏标识：技能条右端的小方章，点它 / 按 Shift 切第二套 */
   /* [v1.8.3] 角标里放剑 / 盾图标 + 「1/2」，不读字也知道自己在第几套 */
   .barset svg{width:16px;height:16px;display:block}

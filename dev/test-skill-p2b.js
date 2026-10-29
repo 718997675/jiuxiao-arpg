@@ -865,6 +865,111 @@ console.log('九、道士 ⑤ 召灵兽');
   }
 }
 
+/* ============================================================
+ * 十、刀客 ⑤ 兵形
+ *
+ * 这一位是 P2b 里唯一一个「一个格位只有一只技能、却要新写三套机制」的位：
+ *   刀式状态（改属性）/ 刃势记账（①②③④ 各一次）/ 断岳斩（形态随刀式）。
+ * 所以这一节查的不是「接了几个键」，而是**这三套机制各自的接线点**都在：
+ *   · 刀式走 recalc 的同一张 BUFF 表（不另开乘区，否则与装备结算顺序打架）
+ *   · 刃势按**格位**记账（按命中次数记 = 左键一秒十次白送）
+ *   · 断岳斩的两种形态各有底子（单体处决 / 三段崩击），且换式不吃怒气
+ * ============================================================ */
+console.log('十、刀客 ⑤ 兵形');
+{
+  const s5 = skillArchSlot('warrior', 5);
+  ok(s5.title === '兵形', '⑤ 位标题是兵形', s5.title);
+  ok(s5.inherit.join(',') === 'avatar', '⑤ 位只继承 avatar（剑神降世改造，不产生独立单位）', s5.inherit);
+  ok(s5.unit === false, '⑤ 位明确不是召唤单位（拍板 #6）');
+  ok((s5.forms || []).length === 3, '三种刀式（斩锋 / 镇岳 / 摧城）', (s5.forms || []).length);
+  ok(s5.finisher && s5.finisher.name === '断岳斩', '终结技叫断岳斩');
+  ok(s5.ultimate && s5.ultimate.name === '剑神降世', '终极形态是剑神降世');
+
+  /* 五档必须齐，且每档给的是**那一档专属的开关**，不是复读同一句 */
+  const e = SKILL_TIER_EVO.avatar || {};
+  ok(!!e[3] && !!e[5] && !!e[7] && !!e[9] && !!e[10], '五档全部登记', Object.keys(e));
+  ok(e[3] && e[3].beh.stanceUnlock === 1, 'Lv3 解锁第二式（镇岳）', e[3] && e[3].beh);
+  ok(e[5] && e[5].beh.edgeFinisher === 1, 'Lv5 才让刃势有出口（断岳斩）', e[5] && e[5].beh);
+  ok(e[7] && e[7].beh.stanceUnlock === 2, 'Lv7 解锁第三式（摧城），同键递进到 2', e[7] && e[7].beh);
+  ok(e[9] && e[9].beh.edgeKeep === 1, 'Lv9 换式保刃势', e[9] && e[9].beh);
+  ok(e[10] && e[10].beh.edgeUltimate === 1, 'Lv10 断岳斩附带剑神降世', e[10] && e[10].beh);
+
+  /* beh 是覆盖不是累加：10 级那行不带 stanceUnlock，但 7 级那行还在 */
+  const b10 = skillTierBeh('avatar', 10) || {};
+  ok(b10.stanceUnlock === 2 && b10.edgeFinisher === 1 && b10.edgeKeep === 1 && b10.edgeUltimate === 1,
+    'Lv10 累积拿到四件（3 / 5 / 7 / 9 层不掉）', b10);
+  ok(!(skillTierBeh('avatar', 4) || {}).edgeFinisher, 'Lv4 还没有断岳斩（攒满也没出口）');
+  ok(!(skillTierBeh('avatar', 2) || {}).stanceUnlock, 'Lv2 仍只有斩锋式');
+
+  /* 3 / 7 不再是数量台阶：avatar 不读 count 通道，给它 count 没有任何 case 消费 */
+  ok(skillCountCapable('avatar') === false, 'avatar 不吃 count 通道（所以 3 / 7 不能写「多发」）');
+  ok(skillTierCount('avatar', 7) === 0, 'Lv7 不给发数（台阶走 stanceUnlock）');
+
+  /* 撞键：台阶四个键不许和 avatar 的分支键重名（重名 = 花点覆盖台阶） */
+  const br = skillBranches('avatar') || {};
+  const own = new Set();
+  for (const row of [br.core].concat(br.pick || [], br.form || [])) {
+    for (const k in ((row && row.beh) || {})) own.add(k);
+  }
+  const mine = new Set();
+  for (const lv of [3, 5, 7, 9, 10]) for (const k in (e[lv].beh || {})) mine.add(k);
+  const clash = [...mine].filter(k => own.has(k));
+  ok(clash.length === 0, '台阶行为键与 avatar 的分支键零重叠', clash);
+  ok(!mine.has('immune'), '不用 immune —— 那是无敌帧（avatar 精研「神临」的键），不是刀式');
+
+  /* 面板：五档全部转绿（3 / 7 以前一直带「待」） */
+  ok([3, 5, 7, 9, 10].every(lv => skillSlotTierDone('warrior', 5, lv)),
+    '刀客 ⑤ 五个台阶全部已实装（面板不带「待」角标）');
+  ok(skillSlotTierDone('warrior', 5, 1), 'Lv1 是基础形态，永远成立');
+
+  /* ---- 三套机制的接线点，逐条钉源码 ---- */
+  ok(/bladeMods\(\)/.test(game) && /applyMods\(this\.bladeMods\(\)\)/.test(game),
+    '刀式走 recalc 的同一张 BUFF 表（不另开乘区）');
+  ok(/if \(i === 1\) return \{ dmgReduce: 20, block: 15 \}/.test(game),
+    '镇岳式 = 减伤 20% + 格挡 15%');
+  ok(/if \(i === 2\) return \{ armorPen: 30 \}/.test(game),
+    '摧城式 = 无视 30% 护甲（走 armorPen，damageEnemy 按比例削）');
+  ok(/return \{ dmgAll: 15, aspd: 10 \}/.test(game), '斩锋式 = 伤害 15% + 攻速 10%');
+  ok(/armor > 0[\s\S]{0,140}bladeStance\(\) === 2/.test(game),
+    '摧城式「对护甲目标 +20%」真的结算（判目标本来有没有护甲）');
+
+  ok(/bladeAddEdge\(id\)/.test(game), 'castSkill 收尾真的记刃势');
+  ok(/skillArchSlotOf\('warrior', id\)/.test(game) && /slot < 1 \|\| slot > 4/.test(game),
+    '刃势按**格位**记账（①②③④ 各一次，⑤ 与秘技不积）');
+  ok(/if \(st\.mask & bit\) return 0/.test(game),
+    '同一个格位重复施放不加层（否则左键一秒十次 = 白送）');
+  ok(/if \(!this\.bladeFinisherOn\(\)\) return 0/.test(game),
+    '5 级之前不记账（攒满了也没出口，只会让玩家以为坏了）');
+  ok(/st\.mask = 0;/.test(game) && /if \(!this\.bladeBeh\(\)\.edgeKeep\) st\.mask = 0/.test(game),
+    'Lv9 之前换式清空刃势、Lv9 起保留');
+
+  /* ⑤ 的两种模式：冷却与资源必须在 case 里改写（castSkill 入口早就定死了） */
+  ok(/bBlade\.edgeFinisher && edgeFull/.test(game), '刃势满 + 已解锁 → 走终结技分支');
+  ok(/this\.cooldowns\[id\] = 1\.2/.test(game), '换式只吃 1.2 秒冷却（否则换一次式要等一分钟）');
+  ok(/s\.mp = Math\.min\(st\.mpMax, s\.mp \+ cost\)/.test(game), '换式不收怒气（退回去）');
+  ok(/this\.cooldowns\[id\] = Math\.max\(8, this\.skillCd\(sk\)/.test(game),
+    '终结技吃技能自己的冷却（含冷却修正）');
+  ok(/stance === 2/.test(game) && /this\.explodeAt\(t, rad, st\.atk \* 2\.4 \* spow/.test(game),
+    '摧城式 → 三段崩击（底子 skysfall）');
+  ok(/lowHp \? 2 : 1/.test(game) && /st\.atk \* 6\.0/.test(game),
+    '斩锋 / 镇岳 → 单体处决（底子 execute，残血翻倍）');
+  ok(/bBlade\.edgeUltimate && sk\.buff/.test(game),
+    'Lv10 才给 12 秒剑神降世（不是每级都有）');
+
+  /* 破军大节点「剑神」刷新突刺：必须留在终结技分支里 ——
+   * 换式冷却只有 1.2 秒，留在外面等于突刺无限刷新。
+   * 取的是**代码行**（`st.specials.avatarResetThrust`）而不是注释里那个词 ——
+   * 上面那段注释本身就点了名，用裸词会把注释的位置当成代码的位置。 */
+  const at = game.indexOf('st.specials.avatarResetThrust');
+  const gate = game.indexOf('if (bBlade.edgeFinisher && edgeFull)');
+  ok(at > 0 && gate > 0 && at > gate, 'avatarResetThrust 在终结技分支内（换式不许刷突刺）', { at, gate });
+
+  /* 兵形归零：换角色 / 开新档从斩锋式起手 */
+  ok(/this\.blade = \{ i: 0, mask: 0 \}/.test(game), 'startNew 把兵形状态归零');
+  ok(/if \(!this\.skillUnlocked\('avatar'\)\) return null/.test(game),
+    '没领悟剑神降世就没有刀式加成（26 级之前白拿 +15% 伤害是 bug）');
+}
+
 /* ---------------- 汇总 ---------------- */
 console.log('\n' + (fail === 0 ? '✓' : '✗') + ' P2b 契约：' + pass + ' 通过 / ' + fail + ' 失败');
 process.exit(fail === 0 ? 0 : 1);

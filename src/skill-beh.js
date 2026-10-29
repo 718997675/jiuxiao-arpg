@@ -398,6 +398,20 @@ const SKILL_BEH = {
   arrayGuard: { ph: 'hook', label: '阵内减伤', run() { /* 由 damagePlayer 消费 */ } },
   arrayCounter: { ph: 'hook', label: '阵内反击', run() { /* 由 damagePlayer 消费 */ } },
 
+  /* [P2b] 刀客 ⑤ 兵形（四个键，全部由 game.js 的兵形状态机消费）。
+   * 这一位不是一个行为键能接完的 —— 它是「刀式状态 + 刃势记账 + 终结技」三件套，
+   * 所以四个键分别对应三个系统的一个开关，而不是「加个数值」：
+   *   stanceUnlock  = 解锁到第几式（1 = 镇岳 / 2 = 摧城，同键递进，后者覆盖前者）
+   *   edgeFinisher  = 刃势有出口（满 4 层时 ⑤ 改为断岳斩）
+   *   edgeKeep      = 换式不清空刃势
+   *   edgeUltimate  = 断岳斩附带 12 秒剑神降世
+   * 四个都登记成 hook：消费点在 castSkill 的 avatar case 与 bladeXxx 系列方法里，
+   * 没有一个走通用 hit 通道（⑤ 是 cast:'self'，通用通道的圆心判定对它没意义）。 */
+  stanceUnlock: { ph: 'hook', label: '解锁刀式（台阶）', run() { /* 由 Game.bladeStanceCount 消费 */ } },
+  edgeFinisher: { ph: 'hook', label: '刃势终结技（台阶）', run() { /* 由 Game.bladeFinisherOn 消费 */ } },
+  edgeKeep: { ph: 'hook', label: '换式保刃势（台阶）', run() { /* 由 Game.bladeCycle 消费 */ } },
+  edgeUltimate: { ph: 'hook', label: '剑神降世（台阶）', run() { /* 由 avatar case 消费 */ } },
+
   /* 击杀类变体：两者都由 onBehKill 钩子消费（噬魂回血 / 燎原尸体再爆） */
   killHeal: { ph: 'self', label: '击杀回血', run() { /* 由 onBehKill 消费 */ } },
   corpseBlast: { ph: 'self', label: '尸体爆炸', run() { /* 由 onBehKill 消费 */ } },

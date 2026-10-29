@@ -3,7 +3,7 @@
 - 分支：`feat/skill-refactor`（优先级 **低**，排在大型扩展之后）
 - 计划文档：`docs/SKILL-REDESIGN-PLAN.md`（16 节）
 - 预览站：暂不发（2026-10-27 用户口径：本地验证即可，别再折腾线上）
-- 更新：2026-10-29 · P2b 进化台阶 **13/15 位**（38/45 条）· **收工点：只剩刀客 ⑤ 兵形 / 法师 ⑤ 法相（都要新写机制）**
+- 更新：2026-10-29 · P2b 进化台阶 **14/15 位**（42/45 条）· **收工点：只剩法师 ⑤ 法相（整只技能还没实现）**
 
 > 当前：**P0 + P1a + P1b + P1c + P1d + P2a 完成，P2b 进行中**。动作条 5 格、格位 = 功能位；
 > 技能树已按「三线并行」结算 —— 没有必点主干、没有主动↔被动二选一，
@@ -14,10 +14,10 @@
 > 台阶也接进战斗了：数量台阶走 `smod.count`（多发带 0.85^n 递减）——**12 个技能全接**
 > （毒雾、火墙、雷云是后两批补进来的）。**节奏不是全局 3 / 7**：法师 ② 在 5 / 7
 > （3 级是「溅射」），按技能覆盖见 `SKILL_COUNT_TIER`。Lv5 / Lv9 / Lv10 走行为键，
-> **已接 13 个位**（刀客 ①②③④、法师 ①②③④、道士 ①②③④⑤），45 条里完成 **38 条**。
-> 剩 2 个 ⑤ 号位仍是文案，面板上带「待」角标 —— 刀客⑤ 兵形、法师⑤ 法相都要**新写机制**
-> （刃势记账 / 一整只技能 / 三兽调度），不是接个行为键就完事的。
-> **别把「P2b 完成」读成 45 条都做了**。
+> **已接 14 个位**（刀客 ①②③④⑤、法师 ①②③④、道士 ①②③④⑤），45 条里完成 **42 条**。
+> 只剩 **法师 ⑤ 元素法相**一个位（3 条）：整只技能在游戏里还没实现
+> （`SKILL_ARCHETYPE` 里 `isNew: true`），得先有技能再谈台阶。
+> **别把「P2b 只剩一个位」读成「快完了」**：法相是「先做一整只技能」的量级。
 
 ## 一句话现状
 
@@ -39,7 +39,7 @@ P1 起才动 `SKILL_BAR_SLOTS` 与面板的三列树。
 | P1c | **取消二选一**：三线并行结算（等级门 `reqLv` + 关键被动软前置 `needPts`），`levelUpSkill` / `levelUpPassive` 的 fork 拦截整块删除，面板去掉「或/锁」标记与互斥虚线，说明页同步 | ✅ | `data-skill-tree.js`、`game.js`、`skill-passive.js`、`ui-skills.js`、`ui.js`、`index.html` | `dev/test-skill-p1c.js` 353 · `dev/probe-skill-p1c.js` 23 |
 | P1d | 面板**视觉**重排：一条线一列、列内按 `reqLv` 递增，被动小一圈挂在主动右边，只留同线淡引导线；手机上三条线分页签、一页一列 | ✅ | `ui-skills.js`（`skTreeLayout` / `skTreeHTML` / `renderSkillTreeDOM` / `skTreeTabsHTML`）、`index.html`（SKG + 被动腰围）、`ui.js`（说明页「技能树布局」） | `dev/probe-skill-p1d.js` 36 |
 | P2a | **等级上限 5 → 10** + 分段曲线真的进战斗（`skillLvMul` 取代旧「每级固定 8%」）+ 点数供给 等级 × 1.5；面板 10 格 / 满级金环 / 洗点全额退回 | ✅ | `data-skills.js`（`SKILL_LV_MAX` / `SKILL_POINT_RATE` / `skillPointPool`）、`data-skill-tree.js`（`lvMax` 同源）、`game.js`（`castSkill` / `skillPoints`）、`ui-skills.js`、`ui.js`、`index.html` | `dev/test-skill-p2.js` 41 · `dev/probe-skill-p2.js` 26 |
-| P2b | **数量 / 形态台阶接进 `castSkill`**。①数量：默认 Lv3 / Lv7 各 +1，接 `smod.count`（13 个技能消费），第 n 发 ×0.85^n 防三倍伤害；**发数节奏可按技能覆盖**（`SKILL_COUNT_TIER`，法师 ② 在 Lv5 / Lv7）。②进化：新建 `SKILL_TIER_EVO`（挂**技能 id** 不挂技能位），合并顺序 **台阶最前 → 精研 / 取向 / 变体覆盖同名键**（花点的选择必须盖过等级送的）。**已接 13 个位 / 38 条**：刀客①旋风斩、法师①火球、道士①符箓、道士②毒雾、刀客②地裂、刀客③剑阵、刀客④血怒、道士④回春、法师③火墙、法师④护盾、道士③太极、法师②陨石（3 溅射 / 5 双陨 / 7 三连落）、道士⑤召灵兽（三只各召各的）—— 细则见下面「P2b 收口要点」。**⚠ 13/15 个位：只剩刀客 ⑤ 兵形、法师 ⑤ 法相（各 3 条），两位都要新写机制** | 🟡 | `data-skills.js`（`SKILL_TIER_EVO` / `SKILL_COUNT_TIER` / `skillTierEvo` / `skillTierMods` / `skillTierBeh`）、`skill-beh.js`（`branchBeh` 台阶排最前 + `killProlong` / `lifesteal` / `ccImmune` / `healOnCast` / `tierDur` / `splash`）、`game.js`（autoTarget / rageMul / firePatch / swordField / applyPlayerSlow / ccImmuneNow / behTierNova / shieldT+sdur / 符阵 dur+tierDur / meteor·blizzard·judgement·starfall 多发 / spawnTierField 落点领域）、`ui.js`（说明页读数现算）、`ui-skills.js` | `dev/test-skill-p2b.js` 739 · `dev/probe-skill-p2b.js` 227 |
+| P2b | **数量 / 形态台阶接进 `castSkill`**。①数量：默认 Lv3 / Lv7 各 +1，接 `smod.count`（13 个技能消费），第 n 发 ×0.85^n 防三倍伤害；**发数节奏可按技能覆盖**（`SKILL_COUNT_TIER`，法师 ② 在 Lv5 / Lv7）。②进化：新建 `SKILL_TIER_EVO`（挂**技能 id** 不挂技能位），合并顺序 **台阶最前 → 精研 / 取向 / 变体覆盖同名键**（花点的选择必须盖过等级送的）。**已接 14 个位 / 42 条**：刀客①旋风斩、法师①火球、道士①符箓、道士②毒雾、刀客②地裂、刀客③剑阵、刀客④血怒、道士④回春、法师③火墙、法师④护盾、道士③太极、法师②陨石（3 溅射 / 5 双陨 / 7 三连落）、道士⑤召灵兽（三只各召各的）、**刀客⑤兵形（刀式状态机 + 刃势 + 断岳斩）** —— 细则见下面「P2b 收口要点」。**⚠ 14/15 个位：只剩法师 ⑤ 法相（3 条），而它是「整只技能还没实现」** | 🟡 | `data-skills.js`（`SKILL_TIER_EVO` / `SKILL_COUNT_TIER` / `skillTierEvo` / `skillTierMods` / `skillTierBeh`）、`skill-beh.js`（`branchBeh` 台阶排最前 + `killProlong` / `lifesteal` / `ccImmune` / `healOnCast` / `tierDur` / `splash` / `stanceUnlock` / `edgeFinisher` / `edgeKeep` / `edgeUltimate`）、`game.js`（autoTarget / rageMul / firePatch / swordField / applyPlayerSlow / ccImmuneNow / behTierNova / shieldT+sdur / 符阵 dur+tierDur / meteor·blizzard·judgement·starfall 多发 / spawnTierField 落点领域 / **bladeXxx 兵形状态机**）、`ui.js`（说明页读数现算 + 动作条刀式角标）、`ui-skills.js` | `dev/test-skill-p2b.js` 797 · `dev/probe-skill-p2b.js` 256 |
 | P2c | 精通层 11~20：光效随等级变亮、Lv15 精通小质变（统一三选一模板），不新增形态 | ⬜ | `src/fx.js`、`skill-beh.js` | — |
 | P3 | 元素注入 + 反应表：伤害管线支持双元素、特效混色、词缀口径 | ⬜ | 战斗 + 词缀 + `src/fx.js` | — |
 | P4 | 三职业独立 ⑤ 号位：刀客兵形/刃势、法师法相、道士召唤 | ⬜ | `src/fx.js`、`src/charforge.js` | — |
@@ -215,20 +215,44 @@ P1 起才动 `SKILL_BAR_SLOTS` 与面板的三列树。
     或者在不需要施法的段落（直接调 `spawnTierField`）里停帧。
 
 
-## P2b 剩余：三个 ⑤ 号位（9 条）
+45. **一个位只有一只技能，也可能要新写三套机制**。刀客 ⑤ 只有 `avatar` 一只，但
+    「刀式 / 刃势 / 断岳斩」三件没有一件是现成通道：刀式要进 recalc 的 BUFF 表，
+    刃势要新开记账口，断岳斩要按刀式分两种形态。判据还是「文案写了什么，机制就得存在」——
+    只接一个行为键的话，Lv3 / Lv7 / Lv9 三档全是空话。
+46. **状态类增益走 recalc 的同一张表，不另开乘区**。刀式三组属性（`dmgAll`+`aspd` /
+    `dmgReduce`+`block` / `armorPen`）全部复用 `BUFF_MUL` / `BUFF_ADD`：把 buff 循环
+    抽成 `applyMods()` 再调一次 `bladeMods()` 就够。另开乘区的话，装备 / 增益 / 刀式的
+    结算顺序要再吵一遍，面板读数也会与战斗对不上。
+47. **「命中次数」不能当资源**。刃势按**格位**记账（①~④ 各一次），不按命中次数：
+    ① 是左键、一秒能点十次，按次数记等于四秒一层白送。同一格位重复放不加，
+    所以「攒满」= 把整套技能用一遍，而不是站桩点左键。
+48. **同一个按键的两种模式，冷却与资源必须在 case 里改写**。`castSkill` 在 switch
+    之前就把 `this.cooldowns[id]` 与资源扣完了，所以「换式 1.2 秒 / 终结技 60 秒」
+    「换式不收怒气」只能写在 case 里（退资源要 `Math.min(mpMax, mp + cost)`）。
+    不这么分的话，换一次式要等一分钟 —— 三把刀等于只有一把能用。
+49. **别把「大招的附带效果」留在换式路径上**。`avatarResetThrust`（破军大节点·剑神）
+    原来写在 case 开头，现在 case 分成两支：留在外面等于「1.2 秒一次刷新突刺」，
+    直接变成无限突刺。凡是「施法时给点好处」的既有钩子，拆模式时都要逐个问
+    「这一支还成立吗」。
+50. **姿态类系统要有常驻读数**。换式是 1.2 秒冷却的战术动作，只给一次 toast 的话
+    玩家记不住自己现在拿的是哪把刀（手机端连 hover 都没有）。动作条 ⑤ 格加了
+    一枚「刀式首字 + 刃势层数」的角标（满层翻金）；刃势点亮时**就地改 DOM**
+    （`UI.syncBladeBadge`），只有换式才重建整条动作条 —— 每点亮一格就
+    `buildActionBar` 会把冷却遮罩一起冲掉。
+51. **探针量「换式不退资源」时，mp 要取在上限以内**。`__mkClean` 把 mp 拉到 99999，
+    退回来的那点会被 `Math.min(mpMax, …)` 夹掉，看起来像「没退」（实测 500 → 244）。
+    这不是 bug，是探针把读数放在了不可能的区间。
 
-已接 13 个位：刀客 ①②③④、法师 ①②③④、道士 ①②③④（法师 ② 的 9 / 10 也已落地）。
+## P2b 剩余：只剩法师 ⑤ 元素法相（3 条）
 
-**B 档 · 要新写机制（单独排，别混进「接个行为键」的批次）**
+已接 14 个位：刀客 ①②③④⑤、法师 ①②③④、道士 ①②③④⑤。
 
-- **刀客 ⑤ 兵形**：刃势满层断岳斩、切刀式保刃势、剑神降世 —— 三件都是新系统（刃势记账 + 终结技 + 三刀式状态），
-  比「一个行为键」大一个量级。
-- **法师 ⑤ 元素法相**：整只技能**还没实现**（`SKILL_ARCHETYPE` 里 `isNew: true`），先有技能再谈台阶。
-- **道士 ⑤ 召灵兽**：白虎 / 青龙 / 四象 —— 灵兽本体已有（`summonBeast`），台阶要接的是「三兽同场」的调度。
-
-做的时候守两条：① 一个位一个 commit，别一批铺完；② `slot.tiers` 的文案与
-`SKILL_TIER_EVO` 的 `label` **必须逐字相同**（契约第七节会红），改不动就改文案 ——
-**点了不生效比不写更糟**。
+- **法师 ⑤ 元素法相**：整只技能**还没实现**（`SKILL_ARCHETYPE` 里 `isNew: true`），
+  先有技能再谈台阶。它的三条（5 全技能灼烧 / 9 法相结束新星 / 10 法相期间免疫打断）
+  全部依赖「法相窗口」这个本体，本体不在，台阶无处可挂。
+- 做的时候守两条：① 一个位一个 commit，别一批铺完；② `slot.tiers` 的文案与
+  `SKILL_TIER_EVO` 的 `label` **必须逐字相同**（契约第七节会红），改不动就改文案 ——
+  **点了不生效比不写更糟**。
 
 ## 特效（P2c 之前先做表现层）
 
@@ -704,3 +728,53 @@ arch 29 · p2 26 · p1c 23 · smoke ERRORS none。
 `reading 'stats'`，要 `oldRoll.call(Game, base)`。
 ④ 「灵兽出手走 rollDamage」会量到 ≥2 次（同一帧多只灵兽选中同一只假怪），断言写 `>= 1`。
 ⑤ 契约里 `new RegExp('^ {2}' + k + ': \\{ ph:')` 少 `m` 标志就永远不匹配，四条「新键已登记」假红。
+
+### 2026-10-29 · P2b 刀客 ⑤ 兵形（一只技能，三套机制）
+
+P2b 最后一个「要新写机制」的位。⑤ 位只有 `avatar`（剑神降世）一只技能，
+但这一位要的不是「接个行为键」，而是**刀式状态 + 刃势记账 + 终结技**三件：
+原稿的 3 / 5 / 7 / 9 / 10 五档里，只有把这三件都做出来才不是空话。
+
+- **刀式（兵形）**：斩锋（伤害 +15% / 攻速 +10%）· 镇岳（减伤 20% / 格挡 +15%）·
+  摧城（无视 30% 护甲 / 对护甲目标 +20%）。全部复用 `BUFF_MUL` / `BUFF_ADD` ——
+  `recalc` 的 buff 循环抽成 `applyMods()`，再调一次 `bladeMods()`，**不另开乘区**。
+  摧城那 +20% 单独写在 `damageEnemy` 的护甲结算之后（判「目标本来有没有护甲」，
+  不是「穿完还剩多少」—— 穿甲堆满 80% 的玩家不该因此丢掉这 20%）。
+- **刃势**：①②③④ 各施放一次点亮一格（**按格位记账**，同一位重复放不加），满 4 层。
+  按命中次数记会被 ① 的左键点穿（一秒十次 = 四秒一层）。⑤ 自己与传世秘技不积。
+- **断岳斩**：刃势满 + 5 级才出，形态随刀式 —— 斩锋 / 镇岳 = 单体处决（底子 `execute`，
+  残血翻倍），摧城 = 三段崩击（底子 `skysfall`，半径 5）。放完清零。
+- **五档怎么兑现**（全部读数据层 `SKILL_TIER_EVO.avatar` 的四个 beh 键，不写死等级）：
+  3 `stanceUnlock:1` 解锁镇岳 · 5 `edgeFinisher:1` 刃势有出口 · 7 `stanceUnlock:2` 解锁摧城
+  · 9 `edgeKeep:1` 换式不再清空刃势 · 10 `edgeUltimate:1` 断岳斩附带 12 秒剑神降世。
+- **两种模式共用一键**：换式 1.2 秒冷却、不收怒气（把刚扣的退回去）；终结技吃技能
+  自己的冷却（60 秒 × 冷却修正）。改写都发生在 case 里 —— `castSkill` 早在 switch
+  之前就把冷却与资源扣完了。
+- **顺手挪走一处会爆炸的旧钩子**：`avatarResetThrust`（破军大节点·剑神）原在 case
+  开头，拆分模式后留在外面等于「1.2 秒刷一次突刺」= 无限突刺，已挪进终结技分支。
+- **12 秒全强化改成 Lv10 的奖励**：以前每次放 ⑤ 都给，现在只有 Lv10 的断岳斩附带
+  （`sk.buff` 原样复用，`dur` 走 `sdur`）。
+- **动作条读数**：⑤ 格加「刀式首字 + 刃势层数」角标（满层翻金），刃势点亮时就地改
+  DOM，换式才重建整条动作条（见收口要点 50）。
+- **兵形只在领悟之后生效**：`bladeMods()` 先判 `skillUnlocked('avatar')`，
+  否则 26 级之前白拿「伤害 +15%、攻速 +10%」。
+- 文案同步：`SKILLS.avatar.desc` 与 `slot.finisher.desc` 都改成「①②③④ 各用一次」口径
+  （原稿写「前 4 个技能**命中**」，而 ④ 是增益、没有命中可言）。
+
+**验证**：`test-skill-p2b` 739→**797 通过 / 0 失败**（新增第十节 58 条：五档登记与 label 对账、
+四个新键已登记、与 avatar 分支零撞键、三套机制的源码接线点、`avatarResetThrust` 位置、
+startNew 归零）；`probe-skill-p2b` 227→**256 通过 / 0 失败**（第十六节 29 条真机读数：
+三种刀式真的进 stats、解锁档与换式循环、26 级前无加成、刃势按格位记账、换式清空 / Lv9 保留、
+换式不收怒气且冷却 1.2 秒、Lv4 满层不出终结技、Lv5 单体处决、Lv10 带剑神降世、
+摧城三段崩击、摧城对护甲目标约 1.29 倍）。
+回归全绿：p0 248 · p1 52 · p1c 353 · p2 41 · p2b 797 · items 17 · save 79 · save-browser 80 ·
+s1 通过 · smoke ERRORS none · arch 29 · bar5 30 · p1c 23 · p1d 36 · p2 26 · mobile-layout 全通过。
+
+**踩坑**：① 探针里「放一次 ⑤ 看刃势变没变」量不到记账口 —— 换式本身就会清空刃势，
+量到的是 `bladeCycle` 的账，改成直接调 `bladeAddEdge('avatar')`；
+② `__mkClean` 把 mp 拉到 99999，退资源时被 `Math.min(mpMax, …)` 夹成 244，
+看起来像「没退」，读数要放在上限以内；
+③ Lv4 满层「层数应该留着」也是错判 —— 换式清空是 1~8 级的正常行为，
+Lv9 才保（`edgeKeep`），断言改成「只换式、不打伤害、层数被换式清掉」；
+④ 三个老探针（p1c / p1d / p2）写死了 macOS / Chrome 的 `executablePath`，
+Windows（只有 Edge）上连启动都起不来 —— 统一改成 `require('./_chrome')`。
