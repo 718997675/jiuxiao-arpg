@@ -617,6 +617,34 @@ Object.assign(UI, {
     const castTxt = sk.cast === 'ground' ? '指定位置' : sk.cast === 'dir' ? '指定方向' : sk.cast === 'enemy' ? '自动索敌' : '自身';
     const pips = Array.from({ length: SKILL_LV_MAX }, (_, i) => `<span class="sk-pip ${i < inv ? 'on' : ''}"></span>`).join('');
 
+    /* [P2c] 精进轨道（11~20）。
+     *
+     * 有效等级超过 10 之后，玩家在卡上**看不到任何东西**：10 格全亮、数字变成
+     * 「投入 10/10 · 装备 +3」，再加装备也只改那行小字。方案 §5.2 要求
+     * 「1~10 显示圆满、11~20 显示精进」，并且**渐进披露**（精通层 10 级后才出现）——
+     * 所以这一条只在 `lvBonus > 0` 时画，不到 10 级的玩家看不到它。
+     *
+     * 这里**故意不画 Lv15 / Lv20 的里程碑**：那两条是精通层的质变点，方案里
+     * 已经拍板，但游戏里还没实装。在轨道上标出来 = 面板宣称了一件不存在的事，
+     * 正是本项目「面板文案与实装对齐」这条红线要拦的。等质变真做出来再加标记。
+     * 唯一标的是 20 级 —— 那是**有效等级上限**，与实装无关，是个事实。
+     */
+    const T = (typeof SKILL_TIERS !== 'undefined') ? SKILL_TIERS
+      : { baseMax: 10, cap: 20, labels: { mastery: '精进' } };
+    const mstSpan = Math.max(1, T.cap - T.baseMax);
+    const mstN = Math.max(0, Math.min(T.cap, lv) - T.baseMax);
+    const mstPips = Array.from({ length: mstSpan }, (_, i) => {
+      const at = T.baseMax + i + 1;
+      const cap0 = at === T.cap ? ' cap' : '';
+      const tip = cap0 ? at + ' 级 · 有效等级上限（含装备 / 词缀加成）' : at + ' 级';
+      return `<span class="sk-pip${i < mstN ? ' on' : ''}${cap0}" title="${tip}"></span>`;
+    }).join('');
+    const mstRow = lvBonus > 0
+      ? `<div class="sd-lv mst" title="1~${T.baseMax} 级为${T.labels.base}（投入技能点）；${T.baseMax + 1}~${T.cap} 级为${T.labels.mastery}层 —— ${T.labels.masteryTip}">
+          <div class="sk-pips">${mstPips}</div>
+          <span class="sk-lvt">${T.labels.mastery} <b>${lv}</b>/${T.cap}</span></div>`
+      : '';
+
     /* 标签：装备词缀按这些标签生效，所以摆在卡上（BD 的另一半） */
     const tg = (typeof skillTags === 'function') ? skillTags(id) : [];
     const tags = tg.length
@@ -734,8 +762,10 @@ Object.assign(UI, {
       ${tags}
       <div class="sd-desc">${desc}</div>
       <div class="sd-meta">消耗 ${Game.skillCost(sk)} · 冷却 ${Game.skillCd(sk).toFixed(1)}s · ${castTxt}${sk.castRange ? ' · ' + sk.castRange + ' 码' : ''}</div>
-      <div class="sd-lv"><div class="sk-pips">${pips}</div>
+      <div class="sd-lv" title="1~${T.baseMax} 级为${T.labels.base}：投入技能点，每级 1 点">
+        <div class="sk-pips">${pips}</div>
         <span class="sk-lvt">投入 <b>${inv}</b>/${SKILL_LV_MAX}${lvBonus ? ' · 装备 +' + lvBonus : ''}</span></div>
+      ${mstRow}
       ${branch}
       <div class="sd-hintline">${locked ? '领悟后可分配技能点' : '左键加 1 级 · 右键减 1 级 · 节点标记选择分支'}${inv > 1 ? ' · 已分配 ' + (inv - 1) + ' 点' : ''}</div>
       ${this.skActsHTML(id, 'active', inv, SKILL_LV_MAX, locked)}
