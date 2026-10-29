@@ -87,19 +87,22 @@ ok(/\$\{T\.labels\.mastery\} <b>\$\{lv\}<\/b>\/\$\{T\.cap\}/.test(uiSk),
 ok(/lvBonus > 0\s*\n?\s*\? `<div class="sd-lv mst"/.test(uiSk),
   '**渐进披露**：只有有效等级超过 10（lvBonus > 0）才画这一行');
 ok(/class="sd-lv mst"/.test(uiSk), '精进行有自己的类（与圆满那行区分）');
-ok(/class="sk-pip\$\{i < mstN \? ' on' : ''\}\$\{cap0\}"/.test(uiSk),
-  '格子的 on 状态按精进层数点，20 级那格另带 cap 类');
+ok(/class="sk-pip\$\{i < mstN \? ' on' : ''\}\$\{cls\}"/.test(uiSk),
+  '格子的 on 状态按精进层数点，15 / 20 两级另带标记类');
 ok(/有效等级上限/.test(uiSk), '20 级那格的提示说的是「有效等级上限」（事实，不是质变）');
+/* 取的是**字符串字面量**，不是注释里的词 —— 注释里写「Lv20 Capstone 还没实装」
+ * 是说明，不是面板文案；用裸词会把注释当成宣称（刀客 ⑤ 那一节踩过同一个坑）。 */
+ok(!/'最终精通'|"最终精通"|'Capstone'/.test(uiSk),
+  '面板文案里没有「最终精通 / Capstone」（Lv20 capstone 还没实装）');
 ok(/投入 <b>\$\{inv\}<\/b>\/\$\{SKILL_LV_MAX\}/.test(uiSk),
   '第一行仍写「投入 x/10」—— 投入封顶没被精通层改掉');
 ok(/T\.labels\.base/.test(uiSk) && /T\.labels\.masteryTip/.test(uiSk),
   '圆满 / 精进层说明都在面板上被消费（不是死数据）');
 
-/* 红线：不许在轨道上宣称还没实装的质变 */
-ok(!/sk-pip\.ms/.test(html) && !/class="sk-pip[^"]*' ms'/.test(uiSk),
-  '没有 15 级里程碑标记（精通小质变还没实装）');
-ok(!/精通小质变|最终精通/.test(uiSk),
-  '面板里没有「精通小质变 / 最终精通」字样（未实装的事不许写进面板）');
+/* 红线：轨道上的标记必须是**已兑现**的 */
+ok(/sk-pip\.ms\{/.test(html), '15 级那格有里程碑样式（精通三选一已实装）');
+ok(/at === T\.masteryAt \? ' ms'/.test(uiSk), '15 级里程碑按 masteryAt 取，不写死 15');
+ok(/精通层：三选一/.test(uiSk), '15 级那格的提示说的是「三选一」，不是含糊的「质变」');
 
 /* ============================================================
  * 四、样式与响应式
@@ -116,6 +119,54 @@ console.log('五、说明页');
 const uiJs = readSrc('src/ui.js');
 ok(/精进层/.test(uiJs), '说明页写了「精进层」');
 ok(/不占技能点/.test(uiJs) || /不占技能点/.test(uiSk), '「不占技能点」说清楚了');
+
+/* ============================================================
+ * 六、精通三选一（Lv15）
+ * ============================================================ */
+console.log('六、精通三选一');
+const skillMasteryOn = pick('skillMasteryOn');
+const skillMasteryIdx = pick('skillMasteryIdx');
+const skillMasteryOpt = pick('skillMasteryOpt');
+
+ok(Array.isArray(SKILL_TIERS.mastery) && SKILL_TIERS.mastery.length === 3,
+  '三条精通（烈 / 疾 / 省）', SKILL_TIERS.mastery && SKILL_TIERS.mastery.length);
+ok(SKILL_TIERS.mastery.every(o => o.mods && !o.beh),
+  '三条**只走 mods**，不新增 beh 键（精通层是数值强化，不是第二套机制）',
+  SKILL_TIERS.mastery.map(o => Object.keys(o)));
+ok(SKILL_TIERS.mastery.every(o => {
+  const k = Object.keys(o.mods);
+  return k.length === 1 && ['dmg', 'cd', 'cost'].indexOf(k[0]) >= 0;
+}), '三条各占一个公共乘区（dmg / cd / cost）',
+  SKILL_TIERS.mastery.map(o => o.mods));
+
+ok(skillMasteryOn(14) === false, '14 级还没开精通', skillMasteryOn(14));
+ok(skillMasteryOn(15) === true, '15 级开启', skillMasteryOn(15));
+ok(skillMasteryOn(20) === true, '20 级仍是开启状态');
+ok(skillMasteryOn(1) === false && skillMasteryOn(0) === false, '1 级 / 脏等级都不开');
+
+ok(skillMasteryIdx({}, 'whirl') === 0, '没选过默认第 0 条（不能出现「开了但没生效」）');
+ok(skillMasteryIdx({ whirl: { lv: 10, m: 2 } }, 'whirl') === 2, '存了 m=2 就读 2');
+ok(skillMasteryIdx({ whirl: { lv: 10, m: 9 } }, 'whirl') === 0, '脏值回落 0');
+ok(skillMasteryIdx({ whirl: { lv: 10, m: 'x' } }, 'whirl') === 0, '非数字回落 0');
+ok(skillMasteryOpt(0) && skillMasteryOpt(0).name === '烈', '第 0 条是「烈」');
+ok(skillMasteryOpt(9) === skillMasteryOpt(0), '越界回落第 0 条（不会返回 undefined）');
+
+/* ---- 接线：合并口、门槛口径、落库字段、面板入口 ---- */
+const gm = readSrc('src/game.js');
+ok(/tierMods,\s*\n\s*this\.skillMasteryMods\(id\)\);/.test(gm),
+  '精通并进 effSkillMods 的同一个 merge（面板 / 战斗 / 召唤自动同口径）');
+ok(/skillMasteryMods\(id\) \{[\s\S]{0,220}skillMasteryOn\(this\.skillLevel\(id\)\)/.test(gm),
+  '门槛读 **skillLevel（有效等级）**，不是已投等级 —— 否则词条层永远开不了');
+ok(/e\.m = idx;/.test(gm), '选择落在 state.skills[id].m（与 lv / f 同一张表）');
+ok(/_summonMods\(skillId\) \{[\s\S]{0,160}this\.effSkillMods\(skillId\)/.test(gm),
+  '召唤的 dmgMul 也是从 effSkillMods 折的 —— 精通「烈」对灵兽同样生效');
+ok(/data-mset="\$\{id\}:\$\{i\}"/.test(uiSk), '面板上三条可点（data-mset）');
+ok(/sb-mlist/.test(uiSk), '精通行有独立的列表类（不与取向 / 变体的委托撞车）');
+ok(/const mstOn = \(typeof skillMasteryOn === 'function'\) && skillMasteryOn\(lv\)/.test(uiSk),
+  '面板用同一个 skillMasteryOn 判门槛（不自己写 lv >= 15）');
+ok(/lvBonus > 0 && mstItems/.test(uiSk), '精通块与精进轨道同一条渐进披露线（> 10 级才出现）');
+ok(/setSkillMastery\(parts\[0\], parseInt\(parts\[1\], 10\)\)/.test(uiSk),
+  '点击走 Game.setSkillMastery（失败会 toast，不静默吞掉）');
 
 console.log('\n' + (fail === 0 ? '✓' : '✗') + ' P2c 契约：' + pass + ' 通过 / ' + fail + ' 失败');
 process.exit(fail === 0 ? 0 : 1);

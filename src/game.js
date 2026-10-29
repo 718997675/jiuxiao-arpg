@@ -3005,10 +3005,13 @@ const Game = {
      * 所以不会出现「卡上写三发、打出来一发」。 */
     const tierMods = (typeof skillTierMods === 'function')
       ? skillTierMods(id, this.skillLevel(id)) : null;
+    /* [P2c] 精通层（Lv15 起的三选一）：与上面四层同一个 merge、同一条加法通道。
+     * 放在最后只是为了读起来顺 —— mergeSkillMods 是纯加法，顺序不影响结果。 */
     return mergeSkillMods(this.skillMod(id),
       (typeof this.branchMods === 'function' ? this.branchMods(id) : null),
       (typeof this.formMods === 'function' ? this.formMods(id) : null),
-      tierMods);
+      tierMods,
+      this.skillMasteryMods(id));
   },
 
   /* ============================================================
@@ -3204,6 +3207,49 @@ const Game = {
     const a = this.elemAuraState();
     const nm = this.elemAuraKind().name;
     return a.t > 0 ? nm + ' · 剩余 ' + Math.ceil(a.t) + ' 秒' : nm + ' · 未开启';
+  },
+
+  /* [P2c] 精通层三选一。
+   *
+   * 门槛看**有效等级**（skillLevel，含装备 / 词缀 / 传世的 +N），不看投入 ——
+   * 11~20 是词条层，玩家点不出来，按投入算这一层永远开不了。
+   *
+   * 强度走 mods 通道（dmg / cd / cost），与装备 / 分支 / 台阶**同一个合并口**
+   * （effSkillMods）。所以面板预览、castSkill、召唤的 dmgMul 全都自动同口径，
+   * 不需要在每个 case 里再补一次。 */
+  skillMastery(id) {
+    return (typeof skillMasteryIdx === 'function') ? skillMasteryIdx(this.skillState(), id) : 0;
+  },
+
+  /* 已开启时返回那一条的 mods，否则 null（没到 15 级不该有加成） */
+  skillMasteryMods(id) {
+    if (typeof skillMasteryOn !== 'function') return null;
+    if (!skillMasteryOn(this.skillLevel(id))) return null;
+    const opt = (typeof skillMasteryOpt === 'function') ? skillMasteryOpt(this.skillMastery(id)) : null;
+    return opt ? opt.mods : null;
+  },
+
+  /* 选 / 换精通。免费、随时可换 —— 与变体同一条规矩（换打法不该收费）。
+   * 但**只有开启后**才能选：没到 15 级就点，等于让玩家提前把选择用掉。 */
+  setSkillMastery(id, idx) {
+    if (!SKILLS[id]) return { ok: false, msg: '技能不存在' };
+    if (idx !== 0 && idx !== 1 && idx !== 2) return { ok: false, msg: '精通条目不存在' };
+    if (!this.skillUnlocked(id)) return { ok: false, msg: '尚未领悟' };
+    const lv = this.skillLevel(id);
+    if (!(typeof skillMasteryOn === 'function' && skillMasteryOn(lv))) {
+      return {
+        ok: false,
+        msg: '「' + SKILLS[id].name + '」等阶 ' + lv + '，需 ' + SKILL_TIERS.masteryAt
+          + ' 级方可精通（11~20 级来自装备 / 词缀，不占技能点）'
+      };
+    }
+    const opt = skillMasteryOpt(idx);
+    if (!opt) return { ok: false, msg: '精通条目不存在' };
+    const sk = this.skillState();
+    const e = sk[id] || (sk[id] = { lv: 1, v: 0 });
+    e.m = idx;
+    if (typeof this.recalc === 'function') this.recalc();
+    return { ok: true, msg: '精通 · ' + opt.name };
   },
 
   /* 技能落点：ground / enemy 自动夹在施法距离内，dir 用当前朝向，self 以自身为中心 */

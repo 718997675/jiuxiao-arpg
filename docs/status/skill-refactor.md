@@ -39,7 +39,7 @@ P1 起才动 `SKILL_BAR_SLOTS` 与面板的三列树。
 | P1d | 面板**视觉**重排：一条线一列、列内按 `reqLv` 递增，被动小一圈挂在主动右边，只留同线淡引导线；手机上三条线分页签、一页一列 | ✅ | `ui-skills.js`（`skTreeLayout` / `skTreeHTML` / `renderSkillTreeDOM` / `skTreeTabsHTML`）、`index.html`（SKG + 被动腰围）、`ui.js`（说明页「技能树布局」） | `dev/probe-skill-p1d.js` 36 |
 | P2a | **等级上限 5 → 10** + 分段曲线真的进战斗（`skillLvMul` 取代旧「每级固定 8%」）+ 点数供给 等级 × 1.5；面板 10 格 / 满级金环 / 洗点全额退回 | ✅ | `data-skills.js`（`SKILL_LV_MAX` / `SKILL_POINT_RATE` / `skillPointPool`）、`data-skill-tree.js`（`lvMax` 同源）、`game.js`（`castSkill` / `skillPoints`）、`ui-skills.js`、`ui.js`、`index.html` | `dev/test-skill-p2.js` 41 · `dev/probe-skill-p2.js` 26 |
 | P2b | **数量 / 形态台阶接进 `castSkill`**。①数量：默认 Lv3 / Lv7 各 +1，接 `smod.count`（13 个技能消费），第 n 发 ×0.85^n 防三倍伤害；**发数节奏可按技能覆盖**（`SKILL_COUNT_TIER`，法师 ② 在 Lv5 / Lv7）。②进化：新建 `SKILL_TIER_EVO`（挂**技能 id** 不挂技能位），合并顺序 **台阶最前 → 精研 / 取向 / 变体覆盖同名键**（花点的选择必须盖过等级送的）。**15 个位 / 45 条全部接完**：刀客①旋风斩、法师①火球、道士①符箓、道士②毒雾、刀客②地裂、刀客③剑阵、刀客④血怒、道士④回春、法师③火墙、法师④护盾、道士③太极、法师②陨石（3 溅射 / 5 双陨 / 7 三连落）、道士⑤召灵兽（三只各召各的）、**刀客⑤兵形（刀式状态机 + 刃势 + 断岳斩）**、**法师⑤元素法相（净新增技能：法相窗口 + 换相 + 命中附加 + 收窗新星 + 免控）** —— 细则见下面「P2b 收口要点」。**✅ 15/15 个位、45/45 条：P2b 收口** | ✅ | `data-skills.js`（`SKILL_TIER_EVO` / `SKILL_COUNT_TIER` / `skillTierEvo` / `skillTierMods` / `skillTierBeh`）、`skill-beh.js`（`branchBeh` 台阶排最前 + `killProlong` / `lifesteal` / `ccImmune` / `healOnCast` / `tierDur` / `splash` / `stanceUnlock` / `edgeFinisher` / `edgeKeep` / `edgeUltimate`）、`game.js`（autoTarget / rageMul / firePatch / swordField / applyPlayerSlow / ccImmuneNow / behTierNova / shieldT+sdur / 符阵 dur+tierDur / meteor·blizzard·judgement·starfall 多发 / spawnTierField 落点领域 / **bladeXxx 兵形状态机**）、`ui.js`（说明页读数现算 + 动作条刀式角标）、`ui-skills.js` | `dev/test-skill-p2b.js` 878 · `dev/probe-skill-p2b.js` 282 |
-| P2c | **精通层 11~20**（不新增形态）：①有效等级 20 与分段曲线 P2a 已接；②**精进轨道**（面板 11~20 十格 + 「精进 x/20」+ 渐进披露 + 20 级上限标记）**已完成**；③Lv15 精通三选一模板、④Lv20 最终精通、⑤光效随等级变亮 —— **未做** | 🟡 | `ui-skills.js`（`skCardHTML` 的 mstRow）、`index.html`（`.sd-lv.mst` / `.sk-pip.cap`） | `dev/test-skill-p2c.js` 33 · `dev/probe-skill-p2c.js` 19 |
+| P2c | **精通层 11~20**（不新增形态）：①有效等级 20 与分段曲线 P2a 已接；②**精进轨道**（11~20 十格 + 「精进 x/20」+ 渐进披露 + 15/20 里程碑）；③**Lv15 精通三选一**（烈 / 疾 / 省，走 mods，门槛看有效等级，存 `skills[id].m`）—— 已完成；④Lv20 最终精通（capstone）、⑤光效随等级变亮 —— **未做** | 🟡 | `data-skills.js`（`SKILL_TIERS.mastery` / `skillMasteryOn` / `skillMasteryIdx` / `skillMasteryOpt`）、`game.js`（`skillMastery` / `skillMasteryMods` / `setSkillMastery` / `effSkillMods` 第五层）、`ui-skills.js`（mstRow + 精通行）、`index.html` | `dev/test-skill-p2c.js` 57 · `dev/probe-skill-p2c.js` 35 |
 | P3 | 元素注入 + 反应表：伤害管线支持双元素、特效混色、词缀口径 | ⬜ | 战斗 + 词缀 + `src/fx.js` | — |
 | P4 | 三职业独立 ⑤ 号位：刀客兵形/刃势、法师法相、道士召唤 | ⬜ | `src/fx.js`、`src/charforge.js` | — |
 | P5 | 形态进化表现：5 槽 × 3 职业 × 3 段 = 45 套 | ⬜ | `src/fx.js`、模型 | — |
@@ -285,7 +285,7 @@ P1 起才动 `SKILL_BAR_SLOTS` 与面板的三列树。
 `SKILL_TIER_EVO` 的 `label` **必须逐字相同**（契约第七节会红），改不动就改文案 ——
 **点了不生效比不写更糟**。
 
-## P2c 待拍板：Lv15 精通「统一三选一」到底选哪三条
+## P2c 已拍板：Lv15 精通「统一三选一」= 烈 / 疾 / 省（原待拍板记录保留）
 
 方案 §5.2 拍板了「**统一模板**（额外投射物概率 / 冷却返还 / 范围扩大三选一），
 不做每技能独立 capstone」。落到这个引擎上，那三条**有一半技能是空选项**：
@@ -300,7 +300,8 @@ P1 起才动 `SKILL_BAR_SLOTS` 与面板的三列树。
 （增益那句注释写着「增益类技能按 spow 放大」），但 `case 'summon'` **不吃 `spow`** ——
 召唤走的是 `summonDmg` 属性。所以「伤害」这一条在召唤位是空的。
 
-三条路线：
+**已选 A 路线**（2026-10-29 用户「继续做」= 按推荐执行），实现见下面的变更记录。
+三条路线的原始权衡保留在这里，将来要改先看它：
 
 - **A. 三条纯乘区（推荐）**：`烈` 伤害 +22% / `疾` 冷却 −18% / `省` 消耗 −35%。
   全部走 `effSkillMods` 已有的通道，零新 beh 键、零新钩子。
@@ -918,3 +919,45 @@ p1d 36 · p2 26 · arch 29。
 **没做的三件（P2c 剩下的）**：Lv15 精通三选一模板 / Lv20 最终精通 / 光效随等级变亮。
 前两件是同一个设计问题（统一模板要对「增益 / 召唤 / 近战 / 投射物」四类都成立，
 否则一半技能点到空选项），**要先拍板再动手**，见下面「P2c 待拍板」。
+
+### 2026-10-29 · P2c Lv15 精通三选一（烈 / 疾 / 省）
+
+精进轨道画出来之后，「15 级那个点是什么」就没法再躲了。方案 §5.2 的原话是
+「额外投射物概率 / 冷却返还 / 范围扩大」，但落到这个引擎上**一半技能是空选项**：
+`case 'summon'` 不吃 `spow`、增益技能既没有「发」也没有「范围」。所以按台账
+「P2c 待拍板」里的 **A 路线**做：三条都走**公共乘区**。
+
+| 条目 | 效果 | 通道 | 谁消费 |
+|---|---|---|---|
+| **烈** | 伤害 / 增益 / 灵兽效果 +22% | `dmg` | `spow`（伤害、增益数值）、`_summonMods` → 灵兽 `dmgMul` |
+| **疾** | 冷却 −18% | `cd` | `castSkill` 的 `skillCd(sk) * (1 - cd/100)` |
+| **省** | 消耗 −35% | `cost` | `castSkill` 的 `skillCost(sk) * (1 - cost/100)` |
+
+- **只走 mods，不新增 beh 键**：精通层是「数值强化」，不是第二套机制（方案 §5.2 拍板
+  「不再新增形态」）。契约里钉了「三条都不许有 beh」。
+- **门槛看有效等级，不看投入等级**：11~20 是词条层，玩家点不出来。按投入算的话
+  这一层永远开不了 —— 这是这一位最容易写错的一行（`skillMasteryOn(this.skillLevel(id))`）。
+- **默认第 0 条**（烈）：没选过也必须有一个，否则「有效等级够了但什么都没生效」。
+  脏值（`m: 9` / `m: 'x'`）一律回落 0，与 `skillFormIdx` 同一套写法。
+- **存储 `state.skills[id].m`**：与 `lv` / `v` / `f` 同一张表。`save.js` 的 `_obj(d.skills)`
+  是整块保留，所以**不用动 `normalizeDoc`** —— 这一条很关键，存档是三条线争用的地方
+  （卡点 2），能不加白名单就不加。
+- **免费、随时可换**（与变体同一条规矩：换打法不该收费）。没到 15 级时三条**照常显示
+  但点不动**，提示写「还差 N 级」—— 直接藏起来的话，玩家攒到 15 级才第一次知道有这东西。
+- **精进轨道补上 15 级里程碑**：上一版故意留空，就是因为质变还没实装。现在它真有了，
+  才允许标；20 级那格仍然只写「有效等级上限」（capstone 还没做）。
+
+**验证**：`test-skill-p2c` 33→**57 通过 / 0 失败**（三条只走 mods、门槛口径、脏值回落、
+`effSkillMods` 第五层接线、召唤也吃得到、面板入口与渐进披露）；`probe-skill-p2c`
+19→**35 通过 / 0 失败**（10 级没有块 / 14 级三条点不动且提示还差 1 级 / 15 级默认「烈」/
+**真的放一次技能**量冷却与消耗 / 切换干净 / 召唤 `dmgMul` 变高）。
+其余全绿：p0 250 · p1 52 · p1c 363 · p2 41 · p2b 878 · items 17 · save 79 ·
+p2b 探针 282 · p2 26 · p1d 36 · arch 29 · bar5 30 · p1c 23 · s1 ✓。
+
+**踩坑**：① `skillCd()` / `skillCost()` 返回的是**基础值**，冷却与消耗的修正是在
+`castSkill` 里乘的 —— 探针读这两个函数会得出「切了精通但没变」的假结论，
+必须真的 `castSkill` 一次再读 `cooldowns[id]` 与扣掉的灵力；
+② 断言「cd 差值 == 18」时，烈那条根本没有 `cd` 键（`undefined`），`18 - undefined = NaN`，
+两边都要 `|| 0`；③ **probe-skill-p2b 不能并发跑** —— 连跑两次（两个 headless Chrome 抢 CPU）
+会让里面一批 `setTimeout` 类断言随机红（定身 2 秒、三段崩击、火墙收尾爆燃都中过），
+单独跑稳定 282/0。顺手把「摧城清刃势」的读数挪进同步窗口，它本来就该在施法瞬间读。

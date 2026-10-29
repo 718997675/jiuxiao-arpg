@@ -792,7 +792,23 @@ const SKILL_TIERS = {
     { from: 16, to: 20, pct: 2 }
   ],
   /* UI 标签：1~10 圆满，11~20 精进 */
-  labels: { base: '圆满', mastery: '精进', masteryTip: '来自装备 / 词缀，不占技能点' }
+  labels: { base: '圆满', mastery: '精进', masteryTip: '来自装备 / 词缀，不占技能点' },
+
+  /* 精通层三选一（Lv15 起，统一模板，不新增形态）。
+   *
+   * 方案 §5.2 的原话是「额外投射物概率 / 冷却返还 / 范围扩大」，但落到这个引擎上
+   * 那三条有一半技能是空选项：`case 'summon'` 不吃 spow（走 summonDmg）、
+   * 增益技能既没有「发」也没有「范围」。照抄等于让玩家点到空选项。
+   *
+   * 改选 dmg / cd / cost 三条 —— 它们分别被 spow（伤害 / 增益数值）、
+   * castSkill 的冷却、cost 消费，而且 `_summonMods` 本来就是从
+   * `effSkillMods(id).dmg` 折成灵兽的 dmgMul，所以召唤位也吃得到。
+   * 三条都只走 mods，不新增 beh 键 —— 精通层是「数值强化」，不是第二套机制。 */
+  mastery: [
+    { name: '烈', desc: '伤害 / 增益 / 灵兽效果 +22%', mods: { dmg: 22 } },
+    { name: '疾', desc: '冷却 −18%', mods: { cd: 18 } },
+    { name: '省', desc: '消耗 −35%', mods: { cost: 35 } }
+  ]
 };
 
 /* 某等级的总伤害倍率（1 级 = 1.0）。战斗与面板共用同一个函数（P2 接线）。 */
@@ -813,6 +829,36 @@ function skillLvMul(lv) {
 function skillTierStep(lv) {
   const n = Math.round(Number(lv) || 0);
   return SKILL_TIERS.steps.find(s => s.lv === n) || null;
+}
+
+/* ============================================================
+ * 精通层三选一（P2c · Lv15 起）
+ *
+ * 和「取向 / 变体」长得像，但门槛完全不同：那两条看**投入等级**（花点），
+ * 这一条看**有效等级**（含装备 / 词缀加成）。理由很直接 —— 11~20 是词条层，
+ * 玩家点不出来，只能靠装备堆上去；门槛若按投入算，这一层永远开不了。
+ *
+ * 存在 `state.skills[id].m`（0 烈 / 1 疾 / 2 省），与变体的 `f`、等级的 `lv`
+ * 同一张表。**默认 0**：没选过也有一个，不能出现「有效等级够了但什么都没生效」。
+ * ============================================================ */
+
+/* 精通层是否已开启 */
+function skillMasteryOn(lv) {
+  const n = Math.round(Number(lv) || 1);
+  return n >= SKILL_TIERS.masteryAt;
+}
+
+/* 某个技能选的是哪一条（脏值回落 0，与 skillFormIdx 同一套写法） */
+function skillMasteryIdx(skillsState, id) {
+  const e = skillsState && skillsState[id];
+  const m = e && e.m;
+  return (m === 0 || m === 1 || m === 2) ? m : 0;
+}
+
+/* 第 idx 条精通（越界回落第 0 条） */
+function skillMasteryOpt(idx) {
+  const arr = SKILL_TIERS.mastery || [];
+  return arr[idx] || arr[0] || null;
 }
 
 /* ============================================================

@@ -2101,9 +2101,13 @@ const ok = (c, m, d) => {
     Game.explodeAt = (pos, rad) => { waves.push(rad); };
     Game.cooldowns = {}; Game.state.mp = 9999;
     Game.castSkill('avatar');
+    /* 刃势在施法那一刻就清零了 —— 必须在同步窗口内读。
+     * 等 1.5 秒再读等于赌「这 1.5 秒里游戏循环没动过 blade」，
+     * 实测偶发会读到 4（别的路径补了一格），把一条好断言变成随机红。 */
+    const triMask = Game.blade.mask;
     await wait(1500);
     Game.explodeAt = oldEx;
-    out.tri = { n: waves.length, rad: waves[0] || 0, mask: Game.blade.mask };
+    out.tri = { n: waves.length, rad: waves[0] || 0, mask: triMask };
 
     /* --- 八、摧城式「无视 30% 护甲 + 对护甲目标 +20%」真的进伤害 --- */
     reset(7);

@@ -624,20 +624,22 @@ Object.assign(UI, {
      * 「1~10 显示圆满、11~20 显示精进」，并且**渐进披露**（精通层 10 级后才出现）——
      * 所以这一条只在 `lvBonus > 0` 时画，不到 10 级的玩家看不到它。
      *
-     * 这里**故意不画 Lv15 / Lv20 的里程碑**：那两条是精通层的质变点，方案里
-     * 已经拍板，但游戏里还没实装。在轨道上标出来 = 面板宣称了一件不存在的事，
-     * 正是本项目「面板文案与实装对齐」这条红线要拦的。等质变真做出来再加标记。
-     * 唯一标的是 20 级 —— 那是**有效等级上限**，与实装无关，是个事实。
+     * 这里只标两个**已经兑现**的点：
+     *   15 级 —— 精通层三选一（真做了，见下面的 mstBlock）
+     *   20 级 —— 有效等级上限（事实，与「质变」无关）
+     * 方案的 Lv20「最终精通（Capstone）」还没实装，所以轨道上不写那四个字 ——
+     * 面板宣称一件不存在的事，正是本项目「文案与实装对齐」这条红线要拦的。
      */
     const T = (typeof SKILL_TIERS !== 'undefined') ? SKILL_TIERS
-      : { baseMax: 10, cap: 20, labels: { mastery: '精进' } };
+      : { baseMax: 10, cap: 20, masteryAt: 15, labels: { mastery: '精进' } };
     const mstSpan = Math.max(1, T.cap - T.baseMax);
     const mstN = Math.max(0, Math.min(T.cap, lv) - T.baseMax);
     const mstPips = Array.from({ length: mstSpan }, (_, i) => {
       const at = T.baseMax + i + 1;
-      const cap0 = at === T.cap ? ' cap' : '';
-      const tip = cap0 ? at + ' 级 · 有效等级上限（含装备 / 词缀加成）' : at + ' 级';
-      return `<span class="sk-pip${i < mstN ? ' on' : ''}${cap0}" title="${tip}"></span>`;
+      const cls = at === T.masteryAt ? ' ms' : (at === T.cap ? ' cap' : '');
+      const tip = at === T.masteryAt ? at + ' 级 · 精通层：三选一（烈 / 疾 / 省）'
+        : at === T.cap ? at + ' 级 · 有效等级上限（含装备 / 词缀加成）' : at + ' 级';
+      return `<span class="sk-pip${i < mstN ? ' on' : ''}${cls}" title="${tip}"></span>`;
     }).join('');
     const mstRow = lvBonus > 0
       ? `<div class="sd-lv mst" title="1~${T.baseMax} 级为${T.labels.base}（投入技能点）；${T.baseMax + 1}~${T.cap} 级为${T.labels.mastery}层 —— ${T.labels.masteryTip}">
@@ -747,7 +749,40 @@ Object.assign(UI, {
       <em class="sb-vhint">${view && view.kind === 'form'
         ? '三选一 · 可随时切换 · 不消耗技能点'
         : '三选一 · 可随时切换 · 不消耗技能点'}</em></div>`;
-    const branch = `<div class="sd-branch">${rows}
+
+    /* [P2c] 精通层三选一（Lv15 起）。
+     *
+     * 与「取向 / 变体」长得像，但门槛看的是**有效等级**（含装备 / 词缀），
+     * 不是投入等级 —— 11~20 是词条层，玩家点不出来。
+     *
+     * 三条都走 mods（dmg / cd / cost），不新增 beh 键：精通层是「数值强化」，
+     * 不是第二套机制（方案 §5.2 拍板「不再新增形态」）。
+     *
+     * 渐进披露与精进轨道同一条线：只在有效等级 > 10 时出现。
+     * 未到 15 级时三条都在、但点不动并写明还差几级 —— 直接藏起来的话，
+     * 玩家攒到 15 级才第一次知道有这么个东西。 */
+    const mstOn = (typeof skillMasteryOn === 'function') && skillMasteryOn(lv);
+    const mstIdx = (typeof Game.skillMastery === 'function') ? Game.skillMastery(id) : 0;
+    const mstDefs = (typeof SKILL_TIERS !== 'undefined' && SKILL_TIERS.mastery) || [];
+    const mstItems = mstDefs.map((o, i) => {
+      const on = mstOn && i === mstIdx;
+      const dis = locked || !mstOn;
+      const tip = !mstOn
+        ? '等阶 ' + lv + '：需 ' + T.masteryAt + ' 级方可精通（还差 ' + Math.max(0, T.masteryAt - lv) + ' 级）'
+        : on ? '当前精通' : '切换至「' + o.name + '」（免费，随时可换）';
+      return `<button class="sb-v${on ? ' on' : ''}${dis ? ' na' : ''}" data-mset="${id}:${i}"
+        aria-pressed="${on ? 'true' : 'false'}" title="${tip}" ${dis ? 'disabled' : ''}>
+        <b>${o.name}</b><em>${o.desc}</em>${on ? '<i class="sd-tag on">当前</i>'
+          : (!mstOn ? `<i class="sd-tag">${T.masteryAt} 级</i>` : '')}</button>`;
+    }).join('');
+    const mstBlock = (lvBonus > 0 && mstItems)
+      ? `<div class="sb-vwrap"><span class="sb-k">精通</span>
+          <div class="sb-vlist sb-mlist">${mstItems}</div>
+          <em class="sb-vhint">${mstOn
+            ? '三选一 · 可随时切换 · 不消耗技能点'
+            : '有效等级达到 ' + T.masteryAt + ' 级开启（11~20 级来自装备 / 词缀）'}</em></div>`
+      : '';
+    const branch = `<div class="sd-branch">${rows}${mstBlock}
         <div class="dim2">${inv < at
           ? '投入等级 ' + inv + ' · 达到 ' + at + ' 级自动获得精研并开放取向'
             + (lvBonus ? '（装备的 +' + lvBonus + ' 级不算门槛）' : '')
@@ -1411,6 +1446,19 @@ Object.assign(UI, {
       if (this._panMoved) return;
       const parts = el.dataset.pset.split(':');
       this.skillPickBranch(parts[0], parseInt(parts[1], 10));
+    });
+
+    /* [P2c] 精通层三条：免费、随时可换，所以不需要「草稿 → 确认」。
+     * 没到 15 级时按钮是 disabled，走不到这里；万一走到了（老档 / 并发改等级），
+     * setSkillMastery 自己会返回原因，照原样 toast 出去，不静默吞掉。 */
+    document.addEventListener('click', e => {
+      const el = (e.target && e.target.closest) ? e.target.closest('#skList .sb-mlist [data-mset]') : null;
+      if (!el || el.disabled) return;
+      if (this._panMoved) return;
+      const parts = el.dataset.mset.split(':');
+      const r = Game.setSkillMastery(parts[0], parseInt(parts[1], 10));
+      if (r && r.ok) this.renderSkillPanel();
+      else if (r && r.msg) UI.toast(r.msg, 'bad');
     });
 
     /* 悬停预览 / 离开树回位：委托在 document 上（mouseover 会冒泡）。

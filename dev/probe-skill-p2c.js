@@ -160,7 +160,115 @@ const ok = (c, m, d) => { if (c) { pass++; console.log('  ✓', m); } else { fai
     ok(r.inside, '精进轨道没有顶出卡片右边', r);
   }
 
-  console.log('六、控制台');
+  console.log('六、精通三选一（Lv15）');
+  {
+    /* 上一节把视口压到 390 了，这一节要读卡上的三行按钮 —— 先回到桌面宽度，
+     * 免得量到手机分页签那一套布局 */
+    await p.setViewport({ width: 1440, height: 900, deviceScaleFactor: 2 });
+    await wait(300);
+    /* 10 级：连块都不该有 */
+    const r10 = await setLv(10);
+    const none = await p.evaluate(() => !document.querySelector('#skList .sb-mlist'));
+    ok(none, '10 级看不到精通块（渐进披露）', r10);
+
+    /* 14 级：块在，但三条点不动 */
+    await setLv(14);
+    const r14 = await p.evaluate(() => {
+      const btns = Array.from(document.querySelectorAll('#skList .sb-mlist [data-mset]'));
+      return {
+        n: btns.length,
+        dis: btns.filter(b => b.disabled).length,
+        tip: btns[0] ? btns[0].getAttribute('title') : '',
+        hint: (document.querySelector('#skList .sb-mlist') || {}).parentElement
+          ? document.querySelector('#skList .sb-mlist').parentElement.querySelector('.sb-vhint').textContent : ''
+      };
+    });
+    ok(r14.n === 3, '14 级已经能看到三条（不是藏到 15 级才出现）', r14);
+    ok(r14.dis === 3, '14 级三条全部点不动', r14);
+    ok(/还差\s*1\s*级/.test(r14.tip), '提示写清还差 1 级', r14.tip);
+    ok(/15\s*级开启/.test(r14.hint), '说明行写「15 级开启」', r14.hint);
+
+    /* 15 级：三条可点，默认「烈」 */
+    await setLv(15);
+    const r15 = await p.evaluate(() => {
+      const btns = Array.from(document.querySelectorAll('#skList .sb-mlist [data-mset]'));
+      return {
+        n: btns.length,
+        dis: btns.filter(b => b.disabled).length,
+        on: btns.filter(b => b.classList.contains('on')).map(b => (b.querySelector('b') || {}).textContent || ''),
+        names: btns.map(b => (b.querySelector('b') || {}).textContent || '')
+      };
+    });
+    ok(r15.n === 3 && r15.dis === 0, '15 级三条都能点', r15);
+    ok(r15.on.join(',') === '烈', '默认选中的是第 0 条「烈」', r15);
+    ok(r15.names.join('/') === '烈/疾/省', '三条名字与数据层一致', r15.names);
+
+    /* 切到「疾」：**真的放一次**，量冷却。skillCd() 只是基础冷却 ——
+     * 冷却修正是在 castSkill 里乘的（`skillCd(sk) * (1 - cd/100)`），
+     * 所以只能读 cooldowns[id]，读 skillCd 会得到「没变」的假结论。 */
+    const cdChk = await p.evaluate(async () => {
+      const id = 'whirl';
+      const castOnce = async (i) => {
+        document.querySelectorAll('#skList .sb-mlist [data-mset]')[i].click();
+        await new Promise(r => setTimeout(r, 150));
+        Game.cooldowns = {};
+        Game.state.mp = Math.floor(Game.state.stats.mpMax * 0.6);
+        const mp0 = Game.state.mp;
+        Game.castSkill(id);
+        return { cd: Game.cooldowns[id], spent: mp0 - Game.state.mp,
+          mods: Game.effSkillMods(id), picked: Game.skillMastery(id),
+          stored: (Game.skillState()[id] || {}).m };
+      };
+      const a = await castOnce(0);   // 烈
+      const b = await castOnce(1);   // 疾
+      return { lie: a, ji: b };
+    });
+    ok((cdChk.ji.mods.cd || 0) - (cdChk.lie.mods.cd || 0) === 18,
+      '「疾」真的进了 effSkillMods（cd +18）', cdChk.ji.mods);
+    ok(cdChk.ji.cd < cdChk.lie.cd, '放出来的冷却真的变短了', { 烈: cdChk.lie.cd, 疾: cdChk.ji.cd });
+    ok(cdChk.ji.picked === 1 && cdChk.ji.stored === 1,
+      '选择落在 state.skills[id].m（存档字段）', cdChk.ji);
+
+    /* 切到「省」：同样放一次，量真的扣了多少灵力 */
+    const rest = await p.evaluate(async () => {
+      const id = 'whirl';
+      const castOnce = async (i) => {
+        document.querySelectorAll('#skList .sb-mlist [data-mset]')[i].click();
+        await new Promise(r => setTimeout(r, 150));
+        Game.cooldowns = {};
+        Game.state.mp = Math.floor(Game.state.stats.mpMax * 0.6);
+        const mp0 = Game.state.mp;
+        Game.castSkill(id);
+        return { spent: mp0 - Game.state.mp, mods: Game.effSkillMods(id), picked: Game.skillMastery(id) };
+      };
+      const lie = await castOnce(0);
+      const sheng = await castOnce(2);
+      const back = await castOnce(0);
+      return { lie: lie, sheng: sheng, back: back };
+    });
+    ok(rest.sheng.spent < rest.lie.spent, '「省」放出来的消耗真的变低',
+      { 烈: rest.lie.spent, 省: rest.sheng.spent });
+    ok(rest.lie.mods.dmg - rest.sheng.mods.dmg === 22,
+      '「烈」比「省」多 22 点伤害修正（两条不会同时生效）',
+      { 烈: rest.lie.mods.dmg, 省: rest.sheng.mods.dmg });
+    ok(rest.back.spent === rest.lie.spent, '换回「烈」后消耗回到原值（切换是干净的）', rest.back);
+    ok(rest.back.picked === 0, '换回来真的写回 0', rest.back.picked);
+
+    /* 召唤位：_summonMods 也是从 effSkillMods 折的，所以「烈」对灵兽同样生效 */
+    const sum = await p.evaluate(async () => {
+      Game.state.skills = { summon: { lv: 10, m: 0 } };
+      Game.skillLevel = () => 15;
+      Game.recalc();
+      const on = Game._summonMods('summon');
+      Game.state.skills.summon.m = 1;   // 疾：没有 dmg
+      Game.recalc();
+      const off = Game._summonMods('summon');
+      return { on: on.dmgMul, off: off.dmgMul };
+    });
+    ok(sum.on > sum.off, '「烈」对召唤位同样生效（dmgMul 真的变高）', sum);
+  }
+
+  console.log('七、控制台');
   ok(errs.length === 0, '全程零控制台报错', errs.slice(0, 3));
 
   console.log('\n' + (fail === 0 ? '✓' : '✗') + ' P2c 探针：' + pass + ' 通过 / ' + fail + ' 失败');
