@@ -970,6 +970,157 @@ console.log('十、刀客 ⑤ 兵形');
     '没领悟剑神降世就没有刀式加成（26 级之前白拿 +15% 伤害是 bug）');
 }
 
+/* ============================================================
+ * 十一、法师 ⑤ 元素法相
+ *
+ * 这一位与刀客 ⑤ 是**同构的两副面孔**：都不是「按一下打一发」，而是开一个
+ * 窗口，窗口里改的是「其他技能长什么样」。区别在于它的技能本体是**净新增**
+ * （`isNew: true` 在这一位上是真的从零写，而不是「还没做」）。
+ *
+ * 所以这一节查四件事：
+ *   1. 技能本体真的存在且是「不做伤害的窗口」（mult 0 / 全抗增益 / 自身施法）
+ *   2. 五档台阶逐档对账（label 与 slot.tiers 逐字相同、beh 键各归各位）
+ *   3. 三套机制的接线点都在：开窗换相 / 命中附加 / 收窗新星
+ *   4. 免控走的是**现成的** ccImmune 通道，不是另开一套无敌帧
+ * ============================================================ */
+console.log('十一、法师 ⑤ 元素法相');
+{
+  const s5 = skillArchSlot('mage', 5);
+  ok(s5.title === '元素法相', '⑤ 位标题是元素法相', s5.title);
+  ok(s5.inherit.join(',') === 'elementavatar', '⑤ 位只继承 elementavatar（净新增，不是改造老技能）', s5.inherit);
+  ok(s5.unit === false, '⑤ 位明确不是召唤单位（拍板 #6）');
+  ok(s5.isNew === true, 'isNew 仍为 true —— 意思是「没有老技能可以改造成它」');
+  ok(s5.aura && s5.aura.mainElemOnly === true, '只强化主元素（不召单位）');
+  ok(!!s5.aura && s5.aura.durMin === 10 && s5.aura.durMax === 15, '面板读数 10~15 秒', s5.aura);
+
+  /* 技能本体 */
+  const sk5 = SKILLS.elementavatar;
+  ok(!!sk5, '技能本体 elementavatar 存在');
+  ok(sk5 && sk5.cls === 'mage' && sk5.tree === '雷霆', '挂在法师 · 雷霆线', sk5 && sk5.tree);
+  ok(sk5 && sk5.mult === 0, '法相本体不造成伤害（mult 0）—— 伤害在台阶 Lv9 的新星里', sk5 && sk5.mult);
+  ok(sk5 && sk5.cast === 'self' && sk5.type === 'ultimate', '自身施法的终极技', sk5 && [sk5.type, sk5.cast]);
+  ok(sk5 && sk5.buff && sk5.buff.allRes === 20 && sk5.buff.dur === 10,
+    '窗口给的是全抗 +20 / 10 秒（走 BUFF 表，不另开乘区）', sk5 && sk5.buff);
+  ok(sk5 && sk5.unlock === 34, '34 级领悟（与树上的岔口 reqLv 一致）', sk5 && sk5.unlock);
+  ok(sk5 && (sk5.variants || []).length === 3, '三条变体（三相 / 久相 / 省相）', sk5 && (sk5.variants || []).length);
+  ok(pick('SKILL_ORDER').mage.indexOf('elementavatar') >= 0,
+    'SKILL_ORDER.mage 里真的排上了（否则动作条选不到）');
+
+  /* 五档 + 逐字对账 */
+  const e = SKILL_TIER_EVO.elementavatar || {};
+  ok(!!e[3] && !!e[5] && !!e[7] && !!e[9] && !!e[10], '五档全部登记', Object.keys(e));
+  ok(e[3] && e[3].beh.elemSwap === 1, 'Lv3 解锁换相', e[3] && e[3].beh);
+  ok(e[5] && e[5].beh.formRider === 1, 'Lv5 命中才附带主元素效果', e[5] && e[5].beh);
+  ok(e[7] && e[7].beh.formDur === 4, 'Lv7 窗口 +4 秒', e[7] && e[7].beh);
+  ok(e[9] && e[9].beh.formNova === 150, 'Lv9 收窗新星（攻击力 150%）', e[9] && e[9].beh);
+  ok(e[10] && e[10].beh.ccImmune === 1, 'Lv10 窗口内免控', e[10] && e[10].beh);
+  const labelBad = [3, 5, 7, 9, 10].filter(lv => (e[lv] || {}).label !== s5.tiers[lv]);
+  ok(labelBad.length === 0, '五档 label 与 slot.tiers 逐字相同（契约会查）', labelBad);
+
+  /* beh 是覆盖不是累加：10 级那行不带 formRider，但 5 级那行还在 */
+  const b10 = skillTierBeh('elementavatar', 10) || {};
+  ok(b10.elemSwap === 1 && b10.formRider === 1 && b10.formDur === 4 && b10.formNova === 150 && b10.ccImmune === 1,
+    'Lv10 累积拿到五件（3 / 5 / 7 / 9 层不掉）', b10);
+  ok(!(skillTierBeh('elementavatar', 2) || {}).elemSwap, 'Lv2 还不会换相（只能是火）');
+  ok(!(skillTierBeh('elementavatar', 4) || {}).formRider, 'Lv4 命中还不带元素效果（否则 Lv5 是空话）');
+
+  /* 法相不吃 count 通道：它不是多发技能，给 count 没有任何 case 消费 */
+  ok(skillCountCapable('elementavatar') === false, '不吃 count 通道（所以 3 / 7 不能写「多发」）');
+
+  /* 撞键：台阶键不许和分支键重名（重名 = 花点覆盖台阶） */
+  const br = skillBranches('elementavatar') || {};
+  const own = new Set();
+  for (const row of [br.core].concat(br.pick || [], br.form || [])) {
+    for (const k in ((row && row.beh) || {})) own.add(k);
+  }
+  const mine = new Set();
+  for (const lv of [3, 5, 7, 9, 10]) for (const k in (e[lv].beh || {})) mine.add(k);
+  const clash = [...mine].filter(k => own.has(k));
+  ok(clash.length === 0, '台阶行为键与 elementavatar 的分支键零重叠', clash);
+  /* 精研核心不许和台阶 Lv7 说同一件事：两处都写「持续 +4 秒」的话，
+   * 面板显示 +8 秒、实际也是 +8 秒，玩家只会当成 bug。 */
+  ok(!(br.core && br.core.mods && br.core.mods.dur) && !(br.core && br.core.beh && br.core.beh.formDur),
+    '精研核心不重复台阶 Lv7 的「持续 +4 秒」', br.core && br.core.mods);
+
+  /* 面板：五档全部转绿 */
+  ok([3, 5, 7, 9, 10].every(lv => skillSlotTierDone('mage', 5, lv)),
+    '法师 ⑤ 五个台阶全部已实装（面板不带「待」角标）');
+  ok(skillSlotTierDone('mage', 5, 1), 'Lv1 是基础形态，永远成立');
+
+  /* 行为键登记（漏一个就是静默失效） */
+  ok(/elemSwap: \{ ph: 'hook'/.test(behSrc), 'elemSwap 已在 SKILL_BEH 登记');
+  ok(/formRider: \{ ph: 'hook'/.test(behSrc), 'formRider 已在 SKILL_BEH 登记');
+  ok(/formDur: \{ ph: 'hook'/.test(behSrc), 'formDur 已在 SKILL_BEH 登记');
+  ok(/formNova: \{ ph: 'hook'/.test(behSrc), 'formNova 已在 SKILL_BEH 登记');
+
+  /* ---- 三套机制的接线点，逐条钉源码 ---- */
+  ok(/case 'elementavatar': \{/.test(game), 'castSkill 里有 elementavatar 分支');
+  ok(/if \(ea\.t > 0\) \{/.test(game), '窗口开着 → 换相分支（不是重开一次）');
+  ok(/if \(!bEa\.elemSwap\) \{/.test(game), '3 级之前按下去不重开窗（只说清楚为什么没反应）');
+  ok(/ea\.elem = \(ea\.elem \+ 1\) % ELEM_AURA_KINDS\.length/.test(game),
+    '换相按火 → 冰 → 雷 → 火循环');
+  ok(/this\.cooldowns\[id\] = 1\.2/.test(game), '换相只吃 1.2 秒冷却（否则换一次相要等一分钟）');
+  ok(/s\.mp = Math\.min\(st\.mpMax, s\.mp \+ cost\)/.test(game), '换相不收灵力（退回去）');
+  ok(/ea\.mul = spow/.test(game), '开窗时快照元素强度（命中结算时手上没有 spow）');
+  ok(/ea\.rider = !!bEa\.formRider/.test(game), 'rider 开关也快照（窗口内不因升级忽然变强）');
+  ok(/baseDur \+ sdur \+ \(bEa\.formDur \|\| 0\)/.test(game),
+    '持续 = 本体 10 + 变体 + Lv7 台阶（三个来源各自可查）');
+  ok(/Math\.max\(4, baseDur/.test(game), '持续有 4 秒下限（三相 −2 也不至于开了等于没开）');
+
+  /* 命中附加：必须在 damageEnemy（所有伤害的唯一出口），且只认有感命中 */
+  ok(/this\.elemAura\.t > 0 && this\.elemAura\.rider/.test(game),
+    '命中附加写在 damageEnemy 里（全技能附带，不逐个 case 加）');
+  ok(/if \(!opts\.silent && this\.elemAura && this\.elemAura\.t > 0/.test(game),
+    'silent 的持续伤害不触发（否则火相 = 永久点燃）');
+  ok(/this\.applySkillDot\(e, stR\.atk \* 0\.18 \* mR, 3, 'fire', '灼烧'\)/.test(game),
+    '火相 → 灼烧走 applySkillDot（与火墙 / 雷云同一条跳伤管线）');
+  ok(/kR\.key === 'ice'[\s\S]{0,160}e\.slowT = Math\.max\(e\.slowT \|\| 0, 2\)/.test(game),
+    '冰相 → 减速（玄冰套 deepfreeze 判定读的就是 slow / slowT）');
+  ok(/if \(!e\.boss\) e\.stun = Math\.max\(e\.stun \|\| 0, 0\.35\)/.test(game),
+    '雷相 → 麻痹（小怪才吃晕，首领只吃易伤）');
+  ok(/e\.vuln = Math\.max\(e\.vuln \|\| 0, 15 \* mR\)/.test(game)
+    && /e\.vulnT = Math\.max\(e\.vulnT \|\| 0, 3\)/.test(game),
+    '雷相 → 易伤（走 e.vuln / vulnT，与旋风斩 Lv9 同一个键）');
+
+  /* 收窗新星：必须在 tickBeh，且早于那两处提前 return */
+  ok(/if \(this\.elemAura && this\.elemAura\.t > 0\) \{/.test(behSrc), 'tickBeh 里真的在倒数法相');
+  ok(/behA\.formNova/.test(behSrc) && /stA\.atk \* behA\.formNova \/ 100/.test(behSrc),
+    'Lv9 新星按 formNova 百分比结算（不写在技能本体里）');
+  {
+    const tickAt = behSrc.indexOf('if (this.elemAura && this.elemAura.t > 0)');
+    const drainAt = behSrc.indexOf('if (this._drainOn) {');
+    ok(tickAt > 0 && drainAt > 0 && tickAt > drainAt, '法相倒数排在 tickBeh 前段（早于提前 return）');
+  }
+
+  /* 免控：复用现成通道，不另开无敌帧 */
+  ok(/if \(bEa\.ccImmune\) \{/.test(game) && /cb\.ccImmune = true/.test(game),
+    'Lv10 把 ccImmune 标记打在增益本体上');
+  ok(/ccImmuneNow\(\) \{[\s\S]{0,120}if \(b\.ccImmune\) return true/.test(game),
+    '判定口 ccImmuneNow 读的是同一个标记（减速 / 中毒真的挂不上）');
+  ok(!/elementavatar[\s\S]{0,200}immune: 1/.test(game), '不用 immune —— 那是无敌帧，不是免控');
+
+  /* 归零：换角色 / 死亡都要关窗 */
+  ok(/this\.elemAura = \{ t: 0, elem: 0, mul: 1, rider: false \}/.test(game),
+    'startNew 把法相状态归零（起手火相、没有窗口）');
+  ok(/die\(\) \{[\s\S]{0,400}this\.elemAura\.t = 0/.test(game),
+    'die() 里关窗（tickBeh 在 dead 时提前返回，不关会冻在「还剩 6 秒」）');
+
+  /* 技能树：净新增技能必须有一岔口，否则树上画不出、永远停在 1 级 */
+  const mageLines = pick('SKILL_TREE').layout.mage;
+  const fork5 = mageLines.reduce((acc, line) => acc.concat(line.forks || []), [])
+    .find(f => f.active === 'elementavatar');
+  ok(!!fork5, '法师树上真的有 elementavatar 这一岔口（不进 layout = 点不动）');
+  ok(fork5 && fork5.passive === 'm_form', '岔口被动侧是 m_form（法身）', fork5 && fork5.passive);
+  ok(!!pick('SKILL_TREE').passives.m_form, '被动 m_form 已登记');
+  ok(/formElemMul\(\)/.test(behSrc) || /formElemMul\(\) \{ return 1 \+ 0\.12/.test(readSrc('src/skill-passive.js')),
+    '法身真的有结算口 formElemMul（点了不能是空点）');
+  ok(/formElemMul/.test(readSrc('src/skill-passive.js')), 'formElemMul 落在 skill-passive.js（与其它被动同处）');
+  ok(/m_form/.test(readSrc('src/skill-passive.js')), 'm_form 进 PASSIVE_HOOKED（覆盖率红线）');
+
+  /* 图标：没有图标的那一格会退化成问号 */
+  ok(/elementavatar: '/.test(readSrc('src/data/data-skill-icons.js')), 'elementavatar 有自己的图标');
+}
+
 /* ---------------- 汇总 ---------------- */
 console.log('\n' + (fail === 0 ? '✓' : '✗') + ' P2b 契约：' + pass + ' 通过 / ' + fail + ' 失败');
 process.exit(fail === 0 ? 0 : 1);

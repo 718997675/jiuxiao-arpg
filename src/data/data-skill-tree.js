@@ -452,6 +452,27 @@ const SKILL_TREE = {
       ]
     },
 
+    /* [P2b] ⑤ 元素法相（净新增技能，同样要三条分支 —— 否则详情面板是空的）。
+     * 三条全部只走 mods 通道（dmg / dur / cd / cost）：法相本体没有伤害，
+     * 它的「强度」是**元素效果的倍率**，由 case 在开窗时把 spow 记进运行时状态。
+     * 不写 beh 是有意的 —— 分支的 beh 键要另外登记进 SKILL_BEH 才算「已接」，
+     * 而这一位真正需要的新机制（窗口 / 换元素 / 结束新星）都挂在台阶上。 */
+    elementavatar: {
+      /* 相持不能也写「持续 +4 秒」—— 台阶 Lv7 的文案就是这一句，
+       * 两处都写的话面板显示 +8 秒、实际也是 +8 秒，玩家会以为是 bug。
+       * 精研走「元素效果」，与 Lv7 的「时长」各管一头。 */
+      core: ['相持', '法相期间元素效果 +20%', { mods: { dmg: 20 } }],
+      pick: [
+        ['炽相', '元素效果 +25%', { mods: { dmg: 25 } }],
+        ['疾相', '冷却 −20%', { mods: { cd: 20 } }]
+      ],
+      form: [
+        ['三相', '元素效果 +40%，持续 −2 秒', { mods: { dmg: 40, dur: -2 } }],
+        ['久相', '持续 +6 秒，冷却 +30%', { mods: { dur: 6, cd: -30 } }],
+        ['省相', '消耗 −50%，元素效果 −20%', { mods: { cost: 50, dmg: -20 } }]
+      ]
+    },
+
     /* ==================== 符师 ==================== */
     talisman: {
       core: ['符引', '命中后下一次该技能伤害 +20%，最多叠 3 层', { beh: { stack: 20, stackMax: 3 } }],
@@ -628,6 +649,10 @@ const SKILL_TREE = {
     m_volt: { name: '高压', desc: '雷电伤害 +10%/级', max: 3, icon: 'passive' },
     m_conduct: { name: '导电', desc: '连锁伤害 +12%/级', max: 3, icon: 'passive' },
     m_stormlord: { name: '雷神', desc: '每 6 秒自动对最近的敌人落雷，造成 200% 伤害', max: 1, key: true, icon: 'key' },
+    /* 术士 · 法相（P2b 新增：⑤ 元素法相那一岔口的被动侧）。
+     * 不做成关键被动 —— 关键被动是「每线一个」的招牌位，雷霆的招牌已经是雷神；
+     * 法身是法相自己的小加成，挂在旁边就够。 */
+    m_form: { name: '法身', desc: '法相期间元素效果 +12%/级', max: 3, icon: 'passive' },
     /* 符师 · 符箓 */
     t_sigil: { name: '符力', desc: '符法伤害 +9%/级', max: 3, icon: 'passive' },
     t_quick: { name: '急咒', desc: '施法速度 +10%/级', max: 3, icon: 'passive' },
@@ -682,7 +707,12 @@ const SKILL_TREE = {
       { name: '雷霆', spine: 'chain', forks: [
         { active: 'starfall', passive: 'm_volt' },
         { active: 'thundercloud', passive: 'm_conduct' },
-        { active: 'judgement', passive: 'm_stormlord' }
+        { active: 'judgement', passive: 'm_stormlord' },
+        /* P2b：⑤ 元素法相是净新增技能，必须有一岔口才点得动 ——
+         * 只放进 SKILL_ORDER 而不进 layout 的话，它在树上画不出来，
+         * 玩家永远停在 1 级，五条台阶全部摸不到。行序按 reqLv 自动排
+         * （34 落在 thundercloud 30 与 judgement 40 之间）。 */
+        { active: 'elementavatar', passive: 'm_form' }
       ] }
     ],
     taoist: [

@@ -3,7 +3,7 @@
 - 分支：`feat/skill-refactor`（优先级 **低**，排在大型扩展之后）
 - 计划文档：`docs/SKILL-REDESIGN-PLAN.md`（16 节）
 - 预览站：暂不发（2026-10-27 用户口径：本地验证即可，别再折腾线上）
-- 更新：2026-10-29 · P2b 进化台阶 **14/15 位**（42/45 条）· **收工点：只剩法师 ⑤ 法相（整只技能还没实现）**
+- 更新：2026-10-29 · P2b 进化台阶 **15/15 位**（45/45 条）· **P2b 收口，下一站 P2c 精通层**
 
 > 当前：**P0 + P1a + P1b + P1c + P1d + P2a 完成，P2b 进行中**。动作条 5 格、格位 = 功能位；
 > 技能树已按「三线并行」结算 —— 没有必点主干、没有主动↔被动二选一，
@@ -14,10 +14,9 @@
 > 台阶也接进战斗了：数量台阶走 `smod.count`（多发带 0.85^n 递减）——**12 个技能全接**
 > （毒雾、火墙、雷云是后两批补进来的）。**节奏不是全局 3 / 7**：法师 ② 在 5 / 7
 > （3 级是「溅射」），按技能覆盖见 `SKILL_COUNT_TIER`。Lv5 / Lv9 / Lv10 走行为键，
-> **已接 14 个位**（刀客 ①②③④⑤、法师 ①②③④、道士 ①②③④⑤），45 条里完成 **42 条**。
-> 只剩 **法师 ⑤ 元素法相**一个位（3 条）：整只技能在游戏里还没实现
-> （`SKILL_ARCHETYPE` 里 `isNew: true`），得先有技能再谈台阶。
-> **别把「P2b 只剩一个位」读成「快完了」**：法相是「先做一整只技能」的量级。
+> **15 个位全部接完**（刀客 ①②③④⑤、法师 ①②③④⑤、道士 ①②③④⑤），45 条全部兑现。
+> **P2b 到此收口**：三个 ⑤ 位各自成了「一只技能 + 一整套状态机」
+> （刀客兵形 / 法师法相 / 道士灵兽），下一站是 P2c 精通层（11~20 级）。
 
 ## 一句话现状
 
@@ -39,7 +38,7 @@ P1 起才动 `SKILL_BAR_SLOTS` 与面板的三列树。
 | P1c | **取消二选一**：三线并行结算（等级门 `reqLv` + 关键被动软前置 `needPts`），`levelUpSkill` / `levelUpPassive` 的 fork 拦截整块删除，面板去掉「或/锁」标记与互斥虚线，说明页同步 | ✅ | `data-skill-tree.js`、`game.js`、`skill-passive.js`、`ui-skills.js`、`ui.js`、`index.html` | `dev/test-skill-p1c.js` 353 · `dev/probe-skill-p1c.js` 23 |
 | P1d | 面板**视觉**重排：一条线一列、列内按 `reqLv` 递增，被动小一圈挂在主动右边，只留同线淡引导线；手机上三条线分页签、一页一列 | ✅ | `ui-skills.js`（`skTreeLayout` / `skTreeHTML` / `renderSkillTreeDOM` / `skTreeTabsHTML`）、`index.html`（SKG + 被动腰围）、`ui.js`（说明页「技能树布局」） | `dev/probe-skill-p1d.js` 36 |
 | P2a | **等级上限 5 → 10** + 分段曲线真的进战斗（`skillLvMul` 取代旧「每级固定 8%」）+ 点数供给 等级 × 1.5；面板 10 格 / 满级金环 / 洗点全额退回 | ✅ | `data-skills.js`（`SKILL_LV_MAX` / `SKILL_POINT_RATE` / `skillPointPool`）、`data-skill-tree.js`（`lvMax` 同源）、`game.js`（`castSkill` / `skillPoints`）、`ui-skills.js`、`ui.js`、`index.html` | `dev/test-skill-p2.js` 41 · `dev/probe-skill-p2.js` 26 |
-| P2b | **数量 / 形态台阶接进 `castSkill`**。①数量：默认 Lv3 / Lv7 各 +1，接 `smod.count`（13 个技能消费），第 n 发 ×0.85^n 防三倍伤害；**发数节奏可按技能覆盖**（`SKILL_COUNT_TIER`，法师 ② 在 Lv5 / Lv7）。②进化：新建 `SKILL_TIER_EVO`（挂**技能 id** 不挂技能位），合并顺序 **台阶最前 → 精研 / 取向 / 变体覆盖同名键**（花点的选择必须盖过等级送的）。**已接 14 个位 / 42 条**：刀客①旋风斩、法师①火球、道士①符箓、道士②毒雾、刀客②地裂、刀客③剑阵、刀客④血怒、道士④回春、法师③火墙、法师④护盾、道士③太极、法师②陨石（3 溅射 / 5 双陨 / 7 三连落）、道士⑤召灵兽（三只各召各的）、**刀客⑤兵形（刀式状态机 + 刃势 + 断岳斩）** —— 细则见下面「P2b 收口要点」。**⚠ 14/15 个位：只剩法师 ⑤ 法相（3 条），而它是「整只技能还没实现」** | 🟡 | `data-skills.js`（`SKILL_TIER_EVO` / `SKILL_COUNT_TIER` / `skillTierEvo` / `skillTierMods` / `skillTierBeh`）、`skill-beh.js`（`branchBeh` 台阶排最前 + `killProlong` / `lifesteal` / `ccImmune` / `healOnCast` / `tierDur` / `splash` / `stanceUnlock` / `edgeFinisher` / `edgeKeep` / `edgeUltimate`）、`game.js`（autoTarget / rageMul / firePatch / swordField / applyPlayerSlow / ccImmuneNow / behTierNova / shieldT+sdur / 符阵 dur+tierDur / meteor·blizzard·judgement·starfall 多发 / spawnTierField 落点领域 / **bladeXxx 兵形状态机**）、`ui.js`（说明页读数现算 + 动作条刀式角标）、`ui-skills.js` | `dev/test-skill-p2b.js` 797 · `dev/probe-skill-p2b.js` 256 |
+| P2b | **数量 / 形态台阶接进 `castSkill`**。①数量：默认 Lv3 / Lv7 各 +1，接 `smod.count`（13 个技能消费），第 n 发 ×0.85^n 防三倍伤害；**发数节奏可按技能覆盖**（`SKILL_COUNT_TIER`，法师 ② 在 Lv5 / Lv7）。②进化：新建 `SKILL_TIER_EVO`（挂**技能 id** 不挂技能位），合并顺序 **台阶最前 → 精研 / 取向 / 变体覆盖同名键**（花点的选择必须盖过等级送的）。**15 个位 / 45 条全部接完**：刀客①旋风斩、法师①火球、道士①符箓、道士②毒雾、刀客②地裂、刀客③剑阵、刀客④血怒、道士④回春、法师③火墙、法师④护盾、道士③太极、法师②陨石（3 溅射 / 5 双陨 / 7 三连落）、道士⑤召灵兽（三只各召各的）、**刀客⑤兵形（刀式状态机 + 刃势 + 断岳斩）**、**法师⑤元素法相（净新增技能：法相窗口 + 换相 + 命中附加 + 收窗新星 + 免控）** —— 细则见下面「P2b 收口要点」。**✅ 15/15 个位、45/45 条：P2b 收口** | ✅ | `data-skills.js`（`SKILL_TIER_EVO` / `SKILL_COUNT_TIER` / `skillTierEvo` / `skillTierMods` / `skillTierBeh`）、`skill-beh.js`（`branchBeh` 台阶排最前 + `killProlong` / `lifesteal` / `ccImmune` / `healOnCast` / `tierDur` / `splash` / `stanceUnlock` / `edgeFinisher` / `edgeKeep` / `edgeUltimate`）、`game.js`（autoTarget / rageMul / firePatch / swordField / applyPlayerSlow / ccImmuneNow / behTierNova / shieldT+sdur / 符阵 dur+tierDur / meteor·blizzard·judgement·starfall 多发 / spawnTierField 落点领域 / **bladeXxx 兵形状态机**）、`ui.js`（说明页读数现算 + 动作条刀式角标）、`ui-skills.js` | `dev/test-skill-p2b.js` 878 · `dev/probe-skill-p2b.js` 282 |
 | P2c | 精通层 11~20：光效随等级变亮、Lv15 精通小质变（统一三选一模板），不新增形态 | ⬜ | `src/fx.js`、`skill-beh.js` | — |
 | P3 | 元素注入 + 反应表：伤害管线支持双元素、特效混色、词缀口径 | ⬜ | 战斗 + 词缀 + `src/fx.js` | — |
 | P4 | 三职业独立 ⑤ 号位：刀客兵形/刃势、法师法相、道士召唤 | ⬜ | `src/fx.js`、`src/charforge.js` | — |
@@ -242,17 +241,49 @@ P1 起才动 `SKILL_BAR_SLOTS` 与面板的三列树。
 51. **探针量「换式不退资源」时，mp 要取在上限以内**。`__mkClean` 把 mp 拉到 99999，
     退回来的那点会被 `Math.min(mpMax, …)` 夹掉，看起来像「没退」（实测 500 → 244）。
     这不是 bug，是探针把读数放在了不可能的区间。
+52. **净新增技能必须先有「岔口」再谈别的**。`SKILL_ORDER` 只决定动作条能不能选到，
+    `SKILL_TREE.layout` 才决定树上有节点、点得动、升得上去。只加前者的话，技能在
+    树上根本画不出来，玩家永远停在 1 级，五条台阶一条都摸不到。
+53. **窗口型大招的强度要快照**。法相的「元素效果」是在 `damageEnemy` 里按**每一次命中**
+    结算的，而那时手上没有 `spow`（命中可能来自 1 秒前放出去的火球）。所以开窗那一刻
+    `ea.mul = spow` 存进运行时状态 —— 否则要么在命中处把 `effSkillMods` 复制第二份，
+    要么「窗口里换个装备，已经开着的那一发强度跟着变」。
+54. **「全技能附带」只能写在 `damageEnemy`**。法师十几只技能 + 装备 / 套装的延迟伤害，
+    逐个 case 加等于加十几处，漏一处就是「这个技能在法相下没效果」。
+    `damageEnemy` 是所有伤害的唯一出口，一行就够。
+55. **命中附加必须判 `opts.silent`**。火相挂的是灼烧 dot，若 dot 每跳也回挂一次灼烧，
+    10 秒窗口会变成**永久点燃** —— 而且看不出来，只会觉得「这怪怎么一直在烧」。
+56. **精研核心别和台阶说同一句话**。相持原本也写「法相持续 +4 秒」，而台阶 Lv7 的文案
+    就是这一句 —— 两处都写，面板显示 +8 秒、实际也真是 +8 秒，玩家只会当成 bug。
+    现在相持改走「元素效果 +20%」，与 Lv7 的「时长」各管一头，契约钉住不许再撞。
+57. **0 号变体是恒生效的默认形态，不是「选了才有」**。`skillFormIdx` 没设过也返回 0，
+    所以 `br.form[0]` 的 mods 一直在算。法相本体写 10 秒、实际开出来是 8 秒
+    （三相 −2 秒），这不是 bug —— 探针读数要按这个口径写，别按 `sk.buff.dur` 写。
+58. **免控复用现成的 `ccImmune` 通道**，不另开无敌帧。标记打在增益本体上，
+    判定口是 `ccImmuneNow()`（`applyPlayerSlow` / `playerPoison` 都过它）。
+    开窗瞬间还要顺手清掉身上已有的减速 / 中毒 —— 否则「免疫控制」在被控住的时候
+    按下去是没用的，玩家会以为这一级没生效。
+59. **死亡必须关窗**。`tickBeh` 第一行就是 `if (this.dead) return`，不主动关的话窗口
+    会冻在「还剩 6 秒」，复活后凭空续上，免控标记还挂在增益上。
+60. **「三职业全树花费一致」这条契约已经不成立**。法师 ⑤ 是净新增技能（主动 9 点 +
+    被动 3 点），法师树 141、另两家 129。改成**显式期望值**而不是删一只法师技能去凑数 ——
+    那才是真的破坏取舍。数值漂了照样红。
 
-## P2b 剩余：只剩法师 ⑤ 元素法相（3 条）
+## P2b 已收口：15 个位 / 45 条
 
-已接 14 个位：刀客 ①②③④⑤、法师 ①②③④、道士 ①②③④⑤。
+刀客 ①②③④⑤、法师 ①②③④⑤、道士 ①②③④⑤ —— 一个不剩。
 
-- **法师 ⑤ 元素法相**：整只技能**还没实现**（`SKILL_ARCHETYPE` 里 `isNew: true`），
-  先有技能再谈台阶。它的三条（5 全技能灼烧 / 9 法相结束新星 / 10 法相期间免疫打断）
-  全部依赖「法相窗口」这个本体，本体不在，台阶无处可挂。
-- 做的时候守两条：① 一个位一个 commit，别一批铺完；② `slot.tiers` 的文案与
-  `SKILL_TIER_EVO` 的 `label` **必须逐字相同**（契约第七节会红），改不动就改文案 ——
-  **点了不生效比不写更糟**。
+三个 ⑤ 位都不是「接个行为键」，而是**一只技能 + 一整套状态机**：
+
+| 职业 | ⑤ 位 | 状态机 | 本体来源 |
+|---|---|---|---|
+| 刀客 | 兵形 | 刀式（改属性）+ 刃势（格位记账）+ 断岳斩（形态随刀式） | 改造 `avatar` |
+| 法师 | 元素法相 | 法相窗口 + 主元素换相 + 命中附加 + 收窗新星 + 免控 | **净新增** `elementavatar` |
+| 道士 | 召灵兽 | 三只灵兽各有血条 / 嘲讽 / 增益 / 体型 / 双生 | 改造三只老召唤 |
+
+做的时候守两条：① 一个位一个 commit，别一批铺完；② `slot.tiers` 的文案与
+`SKILL_TIER_EVO` 的 `label` **必须逐字相同**（契约第七节会红），改不动就改文案 ——
+**点了不生效比不写更糟**。
 
 ## 特效（P2c 之前先做表现层）
 
@@ -778,3 +809,49 @@ s1 通过 · smoke ERRORS none · arch 29 · bar5 30 · p1c 23 · p1d 36 · p2 2
 Lv9 才保（`edgeKeep`），断言改成「只换式、不打伤害、层数被换式清掉」；
 ④ 三个老探针（p1c / p1d / p2）写死了 macOS / Chrome 的 `executablePath`，
 Windows（只有 Edge）上连启动都起不来 —— 统一改成 `require('./_chrome')`。
+
+### 2026-10-29 · P2b 法师 ⑤ 元素法相（净新增技能，P2b 收口）
+
+P2b 的最后一个位，也是全表里**唯一一只净新增**的技能：刀客 ⑤ / 道士 ⑤ 都是「改造既有技能」，
+而法师 ⑤ 在 `SKILL_ARCHETYPE` 里原本是 `inherit: []` 的空位 —— 要补就得从零写一只。
+
+- **技能本体 `elementavatar`**：`mult: 0`（法相不造成伤害），`type: 'ultimate'`，`cast: 'self'`，
+  `buff: { allRes: 20, dur: 10 }`，34 级领悟，55 秒冷却。它不是「打一发」，而是**开一个窗口**：
+  10 秒内全抗 +20，并且**所有命中**都附带主元素效果。
+- **主元素三系**：火（灼烧，走 `applySkillDot`）/ 冰（减速，`e.slow` + `e.slowT`）/
+  雷（麻痹 + 易伤，`e.stun` + `e.vuln` / `vulnT`）。三条都落在 `damageEnemy` 的同一个口上，
+  不新造状态 —— 于是燃烬被动、天师套、玄冰套那些「对灼烧 / 减速目标增伤」全都能吃到。
+- **两种模式共用一键**（与刀客 ⑤ 同构）：窗口关着 → 开窗（吃 55 秒冷却）；
+  窗口开着 → **换相**（火 → 冰 → 雷 → 火，1.2 秒冷却、不收灵力）。
+  改写都发生在 case 里 —— `castSkill` 早在 switch 之前就把冷却与灵力扣完了。
+- **五档怎么兑现**（全部读数据层 `SKILL_TIER_EVO.elementavatar` 的 beh 键，不写死等级）：
+  3 `elemSwap:1` 解锁换相 · 5 `formRider:1` 命中才附带元素效果 · 7 `formDur:4` 窗口 +4 秒
+  · 9 `formNova:150` 收窗炸一发新星（攻击力 150%，半径 7）· 10 `ccImmune:1` 窗口内免控。
+- **强度快照**：开窗那一刻把 `spow` 存进 `elemAura.mul`，命中结算时再乘被动「法身」
+  （`m_form`，+12%/级，`formElemMul`）。命中时手上没有 `spow`，不快照就只能把
+  `effSkillMods` 复制第二份。
+- **技能树**：雷霆线加一岔口 `{ active: 'elementavatar', passive: 'm_form' }`；
+  新被动「法身」登记进 `PASSIVE_HOOKED`（不进 `PASSIVE_STATS` —— 那是无条件折属性的通道，
+  这条只在窗口里成立）。分支三条只走 mods（相持 +20% 元素效果 / 炽相 +25% / 疾相 −20% 冷却）。
+- **文案改了两条原稿**：5「法相期间全技能灼烧」在冰 / 雷法相下是假话，改成「附带主元素效果」；
+  10「免疫打断」—— 这个引擎**没有打断机制**（`m_focus` 那句只是文案），换成「免疫控制」，
+  走现成的 `ccImmune`。9「法相结束新星」补上真实伤害，不再是空话。
+- **动作条读数**：⑤ 格加「主元素首字 + 剩余秒数」角标（窗口开着翻金），
+  与刀式角标共用 `.bl` 样式 —— 同一类「这一格现在是哪种形态」的读数。
+- **两处归零**：`startNew` 起手火相无窗口；`die()` 主动关窗（`tickBeh` 在 `dead` 时提前
+  return，不关会冻在「还剩 6 秒」，复活后凭空续上）。
+
+**验证**：`test-skill-p2b` 797→**878 通过 / 0 失败**（新增第十一节 81 条：技能本体口径、
+五档登记与 label 逐字对账、与分支零撞键、四套机制的源码接线点、免控走的是现成通道、
+树上的岔口与被动登记、startNew / die 两处归零）；`probe-skill-p2b` 256→**282 通过 / 0 失败**
+（第十七节 26 条真机读数：开窗 8 秒 / Lv7 再加 4、换相循环与 1.2 秒冷却且不退灵力、
+Lv4 无附加 / Lv5 三系各自生效、窗口关着不附加、Lv9 收窗真的炸 / Lv8 不炸、
+Lv10 减速挂不上 / Lv9 照常、死亡关窗、动作条角标）。
+回归全绿：p0 250 · p1 52 · p1c 363 · p2 41 · p2b 878 · items 17 · save 79 · save-browser 80 ·
+s1 通过 · smoke ERRORS none · arch 29 · bar5 30 · p1c 23 · p1d 36 · p2 26 · mobile-layout 全通过。
+
+**踩坑**：① `skillTierBeh` 的 beh 是**覆盖**、精研核心的 mods 是**累加**，两者都写「持续 +4 秒」
+会变成 +8（见收口要点 56）；② 探针按 `sk.buff.dur` 断言 10 秒必红 —— 0 号变体（三相 −2）
+是恒生效的默认形态，实际 8 秒（收口要点 57）；③ 角标查询返回 null，因为 `reset()` 不会替
+玩家摆技能条格子，探针要先写 `Game.state.skillbar`；④ 「三职业全树花费一致」这条老契约
+被净新增技能打破，改成显式期望值（收口要点 60）。

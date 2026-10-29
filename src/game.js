@@ -33,6 +33,26 @@ const BEAST_PRESET = {
   dragon: { skill: 'azuredragon', scale: 1.6, color: 0x6ac8ff, cloth: 0x2a5a8a, inherit: 0.8, atkRate: 1.3, aoe: true, name: '青龙', hpPct: 0.55 }
 };
 
+/* [P2b·法师⑤] 元素法相的三系。
+ *
+ * 顺序就是切换顺序（火 → 冰 → 雷 → 火），起手是火 —— 台阶 1 的文案写的是
+ * 「火法相」，所以 1~2 级（还没解锁切换）看到的一定是火，不能随机。
+ *
+ * 三条效果全部落在**同一个口**上（damageEnemy 的命中附加），各自的字段都是
+ * 引擎里真在用的键，不新造一套状态：
+ *   火 = applySkillDot → e.dotT / e.dotDmg（与火墙 / 雷云同一条跳伤管线，
+ *        燃烬被动、天师套的「对灼烧目标 +40%」都能吃到）
+ *   冰 = e.slow / e.slowT（玄冰套 deepfreeze 的增伤判定读的就是这两个）
+ *   雷 = e.stun + e.vuln / e.vulnT（麻痹 + 易伤，与旋风斩 Lv9 的易伤同一个键）
+ *
+ * 表里只放名字与颜色，不放数值：数值随法相强度（开窗时快照的 spow）与
+ * 被动「法身」（m_form）走，见 elemRiderMul()。 */
+const ELEM_AURA_KINDS = [
+  { key: 'fire', name: '火法相', color: 0xff7a30, glyph: '火' },
+  { key: 'ice', name: '冰法相', color: 0x8ad8ff, glyph: '冰' },
+  { key: 'thunder', name: '雷法相', color: 0x9ad8ff, glyph: '雷' }
+];
+
 /**
  * 线段 a→b 与圆 (cx,cz,r) 的首次相交参数 t ∈ [0,1]，不相交返回 -1。
  *
@@ -1539,6 +1559,8 @@ const Game = {
     /* [P2b·刀客⑤] 兵形归零：换角色 / 开新档从斩锋式起手（换图不清 ——
      * 刀式是这一局的姿态，不是一张地图的临时状态） */
     this.blade = { i: 0, mask: 0 };
+    /* [P2b·法师⑤] 法相归零：换角色 / 开新档没有窗口，主元素从火相起手 */
+    this.elemAura = { t: 0, elem: 0, mul: 1, rider: false };
     if (typeof UI !== 'undefined') UI.snaps = null;   // 换角色：上一个人的加点草稿作废
     this.savedSlot = target || 1;
     this.recalc();
@@ -3119,6 +3141,71 @@ const Game = {
     return this.bladeFormName(this.bladeStance()) + ' · 刃势 ' + this.bladeEdge() + '/' + this.bladeEdgeMax();
   },
 
+  /* ============================================================
+   * [P2b·法师 ⑤] 元素法相
+   *
+   * 这一位与刀客 ⑤ 是同一个套路的两副面孔：都不是「按一下打一发」，而是
+   * **开一个窗口**，窗口里改的是「其他技能长什么样」。
+   *
+   *   法相（elemAura.t）  10 秒窗口。窗口内自身全抗 +20（走 addBuff 的
+   *                      同一张 BUFF 表，所以与装备 / 增益的结算顺序一致）。
+   *   主元素（elemAura.elem） 火 / 冰 / 雷。窗口里再按一次 ⑤ 是**换相**，
+   *                      不是重新开窗 —— 所以两档冷却完全不同（见 case）。
+   *   元素强度（elemAura.mul） 开窗那一刻把 spow 快照下来。窗口内换装 /
+   *                      换相都不该把已经开着的那一发悄悄改强或改弱。
+   *
+   * 为什么强度要快照：rider 是在 damageEnemy 里按「每一次命中」结算的，
+   * 那时手上没有 spow（命中可能来自 1 秒前放出去的火球）。不快照就只能
+   * 在读到的位置现算一遍技能修正 —— 等于把 effSkillMods 复制第二份。
+   *
+   * 不进存档：和刀式同理，是「这一局怎么打」的临场状态，重开回到火相；
+   * 存档 schema 现在是三条线争用的地方（台账「卡点 2」），不值得为它加字段。
+   * ============================================================ */
+
+  /* 法相运行时状态。懒初始化：中途载入 / 老存档 / 老角色也能用 */
+  elemAuraState() {
+    if (!this.elemAura || typeof this.elemAura !== 'object') {
+      this.elemAura = { t: 0, elem: 0, mul: 1, rider: false };
+    }
+    const a = this.elemAura;
+    if (typeof a.t !== 'number' || !isFinite(a.t)) a.t = 0;
+    if (typeof a.elem !== 'number' || !isFinite(a.elem)) a.elem = 0;
+    if (typeof a.mul !== 'number' || !isFinite(a.mul) || a.mul <= 0) a.mul = 1;
+    a.elem = ((a.elem | 0) % ELEM_AURA_KINDS.length + ELEM_AURA_KINDS.length) % ELEM_AURA_KINDS.length;
+    return a;
+  },
+
+  /* ⑤ 的台阶行为（只读数据层；非法师 / 还没领悟 元素法相 时给空对象） */
+  elemAuraBeh() {
+    if (!this.state || this.state.cls !== 'mage') return {};
+    if (!this.skillUnlocked('elementavatar')) return {};
+    const b = (typeof this.branchBeh === 'function') ? this.branchBeh('elementavatar') : null;
+    return b || {};
+  },
+
+  elemAuraOn() { return this.elemAuraState().t > 0; },
+
+  /* 当前主元素（面板 / 角标 / 提示三处共用同一个来源） */
+  elemAuraKind() {
+    return ELEM_AURA_KINDS[this.elemAuraState().elem] || ELEM_AURA_KINDS[0];
+  },
+
+  /* 元素强度 = 开窗快照 × 被动「法身」（+12%/级）。
+   * 被动在命中时现读，所以窗口开着的时候点法身会立刻变强 ——
+   * 与「装备换了就重算」是同一条口径。 */
+  elemRiderMul() {
+    const a = this.elemAuraState();
+    const pm = (typeof this.formElemMul === 'function') ? this.formElemMul() : 1;
+    return a.mul * pm;
+  },
+
+  /* 动作条角标的读数：`火法相 · 剩余 7 秒` / `火法相 · 未开启` */
+  elemTip() {
+    const a = this.elemAuraState();
+    const nm = this.elemAuraKind().name;
+    return a.t > 0 ? nm + ' · 剩余 ' + Math.ceil(a.t) + ' 秒' : nm + ' · 未开启';
+  },
+
   /* 技能落点：ground / enemy 自动夹在施法距离内，dir 用当前朝向，self 以自身为中心 */
   resolveCast(sk, pp, aim, dir) {
     const out = aim.clone();
@@ -3662,6 +3749,96 @@ const Game = {
       }
 
       /* 法师 */
+      /* [P2b·法师⑤] 元素法相 —— 一只技能两个模式，和刀客 ⑤ 同构：
+       *
+       *   · 窗口关着 → 开窗（10 秒 + 变体持续 + Lv7 台阶，全抗 +20 走增益表）。
+       *   · 窗口开着 → 换相（火 → 冰 → 雷 → 火，Lv3 解锁）。
+       *
+       * 冷却与资源按模式改写，**必须写在 case 里**（castSkill 早在 switch 之前
+       * 就把 `this.cooldowns[id]` 和灵力扣掉了）：
+       *   换相 = 战术动作，1.2 秒冷却、不收灵力（把刚扣掉的退回去）；
+       *   开窗 = 吃技能自己的冷却（55 秒 × 冷却修正），也就是入口那套，不动它。
+       * 不这么分的话，换一次相要等将近一分钟 —— 那三系等于只有一系能用。
+       *
+       * 窗口内的三件事都不在这里结算：
+       *   命中附加（Lv5）→ damageEnemy（每一次命中，含其他技能打出来的）
+       *   收窗新星（Lv9）→ tickBeh（要倒数到 0 才知道结束了）
+       *   免控（Lv10）  → 标记在增益本体上，判定口 ccImmuneNow() */
+      case 'elementavatar': {
+        const ea = this.elemAuraState();
+        const bEa = this.elemAuraBeh();
+        if (ea.t > 0) {
+          /* ---------------- 换相 ---------------- */
+          if (!bEa.elemSwap) {
+            /* 3 级之前没有这个动作：不当成「重开一次」白吃 55 秒冷却，
+             * 只给 1.2 秒硬直并说清楚为什么没反应 */
+            this.actor.atkAnim = 1; this.actor.atkType = 'cast'; this.actor.atkSpeed = 1.6;
+            SFX.ui();
+            UI.log('法相 · 元素切换要 3 级（当前' + this.elemAuraKind().name + '，还剩 '
+              + Math.ceil(ea.t) + ' 秒）');
+            this.cooldowns[id] = 1.2;
+            s.mp = Math.min(st.mpMax, s.mp + cost);
+            break;
+          }
+          ea.elem = (ea.elem + 1) % ELEM_AURA_KINDS.length;
+          const k = this.elemAuraKind();
+          this.actor.atkAnim = 1; this.actor.atkType = 'cast'; this.actor.atkSpeed = 1.6;
+          SFX.cast();
+          FX.ring(new THREE.Vector3(pp.x, 0.2, pp.z), 3.4, k.color, 0.55, 0.25);
+          FX.burst(new THREE.Vector3(pp.x, 1.4, pp.z), k.color, 18,
+            { speed: 4, size: 0.12, life: 0.7, gravity: -2, additive: true });
+          FX.text(new THREE.Vector3(pp.x, 3, pp.z), k.name, 'lv', { life: 0.95 });
+          UI.toast('法相 · ' + k.name);
+          this.cooldowns[id] = 1.2;
+          /* 换相不收灵力：灵力是打出来的，不该花在「换个元素」上 */
+          s.mp = Math.min(st.mpMax, s.mp + cost);
+          if (typeof UI !== 'undefined' && UI.buildActionBar) UI.buildActionBar();
+          break;
+        }
+
+        /* ---------------- 开窗 ---------------- */
+        /* 持续：技能本体 10 秒 + 变体（三相 −2 / 久相 +6，已在 sdur 里）+ 台阶 Lv7 +4。
+         * 下限 4 秒：三相 −2 与洗点叠在一起也不该变成「开了等于没开」。 */
+        const baseDur = (sk.buff && sk.buff.dur) ? sk.buff.dur : 10;
+        const dur = Math.max(4, baseDur + sdur + (bEa.formDur || 0));
+        ea.t = dur;
+        /* 强度快照：命中附加在 damageEnemy 里结算，那时手上没有 spow */
+        ea.mul = spow;
+        ea.rider = !!bEa.formRider;
+        const kind = this.elemAuraKind();
+        const bf = Object.assign({}, sk.buff, { dur });
+        this.addBuff(sk.name, bf, kind.color,
+          { type: 'buff', icon: sk.glyph, key: 'skill:elementavatar', refresh: true });
+        /* 台阶 Lv10 免控：标记在增益本体上（与血怒位 Lv10 同一套判定口）。
+         * 开窗瞬间顺手清掉身上已有的减速 / 中毒 —— 否则「免疫控制」在已经被
+         * 控住的时候按下去是没用的，玩家会以为这一级没生效。 */
+        if (bEa.ccImmune) {
+          const cb = this.buffs.find(x => x.key === 'skill:elementavatar');
+          if (cb) {
+            cb.ccImmune = true;
+            if ((this.playerSlowT || 0) > 0 || (this.poisonT || 0) > 0) {
+              this.playerSlowT = 0; this.playerSlow = 0; this.poisonT = 0;
+              FX.text(new THREE.Vector3(pp.x, 2.7, pp.z), '免控', 'info', { life: 0.8 });
+            }
+          }
+        }
+        this.actor.atkAnim = 1; this.actor.atkType = 'cast'; this.actor.atkSpeed = 1.4;
+        SFX.cast(); this.shake = Math.max(this.shake, 0.3);
+        FX.ring(new THREE.Vector3(pp.x, 0.2, pp.z), 7, kind.color, 0.8, 0.35);
+        FX.ring(new THREE.Vector3(pp.x, 0.2, pp.z), 4.2, kind.color, 0.6, 0.25);
+        for (let i = 0; i < 22; i++) {
+          const ang = Math.random() * 7, r = RND(0.5, 5);
+          FX.burst(new THREE.Vector3(pp.x + Math.cos(ang) * r, RND(0.2, 3.4), pp.z + Math.sin(ang) * r),
+            kind.color, 2, { speed: 3, size: 0.13, life: 0.9, gravity: -3, additive: true });
+        }
+        FX.text(new THREE.Vector3(pp.x, 3.3, pp.z), kind.name, 'lv', { life: 1.2 });
+        UI.toast('元素法相 · ' + kind.name + ' ' + Math.round(dur) + ' 秒', 'lv');
+        UI.log('法相已开：' + Math.round(dur) + ' 秒内全抗 +'
+          + (bf.allRes || 0) + (ea.rider ? '，命中附带' + kind.glyph + '效果' : ''));
+        if (typeof UI !== 'undefined' && UI.buildActionBar) UI.buildActionBar();
+        break;
+      }
+
       case 'fireball': {
         this.actor.atkAnim = 1; this.actor.atkType = 'cast';
         SFX.fire();
@@ -4891,6 +5068,33 @@ const Game = {
       this.onEnemyDeath(e); return;
     }
 
+    /* [P2b·法师⑤] 法相命中附加（台阶 Lv5）：窗口内的**每一次命中**都带上主元素效果。
+     *
+     * 为什么放在这里而不是各技能 case 里：法相要的是「全技能附带」，法师有
+     * 十几只技能、还有装备 / 套装触发的延迟伤害，逐个 case 加等于加十几处，
+     * 漏一处就是「这个技能在法相下没效果」。damageEnemy 是所有伤害的唯一出口。
+     *
+     * 只认「有感」的命中（silent 的持续伤害不触发）：火相挂的是灼烧 dot，
+     * 若 dot 每跳也回挂一次灼烧，10 秒窗口会变成永久点燃。
+     *
+     * 也放在死亡判定**之后**：打死的那一下再挂减速 / 易伤没有意义，
+     * 只会让尸体的字段多活一帧。 */
+    if (!opts.silent && this.elemAura && this.elemAura.t > 0 && this.elemAura.rider) {
+      const stR = this.state.stats;
+      const kR = this.elemAuraKind();
+      const mR = this.elemRiderMul();
+      if (kR.key === 'fire') {
+        this.applySkillDot(e, stR.atk * 0.18 * mR, 3, 'fire', '灼烧');
+      } else if (kR.key === 'ice') {
+        e.slow = Math.max(e.slow || 0, 0.35);
+        e.slowT = Math.max(e.slowT || 0, 2);
+      } else {
+        if (!e.boss) e.stun = Math.max(e.stun || 0, 0.35);
+        e.vuln = Math.max(e.vuln || 0, 15 * mR);
+        e.vulnT = Math.max(e.vulnT || 0, 3);
+      }
+    }
+
     /* [S5] 召唤：生命每降 25% 召 2 只同族。
      * 用「理论档位 vs 已触发档位」比对，一次大伤害跨两档也不会漏召。 */
     if (e.aff && e.aff.summoner && !e.boss) {
@@ -5312,6 +5516,12 @@ const Game = {
   die() {
     if (this.dead) return;
     this.dead = true;
+    /* [P2b·法师⑤] 法相随死亡关闭：tickBeh 在 dead 时提前返回，不关的话
+     * 窗口会冻在「还剩 6 秒」，复活后凭空续上 —— 而且免控标记还挂在增益上。 */
+    if (this.elemAura && this.elemAura.t > 0) {
+      this.elemAura.t = 0;
+      this.elemAura.rider = false;
+    }
     this.actor.anim = 'die';
     this.actor.group.rotation.z = 0;
     SFX.die();

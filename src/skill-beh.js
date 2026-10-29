@@ -412,6 +412,19 @@ const SKILL_BEH = {
   edgeKeep: { ph: 'hook', label: '换式保刃势（台阶）', run() { /* 由 Game.bladeCycle 消费 */ } },
   edgeUltimate: { ph: 'hook', label: '剑神降世（台阶）', run() { /* 由 avatar case 消费 */ } },
 
+  /* [P2b] 法师 ⑤ 元素法相（四个键 + 复用的 ccImmune）。
+   * 这一位是「窗口」而不是「一发」：开窗之后**每一次命中**都要查一次主元素，
+   * 所以消费点分散在 castSkill（开窗 / 换元素）与 damageEnemy（命中附加）两处。
+   *   elemSwap  = 窗口期间可以换主元素（否则恒为火）
+   *   formRider = 命中附带主元素效果（火灼烧 / 冰减速 / 雷麻痹易伤）
+   *   formDur   = 窗口时长 +N 秒
+   *   formNova  = 窗口结束时炸一发（值 = 攻击力百分比）
+   * 10 级的「免疫控制」直接用现成的 `ccImmune`，不另开键 —— 同语义不该有两套判定口。 */
+  elemSwap: { ph: 'hook', label: '元素切换（台阶）', run() { /* 由 elementavatar case 消费 */ } },
+  formRider: { ph: 'hook', label: '法相命中附加（台阶）', run() { /* 由 damageEnemy 的 formRiderHit 消费 */ } },
+  formDur: { ph: 'hook', label: '法相时长（台阶）', run() { /* 由 elementavatar case 消费 */ } },
+  formNova: { ph: 'hook', label: '法相结束新星（台阶）', run() { /* 由 tickBeh 的收窗结算消费 */ } },
+
   /* 击杀类变体：两者都由 onBehKill 钩子消费（噬魂回血 / 燎原尸体再爆） */
   killHeal: { ph: 'self', label: '击杀回血', run() { /* 由 onBehKill 消费 */ } },
   corpseBlast: { ph: 'self', label: '尸体爆炸', run() { /* 由 onBehKill 消费 */ } },
@@ -1336,6 +1349,43 @@ Object.assign(Game, {
     }
     /* 替身（还魂变体）内置冷却 */
     if ((this._autoReviveCd || 0) > 0) this._autoReviveCd -= dt;
+
+    /* [P2b·法师⑤] 法相窗口：倒数 → 收窗结算。
+     * 必须写在 `if (!this.buffs) return` **之前**（下面还有一处提前 return，
+     * 法相一结束就会被那行吞掉，Lv9 的新星永远炸不出来）。
+     *
+     * 收窗只做两件事：报一句「消散」，以及 Lv9 那发新星。伤害口径是
+     * SKILL_TIER_EVO.elementavatar[9].beh.formNova（攻击力百分比），
+     * 不写在技能本体里 —— 写在那里会变成「一开法相就炸一下」，那是另一只技能。 */
+    if (this.elemAura && this.elemAura.t > 0) {
+      this.elemAura.t -= dt;
+      if (this.elemAura.t <= 0) {
+        this.elemAura.t = 0;
+        this.elemAura.rider = false;
+        const behA = (typeof this.elemAuraBeh === 'function') ? this.elemAuraBeh() : null;
+        const ppA = this.playerGroup.position;
+        const stA = this.state.stats;
+        if (behA && behA.formNova && stA) {
+          const cA = new THREE.Vector3(ppA.x, 0, ppA.z);
+          const rA = 7;
+          FX.flashCircle(cA, rA, 0xffd166, 0.4);
+          FX.ring(cA, rA, 0xffd166, 0.65, 0.3);
+          FX.ring(cA, rA * 0.6, 0xffffff, 0.45, 0.2);
+          SFX.explode();
+          this.shake = Math.max(this.shake || 0, 0.45);
+          for (const e of this.enemies) {
+            if (!e || e.dead) continue;
+            if (DIST2D(e.pos, cA) >= rA + (e.radius || 0)) continue;
+            const { dmg, crit } = this.rollDamage(stA.atk * behA.formNova / 100);
+            this.damageEnemy(e, dmg, crit, { tag: 'aoe', knock: 1.2, elem: 'fire' });
+          }
+          FX.text(new THREE.Vector3(ppA.x, 3.1, ppA.z), '法相 · 新星', 'lv', { life: 1.1 });
+        } else {
+          FX.text(new THREE.Vector3(ppA.x, 2.9, ppA.z), '法相消散', 'info', { life: 0.9 });
+        }
+        if (typeof UI !== 'undefined' && UI.syncElemBadge) UI.syncElemBadge();
+      }
+    }
 
     /* [P2b] 回春位 Lv10「生命低于 N% 时自动施放」。
      * 扫**动作条**而不是写死技能：这一位躺着治疗 / 解毒 / 还魂三只，

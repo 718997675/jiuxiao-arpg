@@ -1258,6 +1258,23 @@ const UI = {
     el.classList.toggle('full', Game.bladeEdge() >= Game.bladeEdgeMax());
   },
 
+  /* [P2b·法师⑤] 法相角标：主元素首字 + 剩余秒数，窗口关着时只显示元素首字。
+   * 与 syncBladeBadge 同理 —— 换相 / 收窗都只改这一个 DOM，不整条重画。 */
+  syncElemBadge() {
+    if (!Game.state || Game.state.cls !== 'mage') return;
+    const el = document.querySelector('#actionbar .skill[data-skill="elementavatar"] .bl');
+    if (!el || typeof Game.elemAuraOn !== 'function') return;
+    const on = Game.elemAuraOn();
+    const k = Game.elemAuraKind();
+    el.textContent = k.glyph + (on ? Math.ceil(Game.elemAuraState().t) : '');
+    el.classList.toggle('full', on);
+    const box = el.parentElement;
+    if (box && typeof Game.elemTip === 'function') {
+      const sk = (typeof SKILLS !== 'undefined' && SKILLS.elementavatar) || null;
+      box.title = (sk ? sk.name + ' · ' : '') + Game.elemTip();
+    }
+  },
+
   buildActionBar() {
     const s = Game.state;
     const bar = document.getElementById('actionbar');
@@ -1288,7 +1305,15 @@ const UI = {
         const full = Game.bladeEdge() >= Game.bladeEdgeMax();
         bladeBadge = `<span class="bl${full ? ' full' : ''}">${bn.slice(0, 1)}${Game.bladeEdge()}</span>`;
       }
-      return `<div class="skill" data-skill="${id}" title="${sk.name}${vName ? ' · ' + vName : ''} · ${castLabel}${rangeLabel}${bladeBadge ? ' · ' + Game.bladeTip() : ''}">
+      /* [P2b·法师⑤] 法相角标：主元素首字 + 剩余秒数（关着时只有元素首字）。
+       * 与刀式角标共用 `.bl` 样式：同一类「这一格现在是哪种形态」的读数，
+       * 长得不一样反而要玩家重新认一次。 */
+      if (s.cls === 'mage' && id === 'elementavatar' && typeof Game.elemTip === 'function') {
+        const eon = Game.elemAuraOn();
+        const ek = Game.elemAuraKind();
+        bladeBadge = `<span class="bl${eon ? ' full' : ''}">${ek.glyph}${eon ? Math.ceil(Game.elemAuraState().t) : ''}</span>`;
+      }
+      return `<div class="skill" data-skill="${id}" title="${sk.name}${vName ? ' · ' + vName : ''} · ${castLabel}${rangeLabel}${bladeBadge ? ' · ' + (s.cls === 'mage' ? Game.elemTip() : Game.bladeTip()) : ''}">
         <span class="k">${keyOf(i)}</span>${vBadge}${bladeBadge}<div class="g">${skillIconSvg(id, 26)}</div>
         <span class="cost">${Game.skillCost(sk)}</span><div class="cd"></div></div>`;
     }).join('') +

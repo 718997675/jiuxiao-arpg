@@ -60,6 +60,14 @@ const SKILL_ICONS = {
   pyroclasm: '<path d="M12 2.5c1.3 2.8 4 4.2 4 7.2a4 4 0 1 1-8 0c0-3 2.7-4.4 4-7.2z"/><path d="M4.5 8L3 6.5"/><path d="M19.5 8L21 6.5"/><path d="M6 16l-2.5.5"/><path d="M18 16l2.5.5"/>',
   /* 天雷裁决：神剑贯地 */
   judgement: '<path d="M12 2v13"/><path d="M9 5.5h6"/><path d="M12 15v3.5"/><path d="M6.5 21.5L12 18.5l5.5 3"/>',
+  /* 元素法相：背后法身（肩线 + 头光）与三元素点 —— 与「剑神」的星形区分开，
+   * 法相是「人在中间、相在身后」，不是一把剑 */
+  elementavatar: '<path d="M12 8.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z"/>' +
+    '<path d="M12 8.5v6"/><path d="M6 21c0-3.5 2.7-6 6-6s6 2.5 6 6"/>' +
+    '<path d="M4 9.5c0-4.4 3.6-8 8-8s8 3.6 8 8" stroke-dasharray="2 2"/>' +
+    '<circle cx="3.5" cy="16" r="1.2" fill="currentColor" stroke="none"/>' +
+    '<circle cx="20.5" cy="16" r="1.2" fill="currentColor" stroke="none"/>' +
+    '<circle cx="12" cy="22.2" r="1.2" fill="currentColor" stroke="none"/>',
 
   /* ---------------- 道士 ---------------- */
   /* 五雷符：黄纸符 + 落雷 */

@@ -58,7 +58,8 @@ const PASSIVE_HOOKED = [
   't_heaven',      // 天师：tickPassives 攒护身符 + damagePlayer 抵挡
   't_serene',      // 静心：debuffDurOf（迟滞 / 中毒时长）
   't_elixir',      // 九转还丹：tickPassives（60 秒自动服丹 + 清负面）
-  't_beast'        // 兽契：allyCap（灵兽上限 +1）+ updateAllies（消散 30% 重召）
+  't_beast',       // 兽契：allyCap（灵兽上限 +1）+ updateAllies（消散 30% 重召）
+  'm_form'         // 法身：formElemMul（法相期间元素效果 +12%/级）
 ];
 
 /* 传给 computePlayerStats 的并加函数（与 codexBonusStats 同型）：
@@ -188,6 +189,12 @@ Object.assign(Game, {
   passiveEmberMul() { return 1 + 0.1 * (this.passiveState().m_ember || 0); },   // 燃烬
   chainMul() { return 1 + 0.12 * (this.passiveState().m_conduct || 0); },       // 导电
   freezeMul() { return 1 + 0.15 * (this.passiveState().m_chill || 0); },        // 霜寒
+
+  /* 法身：法相期间的元素效果 +12%/级。
+   * 它不能进 PASSIVE_STATS —— 那是「无条件折成属性」的通道，而这条只在
+   * 法相窗口里成立；写成常驻属性等于让玩家白拿 36%。由 Game.elemRiderMul()
+   * 在命中时读，与开窗快照相乘。 */
+  formElemMul() { return 1 + 0.12 * (this.passiveState().m_form || 0); },
 
   /* 剑魄记账：castSkill 每次扣资源都进来；换图 / 复活清零（rageSpent 在 state 上） */
   onMpSpent(cost) {

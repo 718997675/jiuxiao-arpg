@@ -2169,8 +2169,215 @@ const ok = (c, m, d) => {
       '镇岳式不加伤害（守就是守）', b.armor);
   }
 
-  /* ---------------- 17. 零报错 ---------------- */
-  console.log('十七、控制台');
+  /* ---------------- 17. 法师 ⑤ 元素法相 ---------------- */
+  console.log('十七、法师 ⑤ 元素法相');
+  const elem = await p.evaluate(() => {
+    const out = {};
+    const mkFoe = () => {
+      const pp = Game.playerGroup.position;
+      return {
+        pos: new THREE.Vector3(pp.x + 2, 0, pp.z), radius: 0.5, dead: false,
+        hp: 1e9, maxHp: 1e9, level: 10, boss: false, cfg: { armorHigh: false },
+        actor: { flash: 0 }, anim: { time: 0 }, spd: 0, atkCd: 999, id: 98
+      };
+    };
+    const reset = (lv) => {
+      Game.enemies = [];
+      Game.allies = [];
+      Game.mapGen = (Game.mapGen || 0) + 1;
+      Game.buffs = [];
+      Game.state.cls = 'mage';
+      Game.state.level = 40;                   // elementavatar 的 unlock 是 34
+      Game.state.skills = { elementavatar: { lv: lv } };
+      Game.state.stats.specials = {};
+      Game.elemAura = { t: 0, elem: 0, mul: 1, rider: false };
+      window.__mkClean();
+      Game.running = true; Game.dead = false;
+      Game.recalc();
+    };
+    /* 开窗：顺手把冷却与灵力清干净，免得上一段的状态漏进来 */
+    const open = (lv) => {
+      reset(lv);
+      Game.cooldowns = {};
+      Game.state.mp = Game.state.stats.mpMax;
+      Game.castSkill('elementavatar');
+      return { t: Game.elemAura.t, elem: Game.elemAura.elem, rider: Game.elemAura.rider,
+        cd: Game.cooldowns['elementavatar'],
+        buffs: Game.buffs.filter(b => b.key === 'skill:elementavatar').length };
+    };
+
+    /* --- 一、开窗：10 秒 + 全抗增益 + 吃自己的长冷却 --- */
+    out.lv1 = open(1);
+    out.lv1.buff = (() => {
+      const b = Game.buffs.find(x => x.key === 'skill:elementavatar');
+      return b ? { allRes: b.stats.allRes, dur: b.dur, cc: !!b.ccImmune } : null;
+    })();
+
+    /* --- 二、Lv7 台阶：窗口 +4 秒 --- */
+    out.lv7 = open(7);
+
+    /* --- 三、换相：3 级之前不换（也不重开窗），3 级起循环 --- */
+    out.swapLocked = (() => {
+      open(2);
+      Game.elemAura.t = 6;
+      Game.cooldowns = {};
+      Game.state.mp = Math.floor(Game.state.stats.mpMax * 0.5);
+      const mp0 = Game.state.mp;
+      Game.castSkill('elementavatar');
+      return { elem: Game.elemAura.elem, t: Game.elemAura.t, cd: Game.cooldowns['elementavatar'], mp0: mp0, mp: Game.state.mp };
+    })();
+    out.swap = (() => {
+      open(3);
+      Game.elemAura.t = 6;
+      Game.cooldowns = {};
+      Game.state.mp = Math.floor(Game.state.stats.mpMax * 0.5);
+      const mp0 = Game.state.mp;
+      const seq = [];
+      for (let i = 0; i < 4; i++) {
+        Game.cooldowns = {};
+        Game.castSkill('elementavatar');
+        seq.push(Game.elemAura.elem);
+      }
+      return { seq: seq, cd: Game.cooldowns['elementavatar'], mp0: mp0, mp: Game.state.mp, t: Game.elemAura.t };
+    })();
+
+    /* --- 四、命中附加（Lv5）：火灼烧 / 冰减速 / 雷麻痹易伤 --- */
+    const hitOnce = (lv, elemIdx) => {
+      open(lv);
+      if (elemIdx) Game.elemAura.elem = elemIdx;
+      const f = mkFoe();
+      Game.enemies = [f];
+      Game.damageEnemy(f, 100, false, { tag: 'aoe' });
+      const r = { dotT: f.dotT || 0, slowT: f.slowT || 0, vulnT: f.vulnT || 0, stun: f.stun || 0 };
+      Game.enemies = [];
+      Game.mapGen = (Game.mapGen || 0) + 1;
+      return r;
+    };
+    out.rid4 = hitOnce(4, 0);      // 4 级还没有 rider
+    out.rid5fire = hitOnce(5, 0);
+    out.rid5ice = hitOnce(5, 1);
+    out.rid5thunder = hitOnce(5, 2);
+    /* 窗口关着的时候不该有任何附加 */
+    out.ridOff = (() => {
+      reset(5);
+      const f = mkFoe();
+      Game.enemies = [f];
+      Game.damageEnemy(f, 100, false, { tag: 'aoe' });
+      const r = { dotT: f.dotT || 0, slowT: f.slowT || 0, vulnT: f.vulnT || 0 };
+      Game.enemies = [];
+      Game.mapGen = (Game.mapGen || 0) + 1;
+      return r;
+    })();
+
+    /* --- 五、收窗新星（Lv9）：倒数到 0 才炸，Lv8 不炸 --- */
+    const novaAt = (lv) => {
+      reset(lv);
+      Game.cooldowns = {}; Game.state.mp = Game.state.stats.mpMax;
+      Game.castSkill('elementavatar');
+      const f = mkFoe();
+      f.hp = f.maxHp = 1e6;
+      Game.enemies = [f];
+      Game.elemAura.t = 0.05;
+      Game.tickBeh(0.1);
+      const r = { dmg: 1e6 - f.hp, t: Game.elemAura.t };
+      Game.enemies = [];
+      Game.mapGen = (Game.mapGen || 0) + 1;
+      return r;
+    };
+    out.nova9 = novaAt(9);
+    out.nova8 = novaAt(8);
+
+    /* --- 六、免控（Lv10）：标记在增益上，减速真的挂不上 --- */
+    out.cc10 = (() => {
+      open(10);
+      const b = Game.buffs.find(x => x.key === 'skill:elementavatar');
+      Game.playerSlowT = 0; Game.playerSlow = 0;
+      const applied = Game.applyPlayerSlow(0.5, 3);
+      return { marked: !!(b && b.ccImmune), now: Game.ccImmuneNow(), applied: applied, slowT: Game.playerSlowT };
+    })();
+    out.cc9 = (() => {
+      open(9);
+      Game.playerSlowT = 0; Game.playerSlow = 0;
+      const applied = Game.applyPlayerSlow(0.5, 3);
+      return { now: Game.ccImmuneNow(), applied: applied, slowT: Game.playerSlowT };
+    })();
+
+    /* --- 七、死亡关窗（tickBeh 在 dead 时提前返回，不关会冻在半路） --- */
+    out.die = (() => {
+      open(9);
+      Game.elemAura.t = 5;
+      Game.dead = false;
+      Game.die();
+      const r = { t: Game.elemAura.t, rider: Game.elemAura.rider };
+      Game.dead = false;
+      return r;
+    })();
+
+    /* --- 八、动作条角标真的画出来了 --- */
+    out.badge = (() => {
+      open(5);
+      /* ⑤ 格要真的装着 elementavatar —— 技能条是存档里的数组，
+       * reset 不会替玩家摆格子，这里显式摆一次 */
+      Game.state.skillbar = ['fireball', 'frostnova', 'chain', 'pyroclasm', 'elementavatar'];
+      Game.elemAura.t = 7.2;
+      UI.buildActionBar();
+      const el = document.querySelector('#actionbar .skill[data-skill="elementavatar"] .bl');
+      return el ? { txt: el.textContent, full: el.classList.contains('full') } : null;
+    })();
+
+    Game.enemies = [];
+    Game.buffs = [];
+    Game.mapGen = (Game.mapGen || 0) + 1;
+    return out;
+  });
+  {
+    const e = elem;
+    /* 默认形态是 0 号变体（三相：元素效果 +40%、持续 −2）—— 这是全局规则，
+     * 所以 Lv1 的窗口是 10 − 2 = 8 秒。台阶 Lv7 的 +4 要**再加在它上面**，
+     * 而不是被变体顶掉。 */
+    ok(e.lv1.t > 7.9 && e.lv1.t < 8.1, '开窗 = 本体 10 秒 + 默认变体（三相 −2）= 8 秒', e.lv1);
+    ok(e.lv1.buffs === 1 && e.lv1.buff && e.lv1.buff.allRes === 20,
+      '窗口给全抗 +20（走增益表，不是另开乘区）', e.lv1.buff);
+    ok(e.lv1.cd > 30, '开窗吃技能自己的长冷却（55 秒 × 冷却修正）', e.lv1.cd);
+    ok(e.lv1.rider === false, '1 级窗口没有命中附加（那是 Lv5 的台阶）', e.lv1.rider);
+
+    ok(Math.abs((e.lv7.t - e.lv1.t) - 4) < 1e-6,
+      'Lv7 台阶在变体之上再加 4 秒（不是被变体顶掉）', { lv1: e.lv1.t, lv7: e.lv7.t });
+
+    ok(e.swapLocked.elem === 0, '3 级之前按下去不换相（仍是火）', e.swapLocked);
+    ok(e.swapLocked.t > 5.9, '也不重开窗（窗口还剩多久就是多久）', e.swapLocked);
+    ok(Math.abs(e.swapLocked.cd - 1.2) < 1e-6, '只给 1.2 秒硬直，不吃 55 秒冷却', e.swapLocked);
+    ok(e.swapLocked.mp === e.swapLocked.mp0, '没换成功也不收灵力', e.swapLocked);
+
+    ok(e.swap.seq.join(',') === '1,2,0,1', 'Lv3 起换相循环 火 → 冰 → 雷 → 火', e.swap.seq);
+    ok(Math.abs(e.swap.cd - 1.2) < 1e-6, '换相只吃 1.2 秒冷却（否则换一次相要等一分钟）', e.swap);
+    ok(e.swap.mp === e.swap.mp0, '换相不收灵力（退回去）', e.swap);
+    ok(e.swap.t > 5.9, '换相不会刷新窗口时长', e.swap);
+
+    ok(e.rid4.dotT === 0 && e.rid4.slowT === 0 && e.rid4.vulnT === 0,
+      'Lv4 命中还没有元素附加（否则 Lv5 是空话）', e.rid4);
+    ok(e.rid5fire.dotT > 0, '火相：命中挂灼烧（走 applySkillDot）', e.rid5fire);
+    ok(e.rid5ice.slowT > 0, '冰相：命中挂减速', e.rid5ice);
+    ok(e.rid5thunder.vulnT > 0, '雷相：命中挂易伤', e.rid5thunder);
+    ok(e.ridOff.dotT === 0 && e.ridOff.slowT === 0 && e.ridOff.vulnT === 0,
+      '窗口关着的时候什么都不附加', e.ridOff);
+
+    ok(e.nova9.dmg > 0, 'Lv9 收窗真的炸了一发新星（按攻击力 150% 结算）', e.nova9);
+    ok(e.nova9.t === 0, '收窗后窗口归零', e.nova9);
+    ok(e.nova8.dmg === 0, 'Lv8 收窗不炸（新星是 Lv9 的台阶）', e.nova8);
+
+    ok(e.cc10.marked === true && e.cc10.now === true, 'Lv10 窗口内免控标记真的挂上了', e.cc10);
+    ok(e.cc10.applied === false && e.cc10.slowT === 0, 'Lv10 减速挂不上（不是缩短，是根本挂不上）', e.cc10);
+    ok(e.cc9.now === false && e.cc9.applied === true, 'Lv9 还没有免控（减速照常生效）', e.cc9);
+
+    ok(e.die.t === 0 && e.die.rider === false, '死亡时法相立即关闭（否则复活后凭空续上）', e.die);
+
+    ok(e.badge && e.badge.txt === '火8' && e.badge.full === true,
+      '动作条角标显示「元素首字 + 剩余秒数」且高亮', e.badge);
+  }
+
+  /* ---------------- 18. 零报错 ---------------- */
+  console.log('十八、控制台');
   ok(errs.length === 0, '全程零控制台报错', errs.slice(0, 3));
 
   console.log('\n' + (fail === 0 ? '✓' : '✗') + ' P2b 探针：' + pass + ' 通过 / ' + fail + ' 失败');

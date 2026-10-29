@@ -264,6 +264,28 @@ const SKILLS = {
     ]
   },
 
+  /* [P2b·法师⑤] 元素法相：⑤ 位唯一一只技能，也是全表里**唯一一只净新增**的技能
+   * （P0 时它在 SKILL_ARCHETYPE 里只是占位文案 `isNew: true`）。
+   *
+   * 它不做伤害，做的是「窗口」：10 秒内自身全抗 +20，并且**所有命中**都附带
+   * 主元素效果（火 = 灼烧 / 冰 = 减速 / 雷 = 麻痹 + 易伤）。窗口期间再按一次
+   * ⑤ 是切换主元素，不是重新开一次 —— 所以两档冷却完全不同（见 game.js 的 case）。
+   *
+   * 为什么 `mult: 0`：法相本体不造成伤害，9 级那发「结束新星」的伤害来自
+   * SKILL_TIER_EVO.elementavatar[9].beh.formNova（攻击力百分比），
+   * 写在这里会变成「开法相就炸一下」，那是另一只技能。 */
+  elementavatar: {
+    id: 'elementavatar', name: '元素法相', cls: 'mage', tree: '雷霆', glyph: '相', unlock: 34, cd: 55, cost: 40,
+    type: 'ultimate', mult: 0, radius: 8, anim: 'cast', cast: 'self', castRange: 0,
+    buff: { allRes: 20, dur: 10 },
+    desc: '开启法相：10 秒内全抗 +20，且每次命中附带主元素效果（火 = 灼烧 / 冰 = 减速 / 雷 = 麻痹并易伤）。法相期间再按一次切换主元素。',
+    variants: [
+      { name: '三相', desc: '元素效果 +40%，持续 −2 秒', mods: { dmg: 40, dur: -2 } },
+      { name: '久相', desc: '持续 +6 秒，冷却 +30%', mods: { dur: 6, cd: -30 } },
+      { name: '省相', desc: '消耗 −50%，元素效果 −20%', mods: { cost: 50, dmg: -20 } }
+    ]
+  },
+
   /* ==================== 道士 · 符箓 ==================== */
   talisman: {
     id: 'talisman', name: '五雷符', cls: 'taoist', tree: '符箓', glyph: '符', unlock: 1, cd: 1.2, cost: 8,
@@ -392,7 +414,7 @@ const SKILLS = {
 /* 技能栏顺序（按解锁等级排列，前 8 个上动作条第一页） */
 const SKILL_ORDER = {
   warrior: ['whirl', 'thrust', 'warcry', 'quake', 'leap', 'shieldwall', 'bloodrage', 'execute', 'avatar', 'riposte', 'swordarray', 'skysfall'],
-  mage: ['fireball', 'frostnova', 'chain', 'meteor', 'iceshard', 'firewall', 'iceshield', 'blizzard', 'starfall', 'thundercloud', 'pyroclasm', 'judgement'],
+  mage: ['fireball', 'frostnova', 'chain', 'meteor', 'iceshard', 'firewall', 'iceshield', 'blizzard', 'starfall', 'thundercloud', 'pyroclasm', 'elementavatar', 'judgement'],
   taoist: ['talisman', 'summon', 'heal', 'poison', 'talismanarrow', 'antidote', 'taiji', 'whitetiger', 'swordrain', 'mastersigil', 'azuredragon', 'revive']
 };
 
@@ -647,12 +669,22 @@ const SKILL_ARCHETYPE = {
           }
         },
         {
-          no: 5, title: '元素法相', inherit: [], unit: false, isNew: true,
+          /* [P2b] 法相本体已实现（`elementavatar` 是净新增技能，见 SKILLS 里那段注释）。
+           * `isNew` 仍然为 true：它的意思是「没有老技能可以改造成它」，
+           * 而不是「还没做」—— 道士 ⑤ 是改造三只老召唤，法师 ⑤ 是从零写一只。 */
+          no: 5, title: '元素法相', inherit: ['elementavatar'], unit: false, isNew: true,
           /* 只强化主元素（默认口径）：全场技能附带主元素效果，不是召唤物 */
           aura: { durMin: 10, durMax: 15, mainElemOnly: true },
+          /* 5 / 9 / 10 三条原稿都要改，理由各不相同：
+           *   5  「法相期间全技能灼烧」—— 冰 / 雷法相下这句是假话。三系都成立的说法是
+           *      「附带主元素效果」，具体是灼烧还是减速由当前法相决定。
+           *   9  「法相结束新星」没说是多疼，补成「爆发新星」并接上真实伤害（formNova）。
+           *   10 「免疫打断」—— 这个引擎里**没有打断机制**（`m_focus` 的「施法不被打断」
+           *      只是文案），写了就是假话。换成免疫控制：走现成的 `ccImmune`，
+           *      判定口 `ccImmuneNow()`，减速 / 中毒真的挂不上。 */
           tiers: {
-            1: '火法相', 3: '元素切换', 5: '法相期间全技能灼烧', 7: '法相延长',
-            9: '法相结束新星', 10: '法相期间免疫打断'
+            1: '火法相', 3: '元素切换', 5: '法相期间全技能附带主元素效果', 7: '法相持续 +4 秒',
+            9: '法相结束时爆发新星', 10: '法相期间免疫控制'
           }
         }
       ]
@@ -1180,6 +1212,27 @@ const SKILL_TIER_EVO = {
     7: { label: '施法后 4 秒移动速度 +15%', beh: { moveSpd: 15 } },
     9: { label: '施法后 4 秒暴击率 +15%', beh: { crit: 15 } },
     10: { label: '护盾破碎 / 爆发时对周围敌人造成伤害并定身 1.5 秒', beh: { tierNova: 150 } }
+  },
+
+  /* ---------------- 法师 ⑤ 元素法相（净新增技能） ----------------
+   * 五档都落在**窗口**上，不是「这一发打多疼」—— 法相本体不造成伤害。
+   *
+   *   3  `elemSwap: 1`   窗口期间可以换主元素（1~2 级只能火）
+   *   5  `formRider: 1`  命中附带主元素效果（火灼烧 / 冰减速 / 雷麻痹易伤）
+   *   7  `formDur: 4`    窗口 +4 秒（10 → 14）
+   *   9  `formNova: 150` 窗口结束炸一发（攻击力 150%，半径 6）
+   *   10 `ccImmune: 1`   窗口期间免疫控制（复用血怒 Lv10 那条通道与判定口）
+   *
+   * 撞键复查：elementavatar 的分支键只有 mods（dmg / dur / cd / cost），
+   * 五条台阶一个 beh 都不与分支重名。**10 级刻意复用 `ccImmune`**：
+   * 同一个语义（免疫控制）不该有两套判定口，否则「血怒的免控生效、法相的没生效」
+   * 这种 bug 迟早出现。 */
+  elementavatar: {
+    3: { label: '元素切换', beh: { elemSwap: 1 } },
+    5: { label: '法相期间全技能附带主元素效果', beh: { formRider: 1 } },
+    7: { label: '法相持续 +4 秒', beh: { formDur: 4 } },
+    9: { label: '法相结束时爆发新星', beh: { formNova: 150 } },
+    10: { label: '法相期间免疫控制', beh: { ccImmune: 1 } }
   },
 
   /* ---------------- 刀客 ⑤ 兵形（剑神降世 改造成刀式状态机） ----------------
