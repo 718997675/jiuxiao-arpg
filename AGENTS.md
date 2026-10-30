@@ -133,6 +133,7 @@ git fetch origin                 # 分支都在远程，clone 完就全能看到
 | 术法（技能树、变体） | `src/ui-skills.js` |
 | 技能实际行为 / 被动 | `src/skill-beh.js` / `src/skill-passive.js` |
 | 元素定义 / 元素反应 | `src/data/data-elem.js`（表）+ `src/game.js` 的 `tryElemReaction` / `applyElemReaction`。**反应挂在 `damageEnemy` 一个口上**，别去各技能 case 里加 |
+| 元素注入（技能位注火/冰/雷/毒） | `src/data/data-elem.js` 的 `SKILL_INJECT` / `skillCanInject` + `src/game.js` 的 `curInject`（三级取值）。**`castSkill` 只开窗口，投射物靠 `FX.projectile` 的 `inj` 自己带** |
 | 手机端摇杆、键位、面板滚动 | `src/mobile.js` + `index.html` 的 `@media` |
 | 手机横向树排版 | `src/ui-mtree.js` |
 | 存档 / 设置持久化 | `src/core/save.js` / `src/core/settings.js` |
@@ -212,7 +213,12 @@ node dev/preview-check.js --url <预览地址>   # 预览站：能开局 + 资�
   表在 `src/data/data-elem.js`，结算在 `damageEnemy` 一个口，三道闸门
   （`silent` / `react` / `_reacting`）+ 双层 ICD（0.5s 全局 · 2s 同目标）。
   **圣系 4 组没做**（引擎里 `sigil` 只是伤害类型，没有状态位，面板上明说）。
-  下一步 **P3b 元素注入**（每技能位注 1~2 种元素 + 附加 30%~50% + 特效混色 + 元素词缀统一）。
+  **P3b 单元素注入已落地**：①②③⑤ 位可注火 / 冰 / 雷 / 毒（④ 增益槽不给注），
+  门槛**角色 20 级**，附加比例跟**技能有效等级**走（10 级 30% → 20 级 50%）。
+  口径是「**附加不转换**」：原伤害 100% + 附加 X%，两段各过自己的抗性与元素词缀。
+  三级取值 `opts.inj → _proj.inj → _elem`；**延迟落点 / dot / 召唤物不注入**（已拍板）。
+  注入元素可当反应源（`elemReactReady` 的 `altElem`，命中元素优先）。
+  下一步 **P3c**：元素词缀统一成「元素伤害 +X%」（老档 1:1 折算）+ 双元素混搭混色。
 - **待拍板**：大地图扩展（12 章 / 80 怪 / 24 首领 / 12 营地 + 任务网 / 5 类地下城 × 5 阶钥匙）。
   方案在 `docs/ACT-EXPANSION-PLAN.md`（2026-10-27 草案，**未动代码**）。
   §14 有 10 项待拍板，**拍板前不要开工**。

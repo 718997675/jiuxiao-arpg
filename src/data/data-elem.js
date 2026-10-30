@@ -129,3 +129,54 @@ function elemReactionOn(hitElem, e) {
   }
   return null;
 }
+
+/* ============================================================
+ * 元素注入（P3b）
+ *
+ * 方案 §6.1：每个技能位可注入 1~2 种元素，伤害**附加、不转换**
+ * （原伤害保留，元素在原伤害上再附加 30%~50%）。
+ * 这一版只做**单元素注入**，双元素混搭留给 P3c。
+ *
+ * 三条口径，都是刻意选的：
+ *   1. **只有 ①②③⑤ 能注入**（`SKILL_ARCHETYPE.slots[].elem`，④ 是增益槽）；
+ *   2. **附加比例跟技能有效等级走**（10 级 30% → 20 级 50%）——
+ *      方案里说的「注入等级」在本仓库不存在，硬造一个新等级就是新机制；
+ *      精进层本来就是词条层，挂在这里最自然，也不用多存一个字段；
+ *   3. **圣不参与**：`sigil` 只是一个伤害类型，没有状态位、没有反应，
+ *      注进去除了改抗性什么都没有 —— 等 P3b 补上圣印状态位再说。
+ * ============================================================ */
+const SKILL_INJECT = {
+  at: 20,                                        // 角色等级门槛（前期不动数值）
+  elems: ['fire', 'ice', 'lightning', 'poison'], // 圣不在列，见上
+  minPct: 30,                                    // 有效等级 10 及以下
+  maxPct: 50                                     // 有效等级 20
+};
+
+/* 注入能附加多少（整数百分比，10 级 30% → 20 级 50%） */
+function skillInjectPct(lv) {
+  const T = SKILL_TIERS;
+  const n = Math.max(T.baseMax, Math.min(T.cap, Math.round(Number(lv) || 1)));
+  const k = (n - T.baseMax) / Math.max(1, T.cap - T.baseMax);
+  return Math.round(SKILL_INJECT.minPct + (SKILL_INJECT.maxPct - SKILL_INJECT.minPct) * k);
+}
+
+/* 某个技能属于哪个功能位（秘技 / 不在 5 位体系里的返回 null） */
+function skillSlotOf(id) {
+  if (typeof SKILL_ARCHETYPE === 'undefined' || !SKILL_ARCHETYPE.classes) return null;
+  for (const cls in SKILL_ARCHETYPE.classes) {
+    const pack = SKILL_ARCHETYPE.classes[cls];
+    for (const s of (pack.slots || [])) {
+      if ((s.inherit || []).indexOf(id) >= 0) {
+        const meta = (SKILL_ARCHETYPE.slots || []).find(m => m.no === s.no) || {};
+        return { cls: cls, no: s.no, elem: !!meta.elem, name: meta.name || '' };
+      }
+    }
+  }
+  return null;
+}
+
+/* 这个技能位能不能注入元素（④ 增益槽恒为 false） */
+function skillCanInject(id) {
+  const s = skillSlotOf(id);
+  return !!(s && s.elem);
+}

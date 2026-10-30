@@ -605,7 +605,10 @@ const FX = {
       style, spin: Math.random() * 6.28, spinSpd: opts.spinSpd || 3.2,
       homing: opts.homing || null, homeTurn: opts.homeTurn || 6,
       hitSet: null,
-      tag: opts.tag           // [S1] 伤害乘区标记，命中时由调用方取回
+      tag: opts.tag,           // [S1] 伤害乘区标记，命中时由调用方取回
+      /* [P3b] 元素注入跟着投射物走：飞出去时施法窗口早就关了，
+       * 创建那一刻把 `{key, amt}` 复制过来，命中时由 Game.curInject 取回 */
+      inj: opts.inj || null
     };
     this.projectiles.push(p);
     return p;

@@ -41,7 +41,8 @@ P1 起才动 `SKILL_BAR_SLOTS` 与面板的三列树。
 | P2b | **数量 / 形态台阶接进 `castSkill`**。①数量：默认 Lv3 / Lv7 各 +1，接 `smod.count`（13 个技能消费），第 n 发 ×0.85^n 防三倍伤害；**发数节奏可按技能覆盖**（`SKILL_COUNT_TIER`，法师 ② 在 Lv5 / Lv7）。②进化：新建 `SKILL_TIER_EVO`（挂**技能 id** 不挂技能位），合并顺序 **台阶最前 → 精研 / 取向 / 变体覆盖同名键**（花点的选择必须盖过等级送的）。**15 个位 / 45 条全部接完**：刀客①旋风斩、法师①火球、道士①符箓、道士②毒雾、刀客②地裂、刀客③剑阵、刀客④血怒、道士④回春、法师③火墙、法师④护盾、道士③太极、法师②陨石（3 溅射 / 5 双陨 / 7 三连落）、道士⑤召灵兽（三只各召各的）、**刀客⑤兵形（刀式状态机 + 刃势 + 断岳斩）**、**法师⑤元素法相（净新增技能：法相窗口 + 换相 + 命中附加 + 收窗新星 + 免控）** —— 细则见下面「P2b 收口要点」。**✅ 15/15 个位、45/45 条：P2b 收口** | ✅ | `data-skills.js`（`SKILL_TIER_EVO` / `SKILL_COUNT_TIER` / `skillTierEvo` / `skillTierMods` / `skillTierBeh`）、`skill-beh.js`（`branchBeh` 台阶排最前 + `killProlong` / `lifesteal` / `ccImmune` / `healOnCast` / `tierDur` / `splash` / `stanceUnlock` / `edgeFinisher` / `edgeKeep` / `edgeUltimate`）、`game.js`（autoTarget / rageMul / firePatch / swordField / applyPlayerSlow / ccImmuneNow / behTierNova / shieldT+sdur / 符阵 dur+tierDur / meteor·blizzard·judgement·starfall 多发 / spawnTierField 落点领域 / **bladeXxx 兵形状态机**）、`ui.js`（说明页读数现算 + 动作条刀式角标）、`ui-skills.js` | `dev/test-skill-p2b.js` 878 · `dev/probe-skill-p2b.js` 282 |
 | P2c | **精通层 11~20**（不新增形态）：①有效等级 20 与分段曲线 P2a 已接；②**精进轨道**（11~20 十格 + 「精进 x/20」+ 渐进披露 + 15/20 里程碑）；③**Lv15 精通三选一**（烈 / 疾 / 省，走 mods，门槛看有效等级，存 `skills[id].m`）；④**Lv20 最终精通「归一」**（三条精通各 60% 同时生效，与 15 级所选**叠加**，走 `effSkillMods` 第六层）—— 已完成；⑤**光效随等级变亮**（`skillFxAmp` → `FX.setAmp`，只乘亮度 / 不透明度 / 粒子数，不乘半径）—— 已完成。**P2c 收口** | ✅ | `data-skills.js`（`SKILL_TIERS.mastery` / `SKILL_TIERS.capstone` / `skillMasteryOn` / `skillMasteryIdx` / `skillMasteryOpt` / `skillCapstoneOn` / `skillCapstoneBonus`）、`game.js`（`skillMastery` / `skillMasteryMods` / `setSkillMastery` / `skillCapstoneMods` / `effSkillMods` 第五·六层）、`ui-skills.js`（mstRow + 精通行 + 60% 角标）、`index.html`、**`fx.js`（`amp` / `setAmp` / `lit` + 7 个原语调亮）** | `dev/test-skill-p2c.js` 99 · `dev/probe-skill-p2c.js` 62 |
 | P3a | **元素反应表 6/10**：触发口径 = 「目标身上已有 A 元素状态 + 这一下带 B 元素」（不依赖注入）。蒸汽爆裂 / 等离子 / 焚毒 / 感电冻结 / 腐霜 / 腐蚀链，走 `damageEnemy` 一个口，三道闸门（silent / react / `_reacting`）+ 双层 ICD（0.5s 全局 · 2s 同目标）。**圣系 4 组未做** —— 引擎里 sigil 只是伤害类型，没有状态位 | ✅ | `data-elem.js`（新建：`ELEM_DEFS` / `ELEM_STATUS` / `ELEM_REACTIONS` / `elemReactionOn`）、`game.js`（`elemReactReady` / `tryElemReaction` / `applyElemReaction` / `chainReaction` / `knockEnemy`）、`ui.js`（说明页「元素反应」行）、`index.html`（加载 data-elem.js） | `dev/test-skill-p3.js` 62 · `dev/probe-skill-p3.js` 26 |
-| P3b | **元素注入**：每个技能位注 1~2 种元素、附加 30%~50%、特效主 70%/副 30% 混色、元素词缀统一口径 | ⬜ | 战斗 + 词缀 + `src/fx.js` | — |
+| P3b | **元素注入（单元素版 ✅）**：①②③⑤ 位可注火 / 冰 / 雷 / 毒，门槛角色 20 级，附加 30%~50%（跟技能有效等级走），**附加不转换**（原伤害 100% + 附加 X%，两段各过自己的抗性与元素词缀）。三级取值 `opts.inj → _proj.inj → _elem`；注入元素可当反应源（命中元素优先、注入兜底）。**延迟落点 / dot / 召唤物不注入**（已拍板）。剩：双元素混搭 + 元素词缀统一口径 | 🟡 | `data-elem.js`（`SKILL_INJECT` / `skillInjectPct` / `skillSlotOf` / `skillCanInject`）、`game.js`（`skillInject` / `skillInjectAmt` / `setSkillInject` / `curInject` / `elemHitMul` + `castSkill` 窗口 + `damageEnemy` 两段式）、`fx.js`（`projectile` 的 `inj`）、`ui-skills.js`（注入块 + 点击委托） | `dev/test-skill-p3.js` 95 · `dev/probe-skill-p3.js` 41 |
+| P3c | **元素词缀统一 + 双元素混搭**：装备词缀从「火伤 / 冰伤 / 雷伤 / 毒伤」四族并成「**元素伤害 +X%**」（全元素通用），老档 1:1 折算；每技能位注 1~2 种元素、特效主 70% / 副 30% 混色 | ⬜ | `data-core.js`、`data-items.js`、`core/save.js`、`game.js`、`src/fx.js` | — |
 | P4 | 三职业独立 ⑤ 号位：刀客兵形/刃势、法师法相、道士召唤 | ⬜ | `src/fx.js`、`src/charforge.js` | — |
 | P5 | 形态进化表现：5 槽 × 3 职业 × 3 段 = 45 套 | ⬜ | `src/fx.js`、模型 | — |
 | P6 | 平衡、洗点、老档兼容回归 | ⬜ | — | — |
@@ -1135,3 +1136,63 @@ mobile-layout ✓。
    CPU 还没缓过来，一批 `setTimeout` 类断言随机红）。**不是本次改动**。
 3. 面板文案用 `ELEM_REACTIONS.map(...)` 生成，不手写 6 条 —— 以后加一组反应，
    说明页自动跟着变；写死文案迟早和表对不上。
+
+### 2026-10-30 · P3b 元素注入（单元素版）
+
+**这一版只做单元素注入**，双元素混搭（主 70% / 副 30% 混色）留 P3c。
+
+三条口径，都是刻意选的：
+
+1. **只有 ①②③⑤ 位能注入**（`SKILL_ARCHETYPE.slots[].elem`）。④ 是增益槽，
+   「给血怒注火」没有元素语义 —— 面板上这个位连注入块都不显示。
+2. **门槛是角色等级 20**（`SKILL_INJECT.at`），**不是技能等级**。注入会改整只技能的
+   伤害口径，前期放开等于把 1~20 级的平衡重做一遍。
+3. **附加比例跟技能有效等级走**（10 级 30% → 20 级 50%）。方案里说的「注入等级」
+   在本仓库不存在；精进层本来就是词条层，挂在那里最自然，也不用多存一个字段。
+
+**伤害是「附加」，不是「转换」**（方案 §6.1 拍板）：
+
+```
+final *= elemHitMul(e, 命中元素, 1) + elemHitMul(e, 注入元素, amt)
+```
+
+两段各自过自己的抗性与元素词缀，加起来就是 1.30 / 1.50 倍。没注入时走**原路径**
+（逐字节不变）。为什么不归一化：归一化等于把注入变成纯色换皮，多打的那 30%~50%
+必须真的多打。
+
+**作用范围故意收窄**：只作用于「施法当帧的伤害 + 这一次施法扔出去的投射物」。
+延迟落点（陨石砸地 0.9 秒后）、地板跳伤、持续伤害、召唤物出手**都不注入** ——
+那些伤害发生时 `_elem` 已经清空。硬要让它们也吃到，就得给每条延迟链单独带参，
+而「这一次施法」和「0.9 秒后那一发」本来就不是同一件事。
+
+三级取值（投射物会飞很久，施法窗口早关了）：
+
+```
+opts.inj  →  this._proj.inj  →  this._elem  →  null
+```
+
+- **注入元素也能当反应源**：`elemReactReady` 多收一个 `altElem`，**命中元素优先**，
+  它跟目标状态同元素（或本身不参与反应）时才试注入那一段。否则「火球注冰打燃烧怪」
+  会因为「火碰火」判定失败而白白丢掉一次蒸汽爆裂。
+- **圣不参与注入**：`sigil` 只是一个伤害类型，没有状态位、没有反应，注进去除了改抗性
+  什么都没有。等补上「圣印」状态位再说。
+
+**验证**：`test-skill-p3` 95 通过 / 0 失败（新增第六节 33 条：门槛 / ④ 位拦截 /
+比例曲线 / 两段相加 / 三级取值 / altElem 兜底 / 面板绑定）；`probe-skill-p3`
+41 通过 / 0 失败（真机：19 级不生效 20 级生效、④ 位注了也不生效、30% 打出 1.30 倍、
+50% 打出 1.50 倍、旋风斩多段全带、收尾清零、火球把 `{key:'ice'}` 复制到自己身上、
+注入冰打燃烧怪触发蒸汽爆裂、面板 5 个选项点击真的写进 `state.skills[id].el`、
+不到门槛写「未开启 · 境界 20 级」）。
+
+其余全绿：p0 250 · p1 52 · p1c 363 · p2 41 · p2b 878 · p2c 99 · items 17 · save 79 ·
+smoke ERRORS none · p2b 探针 282 · p2c 探针 62 · p2 26 · p1d 36 · arch 29 · bar5 30 ·
+p1c 23 · mobile-layout ✓ · save-browser 80。
+
+**踩坑**：
+1. 探针第九节收尾时把 `applyElemReaction` 还原成了原始函数，结果第十节记反应用的
+   `window.__reacts` 再也没人写 —— 「注入冰也能触发反应」那条**假红**（反应其实触发了，
+   只是没人记）。记录壳的还原统一放到探针最后。
+2. 探针里 `Game.time` 不一定走（主角可能已死 → `tickFrame` 不跑），ICD 用绝对值记，
+   永不过期。每个用例前 `_reactCd = {}`。
+3. `FX.projectile` 必须把 `inj` 复制到投射物自己身上。飞出去的那一刻施法窗口已经关了，
+   不复制就是「只有第一发带元素，后面的都不带」。

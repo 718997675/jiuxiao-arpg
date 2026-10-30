@@ -143,9 +143,9 @@ ok(elemReactionOn('fire', {}) === null, '目标身上什么都没有就不反应
  * 五、接线：三道闸门 + 双层 ICD + 面板同源
  * ============================================================ */
 console.log('五、接线');
-ok(/this\.tryElemReaction\(e, elem, final, opts\);/.test(gm),
-  'damageEnemy 里真的调了 tryElemReaction（所有伤害的唯一出口）');
-ok(/elemReactReady\(e, hitElem, opts = \{\}\) \{[\s\S]{0,320}opts\.silent \|\| opts\.react \|\| this\._reacting/.test(gm),
+ok(/this\.tryElemReaction\(e, elem, final, opts, inj \? inj\.key : null\);/.test(gm),
+  'damageEnemy 里真的调了 tryElemReaction（所有伤害的唯一出口），并把注入元素当第二反应源');
+ok(/elemReactReady\(e, hitElem, opts = \{\}, altElem\) \{[\s\S]{0,400}opts\.silent \|\| opts\.react \|\| this\._reacting/.test(gm),
   '三道闸门齐了：silent（dot 不重复触发）/ react（反应伤害不再反应）/ _reacting（递归锁）');
 ok(/_reactCd\[r\.key\] = now \+ icd\.global/.test(gm) && /_reactAt\[r\.key\] = now \+ icd\.sameTarget/.test(gm),
   '双层 ICD：全局 + 同目标同反应');
@@ -158,7 +158,8 @@ ok(/\{ elem: elem, react: true, tag: 'aoe' \}/.test(gm) || /react: true/.test(gm
 ok(/e\._reactDot = false;/.test(gm), 'dot 跳完清掉「焚毒」标记（不会永久 ×1.5）');
 ok(/if \(\(e\.dotT \|\| 0\) > 0 && !e\._reactDot\)/.test(gm),
   '焚毒只在本轮 dot 里加一次（反复触发不叠乘）');
-ok(/this\.tryElemReaction\(e, elem, final, opts\);[\s\S]{0,400}法相命中附加/.test(gm),
+ok(/this\.tryElemReaction\(e, elem, final, opts, inj \? inj\.key : null\);\s*\n\s*\/\*[\s\S]{0,80}\*\/\s*\n\s*\/\* \[P2b·法师⑤\] 法相命中附加/.test(gm)
+  || /tryElemReaction\(e, elem, final, opts, inj \? inj\.key : null\);[\s\S]{0,600}法相命中附加/.test(gm),
   '反应判定在法相挂状态**之前**（否则同一发会跟自己挂的状态反应）');
 
 /* 面板文案与表同源 */
@@ -172,5 +173,90 @@ ok(html.indexOf('src/data/data-elem.js') > 0, 'index.html 加载了 data-elem.js
 ok(html.indexOf('src/data/data-elem.js') < html.indexOf('src/game.js'),
   'data-elem.js 在 game.js 之前加载（game 里直接用表）');
 
-console.log('\n' + (fail === 0 ? '✓' : '✗') + ' P3a 契约：' + pass + ' 通过 / ' + fail + ' 失败');
+/* ============================================================
+ * 六、元素注入（P3b · 单元素）
+ *
+ * 方案 §6.1 的口径是「**附加，不转换**」：原伤害保留，元素再附加 30%~50%。
+ * 这一节钉四件事：
+ *   1. 门槛（角色等级 20）与适用范围（①②③⑤，④ 增益槽不算）；
+ *   2. 附加比例跟**技能有效等级**走（10 级 30% → 20 级 50%），不是新造一个等级；
+ *   3. 伤害真的是两段相加（不是把整发换成元素色）；
+ *   4. 圣不参与（没有状态位、没有反应），面板与数据都不许出现它。
+ * ============================================================ */
+console.log('六、元素注入');
+const SKILL_INJECT = pick('SKILL_INJECT');
+const skillInjectPct = pick('skillInjectPct');
+const skillCanInject = pick('skillCanInject');
+const skillSlotOf = pick('skillSlotOf');
+const saveSrc = readSrc('src/core/save.js');
+const fx = readSrc('src/fx.js');
+const uiSkSrc = readSrc('src/ui-skills.js');
+
+ok(SKILL_INJECT.at === 20, '门槛是角色等级 20（前期不动数值）', SKILL_INJECT.at);
+ok(SKILL_INJECT.elems.join(',') === 'fire,ice,lightning,poison',
+  '可注入的四种元素：火 / 冰 / 雷 / 毒', SKILL_INJECT.elems);
+ok(SKILL_INJECT.elems.indexOf('sigil') < 0, '**圣不在注入列表里**（没有状态位，注了也没有任何效果）');
+ok(SKILL_INJECT.elems.indexOf('phys') < 0, '物理不在列表里（那就是「本命」）');
+
+ok(skillInjectPct(1) === 30 && skillInjectPct(10) === 30, '有效等级 ≤10：附加 30%',
+  [skillInjectPct(1), skillInjectPct(10)]);
+ok(skillInjectPct(15) === 40, '有效等级 15：附加 40%', skillInjectPct(15));
+ok(skillInjectPct(20) === 50 && skillInjectPct(25) === 50, '有效等级 20（含溢出）：附加 50%',
+  [skillInjectPct(20), skillInjectPct(25)]);
+ok(skillInjectPct(0) === 30 && skillInjectPct('x') === 30, '脏等级按最低档，不炸',
+  [skillInjectPct(0), skillInjectPct('x')]);
+{
+  let mono = true;
+  for (let lv = 11; lv <= 20; lv++) if (skillInjectPct(lv) < skillInjectPct(lv - 1)) mono = false;
+  ok(mono, '11→20 单调不减（升级不会让注入变弱）',
+    Array.from({ length: 11 }, (_, i) => skillInjectPct(10 + i)));
+}
+
+/* 适用范围：①②③⑤ 能注，④ 不能 */
+ok(skillCanInject('whirl') === true, '① 位（旋风斩）能注入');
+ok(skillCanInject('quake') === true, '② 位（裂地）能注入');
+ok(skillCanInject('swordarray') === true, '③ 位（剑阵）能注入');
+ok(skillCanInject('avatar') === true, '⑤ 位（兵形）能注入');
+ok(skillCanInject('bloodrage') === false, '**④ 位（血怒）不能注入** —— 增益槽没有元素语义');
+ok(skillCanInject('no_such_skill') === false, '不认识的技能一律不能注入');
+ok((skillSlotOf('whirl') || {}).no === 1 && (skillSlotOf('bloodrage') || {}).no === 4,
+  '位号取自 SKILL_ARCHETYPE（不自己维护第二张表）',
+  [skillSlotOf('whirl'), skillSlotOf('bloodrage')]);
+
+/* 接线：三道校验、取值优先级、两段相加、收尾清零 */
+ok(/skillInject\(id\) \{[\s\S]{0,420}SKILL_INJECT\.at[\s\S]{0,200}skillCanInject\(id\)/.test(gm),
+  'skillInject 里三道校验齐了：门槛 / 该位能不能注 / 键认不认识');
+ok(/curInject\(opts\) \{[\s\S]{0,260}this\._proj && this\._proj\.inj[\s\S]{0,80}this\._elem/.test(gm),
+  'curInject 的优先级：投射物 > 施法窗口（飞出去的那一发要带自己的注入）');
+ok(/this\._elem = injKey \? \{ key: injKey, amt: this\.skillInjectAmt\(id\) \} : null;/.test(gm),
+  'castSkill 把注入折成 {key, amt} 放进施法窗口');
+ok(/this\._elem = null;\s*\/\/ \[P3b\]/.test(gm), '施法收尾把 _elem 清零（窗口之外不注入）');
+ok(/final \*= this\.elemHitMul\(e, elem, 1\) \+ this\.elemHitMul\(e, inj\.key, inj\.amt\);/.test(gm),
+  '**两段相加**：原伤害 100% + 附加 X%，各自过自己的抗性与元素词缀');
+ok(/const inj = \(opts\.react \|\| opts\.silent\) \? null : this\.curInject\(opts\);/.test(gm),
+  '反应伤害与持续伤害不参与注入（否则反应的爆炸会再被注入一次）');
+ok(/elemHitMul\(e, key, w\) \{[\s\S]{0,220}return w \* f;/.test(gm),
+  'elemHitMul 乘的是「抗性 × 该元素词缀 × 权重」');
+ok(/const ELEM_AFFIX = \{[\s\S]{0,200}sigil: 'sigilDmg'/.test(gm),
+  '元素词缀表提到模块级（两段读同一张表，不许各写一份）');
+ok(/inj: this\._elem,/.test(gm) && /inj: opts\.inj \|\| null/.test(fx), 
+  '玩家投射物把注入复制到自己身上（fx.js 存 p.inj）');
+ok(/const prevProj = this\._proj;[\s\S]{0,160}this\._proj = prevProj;/.test(gm),
+  '命中期间挂 _proj，回调里的 damageEnemy 才拿得到注入');
+
+/* 面板与存档 */
+ok(/data-inj="\$\{id\}:\$\{k \|\| ''\}"/.test(uiSkSrc), '面板上每个元素都是可点的（data-inj）');
+ok(/sb-ilist/.test(uiSkSrc), '注入行有独立类名（不与取向 / 变体 / 精通的委托撞车）');
+ok(/境界达到 \$\{injDefs\.at\} 级后可给这个技能位注入元素/.test(uiSkSrc),
+  '没到门槛时写明「几级开启」（不是把按钮藏起来让人猜）');
+ok(/Game\.setSkillInject\(parts\[0\], parts\[1\] \|\| null\)/.test(uiSkSrc),
+  '点击走 Game.setSkillInject（失败会 toast，不静默吞掉）');
+ok(/_obj\(d\.skills\)/.test(saveSrc), '存档的 skills 是整块保留 —— `el` 不需要再加白名单');
+
+/* 反向断言：口径是「附加」不是「转换」 */
+ok(!/final = dmg \* this\.elemHitMul/.test(gm),
+  '**不是转换**：原伤害那一份必须留着（写成 `=` 就变成纯色换皮了）');
+ok(!/sigil/.test(JSON.stringify(SKILL_INJECT)), 'SKILL_INJECT 里不许出现 sigil');
+
+console.log('\n' + (fail === 0 ? '✓' : '✗') + ' P3 契约：' + pass + ' 通过 / ' + fail + ' 失败');
 process.exit(fail === 0 ? 0 : 1);

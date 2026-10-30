@@ -227,19 +227,172 @@ const ok = (c, m, d) => { if (c) { pass++; console.log('  ✓', m); } else { fai
   ok(silent.reacts.length === 0, 'silent（dot 跳伤）不触发反应 —— 否则会滚成无限反应', silent.reacts);
   ok(silent.loss > 0, '但它照样造成伤害', silent.loss);
 
-  /* 收尾：清场，别让假怪进帧循环 */
+  /* 收尾：清场，别让假怪进帧循环。
+   * 注意**不要**在这里还原 `applyElemReaction` —— 下面第十节还要靠这个壳记
+   * `window.__reacts`。上一版在这里还原过一次，结果第十节读到空数组假红
+   * （反应其实触发了，只是没人记）。还原统一放到探针最后。 */
   await p.evaluate(() => {
     Game.enemies = [];
     Game.mapGen = (Game.mapGen || 0) + 1;
     Game._reactCd = {};
+  });
+  await wait(200);
+
+  /* ---------------- 十、元素注入（P3b） ---------------- */
+  console.log('十、元素注入');
+  const inj = await p.evaluate(() => {
+    const mk = window.__mkFoe;
+    Game.state.skills = { whirl: { lv: 10 }, bloodrage: { lv: 10 } };
+    Game.recalc();
+
+    /* 门槛：角色等级 20 */
+    Game.state.level = 19;
+    Game.state.skills.whirl.el = 'fire';
+    const at19 = Game.skillInject('whirl');
+    Game.state.level = 20;
+    const at20 = Game.skillInject('whirl');
+
+    /* ④ 位不能注入 */
+    Game.state.skills.bloodrage.el = 'fire';
+    const buffSlot = Game.skillInject('bloodrage');
+
+    /* 附加比例跟技能有效等级走 */
+    const origLv = Game.skillLevel.bind(Game);
+    Game.skillLevel = () => 10;
+    const amt10 = Game.skillInjectAmt('whirl');
+    Game.skillLevel = () => 20;
+    const amt20 = Game.skillInjectAmt('whirl');
+    Game.skillLevel = origLv;
+
+    /* 伤害真的是两段相加 */
+    const dmgWith = (injObj) => {
+      const e = window.__clean([mk(0, 0, {})])[0];
+      const before = e.hp;
+      Game._proj = null;
+      Game._elem = injObj;
+      Game.damageEnemy(e, 100, false, { elem: 'phys' });
+      Game._elem = null;
+      return before - e.hp;
+    };
+    const base = dmgWith(null);
+    const at30 = dmgWith({ key: 'fire', amt: 0.3 });
+    const at50 = dmgWith({ key: 'fire', amt: 0.5 });
+
+    /* 施法窗口：castSkill 期间 _elem 非空，结束后归 null */
+    Game.state.level = 40;
+    Game.state.skills.whirl = { lv: 10, el: 'fire' };
+    Game.recalc();
+    const pg = Game.playerGroup.position;
+    const e2 = window.__clean([mk(pg.x + 0.6, pg.z, {})])[0];
+    const seen = [];
+    const oldHit = Game.damageEnemy;
+    Game.damageEnemy = function (en, d, c, o) {
+      seen.push(Game._elem ? Game._elem.key : null);
+      return oldHit.call(Game, en, d, c, o);
+    };
+    Game.cooldowns = {};
+    Game.state.mp = Math.floor(Game.state.stats.mpMax * 0.6);
+    Game.castSkill('whirl');
+    Game.damageEnemy = oldHit;
+    const inWindow = seen.slice();
+    const afterCast = Game._elem;
+
+    /* 投射物把注入复制到自己身上 */
+    Game.state.cls = 'mage';
+    Game.state.skills = { fireball: { lv: 10, el: 'ice' } };
+    Game.recalc();
+    Game.cooldowns = {};
+    Game.state.mp = Math.floor(Game.state.stats.mpMax * 0.6);
+    FX.clear();
+    Game.castSkill('fireball');
+    const proj = FX.projectiles[FX.projectiles.length - 1];
+
+    /* 注入元素也能当反应源：火球（火）+ 注入冰 打燃烧目标 */
+    const e3 = window.__clean([mk(pg.x + 0.6, pg.z, { dotT: 3, dotDmg: 40, dotElem: 'fire' })])[0];
+    window.__reacts = [];
+    Game._reactCd = {};      // 上一节刚触发过 steam，ICD 还压着（Game.time 在探针里不一定走）
+    Game._proj = null;
+    Game._elem = { key: 'ice', amt: 0.3 };
+    Game.damageEnemy(e3, 100, false, { elem: 'fire' });
+    Game._elem = null;
+    const reactByInj = window.__reacts.slice();
+
+    Game.enemies = [];
+    Game.mapGen = (Game.mapGen || 0) + 1;
+    Game._reactCd = {};
+    return {
+      at19, at20, buffSlot, amt10, amt20,
+      base, at30, at50,
+      inWindow, afterCast,
+      projInj: proj ? proj.inj : null, projElem: proj ? proj.elem : null,
+      reactByInj
+    };
+  });
+
+  ok(inj.at19 === null, '角色 19 级：注入不生效（门槛 20）', inj.at19);
+  ok(inj.at20 === 'fire', '角色 20 级：注入生效', inj.at20);
+  ok(inj.buffSlot === null, '④ 位（血怒）注了也不生效 —— 增益槽没有元素语义', inj.buffSlot);
+  ok(Math.abs(inj.amt10 - 0.3) < 1e-9 && Math.abs(inj.amt20 - 0.5) < 1e-9,
+    '附加比例：有效等级 10 → 30%，20 → 50%', { lv10: inj.amt10, lv20: inj.amt20 });
+  ok(inj.at30 / inj.base > 1.29 && inj.at30 / inj.base < 1.31,
+    '注入 30%：伤害正好是原来的 1.30 倍（两段相加，不是换色）',
+    { base: inj.base, at30: inj.at30, 倍率: +(inj.at30 / inj.base).toFixed(3) });
+  ok(inj.at50 / inj.base > 1.49 && inj.at50 / inj.base < 1.51,
+    '注入 50%：伤害 1.50 倍（比例真的跟有效等级走）',
+    { base: inj.base, at50: inj.at50, 倍率: +(inj.at50 / inj.base).toFixed(3) });
+  ok(inj.inWindow.length > 0 && inj.inWindow.every(k => k === 'fire'),
+    '施法窗口内每一发都带着注入（旋风斩多段全带）', inj.inWindow);
+  ok(inj.afterCast === null, '施法收尾后窗口清零（不会一路注到下一次施法）', inj.afterCast);
+  ok(inj.projInj && inj.projInj.key === 'ice' && inj.projElem === 'fire',
+    '投射物带着自己的注入飞出去（火球本体是火，注入是冰）', { inj: inj.projInj, elem: inj.projElem });
+  ok(inj.reactByInj.indexOf('steam') >= 0,
+    '注入的元素也能触发反应：火球 + 注入冰 打燃烧目标 = 蒸汽爆裂', inj.reactByInj);
+
+  /* 面板：点一下真的写进存档字段 */
+  const panel = await p.evaluate(() => {
+    Game.state.level = 40;
+    Game.state.cls = 'warrior';          // 上一段切成了法师，不切回来面板会回落到 fireball
+    Game.state.skills = { whirl: { lv: 10 } };
+    Game.recalc();
+    document.getElementById('skillPanel').classList.add('open');
+    UI.skSel = 'whirl';
+    UI.renderSkillPanel();
+    const q = sel => document.querySelector('#skList ' + sel);
+    const btns = () => Array.from(document.querySelectorAll('#skList .sb-ilist [data-inj]'));
+    const before = { n: btns().length, on: btns().filter(b => b.classList.contains('on')).length };
+    const fire = btns().find(b => b.dataset.inj === 'whirl:fire');
+    if (fire) fire.click();
+    const afterPick = { el: Game.state.skills.whirl.el, on: btns().filter(b => b.classList.contains('on')).map(b => b.dataset.inj) };
+    const back = btns().find(b => b.dataset.inj === 'whirl:');
+    if (back) back.click();
+    const afterClear = { el: Game.state.skills.whirl.el };
+    /* 门槛文案 */
+    Game.state.level = 10;
+    Game.state.skills.whirl = { lv: 10 };
+    UI.renderSkillPanel();
+    const locked = q('.sb-ilist') ? q('.sb-ilist').textContent.replace(/\s+/g, '') : '';
+    return { before, afterPick, afterClear, locked };
+  });
+  ok(panel.before.n === 5, '面板上 5 个选项：本命 + 火 / 冰 / 雷 / 毒', panel.before);
+  ok(panel.afterPick.el === 'fire', '点「火」真的写进 state.skills.whirl.el', panel.afterPick);
+  ok(panel.afterPick.on.join(',') === 'whirl:fire', '只有被选中的那个亮着', panel.afterPick.on);
+  ok(panel.afterClear.el === undefined, '点「本命」把注入摘掉（不是留一个 phys）', panel.afterClear);
+  ok(/未开启/.test(panel.locked) && /境界20级/.test(panel.locked),
+    '不到门槛时面板写「未开启 · 境界 20 级」', panel.locked);
+
+  await p.evaluate(() => {
+    Game.enemies = [];
+    Game.mapGen = (Game.mapGen || 0) + 1;
+    Game._elem = null; Game._proj = null;
+    /* 探针彻底跑完才把记反应的壳摘掉，别留在页面里 */
     if (Game.__origApply) { Game.applyElemReaction = Game.__origApply; Game.__origApply = null; }
   });
   await wait(200);
 
-  console.log('十、控制台');
+  console.log('十一、控制台');
   ok(errs.length === 0, '全程零控制台报错', errs.slice(0, 3));
 
-  console.log('\n' + (fail === 0 ? '✓' : '✗') + ' P3a 探针：' + pass + ' 通过 / ' + fail + ' 失败');
+  console.log('\n' + (fail === 0 ? '✓' : '✗') + ' P3 探针：' + pass + ' 通过 / ' + fail + ' 失败');
   await b.close();
   process.exit(fail === 0 ? 0 : 1);
 })();

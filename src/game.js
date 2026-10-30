@@ -53,6 +53,14 @@ const ELEM_AURA_KINDS = [
   { key: 'thunder', name: '雷法相', color: 0x9ad8ff, glyph: '雷' }
 ];
 
+/* 元素 → 对应增伤词条键（M1 的元素词缀）。
+ * [P3b] 从 damageEnemy 里提出来：元素注入要按**段**取词条（原伤害一段、附加一段），
+ * 两处必须读同一张表，否则「面板说火伤 +20%、打出去按冰伤算」这种口径分裂迟早出现。 */
+const ELEM_AFFIX = {
+  fire: 'fireDmg', ice: 'iceDmg', lightning: 'lightningDmg',
+  poison: 'poisonDmg', sigil: 'sigilDmg'
+};
+
 /**
  * 线段 a→b 与圆 (cx,cz,r) 的首次相交参数 t ∈ [0,1]，不相交返回 -1。
  *
@@ -2842,6 +2850,9 @@ const Game = {
         pos: new THREE.Vector3(origin.x + dir.x * 0.7, 1.1, origin.z + dir.z * 0.7),
         dir, speed: 24, color, radius: 0.22, hitRadius: 0.5, team: 'player',
         dmg: st.atk * 0.85, life: 1.4, elem: cc.projElem || 'none',
+        /* [P3b] 注入跟着这一发走：投射物飞出去的时候施法窗口早就关了，
+         * 所以创建时把 inj 复制到自己身上（与 p.tag 同一个用法） */
+        inj: this._elem,
         tag: 'proj',
         onHit: (e, p) => {
           const { dmg, crit } = this.rollDamage(p.dmg);
@@ -3360,6 +3371,12 @@ const Game = {
     if (typeof FX !== 'undefined' && typeof FX.setAmp === 'function') {
       FX.setAmp((typeof skillFxAmp === 'function') ? skillFxAmp(this.skillLevel(id)) : 1);
     }
+    /* [P3b] 元素注入：这一发带出去的注入（null = 不注入）。
+     * 与 `_castSkill` 同一个窗口 —— 收尾一起清零，所以「这一次施法」才是它的
+     * 作用域：投射物在创建时把 inj 复制到自己身上（FX.projectile），
+     * 命中时由 curInject 从 `_proj` 取回。 */
+    const injKey = (typeof this.skillInject === 'function') ? this.skillInject(id) : null;
+    this._elem = injKey ? { key: injKey, amt: this.skillInjectAmt(id) } : null;
     const st = s.stats;
     /* [S2] 回响之语 / 紫府套：15% 概率不进入冷却
      * [P3] 不竭（变体）：本技能不进冷却，只留 0.2 秒硬直 ——
@@ -3915,7 +3932,7 @@ const Game = {
           FX.projectile({
             pos: new THREE.Vector3(pp.x + d2.x * 0.8, 1.4, pp.z + d2.z * 0.8),
             dir: d2, speed: 21, color: 0xff7a30, radius: 0.32, hitRadius: 0.62, team: 'player',
-            dmg: st.atk * 1.9 * spow, life: 1.6, elem: 'fire', trail: true,
+            dmg: st.atk * 1.9 * spow, life: 1.6, elem: 'fire', trail: true, inj: this._elem,
             /* [P2] 集束（取向）：贯穿弹，不再被第一个敌人挡下 */
             pierce: !!(bBeh && bBeh.pierce),
             onHit: (e, proj) => {
@@ -4120,7 +4137,7 @@ const Game = {
           FX.projectile({
             pos: new THREE.Vector3(pp.x + d2.x * 0.8, 1.4, pp.z + d2.z * 0.8),
             dir: d2, speed: 26, color: 0x9ae0ff, radius: 0.26, hitRadius: 0.5, team: 'player',
-            dmg: st.atk * 1.2 * spow, life: 1.2, elem: 'ice', trail: true, tag: 'proj',
+            dmg: st.atk * 1.2 * spow, life: 1.2, elem: 'ice', trail: true, tag: 'proj', inj: this._elem,
             /* [P2] 冰枪（变体）：贯穿冰枪。变体走旧 variants 不进 branchBeh，
              * 这里一并读一下，等变体接进行为层时这条自动生效 */
             pierce: !!(bBeh && bBeh.pierce),
@@ -4512,7 +4529,7 @@ const Game = {
             : new THREE.Vector3(dir.x, 0, dir.z).normalize();
           FX.projectile({
             pos: start, dir: tdir, speed: 17, color: 0xffd24a, radius: 0.3, hitRadius: 0.45,
-            team: 'player', style: 'talisman', life: 2.0, trail: true, tag: 'proj',
+            team: 'player', style: 'talisman', life: 2.0, trail: true, tag: 'proj', inj: this._elem,
             homing: target ? target.pos : null, homeTurn: 9,
             onHit: (e, proj) => {
               /* [P2b] 改追（Lv10）打出去的那一发按 seekPct 结算 —— 白送一次
@@ -4638,7 +4655,7 @@ const Game = {
             : dir.clone();
           FX.projectile({
             pos: start, dir: tdir, speed: 19, color: 0xd8f0a0, radius: 0.24, hitRadius: 0.45,
-            team: 'player', style: 'talisman', life: 2.0, trail: true, tag: 'proj',
+            team: 'player', style: 'talisman', life: 2.0, trail: true, tag: 'proj', inj: this._elem,
             homing: target ? target.pos : null, homeTurn: 7,
             onHit: (e, proj) => {
               const { dmg, crit } = this.rollDamage(st.atk * 1.0 * spow);
@@ -4855,6 +4872,7 @@ const Game = {
     if (typeof this.bladeAddEdge === 'function') this.bladeAddEdge(id);
     this._tag = null;      // [S1] 技能结算完毕，标记归零，避免污染普攻
     this._castSkill = null;   // [P2] 击杀来源标记同步清零（见施法入口的注释）
+    this._elem = null;        // [P3b] 注入只在这一次施法的窗口内有效（见 curInject）
     UI.renderHUD();
   },
 
@@ -4994,12 +5012,79 @@ const Game = {
    *      就是 8 次反应、8 圈特效、伤害直接翻倍。
    * ============================================================ */
 
+  /* ============================================================
+   * [P3b] 元素注入（单元素）
+   *
+   * 状态存在 `state.skills[id].el`（与 lv / f / m 同一张表，save 的 `_obj(d.skills)`
+   * 整块保留，不用加 normalizeDoc 白名单）。null / 未知值 = 不注入（本命元素）。
+   *
+   * 作用范围**故意收窄**：只作用于「施法当帧的伤害 + 这一次施法扔出去的投射物」。
+   * 延迟落点（陨石砸地 0.9 秒后）、地板跳伤、持续伤害、召唤物出手都**不注入** ——
+   * 那些伤害发生时 `_elem` 已经清空，硬要让它们也吃到就得给每条延迟链单独带参，
+   * 而「这一次施法」和「0.9 秒后那一发」本来就不是同一件事。台账里写清楚了。
+   * ============================================================ */
+
+  /* 这个技能位现在注入的是什么元素（null = 本命）。三道校验都在这里：
+   * 没到等级 / 这个位不能注入 / 存的键不认识 → 一律当作没注入。 */
+  skillInject(id) {
+    const s = this.state && this.state.skills && this.state.skills[id];
+    if (!s || !s.el) return null;
+    if (typeof SKILL_INJECT === 'object' && SKILL_INJECT && (this.state.level || 1) < SKILL_INJECT.at) return null;
+    if (typeof skillCanInject === 'function' && !skillCanInject(id)) return null;
+    const list = (typeof SKILL_INJECT === 'object' && SKILL_INJECT && SKILL_INJECT.elems) || [];
+    return list.indexOf(s.el) >= 0 ? s.el : null;
+  },
+
+  /* 这一发注入的附加比例（0.30 ~ 0.50，跟技能**有效等级**走） */
+  skillInjectAmt(id) {
+    const pct = (typeof skillInjectPct === 'function') ? skillInjectPct(this.skillLevel(id)) : 30;
+    return pct / 100;
+  },
+
+  /* 换注入元素。key 为空 = 摘掉。免费、随时可换（与变体 / 精通同一条规矩） */
+  setSkillInject(id, key) {
+    const s = this.state && this.state.skills && this.state.skills[id];
+    if (!s) { UI.log('尚未领悟这只技能'); SFX.ui(); return false; }
+    if (key) {
+      if (typeof SKILL_INJECT !== 'object' || !SKILL_INJECT) return false;
+      if ((this.state.level || 1) < SKILL_INJECT.at) {
+        UI.log('境界达到 ' + SKILL_INJECT.at + ' 级才能注入元素');
+        SFX.ui(); return false;
+      }
+      if (typeof skillCanInject === 'function' && !skillCanInject(id)) {
+        UI.log('这个技能位不能注入元素'); SFX.ui(); return false;
+      }
+      if (SKILL_INJECT.elems.indexOf(key) < 0) return false;
+      s.el = key;
+    } else {
+      delete s.el;
+    }
+    return true;
+  },
+
+  /* 这一次命中实际带出去的注入（投射物 > 施法窗口 > 没有） */
+  curInject(opts) {
+    if (opts && opts.inj) return opts.inj;
+    if (this._proj && this._proj.inj) return this._proj.inj;
+    return this._elem || null;
+  },
+
+  /* 一段元素伤害的乘区：抗性 × 该元素的增伤词缀，再乘这一段的权重 */
+  elemHitMul(e, key, w) {
+    const st = this.state.stats;
+    const res = e.resist ? (e.resist[key] || 0) : 0;
+    const f = (1 - CLAMP(res, -60, 85) / 100) * (1 + (st[ELEM_AFFIX[key]] || 0) / 100);
+    return w * f;
+  },
+
   /* 反应能不能触发（只判定，不产生副作用）—— 契约测试直接调它 */
-  elemReactReady(e, hitElem, opts = {}) {
+  elemReactReady(e, hitElem, opts = {}, altElem) {
     if (!e || e.dead) return null;
     if (opts.silent || opts.react || this._reacting) return null;
     if (typeof elemReactionOn !== 'function') return null;
-    const r = elemReactionOn(hitElem, e);
+    /* 命中元素优先；它跟状态同元素（或本身不参与反应）时，再看注入那一段 */
+    const r = elemReactionOn(hitElem, e)
+      || (altElem ? elemReactionOn(altElem, e) : null);
     if (!r) return null;
     const now = this.time || 0;
     const icd = (typeof ELEM_REACT_ICD === 'object' && ELEM_REACT_ICD) || { global: 0.5, sameTarget: 2 };
@@ -5010,8 +5095,8 @@ const Game = {
   },
 
   /* 记 ICD 并结算 */
-  tryElemReaction(e, hitElem, final, opts = {}) {
-    const r = this.elemReactReady(e, hitElem, opts);
+  tryElemReaction(e, hitElem, final, opts = {}, altElem) {
+    const r = this.elemReactReady(e, hitElem, opts, altElem);
     if (!r) return null;
     const now = this.time || 0;
     const icd = (typeof ELEM_REACT_ICD === 'object' && ELEM_REACT_ICD) || { global: 0.5, sameTarget: 2 };
@@ -5156,15 +5241,23 @@ const Game = {
      * 正数减伤、负数增伤；元素免疫（85%）也走这一条，不另开分支。
      * 上限 +85 / 下限 -60：既能逼玩家换武器，又不至于让某个流派完全打不动。 */
     const elem = opts.elem || 'phys';
-    const res = e.resist ? (e.resist[elem] || 0) : 0;
-    if (res) final *= 1 - CLAMP(res, -60, 85) / 100;
+    /* [P3b] 元素注入：这一发带了几段元素。没注入时走**原路径**（逐字节不变），
+     * 注入了才拆成「原伤害 100% + 附加 X%」两段，各自过自己的抗性与元素词缀。
+     * 为什么不做归一化：方案 §6.1 拍板的是「附加，不转换」—— 附加就该真的多打
+     * 那 30%~50%，归一化等于把注入变成纯色换皮。 */
+    const inj = (opts.react || opts.silent) ? null : this.curInject(opts);
+    if (inj && inj.key !== elem && elem !== 'none') {
+      final *= this.elemHitMul(e, elem, 1) + this.elemHitMul(e, inj.key, inj.amt);
+    } else {
+      const res = e.resist ? (e.resist[elem] || 0) : 0;
+      if (res) final *= 1 - CLAMP(res, -60, 85) / 100;
 
-    /* [M1] 元素伤害词缀：按本次伤害的元素取对应加成键。
-     * 放在抗性之后、暴击之外，保证「堆火伤打亡灵」和「堆错元素打石魔」
-     * 的体感差别立刻能看出来。 */
-    const ELEM_DMG = { fire: 'fireDmg', ice: 'iceDmg', lightning: 'lightningDmg', poison: 'poisonDmg', sigil: 'sigilDmg' };
-    const edk = ELEM_DMG[elem];
-    if (edk && st[edk]) final *= 1 + st[edk] / 100;
+      /* [M1] 元素伤害词缀：按本次伤害的元素取对应加成键。
+       * 放在抗性之后、暴击之外，保证「堆火伤打亡灵」和「堆错元素打石魔」
+       * 的体感差别立刻能看出来。 */
+      const edk = ELEM_AFFIX[elem];
+      if (edk && st[edk]) final *= 1 + st[edk] / 100;
+    }
 
     /* [M1] 游侠套·锐意：攻击满血目标必定暴击 */
     if (st.specials && st.specials.deadeye && !crit && e.hp >= e.maxHp * 0.999) {
@@ -5293,7 +5386,10 @@ const Game = {
      * 放在法相命中附加之前 —— 法相会往目标身上挂状态，若先挂再判，同一发
      * 就能跟自己刚挂上去的状态反应（「火球 + 火法相」自己炸自己）。
      * 也放在死亡判定之后：打死的那一下不必再反应。 */
-    this.tryElemReaction(e, elem, final, opts);
+    /* 注入的元素也能当反应源：火球（火）+ 注入冰 打在燃烧目标上，
+     * 原伤害那段是火（同元素不反应），附加那段是冰 —— 该炸蒸汽就炸。
+     * 先看原伤害再看附加：命中元素优先，避免「注入元素抢了本命元素的反应」。 */
+    this.tryElemReaction(e, elem, final, opts, inj ? inj.key : null);
 
     /* [P2b·法师⑤] 法相命中附加（台阶 Lv5）：窗口内的**每一次命中**都带上主元素效果。
      *
@@ -7133,7 +7229,13 @@ const Game = {
         if (best) {
           /* 命中点：把投射物挪到线段与圆的交点，爆炸/特效就落在模型表面而不是穿到身后 */
           if (!p.pierce) p.pos.lerpVectors(prev, p.pos, bestT);
+          /* [P3b] onHit 里的 damageEnemy 要能拿到「这一发带的注入元素」，
+           * 而施法窗口早关了 —— 所以命中期间把投射物挂到 `_proj` 上，
+           * curInject 从那里取。只有这两行，不用去改 7 个 onHit 回调。 */
+          const prevProj = this._proj;
+          this._proj = p;
           if (p.onHit) p.onHit(best, p);
+          this._proj = prevProj;
           if (!p.pierce) { FX.removeProjectile(i); continue; }
           (p.hitSet || (p.hitSet = new Set())).add(best.id);
         }

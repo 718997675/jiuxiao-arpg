@@ -793,7 +793,45 @@ Object.assign(UI, {
               : '三选一 · 可随时切换 · 不消耗技能点')
             : '有效等级达到 ' + T.masteryAt + ' 级开启（11~20 级来自装备 / 词缀）'}</em></div>`
       : '';
-    const branch = `<div class="sd-branch">${rows}${mstBlock}
+    /* [P3b] 元素注入（①②③⑤ 位，④ 是增益槽没有元素语义）。
+     *
+     * 门槛是**角色等级**（`SKILL_INJECT.at`），不是技能等级 —— 注入会改整只技能的
+     * 伤害口径，前期放开等于把 1~20 级的平衡重做一遍。
+     * 附加比例跟**技能有效等级**走（10 级 30% → 20 级 50%）：方案里说的「注入等级」
+     * 在本仓库不存在，精进层本来就是词条层，挂在那里最自然。
+     * 与精通同一条规矩：免费、随时可换，不需要「草稿 → 确认」。 */
+    const injDefs = (typeof SKILL_INJECT !== 'undefined' && SKILL_INJECT) ? SKILL_INJECT : null;
+    const injCan = (typeof skillCanInject === 'function') ? skillCanInject(id) : false;
+    const injOpen = !!injDefs && ((Game.state && Game.state.level) || 1) >= injDefs.at;
+    const injCur = (typeof Game.skillInject === 'function') ? Game.skillInject(id) : null;
+    const injPct = (typeof skillInjectPct === 'function') ? skillInjectPct(lv) : 0;
+    const slotInfo = (typeof skillSlotOf === 'function') ? skillSlotOf(id) : null;
+    const nativeKey = (slotInfo && typeof SKILL_ARCHETYPE !== 'undefined'
+      && SKILL_ARCHETYPE.classes[slotInfo.cls]) ? SKILL_ARCHETYPE.classes[slotInfo.cls].elem : 'phys';
+    const nativeName = (typeof elemDef === 'function' && elemDef(nativeKey)) ? elemDef(nativeKey).name : '物理';
+    const injItems = (injDefs ? [null].concat(injDefs.elems) : []).map(k => {
+      const on = (k || null) === injCur;
+      const nm = k ? ((typeof elemDef === 'function' && elemDef(k)) ? elemDef(k).name : k) : '本命';
+      const tip = k
+        ? '注入' + nm + '：原伤害保留，另附加 ' + injPct + '% 的' + nm + '伤害（免费，随时可换）'
+        : '不注入，按本命元素（' + nativeName + '）结算';
+      return `<button class="sb-v${on ? ' on' : ''}" data-inj="${id}:${k || ''}"
+        aria-pressed="${on ? 'true' : 'false'}" title="${tip}">
+        <b>${nm}</b><em>${k ? '+' + injPct + '%' : nativeName}</em>${on ? '<i class="sd-tag on">当前</i>' : ''}</button>`;
+    }).join('');
+    const injBlock = (injCan && injItems)
+      ? (injOpen
+        ? `<div class="sb-vwrap"><span class="sb-k">元素</span>
+          <div class="sb-vlist sb-ilist">${injItems}</div>
+          <em class="sb-vhint">${injCur
+            ? '原伤害保留 + 附加 ' + injPct + '% 的' + ((typeof elemDef === 'function' && elemDef(injCur)) ? elemDef(injCur).name : injCur) + '伤害 · 可随时更换'
+            : '不注入 · 附加比例随技能有效等级提升（10 级 30% → 20 级 50%）'}</em></div>`
+        : `<div class="sb-vwrap"><span class="sb-k">元素</span>
+          <div class="sb-vlist sb-ilist"><button class="sb-v na" disabled>
+            <b>未开启</b><em>境界 ${injDefs.at} 级</em></button></div>
+          <em class="sb-vhint">境界达到 ${injDefs.at} 级后可给这个技能位注入元素（现在 ${(Game.state && Game.state.level) || 1} 级）</em></div>`)
+      : '';
+    const branch = `<div class="sd-branch">${rows}${mstBlock}${injBlock}
         <div class="dim2">${inv < at
           ? '投入等级 ' + inv + ' · 达到 ' + at + ' 级自动获得精研并开放取向'
             + (lvBonus ? '（装备的 +' + lvBonus + ' 级不算门槛）' : '')
@@ -1457,6 +1495,16 @@ Object.assign(UI, {
       if (this._panMoved) return;
       const parts = el.dataset.pset.split(':');
       this.skillPickBranch(parts[0], parseInt(parts[1], 10));
+    });
+
+    /* [P3b] 元素注入：与精通同一条规矩 —— 免费、随时可换，不走「草稿 → 确认」。
+     * `data-inj="id:"` 表示摘掉注入（回到本命）。 */
+    document.addEventListener('click', e => {
+      const el = (e.target && e.target.closest) ? e.target.closest('#skList .sb-ilist [data-inj]') : null;
+      if (!el || el.disabled) return;
+      if (this._panMoved) return;
+      const parts = el.dataset.inj.split(':');
+      if (Game.setSkillInject(parts[0], parts[1] || null)) this.renderSkillPanel();
     });
 
     /* [P2c] 精通层三条：免费、随时可换，所以不需要「草稿 → 确认」。
