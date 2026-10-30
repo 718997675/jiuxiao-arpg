@@ -98,6 +98,52 @@ const SaveManager = {
       bestAt: this._num(src.bestAt, 0)
     };
   },
+  /* [P1/P2] 技能账本逐条整形。
+   *
+   * 以前这里只有 `d.skills = this._obj(d.skills) || {}` —— 只保证「是个对象」，
+   * 条目一个都不看。于是 `skills: { fireball: null }` 这种手改档能让
+   * `skillPoints()` 在「读档后第一次点技能」时抛 TypeError，整个面板白掉；
+   * 一个认不出的 id 带着 lv 10 躺在里面，还会白吃 9 点技能点
+   * （skillPoints 是对全表求和的，不查 SKILLS）。
+   *
+   * 所以边界上收干净：认不出的 id 丢掉（与 Game 开局清理同一条规矩），
+   * 剩下的收敛成 { lv, v, f?, m?, p?, el?, el2? }。
+   * 免费字段只在「值合法」时才留 —— 丢掉等于回落默认，比留着脏值安全。 */
+  _skillLedger(v) {
+    const src = this._obj(v) || {};
+    const out = {};
+    const lvMax = (typeof SKILL_LV_MAX === 'number') ? SKILL_LV_MAX : 10;
+    const elems = (typeof SKILL_INJECT === 'object' && SKILL_INJECT && SKILL_INJECT.elems) || [];
+    for (const id in src) {
+      if (typeof SKILLS !== 'undefined' && SKILLS && !SKILLS[id]) continue;
+      const e = this._obj(src[id]);
+      const o = { lv: this._int(e ? e.lv : 1, 1, lvMax, 1), v: this._int(e ? e.v : 0, 0, 2, 0) };
+      if (e) {
+        if (e.f !== undefined) o.f = this._int(e.f, 0, 2, 0);
+        if (e.m !== undefined) o.m = this._int(e.m, 0, 2, 0);
+        if (e.p === 0 || e.p === 1) o.p = e.p;
+        if (typeof e.el === 'string' && elems.indexOf(e.el) >= 0) o.el = e.el;
+        if (typeof e.el2 === 'string' && elems.indexOf(e.el2) >= 0 && e.el2 !== o.el) o.el2 = e.el2;
+      }
+      out[id] = o;
+    }
+    return out;
+  },
+  /* [P2] 被动账本：{ 被动id: 已投级数 }。每级 1 点，与技能等级同一个技能点池，
+   * 加成经 passiveBonusStats 并进 computePlayerStats。
+   * 上限读 SKILL_TREE.passives[id].max（缺省 1）；认不出的 id 直接丢。 */
+  _passives(v) {
+    const src = this._obj(v) || {};
+    const table = (typeof SKILL_TREE === 'object' && SKILL_TREE && SKILL_TREE.passives) || {};
+    const out = {};
+    for (const k in src) {
+      const def = table[k];
+      if (!def) continue;
+      const lv = this._int(src[k], 0, this._int(def.max, 1, 99, 1), 0);
+      if (lv > 0) out[k] = lv;
+    }
+    return out;
+  },
   /* [S5] 异兽志归一化：{ mon: { kind: {kills, at} }, regions: { id: true } }
    * 旧档里 codex 只是个空对象，手改存档可能塞进字符串/数组，
    * 一律收敛成合法结构——图鉴面板会直接取 kills，结构不对就整页崩。 */
@@ -244,8 +290,17 @@ const SaveManager = {
     d.attrAlloc = this._attrAlloc(d.attrAlloc);
     /* [试炼] 无尽试炼记录（最高波数 / 总轮数） */
     d.trial = this._trialRec(d.trial);
-    /* S4 技能：等级 / 变体 / 技能条 5 格 × 2 套配置（[P1] 原 8 格） */
-    d.skills = this._obj(d.skills) || {};
+    /* S4 技能：等级 / 变体 / 技能条 5 格 × 2 套配置（[P1] 原 8 格）
+     * [P2] 被动账本 + 洗点次数一并整形 —— 前者是技能点的另一半去向，
+     * 后者决定洗点价（不存的话每次读档都退回第一档 800 金）。
+     * [P6] barVer / skillReset 是一次性迁移标记，不存就会每次都重跑迁移。 */
+    d.skills = this._skillLedger(d.skills);
+    d.passives = this._passives(d.passives);
+    d.treeRespecCount = this._int(d.treeRespecCount, 0, 9999, 0);
+    d.barVer = this._int(d.barVer, 0, 99, 0);
+    d.skillReset = this._int(d.skillReset, 0, 1, 0);
+    d.skillResetRefund = this._int(d.skillResetRefund, 0, 9999, 0);
+    d.skillResetNote = (typeof d.skillResetNote === 'string') ? d.skillResetNote.slice(0, 120) : '';
     d.skillbar = this._bar(d.skillbar, d.cls);
     d.skillbar2 = this._bar(d.skillbar2, d.cls);
     d.barSet = (d.barSet === 1) ? 1 : 0;
@@ -312,8 +367,22 @@ const SaveManager = {
       talentBonus: this._int(s.talentBonus, 0, 40, 0),
       attrAlloc: this._attrAlloc(s.attrAlloc),
       trial: this._trialRec(s.trial),
-      /* S4：技能等级 / 变体 / 技能条 5 格 × 2 套（id 或 null） */
-      skills: this._obj(s.skills) || {},
+      /* S4：技能等级 / 变体 / 技能条 5 格 × 2 套（id 或 null）
+       * [P2] passives（被动账本）与 treeRespecCount（洗点次数）必须落盘：
+       * 前者是技能点的另一半去向，不存就是「重开被动全没、点数还回来」；
+       * 后者不存就是「洗点价永远第一档」，经济直接破。
+       *
+       * [P6] barVer / skillReset 是**一次性迁移标记**，必须落盘 ——
+       * 不存的话 normalizeProgress 每次读档都以为自己是第一次，
+       * 于是每次都跑一遍 skillRefundAll：玩家的技能点每读一次档被退光一次。
+       * 这是最坏的一类 bug：不报错、不崩、只是每次重开都得重点一遍。 */
+      skills: this._skillLedger(s.skills),
+      passives: this._passives(s.passives),
+      treeRespecCount: this._int(s.treeRespecCount, 0, 9999, 0),
+      barVer: this._int(s.barVer, 0, 99, 0),
+      skillReset: this._int(s.skillReset, 0, 1, 0),
+      skillResetRefund: this._int(s.skillResetRefund, 0, 9999, 0),
+      skillResetNote: (typeof s.skillResetNote === 'string') ? s.skillResetNote.slice(0, 120) : '',
       skillbar: this._bar(s.skillbar, s.cls),
       skillbar2: this._bar(s.skillbar2, s.cls),
       barSet: (s.barSet === 1) ? 1 : 0,
@@ -340,7 +409,13 @@ const SaveManager = {
       talentBonus: this._int(doc.talentBonus, 0, 40, 0),
       attrAlloc: this._attrAlloc(doc.attrAlloc),
       trial: this._trialRec(doc.trial),
-      skills: doc.skills || {},
+      skills: this._skillLedger(doc.skills),
+      passives: this._passives(doc.passives),
+      treeRespecCount: this._int(doc.treeRespecCount, 0, 9999, 0),
+      barVer: this._int(doc.barVer, 0, 99, 0),
+      skillReset: this._int(doc.skillReset, 0, 1, 0),
+      skillResetRefund: this._int(doc.skillResetRefund, 0, 9999, 0),
+      skillResetNote: (typeof doc.skillResetNote === 'string') ? doc.skillResetNote : '',
       skillbar: this._bar(doc.skillbar, doc.cls),
       skillbar2: this._bar(doc.skillbar2, doc.cls),
       barSet: (doc.barSet === 1) ? 1 : 0,

@@ -1134,15 +1134,31 @@ function skillTreeRespecFee(count) {
  *
  * 变体（v / f）**保留**：它不花点，是玩法选择不是投资。
  */
+/* 洗点 / 退还时「留下来的东西」：**不花技能点的选择**。
+ *
+ * lv 归 1、p（取向）清掉 —— 这两个是花点的账，退的就是它们。
+ * v / f（变体）、m（精通）、el / el2（元素注入）都是「换打法不是投资」，
+ * 洗掉等于替玩家重新做了一遍选择，玩家还得再点一遍。
+ *
+ * 这里集中成一处，是为了让 skillRefundAll 与 skillTreeRespecApply
+ * 不可能各自漏一个字段 —— P2 加 m、P3 加 el/el2 时已经漏过一次。 */
+function skillEntryKeep(e) {
+  const keep = { lv: 1, v: (e && e.v) || 0 };
+  if (!e) return keep;
+  if (typeof e.f === 'number') keep.f = e.f;
+  if (typeof e.m === 'number') keep.m = e.m;
+  if (typeof e.el === 'string' && e.el) keep.el = e.el;
+  if (typeof e.el2 === 'string' && e.el2) keep.el2 = e.el2;
+  return keep;
+}
+
 function skillRefundAll(skillsState, passivesState) {
   const sk = skillsState || {};
   let refunded = 0;
   for (const id in sk) {
     const e = sk[id] || {};
     refunded += Math.max(0, (e.lv || 1) - 1);
-    const keep = { lv: 1, v: e.v || 0 };
-    if (typeof e.f === 'number') keep.f = e.f;
-    sk[id] = keep;
+    sk[id] = skillEntryKeep(e);
   }
   const pas = passivesState || {};
   for (const id in pas) { refunded += pas[id] || 0; delete pas[id]; }
@@ -1162,13 +1178,8 @@ function skillTreeRespecApply(skillsState, passivesState, gold, count) {
   if (!lvSpent && !picks && !pasSpent) return { ok: false, msg: '尚未分配技能点，无需重置' };
   const cost = skillTreeRespecFee(count);
   if ((gold || 0) < cost) return { ok: false, msg: '洗点需 ' + cost + ' 金，当前 ' + (gold || 0) };
-  /* 变体不花点，洗点保留：旧通道 v 与新通道 f 都原样带回来 */
-  for (const id in sk) {
-    const e = sk[id] || {};
-    const keep = { lv: 1, v: e.v || 0 };
-    if (typeof e.f === 'number') keep.f = e.f;
-    sk[id] = keep;
-  }
+  /* 免费的选择原样带回来（见 skillEntryKeep 的注释） */
+  for (const id in sk) sk[id] = skillEntryKeep(sk[id]);
   for (const id in pas) delete pas[id];
   return { ok: true, msg: '已重置技能树，扣除 ' + cost + ' 金币', cost, cleaned: lvSpent + picks + pasSpent };
 }

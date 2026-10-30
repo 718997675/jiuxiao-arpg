@@ -766,7 +766,21 @@ const ok = (c, m, d) => {
       FX.ring = oldRing;
       Game.mapGen = (Game.mapGen || 0) + 1;   // 掐掉 8 秒的定时器
       const base = got[0] || 1;
-      return { rings: radii.length, radii: radii,
+      /* 圈数不能直接数 radii.length —— 这 300ms 窗口里除了剑气环，
+       * 还会混进「附加爆发（半径 5）」和各种命中火花（实测 2.97 / 5），
+       * 偶尔刚好落在窗口内，读数就从 2 变成 3，红得莫名其妙（假红）。
+       *
+       * 剑气环是**等比阶梯**：第 i 圈 = 第 0 圈 × (1 + SKILL_RING_STEP × i)。
+       * 所以按阶梯逐级对号，数到第一处断档为止 —— 与窗口里混进什么无关。 */
+      const r0 = radii.find(r => r > 3 && r < 4.2) || 3.6;
+      const step = (typeof SKILL_RING_STEP === 'number') ? SKILL_RING_STEP : 0.42;
+      let rings = 0;
+      for (let i = 0; i < 4; i++) {
+        const L = r0 * (1 + i * step);
+        if (!radii.some(r => Math.abs(r - L) < 0.08)) break;
+        rings++;
+      }
+      return { rings: rings, radii: radii,
         ratio: dist.map((d, i) => (got[i] ? Math.round(got[i] / base * 1000) / 1000 : 0)) };
     };
     out.r2 = await swRings(2);
@@ -1232,7 +1246,7 @@ const ok = (c, m, d) => {
      *
      * 等跳的时候把 running 关掉：假怪没有 actor，帧循环 updateEnemies 一碰
      * 就抛「reading 'time'」（x47 那种），而区域的跳是 setInterval，不依赖帧循环。 */
-    const run = async (id, lv, form, aimZ, waitMs) => {
+    const run = async (id, lv, form, aimZ, waitMs, expectBurst) => {
       const pp = setup(id, lv, form, aimZ);
       const z = id === 'firewall' ? pp.z + 12 : pp.z + (aimZ || 6);
       const es = [0, 4, 6].map((dx, i) => mkFoe(pp.x + dx, z, i));
@@ -1247,7 +1261,17 @@ const ok = (c, m, d) => {
       Game.rollDamage = base => ({ dmg: base, crit: false });
       Game.castSkill(id);
       Game.running = false;              // 等跳期间别让帧循环碰假怪
-      await wait(waitMs);
+      /* 等收尾爆燃时不能死等固定毫秒：火墙 4 秒、雷云 6 秒，而收尾是
+       * 「定时器到点后的下一跳」才触发，机器一慢就正好卡在边界外，
+       * 读数变成 0 → 假红（实测三次里红一次）。改成轮询到出现为止，
+       * 上限仍是 waitMs；不期待爆燃的用例（fw9no）bursts 恒为 0，
+       * 轮询自然走满上限，行为不变。 */
+      if (expectBurst) {
+        const t0 = Date.now();
+        while (bursts === 0 && Date.now() - t0 < waitMs) await wait(80);
+      } else {
+        await wait(waitMs);
+      }
       Game.running = true;
       FX.area = oldArea; Game.explodeAt = oldExp;
       Game.damageEnemy = oldHit; Game.rollDamage = oldRoll;
@@ -1270,7 +1294,7 @@ const ok = (c, m, d) => {
     out.fw5 = await run('firewall', 5, 1, 6, 620);
     out.fw9 = await run('firewall', 9, 1, 6, 620);
     /* Lv10 的收尾爆燃要等火墙烧完（4 秒）+ 一格容错 */
-    out.fw10 = await run('firewall', 10, 1, 6, 4600);
+    out.fw10 = await run('firewall', 10, 1, 6, 7000, true);
     out.fw9no = await run('firewall', 9, 1, 6, 4600);
 
     /* 冰霜新星：瞬发，只有一击 —— 台阶全落在这一击上 */
@@ -1283,7 +1307,7 @@ const ok = (c, m, d) => {
     out.tc1 = await run('thundercloud', 1, 1, 6, 120);
     out.tc3 = await run('thundercloud', 3, 1, 6, 120);
     out.tc7 = await run('thundercloud', 7, 1, 6, 120);
-    out.tc10 = await run('thundercloud', 10, 1, 6, 6600);
+    out.tc10 = await run('thundercloud', 10, 1, 6, 9000, true);
 
     /* Lv10 的 `+endBurst` 必须与变体「爆燃」叠加，而不是被它顶掉：
      * 变体 2 = 爆燃（endBurst 120），台阶再 +60 → 180 */
@@ -1526,6 +1550,11 @@ const ok = (c, m, d) => {
       Game.regen = 0;
       const p0 = Game.playerGroup.position;
       Game.enemies = [mkFoe(p0.x + 2.4, p0.z, 0), mkFoe(p0.x, p0.z + 2.4, 1)];
+      /* 准星必须显式归位。mastersigil 是「丢在准星上的符阵」——
+       * aimPoint 还停在上一个用例丢的远处时，阵心就落到那边去，
+       * 假怪不在阵内 → slow / stun 读成 0，红得毫无道理（实测假红）。 */
+      Game.aimPoint = new THREE.Vector3(p0.x, 0, p0.z);
+      Game.aimDir = new THREE.Vector3(1, 0, 0);
       Game.state.hp = Math.round(Game.state.stats.hpMax * 0.5);
       return p0;
     };

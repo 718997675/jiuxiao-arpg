@@ -116,11 +116,23 @@ const BOSS_POS = (typeof MAP_BOSS_POS !== 'undefined') ? MAP_BOSS_POS : {
 };
 
 /* 技能账本一项的更新：保留没被这次操作改到的字段。
- * s.skills[id] 现在有三个字段（lv 等级 / v 变体 / p 取向），
- * 而升级、降级、换变体三处都习惯「重建对象」—— 每处都手写一遍
- * 保留逻辑，漏一处就让玩家的取向无声消失。统一走这里。 */
+ *
+ * s.skills[id] 的字段分两类，界线是「花不花技能点」：
+ *   · 花点的：lv（投入等级）/ p（取向）
+ *   · 不花点的选择：v（旧变体）/ f（新变体）/ m（精通）/ el · el2（元素注入）
+ *
+ * 升级、降级、换变体三处都习惯「重建对象」，每处手写一遍保留逻辑，
+ * 漏一处就让玩家的选择无声消失 —— P2 加 m、P3 加 el/el2 时已经踩过：
+ * 升一级就把元素注入丢了（面板上还在，进战斗没效果）。
+ *
+ * 所以这里反过来写：**next 没提到的键一律从 prev 带过来**。
+ * 以后再加字段不用回来改这个函数，只要加进名单。 */
+const SKILL_ENTRY_KEEP = ['v', 'f', 'p', 'm', 'el', 'el2'];
 function keepPick(prev, next) {
-  if (prev && prev.p !== undefined) next.p = prev.p;
+  if (!prev) return next;
+  for (const k of SKILL_ENTRY_KEEP) {
+    if (next[k] === undefined && prev[k] !== undefined) next[k] = prev[k];
+  }
   return next;
 }
 
@@ -582,14 +594,28 @@ const Game = {
       talentBonus: 0,
       /* [v1.8.5] 根基加点：四项手动分配的点数（职业基础 / 等级成长之外的那一份） */
       attrAlloc: { str: 0, agi: 0, vit: 0, int: 0 },
-      /* [S4] 技能：{ 技能id: { lv: 1-10, v: 0-2 变体 } } */
+      /* [S4] 技能：{ 技能id: { lv: 1-10, v/f: 0-2 变体, p: 取向, m: 精通, el/el2: 注入元素 } } */
       skills: {},
+      /* [P2] 被动 / 关键被动账本：{ 被动id: 已投级数 }。每级 1 点，与技能等级同池 */
+      passives: {},
+      /* [P2] 洗点次数：决定下一次洗点的价（阶梯 800 → 35000 封顶），必须落盘 */
+      treeRespecCount: 0,
       /* [S4] 技能条：5 格 × 2 套手动配置（技能 id 或 null），新档只放已领悟的。
        * [P1] 格位 = 功能位（第 i 格只能放第 i 个位的技能），所以用迁移函数归位，
        * 不能像以前那样「按表顺序截前 5 个」—— 那样会出现「② 号位的技能占了 ① 格」。 */
       skillbar: skillBarMigrate((SKILL_ORDER[cls] || []).filter(id => SKILLS[id] && SKILLS[id].unlock <= 1), cls),
       skillbar2: [],
       barSet: 0,
+      /* [P6] 两个一次性迁移标记，新档直接写成「已迁移」。
+       *
+       * normalizeProgress 里有两段只该跑一次的迁移（barVer 补位、skillReset 退点），
+       * 判据是「标记不等于目标值」。以前这两个标记没进存档白名单，
+       * 于是每次读档都以为自己第一次跑 —— 玩家的技能点每重开一次被退光一次。
+       * 修好落盘之后，新档还得在这里**主动写上**，否则「建号 → 投点 → 存档 → 读档」
+       * 这条最常见的路径仍然会撞上第一次退款。 */
+      barVer: 2,
+      skillReset: 1,
+      skillResetRefund: 0,
       shop: null          // { at, items, rolls } —— 由 ensureShop/genShop 填充
     };
     return s;
@@ -1367,10 +1393,15 @@ const Game = {
     return { ok: true, msg: SKILLS[id].name + ' 降至 ' + (cur - 1) + ' 级' };
   },
 
+  /* 旧变体通道（v）。P3 之后换变体走 setSkillForm（写 f），
+   * 这个入口留着只为兼容外部脚本 / 控制台调试。
+   * 注意必须**同时**写 f：`skillFormIdx` 优先读 f，只写 v 的话
+   * 老档升级过一次（f 被带过来了）就再也换不动变体。 */
   setSkillVariant(id, v) {
     if (!SKILLS[id] || v < 0 || v > 2) return false;
     const sk = this.skillState();
-    sk[id] = keepPick(sk[id], { lv: (sk[id] && sk[id].lv) || 1, v });
+    sk[id] = keepPick(sk[id], { lv: (sk[id] && sk[id].lv) || 1, v, f: v });
+    if (typeof this.recalc === 'function') this.recalc();
     return true;
   },
 
@@ -1514,9 +1545,10 @@ const Game = {
     /* 已退出数据表的技能 / 天赋节点清掉，防存档里留死 id */
     for (const id in s.skills) if (!SKILLS[id]) delete s.skills[id];
     /* 技能等级 / 变体整形：脏值不许把面板算崩。
-     * [P3 收尾] 等级上限从 10 降到 5，老档 6~10 级在这里压到 5 ——
-     * 「多出的点」不用单独记账：skillPoints() = 角色等级 − 已投，
-     * lv 一变小，可投点数自然涨回来。变体（v / f）原样保留。 */
+     * [P3 收尾] 等级上限一度降到 5，[P2] 又抬回 10 —— 统一读 SKILL_LV_MAX，
+     * 这里不写死数字。压等级产生的「多出的点」不用单独记账：
+     * skillPoints() = 池 − 已投，lv 一变小，可投点数自然涨回来。
+     * 变体（v / f）、精通（m）、元素注入（el / el2）原样保留。 */
     for (const id in s.skills) {
       const e = s.skills[id];
       if (!e || typeof e !== 'object') { delete s.skills[id]; continue; }
