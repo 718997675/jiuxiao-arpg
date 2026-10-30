@@ -4861,7 +4861,9 @@ const Game = {
           const ang = (pi / patches) * Math.PI * 2;
           const off = patches === 1 ? 0 : prad * 0.55;
           const c = new THREE.Vector3(aim.x + Math.cos(ang) * off, 0, aim.z + Math.sin(ang) * off);
-          const zona = FX.area(c, prad, 0x2f9a3c, pdur, { opacity: 0.3 });
+          /* 底色只留一层很淡的地面染色、**不要边沿亮圈**：雾的边界本来就看不见，
+           * 画一圈亮边等于把它重新画成一个圆，与下面的雾团剪影自相矛盾。 */
+          const zona = FX.area(c, prad, 0x2f9a3c, pdur, { opacity: 0.1, rim: false });
           /* [VFX·移植] 雾团剪影：没有地纹、没有边界，只有翻滚的雾片 ——
            * 雾的身份就是「边界看不见」。带着一圈清晰圆边的"雾"读起来是一张绿饼。
            * 半径取 `prad`；台阶「蔓延」长大时下面会连 grp 一起缩放，

@@ -651,10 +651,14 @@ const FX = {
     const m = new THREE.Mesh(geo, mat);
     m.rotation.x = -Math.PI / 2; m.position.set(pos.x, 0.05, pos.z); m.scale.setScalar(radius);
     this.scene.add(m);
-    // 边沿亮圈，避免大色块显得扁平
-    const rim = new THREE.Mesh(fxRingThin(0.93, 1, 40),
-      new THREE.MeshBasicMaterial({ color: this.lit(color), transparent: true, opacity: Math.min(0.7, baseOp + 0.32), side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending }));
-    rim.rotation.x = -Math.PI / 2; rim.position.y = 0.012; m.add(rim);
+    /* 边沿亮圈，避免大色块显得扁平。
+     * `opts.rim === false` 时不要 —— 毒雾这种「边界本来就看不见」的领域，
+     * 一圈亮边会把它重新画成一个圆，与 `FX.field('mist')` 自相矛盾。 */
+    if (opts.rim !== false) {
+      const rim = new THREE.Mesh(fxRingThin(0.93, 1, 40),
+        new THREE.MeshBasicMaterial({ color: this.lit(color), transparent: true, opacity: Math.min(0.7, baseOp + 0.32), side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending }));
+      rim.rotation.x = -Math.PI / 2; rim.position.y = 0.012; m.add(rim);
+    }
     this.zones.push({ mesh: m, mat, life: dur, max: dur, type: 'area', radius, color, baseOp });
     return m;
   },
@@ -866,7 +870,7 @@ const FX = {
         m.position.x = ud.ox + Math.sin(t * 0.5 + ud.ph) * 0.22;
         m.position.z = ud.oz + Math.cos(t * 0.43 + ud.ph) * 0.22;
         m.position.y = ud.oy + Math.sin(t * 0.6 + ud.ph) * 0.10;
-        m.material.opacity = 0.62 * f * (0.72 + 0.28 * Math.sin(t * 1.3 + ud.ph));
+        m.material.opacity = 0.50 * f * (0.72 + 0.28 * Math.sin(t * 1.3 + ud.ph));
       }
     }
     if (z.kind === 'blades') {

@@ -1524,7 +1524,7 @@ r / life / color / opacity / spin / follow
    （一个领域有地纹 / 柱 / 墙 / 剑影好几份，只 dispose 一个 `z.mat` 就是一路涨显存）。
 
 **验证**：`test-vfx-field` **34/0**（源码契约）、`probe-vfx-field` **19/0**（真机：部件构成 /
-半径听调用方 / 到点回收 / 连放不涨 / 零报错），并留下 4 张截图 `shots/field-*.png` 供人眼复核。
+半径听调用方 / 到点回收 / 连放不涨 / 零报错），并留下 4 张截图 `shots/field-*.png` 供人眼复核（`shots/` 在 `.gitignore` 里，只在本地）。
 其余全绿：p2b 903 · p2b 探针 292 · smoke ERRORS none · mobile-layout ✓。
 
 **踩坑**
@@ -1535,3 +1535,14 @@ r / life / color / opacity / spin / follow
    配对当场归零，抽出来只有一行，后面全是假红。
 3. 文件在 Windows 上是 CRLF，跨行正则要小心（老坑，`AGENTS.md §3` 有记）。
 4. 探针第一遍 290/2 又是老坑（符阵减速 / 定身靠 900ms `setInterval`），单独重跑 292/0。
+
+**补（同轮）：毒雾去掉边沿亮圈。** 接完雾团截图一看，`FX.area` 那圈亮边又把雾
+重新画成了一个圆 —— 「没有边界的雾」和「一圈发亮的边」是同屏自相矛盾的。
+给 `FX.area` 加 `opts.rim === false`，毒雾只留一层很淡的地面染色（0.1），
+边界交给雾团自己。契约里补了一条（`rim: false` 必须还在，别被后人"顺手统一"掉）。
+
+**踩坑补一条（重要）**：用 Python 批量改文件时**必须 `newline=''`**。默认文本模式
+把 LF 读成 `\n`、写回时按 `os.linesep` 变成 CRLF，整个 `src/game.js` 的行尾被翻掉 ——
+表现是 `test-skill-p2b` 从 903/0 变成 893/4，报的全是「frostnova / meteor / swordrain
+的 case 块没读 sextra」这种八竿子打不着的条目（因为 `castSkill` 块的切分锚点是
+`'\n  },\n'`，CRLF 下永远匹配不到）。已写进 `AGENTS.md §3`。

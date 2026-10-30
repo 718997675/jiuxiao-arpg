@@ -121,6 +121,11 @@ git fetch origin                 # 分支都在远程，clone 完就全能看到
 - headless 启动参数固定：`--no-sandbox --enable-unsafe-swiftshader --use-gl=angle --use-angle=swiftshader`
 - 本地临时起 HTTP 服务（测 http 语义时用）：`python -m http.server 8765 --bind 127.0.0.1`
   （`dev/test-save-browser.js` 固定用 8123，起服务要用后台任务，不能用 `&` 挂——shell 退出会带走它）
+- **用 Python / 脚本批量改文件时必须 `newline=''`**。默认文本模式会把 `\r\n` 读成 `\n`、
+  写回时再按 `os.linesep` 变成 CRLF —— 整个文件的行尾被静默翻掉，
+  表现就是 `dev/test-skill-*` 里按 `\n` 写的正则大面积假红（实测 p2b 893/4，
+  报的全是「case 块没读 sextra」这种八竿子打不着的条目）。修法：
+  `io.open(p,'r',newline='')` 读、`io.open(p,'w',newline='')` 写，改完 `git diff --stat` 一眼能看出。
 - 部分探针会把截图写到 `/tmp/xxx.png`，在 Windows 上解析成 `D:\tmp`，先 `mkdir -p /d/tmp`。
 
 ## 4. 改动入口速查

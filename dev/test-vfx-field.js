@@ -53,6 +53,8 @@ for (const k of ['sigil', 'taiji', 'mist', 'blades']) {
 }
 ok(/kind !== 'mist'/.test(fieldSrc), '雾不画地纹（带清晰圆边的"雾"读起来是一张饼）');
 ok(/NormalBlending/.test(fieldSrc), '雾片走 NormalBlending（加色雾会变成一团荧光）');
+ok(/opts\.rim !== false/.test(src) && /rim: false/.test(game),
+  '毒雾关掉边沿亮圈（亮边会把「没有边界的雾」重新画成一个圆）');
 ok(/CylinderGeometry/.test(fieldSrc), '法阵 / 太极有竖直柱体（51° 俯角下竖直方向最占屏幕）');
 ok(/swords/.test(fieldSrc) && /fxPlane/.test(fieldSrc), '剑阵用立起来的 plane 做剑影（不是贴地弧）');
 
