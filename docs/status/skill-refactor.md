@@ -41,7 +41,7 @@ P1 起才动 `SKILL_BAR_SLOTS` 与面板的三列树。
 | P2b | **数量 / 形态台阶接进 `castSkill`**。①数量：默认 Lv3 / Lv7 各 +1，接 `smod.count`（13 个技能消费），第 n 发 ×0.85^n 防三倍伤害；**发数节奏可按技能覆盖**（`SKILL_COUNT_TIER`，法师 ② 在 Lv5 / Lv7）。②进化：新建 `SKILL_TIER_EVO`（挂**技能 id** 不挂技能位），合并顺序 **台阶最前 → 精研 / 取向 / 变体覆盖同名键**（花点的选择必须盖过等级送的）。**15 个位 / 45 条全部接完**：刀客①旋风斩、法师①火球、道士①符箓、道士②毒雾、刀客②地裂、刀客③剑阵、刀客④血怒、道士④回春、法师③火墙、法师④护盾、道士③太极、法师②陨石（3 溅射 / 5 双陨 / 7 三连落）、道士⑤召灵兽（三只各召各的）、**刀客⑤兵形（刀式状态机 + 刃势 + 断岳斩）**、**法师⑤元素法相（净新增技能：法相窗口 + 换相 + 命中附加 + 收窗新星 + 免控）** —— 细则见下面「P2b 收口要点」。**✅ 15/15 个位、45/45 条：P2b 收口** | ✅ | `data-skills.js`（`SKILL_TIER_EVO` / `SKILL_COUNT_TIER` / `skillTierEvo` / `skillTierMods` / `skillTierBeh`）、`skill-beh.js`（`branchBeh` 台阶排最前 + `killProlong` / `lifesteal` / `ccImmune` / `healOnCast` / `tierDur` / `splash` / `stanceUnlock` / `edgeFinisher` / `edgeKeep` / `edgeUltimate`）、`game.js`（autoTarget / rageMul / firePatch / swordField / applyPlayerSlow / ccImmuneNow / behTierNova / shieldT+sdur / 符阵 dur+tierDur / meteor·blizzard·judgement·starfall 多发 / spawnTierField 落点领域 / **bladeXxx 兵形状态机**）、`ui.js`（说明页读数现算 + 动作条刀式角标）、`ui-skills.js` | `dev/test-skill-p2b.js` 878 · `dev/probe-skill-p2b.js` 282 |
 | P2c | **精通层 11~20**（不新增形态）：①有效等级 20 与分段曲线 P2a 已接；②**精进轨道**（11~20 十格 + 「精进 x/20」+ 渐进披露 + 15/20 里程碑）；③**Lv15 精通三选一**（烈 / 疾 / 省，走 mods，门槛看有效等级，存 `skills[id].m`）；④**Lv20 最终精通「归一」**（三条精通各 60% 同时生效，与 15 级所选**叠加**，走 `effSkillMods` 第六层）—— 已完成；⑤**光效随等级变亮**（`skillFxAmp` → `FX.setAmp`，只乘亮度 / 不透明度 / 粒子数，不乘半径）—— 已完成。**P2c 收口** | ✅ | `data-skills.js`（`SKILL_TIERS.mastery` / `SKILL_TIERS.capstone` / `skillMasteryOn` / `skillMasteryIdx` / `skillMasteryOpt` / `skillCapstoneOn` / `skillCapstoneBonus`）、`game.js`（`skillMastery` / `skillMasteryMods` / `setSkillMastery` / `skillCapstoneMods` / `effSkillMods` 第五·六层）、`ui-skills.js`（mstRow + 精通行 + 60% 角标）、`index.html`、**`fx.js`（`amp` / `setAmp` / `lit` + 7 个原语调亮）** | `dev/test-skill-p2c.js` 99 · `dev/probe-skill-p2c.js` 62 |
 | P3a | **元素反应表 6/10**：触发口径 = 「目标身上已有 A 元素状态 + 这一下带 B 元素」（不依赖注入）。蒸汽爆裂 / 等离子 / 焚毒 / 感电冻结 / 腐霜 / 腐蚀链，走 `damageEnemy` 一个口，三道闸门（silent / react / `_reacting`）+ 双层 ICD（0.5s 全局 · 2s 同目标）。**圣系 4 组未做** —— 引擎里 sigil 只是伤害类型，没有状态位 | ✅ | `data-elem.js`（新建：`ELEM_DEFS` / `ELEM_STATUS` / `ELEM_REACTIONS` / `elemReactionOn`）、`game.js`（`elemReactReady` / `tryElemReaction` / `applyElemReaction` / `chainReaction` / `knockEnemy`）、`ui.js`（说明页「元素反应」行）、`index.html`（加载 data-elem.js） | `dev/test-skill-p3.js` 62 · `dev/probe-skill-p3.js` 26 |
-| P3b | **元素注入（单元素版 ✅）**：①②③⑤ 位可注火 / 冰 / 雷 / 毒，门槛角色 20 级，附加 30%~50%（跟技能有效等级走），**附加不转换**（原伤害 100% + 附加 X%，两段各过自己的抗性与元素词缀）。三级取值 `opts.inj → _proj.inj → _elem`；注入元素可当反应源（命中元素优先、注入兜底）。**延迟落点 / dot / 召唤物不注入**（已拍板）。剩：双元素混搭 + 元素词缀统一口径 | 🟡 | `data-elem.js`（`SKILL_INJECT` / `skillInjectPct` / `skillSlotOf` / `skillCanInject`）、`game.js`（`skillInject` / `skillInjectAmt` / `setSkillInject` / `curInject` / `elemHitMul` + `castSkill` 窗口 + `damageEnemy` 两段式）、`fx.js`（`projectile` 的 `inj`）、`ui-skills.js`（注入块 + 点击委托） | `dev/test-skill-p3.js` 95 · `dev/probe-skill-p3.js` 41 |
+| P3b | **元素注入（单元素版 ✅）**：①②③⑤ 位可注火 / 冰 / 雷 / 毒，门槛角色 20 级，附加 30%~50%（跟技能有效等级走），**附加不转换**（原伤害 100% + 附加 X%，两段各过自己的抗性与元素词缀）。三级取值 `opts.inj → _proj.inj → _elem`；注入元素可当反应源（命中元素优先、注入兜底）。**延迟落点 / dot / 召唤物不注入**（已拍板）。**P3b 收口** —— 当初挂在这一行尾巴上的另外两块已经拆出去各自做完：双元素混搭见 **P3d**，元素词缀统一见 **P3c** | ✅ | `data-elem.js`（`SKILL_INJECT` / `skillInjectPct` / `skillSlotOf` / `skillCanInject`）、`game.js`（`skillInject` / `skillInjectAmt` / `setSkillInject` / `curInject` / `elemHitMul` + `castSkill` 窗口 + `damageEnemy` 两段式）、`fx.js`（`projectile` 的 `inj`）、`ui-skills.js`（注入块 + 点击委托） | `dev/test-skill-p3.js` 97 · `dev/probe-skill-p3.js` 41 |
 | P3c | **元素词缀统一口径**：随机词缀从「火伤 / 冰伤 / 雷伤 / 毒伤」四族 12 条并成「**元素伤害 +X%**」3 条（全元素通用，含符法）；老档按 **1:1 相加折算**（火 20 + 冰 10 → 元素 30），只增不减。另留一条**元素专属**通道（被动 高压 / 毒经 / 符力、符文之语 雷引 / 炎心、命格固有），两层叠乘。道途面板补上元素增伤 6 行（以前这一族面板一行都没有） | ✅ | `data-core.js`（`elemDmg` + 四旧键标 `legacy`）、`data-items.js`（`AFFIXES` 12→3、`AFFIX_SLOT_ALLOW.fate`、**`foldElemAffixes` + `normalizeItem` 折算**）、`data-elem.js`（`ELEM_AFFIX` / `ELEM_AFFIX_EX` / `elemAffixMul`）、`game.js`（`damageEnemy` / `elemHitMul` 改走 `elemAffixMul`）、`ui.js`（道途面板 + 说明页两行）、`data-builds.js` / `data-trial.js` | `dev/test-elem-affix.js` 60 · `dev/probe-elem-affix.js` 22 |
 | P3d | **双元素混搭**：境界 **40 级**解锁第二元素，①②③⑤ 位可再注一种（不能与主元素相同，摘主元素时副元素一起走）。**总量不变**，按主 70% / 副 30% 拆成两段（50% → 35% + 15%），两段各过自己的抗性与元素增伤；与命中元素相同的段自动剔除。反应按「命中元素 → 主 → 副」顺序试。视觉：施法瞬间脚下喷一簇注入元素色火星（8 + 4 颗，主 70% / 副 30%），**技能本体光效不换色**（FX 是全局的，换色会连敌人技能和血一起染） | ✅ | `data-elem.js`（`SKILL_INJECT.subAt` / `split` / `skillInjectSplit`）、`game.js`（`skillInject2` / `skillInjectPack` / `injectSegs` / `setSkillInject2` + `elemReactReady` 收数组）、`fx.js`（`elemSpark`）、`ui-skills.js`（混搭一行 + `data-inj2` 委托）、`index.html`（`.sb-i2list`）、`ui.js`（说明页两行） | `dev/test-elem-dual.js` 40 · `dev/probe-elem-dual.js` 30 |
 | P4 | 三职业独立 ⑤ 号位：刀客兵形/刃势、法师法相、道士召唤 | ⬜ | `src/fx.js`、`src/charforge.js` | — |
@@ -1140,7 +1140,8 @@ mobile-layout ✓。
 
 ### 2026-10-30 · P3b 元素注入（单元素版）
 
-**这一版只做单元素注入**，双元素混搭（主 70% / 副 30% 混色）留 P3c。
+**这一版只做单元素注入**，双元素混搭（主 70% / 副 30% 混色）留 P3d（原计划写在 P3c，
+后来词缀统一插到前面占了 P3c 的号，双元素顺延成 P3d）。
 
 三条口径，都是刻意选的：
 
@@ -1178,8 +1179,9 @@ opts.inj  →  this._proj.inj  →  this._elem  →  null
 - **圣不参与注入**：`sigil` 只是一个伤害类型，没有状态位、没有反应，注进去除了改抗性
   什么都没有。等补上「圣印」状态位再说。
 
-**验证**：`test-skill-p3` 95 通过 / 0 失败（新增第六节 33 条：门槛 / ④ 位拦截 /
-比例曲线 / 两段相加 / 三级取值 / altElem 兜底 / 面板绑定）；`probe-skill-p3`
+**验证**：`test-skill-p3` 97 通过 / 0 失败（第六节 35 条：门槛 / ④ 位拦截 /
+比例曲线 / 两段相加 / 三级取值 / altElem 兜底 / 面板绑定；P3d 落地时其中 5 条跟着
+签名从 `inj` 单键改成 `[主, 副]` 数组、并补了 `skillInjectPack` / `injectSegs` 两条正向断言）；`probe-skill-p3`
 41 通过 / 0 失败（真机：19 级不生效 20 级生效、④ 位注了也不生效、30% 打出 1.30 倍、
 50% 打出 1.50 倍、旋风斩多段全带、收尾清零、火球把 `{key:'ice'}` 复制到自己身上、
 注入冰打燃烧怪触发蒸汽爆裂、面板 5 个选项点击真的写进 `state.skills[id].el`、
