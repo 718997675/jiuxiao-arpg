@@ -55,7 +55,14 @@
   /* ---------- 右上角 ---------- */
   #topright{position:absolute;right:18px;top:16px;display:flex;flex-direction:column;align-items:flex-end;gap:8px}
   #miniWrap{width:168px;height:168px;border:1px solid var(--line);background:rgba(4,5,8,.8);
-    position:relative;box-shadow:0 6px 24px rgba(0,0,0,.65),inset 0 0 30px rgba(0,0,0,.8);overflow:hidden}
+    position:relative;box-shadow:0 6px 24px rgba(0,0,0,.65),inset 0 0 30px rgba(0,0,0,.8);overflow:hidden;
+    /* [P03] 点它开大图。`#app > *` 默认 pointer-events:none，不显式打开的话
+     * 点击会被整层 HUD 吃掉 —— 代码里绑了 click 也永远不触发。 */
+    pointer-events:auto;cursor:pointer}
+  #miniWrap:hover{border-color:rgba(216,178,90,.7)}
+  #miniWrap::after{content:'';position:absolute;left:0;right:0;top:0;height:100%;pointer-events:none;
+    background:radial-gradient(circle at 50% 50%,transparent 55%,rgba(216,178,90,.10));opacity:0;transition:opacity .2s}
+  #miniWrap:hover::after{opacity:1}
   #minimap{width:100%;height:100%;display:block}
   #zoneName{position:absolute;left:0;right:0;bottom:0;text-align:center;font-size:11px;letter-spacing:2px;
     padding:3px 0;background:linear-gradient(0deg,rgba(0,0,0,.85),transparent);color:var(--gold)}
@@ -84,6 +91,48 @@
     background:linear-gradient(90deg,rgba(28,24,22,.8),rgba(10,9,8,.7));box-shadow:none}
   #wbTrack.dead .wb-n{color:#9a8a80;text-shadow:none}
   #wbTrack.dead .wb-k{color:#7a6a60}
+
+  /* ---------- 世界 Boss · 顶部倒计时（M18.10） ----------
+   * 追踪行在右上角小地图底下，打怪时眼睛根本到不了那儿；玩家要的是
+   * 「抬头就能看见还有多久、在哪刷」。所以另起一条**贴顶居中**的常驻条。
+   *
+   * 和 #wbBanner 分工：那个是「它来了」（3.2 秒闪一下），这个是「还有多久」。
+   * 和 #bossbar 抢位置：打首领时 bossbar 占着顶部中央，靠 body.wb-has-boss
+   * 把这条往下让（见下面的规则），否则两只名字会叠在一起。
+   * top 用 6px 是因为小屏横屏（高 320）再往下压就压到画面中心了。 */
+  #wbTop{position:absolute;left:50%;top:6px;transform:translateX(-50%);
+    display:none;align-items:center;gap:9px;padding:4px 14px 5px;white-space:nowrap;
+    background:linear-gradient(180deg,rgba(38,12,8,.88),rgba(10,7,6,.74));
+    border:1px solid rgba(200,86,58,.42);border-radius:2px;font-size:12px;letter-spacing:1px;
+    color:#c8b8a4;pointer-events:auto;cursor:pointer;z-index:12;
+    box-shadow:0 2px 14px rgba(0,0,0,.5),inset 0 0 18px rgba(200,60,30,.10);
+    transition:top .2s ease}
+  #wbTop:hover{border-color:rgba(255,138,90,.75)}
+  #wbTop .wt-k{font-size:9.5px;letter-spacing:2.5px;color:#e0895a}
+  #wbTop .wt-n{font-family:"STKaiti","KaiTi",serif;font-size:14px;letter-spacing:1.5px;color:#ffd0a8;
+    text-shadow:0 0 10px rgba(220,80,40,.45)}
+  #wbTop .wt-m{color:#a89a88}
+  #wbTop .wt-t{color:#ffb070;font-variant-numeric:tabular-nums;letter-spacing:1px;font-size:13px}
+  #wbTop .wt-s{color:#a89a88}
+  /* 空窗期（已被讨伐）：整块降饱和，倒计时改成「下一只」的口气 */
+  #wbTop.dead{background:linear-gradient(180deg,rgba(26,22,20,.88),rgba(10,9,8,.74));
+    border-color:rgba(120,100,90,.4);box-shadow:0 2px 12px rgba(0,0,0,.45)}
+  #wbTop.dead .wt-k{color:#8a7a6e}
+  #wbTop.dead .wt-n{color:#c0aa98;text-shadow:none}
+  /* 最后一分钟开始呼吸，提醒「要刷了 / 要走了」 */
+  #wbTop.soon{border-color:rgba(255,120,60,.85);animation:wbSoon 1.1s ease-in-out infinite}
+  @keyframes wbSoon{
+    0%,100%{box-shadow:0 2px 14px rgba(0,0,0,.5),inset 0 0 18px rgba(200,60,30,.10)}
+    50%{box-shadow:0 2px 14px rgba(0,0,0,.5),inset 0 0 28px rgba(255,120,60,.32)}}
+  /* 打首领时让位给 #bossbar。
+   * **不要写死像素**：bossbar 的高度不是常数 —— P09 的多首领小血条行会让它
+   * 再长 15px 左右，写死 90px 就直接叠在一起（dev/worldboss-live.js 的 A4
+   * 抓到的就是这个）。现在由 UI._syncBossBarBottom 把实测底边写进
+   * `--bossbar-bottom`，两边谁改了高度都不用再手量一遍。
+   * 兜底 86px = 桌面 top 22 + 单首领高度 64。 */
+  body.wb-has-boss #wbTop{top:calc(var(--bossbar-bottom,86px) + 4px)}
+  body.wb-has-boss #toasts{top:calc(var(--bossbar-bottom,86px) + 42px)}
+  body.in-menu #wbTop{opacity:0;pointer-events:none}
 
   /* ---------- 世界 Boss · 现世横幅（M18.3） ----------
    * 位置在屏幕上方 26%（约 1/3 处），横贯整幅 —— 和试炼的中央大字
@@ -123,6 +172,44 @@
   #bossbar .phase{display:flex;gap:5px;justify-content:center;margin-top:3px}
   #bossbar .phase i{width:22px;height:2px;background:#4a3020}
   #bossbar .phase i.on{background:#e06a40;box-shadow:0 0 8px #e06a40}
+  /* [P09] 多首领：主血条下面一排小血条，点一下切换主显示。
+     宽度 60px 是按「一张图最多 3 只」定的 —— 3×60 + 2×6 间距 = 192px，
+     塞在 560px 的主条下面还有富余，手机上也不会顶到边。 */
+  #bossbar .peers{display:none;gap:6px;justify-content:center;margin-top:5px;flex-wrap:wrap}
+  #bossbar .peer{width:60px;height:5px;background:rgba(0,0,0,.82);border:1px solid rgba(200,60,40,.35);
+    position:relative;overflow:hidden;cursor:pointer;transition:border-color .2s,transform .2s}
+  #bossbar .peer i{display:block;height:100%;background:linear-gradient(180deg,#a83a24,#5a0c06);transition:width .16s}
+  #bossbar .peer:hover{border-color:rgba(240,216,168,.7);transform:translateY(-1px)}
+  #bossbar .peer.on{border-color:#f0d8a8;box-shadow:0 0 8px rgba(240,216,168,.45)}
+  #bossbar .peer.on i{background:linear-gradient(180deg,#e04a30,#6a0e08)}
+  /* 切目标时轻轻闪一下 —— 不然玩家只会觉得「数字怎么突然变了」 */
+  #bossbar.swap{animation:bossSwap .35s ease}
+  @keyframes bossSwap{
+    from{opacity:.2;transform:translateX(-50%) translateY(-5px)}
+    to{opacity:1;transform:translateX(-50%) translateY(0)}
+  }
+
+  /* ---------- 大图（P03） ----------
+   * 独立一层，不占 #miniWrap —— 小地图要一直报「我在哪个区」，
+   * 被大图顶掉的话玩家反而丢了方位感。
+   * 画布内部 720×720，CSS 缩到 min(80vh,80vw)：设备像素比在 2 倍屏上刚好够锐，
+   * 再大就是浪费（一张图最多 12 个区，不需要 4K 精度）。 */
+  #mapBig{position:absolute;inset:0;display:none;align-items:center;justify-content:center;
+    background:rgba(2,3,5,.84);z-index:60;pointer-events:auto}
+  #mapBig.open{display:flex}
+  #mapBig .mb-box{position:relative;width:min(80vh,80vw);height:min(80vh,80vw);
+    border:1px solid var(--line);background:rgba(4,5,8,.96);
+    box-shadow:0 24px 80px rgba(0,0,0,.9),inset 0 0 60px rgba(0,0,0,.8)}
+  #mapBigCv{width:100%;height:100%;display:block;cursor:grab;touch-action:none}
+  #mapBigCv:active{cursor:grabbing}
+  #mapBig .mb-x{position:absolute;right:8px;top:8px;width:34px;height:34px;display:flex;
+    align-items:center;justify-content:center;color:#c8b898;font-size:20px;line-height:1;
+    cursor:pointer;background:rgba(0,0,0,.55);border:1px solid var(--line);border-radius:3px}
+  #mapBig .mb-x:hover{color:#fff;background:rgba(216,178,90,.18)}
+  #mapBig .mb-zoom{position:absolute;left:10px;bottom:8px;font-size:11px;letter-spacing:2px;color:var(--gold)}
+  #mapBig .mb-hint{position:absolute;right:10px;bottom:8px;font-size:10.5px;color:#8a8272;letter-spacing:1px}
+  body.touch #mapBig .mb-hint{display:none}
+  body.touch #mapBig .mb-box{width:min(92vw,92vh);height:min(92vw,92vh)}
 
   /* ---------- 技能栏 ---------- */
   #actionbar{position:absolute;left:50%;bottom:22px;transform:translateX(-50%);display:flex;gap:7px;align-items:flex-end}
@@ -1663,12 +1750,15 @@
     box-shadow:0 0 18px rgba(216,178,90,.22)}
   .cdiff .dn{font-size:14px;letter-spacing:3px;color:#f0e4c8;font-family:"STKaiti","KaiTi",serif}
   .cdiff .dt2{font-size:10px;letter-spacing:1px;margin-top:3px;opacity:.85}
+  .cdiff .dlv{font-size:9.5px;letter-spacing:.5px;margin-top:4px;padding-top:4px;color:#8a8478;
+    border-top:1px solid rgba(216,178,90,.14)}
   #diffDesc{margin-top:11px;font-size:11.5px;line-height:1.75;color:#9a9488;
     max-width:520px;text-align:center;min-height:2.6em}
   body.touch .diffs{gap:6px}
   body.touch .cdiff{min-width:72px;padding:7px 8px}
   body.touch .cdiff .dn{font-size:12.5px;letter-spacing:1px}
   body.touch .cdiff .dt2{font-size:9px}
+  body.touch .cdiff .dlv{font-size:8.5px;margin-top:2px;padding-top:2px}
   body.touch #diffDesc{font-size:10px;line-height:1.6;max-width:92vw;margin-top:7px;min-height:3.2em}
   #start .bottom{margin-top:26px;display:flex;gap:12px;align-items:center}
   #start .tips{position:absolute;bottom:22px;font-size:10.5px;color:#6a6458;letter-spacing:1px;text-align:center;line-height:1.9}
@@ -1802,6 +1892,10 @@
   .setseg{display:flex;gap:5px;flex-wrap:wrap;flex:1;min-width:0}
   .setseg .sbtn{min-width:44px;text-align:center;padding:4px 9px}
   .setseg .sbtn.on{pointer-events:none}
+  /* 被总开关关掉的子项（拾取那五行的后四行）：变灰 + 不可点，但不隐藏 ——
+   * 隐藏会让后面的行整体上移，玩家会以为设置项被删掉了 */
+  .setrow.off{opacity:.38}
+  .setrow.off .sbtn{pointer-events:none}
   /* 音频滑杆：用原生 range，但要压掉浏览器的默认蓝白配色，融进这套暗金 UI */
   .setrange-wrap{align-items:center;gap:10px}
   .setrange{-webkit-appearance:none;appearance:none;flex:1;min-width:120px;height:3px;border-radius:2px;
@@ -1945,6 +2039,15 @@
   body.touch #miniWrap{width:98px;height:98px}
   body.touch #zoneName{font-size:9.5px;padding:2px 0}
   body.touch #questTrack{width:min(180px,42vw);font-size:11px;padding:5px 8px;line-height:1.6}
+  /* 手机顶部只剩一条缝（左上角色板 + 右上小地图各占一头），
+   * 所以顶部条压到 2px、去掉「世界Boss」这行小字，只留「谁 · 哪 · 多久」。 */
+  body.touch #wbTop{top:2px;gap:6px;padding:3px 10px 4px;font-size:11px;max-width:94vw}
+  body.touch #wbTop .wt-k{display:none}
+  body.touch #wbTop .wt-n{font-size:13px;letter-spacing:1px}
+  body.touch #wbTop .wt-t{font-size:12px}
+  /* 手机打首领：同样按实测底边让位（兜底 60 = top 6 + 单首领高度 54） */
+  body.touch.wb-has-boss #wbTop{top:calc(var(--bossbar-bottom,60px) + 4px)}
+  body.touch.wb-has-boss #toasts{top:calc(var(--bossbar-bottom,60px) + 38px)}
   body.touch #goldRow{font-size:11px;gap:10px}
   body.touch #log{left:10px;top:64px;bottom:auto;width:min(240px,44vw);font-size:10.5px;line-height:1.6}
   body.touch #log div:nth-child(n+5){display:none}
@@ -2420,6 +2523,16 @@
     </div>
   </div>
 
+  <!-- 世界 Boss 顶部倒计时（M18.10）：抬头就能看见「还有多久 / 在哪」。
+       内容全由 UI.renderWorldBoss 每秒写文本，这里只留骨架。 -->
+  <div id="wbTop" onclick="UI.gotoWorldBoss()">
+    <span class="wt-k" id="wtK">世界Boss</span>
+    <span class="wt-n" id="wtName"></span>
+    <span class="wt-m" id="wtMap"></span>
+    <span class="wt-t" id="wtTime">--:--</span>
+    <span class="wt-s" id="wtSuf">后现世</span>
+  </div>
+
   <div id="topright">
     <div id="miniWrap"><canvas id="minimap" width="336" height="336"></canvas><div id="zoneName">桃源村</div></div>
     <div id="goldRow"><span id="goldTxt">金 0</span><span id="potionTxt">药 0</span></div>
@@ -2432,6 +2545,17 @@
     <div class="bt" id="bossTitle"></div>
     <div class="bbar"><i id="bossFill"></i><span id="bossText"></span></div>
     <div class="phase" id="bossPhase"></div>
+    <div class="peers" id="bossPeers"></div>
+  </div>
+
+  <!-- 大图（P03）：点右上角小地图打开。滚轮 / 双指缩放，拖动平移，Esc 关闭。 -->
+  <div id="mapBig">
+    <div class="mb-box">
+      <canvas id="mapBigCv" width="720" height="720"></canvas>
+      <div class="mb-x" id="mapBigClose">×</div>
+      <div class="mb-zoom" id="mapBigZoom">1.0×</div>
+      <div class="mb-hint">滚轮 / 双指缩放　·　拖动平移　·　Esc 关闭</div>
+    </div>
   </div>
 
   <div id="buffbar"></div>

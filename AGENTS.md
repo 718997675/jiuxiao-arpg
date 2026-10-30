@@ -150,6 +150,7 @@ cat docs/status/act-expansion.md             # 细看这条线的节点表 / 下
 | 要改什么 | 动哪里 |
 |---|---|
 | 数值平衡（伤害/经验/掉落/移速…） | `src/data/data-core.js` 的 `BALANCE` |
+| 等级上限（**跟难度走**） | `src/data/data-core.js` 的 `BALANCE.levelMaxByDiff` + `levelCapOf(diffKey)`。判断「这个玩家能到几级」一律走 `Game.levelCap()`，**不要读 `BALANCE.levelMax`**（那是全难度最高值，只在兜底场景用）。难度开档定死、中途不可改，所以不用处理降级 |
 | 属性封顶（暴击率、冷却缩减 = 100%） | `src/items.js` 的 `STAT_CAPS` |
 | 主菜单 / 行囊 / 天赋 / 设置 UI | `src/ui.js` |
 | 术法（技能树、变体） | `src/ui-skills.js` |
@@ -191,7 +192,7 @@ node dev/live-check.js       # 线上能否开局（推完 30~60s 后跑）
 node dev/mobile-layout.js --live   # 线上版布局回归
 node dev/preview-check.js --url <预览地址>   # 预览站：能开局 + 资源不越界 + 存档隔离
 node dev/check-worldboss.js  # 世界 Boss 数据层：抗性平坦 / 三阶段 / 领域 / 掉落 / **与八部去重**（1152 项）
-node dev/worldboss-run.js    # 世界 Boss 运行时：30 分钟轮转（时间打桩）、击杀冷却、跨会话、存档往返（76 项）
+node dev/worldboss-run.js    # 世界 Boss 运行时：10 分钟轮转（时间打桩）、击杀冷却、跨会话、存档往返、空窗预选（85 项）。**周期断言全部从 CFG.cycle 派生，别写死分钟数**
 node dev/worldboss-loot.js   # 世界 Boss 掉落：必掉件数 × 四难度 / 120 次大样本全传世 / 材料符文世界魂区间 / 落点在模型外 / 幂等 / onKill 接线（191 项）
 node dev/worldboss-live.js   # 世界 Boss 浏览器实测：实体/光环/横幅/星标/真实击杀链路/六种领域效果（可加 --shot 截图）
 node dev/worldboss-fight.js  # 世界 Boss 战斗层（离线）：阶段边界 / 7 种 shape 命中与否 / 场地 / 定身 / enter 消费点 / 接线断言（252 项）
@@ -201,6 +202,12 @@ node dev/wbmodels-shot.js    # 六套骨架渲图到 shots/wbm-*.png，人工肉
 node dev/check-seals.js      # 魔将之印（离线 111 项）：八印表 / 印↔将↔图三向对齐 / 终门门槛 / 真装载 game.js 调 onBossKill / 老档与脏值 / 存档三段（导出·归一·unpack）/ README 殿名比对
 node dev/seal-live.js        # 魔将之印（浏览器 19 项）：真 DOM 播报 / 真 localStorage / 刷新后 Game.loadSlot(n) 读回仍 8 枚
 node dev/input-keys.js       # 键盘与输入框（浏览器 21 项）：三框 autocomplete=off / e.key===undefined 不崩 / 打字不点亮游戏按键 / 打字不触发热键
+node dev/probe-boss.js       # 首领（浏览器 22 项）：技能距离闸 / 脱战回位 / 血条归属（打谁看谁）/ 招式落点夹取。P02 P09 必跑
+node dev/minimap-check.js    # 小地图（离线 + 浏览器 23 项）：四方向箭头 / 缩放锚点 / 点开放大 / 拖动 / Esc 关闭。P03 必跑
+node dev/respawn-check.js    # 地图内补位（浏览器 14 项）：清空后回填 / 上限 / 距离 / 只补野图 / 任务量对齐。P01 必跑
+node dev/trial-check.js      # 试炼（离线 53 项）：等级乘区 / 经验衰减 / 传世掉落概率表 / 运行时接线。P12 必跑
+node dev/skill-ref.js        # 技能射程与消耗（离线 + 浏览器 38 项）：射程表 ≤13 / 消耗占上限百分比 / 30 米外硬拒绝（不扣蓝不进 CD）/ 满蓝连放几秒见底。P06 P10 必跑
+node dev/pickup-check.js     # 自动拾取（离线 + 浏览器 52 项）：设置默认值与脏数据回落 / 品质顺序 / 只捡够格的 / 「未拾取」角标 / 行囊满不刷屏。P04 必跑
 ```
 
 ## 6. 踩过的坑（改之前先看一眼，能省几小时）
@@ -344,15 +351,35 @@ node dev/input-keys.js       # 键盘与输入框（浏览器 21 项）：三框
 
 - 线上版本：见 `git log -1`。
 - **大地图扩展已合入 `main`（2026-10-28）**：M0~M6 全完（三层世界结构 + 5 营地 + 任务系统 +
-  8 种 zone 骨架 + 39 张图 + 60 级上限 + 5 阶地下城 + 传世 40 件 + 套装 18 套），
-  M18 世界 Boss 九节全完（六只 / 三阶段 / 六套骨架 / 掉落 / 说明页）。
+  8 种 zone 骨架 + 39 张图 + 5 阶地下城 + 传世 40 件 + 套装 18 套），
+  **等级上限跟难度走**（新手 60 / 普通 70 / 困难 85 / 极难 99，见 `BALANCE.levelMaxByDiff`；
+  内容只铺到 60，60 以上是给高难度的长期成长段），
+  M18 世界 Boss 九节全完（六只 / 三阶段 / 六套骨架 / 掉落 / 说明页 / 10 分钟轮转 + 顶部倒计时）。
   **M7 终章重做进行中**：M7.1 结构 / M7.2 八魔将 / M7.4 魔将之印 已落地，
   剩 M7.3 破绽窗口 + M7.5~M7.9。进度与卡点看 `docs/status/act-expansion.md`，
   世界 Boss 看 `docs/status/world-boss.md`。`feat/act-expansion` 分支保留作续做线。
 - **暂停中**：技能系统重构（12 技能 → 4~5 个功能位 + 元素混搭 + 发射数量成长）。
   完整方案在 `docs/SKILL-REDESIGN-PLAN.md`，用户已拍板 10 项决策，**等他说开工**。
   排期在大型扩展合入 main 之后 —— 现在这个条件已经满足。
-- **排队中**：`docs/POLISH-PLAN.md` 的 P 系列 17 项打磨（4 批），只出了方案，代码未动。
+- **打磨第 1 批已完成（2026-10-28，提交 `26dcd7c`）**：`docs/POLISH-PLAN.md` 的
+  P01 P02 P03 P09 P11 P12 P16 七项（补位刷怪 / 首领距离闸 + 脱战 / 小地图箭头 + 大图 / 血条归属 /
+  悬赏交付人 / 试炼等级难度 + 经验衰减 + 传世挂高波 / 符文掉率）。新增 4 个验收脚本
+  （`probe-boss` / `minimap-check` / `respawn-check` / `trial-check`）。
+- **打磨第 2 批前两项已完成（2026-10-29）**：P06（蓝耗 + 法师射程）+ P10（施法距离硬拒绝）这对
+  必须一起做的。**核心是换口径**：`SKILLS[x].cost` 从固定点数改成「占灵力上限的百分比」——
+  固定点数是常数、上限随 int 线性涨到 4400+，比值只会越拉越大，旧口径实测满蓝连放 **332 秒**。
+  配套封 `STAT_CAPS.cdr 40` / `costReduce 20`（不封的话百分比消耗会被它们放大回无限蓝）。
+  新增 `dev/skill-ref.js`（38 项），`balance-report` 加第八节。
+- **打磨第 2 批 P04 已完成（2026-10-28）**：自动拾取 + 品质筛选。关键判断是
+  **不是把 `grabR` 调大，而是给够格的东西换一个更大的吸附圈**（`autoR = 4.2`）——
+  这样「留在地上的白装不跟着玩家跑」天然成立，不用另写排斥逻辑。五个设置项
+  （`autoPickup` + `pickupMinRarity` + gold/mat/rune）语义统一成「**自动**」：
+  关掉任何一项都不会让东西捡不起来，只是回到「走到脚边才捡」。
+  顺手统一品质顺序（`RARITY_ORDER`，以前两套数组对套装/传世的判断相反）、
+  修了 `Settings.set()` 把 `'0'` 存成真值导致「关了还在自动捡」的真 bug。
+  新增 `dev/pickup-check.js`（52 项）。
+  **第 2 批剩余（P07 悬赏板 / P08 奖励预览 / P17 日志消息流）未开工**，
+  三条都是 UI / 交互，互不冲突。
 
 ## 8. 记忆与日志
 

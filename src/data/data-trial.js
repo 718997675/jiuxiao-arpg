@@ -59,6 +59,48 @@ const TRIAL_CFG = {
   xpWaveRatioBoss: 0.72,  // 首领波
   xpWaveRatioBig: 1.05,   // 大首领波
 
+  /* ---- 经验随波数衰减（P12） ----
+   * 比例制解决了「固定经验在高等级变零头」，但同时开了另一个口子：
+   * **收益完全不随等级衰减**，于是「低波数 × 高等级」= 零风险高收益，
+   * 玩家不需要往高波打，只需要反复重开第 1~10 波。
+   *
+   * pace = (wave / (level × xpPaceLevelMul)) ^ xpPacePow，上限 1
+   *   xpPaceLevelMul 0.6：40 级要打到第 24 波才满额，60 级要第 36 波
+   *   xpPacePow      3  ：**低波数几乎不给经验**，这才是止住刷级的关键
+   *
+   * 为什么不是线性（计划书原稿的写法）：线性实测 40 级打 10 波仍给 115%
+   * 升级所需，远达不到「< 15%」的验收线 —— 10 波本身只要几分钟。
+   * 三次方后 40 级 10 波 ≈ 10%，而满额波数不变（仍是第 24 波）。
+   * 见 dev/trial-check.js 的「经验衰减」段。 */
+  xpPaceLevelMul: 0.6,
+  xpPacePow: 3,
+
+  /* ---- 等级难度乘区（P12） ----
+   * 用户方案：「动态根据人物等级调整试炼场的怪物难度，升级了难度也增加」。
+   * 原来的难度乘区只跟波数有关，40 级玩家打第 1 波，怪还是按 8 级调的
+   * 0.54 系数 —— 装备成型后一路平推，这就是「试炼升级太快」的另一半原因。
+   *
+   * lvMul = 1 + max(0, level − lvMulFrom) × lvMulPer
+   *   10 级 ×1.00（刚解锁、装备没成型，不加压）
+   *   30 级 ×1.70 · 60 级 ×2.75
+   * 从 10 级起算：unlockLevel 是 6，6~10 级是「刚进来、装备没凑齐」的窗口；
+   * 10 级后进卷二，装备开始滚雪球，才需要压。
+   * 系数 0.035 是初值，用 dev/trial-check.js 的「各等级最远波数」校准，
+   * 目标是 10/20/30/40/50/60 级的最远波数都落在 25~40 波。 */
+  lvMulFrom: 10,
+  lvMulPer: 0.035,
+
+  /* ---- 传世掉落（P12） ----
+   * 用户方案：「试炼只有高级层数才有极小概率掉落传世」。
+   * 终局产出挂在高波，不挂在「反复重开」上。
+   *
+   * 概率 = min(cap, base + (wave − minWave) × perWave)，首领波 ×bossMul
+   *   30 波 0.3% / 40 波 0.7% / 50 波 1.1% / 60 波 1.5% / 70+ 1.9%（封顶）
+   *   首领波再 ×3 → 0.9% / 2.1% / 3.3% / 4.5% / 5.7%
+   * 只掉 ilvl ≥ ilvlMin 的传世，且玩家 < minLevel 级不掉 ——
+   * 传世 reqLv = ilvl，39 级才穿得上 40 级装，早掉只会变成「捡到但穿不上」的挫败。 */
+  unique: { minWave: 30, base: 0.003, perWave: 0.0004, cap: 0.019, bossMul: 3, ilvlMin: 40, minLevel: 39 },
+
   /* ---- 清场掉落 ---- */
   dropGoldBase: 40,       // 金币 = base × 波数 × 难度系数
   dropWaves: [1, 3, 6, 10, 15, 20, 26, 33, 41, 50],  // 这些波次额外掉装备
@@ -78,15 +120,46 @@ const TRIAL_CFG = {
  * 1+0.20L 提到 1+0.34L 之后，试炼的怪凭空强了 1.5~2 倍 ——
  * 32 级进场的崩盘点从 29 波掉到 21 波。试炼是独立玩法，不该被主线调参
  * 顺手打死，所以在这里按比例收回，保持设计难度不变。
- * 以后主线再调 mob 曲线，记得同步改这两个系数（dev/trial-balance.js 可验算）。 */
-function trialHpMul(wave) {
+ * 以后主线再调 mob 曲线，记得同步改这两个系数（dev/trial-balance.js 可验算）。
+ *
+ * [P12] 两个乘区各再乘一个**等级乘区** `trialLevelMul(level)`。
+ * 不传 level 时按「不加压」处理（×1.00），保证老调用点 / dev 脚本不传参也不会静默变难。 */
+function trialHpMul(wave, level) {
   const w = Math.max(0, wave || 0);
-  return 0.54 * (1 + 0.100 * w + 0.0045 * w * w);
+  return 0.54 * (1 + 0.100 * w + 0.0045 * w * w) * trialLevelMul(level);
 }
-function trialDmgMul(wave) {
+function trialDmgMul(wave, level) {
   const w = Math.max(0, wave || 0);
-  return 0.56 * (1 + 0.045 * w + 0.0010 * w * w);
+  return 0.56 * (1 + 0.045 * w + 0.0010 * w * w) * trialLevelMul(level);
 }
+
+/* 等级难度乘区（P12）。
+ * 为什么只给「血量 + 伤害」加、不给怪物等级加：怪物等级本来就贴玩家
+ * （trialEnemyLevel），再加一次等于把 lv² 的平方项又放大一遍，高等级会直接爆表。
+ * 这里加的是**同等级下的强度**，语义是「你变强了，试炼的怪也跟着变强」。 */
+function trialLevelMul(level) {
+  const L = Math.max(1, level || 1);
+  return 1 + Math.max(0, L - TRIAL_CFG.lvMulFrom) * TRIAL_CFG.lvMulPer;
+}
+
+/* 经验衰减系数（P12）。wave 越高越接近 1；等级越高，需要打得更深才满额。
+ * 见 TRIAL_CFG.xpPaceLevelMul / xpPacePow 的说明。 */
+function trialXpPace(wave, level) {
+  const need = Math.max(1, (level || 1) * TRIAL_CFG.xpPaceLevelMul);
+  const p = Math.min(1, Math.max(0, wave || 0) / need);
+  return Math.pow(p, TRIAL_CFG.xpPacePow);
+}
+
+/* 传世掉落概率（P12）。非首领波 / 首领波分别返回，0 表示这一波不掉。 */
+function trialUniqueChance(wave, isBoss) {
+  const U = TRIAL_CFG.unique;
+  const w = Math.max(0, wave || 0);
+  if (w < U.minWave) return 0;
+  let c = Math.min(U.cap, U.base + (w - U.minWave) * U.perWave);
+  if (isBoss) c = Math.min(U.cap * U.bossMul, c * U.bossMul);
+  return c;
+}
+
 /* 每波怪物数量 */
 function trialWaveCount(wave) {
   const w = Math.max(1, wave || 1);

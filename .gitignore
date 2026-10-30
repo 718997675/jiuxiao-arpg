@@ -3,11 +3,14 @@
 
 # WorkBuddy 会话数据与应用标记文件
 .workbuddy/
+.workbuddy-ai/
 .wbapp_*.genie
 
 # 本地截图与调试产物（体积大，不纳入版本管理）
 shots/
 dev/shot-*.png
+dev/*-smoke.png
+dev/*.log
 
 # 一次性探针脚本（查完就删，长期有用的都进 dev/）
 .probe/

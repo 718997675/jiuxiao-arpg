@@ -62,6 +62,31 @@ const HOME_WALK = (BALANCE.aggro && BALANCE.aggro.homeWalk) || 0.55;
 /* 刷怪 / 补怪时离玩家至少这么远，避免怪直接刷在脸上 */
 const SPAWN_SAFE = 20;
 
+/* [P01] 地图内补位（用户原话：「任务怪数量少，要开地图几次才能刷满」）。
+ *
+ * 根因不是「任务要求太多」，是**怪死了不补**：`spawnEnemies` 只在 loadMap
+ * 时刷一次，清完就空。于是一条「杀 60 只」的任务必须出图再进图三次。
+ *
+ * 三个旋钮的分工：
+ *   RESPAWN_TICK   6 秒检查一次。不能更密 —— 每帧遍历 40 只怪只为数个数太亏，
+ *                  也不能更疏：玩家清完一片区要等半分钟才见新怪，会以为图坏了。
+ *   RESPAWN_FLOOR  存活低于「计划总数 × 0.6」才补。留 40% 余量是给「刚打完
+ *                  一波、正在捡东西」的玩家留喘息，不然清场时永远有怪在刷。
+ *   RESPAWN_MIN_DIST 只在离玩家 25 米以外的区补。近处补怪 = 凭空出现在视野里，
+ *                  比不补更糟。
+ * 补到的上限是 spawnPlan 里记的原始数量，所以「这张图有多少只」的静态口径不变，
+ * `dev/zone-density.js` 读的仍然是静态值。 */
+const RESPAWN_TICK = 6;
+const RESPAWN_FLOOR = 0.6;
+const RESPAWN_MIN_DIST = 25;
+/* 一次最多补几只。
+ * 计划书原稿写的是「1~2 只」，但它自己给的验收线是「清空后等 30 秒，
+ * 怪数回到 spawnCount × 0.6」—— 41 只的图要在 5 个 tick 内补回 25 只，
+ * 一次 1~2 只根本追不上（实测 30 秒只补到 10 只，图看起来还是空的）。
+ * 取 5：5 tick × 5 = 25 刚好压线，而且这些怪都落在 25 米外的区里，
+ * 不会在玩家眼前凭空出现。 */
+const RESPAWN_BATCH = 5;
+
 /* [M12] 首领落点改由 data-maps.js 的 MAP_BOSS_POS 提供（必须落在 sanctum 圆内）。
  * 这里保留 BOSS_POS 这个名字，调用方不用改；缺表时退回一组安全默认值。 */
 const BOSS_POS = (typeof MAP_BOSS_POS !== 'undefined') ? MAP_BOSS_POS : {
@@ -352,6 +377,13 @@ const Game = {
       const k = (e.key || '').toLowerCase();
       if (!k) return;
       if (typing()) return;
+      /* [P03] Esc 先关大图。大图是全屏层，不给退出键的话
+       * 键盘玩家会卡在「只能去点右上角 ×」的窘境（鼠标还被 pointer lock 收着）。 */
+      if (k === 'escape') {
+        if (typeof Minimap !== 'undefined' && Minimap.big && Minimap.big.open) {
+          Minimap.closeBig(); e.preventDefault(); return;
+        }
+      }
       this.keys[k] = true;
       /* repeat 的 keydown 不触发翻滚/技能/药水等动作，避免持续触发 */
     if (e.repeat) return;
@@ -723,7 +755,7 @@ const Game = {
    * 同部位同品质再按评分兜底，保证「点两次结果一样」，玩家不会觉得按钮坏了。 */
   stashSort() {
     const d = this.stashData();
-    const rk = Object.keys(RARITY);
+    const rk = RARITY_ORDER;   // 品质顺序只有 items.js 里那一份
     const slotIdx = (it) => {
       const i = SLOT_ORDER.indexOf(it.slot === 'ring' ? 'ring1' : it.slot);
       return i < 0 ? 99 : i;
@@ -991,7 +1023,9 @@ const Game = {
     return s.talents;
   },
 
-  /* 可用天赋点：每级 1 点 + 任务奖励点（[M1] 满级 60 + 主线 10 = 70） */
+  /* 可用天赋点：每级 1 点 + 任务奖励点。
+   * [2026-10-28] 满级点数跟难度走（等级上限 60/70/85/99），所以
+   * 「满级 = 70 点」这句话只对新手难度成立 —— 别再当成定值写进文案。 */
   talentPoints() {
     const s = this.state;
     const sp = this.talentState().spent;
@@ -1537,6 +1571,8 @@ const Game = {
     this.npcs = {};
     if (this.world) disposeTree(this.world.root);
     this.boss = null; UI.updateBoss(null);
+    /* [P09] 血条归属的计时跟着地图一起清，否则换图后 bossPickCd 还带着上一张图的余数 */
+    this.bossPickCd = 0;
     FX.clear();
     /* [M18.7] 场地效果（相柳毒沼 / 九尾狐狐火）必须跟着清。
      * FX.clear 只删了看得见的圆，伤害记账还在 `WBFight._hazards` 里 ——
@@ -1673,10 +1709,17 @@ const Game = {
       this.npcs[id] = { id, actor: a, group: a.group, pos: new THREE.Vector3(x, 0, z), basesY: 0 };
       /* [M2] 所有任务发布者都挂 ! / ? 标记（以前只挂老村长）。
        * 不挂的话，营地里的掌事和录事看起来跟铁匠药师没区别，
-       * 玩家根本不知道谁是发任务的。 */
+       * 玩家根本不知道谁是发任务的。
+       *
+       * [P11] 两个标记的分工定死：
+       *   金色「!」= 有赏可领（可复命）—— 优先级最高，玩家的第一诉求是交任务
+       *   绿色「?」= 有事可接
+       * 原来正好反过来（金「!」是可接、绿「?」是可交），而用户看到的
+       * 「录事头顶什么都没有」是另一层问题：悬赏的 giver 是 'board'，
+       * `readyOf` / `offersOf` 两边都匹配不到，所以录事的两个标记永远是 hidden。 */
       if (NPCS[id] && NPCS[id].role === 'quest') {
         const ex = makeLabelSprite('!', '#ffd166', 175, 2.4, 1.2);
-        ex.position.y = 4.1;
+        ex.position.y = 4.1; ex.visible = false;
         a.group.add(ex);
         const qm = makeLabelSprite('?', '#8ae08a', 175, 2.4, 1.2);
         qm.position.y = 4.1; qm.visible = false;
@@ -1695,9 +1738,11 @@ const Game = {
       if (!n.markEx) continue;
       const giver = giverOfNpc(id);
       const ready = QuestSys.readyOf(giver).length > 0;
-      const avail = QuestSys.offersOf(giver).length > 0;
-      n.markEx.visible = avail && !ready;
-      n.markQ.visible = ready;
+      /* [P11] 悬赏不在 offersOf 里（giver 是 'board'），录事要靠 boardOf 单独算 ——
+       * 不然「板上有三条可接」这件事在 NPC 头顶完全看不出来。 */
+      const avail = QuestSys.offersOf(giver).length > 0 || QuestSys.boardOf(giver).length > 0;
+      n.markEx.visible = ready;                 // 金「!」= 可复命
+      n.markQ.visible = avail && !ready;        // 绿「?」= 可接（可交时让位给「!」）
     }
   },
 
@@ -1727,6 +1772,10 @@ const Game = {
         const n = qb ? Math.min(Math.round(base * qb.mult), base + qb.extra) : base;
         if (n > 0) queues.push({ z: z, left: n, qb: qb });
       }
+      /* [P01] 记下刷怪计划 —— 补位器用它算「这张图本该有多少只、每个区各几只」。
+       * 必须在下面的 while 之前拷一份：`left` 会被递减到 0。 */
+      this.spawnPlan = queues.map(q => ({ z: q.z, cap: q.left, qb: q.qb }));
+      this.respawnCd = 0;
       let total = 0;
       for (const q of queues) total += q.left;
       while (total > 0) {
@@ -1765,6 +1814,9 @@ const Game = {
      * 原来的 `m.spawnCount || 14` 把 0 当成「没配」（0 是 falsy），
      * 结果首领场凭空刷出 14 只小怪，站在首领旁边一起打玩家。
      * 只有 undefined / null 才回退到旧图的默认 14。 */
+    /* [P01] 老图（没有 zone 配置）没有分区，补位器一律跳过 ——
+     * 它们的 spawnCount 只有 12~14，清完了靠出图重进本来就不痛苦。 */
+    this.spawnPlan = null;
     const count = (m.spawnCount === undefined || m.spawnCount === null)
       ? 14 : Math.max(0, m.spawnCount);
     /* [DIFF] 精英出现概率由难度决定：新手 3%，普通 8%，困难 16%，极难 26% */
@@ -1773,6 +1825,62 @@ const Game = {
       const r = RND(16, m.size * 0.46);
       const kind = PICK(m.spawns);
       this.spawnEnemy(kind, Math.cos(ang) * r, Math.sin(ang) * r, CHANCE(D.elite));
+    }
+  },
+
+  /* [P01] 地图内补位。
+   *
+   * 只在**野图**生效：安全区（村子）、raid 图、地下城、试炼场全部跳过 ——
+   * 那些地方要么不该有怪，要么「清干净」本身就是玩法（地下城通关判定）。
+   *
+   * 补位顺序是「离玩家最远的区优先」：玩家的视线在近处，远处补不会穿帮；
+   * 而且这样玩家往前走的时候，身后的区会慢慢填满，回头还能再打一轮。
+   *
+   * 一次补「缺口的一半」，上限 RESPAWN_BATCH 只 —— 不是一次补满：
+   * 一次补满会让整片图瞬间复活，看起来像刷怪作弊；补太少又追不上玩家
+   * 清场的速度（一秒一只），图会一直是空的。缺口按比例补能两头兼顾：
+   * 刚清完时补得最多，快接近 60% 时自动放缓。 */
+  updateRespawn(dt) {
+    if (!this.state || !this.spawnPlan || !this.spawnPlan.length) return;
+    const m = MAPS[this.state.mapId];
+    if (!m || m.safe || m.raid) return;
+    if (typeof Dungeon !== 'undefined' && Dungeon.active) return;
+    if (typeof Trial !== 'undefined' && Trial.active) return;
+    this.respawnCd = (this.respawnCd || 0) - dt;
+    if (this.respawnCd > 0) return;
+    this.respawnCd = RESPAWN_TICK;
+
+    let alive = 0, total = 0;
+    for (const e of this.enemies) if (!e.dead && !e.boss) alive++;
+    for (const p of this.spawnPlan) total += p.cap;
+    if (!total || alive >= total * RESPAWN_FLOOR) return;
+
+    const pp = this.playerGroup.position;
+    const cand = [];
+    for (const p of this.spawnPlan) {
+      const d = Math.hypot(p.z.x - pp.x, p.z.z - pp.z);
+      if (d > RESPAWN_MIN_DIST) cand.push({ p, d });
+    }
+    if (!cand.length) return;
+    cand.sort((a, b) => b.d - a.d);
+
+    const gap = total * RESPAWN_FLOOR - alive;
+    const need = Math.max(1, Math.min(RESPAWN_BATCH, Math.ceil(gap * 0.5)));
+    const D = this.diff();
+    for (let i = 0; i < need; i++) {
+      const p = cand[i % cand.length].p;
+      const kind = (p.qb && p.qb.kinds && p.qb.kinds.length && Math.random() < 0.75)
+        ? p.qb.kinds[Math.floor(Math.random() * p.qb.kinds.length)]
+        : zonePickKind(p.z, m.spawns);
+      if (!kind) continue;
+      /* 落点仍然要离玩家足够远（同一个区可能有几十米长，区中心远不代表落点远） */
+      let pt = null;
+      for (let k = 0; k < 6; k++) {
+        const q2 = randomPointInZone(p.z, 2.6);
+        if (Math.hypot(q2.x - pp.x, q2.z - pp.z) >= SPAWN_SAFE) { pt = q2; break; }
+      }
+      if (!pt) continue;
+      this.spawnEnemy(kind, pt.x, pt.z, CHANCE(D.elite));
     }
   },
 
@@ -2034,6 +2142,9 @@ const Game = {
       const b = this.spawnEnemy(null, pos[0], pos[1], false, cfg.level, bid);
       if (b) {
         b.dmg = cfg.atk * (1 + cfg.level * 0.09);
+        /* [P02] 记下原始伤害。狂怒每次进阶段 ×1.15，脱战复位要退回去 ——
+         * 不记的话复位一次涨一档，反复拉远拉近能把首领养成一拳超人。 */
+        b.baseDmg = b.dmg;
         b.patternCd = RND(2.5, 4.5);
         /* [M12] 拴绳锚点：玩家跑出祭坛之后首领要回位，
          * 而不是顶着祭坛的硬墙原地抖（区域化之前圆环是软的，看不出来）。 */
@@ -2496,6 +2607,8 @@ const Game = {
     this.tickZone(dt);
     this.updateAuras(dt);
     this.updateEnemies(dt);
+    /* [P01] 地图内补位：清完的区会慢慢长回来，任务不必出图重进 */
+    this.updateRespawn(dt);
     this.updateAllies(dt);
     /* [P2] 被动的周期触发（战意不灭 / 雷神 / 天师 / 九转还丹 / 涅槃火球） */
     if (typeof this.tickPassives === 'function') this.tickPassives(dt);
@@ -2904,12 +3017,33 @@ const Game = {
   },
 
   /* ---------------- 技能 ---------------- */
-  /* [S1] 技能实际消耗（装备的 costReduce 生效后）。技能栏显示与施放判定共用这一个入口，
-   * 否则会出现「按钮显示 12，实际扣 10」或者「明明够蓝却提示灵力不足」。 */
+  /* [P06] 技能实际消耗 = **灵力上限的百分比**，不是固定点数。
+   *
+   * 原来的写法 `sk.cost * (1 - costReduce)` 是固定点数：火球 10 点、
+   * 灵力上限 60 级 3700+ —— 一管蓝 370 发，用户的原话是「一个蓝条都用不完」。
+   * 根因不是数值调小了，是**口径错了**：消耗是常数、蓝量是线性成长，
+   * 比值只会越拉越大，40 级以后任何调参都救不回来。
+   *
+   * 现在 `SKILLS[x].cost` 的含义是「占上限的百分之几」（见 data-skills.js 抬头），
+   * 于是「一管蓝能放几发」是常数，不随等级/装备漂移。
+   *
+   * 三处乘区，顺序不能换：
+   *   ① 上限 × 百分比        —— 主项
+   *   ② × 技能等级成长        —— 1 级 1.00、10 级 1.54（和伤害的 +8%/级 对冲，
+   *                              否则技能升级等于白送续航）
+   *   ③ × (1 - costReduce)    —— 装备 / 传世的消耗缩减，封顶见 STAT_CAPS.costReduce
+   *
+   * 技能栏显示与施放判定共用这一个入口，否则会出现「按钮显示 12，实际扣 10」
+   * 或者「明明够蓝却提示灵力不足」。 */
   skillCost(sk) {
     const st = this.state && this.state.stats;
     if (!st) return sk.cost;      // 开始界面构建技能栏时还没有 state
-    return Math.max(1, Math.round(sk.cost * (1 - (st.costReduce || 0) / 100)));
+    const pct = (sk.cost || 0) / 100;
+    /* 技能等级：读不到（还没建 state.skills）时按 1 级算，不抛错 */
+    const lv = (typeof this.skillLevel === 'function') ? Math.max(1, this.skillLevel(sk.id)) : 1;
+    const lvMul = 1 + 0.06 * (lv - 1);
+    const cut = 1 - (st.costReduce || 0) / 100;
+    return Math.max(1, Math.round((st.mpMax || 0) * pct * lvMul * cut));
   },
 
   /* [S1] cdrFlat 是固定秒数缩减，优先级高于百分比；冷却不低于 0.5 秒防止无限连 */
@@ -3033,7 +3167,10 @@ const Game = {
       return out;
     }
     if (sk.cast === 'enemy') {
-      const maxR = range || 99;
+      /* [P10] 原来是 `range || 99`：castRange 为 0 / 未写时自动锁敌半径变 99 米。
+       * 当前没有技能触发（全都显式写了），但这是「以后新增技能必踩的坑」——
+       * 忘写一个 castRange 就等于给了一个全图锁敌。没射程就是不能自动锁敌。 */
+      const maxR = range > 0 ? range : 0;
       let target = this.nearestEnemy(aim, maxR);
       if (target && DIST2D(target.pos, pp) > maxR) target = null;
       if (!target) target = this.nearestEnemy(pp, maxR);
@@ -3043,6 +3180,37 @@ const Game = {
     else if (dist < 0.6) out.copy(pp);
     out.y = 0;
     return out;
+  },
+
+  /* [P10] 射程够不够得着。返回 null = 可以放，返回字符串 = 拒绝原因。
+   *
+   * 为什么需要它：射程原来只用来**裁剪落点** —— 站在 30 米外点火球，落点被夹到
+   * 12 米、技能照放（扣蓝、进 CD），只是打空；`cast:'enemy'` 还会自动改锁最近的
+   * 敌人。于是「射程」对玩家不构成任何约束，卡位远程磨死首领就是这么来的。
+   * 现在射程是**否决条件**：够不着就放不出来，不扣蓝、不进 CD、不触发结算。
+   *
+   * 三种 cast 判的东西不一样，别图省事写成一个：
+   *   · self        —— 不判（自身范围技能没有「太远」这回事）
+   *   · dir         —— 判**最近敌人**，不是点击位置：朝朝向飞出去的技能，
+   *                    玩家点哪儿都无所谓，真正决定「打不打得到」的是最近的怪。
+   *                    附近一个怪都没有时**放行**（空放是玩家自己的事，
+   *                    连按都按不出来会让人以为技能坏了）。
+   *   · ground/enemy—— 判落点距离（enemy 的落点本来就会被锁到敌人身上）。
+   * 5% 容差：落点是从屏幕射线反算的，和真实距离差一点点很正常。 */
+  castRangeFail(sk) {
+    const R = sk.castRange || 0;
+    if (sk.cast === 'self' || R <= 0) return null;
+    const pg = this.playerGroup;
+    if (!pg) return null;
+    const pp = new THREE.Vector3(pg.position.x, 0, pg.position.z);
+    if (sk.cast === 'dir') {
+      const e = this.nearestEnemy(pp, R * 3);
+      if (!e) return null;
+      return DIST2D(e.pos, pp) > R * 1.05 ? '距离太远。' : null;
+    }
+    const aim = this.aimPoint;
+    if (!aim) return null;
+    return DIST2D(pp, aim) > R * 1.05 ? '距离太远。' : null;
   },
 
   /* 施法瞬间在地上画一条方向线 + 落点圈，让玩家看清本次判定的方向和最远距离 */
@@ -3089,6 +3257,11 @@ const Game = {
      * 再扣资源会变成背包里的隐形扣血。 */
     const cost = autoCast ? 0
       : Math.max(1, Math.round(this.skillCost(sk) * (1 - (smod && smod.cost ? smod.cost : 0) / 100)));
+    /* [P10] 射程硬拒绝：够不着就别放。放在扣蓝之前 —— 被拒绝的施法
+     * 不扣蓝、不进 CD、不触发任何后续结算，只给一句提示。
+     * 原来射程只裁剪落点，30 米外点火球照样扣蓝进 CD，射程形同虚设。 */
+    const tooFar = this.castRangeFail(sk);
+    if (tooFar) { UI.log(tooFar, 'bad'); SFX.ui(); return; }
     /* 资源名读职业表：刀客怒气 / 术士灵力 / 符师道力。写死「灵力」会让符师的提示说错 */
     if (s.mp < cost) { UI.log(((CLASSES[s.cls] || {}).res || '资源') + '不足'); SFX.ui(); return; }
     s.mp -= cost;
@@ -4189,6 +4362,14 @@ const Game = {
 
   damageEnemy(e, dmg, crit, opts = {}) {
     if (e.dead) return;
+    /* [P09] 血条归属：打谁显示谁。
+     * 以前 `this.boss` 是「谁先走进 17 米谁占住」，玩家回头打第一只时
+     * 血条还挂在第二只身上 —— 实际在掉血的那只不更新，看起来像血条坏了。
+     * 现在**攻击是唯一的主动切换途径**：每次命中就把归属钉在目标身上，
+     * `_pickBoss` 只在它死了 / 脱战之后才自己找下一只。 */
+    if (e.boss && e.active && this.boss !== e) {
+      this.boss = e; UI.updateBoss(e);
+    }
     const st = this.state.stats;
     const tag = opts.tag || this._tag || 'melee';
     let final = dmg * (1 + st.skillDmg / 100 * 0.5) * (1 + this.tagBonus(tag) / 100);
@@ -4758,8 +4939,46 @@ const Game = {
   },
 
   /* ---------------- 敌人 ---------------- */
+  /* [P09] 血条归属重算。
+   *
+   * 规则只有三条：
+   *   ① 当前那只还活着、还在场 → **不换**（粘性）
+   *   ② 它死了 / 脱战了 → 取「离玩家最近的已激活首领」
+   *   ③ 一只都没有 → 收血条
+   *
+   * 为什么是「粘性」而不是「按距离每 0.5 秒重选」：
+   *   多首领图里三只首领相距只有 9~10 米（P14 分场之前就是这样），
+   *   纯按距离选的话，玩家在 A 面前打，B 稍微走位靠近一点血条就跳走 ——
+   *   这正是用户报的「血条显示的是另一只」。距离只在「当前那只已经不在场」
+   *   时用来选下一个目标。
+   *
+   * 换目标的**唯一主动途径是攻击**：`damageEnemy` 里打谁就把 `this.boss` 设成谁。
+   * 这样「实际在掉血的那只」和「血条显示的那只」永远是同一只。
+   *
+   * 重算频率 0.5 秒（不是每帧）：每帧遍历一遍敌人只为了选血条太浪费，
+   * 而 0.5 秒的延迟在人眼看来是「立刻切过去了」。 */
+  _pickBoss(dt, pp) {
+    this.bossPickCd = (this.bossPickCd || 0) - dt;
+    if (this.bossPickCd > 0) return;
+    this.bossPickCd = 0.5;
+    const cur = this.boss;
+    if (cur && !cur.dead && cur.active) return;      // ① 粘住
+    let best = null, bd = Infinity;
+    for (const o of this.enemies) {
+      if (!o.boss || o.dead || !o.active) continue;
+      const d = DIST2D(o.pos, pp);
+      if (d < bd) { bd = d; best = o; }
+    }
+    if (best) {
+      if (best !== cur) { this.boss = best; UI.updateBoss(best); }
+    } else if (cur) {
+      this.boss = null; UI.updateBoss(null);
+    }
+  },
+
   updateEnemies(dt) {
     const pp = new THREE.Vector3(this.playerGroup.position.x, 0, this.playerGroup.position.z);
+    this._pickBoss(dt, pp);
     let aggroBoss = null;
     for (const e of this.enemies) {
       if (e.dead) {
@@ -4875,8 +5094,12 @@ const Game = {
       if (e.boss && !e.active) {
         if (d < 17) {
           e.active = true;
-          this.boss = e;
-          UI.updateBoss(e);
+          /* [P09] 不再「谁先靠近谁抢血条」。已经有一只在场时只激活、不换血条 ——
+           * 归属交给「打谁看谁」（damageEnemy），这里只负责「本来就没血条」的情况。 */
+          if (!this.boss || this.boss.dead || !this.boss.active) {
+            this.boss = e;
+            UI.updateBoss(e);
+          }
           UI.toast(e.cfg.name + '　' + (e.cfg.title || ''), 'lv');
           SFX.boss();
           this.shake = 0.5;
@@ -5460,9 +5683,53 @@ const Game = {
     this.poisonDps = dps;
   },
 
+  /* [P02] 首领脱战复位。
+   *
+   * 触发条件只有一个：玩家跑出 `BALANCE.boss.leash`（32 米）。
+   * 复位要做满六件事，少一件都会留下怪现象：
+   *   ① 回锚点   —— 不回的话玩家跑回来发现首领在入口等着（它一路追过来的）
+   *   ② 回满血   —— 这是 leash 的全部意义：卡位磨血变成白磨
+   *   ③ 清 debuff —— 不然「毒了 20 秒的 Boss 回位后自己死掉」
+   *   ④ 清技能态 —— windup / charging / pendingMelee 中途复位会让它回位后立刻挥空一刀
+   *   ⑤ phase 归零 —— 血量满了还挂着「狂怒」，等于白送 15% 伤害
+   *   ⑥ 脱战      —— active=false，玩家再走进 17 米会重新走一遍「登场」
+   *
+   * 世界 Boss（e.wb）不走这条：它的三阶段、领域、招牌技能都挂在 e.wb 上，
+   * 中途复位会把阶段状态和血量对不上（WBFight 没有复位入口）。
+   * 世界 Boss 本来就在独立战场里，跑不到 32 米外。 */
+  resetBoss(e) {
+    const an = e.anchor || { x: e.pos.x, z: e.pos.z };
+    e.pos.x = an.x; e.pos.z = an.z;
+    e.hp = e.maxHp;
+    e.active = false;
+    e.phase = 0;
+    e.dmg = e.baseDmg || e.dmg;          // 狂怒期间涨上去的伤害要退回去
+    e.patternCd = RND(2.5, 4.5);
+    e.atkCd = 0;
+    e.windup = 0; e.pendingMelee = false;
+    e.charging = 0; e.chargeHit = false;
+    e.slow = 0; e.slowT = 0; e.stun = 0; e.freeze = 0;
+    e.fearT = 0; e.tauntT = 0; e.tauntPt = null;
+    e.poisonT = 0; e.poisonTick = 0; e.poisonDmg = 0;
+    e.dotT = 0; e.dotDmg = 0; e.dotElem = null;
+    e.vulnT = 0; e.shredT = 0; e.antiHealT = 0; e.venomT = 0;
+    e.aspdT = 0; e.aspdMul = 0;
+    e.shield = 0; e.berserkOn = false;
+    if (this.boss === e) { this.boss = null; UI.updateBoss(null); }
+    if (typeof FX !== 'undefined') FX.ring(new THREE.Vector3(an.x, 0, an.z), 5, 0x88aaff, 0.8, 0.22);
+    UI.log('【' + e.cfg.name + '】退回祭坛，伤势尽复。', 'warn');
+  },
+
   updateBossAI(e, dt, d, pp) {
     if (e.dead) return;
     const a = e.actor;
+    /* [P02] 拴绳：玩家跑出 32 米 → 脱战复位。
+     * 放在最前面（阶段判定之前），否则这一帧还会先走一次「狂怒」演出。 */
+    if (!e.wb && e.active && d > ((BALANCE.boss && BALANCE.boss.leash) || 32)) {
+      this.resetBoss(e);
+      a.moving = false;
+      return;
+    }
     const hpRatio = e.hp / e.maxHp;
     /* [M18.7] 世界 Boss 的「阶段」走自己的三阶段（血量 1.00 / 0.66 / 0.33，
      * 见 data-worldboss.js 的 phases），**不是**常驻首领那套 0.6 / 0.3 的「狂怒」。
@@ -5553,14 +5820,48 @@ const Game = {
        * 「狂怒」不用管它，这里也不按血量再判一次。 */
       if (typeof WBFight !== 'undefined') WBFight.ai(e, dt, pp);
     } else if (e.patternCd <= 0) {
-      e.patternCd = RND(4.5, 7.5) * (1 - e.phase * 0.12);
-      this.bossPattern(e, pp);
+      /* [P02] 技能距离闸。
+       *
+       * 用户报的现象：「Boss 在传送门那边（98 米外）也放技能」。
+       * 根因是这里只等 CD、不看距离 —— 首领一旦被激活过（走进 17 米那一下），
+       * 玩家跑回入口它照样每 4.5~7.5 秒放一轮。`slam` 尤其离谱：落点直接钉在
+       * 玩家脚下，所以 98 米外的祭坛里，玩家脚边照样亮红圈。
+       *
+       * 处理：CD 到点先量距离，超出交战半径就**不放**，并把 CD 压到 1.2 秒重试。
+       * 用短 CD 而不是整轮 CD，是为了「走进 18 米后 1.2 秒就能吃第一发」——
+       * 整轮 CD 会让玩家走到脸上还得干等 5 秒，手感像卡住了。 */
+      const skillR = (BALANCE.boss && BALANCE.boss.skillRange) || 18;
+      if (d > skillR) {
+        e.patternCd = 1.2;
+      } else {
+        e.patternCd = RND(4.5, 7.5) * (1 - e.phase * 0.12);
+        this.bossPattern(e, pp);
+      }
     }
 
     // 面向
     const ang = Math.atan2(pp.x - e.pos.x, pp.z - e.pos.z);
     a.group.rotation.y = this.lerpAngle(a.group.rotation.y, ang, 1 - Math.pow(0.002, dt));
     if (this.boss === e) UI.updateBoss(e);
+  },
+
+  /* [P02] 招式落点：以「玩家位置 + 随机散布」为基础，再夹进交战半径内。
+   *
+   * 为什么还要夹一次：距离闸（`skillRange` 18 米）只保证「玩家在范围内」，
+   * 但 `roots` 散 ±5、`rocks` 散 ±8、`swordrain` 散 ±10 —— 玩家站在 17 米时，
+   * 散布能把落点推到离首领 27 米的地方。以前没人管是因为技能本来就能跨图放，
+   * 现在有了距离闸，落点再飘出去就变成「红圈亮在墙外面」，比原来更违和。
+   *
+   * 夹取只影响超出半径的那部分落点，范围内的一切照旧 —— 也就是玩家在正常
+   * 交战距离里看到的弹幕分布一个像素都没变。 */
+  _bossAim(e, pp, spread = 0) {
+    const R = (BALANCE.boss && BALANCE.boss.skillRange) || 18;
+    let x = pp.x, z = pp.z;
+    if (spread) { x += RND(-spread, spread); z += RND(-spread, spread); }
+    const dx = x - e.pos.x, dz = z - e.pos.z;
+    const dd = Math.hypot(dx, dz);
+    if (dd > R) { const k = R / dd; x = e.pos.x + dx * k; z = e.pos.z + dz * k; }
+    return new THREE.Vector3(x, 0, z);
   },
 
   bossPattern(e, pp) {
@@ -5571,7 +5872,7 @@ const Game = {
     this.shake = Math.max(this.shake, 0.3);
     switch (pat) {
       case 'slam': {
-        const target = new THREE.Vector3(pp.x, 0, pp.z);
+        const target = this._bossAim(e, pp, 0);
         FX.telegraph(target, 4.6, 0.85, () => {
           if (this.dead) return;
           FX.flashCircle(target, 4.6, 0xff5522, 0.4);
@@ -5583,7 +5884,7 @@ const Game = {
       }
       case 'roots': {
         for (let i = 0; i < 3; i++) {
-          const t = new THREE.Vector3(pp.x + RND(-5, 5), 0, pp.z + RND(-5, 5));
+          const t = this._bossAim(e, pp, 5);
           FX.telegraph(t, 2.6, 0.7 + i * 0.18, () => {
             FX.burst(new THREE.Vector3(t.x, 0.3, t.z), 0x6aa04a, 18, { speed: 4, size: 0.16, life: 0.8, gravity: -3 });
             if (DIST2D(new THREE.Vector3(this.playerGroup.position.x, 0, this.playerGroup.position.z), t) < 2.6) this.damagePlayer(st * 1.1, self);
@@ -5637,7 +5938,7 @@ const Game = {
       }
       case 'rocks': {
         for (let i = 0; i < 5; i++) {
-          const t = new THREE.Vector3(pp.x + RND(-8, 8), 0, pp.z + RND(-8, 8));
+          const t = this._bossAim(e, pp, 8);
           FX.telegraph(t, 2.2, 0.9 + i * 0.12, () => {
             FX.burst(new THREE.Vector3(t.x, 0.4, t.z), 0x998877, 14, { speed: 6, size: 0.18, life: 0.7, gravity: 12 });
             if (DIST2D(new THREE.Vector3(this.playerGroup.position.x, 0, this.playerGroup.position.z), t) < 2.2) this.damagePlayer(st * 1.2, self);
@@ -5710,7 +6011,7 @@ const Game = {
       }
       case 'meteor': {
         for (let i = 0; i < 4; i++) {
-          const t = new THREE.Vector3(pp.x + RND(-7, 7), 0, pp.z + RND(-7, 7));
+          const t = this._bossAim(e, pp, 7);
           FX.telegraph(t, 3.4, 1.1, () => {
             FX.flashCircle(t, 3.4, 0xff5522, 0.4);
             this.shake = 0.4;
@@ -5721,7 +6022,7 @@ const Game = {
       }
       case 'swordrain': {
         for (let i = 0; i < 10; i++) {
-          const t = new THREE.Vector3(pp.x + RND(-10, 10), 0, pp.z + RND(-10, 10));
+          const t = this._bossAim(e, pp, 10);
           FX.telegraph(t, 2.4, 0.8 + i * 0.1, () => {
             FX.burst(new THREE.Vector3(t.x, 0.4, t.z), 0xffe0a0, 10, { speed: 6, size: 0.12, life: 0.5, gravity: 2, additive: true });
             if (DIST2D(new THREE.Vector3(this.playerGroup.position.x, 0, this.playerGroup.position.z), t) < 2.4) this.damagePlayer(st * 0.9, self);
@@ -6020,19 +6321,82 @@ const Game = {
     this.scene.add(g);
   },
 
+  /* ---------------- 拾取策略（P04） ----------------
+   * 返回本帧生效的拾取配置。**设置还没加载时按「全默认」**（自动开 / 灵品+），
+   * 而不是按「全关」—— 否则从没开过设置面板的玩家会莫名其妙没有自动拾取。 */
+  pickupCfg() {
+    const S = (typeof Settings !== 'undefined' && Settings.d) ? Settings.d : null;
+    return {
+      auto: S ? S.autoPickup !== false : true,
+      minRank: rarityRank(S ? S.pickupMinRarity : 'magic'),
+      gold: S ? S.pickupGold !== false : true,
+      mat: S ? S.pickupMat !== false : true,
+      rune: S ? S.pickupRune !== false : true
+    };
+  },
+
+  /* 「未拾取」角标：一张 256×64 的贴图 + 一份材质，全场共用。
+   * 每掉一件白装就新建一张 512×128 的贴图是白烧显存，而且这类角标同时存在
+   * 多少个完全取决于「玩家有多懒」，不可控。共享材质走 markShared，
+   * 这样 disposeTree 回收掉落物时不会把它连坐释放掉。 */
+  _holdTagSprite() {
+    if (!this._holdTagMat) {
+      const c = document.createElement('canvas');
+      c.width = 256; c.height = 64;
+      const g2 = c.getContext('2d');
+      g2.font = 'bold 34px "PingFang SC","Microsoft YaHei",sans-serif';
+      g2.textAlign = 'center'; g2.textBaseline = 'middle';
+      g2.lineWidth = 7; g2.strokeStyle = 'rgba(0,0,0,0.85)';
+      g2.strokeText('未拾取', 128, 32);
+      g2.fillStyle = '#9aa0aa';
+      g2.fillText('未拾取', 128, 32);
+      const tex = markShared(new THREE.CanvasTexture(c));
+      this._holdTagMat = markShared(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false }));
+    }
+    const s = new THREE.Sprite(this._holdTagMat);
+    s.scale.set(2.2, 0.55, 1);
+    s.position.y = 1.5;
+    s.renderOrder = 998;
+    return s;
+  },
+
   updateLoot(dt) {
     const pp = this.playerGroup.position;
     /* [S1] 拾取范围：装备上的 pickupRadius 同时放大吸附圈与拾取圈 */
     const pr = this.state.stats.pickupRadius || 0;
     const pullR = 2.4 + pr * 0.55;
     const grabR = 1.3 + pr * 0.3;
+    /* [P04] 够格自动捡的东西吸附圈从 2.4 米放到 4.2 米 —— 怪一死就自己飞过来，
+     * 不用再一个个踩点。**只有够格的那几件享受这个范围**，其余仍走 pullR，
+     * 否则留在地上的白装会跟着玩家满地图跑，看起来像 bug。 */
+    const autoR = 4.2 + pr * 0.6;
+    const cfg = this.pickupCfg();
+    const now = performance.now() / 1000;
     for (let i = this.loot.length - 1; i >= 0; i--) {
       const l = this.loot[i];
       l.t += dt;
       l.obj.position.y = Math.sin(l.t * 3) * 0.1;
       l.box.rotation.y += dt * 2;
+
+      /* 这一件够不够格自动捡 */
+      let auto;
+      if (!cfg.auto) auto = false;
+      else if (l.item) auto = rarityRank(l.item.rarity) >= cfg.minRank;
+      else if (l.rune) auto = cfg.rune;
+      else if (l.mat) auto = cfg.mat;
+      else auto = cfg.gold;               // 金币与玄晶共用一格开关
+
+      /* 「留在地上」必须看得见：开了自动拾取却不捡的装备挂个灰色角标，
+       * 否则玩家会以为东西压根没掉。关掉总开关时不挂 —— 那时候「全都得自己
+       * 走过去」是玩家的主动选择，不是意外，挂满屏幕角标反而是噪音。 */
+      if (l.item && cfg.auto && !auto) {
+        if (!l.tag) { l.tag = this._holdTagSprite(); l.obj.add(l.tag); }
+      } else if (l.tag) {
+        l.obj.remove(l.tag); l.tag = null;
+      }
+
       const d = Math.hypot(pp.x - l.pos.x, pp.z - l.pos.z);
-      if (d < pullR) {
+      if (d < (auto ? autoR : pullR)) {
         // 吸附
         l.pos.x += (pp.x - l.pos.x) * dt * 6;
         l.pos.z += (pp.z - l.pos.z) * dt * 6;
@@ -6066,7 +6430,16 @@ const Game = {
             this.loot.splice(i, 1);
           } else if (l.item) {
             if (this.state.inventory.length >= this.bagCap()) {
-              if (!l.warned) { l.warned = true; UI.log('行囊已满，先清理背包。', 'bad'); }
+              /* 自动拾取因为行囊满而卡住时，一波怪掉 8 件会刷 8 条红字，
+               * 改成 10 秒一次的低频提示。手动捡（走过去踩到的）保持原来的一件一次。 */
+              if (auto) {
+                if (now - (this._autoFullAt || -99) > 10) {
+                  this._autoFullAt = now;
+                  UI.log('行囊已满，自动拾取暂停。', 'bad');
+                }
+              } else if (!l.warned) {
+                l.warned = true; UI.log('行囊已满，先清理背包。', 'bad');
+              }
             } else if (this.addItem(l.item)) {
               SFX.loot(l.item.rarity);
               const col = RARITY[l.item.rarity].color;
@@ -6398,9 +6771,18 @@ const Game = {
     }
 
     /* [S2] 符文 / 玄晶：材料直接进 state.stash.mats，不占背包格。
-     * seeker（山海套）提高符文与玄晶的出率、数量。 */
+     * seeker（山海套）提高符文与玄晶的出率、数量。
+     *
+     * [P16] 2026-10-28 下调 60%：普通 2.5% → 0.8%、精英 18% → 8%，seeker ×2 → ×1.6。
+     * 用户反馈「符文爆率太高，打造太容易」。原值一张图（40 只）期望掉 1 个符文，
+     * 清两张图就够一次打造 —— 打造本该是「攒」出来的，不是顺手就有的。
+     * 现在一张图期望 40 × 0.008 ≈ 0.32 个，约三张图凑一次打造。
+     * **首领保持 100%**：打首领该有确定性回报，这条不动。
+     * 如果反馈「太慢」，优先回调精英档（8% → 12%），别动普通怪 ——
+     * 普通怪是「意外之喜」，不该是主要来源。 */
     const seeker = !!sto.flags.seeker;
-    const runeChance = e.boss ? 1 : (e.elite ? (seeker ? 0.3 : 0.18) : (seeker ? 0.05 : 0.025));
+    const runeBase = e.boss ? 1 : (e.elite ? 0.08 : 0.008);
+    const runeChance = e.boss ? 1 : runeBase * (seeker ? 1.6 : 1);
     /* [DIFF] 符文/玄晶出率同步按难度提升 */
     const runeRoll = Math.min(1, runeChance * D.rune);
     if (CHANCE(runeRoll)) {
@@ -6536,14 +6918,24 @@ const Game = {
     }
   },
 
+  /* 当前难度能到的等级上限（[2026-10-28] 跟难度走：新手 60 / 普通 70 /
+   * 困难 85 / 极难 99）。难度开档时定死、中途不可改，所以这里不用处理
+   * 「切回低难度后等级超上限」的降级 —— 真要做难度切换，必须先想清楚
+   * 掉级会不会回收属性点/天赋点。 */
+  levelCap() {
+    const k = this.state && this.state.difficulty;
+    if (typeof levelCapOf === 'function') return levelCapOf(k);
+    return (typeof BALANCE !== 'undefined' && BALANCE.levelMax) || 60;
+  },
+
   gainXp(amount) {
     const s = this.state;
     /* [S1] 经验获取加成 */
     amount = Math.round(amount * (1 + (s.stats.expGain || 0) / 100));
-    /* [M6] 满级收口：到 BALANCE.levelMax（60）就停在 60，
-     * 经验不再累积 —— 否则 xpNext 会一直往上算，存档里的经验条也永远差一格。
-     * 注意 while 必须在这里跳出，不然 level 卡在 60 而 xp 不清零会死循环。 */
-    const lvMax = (typeof BALANCE !== 'undefined' && BALANCE.levelMax) || 60;
+    /* 满级收口：到**当前难度**的上限就停，经验不再累积 ——
+     * 否则 xpNext 会一直往上算，存档里的经验条也永远差一格。
+     * 注意 while 必须在这里跳出，不然 level 卡在上限而 xp 不清零会死循环。 */
+    const lvMax = this.levelCap();
     if (s.level >= lvMax) {
       s.level = lvMax;
       s.xp = 0;
@@ -6792,36 +7184,43 @@ const Game = {
     const boardBtn = { label: '看看悬赏板', action: () => this.openBoard(partOfGiver(giver)) };
     const closeBtn = { label: '告辞', action: () => UI.closeAll() };
 
-    /* 1. 可复命 */
+    /* 1. 可复命
+     * [P11] 这里原来只认 `ready[0]`，玩家交了三条悬赏要跟录事说三次话。
+     * 现在每条可交的都给一个按钮，一次说完。 */
     const ready = QuestSys.readyOf(giver);
     if (ready.length) {
-      const a = ready[0], q = QUESTS[a.id];
-      const tail = q.kind === 'board' ? '赏钱在这儿，点点。' : '你的手段，比我想的干净。';
-      UI.showDialog(npc.name, `「${q.name}」已了。${tail}`, [
-        {
-          label: '复命领赏', primary: true, action: () => {
-            const done = QuestSys.turnIn(a);
-            const nx = QuestSys.nextOf(done);
-            if (nx) {
-              UI.showDialog(npc.name, nx.brief, [
-                { label: '接下「' + nx.name + '」', primary: true, action: () => { QuestSys.accept(nx.id); UI.closeAll(); } },
-                { label: '稍后再说', action: () => UI.closeAll() }
-              ]);
-            } else {
-              const more = QuestSys.offersOf(giver);
-              if (more.length) {
-                UI.showDialog(npc.name, '还有一件事，你听听看。', [
-                  { label: '听听「' + more[0].name + '」', primary: true, action: () => { QuestSys.accept(more[0].id); UI.closeAll(); } },
-                  boardBtn, closeBtn
-                ]);
-              } else {
-                UI.showDialog(npc.name, '这里暂时没别的事了。走走看看，山海的尽头自有答案。', [boardBtn, closeBtn]);
-              }
-            }
+      const fq = QUESTS[ready[0].id];
+      const tail = fq.kind === 'board' ? '赏钱在这儿，点点。' : '你的手段，比我想的干净。';
+      const extra = ready.length > 1 ? `\n\n另有 ${ready.length - 1} 条也了结了，一并算清。` : '';
+      /* 交完之后的三条出路（下一环 / 还有别的活 / 散了）。
+       * 抽成函数是因为下面每条 ready 的按钮都要走一遍。 */
+      const after = (a) => {
+        const done = QuestSys.turnIn(a);
+        const nx = QuestSys.nextOf(done);
+        if (nx) {
+          UI.showDialog(npc.name, nx.brief, [
+            { label: '接下「' + nx.name + '」', primary: true, action: () => { QuestSys.accept(nx.id); UI.closeAll(); } },
+            { label: '稍后再说', action: () => UI.closeAll() }
+          ]);
+        } else {
+          const more = QuestSys.offersOf(giver);
+          if (more.length) {
+            UI.showDialog(npc.name, '还有一件事，你听听看。', [
+              { label: '听听「' + more[0].name + '」', primary: true, action: () => { QuestSys.accept(more[0].id); UI.closeAll(); } },
+              boardBtn, closeBtn
+            ]);
+          } else {
+            UI.showDialog(npc.name, '这里暂时没别的事了。走走看看，山海的尽头自有答案。', [boardBtn, closeBtn]);
           }
-        },
-        { label: '稍后', action: () => UI.closeAll() }
-      ]);
+        }
+      };
+      const btns = ready.map((a, i) => ({
+        label: '复命「' + (QUESTS[a.id] || { name: a.id }).name + '」' + (QUESTS[a.id].kind === 'board' ? '（领赏）' : ''),
+        primary: i === 0,
+        action: () => after(a)
+      }));
+      btns.push({ label: '稍后', action: () => UI.closeAll() });
+      UI.showDialog(npc.name, `「${fq.name}」已了。${tail}${extra}`, btns);
       return;
     }
 
