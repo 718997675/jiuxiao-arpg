@@ -91,9 +91,11 @@ ok(/class="sk-pip\$\{i < mstN \? ' on' : ''\}\$\{cls\}"/.test(uiSk),
   '格子的 on 状态按精进层数点，15 / 20 两级另带标记类');
 ok(/有效等级上限/.test(uiSk), '20 级那格的提示说的是「有效等级上限」（事实，不是质变）');
 /* 取的是**字符串字面量**，不是注释里的词 —— 注释里写「Lv20 Capstone 还没实装」
- * 是说明，不是面板文案；用裸词会把注释当成宣称（刀客 ⑤ 那一节踩过同一个坑）。 */
-ok(!/'最终精通'|"最终精通"|'Capstone'/.test(uiSk),
-  '面板文案里没有「最终精通 / Capstone」（Lv20 capstone 还没实装）');
+ * 是说明，不是面板文案；用裸词会把注释当成宣称（刀客 ⑤ 那一节踩过同一个坑）。
+ * [P2c·capstone] 反过来也一样：capstone 实装之后，面板**必须**写出「最终精通」，
+ * 否则玩家在 20 级只会看到一句「有效等级上限」，不知道那两级词条换来了什么。 */
+ok(/最终精通「' \+ CAP\.name/.test(uiSk),
+  '面板文案里写了「最终精通」（Lv20 capstone 已实装，写了就得能兑现）');
 ok(/投入 <b>\$\{inv\}<\/b>\/\$\{SKILL_LV_MAX\}/.test(uiSk),
   '第一行仍写「投入 x/10」—— 投入封顶没被精通层改掉');
 ok(/T\.labels\.base/.test(uiSk) && /T\.labels\.masteryTip/.test(uiSk),
@@ -153,7 +155,7 @@ ok(skillMasteryOpt(9) === skillMasteryOpt(0), '越界回落第 0 条（不会返
 
 /* ---- 接线：合并口、门槛口径、落库字段、面板入口 ---- */
 const gm = readSrc('src/game.js');
-ok(/tierMods,\s*\n\s*this\.skillMasteryMods\(id\)\);/.test(gm),
+ok(/tierMods,\s*\n\s*this\.skillMasteryMods\(id\),\s*\n\s*this\.skillCapstoneMods\(id\)\);/.test(gm),
   '精通并进 effSkillMods 的同一个 merge（面板 / 战斗 / 召唤自动同口径）');
 ok(/skillMasteryMods\(id\) \{[\s\S]{0,220}skillMasteryOn\(this\.skillLevel\(id\)\)/.test(gm),
   '门槛读 **skillLevel（有效等级）**，不是已投等级 —— 否则词条层永远开不了');
@@ -167,6 +169,69 @@ ok(/const mstOn = \(typeof skillMasteryOn === 'function'\) && skillMasteryOn\(lv
 ok(/lvBonus > 0 && mstItems/.test(uiSk), '精通块与精进轨道同一条渐进披露线（> 10 级才出现）');
 ok(/setSkillMastery\(parts\[0\], parseInt\(parts\[1\], 10\)\)/.test(uiSk),
   '点击走 Game.setSkillMastery（失败会 toast，不静默吞掉）');
+
+/* ============================================================
+ * 七、最终精通「归一」（Lv20）
+ *
+ * 方案 §5.2 只拍板了「统一模板 + 不做每技能独立 capstone」，没写 20 级给什么。
+ * 这里钉的是我们**自己选的那套**：三条精通各 60% 同时生效、与 15 级所选叠加。
+ * 三条都走 mods，所以四类技能（伤害 / 增益 / 召唤 / 领域）都不会点到空选项 ——
+ * 这是选它而不是选「处决 / 溅射 / 回响」的唯一理由，也是这一节要守住的东西。
+ * ============================================================ */
+console.log('七、最终精通');
+const skillCapstoneOn = pick('skillCapstoneOn');
+const skillCapstoneBonus = pick('skillCapstoneBonus');
+const mergeSkillMods = pick('mergeSkillMods');
+
+ok(!!SKILL_TIERS.capstone, 'SKILL_TIERS 里有 capstone 定义');
+ok(SKILL_TIERS.capstone.at === SKILL_TIERS.cap,
+  'capstone 的开启等级就是有效等级上限（多一级都没有）',
+  { at: SKILL_TIERS.capstone.at, cap: SKILL_TIERS.cap });
+ok(SKILL_TIERS.capstone.name === '归一', '名字是「归一」', SKILL_TIERS.capstone.name);
+ok(SKILL_TIERS.capstone.pct === 60, '三份里拿一份半（60%）', SKILL_TIERS.capstone.pct);
+ok(!SKILL_TIERS.capstone.mods && !SKILL_TIERS.capstone.beh,
+  'capstone 自己不带 mods / beh（它只是三条精通的折算规则，不新增形态）',
+  Object.keys(SKILL_TIERS.capstone));
+
+ok(skillCapstoneOn(19) === false, '19 级还没到最终精通', skillCapstoneOn(19));
+ok(skillCapstoneOn(20) === true, '20 级开启', skillCapstoneOn(20));
+ok(skillCapstoneOn(25) === true, '超过 20 级仍开启（有效等级被 cap 夹住，但状态不会掉）');
+ok(skillCapstoneOn(1) === false && skillCapstoneOn(0) === false, '1 级 / 脏等级都不开');
+
+{
+  const c = skillCapstoneBonus();
+  ok(c.dmg === 13 && c.cd === 11 && c.cost === 21,
+    '三条各按 60% 折算：dmg 13 / cd 11 / cost 21', c);
+  ok(Object.keys(c).every(k => Number.isInteger(c[k])),
+    '折算结果全是整数（面板写 +13 而战斗乘 1.132 就是新的口径分裂）', c);
+  ok(Object.keys(c).every(k => ['dmg', 'cd', 'cost'].indexOf(k) >= 0),
+    '只碰 dmg / cd / cost 三个公共乘区', Object.keys(c));
+  ok(c.dmg < 22 && c.cd < 18 && c.cost < 35,
+    '单看每条都弱于 15 级的全额 —— 20 级是「再进一步」，不该盖掉 15 级的选择', c);
+
+  /* 叠加不是替换：20 级选「烈」= 22 + 13 = 35，不是只剩 13 */
+  const both = mergeSkillMods(SKILL_TIERS.mastery[0].mods, c);
+  ok(both.dmg === 35 && both.cd === 11 && both.cost === 21,
+    '20 级 + 烈 = dmg 35 / cd 11 / cost 21（两份 mods 相加，不是覆盖）', both);
+
+  /* 纯函数：不许把折算写回 mastery 本体，否则反复调用会一路缩水 */
+  const again = skillCapstoneBonus();
+  ok(again.dmg === c.dmg && SKILL_TIERS.mastery[0].mods.dmg === 22,
+    'skillCapstoneBonus 是纯函数（不写回 SKILL_TIERS.mastery）',
+    { again, mastery0: SKILL_TIERS.mastery[0].mods });
+}
+
+/* ---- 接线：门槛口径、合并口、面板角标 ---- */
+ok(/skillCapstoneMods\(id\) \{[\s\S]{0,260}skillCapstoneOn\(this\.skillLevel\(id\)\)/.test(gm),
+  'capstone 的门槛也读 **skillLevel（有效等级）**，与精通三选一同一条线');
+ok(/this\.skillMasteryMods\(id\),\s*\n\s*this\.skillCapstoneMods\(id\)\);/.test(gm),
+  'capstone 是 effSkillMods 的第六层（与上面五层同一个 merge）');
+ok(/const capOn = !!CAP && \(typeof skillCapstoneOn === 'function'\) && skillCapstoneOn\(lv\)/.test(uiSk),
+  '面板用同一个 skillCapstoneOn 判状态（不自己写 lv >= 20）');
+ok(/class="sd-tag cap"/.test(uiSk), '20 级时三条精通各挂一个折算角标（玩家看得出「另外两条也拿到了」）');
+ok(/\.sd-tag\.cap\{/.test(html), '那个角标有独立样式（橙色，与「当前」的金色区分）');
+ok(/20 级「' \+ CAP\.name \+ '」让三条各 ' \+ CAP\.pct \+ '% 同时生效/.test(uiSk),
+  '提示语写的是「同时生效」，不是含糊的「效果提升」');
 
 console.log('\n' + (fail === 0 ? '✓' : '✗') + ' P2c 契约：' + pass + ' 通过 / ' + fail + ' 失败');
 process.exit(fail === 0 ? 0 : 1);

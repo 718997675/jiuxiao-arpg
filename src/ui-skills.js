@@ -624,21 +624,26 @@ Object.assign(UI, {
      * 「1~10 显示圆满、11~20 显示精进」，并且**渐进披露**（精通层 10 级后才出现）——
      * 所以这一条只在 `lvBonus > 0` 时画，不到 10 级的玩家看不到它。
      *
-     * 这里只标两个**已经兑现**的点：
+     * 这里标三个**已经兑现**的点：
      *   15 级 —— 精通层三选一（真做了，见下面的 mstBlock）
-     *   20 级 —— 有效等级上限（事实，与「质变」无关）
-     * 方案的 Lv20「最终精通（Capstone）」还没实装，所以轨道上不写那四个字 ——
-     * 面板宣称一件不存在的事，正是本项目「文案与实装对齐」这条红线要拦的。
+     *   20 级 —— 有效等级上限 + 最终精通「归一」（三条精通各 60% 同时生效）
+     * 方案 §5.2 拍板「不做每技能独立 capstone」，所以 20 级给的是**统一模板**：
+     * 不新增形态、不新增 beh 键，只把三条精通按 60% 折算后叠加进 effSkillMods。
      */
     const T = (typeof SKILL_TIERS !== 'undefined') ? SKILL_TIERS
       : { baseMax: 10, cap: 20, masteryAt: 15, labels: { mastery: '精进' } };
+    const CAP = T.capstone || null;
+    const capOn = !!CAP && (typeof skillCapstoneOn === 'function') && skillCapstoneOn(lv);
     const mstSpan = Math.max(1, T.cap - T.baseMax);
     const mstN = Math.max(0, Math.min(T.cap, lv) - T.baseMax);
     const mstPips = Array.from({ length: mstSpan }, (_, i) => {
       const at = T.baseMax + i + 1;
       const cls = at === T.masteryAt ? ' ms' : (at === T.cap ? ' cap' : '');
       const tip = at === T.masteryAt ? at + ' 级 · 精通层：三选一（烈 / 疾 / 省）'
-        : at === T.cap ? at + ' 级 · 有效等级上限（含装备 / 词缀加成）' : at + ' 级';
+        : at === T.cap
+          ? (CAP ? at + ' 级 · 有效等级上限 · 最终精通「' + CAP.name + '」' + CAP.desc
+            : at + ' 级 · 有效等级上限（含装备 / 词缀加成）')
+          : at + ' 级';
       return `<span class="sk-pip${i < mstN ? ' on' : ''}${cls}" title="${tip}"></span>`;
     }).join('');
     const mstRow = lvBonus > 0
@@ -764,22 +769,28 @@ Object.assign(UI, {
     const mstOn = (typeof skillMasteryOn === 'function') && skillMasteryOn(lv);
     const mstIdx = (typeof Game.skillMastery === 'function') ? Game.skillMastery(id) : 0;
     const mstDefs = (typeof SKILL_TIERS !== 'undefined' && SKILL_TIERS.mastery) || [];
+    /* [P2c] 最终精通「归一」（Lv20）：三条精通各 60% 同时生效。
+     * 到 20 级时三个按钮都挂一个「60%」角标 —— 玩家能一眼看出
+     * 「我选的那条是全额，另外两条也各拿到六成」，而不是以为要重新选一次。 */
+    const capTip = CAP ? '最终精通「' + CAP.name + '」：' + CAP.desc + '（与所选精通叠加）' : '';
     const mstItems = mstDefs.map((o, i) => {
       const on = mstOn && i === mstIdx;
       const dis = locked || !mstOn;
       const tip = !mstOn
         ? '等阶 ' + lv + '：需 ' + T.masteryAt + ' 级方可精通（还差 ' + Math.max(0, T.masteryAt - lv) + ' 级）'
         : on ? '当前精通' : '切换至「' + o.name + '」（免费，随时可换）';
+      const capChip = capOn ? `<i class="sd-tag cap" title="${capTip}">${CAP.pct}%</i>` : '';
       return `<button class="sb-v${on ? ' on' : ''}${dis ? ' na' : ''}" data-mset="${id}:${i}"
         aria-pressed="${on ? 'true' : 'false'}" title="${tip}" ${dis ? 'disabled' : ''}>
         <b>${o.name}</b><em>${o.desc}</em>${on ? '<i class="sd-tag on">当前</i>'
-          : (!mstOn ? `<i class="sd-tag">${T.masteryAt} 级</i>` : '')}</button>`;
+          : (!mstOn ? `<i class="sd-tag">${T.masteryAt} 级</i>` : '')}${capChip}</button>`;
     }).join('');
     const mstBlock = (lvBonus > 0 && mstItems)
       ? `<div class="sb-vwrap"><span class="sb-k">精通</span>
           <div class="sb-vlist sb-mlist">${mstItems}</div>
           <em class="sb-vhint">${mstOn
-            ? '三选一 · 可随时切换 · 不消耗技能点'
+            ? (capOn ? '三选一 · 20 级「' + CAP.name + '」让三条各 ' + CAP.pct + '% 同时生效'
+              : '三选一 · 可随时切换 · 不消耗技能点')
             : '有效等级达到 ' + T.masteryAt + ' 级开启（11~20 级来自装备 / 词缀）'}</em></div>`
       : '';
     const branch = `<div class="sd-branch">${rows}${mstBlock}

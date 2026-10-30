@@ -808,7 +808,22 @@ const SKILL_TIERS = {
     { name: '烈', desc: '伤害 / 增益 / 灵兽效果 +22%', mods: { dmg: 22 } },
     { name: '疾', desc: '冷却 −18%', mods: { cd: 18 } },
     { name: '省', desc: '消耗 −35%', mods: { cost: 35 } }
-  ]
+  ],
+
+  /* 精通层最终阶（Lv20 · capstone）。
+   *
+   * 方案 §5.2 只拍板了「统一模板 + **不做每技能独立 capstone**」，没写 20 级给什么。
+   * 这里给「归一」：**三条精通同时以 60% 生效**，仍然只走 mods、零新 beh 键。
+   *
+   * 为什么不给一套新机制：dmg / cd / cost 是这个引擎里**唯一**对四类技能
+   * （伤害 / 增益 / 召唤 / 领域）都成立的轴 —— spow 被前三类消费，
+   * `_summonMods` 又从 `effSkillMods(id).dmg` 折成灵兽的 dmgMul。
+   * 换任何一条新轴（处决 / 溅射 / 回响）都会有一类技能点到空选项，
+   * 那就又回到 §5.2 否决「每技能独立」时列出的同一个洞。
+   *
+   * 60% 是「三份里拿一份半」：单独看每条都不如 15 级选的那条（100%），
+   * 合起来仍然明显更强 —— 20 级是词条层天花板，值得有回报，但不该盖掉 15 级的选择。 */
+  capstone: { at: 20, name: '归一', pct: 60, desc: '三条精通同时生效（各 60%）' }
 };
 
 /* 某等级的总伤害倍率（1 级 = 1.0）。战斗与面板共用同一个函数（P2 接线）。 */
@@ -859,6 +874,42 @@ function skillMasteryIdx(skillsState, id) {
 function skillMasteryOpt(idx) {
   const arr = SKILL_TIERS.mastery || [];
   return arr[idx] || arr[0] || null;
+}
+
+/* ============================================================
+ * 精通层最终阶（P2c · Lv20「归一」）
+ *
+ * 门槛与三选一同一条线：看**有效等级**，不看投入（20 级只能靠装备堆）。
+ * 效果是「三条精通各 60% 同时生效」—— 与 15 级选的那条**叠加**，
+ * 所以 20 级 + 烈 = dmg 22 + 13 = 35，20 级 + 疾 = cd 18 + 11 = 29。
+ *
+ * 逐键四舍五入而不是整体折算：面板与契约都要读**整数**，
+ * 留个 13.2 下去，面板写「+13%」而战斗乘 1.132，就成了新的口径分裂。
+ * ============================================================ */
+
+/* 最终阶是否已开启 */
+function skillCapstoneOn(lv) {
+  const c = SKILL_TIERS.capstone;
+  if (!c) return false;
+  return Math.round(Number(lv) || 1) >= c.at;
+}
+
+/* 三条精通按 pct 折算后合并成一份 mods（未开启的等级不该调它） */
+function skillCapstoneBonus() {
+  const T = SKILL_TIERS;
+  const c = T.capstone;
+  const out = {};
+  if (!c) return out;
+  const k = Math.max(0, Math.min(100, Number(c.pct) || 0)) / 100;
+  for (const opt of (T.mastery || [])) {
+    const mods = (opt && opt.mods) || {};
+    for (const key in mods) {
+      const v = Number(mods[key]) || 0;
+      if (!v) continue;
+      out[key] = (out[key] || 0) + Math.round(v * k);
+    }
+  }
+  return out;
 }
 
 /* ============================================================

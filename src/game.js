@@ -3011,7 +3011,8 @@ const Game = {
       (typeof this.branchMods === 'function' ? this.branchMods(id) : null),
       (typeof this.formMods === 'function' ? this.formMods(id) : null),
       tierMods,
-      this.skillMasteryMods(id));
+      this.skillMasteryMods(id),
+      this.skillCapstoneMods(id));
   },
 
   /* ============================================================
@@ -3227,6 +3228,16 @@ const Game = {
     if (!skillMasteryOn(this.skillLevel(id))) return null;
     const opt = (typeof skillMasteryOpt === 'function') ? skillMasteryOpt(this.skillMastery(id)) : null;
     return opt ? opt.mods : null;
+  },
+
+  /* [P2c] 精通层最终阶（Lv20「归一」）：三条精通各 60% 同时生效。
+   * 与 15 级选的那条**叠加**（两份 mods 在 effSkillMods 里相加），不是替换 ——
+   * 20 级是「再进一步」，不该把玩家 15 级的选择抹掉。
+   * 门槛同样看有效等级：20 级只能靠装备 / 词缀堆上去。 */
+  skillCapstoneMods(id) {
+    if (typeof skillCapstoneOn !== 'function') return null;
+    if (!skillCapstoneOn(this.skillLevel(id))) return null;
+    return (typeof skillCapstoneBonus === 'function') ? skillCapstoneBonus() : null;
   },
 
   /* 选 / 换精通。免费、随时可换 —— 与变体同一条规矩（换打法不该收费）。

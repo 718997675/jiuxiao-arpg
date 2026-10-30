@@ -268,7 +268,126 @@ const ok = (c, m, d) => { if (c) { pass++; console.log('  ✓', m); } else { fai
     ok(sum.on > sum.off, '「烈」对召唤位同样生效（dmgMul 真的变高）', sum);
   }
 
-  console.log('七、控制台');
+  console.log('七、最终精通「归一」（Lv20）');
+  {
+    /* 上一节最后把 state.skills 换成了 summon 来量 dmgMul，这里换回 whirl，
+     * 否则下面的面板读数会读到一只还没解锁的技能 */
+    await p.evaluate(() => {
+      Game.state.skills = { whirl: { lv: 10, m: 0 } };
+      Game.recalc();
+      UI.skSel = 'whirl';
+      UI.renderSkillPanel();
+    });
+    await wait(250);
+
+    const r19 = await setLv(19);
+    const c19 = await p.evaluate(() => {
+      const list = document.querySelector('#skList .sb-mlist');
+      return {
+        chips: document.querySelectorAll('#skList .sb-mlist .sd-tag.cap').length,
+        hint: list && list.parentElement ? list.parentElement.querySelector('.sb-vhint').textContent : ''
+      };
+    });
+    ok(c19.chips === 0, '19 级三条都没有 60% 角标（还没到最终精通）', c19);
+    ok(!/归一/.test(c19.hint), '19 级的说明行也不提「归一」', c19.hint);
+    ok(r19.capOn === 0, '轨道 20 级那格没点亮', r19);
+
+    const r20 = await setLv(20);
+    const c20 = await p.evaluate(() => {
+      const btns = Array.from(document.querySelectorAll('#skList .sb-mlist [data-mset]'));
+      const chip0 = btns.length ? btns[0].querySelector('.sd-tag.cap') : null;
+      const list = document.querySelector('#skList .sb-mlist');
+      const pip = document.querySelector('#skList .sd-lv.mst .sk-pip.cap');
+      return {
+        chips: btns.map(b => { const c = b.querySelector('.sd-tag.cap'); return c ? c.textContent : ''; }),
+        chipTip: chip0 ? chip0.getAttribute('title') : '',
+        hint: list && list.parentElement ? list.parentElement.querySelector('.sb-vhint').textContent : '',
+        pipTip: pip ? pip.getAttribute('title') : '',
+        pipOn: pip ? pip.classList.contains('on') : false
+      };
+    });
+    ok(c20.chips.join(',') === '60%,60%,60%', '20 级三条都挂「60%」角标（另外两条也拿到了）', c20.chips);
+    ok(/归一/.test(c20.chipTip) && /叠加/.test(c20.chipTip),
+      '角标提示写明「归一」且「与所选精通叠加」', c20.chipTip);
+    ok(/归一/.test(c20.hint) && /60%/.test(c20.hint),
+      '说明行写「20 级「归一」让三条各 60% 同时生效」', c20.hint);
+    ok(/最终精通/.test(c20.pipTip) && /有效等级上限/.test(c20.pipTip),
+      '轨道 20 级那格同时写了「有效等级上限」与「最终精通」', c20.pipTip);
+    ok(c20.pipOn === true && r20.capOn === 1, '轨道 20 级那格真的点亮了', { pipOn: c20.pipOn, capOn: r20.capOn });
+    ok(r20.dmg > r19.dmg, '卡上预览伤害随最终精通上升（面板与战斗同口径）',
+      { lv19: r19.dmg, lv20: r20.dmg });
+
+    /* 真放一次：冷却 / 消耗都得比 19 级低，且差值等于折算出来的 11 / 21 */
+    const num = await p.evaluate(async () => {
+      const id = 'whirl';
+      const at = (lv) => {
+        Game.skillLevel = () => lv;
+        Game.recalc();
+        Game.cooldowns = {};
+        Game.state.mp = Math.floor(Game.state.stats.mpMax * 0.6);
+        const mp0 = Game.state.mp;
+        Game.castSkill(id);
+        return { cd: Game.cooldowns[id], spent: mp0 - Game.state.mp, mods: Game.effSkillMods(id) };
+      };
+      const a = at(19);
+      const b = at(20);
+      return { a: a, b: b };
+    });
+    ok((num.b.mods.dmg || 0) - (num.a.mods.dmg || 0) === 13, '伤害修正正好 +13（22 × 60%）',
+      { lv19: num.a.mods, lv20: num.b.mods });
+    ok((num.b.mods.cd || 0) - (num.a.mods.cd || 0) === 11, '冷却修正正好 +11（18 × 60%）',
+      { lv19: num.a.mods, lv20: num.b.mods });
+    ok((num.b.mods.cost || 0) - (num.a.mods.cost || 0) === 21, '消耗修正正好 +21（35 × 60%）',
+      { lv19: num.a.mods, lv20: num.b.mods });
+    ok(num.b.cd < num.a.cd, '20 级放出来的冷却真的更短', { lv19: num.a.cd, lv20: num.b.cd });
+    ok(num.b.spent < num.a.spent, '20 级放出来的消耗真的更低', { lv19: num.a.spent, lv20: num.b.spent });
+
+    /* 换成「疾」：20 级应该是 18 + 11 = 29，而不是只剩 11 —— 叠加不是替换。
+     * 伤害这里只比**差值**：whirl 身上还有装备词缀的负修正（这次是 −16.3），
+     * 绝对值会变，但「选烈 vs 选疾」差 22、「19 级 vs 20 级」差 13 是不变量。 */
+    const ji = await p.evaluate(() => {
+      Game.state.skills.whirl.m = 1;
+      const at = (lv) => { Game.skillLevel = () => lv; Game.recalc(); return Game.effSkillMods('whirl'); };
+      const m19 = at(19);
+      const m20 = at(20);
+      Game.cooldowns = {};
+      Game.state.mp = Math.floor(Game.state.stats.mpMax * 0.6);
+      Game.castSkill('whirl');
+      return { m19: m19, m20: m20, cd: Game.cooldowns.whirl };
+    });
+    ok((ji.m20.cd || 0) === 29, '20 级 + 疾 = cd 29（18 + 11，叠加不是覆盖）', ji.m20);
+    ok((ji.m20.dmg || 0) - (ji.m19.dmg || 0) === 13,
+      '没选「烈」也拿到 13 点伤害（六成那条依然生效）', { lv19: ji.m19, lv20: ji.m20 });
+    ok(num.b.mods.dmg - ji.m20.dmg === 22,
+      '「烈」那 22 点与 capstone 的 13 点互不吞没（选烈就比选疾多 22）',
+      { 烈20: num.b.mods.dmg, 疾20: ji.m20.dmg });
+    ok(ji.cd < num.b.cd, '换成「疾」之后冷却比「烈」更短（15 级的选择仍然主导）',
+      { 烈: num.b.cd, 疾: ji.cd });
+
+    /* 召唤位：_summonMods 从 effSkillMods(id).dmg 折 dmgMul，所以也吃得到 */
+    const sum = await p.evaluate(() => {
+      Game.state.skills = { summon: { lv: 10, m: 0 } };
+      Game.skillLevel = () => 20;
+      Game.recalc();
+      const on = Game._summonMods('summon').dmgMul;
+      Game.skillLevel = () => 15;
+      Game.recalc();
+      const off = Game._summonMods('summon').dmgMul;
+      return { on: on, off: off };
+    });
+    ok(sum.on > sum.off, '召唤位也吃得到最终精通（20 级灵兽 dmgMul 更高）', sum);
+
+    /* 收尾：把状态还给「正常 20 级 whirl 选烈」，免得污染控制台那一节 */
+    await p.evaluate(() => {
+      Game.state.skills = { whirl: { lv: 10, m: 0 } };
+      if (Game.__origSkillLevel) Game.skillLevel = Game.__origSkillLevel;
+      Game.recalc();
+      UI.renderSkillPanel();
+    });
+    await wait(200);
+  }
+
+  console.log('八、控制台');
   ok(errs.length === 0, '全程零控制台报错', errs.slice(0, 3));
 
   console.log('\n' + (fail === 0 ? '✓' : '✗') + ' P2c 探针：' + pass + ' 通过 / ' + fail + ' 失败');
