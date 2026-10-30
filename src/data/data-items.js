@@ -458,22 +458,16 @@ const AFFIXES = [
   { key: 'aspdOnCrit', pre: ['疾击的', '连斩的'], suf: ['· 疾击', '· 连斩'], min: 5, max: 15, tier: 3 },
   { key: 'cdrFlat', pre: ['顿悟的', '无碍的'], suf: ['· 顿悟', '· 无碍'], min: 1, max: 2, tier: 3 },
 
-  /* ---------- [M1] 元素伤害族（火 / 冰 / 雷 / 毒，各 3 阶） ----------
-   * 与族群抗性是一对：抗性让「一套装备打天下」不成立，
-   * 元素伤害则让「堆对元素」能真的打出伤害。
-   * 结算在 game.js damageEnemy：按本次伤害的 elem 取对应键。 */
-  { key: 'fireDmg', pre: ['炎爆的', '焚天的'], suf: ['· 炎心'], min: 4, max: 10, tier: 1 },
-  { key: 'fireDmg', pre: ['赤炎的', '燎原的'], suf: ['· 燎原'], min: 9, max: 19, tier: 2 },
-  { key: 'fireDmg', pre: ['焚世的', '九阳的'], suf: ['· 九阳'], min: 16, max: 30, tier: 3 },
-  { key: 'iceDmg', pre: ['寒霜的', '凛冬的'], suf: ['· 霜心'], min: 4, max: 10, tier: 1 },
-  { key: 'iceDmg', pre: ['玄冰的', '雪封的'], suf: ['· 雪封'], min: 9, max: 19, tier: 2 },
-  { key: 'iceDmg', pre: ['极寒的', '万里冰的'], suf: ['· 极寒'], min: 16, max: 30, tier: 3 },
-  { key: 'lightningDmg', pre: ['雷引的', '电闪的'], suf: ['· 雷心'], min: 4, max: 10, tier: 1 },
-  { key: 'lightningDmg', pre: ['惊雷的', '霆击的'], suf: ['· 霆击'], min: 9, max: 19, tier: 2 },
-  { key: 'lightningDmg', pre: ['天罚的', '紫霄的'], suf: ['· 紫霄'], min: 16, max: 30, tier: 3 },
-  { key: 'poisonDmg', pre: ['蚀骨的', '腐心的'], suf: ['· 蚀骨'], min: 4, max: 10, tier: 1 },
-  { key: 'poisonDmg', pre: ['毒煞的', '溃烂的'], suf: ['· 溃烂'], min: 9, max: 19, tier: 2 },
-  { key: 'poisonDmg', pre: ['万毒的', '九幽毒的'], suf: ['· 九幽'], min: 16, max: 30, tier: 3 },
+  /* ---------- [P3c] 元素伤害（**全元素通用**，3 阶） ----------
+   * 原来是火 / 冰 / 雷 / 毒四族 × 3 阶 = 12 条。并成 3 条的理由：
+   *   1. 元素注入（P3b）让玩家随时能改技能元素 —— 四族词缀等于「换个注入就废一身装」；
+   *   2. 12 条同义词缀在洗练面板上就是 12 个一模一样的按钮，玩家分不清该点哪个。
+   * 名字也一并改成元素中立（蕴灵 / 通元 / 混元），不再叫「炎爆的」——
+   * 词条写着「元素伤害 +20」而名字写着「炎爆」，那是自己跟自己打架。
+   * 老档的「火伤 +20%」按 1:1 折算成「元素伤害 +20%」，见 items.js normalizeItem。 */
+  { key: 'elemDmg', pre: ['蕴灵的', '纳元的'], suf: ['· 蕴灵'], min: 4, max: 10, tier: 1 },
+  { key: 'elemDmg', pre: ['通元的', '化气的'], suf: ['· 通元'], min: 9, max: 19, tier: 2 },
+  { key: 'elemDmg', pre: ['混元的', '周天的'], suf: ['· 混元'], min: 16, max: 30, tier: 3 },
 
   /* ---------- [M1] 全技能等级（+N，叠在已投等级上，上限 20） ---------- */
   { key: 'skillLv', pre: ['通玄的', '悟道的'], suf: ['· 通玄'], min: 1, max: 1, tier: 2 },
@@ -542,7 +536,7 @@ const AFFIX_SLOT_ALLOW = {
   fate: [
     'deathWard', 'skillLv',
     'auraSlow', 'auraBurn', 'auraRange',
-    'fireDmg', 'iceDmg', 'lightningDmg', 'poisonDmg',
+    'elemDmg',
     'critDmg', 'crit', 'cdr', 'cdrFlat', 'costReduce',
     'hpPct', 'dmgReduce', 'lifesteal', 'executeDmg', 'firstStrike',
     'aspdOnCrit', 'overkillShield', 'eliteDmg', 'bossDmg',

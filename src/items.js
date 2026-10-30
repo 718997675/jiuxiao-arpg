@@ -336,6 +336,32 @@ function estimateTargetedReforge(item, index, affixDef) {
   return { attempts: n, cost };
 }
 
+/* [P3c] 旧档元素词缀 → 统一「元素伤害」的 1:1 折算。
+ *
+ * 老装备身上躺着「火焰伤害 +20%」这类词条，而随机词缀池已经统一成 elemDmg。
+ * 不折算的话它们会变成「只对火有用的孤儿词条」—— 玩家一换注入元素就白给。
+ * 折算口径是**相加**：火 20 + 冰 10 → 元素伤害 30，只增不减，不削弱任何老装备。
+ *
+ * 同一件装备上多条折算后合并成一条（`makeAffix` 按 key 去重，留着两条会让
+ * 洗练面板出现两个一模一样的「元素伤害」）。
+ * 只动 affixes / fixed / implicit / uniqueStats 这四处；套装与符文是另一套结构。 */
+const LEGACY_ELEM_KEYS = { fireDmg: 1, iceDmg: 1, lightningDmg: 1, poisonDmg: 1 };
+
+function foldElemAffixes(list) {
+  if (!Array.isArray(list)) return list;
+  let sum = 0, first = null;
+  for (const a of list) {
+    if (a && LEGACY_ELEM_KEYS[a.key]) {
+      sum += Number(a.val) || 0;
+      if (!first) first = a;
+    }
+  }
+  if (!first) return list;
+  const out = list.filter(a => !(a && LEGACY_ELEM_KEYS[a.key]));
+  if (sum) out.push(Object.assign({}, first, { key: 'elemDmg', val: sum }));
+  return out;
+}
+
 /* 旧档 / 导入档的物品整形：孔位、符文、词缀、固有属性都要能被信任 */
 function normalizeItem(item) {
   if (!item || typeof item !== 'object') return null;
@@ -367,6 +393,9 @@ function normalizeItem(item) {
     if (item.hand !== 'one' && item.hand !== 'dual' && item.hand !== 'two') item.hand = weaponHandFallback(item.shape);
   } else if (item.hand) item.hand = null;
   if (!Array.isArray(item.affixes)) item.affixes = [];
+  /* [P3c] 折算必须在下面那道 `STATS[key]` 过滤**之前**跑：
+   * 旧键还留在 STATS 里只是为了让它们活到这一步，过滤之后就没它们的事了。 */
+  item.affixes = foldElemAffixes(item.affixes);
   item.affixes = item.affixes.filter(a => a && typeof a.key === 'string' && STATS[a.key] && isFinite(a.val));
   // 旧档词缀没有 q，补齐为 1
   for (const a of item.affixes) { if (!a.q) a.q = 1; }
@@ -374,6 +403,7 @@ function normalizeItem(item) {
    * v1.1.6 之前的存档压根没有 fixed 字段，这里补上，
    * 让「品质决定固定词条数」的规则对老装备同样成立。 */
   if (!Array.isArray(item.fixed)) item.fixed = [];
+  item.fixed = foldElemAffixes(item.fixed);      // [P3c] 同 affixes
   item.fixed = item.fixed.filter(a => a && typeof a.key === 'string' && STATS[a.key] && isFinite(a.val));
   for (const a of item.fixed) { if (!a.q) a.q = 1; a.fixed = true; }
   fillFixedAffixes(item);
@@ -936,6 +966,10 @@ function sumItemStats(item, out) {
   if (item.power === 'thorns') out.thorns += 30;
   if (item.power === 'lifesteal') out.lifesteal += 6;
   if (item.power === 'magicfind') out.magicFind += 30;
+  /* 注意：[P3c] 的旧元素词缀折算**只发生在 normalizeItem**，不在这里做。
+   * 固有属性 / 传世属性 / 符文里的「火焰伤害」是**专属来源**（命格的元素身份、
+   * 传世的元素倾向），它们本来就该只加一个元素，折算成通用等于抹掉设计。
+   * 只有随机词缀与固定词条那一层才统一。 */
 }
 
 /* [S3] 天赋加成汇总：传入 state.talents（{ spent, presets }）或直接传 spent map。

@@ -53,13 +53,9 @@ const ELEM_AURA_KINDS = [
   { key: 'thunder', name: '雷法相', color: 0x9ad8ff, glyph: '雷' }
 ];
 
-/* 元素 → 对应增伤词条键（M1 的元素词缀）。
- * [P3b] 从 damageEnemy 里提出来：元素注入要按**段**取词条（原伤害一段、附加一段），
- * 两处必须读同一张表，否则「面板说火伤 +20%、打出去按冰伤算」这种口径分裂迟早出现。 */
-const ELEM_AFFIX = {
-  fire: 'fireDmg', ice: 'iceDmg', lightning: 'lightningDmg',
-  poison: 'poisonDmg', sigil: 'sigilDmg'
-};
+/* [P3c] 元素增伤的两条通道与合并函数都搬去 `data-elem.js` 了
+ * （`ELEM_AFFIX` / `ELEM_AFFIX_EX` / `elemAffixMul`）——
+ * 契约测试能直接装数据层验算，不用为了一个纯函数把整个 game.js 塞进 vm。 */
 
 /**
  * 线段 a→b 与圆 (cx,cz,r) 的首次相交参数 t ∈ [0,1]，不相交返回 -1。
@@ -5069,11 +5065,10 @@ const Game = {
     return this._elem || null;
   },
 
-  /* 一段元素伤害的乘区：抗性 × 该元素的增伤词缀，再乘这一段的权重 */
+  /* 一段元素伤害的乘区：抗性 × 该元素的增伤（通用 × 专属），再乘这一段的权重 */
   elemHitMul(e, key, w) {
-    const st = this.state.stats;
     const res = e.resist ? (e.resist[key] || 0) : 0;
-    const f = (1 - CLAMP(res, -60, 85) / 100) * (1 + (st[ELEM_AFFIX[key]] || 0) / 100);
+    const f = (1 - CLAMP(res, -60, 85) / 100) * elemAffixMul(this.state.stats, key);
     return w * f;
   },
 
@@ -5252,11 +5247,10 @@ const Game = {
       const res = e.resist ? (e.resist[elem] || 0) : 0;
       if (res) final *= 1 - CLAMP(res, -60, 85) / 100;
 
-      /* [M1] 元素伤害词缀：按本次伤害的元素取对应加成键。
-       * 放在抗性之后、暴击之外，保证「堆火伤打亡灵」和「堆错元素打石魔」
+      /* [M1/P3c] 元素伤害词缀：按本次伤害的元素取加成（通用 × 专属）。
+       * 放在抗性之后、暴击之外，保证「堆元素伤害打亡灵」和「堆错元素打石魔」
        * 的体感差别立刻能看出来。 */
-      const edk = ELEM_AFFIX[elem];
-      if (edk && st[edk]) final *= 1 + st[edk] / 100;
+      final *= elemAffixMul(st, elem);
     }
 
     /* [M1] 游侠套·锐意：攻击满血目标必定暴击 */

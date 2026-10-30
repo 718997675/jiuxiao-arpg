@@ -42,7 +42,8 @@ P1 起才动 `SKILL_BAR_SLOTS` 与面板的三列树。
 | P2c | **精通层 11~20**（不新增形态）：①有效等级 20 与分段曲线 P2a 已接；②**精进轨道**（11~20 十格 + 「精进 x/20」+ 渐进披露 + 15/20 里程碑）；③**Lv15 精通三选一**（烈 / 疾 / 省，走 mods，门槛看有效等级，存 `skills[id].m`）；④**Lv20 最终精通「归一」**（三条精通各 60% 同时生效，与 15 级所选**叠加**，走 `effSkillMods` 第六层）—— 已完成；⑤**光效随等级变亮**（`skillFxAmp` → `FX.setAmp`，只乘亮度 / 不透明度 / 粒子数，不乘半径）—— 已完成。**P2c 收口** | ✅ | `data-skills.js`（`SKILL_TIERS.mastery` / `SKILL_TIERS.capstone` / `skillMasteryOn` / `skillMasteryIdx` / `skillMasteryOpt` / `skillCapstoneOn` / `skillCapstoneBonus`）、`game.js`（`skillMastery` / `skillMasteryMods` / `setSkillMastery` / `skillCapstoneMods` / `effSkillMods` 第五·六层）、`ui-skills.js`（mstRow + 精通行 + 60% 角标）、`index.html`、**`fx.js`（`amp` / `setAmp` / `lit` + 7 个原语调亮）** | `dev/test-skill-p2c.js` 99 · `dev/probe-skill-p2c.js` 62 |
 | P3a | **元素反应表 6/10**：触发口径 = 「目标身上已有 A 元素状态 + 这一下带 B 元素」（不依赖注入）。蒸汽爆裂 / 等离子 / 焚毒 / 感电冻结 / 腐霜 / 腐蚀链，走 `damageEnemy` 一个口，三道闸门（silent / react / `_reacting`）+ 双层 ICD（0.5s 全局 · 2s 同目标）。**圣系 4 组未做** —— 引擎里 sigil 只是伤害类型，没有状态位 | ✅ | `data-elem.js`（新建：`ELEM_DEFS` / `ELEM_STATUS` / `ELEM_REACTIONS` / `elemReactionOn`）、`game.js`（`elemReactReady` / `tryElemReaction` / `applyElemReaction` / `chainReaction` / `knockEnemy`）、`ui.js`（说明页「元素反应」行）、`index.html`（加载 data-elem.js） | `dev/test-skill-p3.js` 62 · `dev/probe-skill-p3.js` 26 |
 | P3b | **元素注入（单元素版 ✅）**：①②③⑤ 位可注火 / 冰 / 雷 / 毒，门槛角色 20 级，附加 30%~50%（跟技能有效等级走），**附加不转换**（原伤害 100% + 附加 X%，两段各过自己的抗性与元素词缀）。三级取值 `opts.inj → _proj.inj → _elem`；注入元素可当反应源（命中元素优先、注入兜底）。**延迟落点 / dot / 召唤物不注入**（已拍板）。剩：双元素混搭 + 元素词缀统一口径 | 🟡 | `data-elem.js`（`SKILL_INJECT` / `skillInjectPct` / `skillSlotOf` / `skillCanInject`）、`game.js`（`skillInject` / `skillInjectAmt` / `setSkillInject` / `curInject` / `elemHitMul` + `castSkill` 窗口 + `damageEnemy` 两段式）、`fx.js`（`projectile` 的 `inj`）、`ui-skills.js`（注入块 + 点击委托） | `dev/test-skill-p3.js` 95 · `dev/probe-skill-p3.js` 41 |
-| P3c | **元素词缀统一 + 双元素混搭**：装备词缀从「火伤 / 冰伤 / 雷伤 / 毒伤」四族并成「**元素伤害 +X%**」（全元素通用），老档 1:1 折算；每技能位注 1~2 种元素、特效主 70% / 副 30% 混色 | ⬜ | `data-core.js`、`data-items.js`、`core/save.js`、`game.js`、`src/fx.js` | — |
+| P3c | **元素词缀统一口径**：随机词缀从「火伤 / 冰伤 / 雷伤 / 毒伤」四族 12 条并成「**元素伤害 +X%**」3 条（全元素通用，含符法）；老档按 **1:1 相加折算**（火 20 + 冰 10 → 元素 30），只增不减。另留一条**元素专属**通道（被动 高压 / 毒经 / 符力、符文之语 雷引 / 炎心、命格固有），两层叠乘。道途面板补上元素增伤 6 行（以前这一族面板一行都没有） | ✅ | `data-core.js`（`elemDmg` + 四旧键标 `legacy`）、`data-items.js`（`AFFIXES` 12→3、`AFFIX_SLOT_ALLOW.fate`、**`foldElemAffixes` + `normalizeItem` 折算**）、`data-elem.js`（`ELEM_AFFIX` / `ELEM_AFFIX_EX` / `elemAffixMul`）、`game.js`（`damageEnemy` / `elemHitMul` 改走 `elemAffixMul`）、`ui.js`（道途面板 + 说明页两行）、`data-builds.js` / `data-trial.js` | `dev/test-elem-affix.js` 60 · `dev/probe-elem-affix.js` 22 |
+| P3d | **双元素混搭**：每技能位注 1~2 种元素（主 70% / 副 30%），特效混色。单元素注入已落地（P3b），这里只加第二槽与配色 | ⬜ | `data-elem.js`、`game.js`、`src/fx.js`、`ui-skills.js` | — |
 | P4 | 三职业独立 ⑤ 号位：刀客兵形/刃势、法师法相、道士召唤 | ⬜ | `src/fx.js`、`src/charforge.js` | — |
 | P5 | 形态进化表现：5 槽 × 3 职业 × 3 段 = 45 套 | ⬜ | `src/fx.js`、模型 | — |
 | P6 | 平衡、洗点、老档兼容回归 | ⬜ | — | — |
@@ -1196,3 +1197,59 @@ p1c 23 · mobile-layout ✓ · save-browser 80。
    永不过期。每个用例前 `_reactCd = {}`。
 3. `FX.projectile` 必须把 `inj` 复制到投射物自己身上。飞出去的那一刻施法窗口已经关了，
    不复制就是「只有第一发带元素，后面的都不带」。
+
+### 2026-10-30 · P3c 元素词缀统一口径
+
+方案 §6.5 早就拍板了，一直没做，因为**没有元素注入的时候它不重要**：技能元素是固定的，
+「火伤 +20%」不会失效。P3b 把注入做完之后，这条立刻变成硬需求 ——
+**玩家换个注入元素，一身四族词缀当场作废**。
+
+#### 改了什么
+
+| 层 | 之前 | 现在 |
+|---|---|---|
+| 属性表 | `fireDmg` / `iceDmg` / `lightningDmg` / `poisonDmg` / `sigilDmg` | 新增 `elemDmg`（元素伤害，全元素通用）。四个旧键**保留**并标 `legacy: true`，只作为折算入口 |
+| 词缀池 | 12 条（4 元素 × 3 阶），名字「炎爆的 / 寒霜的 / 雷引的 / 蚀骨的」 | **3 条**（一 / 二 / 三阶各一条），名字改元素中立：蕴灵的 / 通元的 / 混元的。数值区间一字未动（4~10 / 9~19 / 16~30） |
+| 老档 | 火伤 +20% | `normalizeItem` 里 1:1 **相加**折算：火 20 + 冰 10 → 元素伤害 30（合并成一条） |
+| 结算 | `final *= 1 + st[ELEM_AFFIX[elem]]/100` | `final *= elemAffixMul(st, elem)` = 通用 × 专属 |
+| 面板 | **这一族词条在道途页一行都没有** | 「元素伤害」+ 五行专属共 6 行（有值才显示） |
+
+#### 为什么留一条「元素专属」通道
+
+`ELEM_AFFIX_EX`（fireDmg / iceDmg / …）仍然生效，来源只有三类：被动（高压 / 毒经 / 符力）、
+符文之语天赋（雷引 / 炎心）、命格固有（流火格 / 寒霜格 / 雷引格 / 蚀骨格）。
+**它们不进随机词缀池**，两层是**叠乘**不是相加。
+
+统一掉它们会怎样：被动「高压：雷电伤害」变成「元素伤害」，雷法流派的身份就没了；
+「雷霆之语 → 雷伤」这条符文之语的协同也只剩一个空名字。**随机词缀必须跟着人走，
+专属来源必须跟着元素走** —— 这才是这条口径真正的分界线。
+
+#### 折算的三条硬约束
+
+1. **折算必须跑在 `STATS[key]` 过滤之前**。`normalizeItem` 原来先 `filter(STATS[a.key])`，
+   把旧键从 `STATS` 里删掉再折算，等于**静默删掉玩家的词缀**。所以旧键留在表里，
+   只是不再掉落。契约里有一条按源码顺序断言（`indexOf(fold) < indexOf(filter)`）。
+2. **只折 `affixes` 与 `fixed`，不折 `implicit` / `uniqueStats`**。命格固有、传世属性
+   是「这件东西的元素身份」，折成通用等于抹掉设计。探针里拿「流火格」钉住这一条。
+3. **相加，不取最大**。取最大是削弱，1:1 折算承诺的是「不削弱」。
+
+#### 验证
+
+`test-elem-affix` **60 通过 / 0 失败**（属性表 / 词缀池真滚 300 次不出旧键 / 折算相加与合并 /
+源码顺序 / 叠乘 / 面板与说明页 / 不削弱）；
+`probe-elem-affix` **22 通过 / 0 失败**（真机：老装备读档 → tooltip 写「元素伤害」→
+stats.elemDmg 30 → 火冰雷毒四种伤害一起 ×1.30、物理不吃 → 道途页出现「元素伤害 30%」→
+命格固有仍是火伤专属且面板可见 → 洗练池里没有四族旧词条）。
+
+其余全绿：p0 250 · p1 52 · p1c 363 · p2 41 · p2b 878 · p2c 99 · p3 96 · items 17 · save 79 ·
+smoke ERRORS none · p2b 探针 282 · p2c 探针 62 · p2 26 · p1d 36 · arch 29 · bar5 30 · p1c 23 ·
+mobile-layout ✓。
+
+**踩坑**：
+1. `ELEM_AFFIX` / `elemAffixMul` 一开始写在 `game.js` 里，契约测试装不了
+   （`_load.js` 只装数据层 + items + store + save）。搬进 `data-elem.js` 之后
+   一个纯函数就能直接验算 —— **纯函数别住在 game.js**。
+2. 探针里 `normalizeItem` 会按品质补固定词条，其中可能正好有一条 `elemDmg`，
+   「elemDmg 还是 30」于是读成 41。断言要把补进来的那部分扣掉。
+3. 面板 `textContent` 里 `<span>元素伤害</span><b>30%</b>` 是**没有空格**的
+   （"元素伤害30%"），`replace(/\s+/g,' ')` 补不出空格来。正则别带空格。

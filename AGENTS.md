@@ -134,6 +134,7 @@ git fetch origin                 # 分支都在远程，clone 完就全能看到
 | 技能实际行为 / 被动 | `src/skill-beh.js` / `src/skill-passive.js` |
 | 元素定义 / 元素反应 | `src/data/data-elem.js`（表）+ `src/game.js` 的 `tryElemReaction` / `applyElemReaction`。**反应挂在 `damageEnemy` 一个口上**，别去各技能 case 里加 |
 | 元素注入（技能位注火/冰/雷/毒） | `src/data/data-elem.js` 的 `SKILL_INJECT` / `skillCanInject` + `src/game.js` 的 `curInject`（三级取值）。**`castSkill` 只开窗口，投射物靠 `FX.projectile` 的 `inj` 自己带** |
+| 元素增伤词缀（统一 / 专属两层） | `src/data/data-elem.js` 的 `ELEM_AFFIX`（通用 `elemDmg`）/ `ELEM_AFFIX_EX`（专属）/ **`elemAffixMul`（唯一出口）**。加新词条走 `data-items.js` 的 `AFFIXES`；**别再写第二处 `1 + st[键]/100`** |
 | 手机端摇杆、键位、面板滚动 | `src/mobile.js` + `index.html` 的 `@media` |
 | 手机横向树排版 | `src/ui-mtree.js` |
 | 存档 / 设置持久化 | `src/core/save.js` / `src/core/settings.js` |
@@ -218,7 +219,13 @@ node dev/preview-check.js --url <预览地址>   # 预览站：能开局 + 资�
   口径是「**附加不转换**」：原伤害 100% + 附加 X%，两段各过自己的抗性与元素词缀。
   三级取值 `opts.inj → _proj.inj → _elem`；**延迟落点 / dot / 召唤物不注入**（已拍板）。
   注入元素可当反应源（`elemReactReady` 的 `altElem`，命中元素优先）。
-  下一步 **P3c**：元素词缀统一成「元素伤害 +X%」（老档 1:1 折算）+ 双元素混搭混色。
+  **P3c 元素词缀统一已落地**：随机词缀 12 条（火/冰/雷/毒各 3 阶）并成
+  「**元素伤害 +X%**」3 条，全元素通用（含符法）；老档按 **1:1 相加**折算
+  （火 20 + 冰 10 → 元素 30，只增不减）。另留**元素专属**通道
+  （被动 高压/毒经/符力、符文之语 雷引/炎心、命格固有），两层**叠乘**。
+  道途面板补上元素增伤 6 行。**折算只能跑在 `normalizeItem` 的 `STATS[key]` 过滤之前**，
+  否则就是静默删玩家词缀（契约有源码顺序断言钉着）。
+  下一步 **P3d 双元素混搭**（主 70% / 副 30% + 特效混色）。
 - **待拍板**：大地图扩展（12 章 / 80 怪 / 24 首领 / 12 营地 + 任务网 / 5 类地下城 × 5 阶钥匙）。
   方案在 `docs/ACT-EXPANSION-PLAN.md`（2026-10-27 草案，**未动代码**）。
   §14 有 10 项待拍板，**拍板前不要开工**。

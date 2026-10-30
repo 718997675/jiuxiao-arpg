@@ -41,6 +41,7 @@ const readSrc = f => fs.readFileSync(path.join(ROOT, f), 'utf8');
 const gm = readSrc('src/game.js');
 const uiJs = readSrc('src/ui.js');
 const html = readSrc('index.html');
+const elemSrc = readSrc('src/data/data-elem.js');
 
 /* ============================================================
  * 一、表结构
@@ -235,10 +236,14 @@ ok(/final \*= this\.elemHitMul\(e, elem, 1\) \+ this\.elemHitMul\(e, inj\.key, i
   '**两段相加**：原伤害 100% + 附加 X%，各自过自己的抗性与元素词缀');
 ok(/const inj = \(opts\.react \|\| opts\.silent\) \? null : this\.curInject\(opts\);/.test(gm),
   '反应伤害与持续伤害不参与注入（否则反应的爆炸会再被注入一次）');
-ok(/elemHitMul\(e, key, w\) \{[\s\S]{0,220}return w \* f;/.test(gm),
-  'elemHitMul 乘的是「抗性 × 该元素词缀 × 权重」');
-ok(/const ELEM_AFFIX = \{[\s\S]{0,200}sigil: 'sigilDmg'/.test(gm),
-  '元素词缀表提到模块级（两段读同一张表，不许各写一份）');
+ok(/elemHitMul\(e, key, w\) \{[\s\S]{0,240}elemAffixMul\(this\.state\.stats, key\)/.test(gm),
+  'elemHitMul 乘的是「抗性 × 该元素增伤（通用 × 专属）× 权重」');
+/* [P3c] 元素词缀表搬去了 data-elem.js，并把 sigil 也并进 elemDmg（统一口径）。
+ * 这里只钉「两段读同一张表」这件事本身 —— 具体映射由 test-elem-affix 负责。 */
+ok(/const ELEM_AFFIX = \{[\s\S]{0,200}sigil: 'elemDmg'/.test(elemSrc),
+  '元素词缀表在模块级、只有一份（两段读同一张表，不许各写一份）');
+ok(/elemAffixMul\(this\.state\.stats, key\)/.test(gm) && /final \*= elemAffixMul\(st, elem\);/.test(gm),
+  '注入两段与原路径都走同一个 elemAffixMul（口径不分裂）');
 ok(/inj: this\._elem,/.test(gm) && /inj: opts\.inj \|\| null/.test(fx), 
   '玩家投射物把注入复制到自己身上（fx.js 存 p.inj）');
 ok(/const prevProj = this\._proj;[\s\S]{0,160}this\._proj = prevProj;/.test(gm),

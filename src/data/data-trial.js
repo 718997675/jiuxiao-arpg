@@ -220,7 +220,7 @@ const TRIAL_BLESSINGS = [
   { id: 'melee', name: '刀意', cat: 'skill', tier: 1, max: 8, icon: '刀', val: 15, stats: { meleeDmg: 15 }, desc: '近战伤害 +15%' },
   { id: 'summon', name: '驭兽', cat: 'skill', tier: 2, max: 6, icon: '驭', val: 18, stats: { summonDmg: 18 }, desc: '召唤物伤害 +18%' },
   { id: 'cost', name: '蓄灵', cat: 'skill', tier: 2, max: 6, icon: '蓄', val: 7, stats: { costReduce: 7 }, desc: '技能消耗降低 +7%' },
-  { id: 'elem', name: '五行归一', cat: 'skill', tier: 3, max: 4, icon: '归', val: 14, stats: { fireDmg: 14, iceDmg: 14, lightningDmg: 14, poisonDmg: 14 }, desc: '全元素伤害 +14%' },
+  { id: 'elem', name: '五行归一', cat: 'skill', tier: 3, max: 4, icon: '归', val: 14, stats: { elemDmg: 14 }, desc: '全元素伤害 +14%' },
   { id: 'skilllv', name: '悟道', cat: 'skill', tier: 3, max: 3, icon: '悟', val: 1, stats: { skillLv: 1 }, desc: '全技能等级 +1' },
 
   /* ---------- 传说（机制型） ---------- */

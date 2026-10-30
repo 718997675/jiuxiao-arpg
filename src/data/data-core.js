@@ -94,15 +94,23 @@ const STATS = {
   skillDmg: { label: '技能伤害', pct: true },
   summonDmg: { label: '召唤物伤害', pct: true },
 
-  /* ---- [M1] 元素伤害加成（词缀族：火/冰/雷/毒） ----
-   * 与「抗性」相反：这是玩家打出去的加成，按本次伤害的 elem 取用，
-   * 结算见 game.js damageEnemy。 */
-  fireDmg: { label: '火焰伤害', pct: true },
-  iceDmg: { label: '冰霜伤害', pct: true },
-  lightningDmg: { label: '雷电伤害', pct: true },
-  poisonDmg: { label: '毒性伤害', pct: true },
-  /* [P2] 符法伤害：符箓系（符箓 / 符箭 / 剑雨 / 天师符）的专属元素，
-   * 来源目前只有被动「符力」—— 词缀池刻意不放，留作流派纵深 */
+  /* ---- [P3c] 元素伤害：**全元素通用**（火 / 冰 / 雷 / 毒 / 符法）----
+   * 为什么从「火伤 / 冰伤 / 雷伤 / 毒伤」四族并成一个键：
+   * 元素注入（P3b）让玩家能随时改技能元素，四族词缀意味着「换个注入元素，
+   * 一身词缀当场作废」。统一之后词缀跟着人走，不再跟着元素走。
+   * 老档的「火伤 +20%」按 **1:1** 折算成「元素伤害 +20%」（见 items.js normalizeItem），
+   * 只增不减，不削弱任何老装备。 */
+  elemDmg: { label: '元素伤害', pct: true },
+  /* 下面四个是**旧档遗留键**：不再进词缀池、不再掉落，只为了让 normalizeItem
+   * 在折算之前不会把老词缀当脏数据丢掉（过滤在折算之前跑）。
+   * 折算完它们就是 0，面板也不显示。别往这里加新东西。 */
+  fireDmg: { label: '火焰伤害', pct: true, legacy: true },
+  iceDmg: { label: '冰霜伤害', pct: true, legacy: true },
+  lightningDmg: { label: '雷电伤害', pct: true, legacy: true },
+  poisonDmg: { label: '毒性伤害', pct: true, legacy: true },
+  /* [P2] 符法伤害：符箓系（符箓 / 符箭 / 剑雨 / 天师符）的专属加成，
+   * 来源目前只有被动「符力」—— 词缀池刻意不放，留作流派纵深。
+   * 它和 elemDmg **叠乘**（符法既能吃全元素，又能额外吃符力）。 */
   sigilDmg: { label: '符法伤害', pct: true },
 
   /* ---- [M1] 全技能等级（词缀 +N 技能等级）----

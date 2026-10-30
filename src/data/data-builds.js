@@ -58,7 +58,7 @@ const BUILDS = [
     tagline: '火墙满地铺，靠爆燃在墙尽头再炸一次',
     skill: 'firewall', pick: 1, form: 2,
     passives: ['m_ember', 'm_focus'],
-    stats: { fireDmg: 40, atkPct: 30 },
+    stats: { elemDmg: 40, atkPct: 30 },
     tags: ['fire', 'aoe', 'burn'],
     why: '「爆燃」使火墙结束时再结算一次爆炸，同一次施法两次结算燃烧；燃烧伤害受「燃烬」加成。',
     steps: ['火墙点到 5 级', '取向选「烈墙」', '变体切「爆燃」', '被动点「燃烬」']
@@ -68,7 +68,7 @@ const BUILDS = [
     tagline: '暴雪周期冻结，绝对零度把冻结目标按死',
     skill: 'blizzard', pick: 0, form: 1,
     passives: ['m_chill', 'm_absolute'],
-    stats: { iceDmg: 40, crit: 15 },
+    stats: { elemDmg: 40, crit: 15 },
     tags: ['ice', 'aoe', 'freeze'],
     why: '「冰封」使暴雪每 3 秒冻结一次；关键被动「绝对零度」对冻结目标额外 +35% 伤害。',
     steps: ['暴雪点到 5 级', '取向选「广域」', '变体切「冰封」', '关键被动「绝对零度」']
@@ -78,7 +78,7 @@ const BUILDS = [
     tagline: '连锁闪电铺成网，靠导电与雷神收尾',
     skill: 'chain', pick: 0, form: 0,
     passives: ['m_volt', 'm_stormlord'],
-    stats: { lightningDmg: 40, critDmg: 40 },
+    stats: { elemDmg: 40, critDmg: 40 },
     tags: ['thunder', 'ranged', 'chain'],
     why: '「雷网」额外弹射两次，每次弹射均受「导电」加成；雷神每 6 秒落雷一次，用于填补冷却空档。',
     steps: ['连锁闪电点到 5 级', '取向选「多链」', '变体切「雷网」', '被动「高压」+ 关键被动「雷神」']
@@ -100,7 +100,7 @@ const BUILDS = [
     tagline: '毒雾铺地，尸毒把每一具尸体变成地雷',
     skill: 'poison', pick: 1, form: 0,
     passives: ['t_toxin', 't_merid'],
-    stats: { poisonDmg: 40 },
+    stats: { elemDmg: 40 },
     tags: ['poison', 'aoe', 'dot'],
     why: '「毒海」将毒雾半径提升至上限，「尸毒」使敌人在雾中死亡后再爆一次；群体清理依赖连锁死亡。',
     steps: ['毒雾点到 5 级', '取向选「毒海」', '变体切「尸毒」', '被动点「毒经」']
@@ -133,7 +133,7 @@ function buildOf(id) {
  *   cls,                                    // 存档职业
  *   skills: { id: { lv, p, f } },           // Game.skillState()
  *   passives: { id: lv },                   // state.passives
- *   stats: { crit, critDmg, fireDmg, … },   // state.stats
+ *   stats: { crit, critDmg, elemDmg, … },   // state.stats
  *   tagCount: { tag: 已投点技能数 }           // 由 Game.recommendBuilds 预先数好
  * }
  * 返回 { fit, parts[], missing[] }。纯函数：同一次存档永远同一个分数，
@@ -216,8 +216,8 @@ function buildFit(b, ctx) {
 const BUILD_STAT_NAME = {
   crit: '暴击率', critDmg: '暴击伤害', atkPct: '攻击加成', atk: '攻击力',
   def: '护甲', hpMax: '生命上限', dmgReduce: '减伤', aspd: '攻速',
-  fireDmg: '火伤', iceDmg: '冰伤', lightningDmg: '雷伤',
-  poisonDmg: '毒伤', sigilDmg: '符法', summonDmg: '召唤伤',
+  elemDmg: '元素伤',
+  sigilDmg: '符法', summonDmg: '召唤伤',
   healBonus: '治疗量', magicFind: '魔 find'
 };
 function statLabel(k) { return BUILD_STAT_NAME[k] || k; }

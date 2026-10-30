@@ -705,7 +705,10 @@ const UI = {
       row('套装（类型）', `绿色边框，${setIds.length} 套。品质固定为「套装」（${RARITY.set.affixes + RARITY.set.fixed} 词条），靠穿够 2 / 3 / 4 / 5 件激活套装效果，不走升品链`),
       row('传世（类型）', `红色边框，${uniN} 件。固定词条 + 独有特性 + 技能效果，既不在升品链也不在八阶链 —— 详见第六节`),
       row('词缀池', `共 ${affN} 条：一阶 ${affTier[1]} 条 / 二阶 ${affTier[2]} 条 / 三阶 ${affTier[3]} 条。阶数越高数值越大，掉落权重越低`),
-      row('词缀族', `元素伤害（火/冰/雷/毒）、单项与全抗、+N 技能等级、光环（周围减速/持续伤害）、资源、生存、掉落、暴击、攻速、移速`),
+      row('词缀族', `元素伤害（<b>全元素通用</b>）、单项与全抗、+N 技能等级、光环（周围减速/持续伤害）、资源、生存、掉落、暴击、攻速、移速`),
+      row('元素伤害', `随机词缀统一为「<b>元素伤害 +X%</b>」，火 / 冰 / 雷 / 毒 / 符法<b>全吃</b> —— 技能换了元素，词缀不用重洗。` +
+        `另有一层「元素专属」加成（被动「高压 / 毒经 / 符力」、符文之语「雷引 / 炎心」、命格固有），只对那一个元素生效，两层<b>叠乘</b>。` +
+        `老档的「火焰伤害 +20%」按 <b>1:1</b> 折算为「元素伤害 +20%」，只增不减`),
       row('洗练', `炼器台「品质」页可以重洗词条；同一条属性不会在一件装备上出现两次`)
     ]));
 
@@ -859,7 +862,7 @@ const UI = {
       row('变体特效', `${fxStat.total} 条变体中有 ${fxStat.styled} 条附带专属特效，按行为归为 ${fxKinds} 类风格：${fxNames.join(' / ')}。施法时绘制一次专属光效，颜色与卡片风格标签、树上变体名一致。纯数值变体不附加光效`),
       row('元素反应', (typeof ELEM_REACTIONS !== 'undefined' && ELEM_REACTIONS.length)
         ? `<b>${ELEM_REACTIONS.length}</b> 组已接进战斗。触发条件是「<b>这一下带 A 元素</b> + <b>目标身上已有 B 元素的状态</b>」——` +
-          `不是「一个技能同时带两种元素」（元素注入还没做）。${ELEM_REACTIONS.map(r => {
+          `先冻住再补火也算「火碰冰」，不必等元素注入。${ELEM_REACTIONS.map(r => {
             const na = (typeof elemDef === 'function' && elemDef(r.a)) ? elemDef(r.a).name : r.a;
             const nb = (typeof elemDef === 'function' && elemDef(r.b)) ? elemDef(r.b).name : r.b;
             return `<b>${r.name}</b>（${na}+${nb}：${r.desc}）`;
@@ -867,6 +870,14 @@ const UI = {
           `内建冷却：全局 ${ELEM_REACT_ICD.global} 秒、同目标同反应 ${ELEM_REACT_ICD.sameTarget} 秒；` +
           `<b>持续伤害与反应自己造成的伤害不再触发反应</b>。圣系 4 组（净化烈焰 / 圣霜 / 天罚 / 解毒雾）未做 —— 引擎里「圣」只是一个伤害类型，没有对应的状态位`
         : ''),
+      row('元素注入', (typeof SKILL_INJECT === 'object' && SKILL_INJECT)
+        ? `①②③⑤ 号位可注入火 / 冰 / 雷 / 毒（④ 是增益槽，没有元素语义）。<b>境界 ${SKILL_INJECT.at} 级</b>开放，` +
+          `面板详情卡「元素」一栏点选，<b>免费、随时可换</b>。口径是<b>附加不转换</b>：原伤害 100% 照打，` +
+          `再额外附加 ${SKILL_INJECT.minPct}%~${SKILL_INJECT.maxPct}% 的元素伤害（比例随技能有效等级提升，10 级 ${SKILL_INJECT.minPct}% → 20 级 ${SKILL_INJECT.maxPct}%），` +
+          `两段各自过抗性与元素增伤。只作用于<b>这一次施法</b>与它扔出的投射物 —— 延迟落点、地板跳伤、持续伤害、召唤物出手不注入`
+        : ''),
+      row('注入与反应', `注入的元素<b>也能当反应源</b>：火球注冰打燃烧目标 = 蒸汽爆裂。判定时<b>命中元素优先</b>，` +
+        `它跟目标状态同元素（或本身不参与反应）才用注入那一段兜底 —— 否则「火碰火」会白丢一次反应`),
       row('推荐流派', `${bdN} 套模板（每职业 ${bdPerCls} 套）。术法面板顶部「推荐流派」按<b>当前存档</b>计算契合度最高的三套：核心技能等级 / 取向 / 变体 / 被动 / 属性 / 标签六项加权求和即契合度。该值表示与模板的接近程度，不作强度排名（未接入伤害模拟）。卡片内仅支持一键切换变体，技能点与被动需逐项分配`),
       row('技能条', `${barSlots} 格 × ${barSets} 套（左键 + ${barKeyText}）。格位 = 功能位：① 基础攻击 / ② 中程爆发 / ③ 护身清场 / ④ 自身增益 / ⑤ 职业核心，**每格只能放本位的技能**。在术法面板详情卡底部点格位配置；按 ${K(SKILL_BAR_SET_LABEL)} 切换栏位（同一格换不同技能，首领 / 刷图各一套）`),
       row('秘技', `传世授予的技能（可跨职业）在面板内单独分组，带青色「秘」角标；卸下装备后失效，不占用技能点`),
@@ -2819,6 +2830,17 @@ const UI = {
     if (n('firstStrike')) atk.push(['先手伤害', P('firstStrike')]);
     if (n('armorPen')) atk.push(['护甲穿透', P('armorPen')]);
     if (n('summonDmg')) atk.push(['召唤物伤害', P('summonDmg')]);
+    /* [P3c] 元素增伤两条通道，分开列：
+     *   「元素伤害」= 全元素通用（随机词缀 / 五行归一祝福）；
+     *   下面五行 = 元素专属（被动 / 符文之语 / 命格固有），只对那一个元素生效。
+     * 之前这一整族词条在面板上一行都没有 —— 玩家堆了一身火伤，道途页看不见，
+     * 只能靠「打怪好像快了点」猜。实装有效果、面板不显示，同样是不对齐。 */
+    if (n('elemDmg')) atk.push(['元素伤害', P('elemDmg')]);
+    if (n('fireDmg')) atk.push(['火焰伤害', P('fireDmg')]);
+    if (n('iceDmg')) atk.push(['冰霜伤害', P('iceDmg')]);
+    if (n('lightningDmg')) atk.push(['雷电伤害', P('lightningDmg')]);
+    if (n('poisonDmg')) atk.push(['毒性伤害', P('poisonDmg')]);
+    if (n('sigilDmg')) atk.push(['符法伤害', P('sigilDmg')]);
     G.push(['攻伐', atk]);
 
     /* 守御 */

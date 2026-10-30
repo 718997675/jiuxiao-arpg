@@ -131,6 +131,44 @@ function elemReactionOn(hitElem, e) {
 }
 
 /* ============================================================
+ * [P3c] 元素增伤**两条通道，叠乘**
+ *
+ *   ELEM_AFFIX     elemDmg —— 全元素通用。来源：随机词缀（统一后的
+ *                            「元素伤害 +X%」）、试炼祝福「五行归一」。
+ *   ELEM_AFFIX_EX  fireDmg / iceDmg / lightningDmg / poisonDmg / sigilDmg
+ *                            —— 元素专属。来源：被动（高压 / 毒经 / 符力）、
+ *                            符文之语天赋（雷引 / 炎心）、命格固有。
+ *                            **不进随机词缀池。**
+ *
+ * 为什么留两条：随机词缀必须跟着人走（元素注入能随时改元素，四族词缀等于
+ * 「换个注入就废一身装」），但「雷霆之语 → 雷伤」这种专属来源的元素身份是设计，
+ * 统一掉就只剩一个空名字。两条通道都是乘区，不会互相挤占。
+ *
+ * [P3b] 这张表从 damageEnemy 里提出来：元素注入要按**段**取词条（原伤害一段、
+ * 附加一段），两处必须读同一张表，否则「面板说火伤 +20%、打出去按冰伤算」这种
+ * 口径分裂迟早出现。所以合并只留 `elemAffixMul` 一个出口。
+ * ============================================================ */
+const ELEM_AFFIX = {
+  fire: 'elemDmg', ice: 'elemDmg', lightning: 'elemDmg',
+  poison: 'elemDmg', sigil: 'elemDmg'
+};
+const ELEM_AFFIX_EX = {
+  fire: 'fireDmg', ice: 'iceDmg', lightning: 'lightningDmg',
+  poison: 'poisonDmg', sigil: 'sigilDmg'
+};
+
+/* 某个元素拿到的总增伤倍率（通用 × 专属）。物理 / 无元素恒 1 */
+function elemAffixMul(st, elem) {
+  if (!st || !elem || elem === 'phys' || elem === 'none') return 1;
+  let m = 1;
+  const a = ELEM_AFFIX[elem];
+  if (a && st[a]) m *= 1 + st[a] / 100;
+  const b = ELEM_AFFIX_EX[elem];
+  if (b && st[b]) m *= 1 + st[b] / 100;
+  return m;
+}
+
+/* ============================================================
  * 元素注入（P3b）
  *
  * 方案 §6.1：每个技能位可注入 1~2 种元素，伤害**附加、不转换**
