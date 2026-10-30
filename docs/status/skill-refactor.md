@@ -40,7 +40,7 @@ P1 起才动 `SKILL_BAR_SLOTS` 与面板的三列树。
 | P2a | **等级上限 5 → 10** + 分段曲线真的进战斗（`skillLvMul` 取代旧「每级固定 8%」）+ 点数供给 等级 × 1.5；面板 10 格 / 满级金环 / 洗点全额退回 | ✅ | `data-skills.js`（`SKILL_LV_MAX` / `SKILL_POINT_RATE` / `skillPointPool`）、`data-skill-tree.js`（`lvMax` 同源）、`game.js`（`castSkill` / `skillPoints`）、`ui-skills.js`、`ui.js`、`index.html` | `dev/test-skill-p2.js` 41 · `dev/probe-skill-p2.js` 26 |
 | P2b | **数量 / 形态台阶接进 `castSkill`**。①数量：默认 Lv3 / Lv7 各 +1，接 `smod.count`（13 个技能消费），第 n 发 ×0.85^n 防三倍伤害；**发数节奏可按技能覆盖**（`SKILL_COUNT_TIER`，法师 ② 在 Lv5 / Lv7）。②进化：新建 `SKILL_TIER_EVO`（挂**技能 id** 不挂技能位），合并顺序 **台阶最前 → 精研 / 取向 / 变体覆盖同名键**（花点的选择必须盖过等级送的）。**15 个位 / 45 条全部接完**：刀客①旋风斩、法师①火球、道士①符箓、道士②毒雾、刀客②地裂、刀客③剑阵、刀客④血怒、道士④回春、法师③火墙、法师④护盾、道士③太极、法师②陨石（3 溅射 / 5 双陨 / 7 三连落）、道士⑤召灵兽（三只各召各的）、**刀客⑤兵形（刀式状态机 + 刃势 + 断岳斩）**、**法师⑤元素法相（净新增技能：法相窗口 + 换相 + 命中附加 + 收窗新星 + 免控）** —— 细则见下面「P2b 收口要点」。**✅ 15/15 个位、45/45 条：P2b 收口** | ✅ | `data-skills.js`（`SKILL_TIER_EVO` / `SKILL_COUNT_TIER` / `skillTierEvo` / `skillTierMods` / `skillTierBeh`）、`skill-beh.js`（`branchBeh` 台阶排最前 + `killProlong` / `lifesteal` / `ccImmune` / `healOnCast` / `tierDur` / `splash` / `stanceUnlock` / `edgeFinisher` / `edgeKeep` / `edgeUltimate`）、`game.js`（autoTarget / rageMul / firePatch / swordField / applyPlayerSlow / ccImmuneNow / behTierNova / shieldT+sdur / 符阵 dur+tierDur / meteor·blizzard·judgement·starfall 多发 / spawnTierField 落点领域 / **bladeXxx 兵形状态机**）、`ui.js`（说明页读数现算 + 动作条刀式角标）、`ui-skills.js` | `dev/test-skill-p2b.js` 878 · `dev/probe-skill-p2b.js` 282 |
 | P2c | **精通层 11~20**（不新增形态）：①有效等级 20 与分段曲线 P2a 已接；②**精进轨道**（11~20 十格 + 「精进 x/20」+ 渐进披露 + 15/20 里程碑）；③**Lv15 精通三选一**（烈 / 疾 / 省，走 mods，门槛看有效等级，存 `skills[id].m`）；④**Lv20 最终精通「归一」**（三条精通各 60% 同时生效，与 15 级所选**叠加**，走 `effSkillMods` 第六层）—— 已完成；⑤**光效随等级变亮**（`skillFxAmp` → `FX.setAmp`，只乘亮度 / 不透明度 / 粒子数，不乘半径）—— 已完成。**P2c 收口** | ✅ | `data-skills.js`（`SKILL_TIERS.mastery` / `SKILL_TIERS.capstone` / `skillMasteryOn` / `skillMasteryIdx` / `skillMasteryOpt` / `skillCapstoneOn` / `skillCapstoneBonus`）、`game.js`（`skillMastery` / `skillMasteryMods` / `setSkillMastery` / `skillCapstoneMods` / `effSkillMods` 第五·六层）、`ui-skills.js`（mstRow + 精通行 + 60% 角标）、`index.html`、**`fx.js`（`amp` / `setAmp` / `lit` + 7 个原语调亮）** | `dev/test-skill-p2c.js` 99 · `dev/probe-skill-p2c.js` 62 |
-| P3a | **元素反应表 6/10**：触发口径 = 「目标身上已有 A 元素状态 + 这一下带 B 元素」（不依赖注入）。蒸汽爆裂 / 等离子 / 焚毒 / 感电冻结 / 腐霜 / 腐蚀链，走 `damageEnemy` 一个口，三道闸门（silent / react / `_reacting`）+ 双层 ICD（0.5s 全局 · 2s 同目标）。**圣系 4 组未做** —— 引擎里 sigil 只是伤害类型，没有状态位 | ✅ | `data-elem.js`（新建：`ELEM_DEFS` / `ELEM_STATUS` / `ELEM_REACTIONS` / `elemReactionOn`）、`game.js`（`elemReactReady` / `tryElemReaction` / `applyElemReaction` / `chainReaction` / `knockEnemy`）、`ui.js`（说明页「元素反应」行）、`index.html`（加载 data-elem.js） | `dev/test-skill-p3.js` 62 · `dev/probe-skill-p3.js` 26 |
+| P3a | **元素反应表 10/10**：触发口径 = 「目标身上已有 A 元素状态 + 这一下带 B 元素」（不依赖注入）。**6 组元素互碰**（蒸汽爆裂 / 等离子 / 焚毒 / 感电冻结 / 腐霜 / 腐蚀链）+ **4 组圣系**（净化烈焰 / 圣霜 / 天罚 / 解毒雾），走 `damageEnemy` 一个口，三道闸门（silent / react / `_reacting`）+ 双层 ICD（0.5s 全局 · 2s 同目标）。圣系的前提是 **圣印**（`e.sigilT`，sigil 命中盖 6 秒印记，只刷新不叠加）；**圣排在状态表最后** —— 顺序即优先级，否则道士常驻的圣印会把「火 + 冰」的蒸汽爆裂整组吃掉。圣系收益落在**玩家身上**（回血 / 护盾 / 对亡灵与首领增伤），全部当场结算、**不做窗口 buff**（面板看不见的增益等于没做）。方案写的「击杀回血」改成立刻回 3%（打不死目标时那组反应否则等于白触发） | ✅ | `data-elem.js`（`ELEM_DEFS` / `ELEM_STATUS` / `SIGIL_MARK` / `ELEM_REACTIONS` / `elemReactionOn`）、`game.js`（`elemReactReady` / `tryElemReaction` / `applyElemReaction` 的 4 个圣系 case / `chainReaction` / `knockEnemy` / **`sigilT` 盖印与递减** / **`healMist` 回血雾** / 护盾字段通用化）、`ui.js`（说明页「元素反应」行）、`index.html`（加载 data-elem.js） | `dev/test-skill-p3.js` 106 · `dev/probe-skill-p3.js` 41 · **`dev/test-elem-holy.js` 50 · `dev/probe-elem-holy.js` 26** |
 | P3b | **元素注入（单元素版 ✅）**：①②③⑤ 位可注火 / 冰 / 雷 / 毒，门槛角色 20 级，附加 30%~50%（跟技能有效等级走），**附加不转换**（原伤害 100% + 附加 X%，两段各过自己的抗性与元素词缀）。三级取值 `opts.inj → _proj.inj → _elem`；注入元素可当反应源（命中元素优先、注入兜底）。**延迟落点 / dot / 召唤物不注入**（已拍板）。**P3b 收口** —— 当初挂在这一行尾巴上的另外两块已经拆出去各自做完：双元素混搭见 **P3d**，元素词缀统一见 **P3c** | ✅ | `data-elem.js`（`SKILL_INJECT` / `skillInjectPct` / `skillSlotOf` / `skillCanInject`）、`game.js`（`skillInject` / `skillInjectAmt` / `setSkillInject` / `curInject` / `elemHitMul` + `castSkill` 窗口 + `damageEnemy` 两段式）、`fx.js`（`projectile` 的 `inj`）、`ui-skills.js`（注入块 + 点击委托） | `dev/test-skill-p3.js` 97 · `dev/probe-skill-p3.js` 41 |
 | P3c | **元素词缀统一口径**：随机词缀从「火伤 / 冰伤 / 雷伤 / 毒伤」四族 12 条并成「**元素伤害 +X%**」3 条（全元素通用，含符法）；老档按 **1:1 相加折算**（火 20 + 冰 10 → 元素 30），只增不减。另留一条**元素专属**通道（被动 高压 / 毒经 / 符力、符文之语 雷引 / 炎心、命格固有），两层叠乘。道途面板补上元素增伤 6 行（以前这一族面板一行都没有） | ✅ | `data-core.js`（`elemDmg` + 四旧键标 `legacy`）、`data-items.js`（`AFFIXES` 12→3、`AFFIX_SLOT_ALLOW.fate`、**`foldElemAffixes` + `normalizeItem` 折算**）、`data-elem.js`（`ELEM_AFFIX` / `ELEM_AFFIX_EX` / `elemAffixMul`）、`game.js`（`damageEnemy` / `elemHitMul` 改走 `elemAffixMul`）、`ui.js`（道途面板 + 说明页两行）、`data-builds.js` / `data-trial.js` | `dev/test-elem-affix.js` 60 · `dev/probe-elem-affix.js` 22 |
 | P3d | **双元素混搭**：境界 **40 级**解锁第二元素，①②③⑤ 位可再注一种（不能与主元素相同，摘主元素时副元素一起走）。**总量不变**，按主 70% / 副 30% 拆成两段（50% → 35% + 15%），两段各过自己的抗性与元素增伤；与命中元素相同的段自动剔除。反应按「命中元素 → 主 → 副」顺序试。视觉：施法瞬间脚下喷一簇注入元素色火星（8 + 4 颗，主 70% / 副 30%），**技能本体光效不换色**（FX 是全局的，换色会连敌人技能和血一起染） | ✅ | `data-elem.js`（`SKILL_INJECT.subAt` / `split` / `skillInjectSplit`）、`game.js`（`skillInject2` / `skillInjectPack` / `injectSegs` / `setSkillInject2` + `elemReactReady` 收数组）、`fx.js`（`elemSpark`）、`ui-skills.js`（混搭一行 + `data-inj2` 委托）、`index.html`（`.sb-i2list`）、`ui.js`（说明页两行） | `dev/test-elem-dual.js` 40 · `dev/probe-elem-dual.js` 30 |
@@ -1340,3 +1340,73 @@ arch 29 · bar5 30 · p1c 23 · mobile-layout ✓。
 3. 数火星别数 `FX.parts`：同一次施法还有技能自己的火星，而且低画质时 `FX.q < 1`
    会按倍率砍粒子数（8 颗被砍成 4 颗 = 假红）。直接截 `FX.burst` 的**参数**，
    量的是「调用意图」，正好就是 70/30 这条口径本身。
+
+### 2026-10-30 · P3a 补齐：圣系 4 组反应（10/10 收口）
+
+P3a 当初做到 6/10 就停了，理由写在文件头：`sigil` 在引擎里只是一个**伤害类型**
+（`sigilDmg`），打完什么都不留，反应表没有可判的「状态位」。这次补上那块地基。
+
+**圣印（`e.sigilT` / `SIGIL_MARK`）**
+
+`sigil` 命中就在目标身上盖一个 **6 秒**印记，只刷新不叠加。三个刻意的选择：
+
+1. **盖在反应判定之前**。这一发自己盖的印不会跟自己反应（`elemReactionOn` 跳过
+   与命中元素相同的状态），但「圣符打在燃烧目标上」必须算数 —— 先判后盖的话，
+   道士的圣符永远等不到自己盖的那一枚。
+2. **`opts.react` 不盖印**。反应追加的圣伤若再盖印，等于让反应自己给自己续命：
+   目标身上一旦有火 dot，就会变成每 0.5 秒一次的无限净化烈焰。
+3. **递减挂在 `stun` 的 `continue` 之前**。圣印是给玩家用的状态位，若眩晕的怪
+   能把它冻住不减，一波控住就能白嫖 6 秒圣系反应。
+
+**顺序即优先级：圣排最后**
+
+`elemStatusList` 按 `ELEM_STATUS` 的键序遍历。道士的符箓系全是 `sigil`，
+圣印几乎是常驻底色 —— 圣系若排在前面，「火 + 冰」的蒸汽爆裂就永远轮不到，
+四组非圣反应等于被圣系整组吃掉。契约与探针各钉了一条
+（冻结 + 圣印时火出蒸汽爆裂、中毒 + 圣印时雷出腐蚀链）。
+
+**收益方向反过来**
+
+前 6 组往敌人身上追加伤害 / 挂 debuff，圣系落在**玩家身上**。所以字段不是 `dmg`：
+
+| 组 | 实现 | 方案原文 |
+|---|---|---|
+| 净化烈焰（火+圣） | 追加 30% 圣伤，亡灵 ×1.3；立刻回 3% 生命 | 对亡灵 +30%，击杀回血 |
+| 圣霜（冰+圣） | 护盾 = 最大生命 × 8% × 护盾强度 × 1.25 | 护盾吸收量 +25% |
+| 天罚（雷+圣） | 追加 25% 圣伤，首领 ×1.15 | 对首领 +15% |
+| 解毒雾（毒+圣） | 脚下回血雾 5 秒，每秒 2%，半径内灵兽一起回 | 范围内友方持续回血 |
+
+**条件加成全部当场结算，不开窗口 buff。** 窗口 buff 在面板上看不见，
+玩家打亡灵时也感觉不到 —— 那就是文案与实装对不上。探针里「亡灵 ×1.3」
+用的是「有圣印 − 无圣印」的差值比，把护甲 / 抗性 / bossSlayer 全部约掉，
+测的是这一组反应自己的贡献。
+
+**「击杀回血」→ 立刻回 3%**：方案写的是击杀回血，实装改成立刻回血。理由是
+打不死目标时那组反应等于白触发（圣霜至少有盾，天罚至少有伤害，净化烈焰
+若只有击杀回血就什么都没有）。面板文案跟着写「回复 3% 生命」，能兑现。
+
+**顺带修的两处**
+
+- 护盾消散文案 `玄冰护盾消散` → `护盾消散`，buffbar 标题 `玄冰护盾` → `护盾`：
+  圣霜走的是同一个 `this.shield` 字段，写死「玄冰」就是撒谎。
+- `dev/_chrome.js` 补 `%LOCALAPPDATA%` 两条候选。Chrome 默认装在用户目录，
+  没管理员权限的机器上 Program Files 里一个都没有 —— 只按 Program Files 探测
+  会误判成「本机没浏览器」，探针白写。
+
+**验证**：`test-skill-p3` 106（原 6 组的反向断言翻成正向）、`probe-skill-p3` 41、
+`test-elem-holy` 50、`probe-elem-holy` 26。其余全绿：p0 250 · p1 52 · p1c 363 ·
+p2 41 · p2b 878 · p2c 99 · elem-affix 60 · elem-dual 40 · items 17 · save 79 ·
+smoke ERRORS none · mobile-layout ✓ · 探针 p2 26 · p1c 23 · p1d 36 · arch 29 ·
+bar5 30 · p2b 282 · p2c 62 · elem-affix 22 · elem-dual 30。
+
+**踩坑**：
+
+1. 假怪过不了帧循环 —— `updateActorAnim` 第一行就是 `const P = a.parts;` 然后
+   `P.torso`，假怪没 `parts` 直接抛。**验证「状态随帧递减」这类用例必须用真怪**
+   （`Game.spawnEnemy`），而且 `dt` 要按 0.1 秒推多帧，一次性传 `dt=2` 会让
+   眩晕 / 攻击冷却这些字段算飞。
+2. 说明页是**分页签**渲染的（`el.innerHTML = SECTIONS[hpTab].html`），
+   只调一次 `renderHelp()` 只能读到第一节。要验第七节，得把 `data-hp` 全翻一遍
+   再拼 `textContent`。
+3. 契约里的「圣系未做」是**反向断言**，实装之后要翻成正向（项目约定，不是测试
+   反复横跳）：`/圣系 4 组…未做/` → `!/圣系 4 组…未做/` + `/圣印/` 正向。

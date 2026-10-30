@@ -132,7 +132,7 @@ git fetch origin                 # 分支都在远程，clone 完就全能看到
 | 主菜单 / 行囊 / 天赋 / 设置 UI | `src/ui.js` |
 | 术法（技能树、变体） | `src/ui-skills.js` |
 | 技能实际行为 / 被动 | `src/skill-beh.js` / `src/skill-passive.js` |
-| 元素定义 / 元素反应 | `src/data/data-elem.js`（表）+ `src/game.js` 的 `tryElemReaction` / `applyElemReaction`。**反应挂在 `damageEnemy` 一个口上**，别去各技能 case 里加 |
+| 元素定义 / 元素反应 | `src/data/data-elem.js`（表）+ `src/game.js` 的 `tryElemReaction` / `applyElemReaction`。**反应挂在 `damageEnemy` 一个口上**，别去各技能 case 里加。圣系靠**圣印** `e.sigilT` 判状态（`SIGIL_MARK`，`sigil` 命中盖 6 秒、`opts.react` 不盖）；**`ELEM_STATUS` 的键序就是优先级，圣必须排最后**（道士符箓全是 `sigil`，排前面会把火+冰整组吃掉） |
 | 元素注入（技能位注火/冰/雷/毒，单 / 双元素） | `src/data/data-elem.js` 的 `SKILL_INJECT`（`at` 单元素门槛 / `subAt` 混搭门槛 / `split` 70-30）/ `skillInjectSplit` / `skillCanInject` + `src/game.js` 的 `skillInjectPack`（注入包）与 `injectSegs`（拆段）。**`castSkill` 只开窗口，投射物靠 `FX.projectile` 的 `inj` 自己带** |
 | 元素增伤词缀（统一 / 专属两层） | `src/data/data-elem.js` 的 `ELEM_AFFIX`（通用 `elemDmg`）/ `ELEM_AFFIX_EX`（专属）/ **`elemAffixMul`（唯一出口）**。加新词条走 `data-items.js` 的 `AFFIXES`；**别再写第二处 `1 + st[键]/100`** |
 | 手机端摇杆、键位、面板滚动 | `src/mobile.js` + `index.html` 的 `@media` |
@@ -209,11 +209,16 @@ node dev/preview-check.js --url <预览地址>   # 预览站：能开局 + 资�
   `skillFxAmp()` → `FX.setAmp()`，**只乘亮度 / 不透明度 / 粒子数，不乘半径** ——
   光效圈是判定的视觉契约，画大了就是谎报范围（契约里有正反两条断言钉着）。
   **别顺手加新机制**，那会把 P2c 变成第二个 P2b。
-  **P3a 已落地**：元素反应 **6/10**（蒸汽爆裂 / 等离子 / 焚毒 / 感电冻结 / 腐霜 / 腐蚀链）。
+  **P3a 已落地（10/10）**：元素反应 **6 组元素互碰**（蒸汽爆裂 / 等离子 / 焚毒 /
+  感电冻结 / 腐霜 / 腐蚀链）+ **4 组圣系**（净化烈焰 / 圣霜 / 天罚 / 解毒雾）。
   触发口径是「**目标身上已有 A 元素状态 + 这一下带 B 元素**」，不依赖元素注入；
   表在 `src/data/data-elem.js`，结算在 `damageEnemy` 一个口，三道闸门
   （`silent` / `react` / `_reacting`）+ 双层 ICD（0.5s 全局 · 2s 同目标）。
-  **圣系 4 组没做**（引擎里 `sigil` 只是伤害类型，没有状态位，面板上明说）。
+  圣系的前提是 **圣印**（`e.sigilT`，`sigil` 命中盖 6 秒印记，只刷新不叠加，
+  `opts.react` 的伤害不盖印）。**圣在 `ELEM_STATUS` 里排最后** —— 顺序即优先级，
+  道士的符箓系全是 `sigil`，圣印是常驻底色，排前面会把「火 + 冰」整组吃掉。
+  圣系收益落在**玩家身上**（回血 / 护盾 / 对亡灵与首领增伤），全部当场结算，
+  **不开窗口 buff** —— 面板看不见的增益等于没做。
   **P3b 单元素注入已落地**：①②③⑤ 位可注火 / 冰 / 雷 / 毒（④ 增益槽不给注），
   门槛**角色 20 级**，附加比例跟**技能有效等级**走（10 级 30% → 20 级 50%）。
   口径是「**附加不转换**」：原伤害 100% + 附加 X%，两段各过自己的抗性与元素词缀。
@@ -233,7 +238,7 @@ node dev/preview-check.js --url <预览地址>   # 预览站：能开局 + 资�
   自动剔除。反应按「命中元素 → 主 → 副」顺序试（`elemReactReady` 的 `altElem`
   收数组）。视觉只加一簇注入元素色火星（8 + 4 颗），**技能本体光效不换色** ——
   FX 是全局的，换色会连敌人技能和血一起染，而且会让玩家以为元素被转换了。
-  **P3 到此收口**（反应表 6/10 + 单/双元素注入 + 词缀统一）。
+  **P3 到此收口**（反应表 10/10 + 单/双元素注入 + 词缀统一）。
 - **待拍板**：大地图扩展（12 章 / 80 怪 / 24 首领 / 12 营地 + 任务网 / 5 类地下城 × 5 阶钥匙）。
   方案在 `docs/ACT-EXPANSION-PLAN.md`（2026-10-27 草案，**未动代码**）。
   §14 有 10 项待拍板，**拍板前不要开工**。

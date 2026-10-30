@@ -1636,6 +1636,8 @@ const Game = {
     FX.clear();
 
     this.buffs = []; this.shield = 0; this.shieldT = 0; this.regen = 0; this.poisonT = 0; this.playerSlow = 0; this.playerSlowT = 0; this.reviveT = 0;
+    /* [P3a] 解毒雾（圣系反应的玩家侧计时器），换图 / 重开都要清 */
+    this.healMist = null;
     /* 技能树分支叠层（stack）：换图 / 重开都归零 */
     this.behStack = {}; this._drainOn = null; this._follows = null;
     this._recharge = null; this._dragonT = 0; this._autoReviveCd = 0; this._pasT = 0;
@@ -1697,6 +1699,7 @@ const Game = {
       this.state.mp = st.mpMax;
       this.shield = 0;
       this.poisonT = 0; this.playerSlow = 0; this.playerSlowT = 0; this.shieldT = 0;
+      this.healMist = null;
       if (wasHurt) {
         const pp = new THREE.Vector3(this.playerGroup.position.x, 0, this.playerGroup.position.z);
         FX.ring(pp, 3.2, 0x8ce0a8, 0.8, 0.3);
@@ -1913,6 +1916,8 @@ const Game = {
       atkCd: RND(0.3, 1.4), windup: 0, anim: 0, hitFlash: 0,
       stun: 0, slow: 0, slowT: 0, poisonT: 0, poisonDmg: 0, venomT: 0,
       dotT: 0, dotTick: 0, dotDmg: 0, dotElem: null, dotLabel: '',
+      /* [P3a] 圣印：sigil 元素命中盖上的印记（秒），圣系 4 组反应的状态位 */
+      sigilT: 0,
       phase: 0, patternCd: 3, tag: kind, facing: new THREE.Vector3(0, 0, 1),
       spawnPos: new THREE.Vector3(x, 0, z), active: !isBoss, hitT: 0,
       /* [S5] 精英词缀与族群抗性 */
@@ -2652,7 +2657,29 @@ const Game = {
     // 护盾计时
     if (this.shield > 0) {
       this.shieldT = (this.shieldT || 0) - dt;
-      if (this.shieldT <= 0) { this.shield = 0; UI.log('玄冰护盾消散'); }
+      /* 文案不再写死「玄冰」—— 圣霜护盾（P3a 圣系反应）走的是同一个字段 */
+      if (this.shieldT <= 0) { this.shield = 0; UI.log('护盾消散'); }
+    }
+    /* [P3a] 解毒雾：脚下回血雾。每秒一跳，玩家 + 半径内的灵兽一起回。
+     * 用 silent 回血 —— 每跳都弹字的话，5 秒就是一串 +N 糊在屏幕中间。 */
+    if (this.healMist && this.healMist.t > 0) {
+      const hm = this.healMist;
+      hm.t = Math.max(0, hm.t - dt);
+      hm.tick = (hm.tick || 0) - dt;
+      if (hm.tick <= 0) {
+        hm.tick = 1;
+        const stM = this.state.stats;
+        const amount = stM.hpMax * hm.dps / 100;
+        if (this.state.hp < stM.hpMax) this.healPlayer(amount, true);
+        const pp0 = this.playerGroup.position;
+        for (const al of (this.allies || [])) {
+          if (!al || !(al.hp > 0) || al.hp >= al.maxHp) continue;
+          const ap = (al.actor && al.actor.group) ? al.actor.group.position : al.pos;
+          if (!ap || DIST2D(ap, pp0) > hm.r) continue;
+          al.hp = Math.min(al.maxHp, al.hp + amount);
+        }
+      }
+      if (hm.t <= 0) this.healMist = null;
     }
     if (typeof UI !== 'undefined') UI.renderBuffs();
   },
@@ -4921,7 +4948,8 @@ const Game = {
     if (this.reviveT > 0) out.push({ name: '还魂', dur: this.reviveT, color: '#ffd166', type: 'buff', icon: '魂', desc: '受到致命伤时以 35% 生命存活' });
     if (this.playerSlowT > 0) out.push({ name: '迟滞', dur: this.playerSlowT, color: '#6ab8ff', type: 'debuff', icon: '缓', desc: '移动速度降低 ' + Math.round((this.playerSlow || 0) * 100) + '%' });
     if (this.poisonT > 0) out.push({ name: '中毒', dur: this.poisonT, color: '#7fbf5a', type: 'debuff', icon: '毒', desc: '每 0.9 秒受到 ' + Math.round(this.poisonDps || 0) + ' 点毒素伤害' });
-    if (this.shield > 0 && this.shieldT > 0) out.push({ name: '玄冰护盾', dur: this.shieldT, color: '#9ae0ff', type: 'buff', icon: '盾', desc: '吸收 ' + Math.round(this.shield) + ' 点伤害' });
+    /* 护盾条目标题不写死「玄冰」：圣霜护盾（P3a 圣系反应）走同一个字段 */
+    if (this.shield > 0 && this.shieldT > 0) out.push({ name: '护盾', dur: this.shieldT, color: '#9ae0ff', type: 'buff', icon: '盾', desc: '吸收 ' + Math.round(this.shield) + ' 点伤害' });
     return out;
   },
 
@@ -5296,6 +5324,63 @@ const Game = {
         this.chainReaction(e, r.chain, final * r.dmg / 100, c1, 'poison');
         break;
       }
+
+      /* ---- 圣系 4 组：收益落在玩家身上，不在敌人身上 ---- */
+      case 'purify': {
+        /* 圣火：金白外焰 + 橙芯，整体向上卷（和前几组「往下砸」的观感区分） */
+        FX.ring(pos, 2.0, c1, 0.5, 0.22);
+        FX.burst(new THREE.Vector3(e.pos.x, 0.9, e.pos.z), c1, 14, { speed: 3.0, size: 0.13, life: 0.9, gravity: -3, additive: true });
+        FX.burst(new THREE.Vector3(e.pos.x, 0.7, e.pos.z), c2, 9, { speed: 2.4, size: 0.12, life: 0.7, gravity: -3, additive: true });
+        /* 「对亡灵 +30%」直接乘在**这一发**上，不开窗口 buff：
+         * 窗口 buff 面板上看不见，玩家打亡灵时也感觉不到，等于这组反应没做。
+         * 亡灵判定读 `family`（data-monsters.js 里骷髅 / 僵尸 / 怨魂都是 undead）。 */
+        const undead = e.family === 'undead';
+        const kp = r.dmg / 100 * (undead ? 1 + r.vsUndead / 100 : 1);
+        this.damageEnemy(e, final * kp, false, { elem: 'sigil', react: true, tag: 'aoe' });
+        if (undead) FX.text(new THREE.Vector3(e.pos.x, e.boss ? 4.6 : 3.0, e.pos.z), '亡灵 +' + r.vsUndead + '%', 'info', { life: 0.8 });
+        this.healPlayer(this.state.stats.hpMax * r.heal / 100);
+        break;
+      }
+      case 'holyfrost': {
+        FX.ring(pos, 1.9, c1, 0.5, 0.22);
+        FX.flashCircle(pos, 1.5, c2, 0.25);
+        const pg = this.playerGroup.position;
+        for (let i = 0; i < 3; i++) {
+          const a = Math.random() * 6.283;
+          FX.beam(new THREE.Vector3(e.pos.x + Math.cos(a) * 1.5, RND(0.5, 2), e.pos.z + Math.sin(a) * 1.5),
+            new THREE.Vector3(pg.x, 1.1, pg.z), c1, 0.14);
+        }
+        /* 护盾量 = 最大生命 × shield% × 护盾强度 × (1 + 25%)。
+         * 取 max 不叠加 —— 否则冰环连着砸能把护盾刷成第二条血条。 */
+        const stS = this.state.stats;
+        const add = stS.hpMax * r.shield / 100 * (1 + (stS.shieldBonus || 0) / 100) * (1 + r.shieldMul / 100);
+        if (add > (this.shield || 0)) {
+          this.shield = add;
+          this.shieldT = Math.max(this.shieldT || 0, r.dur);
+          FX.text(new THREE.Vector3(pg.x, 2.9, pg.z), '圣霜护盾 ' + Math.round(add), 'info', { life: 0.9 });
+        }
+        break;
+      }
+      case 'judgment': {
+        /* 圣雷：天上一道光柱直落（全场唯一「从天上下来」的元素反应） */
+        FX.beam(new THREE.Vector3(e.pos.x, 9, e.pos.z), new THREE.Vector3(e.pos.x, 0.6, e.pos.z), c1, 0.28, 1.1);
+        FX.flashCircle(pos, 2.2, c1, 0.3);
+        FX.burst(new THREE.Vector3(e.pos.x, 0.8, e.pos.z), c2, 16, { speed: 5, size: 0.1, life: 0.5, additive: true });
+        const kb = e.boss ? 1 + r.vsBoss / 100 : 1;
+        this.damageEnemy(e, final * r.dmg / 100 * kb, false, { elem: 'sigil', react: true, tag: 'aoe' });
+        if (e.boss) FX.text(new THREE.Vector3(e.pos.x, 4.6, e.pos.z), '天罚 +' + r.vsBoss + '%', 'info', { life: 0.8 });
+        break;
+      }
+      case 'cleansmist': {
+        FX.area(pos, r.mist.r, c1, r.mist.dur, { opacity: 0.14 });
+        FX.burst(new THREE.Vector3(e.pos.x, 0.5, e.pos.z), c2, 12, { speed: 2, size: 0.14, life: 1.0, gravity: -1.5, additive: true });
+        /* 回血雾不新建实体，挂一个计时器在玩家身上：这里的「友方」是玩家和灵兽，
+         * 敌人踩进来不该回血，所以判定中心跟人走、不钉在这只怪脚下。
+         * 结算在 updateBuffs（每帧都跑，和护盾计时同一处）。 */
+        this.healMist = { t: r.mist.dur, tick: 0, dps: r.mist.dps, r: r.mist.r };
+        FX.text(new THREE.Vector3(this.playerGroup.position.x, 2.9, this.playerGroup.position.z), '解毒雾', 'info', { life: 0.9 });
+        break;
+      }
       default: break;
     }
   },
@@ -5465,6 +5550,18 @@ const Game = {
        * 补刀（resetOnKill）靠它区分「处决亲手杀的」和「烧死的」 */
       if (this._castSkill) e.lastHitBy = this._castSkill;
       this.onEnemyDeath(e); return;
+    }
+
+    /* [P3a] 圣印：sigil 命中就盖印，给圣系 4 组反应一个可判的状态位。
+     *
+     * 放在反应判定**之前**：这一发自己盖的印不会跟自己反应（`elemReactionOn`
+     * 跳过与命中元素相同的状态），但「圣符打在燃烧目标上」必须算数 ——
+     * 先判后盖的话，道士的圣符永远等不到自己盖的那一枚。
+     *
+     * `opts.react` 不盖印：反应追加的圣伤若再盖印，等于让反应自己给自己续命，
+     * 目标身上一旦有火 dot 就会变成每 0.5 秒一次的无限净化烈焰。 */
+    if (elem === 'sigil' && !opts.react && typeof SIGIL_MARK === 'object' && SIGIL_MARK) {
+      e.sigilT = Math.max(e.sigilT || 0, SIGIL_MARK.dur);
     }
 
     /* [P3a] 元素反应：目标身上**原有的** A 元素状态 + 这一下带的 B 元素。
@@ -6002,6 +6099,9 @@ const Game = {
       /* [v1.12.1] 眩晕 / 未激活的首领会 continue 跳过循环末尾的 collideWorld，
        * 万一前一帧被推到边界外就再也夹不回来了（越界计数会一直涨）。
        * 这两个早退分支各补一次边界夹取。 */
+      /* [P3a] 圣印递减。放在 stun 的 `continue` **之前** —— 圣印是给玩家用的
+       * 状态位，若眩晕的怪能把它冻住不减，一波控住就能白嫖 6 秒圣系反应。 */
+      if (e.sigilT > 0) e.sigilT = Math.max(0, e.sigilT - dt);
       if (e.stun > 0) {
         e.stun -= dt; a.moving = false; updateActorAnim(a, dt);
         this.collideWorld(e.pos, e.radius * 0.7, null, true);

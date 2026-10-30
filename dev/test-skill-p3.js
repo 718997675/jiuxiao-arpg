@@ -25,6 +25,7 @@ const ELEM_DEFS = pick('ELEM_DEFS');
 const ELEM_REACTIONS = pick('ELEM_REACTIONS');
 const ELEM_REACT_ICD = pick('ELEM_REACT_ICD');
 const ELEM_STATUS = pick('ELEM_STATUS');
+const SIGIL_MARK = pick('SIGIL_MARK');
 const elemDef = pick('elemDef');
 const elemReaction = pick('elemReaction');
 const elemReactionOn = pick('elemReactionOn');
@@ -50,16 +51,22 @@ console.log('一、表结构');
 ok(ELEM_DEFS.length === 6, '六个元素（物理 / 火 / 冰 / 雷 / 毒 / 圣）', ELEM_DEFS.map(d => d.key));
 ok(ELEM_DEFS.map(d => d.key).join(',') === 'phys,fire,ice,lightning,poison,sigil',
   'key 与 monsters.resist / items 的 ELEM_DMG 键同源（顺序固定）', ELEM_DEFS.map(d => d.key));
-ok(ELEM_REACTIONS.length === 6, '6 组反应（方案 10 组里去掉圣系 4 组）', ELEM_REACTIONS.length);
+ok(ELEM_REACTIONS.length === 10, '10 组反应（方案 §6.2 全表：6 组元素互碰 + 4 组圣系）', ELEM_REACTIONS.length);
 {
   const keys = ELEM_REACTIONS.map(r => r.key);
   ok(new Set(keys).size === keys.length, '反应 key 唯一', keys);
   const bad = ELEM_REACTIONS.filter(r => !elemDef(r.a) || !elemDef(r.b));
   ok(bad.length === 0, '每条反应的 a / b 都是已知元素', bad.map(r => r.key));
   ok(ELEM_REACTIONS.every(r => r.a !== r.b), '没有「同元素反应」这种空条目');
-  ok(!ELEM_REACTIONS.some(r => r.a === 'sigil' || r.b === 'sigil'),
-    '**没有圣系反应**（引擎里 sigil 只是一个伤害类型，没有状态位）',
-    ELEM_REACTIONS.filter(r => r.a === 'sigil' || r.b === 'sigil').map(r => r.key));
+  /* [P3a 补齐] 圣系 4 组：都以 sigil 为一方，另一方是四种可注入元素 */
+  {
+    const holy = ELEM_REACTIONS.filter(r => r.a === 'sigil' || r.b === 'sigil');
+    ok(holy.length === 4, '圣系 4 组都在（净化烈焰 / 圣霜 / 天罚 / 解毒雾）', holy.map(r => r.key));
+    const other = holy.map(r => (r.a === 'sigil' ? r.b : r.a)).sort().join(',');
+    ok(other === 'fire,ice,lightning,poison',
+      '圣系四组分别对应火 / 冰 / 雷 / 毒（四种可注入元素各一组）', other);
+    ok(holy.every(r => r.name && r.desc), '圣系每条也有名字与说明（面板要遍历表生成文案）');
+  }
   ok(ELEM_REACTIONS.every(r => r.name && r.desc && r.color),
     '每条都有名字 / 说明 / 颜色（面板与特效都要用）');
   ok(ELEM_REACTIONS.every(r => !r.dmg || (r.dmg >= 20 && r.dmg <= 50)),
@@ -81,7 +88,8 @@ ok((elemReaction('ice', 'poison') || {}).key === 'frostrot', '冰 + 毒 = 腐霜
 ok((elemReaction('lightning', 'poison') || {}).key === 'corrochain', '雷 + 毒 = 腐蚀链');
 ok(elemReaction('fire', 'fire') === null, '同元素不反应');
 ok(elemReaction('phys', 'fire') === null && elemReaction('ice', 'phys') === null, '物理不参与反应');
-ok(elemReaction('sigil', 'fire') === null, '圣不参与（还没状态位，宁可没有也不编）');
+ok((elemReaction('sigil', 'fire') || {}).key === 'purify', '圣 + 火 = 净化烈焰');
+ok(elemReaction('sigil', 'fire') === elemReaction('fire', 'sigil'), '圣系查表同样顺序无关');
 ok(elemReaction('', 'fire') === null && elemReaction(null, undefined) === null, '空值不炸');
 {
   /* 四种可反应元素两两组合正好 6 对，一对不多一对不少 */
@@ -91,6 +99,11 @@ ok(elemReaction('', 'fire') === null && elemReaction(null, undefined) === null, 
     for (let j = i + 1; j < E.length; j++) if (elemReaction(E[i], E[j])) pairs++;
   }
   ok(pairs === 6, '四种可反应元素两两组合 = 6，正好被表覆盖完', pairs);
+  /* 加上圣系 4 组，整表 = 6 + 4 = 10，不多不少 */
+  let holyPairs = 0;
+  for (const k of E) if (elemReaction(k, 'sigil')) holyPairs++;
+  ok(pairs + holyPairs === ELEM_REACTIONS.length,
+    '6 对元素互碰 + 4 对圣系 = 整表 10 组，没有漏也没有重复', pairs + holyPairs);
 }
 
 /* ============================================================
@@ -109,8 +122,14 @@ ok(elemStatusOn({ vulnT: 2, vuln: 0 }, 'lightning') === false, '只有计时没�
 ok(elemStatusOn({ poisonT: 3 }, 'poison') === true, '毒状态 = poisonT');
 ok(elemStatusOn({ dotT: 2, dotElem: 'poison' }, 'poison') === true, '毒 dot 也算毒状态');
 ok(elemStatusOn({}, 'poison') === false && elemStatusOn(null, 'fire') === false, '空对象 / null 不炸');
-ok(Object.keys(ELEM_STATUS).join(',') === 'fire,ice,lightning,poison',
-  '状态表只覆盖四种能反应的元素（顺序固定 → 反应优先级可预测）', Object.keys(ELEM_STATUS));
+ok(Object.keys(ELEM_STATUS).join(',') === 'fire,ice,lightning,poison,sigil',
+  '状态表覆盖五种能反应的元素，**圣排最后**（顺序即优先级）', Object.keys(ELEM_STATUS));
+ok(Object.keys(ELEM_STATUS).slice(-1)[0] === 'sigil',
+  '圣印是道士常驻的底色，排最后 —— 排前面的话「火 + 冰」的蒸汽爆裂永远轮不到');
+ok(elemStatusOn({ sigilT: 3 }, 'sigil') === true, '圣状态 = 圣印还在');
+ok(elemStatusOn({ sigilT: 0 }, 'sigil') === false && elemStatusOn({}, 'sigil') === false,
+  '印记到时间 / 从没盖过都不算圣状态');
+ok(SIGIL_MARK.dur > 0 && SIGIL_MARK.dur <= 10, '圣印时长在 1~10 秒之间（太短够不着、太长变成常驻）', SIGIL_MARK.dur);
 ok(elemStatusList({ dotT: 2, dotElem: 'fire', slowT: 1, slow: 0.5 }).join(',') === 'fire,ice',
   '同时挂着火与冰时，列表按固定顺序给出两种', elemStatusList({ dotT: 2, dotElem: 'fire', slowT: 1, slow: 0.5 }));
 
@@ -166,7 +185,8 @@ ok(/tryElemReaction\(e, elem, final, opts, inj \? \[inj\.key, inj\.sub\]\.filter
 ok(/row\('元素反应'/.test(uiJs), '说明页有一行「元素反应」');
 ok(/ELEM_REACTIONS\.map\(r =>/.test(uiJs), '那一行是**遍历表**生成的，不是手写 6 条文案');
 ok(/ELEM_REACT_ICD\.global/.test(uiJs), '冷却数字也从数据里读（改表就改文案）');
-ok(/圣系 4 组[\s\S]{0,40}未做/.test(uiJs), '**明说**圣系 4 组未做（做了才许写，没做要写清楚）');
+ok(/圣印/.test(uiJs), '说明页讲清「圣印」是圣系反应的前提（面板要能兑现）');
+ok(!/圣系 4 组[\s\S]{0,40}未做/.test(uiJs), '实装之后**不许**再写「圣系未做」（反向断言，做了才翻正向）');
 
 /* 加载顺序 */
 ok(html.indexOf('src/data/data-elem.js') > 0, 'index.html 加载了 data-elem.js');
@@ -181,7 +201,8 @@ ok(html.indexOf('src/data/data-elem.js') < html.indexOf('src/game.js'),
  *   1. 门槛（角色等级 20）与适用范围（①②③⑤，④ 增益槽不算）；
  *   2. 附加比例跟**技能有效等级**走（10 级 30% → 20 级 50%），不是新造一个等级；
  *   3. 伤害真的是两段相加（不是把整发换成元素色）；
- *   4. 圣不参与（没有状态位、没有反应），面板与数据都不许出现它。
+ *   4. 圣不参与注入 —— 它现在**有**状态位也有反应了，但圣是道士的职业元素
+ *      身份，放开注入等于让刀客 / 法师随手打圣伤（理由在 data-elem.js）。
  * ============================================================ */
 console.log('六、元素注入');
 const SKILL_INJECT = pick('SKILL_INJECT');
@@ -195,7 +216,7 @@ const uiSkSrc = readSrc('src/ui-skills.js');
 ok(SKILL_INJECT.at === 20, '门槛是角色等级 20（前期不动数值）', SKILL_INJECT.at);
 ok(SKILL_INJECT.elems.join(',') === 'fire,ice,lightning,poison',
   '可注入的四种元素：火 / 冰 / 雷 / 毒', SKILL_INJECT.elems);
-ok(SKILL_INJECT.elems.indexOf('sigil') < 0, '**圣不在注入列表里**（没有状态位，注了也没有任何效果）');
+ok(SKILL_INJECT.elems.indexOf('sigil') < 0, '**圣不在注入列表里**（职业元素身份，不靠注入获得）');
 ok(SKILL_INJECT.elems.indexOf('phys') < 0, '物理不在列表里（那就是「本命」）');
 
 ok(skillInjectPct(1) === 30 && skillInjectPct(10) === 30, '有效等级 ≤10：附加 30%',
