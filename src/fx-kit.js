@@ -432,8 +432,26 @@ const FXK = {
     const arr = new Float32Array(n * 3);
     const vel = new Float32Array(n * 3);
     const dir = o.dir || null;
+    /* `ring`：把粒子等分到一个圆上（螺旋气流 / 环绕剑影 / 火墙的一排火舌）。
+     *
+     * 为什么要有这个开关：这些形状**必须是一簇**。按「每颗粒子各调一次 spr」
+     * 去摆位置，一簇就是 n 次 draw call —— 实测火墙一发放出 88 个 Points，
+     * 单技能 92 次绘制，比整帧基线还高。摆位是数据，不是绘制单元。 */
+    const ringR = o.ring || 0;
     for (let i = 0; i < n; i++) {
       const k = i * 3;
+      if (ringR > 0) {
+        const a = (i / Math.max(1, n)) * Math.PI * 2 + (o.phase || 0);
+        arr[k] = pos.x + Math.cos(a) * ringR + RND(-spread, spread);
+        arr[k + 1] = y0 + RND(-spread * 0.4, spread * 0.4);
+        arr[k + 2] = pos.z + Math.sin(a) * ringR + RND(-spread, spread);
+        /* 切向初速：绕圈走，不是四散 —— 这是「转」读得出来的关键 */
+        const sp = speed * RND(0.7, 1.2);
+        vel[k] = -Math.sin(a) * sp;
+        vel[k + 1] = (o.up === undefined ? 0 : o.up) * RND(0.6, 1.2);
+        vel[k + 2] = Math.cos(a) * sp;
+        continue;
+      }
       arr[k] = pos.x + RND(-spread, spread);
       arr[k + 1] = y0 + RND(-spread * 0.4, spread * 0.4);
       arr[k + 2] = pos.z + RND(-spread, spread);
@@ -633,32 +651,34 @@ const FXK = {
       }
     }
 
-    /* 外晕 + 内芯：两条材质，内芯更白更亮、透明度更高 */
+    /* 外晕 + 内芯：**所有折线（主干 + 全部分叉）塞进同一份几何**，只画两次。
+     * 早期版本每条折线各建一份几何 + 两个材质，一道带 3 个分叉的闪电就是
+     * 8 次绘制 —— 而雷电是最容易「一次劈出一屏」的原语（实测单技能 13 次）。 */
     const outerC = o.color === undefined ? 0x88ddff : o.color;
     const coreC = o.core === undefined ? 0xffffff : o.core;
-    const items = [];
+    const segPts = [];
     for (const g2 of groups) {
-      const geo = new THREE.BufferGeometry().setFromPoints(g2);
-      const matO = new THREE.LineBasicMaterial({
-        color: outerC, transparent: true, opacity: 0.45,
-        depthWrite: false, blending: THREE.AdditiveBlending
-      });
-      const matC = new THREE.LineBasicMaterial({
-        color: coreC, transparent: true, opacity: 0.95,
-        depthWrite: false, blending: THREE.AdditiveBlending
-      });
-      const lo = new THREE.Line(geo, matO);
-      const lc = new THREE.Line(geo, matC);
-      lo.frustumCulled = false; lc.frustumCulled = false;
-      scene.add(lo); scene.add(lc);
-      items.push({ geo, matO, matC, lo, lc });
+      for (let i = 0; i < g2.length - 1; i++) { segPts.push(g2[i], g2[i + 1]); }
     }
+    const geo = new THREE.BufferGeometry().setFromPoints(segPts);
+    const matO = new THREE.LineBasicMaterial({
+      color: outerC, transparent: true, opacity: 0.45,
+      depthWrite: false, blending: THREE.AdditiveBlending
+    });
+    const matC = new THREE.LineBasicMaterial({
+      color: coreC, transparent: true, opacity: 0.95,
+      depthWrite: false, blending: THREE.AdditiveBlending
+    });
+    const lo = new THREE.LineSegments(geo, matO);
+    const lc = new THREE.LineSegments(geo, matC);
+    lo.frustumCulled = false; lc.frustumCulled = false;
+    scene.add(lo); scene.add(lc);
     /* 总量闸门：闪电是最容易「一次劈出一屏」的原语 */
     if (this.bolts.length >= 12) {
       const old = this.bolts.shift();
       this._dropBolt(old);
     }
-    this.bolts.push({ items, life, max: life, a: a.clone(), b: b.clone() });
+    this.bolts.push({ geo, matO, matC, lo, lc, life, max: life, a: a.clone(), b: b.clone() });
     /* 端点闪光：不画这个，闪电看起来「没打中」 */
     this.spr(b, {
       n: Math.round(6 * (o.flash === undefined ? 1 : o.flash)), tex: 'spark',
@@ -670,12 +690,10 @@ const FXK = {
   _dropBolt(item) {
     if (!item) return;
     const scene = this.scene;
-    for (const it of item.items) {
-      if (scene) { scene.remove(it.lo); scene.remove(it.lc); }
-      it.geo.dispose();
-      it.matO.dispose();
-      it.matC.dispose();
-    }
+    if (scene) { scene.remove(item.lo); scene.remove(item.lc); }
+    item.geo.dispose();
+    item.matO.dispose();
+    item.matC.dispose();
   },
 
   /* ============================================================
@@ -855,10 +873,8 @@ const FXK = {
       b.life -= dt;
       const k = Math.max(0, b.life / b.max);
       const flick = 0.75 + Math.sin((b.max - b.life) * 90) * 0.25;
-      for (const it of b.items) {
-        it.matO.opacity = 0.45 * k * flick;
-        it.matC.opacity = 0.95 * k;
-      }
+      b.matO.opacity = 0.45 * k * flick;
+      b.matC.opacity = 0.95 * k;
       if (b.life <= 0) {
         this._dropBolt(b);
         this.bolts.splice(i, 1);

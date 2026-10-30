@@ -3087,6 +3087,8 @@
 <script src="src/data/data-skill-icons.js"></script>
 <script src="src/data/data-skill-tree.js"></script>
 <script src="src/data/data-form-fx.js"></script>
+<!-- [V0] 特效配方（形 + 色）：纯数据 + 纯函数，不碰 THREE -->
+<script src="src/data/data-vfx.js"></script>
 <script src="src/data/data-talents.js"></script>
 <!-- 职业包注册表：必须在 CLASSES / SKILLS / SKILL_ICONS / TALENTS 之后加载 -->
 <script src="src/data/class-pack.js"></script>
@@ -3116,6 +3118,9 @@
 <!-- [V0] 特效原语层（图集 + spr / trail / bolt / shock / decal）。必须在 fx.js 之后：
      它读 FX.scene / FX.cam / FX.q，并在 FX.update / FX.clear 里被回调 -->
 <script src="src/fx-kit.js"></script>
+<!-- [V0] 配方解释器：把 data-vfx.js 的 cast/loop/impact 翻译成原语调用。
+     必须在 fx-kit.js 之后（它调 FXK.*），且在 game.js 之前（技能要用） -->
+<script src="src/vfx.js"></script>
 <script src="src/world.js"></script>
 <script src="src/ui-mtree.js"></script>
 <script src="src/ui.js"></script>

@@ -68,7 +68,16 @@ function makeCtx() {
   class BufferGeometry {
     constructor() { counts.geo++; this.attributes = {}; this.disposed = false; }
     setAttribute(n, a) { this.attributes[n] = a; return this; }
-    setFromPoints(pts) { this.attributes.position = { count: pts.length, array: pts }; return this; }
+    /* 真实 THREE 会把点摊平成 Float32Array；桩也必须摊平，
+     * 否则测「折点有没有被揉弯」时读到的是对象，Math.abs 全是 NaN */
+    setFromPoints(pts) {
+      const a = new Float32Array(pts.length * 3);
+      for (let i = 0; i < pts.length; i++) {
+        a[i * 3] = pts[i].x; a[i * 3 + 1] = pts[i].y; a[i * 3 + 2] = pts[i].z;
+      }
+      this.attributes.position = { count: pts.length, array: a };
+      return this;
+    }
     setIndex(i) { this.index = i; return this; }
     computeBoundingSphere() { }
     dispose() { this.disposed = true; counts.disposed++; }
@@ -84,6 +93,7 @@ function makeCtx() {
   class Obj { constructor(geo, mat) { this.geometry = geo; this.material = mat; this.frustumCulled = true; this.position = new V3(); this.rotation = { x: 0, y: 0, z: 0 }; this.scale = new V3(1, 1, 1); this.quaternion = {}; } }
   const Points = class extends Obj { constructor(g, m) { super(g, m); counts.points++; } };
   const Line = class extends Obj { constructor(g, m) { super(g, m); counts.line++; } };
+  const LineSegments = class extends Obj { constructor(g, m) { super(g, m); counts.line++; } };
   const Mesh = class extends Obj { constructor(g, m) { super(g, m); counts.mesh++; } };
   class CanvasTexture {
     constructor(c) { counts.tex++; this.image = c; this.needsUpdate = false; }
@@ -100,7 +110,7 @@ function makeCtx() {
   };
   const THREE = {
     Vector3: V3, Color,
-    Scene, Points, Line, Mesh,
+    Scene, Points, Line, LineSegments, Mesh,
     PointsMaterial: Mat, MeshBasicMaterial: Mat, LineBasicMaterial: Mat,
     BufferGeometry, BufferAttribute,
     PlaneGeometry: Geo('plane'), RingGeometry: Geo('ring'),
@@ -195,12 +205,18 @@ console.log('四、bolt：折线 / 分叉 / 闸门');
   const from = new THREE.Vector3(0, 1, 0), to = new THREE.Vector3(0, 1, 12);
   const b = FXK.bolt(from, to, { depth: 4, branch: 1 });
   ok(!!b, 'bolt 建出来了');
-  ok(b.items.length >= 2, '至少主干 + 分叉（branch=1 时几乎必有分叉）', b.items.length);
-  const main = b.items[0].geo.attributes.position.array;
-  ok(main.length === 17, 'depth=4 → 主干 17 个折点（2^4+1）', main.length);
+  /* 主干 + 全部分叉塞进**同一份几何**，只画外晕 / 内芯两次 ——
+   * 每条折线各建一份几何的话，一道带 3 个分叉的闪电就是 8 次绘制 */
+  const verts = b.geo.attributes.position.count;
+  ok(verts >= 32, '主干 17 点 = 16 段 = 32 顶点（分叉再往上加）', verts);
+  ok(b.lo.material === b.matO && b.lc.material === b.matC, '外晕 / 内芯各一份材质，共用一份几何');
   /* 折点必须真的偏离直线：x 或 y 有非零位移，否则就是一根直棍 */
-  const bent = main.filter(p => Math.abs(p.x) > 1e-6 || Math.abs(p.y - 1) > 1e-6).length;
-  ok(bent >= 4, '折点真的被中点位移揉过（不是一条直线）', bent);
+  const arr = b.geo.attributes.position.array;
+  let bent = 0;
+  for (let i = 0; i < arr.length; i += 3) {
+    if (Math.abs(arr[i]) > 1e-6 || Math.abs(arr[i + 1] - 1) > 1e-6) bent++;
+  }
+  ok(bent >= 6, '折点真的被中点位移揉过（不是一条直线）', bent);
   ok(FXK.parts.length === 1, '端点有闪光（不然看起来「没打中」）', FXK.parts.length);
 
   /* 闸门：连劈 20 道，最多留 12 道 */
@@ -212,9 +228,8 @@ console.log('四、bolt：折线 / 分叉 / 闸门');
 
   const low = boot(0.5);
   const from2 = new low.THREE.Vector3(0, 1, 0), to2 = new low.THREE.Vector3(0, 1, 12);
-  const b2 = low.FXK.bolt(from2, to2, { depth: 4, branch: 1 });
-  const m2 = b2.items[0].geo.attributes.position.array;
-  ok(m2.length === 5, '低画质：depth 砍半（4→2）→ 5 个折点', m2.length);
+  const b2 = low.FXK.bolt(from2, to2, { depth: 4, branch: 0 });
+  ok(b2.geo.attributes.position.count === 8, '低画质：depth 砍半（4→2）→ 5 点 4 段 8 顶点', b2.geo.attributes.position.count);
 }
 
 console.log('五、shock：三件套 + 低画质去气浪');

@@ -3,7 +3,7 @@
 - 分支：`feat/skill-refactor`（优先级 **低**，排在大型扩展之后）
 - 计划文档：`docs/SKILL-REDESIGN-PLAN.md`（16 节）
 - 预览站：暂不发（2026-10-27 用户口径：本地验证即可，别再折腾线上）
-- 更新：2026-10-30 · **已合 main（8 处冲突全解，契约 + 探针全绿）** · P0~P3 + P6 收口，下一站 V0 特效地基
+- 更新：2026-10-30 · **已合 main（8 处冲突全解，契约 + 探针全绿）** · P0~P3 + P6 收口 · **V0 特效地基收口**，下一站 P4（三职业 ⑤ 号位表现）
 
 > 当前：**P0 ~ P3 + P6 全部收口，已合入 main**。动作条 5 格、格位 = 功能位；
 > 技能树已按「三线并行」结算 —— 没有必点主干、没有主动↔被动二选一，
@@ -49,7 +49,7 @@ P1 起才动 `SKILL_BAR_SLOTS` 与面板的三列树。
 | P3d | **双元素混搭**：境界 **40 级**解锁第二元素，①②③⑤ 位可再注一种（不能与主元素相同，摘主元素时副元素一起走）。**总量不变**，按主 70% / 副 30% 拆成两段（50% → 35% + 15%），两段各过自己的抗性与元素增伤；与命中元素相同的段自动剔除。反应按「命中元素 → 主 → 副」顺序试。视觉：施法瞬间脚下喷一簇注入元素色火星（8 + 4 颗，主 70% / 副 30%），**技能本体光效不换色**（FX 是全局的，换色会连敌人技能和血一起染） | ✅ | `data-elem.js`（`SKILL_INJECT.subAt` / `split` / `skillInjectSplit`）、`game.js`（`skillInject2` / `skillInjectPack` / `injectSegs` / `setSkillInject2` + `elemReactReady` 收数组）、`fx.js`（`elemSpark`）、`ui-skills.js`（混搭一行 + `data-inj2` 委托）、`index.html`（`.sb-i2list`）、`ui.js`（说明页两行） | `dev/test-elem-dual.js` 40 · `dev/probe-elem-dual.js` 30 |
 | P4 | 三职业独立 ⑤ 号位：刀客兵形/刃势、法师法相、道士召唤 | ⬜ | `src/fx.js`、`src/charforge.js` | — || P5 | 形态进化表现：5 槽 × 3 职业 × 3 段 = 45 套 | ⬜ | `src/fx.js`、模型 | — |
 | P6 | **回归**：①老档兼容（8 格条 / 只有 `v` 通道 / 无 passives 的档）；②洗点（只退花点的，免费字段保留，阶梯价落盘）；③平衡体检（`dev/balance-skills.js`）。**查出三个「无声消失」的存档 bug，全部修完** | ✅ | `core/save.js`（`_skillLedger` / `_passives` + `barVer`/`skillReset`/`passives`/`treeRespecCount` 落盘）、`game.js`（`keepPick` 名单化、`newState` 标已迁移）、`data-skill-tree.js`（`skillEntryKeep` 单一出口） | `dev/test-skill-p6.js` 97 · `dev/probe-skill-p6.js` 53 · `dev/balance-skills.js` 17（+6 条观察项） |
-| V0 | **特效地基**：图集（14 格程序化贴图）+ 五个原语 `spr` / `trail` / `bolt` / `shock` / `decal`，全部带 `FX.q` 降级。**原语层完成**；配方 DSL v2（`data-vfx.js`）与 `vfx-bench` / `vfx-shot` 未做 | 🔄 | `src/fx-kit.js`、`src/fx.js`（`update` / `clear` 各接一行）、`index.html` | `dev/test-vfx-kit.js` 58 · `dev/probe-vfx-kit.js` 43 |
+| V0 | **特效地基**（✅ 收口）：①图集 14 格 + 原语 `spr` / `trail` / `bolt` / `shock` / `decal`（外加 `arc` / `vortex` / `cone` / `geyser` / `ring` / `beam` / `flash`），全部带 `FX.q` 降级；②**配方 DSL v2**：`data-vfx.js`（15 条剪影 × 形/色/时 三层，台阶用 patch）+ `src/vfx.js` 解释器 `VFX.play(recipe, ctx)` / `playFor(id, ctx)`；③`dev/vfx-bench.js`（真机 draw call 预算）+ `dev/vfx-shot.js`（15 条剪影 × 起手/收势两帧截图）。**15 条配方全部 ≤ 6 draw call**（方案 §2 硬指标） | ✅ | `src/fx-kit.js`、`src/fx.js`（`update` / `clear` 各接一行）、`src/vfx.js`、`src/data/data-vfx.js`、`index.html`（两个 `<script>`） | `dev/test-vfx-dsl.js` 291 · `dev/vfx-bench.js` 48 · `dev/vfx-shot.js` 62 · `dev/test-vfx-kit.js` 58 · `dev/probe-vfx-kit.js` 43 |
 
 ## 执行顺序（2026-10-30 拍板）
 
@@ -1790,3 +1790,58 @@ function keepPick(prev, next) {
 修完连跑五次 **292/0**。教训写进 `AGENTS.md §7.3`：
 **探针读「某一瞬间的副作用计数」时，要么按契约形状对号，要么轮询到出现，
 不要数「窗口里发生了多少次」。**
+
+### 2026-10-30 · V0 特效地基收口（配方 DSL v2 + 预算体检 + 剪影截图）
+
+原语层（`fx-kit.js` 的 `spr` / `trail` / `bolt` / `shock` / `decal`）在 `b49aa22` 就提交了，
+这一批补的是它上面那两层 —— **数据**（配方怎么写）和**验收**（怎么量）。
+
+| 层 | 文件 | 干什么 |
+|---|---|---|
+| 数据 | `src/data/data-vfx.js` | 15 条剪影（3 职业 × 5 功能位），形 / 色 / 时 三层分离；`ELEM_PROFILE` 6 套材质；台阶用 **patch** 覆盖 |
+| 解释 | `src/vfx.js` | `VFX.play(recipe, ctx)` / `VFX.playFor(id, ctx)`；12 种指令一个 switch；`delay` 走 `_later`（换图作废） |
+| 验收 | `dev/test-vfx-dsl.js` | 291 条：剪影齐全 / 指令与贴图都存在 / patch 是覆盖不是拼接 / 染色只换贴图色 / 元素运动方向可辨 / 指令数上限 |
+| 验收 | `dev/vfx-bench.js` | 48 条：真机 `renderer.info.render.calls` 量 **单技能 ≤ 6** 与 **5 连放 ≤ 基线 +25%** |
+| 验收 | `dev/vfx-shot.js` | 62 条：15 条剪影 × **起手 / 收势两帧**截图到 `shots/vfx/`，外加「部件真的可见、画在落点附近、没有拼错的指令」 |
+
+**每条指令的真实绘制成本**（真机量出来的，不是估的）—— 以后加配方直接照这张表算：
+
+| 指令 | draw call | 备注 |
+|---|---|---|
+| `spr` / `trail` / `decal` / `ring` / `flash` | **1** | 一簇粒子 = 一个 `Points`，不是一颗一次 |
+| `beam` | **2** | 折线 + 端点爆闪 |
+| `bolt` | **3** | 外晕 + 内芯 + 端点闪光（分叉已合进同一份几何） |
+| `shock` | **3** | 地面环 + 竖直气浪 + 尘环 |
+| `geyser` | 1（`shock:false`）/ **4**（默认带冲击波） | 默认那 4 = 自己 1 + `shock` 3 |
+| `arc` | n（`n` 道刀光） | `cone` / `vortex` 同理：几排 / 几圈 = 几次 |
+
+**三条超预算的配方（8 / 9 / 7 → 6 / 6 / 4）**：
+
+- `meteor`：命中段的 `shock` 换成 `ring` —— 碎屑柱（`geyser` 26 颗）已经把「尘」和
+  「高度」说完了，再叠一套三件套是同一个意思画两遍。起手的**落点预警圈 + 天降火线**
+  一个都不许省（0.9 秒前摇，玩家靠它们判断砸哪儿、砸多大）。
+- `swordrain`：`loop` 的 `geyser` 补 `shock: false`。剑雨是连绵落下的，
+  **每一拍都砸一圈冲击波既不合物理、也白烧 3 次绘制** —— 这是 bug，不是预算妥协。
+- `summon`：`cast` 的 `geyser` 补 `shock: false`。同一段里已经有一个 `ring`，
+  两个环叠在一起是同一句话。
+
+**剪影截图的两个坑（都踩了）**：
+
+1. **`page.screenshot` 要几百毫秒，而刀光只活 0.2 秒** —— 不冻结的话拍到的是
+   「已经消失之后」，表现是「配方明明有 3 个部件，图上一片空白」（whirl 实测）。
+   解法：截图前把 `FX.update` 换成空函数（只掐特效推进，主循环照跑，
+   相机 / 水面还在动，画面不僵），拍完再还原。
+2. **贴花是池化复用的**（16 个 quad 建一次、循环用），没用到的那些天生
+   `visible = false`。第一次用到贴花时整池一起进场景 —— 不排除的话
+   每条带贴花的配方都会假红。体检时要 `FXK.decals` 建个 Set 排除掉。
+
+**一个必须记下来的观察（不是 bug，是场景问题）**：在**白天的桃源村**地面上，
+粒子类特效几乎看不见 —— 加法混合撞上已经很亮的地面，抬不动多少。
+逐原语量过差异像素（250×165 采样）：`arc` 1128 / `shock` 410 / `trail` 215 /
+`bolt` 90 / **`spr` 0~20 / `geyser` 2 / `vortex` 0**。
+把 `spr` 的尺寸从 0.23 米放大到 2.08 米才勉强到 239 —— 说明不是没画，
+是**尺寸太小 + 底色太亮**。暗场景（地牢）里会好得多，但「只在地牢里好看」不算好看。
+这条留给 V2 逐位重做配方时一起解决（放大 `ELEM_PROFILE.size` + 给地面贴花加深底）。
+
+**验证**：`test-vfx-dsl` 291/0 · `vfx-bench` 48/0 · `vfx-shot` 62/0 ·
+`test-vfx-kit` 58/0 · `test-vfx-field` 35/0 · `probe-vfx-kit` 43/0 · `probe-vfx-field` 19/0。
