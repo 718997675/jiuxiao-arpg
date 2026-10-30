@@ -39,7 +39,7 @@ P1 起才动 `SKILL_BAR_SLOTS` 与面板的三列树。
 | P1d | 面板**视觉**重排：一条线一列、列内按 `reqLv` 递增，被动小一圈挂在主动右边，只留同线淡引导线；手机上三条线分页签、一页一列 | ✅ | `ui-skills.js`（`skTreeLayout` / `skTreeHTML` / `renderSkillTreeDOM` / `skTreeTabsHTML`）、`index.html`（SKG + 被动腰围）、`ui.js`（说明页「技能树布局」） | `dev/probe-skill-p1d.js` 36 |
 | P2a | **等级上限 5 → 10** + 分段曲线真的进战斗（`skillLvMul` 取代旧「每级固定 8%」）+ 点数供给 等级 × 1.5；面板 10 格 / 满级金环 / 洗点全额退回 | ✅ | `data-skills.js`（`SKILL_LV_MAX` / `SKILL_POINT_RATE` / `skillPointPool`）、`data-skill-tree.js`（`lvMax` 同源）、`game.js`（`castSkill` / `skillPoints`）、`ui-skills.js`、`ui.js`、`index.html` | `dev/test-skill-p2.js` 41 · `dev/probe-skill-p2.js` 26 |
 | P2b | **数量 / 形态台阶接进 `castSkill`**。①数量：默认 Lv3 / Lv7 各 +1，接 `smod.count`（13 个技能消费），第 n 发 ×0.85^n 防三倍伤害；**发数节奏可按技能覆盖**（`SKILL_COUNT_TIER`，法师 ② 在 Lv5 / Lv7）。②进化：新建 `SKILL_TIER_EVO`（挂**技能 id** 不挂技能位），合并顺序 **台阶最前 → 精研 / 取向 / 变体覆盖同名键**（花点的选择必须盖过等级送的）。**15 个位 / 45 条全部接完**：刀客①旋风斩、法师①火球、道士①符箓、道士②毒雾、刀客②地裂、刀客③剑阵、刀客④血怒、道士④回春、法师③火墙、法师④护盾、道士③太极、法师②陨石（3 溅射 / 5 双陨 / 7 三连落）、道士⑤召灵兽（三只各召各的）、**刀客⑤兵形（刀式状态机 + 刃势 + 断岳斩）**、**法师⑤元素法相（净新增技能：法相窗口 + 换相 + 命中附加 + 收窗新星 + 免控）** —— 细则见下面「P2b 收口要点」。**✅ 15/15 个位、45/45 条：P2b 收口** | ✅ | `data-skills.js`（`SKILL_TIER_EVO` / `SKILL_COUNT_TIER` / `skillTierEvo` / `skillTierMods` / `skillTierBeh`）、`skill-beh.js`（`branchBeh` 台阶排最前 + `killProlong` / `lifesteal` / `ccImmune` / `healOnCast` / `tierDur` / `splash` / `stanceUnlock` / `edgeFinisher` / `edgeKeep` / `edgeUltimate`）、`game.js`（autoTarget / rageMul / firePatch / swordField / applyPlayerSlow / ccImmuneNow / behTierNova / shieldT+sdur / 符阵 dur+tierDur / meteor·blizzard·judgement·starfall 多发 / spawnTierField 落点领域 / **bladeXxx 兵形状态机**）、`ui.js`（说明页读数现算 + 动作条刀式角标）、`ui-skills.js` | `dev/test-skill-p2b.js` 878 · `dev/probe-skill-p2b.js` 282 |
-| P2c | **精通层 11~20**（不新增形态）：①有效等级 20 与分段曲线 P2a 已接；②**精进轨道**（11~20 十格 + 「精进 x/20」+ 渐进披露 + 15/20 里程碑）；③**Lv15 精通三选一**（烈 / 疾 / 省，走 mods，门槛看有效等级，存 `skills[id].m`）；④**Lv20 最终精通「归一」**（三条精通各 60% 同时生效，与 15 级所选**叠加**，走 `effSkillMods` 第六层）—— 已完成；⑤光效随等级变亮 —— **未做** | 🟡 | `data-skills.js`（`SKILL_TIERS.mastery` / `SKILL_TIERS.capstone` / `skillMasteryOn` / `skillMasteryIdx` / `skillMasteryOpt` / `skillCapstoneOn` / `skillCapstoneBonus`）、`game.js`（`skillMastery` / `skillMasteryMods` / `setSkillMastery` / `skillCapstoneMods` / `effSkillMods` 第五·六层）、`ui-skills.js`（mstRow + 精通行 + 60% 角标）、`index.html` | `dev/test-skill-p2c.js` 78 · `dev/probe-skill-p2c.js` 54 |
+| P2c | **精通层 11~20**（不新增形态）：①有效等级 20 与分段曲线 P2a 已接；②**精进轨道**（11~20 十格 + 「精进 x/20」+ 渐进披露 + 15/20 里程碑）；③**Lv15 精通三选一**（烈 / 疾 / 省，走 mods，门槛看有效等级，存 `skills[id].m`）；④**Lv20 最终精通「归一」**（三条精通各 60% 同时生效，与 15 级所选**叠加**，走 `effSkillMods` 第六层）—— 已完成；⑤**光效随等级变亮**（`skillFxAmp` → `FX.setAmp`，只乘亮度 / 不透明度 / 粒子数，不乘半径）—— 已完成。**P2c 收口** | ✅ | `data-skills.js`（`SKILL_TIERS.mastery` / `SKILL_TIERS.capstone` / `skillMasteryOn` / `skillMasteryIdx` / `skillMasteryOpt` / `skillCapstoneOn` / `skillCapstoneBonus`）、`game.js`（`skillMastery` / `skillMasteryMods` / `setSkillMastery` / `skillCapstoneMods` / `effSkillMods` 第五·六层）、`ui-skills.js`（mstRow + 精通行 + 60% 角标）、`index.html`、**`fx.js`（`amp` / `setAmp` / `lit` + 7 个原语调亮）** | `dev/test-skill-p2c.js` 99 · `dev/probe-skill-p2c.js` 62 |
 | P3 | 元素注入 + 反应表：伤害管线支持双元素、特效混色、词缀口径 | ⬜ | 战斗 + 词缀 + `src/fx.js` | — |
 | P4 | 三职业独立 ⑤ 号位：刀客兵形/刃势、法师法相、道士召唤 | ⬜ | `src/fx.js`、`src/charforge.js` | — |
 | P5 | 形态进化表现：5 槽 × 3 职业 × 3 段 = 45 套 | ⬜ | `src/fx.js`、模型 | — |
@@ -332,6 +332,9 @@ P1 起才动 `SKILL_BAR_SLOTS` 与面板的三列树。
 **全部改动只提交这一个文件**（`0e5f7b3` 领域/吸怪/斧头/反应/混色、`8028c3e` 台阶演示）。
 `src/fx.js` / `src/game.js` 一行没改 —— **游戏里还是 `FX.area` 一个圆片 + 一个边沿环**，
 下面每一条打 ✅ 的都是「试验台里能看」，不是「游戏里能看」。
+
+> 2026-10-30 补：`src/fx.js` 因为 P2c「光效随等级变亮」动过一次，但那次只给**现有 7 个原语**
+> 加了一层亮度倍率（`FX.amp`），没引入任何新原语、没动配方解释器。**移植仍然是 0%**。
 
 | # | 项 | 状态 | commit |
 |---|---|---|---|
@@ -1021,3 +1024,60 @@ p2b 探针 282 · p2 26 · p1d 36 · arch 29 · bar5 30 · p1c 23。
 里 `e.cfg.armorHigh` 没做空值保护，某条路径上拿到了没有 `cfg` 的目标。**与本次改动无关**
 （干净树上也可能偶发），单独重跑即绿。真要修的话应该是
 `(e.cfg && e.cfg.armorHigh)` 一行，但那属于战斗管线，不在 P2c 范围内，先记在这里。
+
+### 2026-10-30 · P2c 光效随等级变亮（P2c 收口）
+
+方案 §5.2 把 11~20 定成「数值强化 **+ 光效增强**（武器 / 投射物光效随等级变亮）」。
+数值那半 P2a 就接完了，光效这半一直欠着 —— 玩家把技能从 10 级堆到 20 级，
+屏幕上**一点变化都没有**，只剩面板上一行小字。
+
+| 项 | 值 |
+|---|---|
+| 曲线 | `SKILL_TIERS.fx`：11~20 每级 +1.2%，15 / 20 各再跳一档（+4 / +6） |
+| 读数 | 10 级 ×1.00 · 15 级 ×1.10 · 19 级 ×1.148 · **20 级 ×1.22** |
+| 通道 | `skillFxAmp(lv)`（纯函数）→ `FX.setAmp()` → 各原语按 `FX.amp` 调亮 |
+| 乘什么 | 颜色（往白里 lerp）· 不透明度 · 粒子数 |
+| **不乘什么** | **半径 / 弧度 / 射程 / hitRadius** —— 光效圈是判定的视觉契约 |
+| 影响面 | `burst` / `ring` / `flashCircle` / `area` / `beam` / `slash` / `projectile`（+ `spark` / `blood` 走 burst） |
+
+- **基础段恒为 1**（10 级及以下不加亮）：基础段的「看得见的变化」由台阶（数量 / 形态）
+  负责，再叠一层亮度会让「1 级 → 10 级」退化成「暗一点 → 亮一点」。
+- **15 / 20 两级各跳一档**，与精通三选一 / 归一**同源**：玩家看到光突然亮一档的地方，
+  正好就是两条质变开启的地方。这个「同源」是刻意的，不是巧合。
+- **施法尾窗 1.2 秒**（`FX.ampHold`）：技能的延后特效（陨石砸地 0.9~1.1 秒、
+  火墙四段、崩击三段）都在 0.4~1.2 秒后出，只认同步那一帧的话，玩家堆到 20 级的
+  **主视觉**反而还是基础亮度。尾窗在 `FX.update` 里倒数，到点回落 1。
+- **`FX.telegraph` 一个字没动**：Boss 预警圈是「危险信号」，不是「我的光效」。
+  它跟着技能等级变亮，等于把预警的对比度也一起改掉。
+- **`FX.clear()` 也还原 amp**：否则上一张图末尾那次 20 级技能的亮度会被带进新图。
+- **setAmp 写在 `_castSkill = id` 之后**：上面每一道闸门（没解锁 / 冷却中 / 资源不足）
+  都会 return，那些情况不该把屏幕调亮。
+
+**契约（`test-skill-p2c` 第八节，21 条）**：曲线基础段恒 1、11→20 单调、20 级 1.22、
+超 20 级不再涨、15/20 的增量大于普通一级；`FX.amp` 默认 1、`setAmp` 有尾窗、
+`lit()` 在 amp=1 时原样返回、`update` 会回落、`clear()` 会还原；
+**反向断言**：`radius|arc|thickness|hitRadius|castRange` 一个都不许被 amp 乘
+（正写反写都拦）；`game.js` 里除那一次 `setAmp` 外没有任何地方读 amp / skillFxAmp
+（它是纯表现，不参与结算）；面板文案写了「光效也随之变亮」与「10 级 ×1.00 → 20 级 ×1.22」。
+
+**探针（`probe-skill-p2c` 第八节，8 条）**：真放一次旋风斩 —— 10 级 amp 仍 1、
+20 级 amp 1.22、只有变亮那发开尾窗、环的 RGB 三通道之和变大、不透明度 0.9 → 1.0、
+火星 18 → 22、**半径一模一样**、推一帧 `update(1.3)` 后回落 1。
+
+**踩坑**：
+1. 探针里等墙钟等不到回落 —— `tickFrame` 只在 `running && state && !dead` 时调
+   `FX.update`，而探针跑了几十秒、主角早被打死了，`amp` 永远停在 1.22。
+   改成手动 `FX.update(1.3)` 推一帧（同一段代码，去掉对主循环的依赖）。
+2. 量火星数不能读 `FX.parts` 最后一组：命中还会各自喷血 / 火星（count 1~10），
+   读到的是「一滴血」。要读**这一簇里最多的那组**（`Math.max(...parts.map(p => p.n))`）。
+3. 这一条**不是**台账「特效」一节的「移植进游戏」：那个是把试验台的
+   `FX.spr / bolt / decal / geyser / ribbon / vortex / field / suck / spinBlades`
+   搬进 `src/fx.js`（仍是 0%）。本次只给**现有 7 个原语**加了一层亮度倍率，
+   没引入任何新原语、没动配方解释器。
+
+**验证**：`test-skill-p2c` 78→**99 通过 / 0 失败**、`probe-skill-p2c` 54→**62 通过 / 0 失败**。
+其余全绿：p0 250 · p1 52 · p1c 363 · p2 41 · p2b 878 · items 17 · save 79 · save-browser 80 ·
+s1 ✓ · smoke ERRORS none · p2b 探针 282 · p2 26 · p1d 36 · arch 29 · bar5 30 · p1c 23 ·
+mobile-layout ✓。
+
+**P2c 到此收口**（①精进轨道 ②Lv15 三选一 ③Lv20 归一 ④光效变亮 全部落地）。

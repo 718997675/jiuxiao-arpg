@@ -387,7 +387,79 @@ const ok = (c, m, d) => { if (c) { pass++; console.log('  ✓', m); } else { fai
     await wait(200);
   }
 
-  console.log('八、控制台');
+  console.log('八、光效随等级变亮（P2c 收尾）');
+  {
+    await p.evaluate(() => {
+      if (Game.__origSkillLevel) Game.skillLevel = Game.__origSkillLevel;
+      Game.state.skills = { whirl: { lv: 10, m: 0 } };
+      Game.state.level = 40;
+      Game.recalc();
+      UI.renderSkillPanel();
+    });
+    await wait(200);
+
+    /* 同一次施法分别在 10 级 / 20 级各放一次，量三样东西：
+     * ① FX.amp（施法窗口里的亮度倍率）② 环的颜色与不透明度 ③ 环的半径
+     * —— 第三条是**反向断言**：亮度可以变，半径一个字节都不许动。 */
+    const shot = await p.evaluate(() => {
+      const sum = h => ((h >> 16) & 255) + ((h >> 8) & 255) + (h & 255);
+      const castAt = (lv) => {
+        Game.skillLevel = () => lv;
+        Game.recalc();
+        FX.clear();                       // 顺带把 amp 还原成 1，读数才是这一发自己的
+        Game.cooldowns = {};
+        Game.state.mp = Math.floor(Game.state.stats.mpMax * 0.6);
+        Game.castSkill('whirl');
+        const z = FX.zones.filter(x => x.type === 'ring').pop();
+        /* 火星数取**这一簇里最多的那组**：命中还会各自喷血 / 火星（count 1~10），
+         * 读「最后压进去的那组」会读到一滴血，量不到旋风斩自己那 18 颗。 */
+        const parts = FX.parts.length ? Math.max.apply(null, FX.parts.map(x => x.n)) : -1;
+        return {
+          amp: FX.amp,
+          hold: FX.ampHold > 0,
+          radius: z ? z.radius : -1,
+          op0: z ? z.op0 : -1,
+          lum: z ? sum(z.mat.color.getHex()) : -1,
+          parts: parts
+        };
+      };
+      const a = castAt(10);
+      const b = castAt(20);
+      return { a, b };
+    });
+    ok(shot.a.amp === 1, '10 级放旋风斩：亮度倍率仍是 1（基础段不加亮）', shot.a);
+    ok(shot.b.amp === 1.22, '20 级放旋风斩：亮度倍率 1.22（有效等级折出来的）', shot.b);
+    ok(shot.a.hold === false && shot.b.hold === true,
+      '只有变亮的那一发才开尾窗（10 级不占窗口）', { a: shot.a.hold, b: shot.b.hold });
+    ok(shot.b.lum > shot.a.lum, '环的颜色真的更亮（RGB 三通道之和变大）',
+      { lv10: shot.a.lum, lv20: shot.b.lum });
+    ok(shot.b.op0 > shot.a.op0, '环的不透明度也抬了（0.9 → 1.0 夹住）',
+      { lv10: shot.a.op0, lv20: shot.b.op0 });
+    ok(shot.b.parts > shot.a.parts, '火星数量随等级变多（18 → 22）',
+      { lv10: shot.a.parts, lv20: shot.b.parts });
+    ok(shot.a.radius === shot.b.radius && shot.a.radius > 0,
+      '**半径一模一样**：光效变亮不许改「看起来能打到哪」',
+      { lv10: shot.a.radius, lv20: shot.b.radius });
+
+    /* 尾窗会自己收：1.2 秒后回落 1，不会一路亮到下一次施法。
+     *
+     * 这里**手动推一帧** `FX.update(1.3)` 而不是等 1.5 秒墙钟：`tickFrame` 只在
+     * 「活着」时才调 `FX.update`（`if (running && state && !dead)`），而探针跑了几十秒、
+     * 主角早就被打死了 —— 等墙钟的话 amp 永远停在 1.22，红的是探针不是代码。 */
+    const back = await p.evaluate(() => {
+      FX.update(1.3);
+      return { amp: FX.amp, hold: FX.ampHold };
+    });
+    ok(back.amp === 1 && back.hold === 0, '1.2 秒后亮度自动回落 1（尾窗到点就关）', back);
+
+    /* 收尾：把有效等级还回去 */
+    await p.evaluate(() => {
+      if (Game.__origSkillLevel) Game.skillLevel = Game.__origSkillLevel;
+      Game.recalc();
+    });
+  }
+
+  console.log('九、控制台');
   ok(errs.length === 0, '全程零控制台报错', errs.slice(0, 3));
 
   console.log('\n' + (fail === 0 ? '✓' : '✗') + ' P2c 探针：' + pass + ' 通过 / ' + fail + ' 失败');

@@ -233,5 +233,69 @@ ok(/\.sd-tag\.cap\{/.test(html), '那个角标有独立样式（橙色，与「�
 ok(/20 级「' \+ CAP\.name \+ '」让三条各 ' \+ CAP\.pct \+ '% 同时生效/.test(uiSk),
   '提示语写的是「同时生效」，不是含糊的「效果提升」');
 
+/* ============================================================
+ * 八、光效随等级变亮（P2c 的最后一件）
+ *
+ * 方案 §5.2 把 11~20 定成「数值强化 + 光效增强」，数值那半在 P2a 就接完了。
+ * 这一节钉三件事：
+ *   1. 曲线只在**精通层**成立（10 级及以下恒 1，否则 1 级和 10 级只差「暗一点」）；
+ *   2. 15 / 20 两级各跳一档，与两条质变门槛同源；
+ *   3. **只乘亮度 / 不透明度 / 粒子数，不乘半径 / 角度** ——
+ *      光效圈是判定的视觉契约，画大了就是谎报范围。
+ * 顺带钉住「它是纯表现」：fx.js 里 amp 不许出现在任何伤害 / 冷却算式里。
+ * ============================================================ */
+console.log('八、光效变亮');
+const skillFxAmp = pick('skillFxAmp');
+const fx = readSrc('src/fx.js');
+
+ok(!!SKILL_TIERS.fx, 'SKILL_TIERS 里有光效强度定义（可调，不写死在 fx.js 里）');
+ok(skillFxAmp(1) === 1 && skillFxAmp(10) === 1, '基础段（1~10）恒为 1：台阶才是基础段的可见变化',
+  [skillFxAmp(1), skillFxAmp(10)]);
+ok(skillFxAmp(0) === 1 && skillFxAmp(-5) === 1 && skillFxAmp('x') === 1, '脏等级按「不变亮」处理',
+  [skillFxAmp(0), skillFxAmp(-5), skillFxAmp('x')]);
+ok(skillFxAmp(11) > 1, '11 级开始变亮（与「> 10 才是精进层」同一条线）', skillFxAmp(11));
+{
+  let mono = true;
+  for (let lv = 11; lv <= 20; lv++) if (!(skillFxAmp(lv) > skillFxAmp(lv - 1))) mono = false;
+  ok(mono, '11→20 单调递增（没有哪一级反而变暗）',
+    Array.from({ length: 10 }, (_, i) => skillFxAmp(11 + i)));
+  ok(skillFxAmp(20) === 1.22, '20 级 = 1.22（10 级 ×1.00 → 20 级 ×1.22）', skillFxAmp(20));
+  ok(skillFxAmp(20) <= SKILL_TIERS.fx.max, '不超过 SKILL_TIERS.fx.max 的夹子',
+    { amp20: skillFxAmp(20), max: SKILL_TIERS.fx.max });
+  ok(skillFxAmp(99) === skillFxAmp(20), '超过 20 级不再更亮（与有效等级 cap 同源）',
+    [skillFxAmp(99), skillFxAmp(20)]);
+  /* 两级台阶：15 与 20 的增量明显大于普通一级 —— 玩家该在质变点看到「跳一档」 */
+  const step = lv => skillFxAmp(lv) - skillFxAmp(lv - 1);
+  ok(step(15) > step(14) && step(20) > step(19),
+    '15 / 20 各跳一档（与精通三选一 / 归一的门槛同源）',
+    { s14: step(14), s15: step(15), s19: step(19), s20: step(20) });
+}
+
+/* ---- FX 侧：接口、默认值、回落、只乘亮度的硬约束 ---- */
+ok(/amp: 1,/.test(fx) && /ampHold: 0,/.test(fx), 'FX 默认 amp = 1、没有残留尾窗');
+ok(/setAmp\(v, hold = 1\.2\)/.test(fx), 'setAmp 自带 1.2 秒尾窗（延后特效也在窗内）');
+ok(/lit\(color\) \{[\s\S]{0,140}if \(this\.amp <= 1\.0001\) return color;/.test(fx),
+  'lit() 在 amp = 1 时**原样返回**（不引入任何颜色误差）');
+ok(/if \(this\.ampHold > 0\) \{[\s\S]{0,160}this\.amp = 1;/.test(fx),
+  '尾窗在 update 里倒数，到点回落 1（不会一路亮到下一次施法）');
+ok(/this\.amp = 1;\s*\n\s*this\.ampHold = 0;/.test(fx), 'FX.clear() 也把亮度还原（换图不带旧亮度）');
+
+/* 反向断言：半径 / 角度 / 射程一个都不许被 amp 乘 */
+ok(!/(radius|arc|thickness|hitRadius|castRange)\s*\*\s*this\.amp/.test(fx),
+  '**半径 / 弧度 / 判定半径都不乘 amp**（光效圈画多大，就该真能打到多大）');
+ok(!/this\.amp\s*\*\s*(radius|arc|thickness|hitRadius)/.test(fx),
+  '反过来写也不许（同一条硬约束）');
+/* 纯表现：amp 只出现在 FX 里，战斗算式里一处都没有 */
+ok(!/skillFxAmp|\.amp\b/.test(gm.replace(/FX\.setAmp\([\s\S]{0,160}?\);/, '')),
+  'game.js 里除了那一次 setAmp，没有任何地方读 amp / skillFxAmp（它不参与结算）');
+ok(/FX\.setAmp\(\(typeof skillFxAmp === 'function'\) \? skillFxAmp\(this\.skillLevel\(id\)\) : 1\)/.test(gm),
+  'castSkill 按**有效等级**（skillLevel）设亮度，与精通 / capstone 同一条门槛');
+ok(/this\._castSkill = id;\s*\n\s*\/\* \[P2c\] 光效随等级变亮/.test(gm),
+  'setAmp 写在所有闸门之后（冷却中 / 资源不足不会把屏幕调亮）');
+
+/* ---- 面板文案：做了才许写 ---- */
+ok(/光效也随之变亮/.test(pick('SKILL_TIERS').labels.masteryTip), '精进层的说明写上「光效也随之变亮」');
+ok(/20 级 ×1\.22/.test(readSrc('src/ui.js')), '说明页写出 1.00 → 1.22 的读数（不写「明显增强」这种空话）');
+
 console.log('\n' + (fail === 0 ? '✓' : '✗') + ' P2c 契约：' + pass + ' 通过 / ' + fail + ' 失败');
 process.exit(fail === 0 ? 0 : 1);

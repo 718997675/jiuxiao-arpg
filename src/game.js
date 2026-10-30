@@ -3354,6 +3354,12 @@ const Game = {
      * 毒 / 火的延迟跳伤发生时标记已经清掉，不会误触发。 */
     const bBeh = (typeof this.branchBeh === 'function') ? this.branchBeh(id) : null;
     this._castSkill = id;
+    /* [P2c] 光效随等级变亮：把**有效等级**折成亮度倍率交给 FX（1 ~ 1.22）。
+     * 写在这里是因为上面每一道闸门都可能 return —— 资源不足 / 冷却中 / 没解锁
+     * 都不该把屏幕调亮。只改表现：伤害 / 冷却 / 消耗一个数都不经过它。 */
+    if (typeof FX !== 'undefined' && typeof FX.setAmp === 'function') {
+      FX.setAmp((typeof skillFxAmp === 'function') ? skillFxAmp(this.skillLevel(id)) : 1);
+    }
     const st = s.stats;
     /* [S2] 回响之语 / 紫府套：15% 概率不进入冷却
      * [P3] 不竭（变体）：本技能不进冷却，只留 0.2 秒硬直 ——

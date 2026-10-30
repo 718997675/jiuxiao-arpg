@@ -338,6 +338,9 @@ const fxPlane = (w, h) => _fxGeo(`p${w}_${h}`, () => new THREE.PlaneGeometry(w, 
 
 /* 追踪用的临时向量：每帧每个投射物都 new 一个 Vector3 会造成 GC 抖动 */
 const _vHome = new THREE.Vector3();
+/* 亮度调色的临时色（避免每个原语都 new 一个 Color） */
+const _cLit = new THREE.Color();
+const _cWhite = new THREE.Color(1, 1, 1);
 
 const FX = {
   scene: null, cam: null, layer: null,
@@ -347,6 +350,36 @@ const FX = {
    * 「每帧重建光栅化状态」的来源之一，砍半几乎看不出，帧率能回来不少。 */
   q: 1,
 
+  /* ============================================================
+   * [P2c] 光效强度：技能有效等级 → 亮度倍率（1 ~ 1.22）
+   *
+   * `castSkill` 按技能有效等级调一次 `setAmp(skillFxAmp(lv))`，之后由 `update`
+   * 倒数 `ampHold` 秒自动回落 1。为什么不是「设完立刻还原」：技能的特效有一部分
+   * 是延后出的（陨石砸地 0.9~1.1 秒、火墙四段、崩击三段），只认同步那一帧的话，
+   * 玩家花词条堆到 20 级的技能，**主视觉**反而还是基础亮度。
+   *
+   * 硬约束（写进契约）：**只乘亮度 / 不透明度 / 粒子数，不乘半径、角度、射程。**
+   * 那些是判定的视觉契约 —— 光效圈画大一圈，玩家就会以为打得到更远的地方。
+   * ============================================================ */
+  amp: 1,
+  ampHold: 0,
+  ampMax: 1.25,
+
+  setAmp(v, hold = 1.2) {
+    const n = Number(v);
+    this.amp = (isFinite(n) && n > 1) ? Math.min(this.ampMax, n) : 1;
+    this.ampHold = this.amp > 1 ? Math.max(0, Number(hold) || 0) : 0;
+    return this.amp;
+  },
+
+  /* 亮度：把颜色往白里拉一点（加色混合下就是「更亮」）。
+   * amp = 1 时**原样返回** —— 不给没变亮的特效多算一次，也不引入任何误差。 */
+  lit(color) {
+    if (this.amp <= 1.0001) return color;
+    _cLit.set(color).lerp(_cWhite, Math.min(0.45, (this.amp - 1) * 1.8));
+    return _cLit.getHex();
+  },
+
   init(scene, cam, layer) { this.scene = scene; this.cam = cam; this.layer = layer; },
 
   burst(pos, color, count = 10, opts = {}) {
@@ -354,6 +387,12 @@ const FX = {
      * 绘制批次顶上去。超过上限就直接不出新粒子——画面上少一簇火星没人看得出来，
      * 但 draw call 从 700 掉回 300 是实打实的手感差别。 */
     if (this.parts.length >= 40) return;
+    /* [P2c] 光效随等级变亮：火星**更多更亮**，但速度 / 大小不动 ——
+     * 大小会让「这一簇火有多大」变味，而那正好是玩家判断范围的东西。 */
+    if (this.amp > 1) {
+      count = Math.max(1, Math.round(count * this.amp));
+      color = this.lit(color);
+    }
     // 低画质时按倍率削减粒子数，但至少保留 3 颗，否则打击感会整个消失
     if (this.q < 1) count = Math.max(3, Math.round(count * this.q));
     const speed = opts.speed || 6;
@@ -407,24 +446,28 @@ const FX = {
 
   ring(pos, radius, color = 0xffffff, dur = 0.45, thickness = 0.16) {
     const geo = fxRing(0.9, 1.0, 32, Math.PI * 2);
-    const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.9, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending });
+    /* [P2c] 变亮只走「颜色 + 不透明度」，radius 一个字节都不动 ——
+     * 这个环画多大，就是这一发真的能打到多大。 */
+    const op0 = Math.min(1, 0.9 * this.amp);
+    const mat = new THREE.MeshBasicMaterial({ color: this.lit(color), transparent: true, opacity: op0, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending });
     const m = new THREE.Mesh(geo, mat);
     m.rotation.x = -Math.PI / 2;
     m.position.set(pos.x, 0.08, pos.z);
     m.scale.setScalar(radius * 0.25);
     this.scene.add(m);
-    this.zones.push({ mesh: m, mat, life: dur, max: dur, type: 'ring', radius, t: 0 });
+    this.zones.push({ mesh: m, mat, life: dur, max: dur, type: 'ring', radius, t: 0, op0 });
   },
 
   flashCircle(pos, radius, color = 0xffffff, dur = 0.4) {
     const geo = fxCircle(28);
-    const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.55, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending });
+    const op0 = Math.min(1, 0.55 * this.amp);
+    const mat = new THREE.MeshBasicMaterial({ color: this.lit(color), transparent: true, opacity: op0, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending });
     const m = new THREE.Mesh(geo, mat);
     m.rotation.x = -Math.PI / 2;
     m.position.set(pos.x, 0.07, pos.z);
     m.scale.setScalar(radius);
     this.scene.add(m);
-    this.zones.push({ mesh: m, mat, life: dur, max: dur, type: 'flash' });
+    this.zones.push({ mesh: m, mat, life: dur, max: dur, type: 'flash', op0 });
   },
 
   /* 地面预警（Boss 技能） */
@@ -446,14 +489,16 @@ const FX = {
     // 亮色技能降低不透明度，避免在亮地面上糊成一块
     const cc = new THREE.Color(color);
     const lum = 0.299 * cc.r + 0.587 * cc.g + 0.114 * cc.b;
-    const baseOp = opts.opacity || Math.max(0.07, 0.3 - lum * 0.22);
-    const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: baseOp, side: THREE.DoubleSide, depthWrite: false });
+    /* [P2c] 光效变亮：面积不放大（那是判定范围），只抬不透明度 + 调亮颜色。
+     * 上限 0.75 是 SKILL-VFX-PLAN §亮度预算：5 个技能同屏时不许糊住 Boss 的预警圈。 */
+    const baseOp = Math.min(0.75, (opts.opacity || Math.max(0.07, 0.3 - lum * 0.22)) * this.amp);
+    const mat = new THREE.MeshBasicMaterial({ color: this.lit(color), transparent: true, opacity: baseOp, side: THREE.DoubleSide, depthWrite: false });
     const m = new THREE.Mesh(geo, mat);
     m.rotation.x = -Math.PI / 2; m.position.set(pos.x, 0.05, pos.z); m.scale.setScalar(radius);
     this.scene.add(m);
     // 边沿亮圈，避免大色块显得扁平
     const rim = new THREE.Mesh(fxRingThin(0.93, 1, 40),
-      new THREE.MeshBasicMaterial({ color, transparent: true, opacity: Math.min(0.7, baseOp + 0.32), side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending }));
+      new THREE.MeshBasicMaterial({ color: this.lit(color), transparent: true, opacity: Math.min(0.7, baseOp + 0.32), side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending }));
     rim.rotation.x = -Math.PI / 2; rim.position.y = 0.012; m.add(rim);
     this.zones.push({ mesh: m, mat, life: dur, max: dur, type: 'area', radius, color, baseOp });
     return m;
@@ -469,7 +514,7 @@ const FX = {
       pts.push(p);
     }
     const geo = new THREE.BufferGeometry().setFromPoints(pts);
-    const line = new THREE.Line(geo, new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.95, linewidth: width }));
+    const line = new THREE.Line(geo, new THREE.LineBasicMaterial({ color: this.lit(color), transparent: true, opacity: Math.min(1, 0.95 * this.amp), linewidth: width }));
     this.scene.add(line);
     this.beams.push({ line, life: dur, max: dur });
     this.burst(b, color, 8, { speed: 5, size: 0.08, life: 0.3, additive: true, gravity: 0 });
@@ -479,13 +524,16 @@ const FX = {
   slash(pos, angle, color = 0xffffff, radius = 2.2, arc = 2.2) {
     // 几何体只按半径/弧度缓存，朝向交给 rotation.z（等价于原来的 thetaStart）
     const geo = fxRing(radius * 0.55, radius, 24, arc);
-    const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.85, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending });
+    /* [P2c] 刀光变亮：颜色 + 不透明度。radius / arc 不动 —— 剑光的弧度
+     * 就是这一刀扫过的角度，画大了等于骗玩家「这一下能扫到背后」。 */
+    const op0 = Math.min(1, 0.85 * this.amp);
+    const mat = new THREE.MeshBasicMaterial({ color: this.lit(color), transparent: true, opacity: op0, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending });
     const m = new THREE.Mesh(geo, mat);
     m.rotation.x = -Math.PI / 2;
     m.rotation.z = angle - arc / 2;
     m.position.set(pos.x, 0.6, pos.z);
     this.scene.add(m);
-    this.zones.push({ mesh: m, mat, life: 0.2, max: 0.2, type: 'slash' });
+    this.zones.push({ mesh: m, mat, life: 0.2, max: 0.2, type: 'slash', op0 });
   },
 
   /**
@@ -498,6 +546,11 @@ const FX = {
   projectile(opts) {
     const r = opts.radius || 0.3;
     const col = opts.color || 0xffaa44;
+    /* [P2c] 光效随等级变亮：**只调亮球体 / 光晕的颜色**，半径一个字节不动 ——
+     * 法球的视觉半径和 hitRadius 本来就是分开的两个数（见上面注释），
+     * 把视觉半径放大等于向玩家谎报判定范围。
+     * `p.color` 仍存原色：拖尾交给 burst 去调亮，存调亮后的值会被调两次。 */
+    const colLit = this.lit(col);
     const style = opts.style || 'orb';
     let m, mat, haloMat = null, haloMat2 = null;
 
@@ -515,23 +568,23 @@ const FX = {
       });
       m = new THREE.Mesh(fxPlane(0.40 * scl, 0.64 * scl), mat);
       haloMat = new THREE.MeshBasicMaterial({
-        color: col, transparent: true, opacity: 0.42,
+        color: colLit, transparent: true, opacity: Math.min(1, 0.42 * this.amp),
         blending: THREE.AdditiveBlending, depthWrite: false
       });
       const glow = new THREE.Mesh(fxPlane(0.72 * scl, 0.98 * scl), haloMat);
       glow.position.z = -0.01;
       m.add(glow);
     } else {
-      mat = new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.95 });
+      mat = new THREE.MeshBasicMaterial({ color: colLit, transparent: true, opacity: Math.min(1, 0.95 * this.amp) });
       m = new THREE.Mesh(sphGeo(r, 7), mat);
       /* 不再给投射物挂 PointLight。
        * 场景里光源数量一变，three 就会把所有材质的 shader 重新编译一次，
        * 战斗中不停发射/消失 → 每帧几百次重编译 → 这是「非常卡」的头号原因。
        * 改用两层叠加光晕，视觉上几乎等价，成本只是两个精灵。
        */
-      haloMat = new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.34, blending: THREE.AdditiveBlending, depthWrite: false });
+      haloMat = new THREE.MeshBasicMaterial({ color: colLit, transparent: true, opacity: Math.min(1, 0.34 * this.amp), blending: THREE.AdditiveBlending, depthWrite: false });
       m.add(new THREE.Mesh(sphGeo(r * 1.9, 6), haloMat));
-      haloMat2 = new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.13, blending: THREE.AdditiveBlending, depthWrite: false });
+      haloMat2 = new THREE.MeshBasicMaterial({ color: colLit, transparent: true, opacity: Math.min(1, 0.13 * this.amp), blending: THREE.AdditiveBlending, depthWrite: false });
       m.add(new THREE.Mesh(sphGeo(r * 3.4, 6), haloMat2));
       if (opts.scale) m.scale.setScalar(opts.scale);
     }
@@ -571,6 +624,13 @@ const FX = {
   },
 
   update(dt) {
+    /* [P2c] 施法尾窗：castSkill 设完 amp 后在这里倒数。
+     * 技能的延后特效（陨石砸地 / 火墙四段 / 崩击三段）都在 0.4~1.2 秒后出，
+     * 尾窗就是为它们留的 —— 到点回落 1，不会一路亮到下一次施法。 */
+    if (this.ampHold > 0) {
+      this.ampHold -= dt;
+      if (this.ampHold <= 0) { this.ampHold = 0; this.amp = 1; }
+    }
     // 粒子（THREE.Points：整组一个 draw call，位置在这里逐帧刷新）
     for (let i = this.parts.length - 1; i >= 0; i--) {
       const p = this.parts[i];
@@ -601,9 +661,9 @@ const FX = {
       const k = 1 - z.life / z.max;
       if (z.type === 'ring') {
         z.mesh.scale.setScalar(z.radius * (0.25 + k * 0.9));
-        z.mat.opacity = Math.max(0, 0.9 * (1 - k));
+        z.mat.opacity = Math.max(0, (z.op0 || 0.9) * (1 - k));
       } else if (z.type === 'flash') {
-        z.mat.opacity = Math.max(0, 0.55 * (1 - k));
+        z.mat.opacity = Math.max(0, (z.op0 || 0.55) * (1 - k));
         z.mesh.scale.setScalar(z.mesh.scale.x * (1 + dt * 0.6));
       } else if (z.type === 'tele') {
         z.mat.opacity = 0.18 + Math.sin(k * 26) * 0.12 + k * 0.25;
@@ -612,7 +672,7 @@ const FX = {
         z.mat.opacity = Math.max(0, (z.baseOp || 0.18) * (0.85 + Math.sin(k * 14) * 0.2)) * Math.min(1, z.life * 2);
         z.mesh.scale.setScalar(z.radius * (0.94 + Math.sin(k * 6) * 0.03));
       } else if (z.type === 'slash') {
-        z.mat.opacity = Math.max(0, 0.85 * (1 - k));
+        z.mat.opacity = Math.max(0, (z.op0 || 0.85) * (1 - k));
         z.mesh.rotation.z += dt * 2;
       }
       if (z.life <= 0) { this.scene.remove(z.mesh); z.mat.dispose(); this.zones.splice(i, 1); }
@@ -710,5 +770,9 @@ const FX = {
     this.beams.length = 0;
     for (const t of this.texts) { if (t.el.parentNode) t.el.remove(); }
     this.texts.length = 0;
+    /* 换图 / 重开时把光效强度也还原：否则上一张图末尾那次 20 级技能的亮度
+     * 会跟着尾窗带进新图（新图起手第一发就莫名偏亮） */
+    this.amp = 1;
+    this.ampHold = 0;
   }
 };
