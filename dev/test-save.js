@@ -116,7 +116,12 @@ function buildV1() {
       active: [{ id: 'q3', progress: [0] }],
       done: ['q1', 'q2'],
       next: 'q3',
-      announced: { q1: 1, q2: 1 }
+      announced: { q1: 1, q2: 1 },
+      /* [M2] 悬赏板字段：normalizeDoc 会补默认值，所以往返一致的基线也要带上，
+       * 否则这条断言测的就不是「还原」而是「schema 有没有变」了。
+       * 注意 q1~q3 这几个老 id 故意保留 —— 存档层不负责迁移（迁移在 QuestSys.migrate），
+       * 这里要证的正是「存档层原样搬，不动任务 id」。 */
+      board: { cd: {}, count: {} }
     },
     mapId: 'forest',
     playerPos: { x: 3.5, z: -12.25 },
@@ -141,7 +146,7 @@ eq(localStorage.getItem('jiuxiao_save_v2_s1.tmp'), null, '临时键已清理（�
 eq(SM.activeSlot(), 1, '当前角色位 = 1');
 
 const doc1 = SM.readSlot(1);
-eq(doc1.v, 2, 'doc.v === 2');
+eq(doc1.v, 3, 'doc.v === 3');
 for (const k of ['meta', 'char', 'world', 'stash', 'codex', 'talents', 'mount', 'settings']) {
   ok(k in doc1, `doc 含 ${k} 段`);
 }
@@ -183,7 +188,7 @@ section('四、导出 → 清空 → 导入（100% 还原）');
 const exported = SM.exportText(1);
 ok(exported.length > 500, `导出文本长度 ${exported.length}`);
 const exObj = JSON.parse(exported);
-eq(exObj.v, 2, '导出内容 schemaVersion = 2');
+eq(exObj.v, 3, '导出内容 schemaVersion = 3');
 ok(!!exObj.meta.exportedAt, '导出带 exportedAt 时间戳');
 
 const fpExport = api.saveStateFingerprint(SM.unpack(exObj));

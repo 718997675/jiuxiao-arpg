@@ -4,6 +4,19 @@
 
 let ITEM_UID = 1;
 
+/* ---------------- 品质高低 ----------------
+ * 由低到高的规范顺序，**取自 data-core 里 RARITY 的声明顺序**
+ * （凡品 < 灵品 < 玄品 < 神品 < 套装 < 传世）。
+ * 要比较「谁的品质更高」一律走 rarityRank()，别在各处再写一份数组 ——
+ * 以前「一键整理」用 Object.keys(RARITY)、别处用 ['common','magic','rare','legendary']，
+ * 两套顺序对套装/传世的位置判断是相反的。
+ */
+const RARITY_ORDER = Object.keys(RARITY);
+function rarityRank(r) {
+  const i = RARITY_ORDER.indexOf(r);
+  return i < 0 ? 0 : i;
+}
+
 /* ---------------- 唯一装备（传世） ----------------
  * 目录与特性定义在 src/data/data-uniques.js，这里只做查询与生成。
  * 一次性建索引；目录是静态数据，不需要每次掉落都线性扫。
@@ -452,13 +465,46 @@ function normalizeItem(item) {
   return item;
 }
 
-/* [M1] 基底 5 档 → 8 档：每 5 级一换皮（ilvl 1-40 → 0..7）。
- * 顶档数值与旧版顶档一致（不抬上限），只是中间多垫了地煞 / 天罡 / 仙品三层，
- * 让中期每 5 级都有「换一层皮」的期待。 */
+/* 装备等级硬上限。**唯一口径**：rollItem 的入参整形、试炼掉落、
+ * 法器池上限全部读它。60 = 角色等级上限（PARTS 等级的末端图 chaossea）。
+ * 改这个数必须同时确认 BASE_TIERS × TIER_LEVELS ≥ ILVL_MAX（底下有推导）。 */
+const ILVL_MAX = 60;
+
+/* [M1] 基底 5 档 → 8 档：每 5 级一换皮。
+ * [M6] **保持 8 阶不扩**（用户明确「基地就8阶 不要弄12阶」）。
+ * 等级上限虽然到了 60，但 ilvl 41~60 会被 tierIndex() 夹到第 7 档「太初」：
+ * 基础数值的公式是 `base × (1 + ilvl × k)`，ilvl 40→60 那个系数本身就从
+ * 6.2 倍涨到 8.8 倍（护甲 k=0.13）/ 5 倍涨到 7 倍（武器 k=0.10），
+ * 成长全部由 ilvl 项承担，档位只负责换皮与固有属性，不需要再加 4 层。
+ * 验算：dev/balance-report.js 的「装备成长」一节 + dev/test-items.js 的单调性断言。 */
 const BASE_TIERS = 8;
 const TIER_LEVELS = 5;
 function tierIndex(ilvl) {
   return CLAMP(Math.floor((ilvl - 1) / TIER_LEVELS), 0, BASE_TIERS - 1);
+}
+
+/* [M6] 等级缩放：`1 + ilvl × k` 再乘一段「终局加速」。
+ *
+ * 为什么需要这一段：怪物血量是二次的（`hpBase + lv×hpLv + lv²×hpLv2`），
+ * 40→60 涨 2.05 倍；而装备的 ilvl 项是线性的，40→60 只有 1.40 倍。
+ * 差出来的 46% 会全部变成「越到后期越打不动」（TTK 从 3.9s 涨到 6.0s）。
+ *
+ * 12 阶基底那条线是靠「多垫 4 层基底 + 每层 ×1.05/×1.09」补上这 46% 的，
+ * 但用户明确要求**基地就 8 阶**，所以改成让 ilvl 项自己承担：
+ * 40 级以下完全不动，40→60 线性加一段 ×1.464 的缓起加速。
+ *
+ * 为什么写成「乘一段系数」而不是「加一个二次项」：
+ * 二次项要做到同样倍率，系数会随 k 变（k=0.055 与 0.13 差一倍），
+ * 而乘系数与 k 无关 —— 任何 k 在 40→60 都恰好放大 1.464 倍，
+ * 武器 / 护甲 / 词缀 / 打造重算四条路天然同步。
+ *
+ * 验算：dev/test-items.js（40→60 应落在 1.5~2.6 倍）+ dev/balance-report.js 第四节。 */
+const TERM_FROM = 40;      // 加速起点（此级及以下完全不受影响）
+const TERM_TO = 60;        // 加速终点（= 等级上限）
+const TERM_GAIN = 0.464;   // 终点处的额外倍率（1.40 × 1.464 ≈ 2.05，对上怪物血量）
+function ilvlScale(ilvl, k) {
+  const t = CLAMP((ilvl - TERM_FROM) / (TERM_TO - TERM_FROM), 0, 1);
+  return (1 + ilvl * k) * (1 + TERM_GAIN * t * t);
 }
 
 function itemPower(item) {
@@ -480,7 +526,7 @@ function itemValue(item) {
 function affixValue(a, ilvl, q) {
   const quality = q || 1;
   const mul = quality === 4 ? 1.30 : quality === 3 ? 1.18 : quality === 2 ? 1.08 : 1.0;
-  const v = RND(a.min, a.max) * (1 + ilvl * 0.055) * mul;
+  const v = RND(a.min, a.max) * ilvlScale(ilvl, 0.055) * mul;
   return Math.max(1, Math.round(v));
 }
 
@@ -648,7 +694,7 @@ function upgradeTierInfo(item) {
   /* [UNIQUE-1] 传世不在八阶体系里，给它留一条独立说明，
    * 否则玩家会以为「打到了好东西却升不了」是 bug */
   if (item.tierless || item.rarity === 'unique') {
-    return { ok: false, msg: '传世装备不属于八阶基底体系，不参与升阶 —— 它的强度来自固定词条、独有特性与专属技能。' };
+    return { ok: false, msg: '传世装备不属于基底阶体系，不参与升阶 —— 它的强度来自固定词条、独有特性与专属技能。' };
   }
   const list = itemBaseList(item);
   if (!list || !list.length) return { ok: false, msg: '这件装备没有基底阶（法器不能升阶）。' };
@@ -684,8 +730,8 @@ function upgradeItemBaseTier(item) {
     const base = tierList[vi];
     item.baseName = base.name;
     item.baseDmg = [
-      Math.round(base.dmg[0] * (1 + item.ilvl * 0.100) * rm),
-      Math.round(base.dmg[1] * (1 + item.ilvl * 0.100) * rm)
+      Math.round(base.dmg[0] * ilvlScale(item.ilvl, 0.100) * rm),
+      Math.round(base.dmg[1] * ilvlScale(item.ilvl, 0.100) * rm)
     ];
     item.speed = base.speed;
     item.shape = base.shape || item.shape;
@@ -693,7 +739,7 @@ function upgradeItemBaseTier(item) {
   } else {
     const [bn, barm, ik, iv] = tierList[vi];
     item.baseName = bn;
-    item.baseArmor = Math.round(barm * (1 + item.ilvl * (item.slot === 'offhand' ? 0.1 : 0.13)) * rm);
+    item.baseArmor = Math.round(barm * ilvlScale(item.ilvl, item.slot === 'offhand' ? 0.1 : 0.13) * rm);
     item.implicit = ik ? { key: ik, val: iv } : null;
   }
   if (!item.setId && item.rarity !== 'unique') item.name = item.baseName;
@@ -704,9 +750,9 @@ function upgradeItemBaseTier(item) {
 }
 
 
-/* 生成一件装备 */
+/* 生成一件装备（ILVL_MAX 与基底阶在文件上半部分统一定义，这里不再重复声明） */
 function rollItem(ilvl, opts = {}) {
-  ilvl = CLAMP(Math.round(ilvl), 1, 40);
+  ilvl = CLAMP(Math.round(ilvl), 1, ILVL_MAX);
   let slot = opts.slot || PICK(['helm', 'chest', 'shoulders', 'cloak', 'gloves', 'boots', 'belt', 'amulet', 'ring', 'weapon', 'offhand']);
   /* 默认职业池读注册表：写死三个职业的话，新加的职业永远掉不到自己用的武器 */
   let cls = opts.cls || PICK((typeof classPackIds === 'function') ? classPackIds() : ['warrior', 'mage', 'taoist']);
@@ -784,8 +830,8 @@ function rollItem(ilvl, opts = {}) {
     /* [B5] 记住基底阶与变体：升阶要换「同变体的下一档」，而不是随机换一个 */
     item.baseTier = tier; item.baseVar = bi;
     const rm = RARITY[rarity].mul;
-    const lo = base.dmg[0] * (1 + ilvl * 0.100) * rm;
-    const hi = base.dmg[1] * (1 + ilvl * 0.100) * rm;
+    const lo = base.dmg[0] * ilvlScale(ilvl, 0.100) * rm;
+    const hi = base.dmg[1] * ilvlScale(ilvl, 0.100) * rm;
     item.baseName = base.name;
     item.shape = base.shape;
     /* v1.3.0 握持：同档三变体按均伤排（最轻双持 / 居中单手 / 最重双手） */
@@ -802,7 +848,7 @@ function rollItem(ilvl, opts = {}) {
     const [bn, barm, ik, iv] = list[tier][vi];
     item.baseTier = tier; item.baseVar = vi;
     item.baseName = bn;
-    item.baseArmor = Math.round(barm * (1 + ilvl * 0.088) * RARITY[rarity].mul);
+    item.baseArmor = Math.round(barm * ilvlScale(ilvl, 0.088) * RARITY[rarity].mul);
     item.cls = cls;
     item.name = bn;
     item.kind = '副手';
@@ -815,14 +861,14 @@ function rollItem(ilvl, opts = {}) {
     const [bn, barm, ik, iv] = list[tier][vi];
     item.baseTier = tier; item.baseVar = vi;
     item.baseName = bn;
-    item.baseArmor = Math.round(barm * (1 + ilvl * 0.112) * RARITY[rarity].mul);
+    item.baseArmor = Math.round(barm * ilvlScale(ilvl, 0.112) * RARITY[rarity].mul);
     item.name = bn;
     item.kind = SLOTS[slot].name;
     if (ik) item.implicit = { key: ik, val: iv };
   }
   if (isRing) { item.slot = 'ring'; }
 
-  /* ---- 套装（v1.2.2：9 套职业套装，部位精确匹配） ---- */
+  /* ---- 套装（[M6] 18 套：职业套 12 + 通用套 6，部位精确匹配） ---- */
   if (rarity === 'set') {
     const cands = Object.values(SETS).filter(s => s.slots.indexOf(slot) >= 0 && (!s.cls || s.cls === cls));
     if (cands.length) {
@@ -1075,7 +1121,19 @@ function aggregate(equipped, talents) {
  *   靠词缀数值与掉落曲线自然收敛；这张表以后只放「必须封顶」的键。 */
 const STAT_CAPS = {
   crit: 100,
-  cdr: 100
+  /* [P06] 冷却缩减封 40%。
+   * 实测（`node dev/balance-report.js`）：60 级术士 / 符师的 cdr 能堆到 **86~87%**，
+   * 技能 CD 全部贴到 `skillCd` 的 0.5 秒地板 —— 1.4 秒的火球变成每秒两发。
+   * 这不只是「输出高」：P06 把消耗改成「上限百分比」之后，CD 越短每秒掉蓝越快，
+   * 86% cdr 下法师 4 秒就空蓝，手感比改之前更差。
+   * 40% 是「明显有感、又不会把 CD 压到地板」的位置（火球 1.4 → 0.84 秒）。 */
+  cdr: 40,
+  /* [P06] 消耗缩减封顶 20%。
+   * 消耗改成「灵力上限的百分比」之后，这个属性的边际效应被放大了：
+   * 43% 缩减 = 一管蓝能多放 1.75 倍次数，等于白送半管蓝，
+   * 60 级法师靠它又能回到「永远打不完」的状态（实测 37 秒 vs 验收 12~18 秒）。
+   * 封 20% 之后它仍然是好词缀（多放 25% 次数），但不再是无限蓝的钥匙。 */
+  costReduce: 20
 };
 
 /* [S4] 增益（buff）结算表：recalc 按这两张表把 buff.stats 应用到最终属性。
@@ -1110,6 +1168,11 @@ function computePlayerStats(p) {
   /* [S5] 图鉴加成并进 st 之后，后面的面板属性、STAT_CAPS 封顶、透传全部自动生效 */
   const cdb = codexBonusStats(p.codex);
   for (const k in cdb) st[k] = (st[k] || 0) + cdb[k];
+  /* [M5] 地脉异闻（地下城 5 类 × 5 阶）的永久加成。
+   * 和异兽志走同一条并加通道 —— 图鉴不属于装备，也不该被「卸装备重算」影响。
+   * 加成本身不落存档（存档只记 cleared），所以以后改数值不用迁移老档。 */
+  const dgb = (typeof dungeonBonusStats === 'function') ? dungeonBonusStats(p.dungeon) : {};
+  for (const k in dgb) st[k] = (st[k] || 0) + dgb[k];
   /* [P2] 被动 / 关键被动：与图鉴同一条并加通道 —— 封顶、透传、面板显示自动生效 */
   const pdb = (typeof passiveBonusStats === 'function') ? passiveBonusStats(p) : {};
   for (const k in pdb) st[k] = (st[k] || 0) + pdb[k];
@@ -1539,7 +1602,7 @@ function itemTooltip(item, opts = {}) {
   h += `<div class="tt-sub">${r.name} · ${SLOT_NAME[item.slot] || item.kind}${item.setName ? ' · ' + item.setName + '套装' : ''}</div>`;
   /* [UNIQUE-1] 传世不在八阶体系里：明确写一行，免得玩家拿它去炼器台找不到「升阶」 */
   if (item.rarity === 'unique' || item.tierless) {
-    h += `<div class="tt-tierless">传世名器 · 不入八阶 · 不可升阶</div>`;
+    h += `<div class="tt-tierless">传世名器 · 不入基底阶 · 不可升阶</div>`;
   }
   h += `</div></div>`;
   /* v1.3.0：兵器握持标签。双手会白纸黑字写清楚「占用副手位」，

@@ -163,8 +163,10 @@ const Trial = {
     if (!r) return;
     const w = r.wave;
     const lvl = trialEnemyLevel(w, s.level);
-    const hpMul = trialHpMul(w);
-    const dmgMul = trialDmgMul(w);
+    /* [P12] 难度乘区带上玩家等级 —— 等级涨了，同一波的怪也要变强。
+     * 不传 s.level 的话，40 级玩家打第 1 波面对的仍是按 8 级调的强度。 */
+    const hpMul = trialHpMul(w, s.level);
+    const dmgMul = trialDmgMul(w, s.level);
     const isBoss = trialIsBossWave(w);
     const isBig = trialIsBigBossWave(w);
     const eliteChance = trialEliteChance(w);
@@ -348,10 +350,15 @@ const Trial = {
     const D = G.diff();
 
     /* ---- 经验：按「当前升级所需」的比例给，自动适配任何等级 ----
-     * 固定数值经验在高等级会变成零头、低等级会直接连升，比例制没有这个问题。 */
+     * 固定数值经验在高等级会变成零头、低等级会直接连升，比例制没有这个问题。
+     * [P12] 但比例制本身不随等级衰减，于是「低波数 × 高等级」成了零风险刷级场。
+     * 现在乘一个 pace：wave 越浅、等级越高，给得越少 ——
+     * 40 级要打到第 24 波才满额，60 级第 36 波。见 data-trial.js 的 xpPace* 说明。 */
     let ratio = TRIAL_CFG.xpWaveRatio;
     if (isBig) ratio = TRIAL_CFG.xpWaveRatioBig;
     else if (isBoss) ratio = TRIAL_CFG.xpWaveRatioBoss;
+    const pace = trialXpPace(w, s.level);
+    ratio *= pace;
     const xp = Math.max(1, Math.round((s.xpNext || 100) * ratio));
     G.gainXp(xp);
 
@@ -385,6 +392,33 @@ const Trial = {
       const runeN = isBig ? 2 : 1;
       for (let i = 0; i < runeN; i++) G.spawnLoot(pp, null, 0, { rune: rollRune(ilvl) });
       G.spawnLoot(pp, null, 0, { crystal: Math.round((isBig ? 10 : 6) * (1 + w * 0.03)) });
+    }
+
+    /* ---- 传世（P12）----
+     * 用户方案：「试炼只有高级层数才有极小概率掉落传世」。
+     * 两条门槛叠在一起，缺一条都会出怪现象：
+     *   ① 波数 ≥ 30 —— 终局产出挂在高波，不挂在「反复重开低波」
+     *   ② 玩家 ≥ 39 级 —— 传世 reqLv = ilvl，而试炼只出 ilvl ≥ 40 的传世；
+     *      不到 39 级掉了也穿不上，纯粹是「捡到个好看的废物」
+     * 每波最多 1 件（不是「每只怪」），概率见 trialUniqueChance。 */
+    const U = TRIAL_CFG.unique;
+    const uChance = trialUniqueChance(w, isBoss);
+    if (uChance > 0 && s.level >= U.minLevel && CHANCE(uChance)) {
+      const uIlvl = Math.max(U.ilvlMin, ilvl);
+      const uItem = rollItem(uIlvl, {
+        rarity: 'unique',
+        cls: CHANCE(0.8) ? s.cls : PICK((typeof classPackIds === 'function' ? classPackIds() : ['warrior', 'mage', 'taoist']))
+      });
+      /* 该等级能掉的传世池为空时 rollItem 会退化成神品 —— 那就当这次没掉，
+       * 不要拿一件「神品」冒充传世播报。 */
+      if (uItem && uItem.rarity === 'unique') {
+        G.spawnLoot(pp, uItem, 0);
+        r.items++;
+        r.uniques = (r.uniques || 0) + 1;
+        UI.log('【传世】' + uItem.name + ' —— 自第 ' + w + ' 波深处显世。', 'good');
+        UI.toast('传 世 · ' + uItem.name, 'lv');
+        SFX.loot('unique');
+      }
     }
 
     /* ---- 回气：清场给一小口，让长局有呼吸（大头还是靠祝福与药） ---- */

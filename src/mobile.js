@@ -107,7 +107,7 @@ const Mobile = {
      * 手指上推毫无反应（PC 上鼠标滚轮走的是另一条路，所以看不出来）。
      * 现在按落点分流：落在已打开的面板 / 对话框里 → 放行原生滚动；
      * 落在游戏画面、HUD、触控层上 → 照旧拦掉。 */
-    const SCROLL_HOST = '.panel.open, #dialog, .dlg-box, #setCodexPanel.open';
+    const SCROLL_HOST = '.panel.open, #dialog, .dlg-box, #setCodexPanel.open, #mapBig.open';
     document.addEventListener('touchmove', e => {
       /* 多指一律拦：这是「整页缩放」，不是滚动 */
       if (e.touches.length >= 2) { e.preventDefault(); return; }

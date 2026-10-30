@@ -1,0 +1,689 @@
+# 大型扩展 · 任务台账
+
+- 分支：`main`（2026-10-28 已由 `feat/act-expansion` 合入，线上即正式站）
+- 计划文档：`docs/ACT-EXPANSION-PLAN.md`（16 节，§15 = 终章重做）
+- 打磨计划：`docs/POLISH-PLAN.md`（用户 2026-10-28 提的 17 项体验 / 平衡，P01~P17，分 4 批）
+- 专题台账：`docs/status/world-boss.md`（M18 世界 Boss，插单，与本线并行；**M18.1~M18.9 全部完成**（含六套骨架 + 两个骨架键 + 掉落 + 说明页），可合 main）
+- 预览站：<https://718997675.github.io/jiuxiao-arpg/preview/act-expansion/>
+- 更新：2026-10-29 00:20
+
+> 当前：M1~M6 已完成（39 张图 · 80 种怪 · 图鉴 5 卷 + 秘境 · 5 阶地下城 · 60 级上限 · 传世 40 件 ·
+> 套装 18 套 · 基底 8 阶）。**M18 世界 Boss 九节全完**，已随本线合入 main。
+> M7 终章重做（八部天龙）进行中：M7.1 结构 / M7.2 八魔将数据 / **M7.4 魔将之印**已落地，
+> M7.3 破绽窗口 + M7.5~M7.9 待做，见下「M7 小节状态」。另有一条并行线：P 打磨 17 项，
+> **第 1 批（P01 P02 P03 P09 P11 P12 P16）+ 第 2 批的 P04 / P06 / P10 已完成**，
+> 第 2 批剩余（P07 P08 P17）与第 3~4 批未开工，见下「P 系列」。
+
+## 一句话现状
+
+M3 把「手写地图」变成了数据：8 种 zone 骨架（`ZONE_ARCHETYPES`）+ 一张图一行 `MAP_SPECS`，
+坐标 / 刷怪分配 / 首领落点全部自动展开。**30 个图位全部填满**（原来 11 张，新增 19 张），
+`id: null` 归零；每张 16,000~18,700㎡、40~46 只怪、密度 391~409㎡/只、max/min ≤1.33，
+全部实测落在 §5.1 的区间里。地貌从 4 种扩到 8 种（新增 snow / bone / void / flood），
+小地图是整图俯视 + 任务区虚线高亮。任务链从 40 条扩到 63 条（主线 39 / 支线 9 / 悬赏 15），
+主线从「竹林异动」一条链走到底到「混沌海」。首领新增 16 只（19 张新图各自有人坐镇）。
+
+M4 把「怪」补齐了：`MONSTERS` 40 → **76**（计划书 §6.2 的 36 只野外新怪全量落地，
+**0 新模型**，全部复用既有 22 个程序化骨架，只换色 / 比例 / 族群 / AI），
+每张图的怪池从 5~6 种扩到 8~9 种。图鉴从「5 张老图 = 5 区」改成「**卷一~卷五**」，
+76 只按「出场最多的卷」归区（31/14/13/9/9），老档旧区 key 自动迁移、加成一分不少。
+5 个卷末首领就地取材（重定级 + 卷末血量线 + 次阶钥匙 8%/15% 掉率钩子）。
+
+M5 把「钥匙」变成了第二套循环：`KEY_TIERS` 5 阶（一阶对一卷）→ 营地里找**地脉守**
+开门 → 门口自选 5 类地缝（尸冢 / 塌井 / 兽窟 / 沉狱 / 坠天）→ 3 层（清 70% → 清 80% →
+首领场）→ 词缀随阶递增（2 阶 1 条 … 5 阶 4 条，共 10 条）。钥匙供给三条线：
+小怪 0.6% / 精英 10% / 首领必掉本阶，卷末首领另抽 8% 次阶（终局 15%），通关再来 35% 次阶。
+`MONSTERS` → **80**（+4 只地下城专属怪），图鉴加第 6 区「秘境 · 地脉裂隙」，
+另有一套独立的 25 条地脉异闻（5 类 × 5 阶，单类全清给一类加成、25 条全清给终局加成）。
+
+M7 把「打完终 boss 就结束」改成了终局循环：混沌海从战斗图变成**枢纽**（安全区，
+八部坛四面开 8 道门），门后是 8 张独立副本图（各用一种骨架，12 护卫 + 1 魔将），
+8 位魔将各掉一枚**魔将之印**；8 印齐开天龙终门 → 终 boss 场「无相天」。
+图位 30 → **39**。8 位魔将的弱点**不进图鉴**，只写在 `BOSSES.resist` 里，
+玩家只能靠伤害数字自己摸 —— 打错吃 20%、打对吃 160%，正好 8 倍。
+
+**剩下的**：M7.3 破绽窗口 → M7.4 印掉落与 UI → M7.5 九个模型 → M7.6 五阶段终 boss
+→ M7.7 全传世掉落 → M7.8 二周目 → M7.9 文案同步，然后才走「合入 main」。
+
+## 节点表
+
+> 阶段划分来自 `docs/ACT-EXPANSION-PLAN.md` §11，总计约 30 个工作日（单人）。
+
+| # | 节点 | 状态 | 产物 | 提交 |
+|---|---|---|---|---|
+| D0 | 需求与结构设计（三层世界 + 营地任务网 + 地下城） | ✅ | `docs/ACT-EXPANSION-PLAN.md` | `045540c` |
+| M0 | 地基：schema v3 + 老档迁移；`PARTS/ACTS/CAMPS` 数据；世界地图三层 UI | ✅ | `src/data/data-world.js`、`src/core/save.js`、`src/ui.js` | `7314c40` |
+| M1 | 卷 / 营地 / 传送：5 营地、路标石、章间出口门 | ✅ | `src/data/data-world.js`、`src/world.js`、`src/game.js`、`src/ui.js` | `3284cf1` + `8e1f816` |
+| M2 | 任务系统：`quests.js`；任务板；任务区域；追踪三行 | ✅ | `src/quests.js`、`src/data/data-quests.js` | `da3dbf7` 前 |
+| M3a | 地图扩容第一批：8 种骨架、`ash` 地貌、4 张新图（卷二 2-2/2-3）、密度公式、小地图 | ✅ | `src/data/data-maps.js`、`src/ui-minimap.js` | `da3dbf7` |
+| M3b | 地图扩容第二批：4 种地貌（snow/bone/void/flood）、**19 张新图**、16 只新首领、23 条新任务 | ✅ | `src/data/data-maps.js`、`src/data/data-world.js`、`src/data/data-monsters.js`、`src/data/data-quests.js`、`src/world.js` | 本次 |
+| M4 | 怪物 / 首领：**36 只新怪**（全量，非 24）；图鉴改 5 大卷；5 个卷末首领强化 | ✅ | `src/data/data-monsters.js`、`src/data/data-world.js`、`src/data/data-maps.js`、`src/game.js`、`src/ui.js`、`src/data/data-core.js`、`dev/test-m4.js` | 本次 |
+| M5 | 地下城：`dungeon.js`；5 类 × 5 阶；词缀；图鉴加成；钥匙掉落 | ✅ | 新建 `src/dungeon.js`、`src/data/data-dungeon.js`、`dev/test-m5.js`、`dev/dungeon-sim.js`、`dev/probe-dungeon.js`；改 `index.html`、`src/game.js`、`src/core/save.js`、`src/items.js`、`src/world.js`、`src/data/data-monsters.js`、`src/data/data-world.js`、`src/data/data-core.js`、`src/data/data-maps.js` | 本次 |
+| M6 | 平衡 / 打磨：60 级曲线复算；**基底保持 8 阶**（否决 12 阶）+ ilvl 终局加速；传世 40 件；套装 18 套；**终局难度回补**；世界结构体检；性能实测；手机端回归 | ✅ | `src/data/data-core.js`、`data-uniques.js`、`data-items.js`、`data-monsters.js`、`data-maps.js`、`data-world.js`、`src/items.js`、`src/actors.js`、`dev/act-check.js` | 本次（见下） |
+| M7 | **终章重做 · 八部天龙**：8 魔将副本 + 8 魔将之印 + 终门 + 五阶段终 boss + 9 个专属模型 + 全传世掉落 | 🔄 | `data-world.js`、`data-maps.js`、`data-monsters.js`、`game.js`、`ui.js`、`dev/check-bafo.js` | 见下「M7 小节状态」 |
+| M3b-fix | **图间门**：一章里第 2 张起的图（落霞坡 / 沉骨滩 / 玄铁矿洞 / 万剑坑 …）在游戏里没有入口 —— M1 只给章尾挂了门。补 `nextMapInWorld`（章内先串、章尾再跨章）；门立在**首领区最深处**、**首领第一次倒地才出现**（`state.mapCleared`），门加名牌 | ✅ | `src/data/data-world.js`、`src/data/data-maps.js`、`src/world.js`、`src/game.js`、`src/core/save.js`、`dev/act-check.js`、`dev/zone-check.js` | `7696f58` + `40f8260` |
+| P | **打磨计划 17 项**（P01~P17，体验 / 平衡，用户 2026-10-28 提）：只出了**计划文档**，代码未动 | 🔄 | `docs/POLISH-PLAN.md` | `0513141`（搭车提交） |
+
+### M7 小节状态（终章重做 · 换账号按这张表继续）
+
+> 设计与口径见 `docs/ACT-EXPANSION-PLAN.md` §15。
+> 状态：⬜ 未开始 / 🔄 进行中 / ✅ 完成 / ⏸ 暂停 / ❌ 否决
+
+| 编号 | 小节 | 状态 | 产物 | 验收 |
+|---|---|---|---|---|
+| M7.1 | 结构：`ACTS['5-2']` 改成枢纽 + 8 副本图位 + 终 boss 场 | ✅ | `data-world.js`、`data-maps.js`、`ui.js`、`act-check` / `zone-check` / `zone-density` | `act-check` **556 项**（图位 30 → **39**）；`zone-check` / `zone-density` 全绿 |
+| M7.2 | 8 魔将数据（`resist` / `stagger` / `seal` / `animKind`）+ `BAFO_SEALS` 八印表 | ✅ | `data-monsters.js`、`data-world.js`、`game.js`、新建 `dev/check-bafo.js` | `check-bafo` **335 项**（含「8.00 倍差」硬断言） |
+| M7.3 | 弱点与破绽机制 | 🔄 | `game.js` | 抗性侧已成立（`damageEnemy` 读 `boss.resist`）；**破绽窗口未做** |
+| M7.4 | 魔将之印 + 终门 | ✅ | `game.js`、`core/save.js`、`ui.js`、`README.md`、新建 `dev/check-seals.js`、`dev/seal-live.js` | 印门拦在 `travelTo` + 山河图；**印掉落 / 存档 / 播报已接**（`check-seals` **111 项** · `seal-live` **19 项**）；八印总览面板未做（山河图已写「需 8 印（N）」，不阻塞） |
+| M7.5 | 9 个模型 + 专属动画 | ⬜ | `actors.js`、`fx.js` | `verify-perf` 报错 0 |
+| M7.6 | 终 boss 五阶段 + P5 满血变身 | ⬜ | `data-monsters.js`、`game.js` | 阶段与血条重置可复现 |
+| M7.7 | 全传世掉落（0.01% / 0.1%，未收集优先） | ⬜ | `game.js`、`items.js` | 抽样 10 万次验概率 |
+| M7.8 | 二周目最小闭环 | ⬜ | `game.js`、`core/save.js`、`ui.js` | 轮回后强度与掉率生效 |
+| M7.9 | 说明页 / 图鉴 / README 同步 | ⬜ | `ui.js`、`README.md` | 文案与实际一致 |
+
+### M7 已交付明细（M7.1 + M7.2）
+
+| 项 | 落地内容 | 回归 |
+|---|---|---|
+| **章结构** | `ACTS['5-2'].maps` 从 1 个图位改成 **10 个**：混沌海（枢纽）→ 8 副本 → 无相天。首图仍是混沌海，「前往本章」落点不变 | `act-check` 图位 39 |
+| **混沌海改枢纽** | 安全区、`spawns: []`、`bosses: []`、`hub: true`；骨架 `isles 303` → **`radial 220`**：8 间侧室正好一室一门，中庭是八部坛，北端 `sanctum` 是天龙终门 | `zone-check` 连通 / 门坐标在可走区内 |
+| **8 张副本图** | 各用一种骨架（radial/spiral/twin/ring/canyon/terrace/cross/isles），尺寸 138~144，`spawnTotal` **写死 12**，`raid: true` | 实测每图 12 护卫 + 1 魔将 |
+| **无相天** | 手写 2 个 zone（入口道 + r=58 大圆），`arena: true`（只有 boss 不刷杂兵），size 180 | `check-bafo` boss 区半径 ≥ 40 |
+| **8 魔将** | `BOSSES` 新增 `bafo_*` 8 条：hp 134k~150k、lv60、各自 `weak` / `resist` / `stagger` / `seal` / `animKind` | `check-bafo` 335 项 |
+| **抗性 8 倍差** | 弱点元素 `resist = −60`（吃 160%）、其余四元素 `+80`（吃 20%）。`−60` 是 `damageEnemy` 的夹取下限，`1 − (−60)/100 = 1.6` 是唯一写法 | 硬断言 `弱点/非弱点 = 8.00` |
+| **弱点不进族群表** | 只写 `BOSSES[id].resist`，`MON_FAMILIES` 不动（图鉴会公开显示 resist）。`spawnEnemy` 加 `if (cfg.resist) Object.assign(resist, cfg.resist)` | `check-bafo` 族群表无 ±70 量级抗性 |
+| **八印表** | 新建 `BAFO_SEALS`（8 条：key / name / part / map / boss / color），是 UI、印门、掉落、校验的**唯一清单** | 印 ↔ 门 ↔ 图位 ↔ 魔将 四向对齐 |
+| **印门** | `MAPS.wuxiang.sealNeed = 8`；拦截放在 **`travelTo`** 而不是只做一道门 —— 山河图 / 传送阵 / 章间门三条路都能进图 | 无印进不去、8 印能进 |
+| **新增体检** | `dev/check-bafo.js`：八印清单 / 四向对齐 / 8 副本图 / 8 魔将（抗性·破绽·模型·印）/ 无相天 | 335 项全绿 |
+| **顺带修的真 bug** | `SPAWN_SAFE = 20` 是世界图尺度，140 尺寸的副本图里「入口 → 近区」不足 20 米，整片近区刷不出怪（实测 12 只只出 10 只）。改成 `min(20, size × 0.10)`：世界图仍 20（零变化），副本落到 14 | 8 副本全部恢复 12 只 |
+| 回归 | `act-check` 556 · `check-bafo` 335 · `zone-check` ✅ · `zone-density` ✅ · `test-m6` 264 · `test-items` 21 · `test-m4` 25 · `test-m5` 89 · `dungeon-sim` 60 · `test-save` · `check-uniques` · `check-sets` · `check-endgame` · `quest-ref` 39 · `smoke` ERRORS none · `mobile-layout` 全通过 · `verify-perf` 报错 0 | 全绿 |
+
+### M7.4 已交付明细（魔将之印）
+
+合 main 之后才发现的**上线阻塞**：`MAPS.chaossea.finalGate.sealNeed = 8`，
+但印没有任何产出点 —— 玩家打完八只魔将也拿不到印，终章永远进不去。
+「印门拦住了」在 M7.1/M7.2 阶段看起来是对的，合进正式站才暴露成死锁。
+
+| 项 | 落地内容 | 回归 |
+|---|---|---|
+| **印掉落** | `Game.onBossKill(e)`（原本是个空钩子）按 `e.kind` 查 `BAFO_SEALS`，命中就写 `state.seals[key] = 1`。挂在 `onBossKill` 而不是掉落表：印是**进度物**不是装备，不能卖 / 丢 / 重复拿 | `check-seals` 五~八节 |
+| **只掉一次** | `if (s.seals[rec.key]) return;` —— 重打不重复给，也不重复播报、不重复存档 | 连杀两次仍是 1 枚、toast 数不变 |
+| **反馈三件套** | `UI.toast('得 · 天之印')` + 日志「归位（1 / 8）」+ `FX.ring` 印色光圈 + `SFX.cast`；8/8 当场再喊一次「天龙终门已开」+ `FX.flashCircle` | `seal-live` 二 / 四节读真 DOM |
+| **存档三处 + 读档一处** | `Game.newState` 带 `seals: {}`；`normalizeDoc` 补字段并把值**夹成 0/1**；导出白名单 `seals`；**`unpack` 必须搬回 flat state** | `test-save` 79 项 · `check-seals` 十一节 |
+| **踩到的坑** | 只加了前两处（导出）时，盘上明明有 8 枚，**刷新后读回来是 0** —— `unpack` 里漏一行，`state.seals` 永远是 `{}`。这正是「存得进、读不回」，离线脚本打桩测不出来，是 `seal-live` 在浏览器里红了两项才抓到 | `seal-live` 六节：刷新 → `Game.loadSlot(n)` → 仍 8 枚 |
+| **测试入口的坑** | 标题页 `#startBtn` 是**新建角色**（占用下一个空槽），不是「继续」；验读档必须走 `Game.loadSlot(n)`（存档面板那条路）。第一版用 `#startBtn` 验，读到的是 1 级新号，白红两项 | `seal-live` 六节注释 |
+| **说明页** | `renderHelp` 新增「十五 · 终章」：怎么走 / 八印 / 印从哪来 / 怎么打（8 倍差）/ 卡住了。全节实时读 `BAFO_SEALS` + `MAPS.chaossea.finalGate`，改印数自动跟着变 | 浏览器实测 15 个页签、本节 486 字、零 pageerror |
+| **README** | 新增「终章 · 八部天龙」小节（八部 / 魔将殿 / 印 三列表 + 8 倍差说明） | `check-seals` 十二节：八张殿名逐个比对数据，防「靠记忆写殿名」写错字 |
+| **新增体检** | `dev/check-seals.js`（离线 111 项：八印表 / 三向对齐 / 终门门槛 / 真装载 `game.js` 调 `onBossKill` / 老档与脏数据 / 存档三段 / 文案一致）；`dev/seal-live.js`（浏览器 19 项：真 DOM 播报 / 真 localStorage / 刷新读回） | 111 + 19 全绿 |
+| 回归 | `check-bafo` 335 · `act-check` 646 · `test-save` 79 · `check-seals` 111 · `seal-live` 19 · `smoke` ERRORS none | 全绿 |
+
+**剩下没做的**：八印总览面板（主菜单里一页看八枚印的收集情况）。
+山河图那扇门已经写「需 8 印（N）」，玩家不会迷路，所以不阻塞；
+要做的时候只需读 `Game.sealCount()` + `BAFO_SEALS`，别再写第二份清单。
+
+### M6 交付明细（已完成）
+
+> 口径修正：计划书 §10.3 写的「基底 8 → 12 阶」**作废**，用户明确「基地就8阶 不要弄12阶」；
+> §10.4 写的「传世 ilvl 上限 40」也**作废**，实际封顶 60。
+
+| 子项 | 落地内容 | 回归 |
+|---|---|---|
+| 等级上限 | `BALANCE.levelMax = 60`；`gainXp` 满级收口（level 夹取 + xp 清零 + 提示一次），while 内补到顶分支避免死循环 | 满级后继续吃经验不涨级、不卡死 |
+| 曲线复算 | `xp` 曲线 **205 / 1.83 维持不动**：1→40 = 239 万，1→60 = 762 万（3.19×）；五卷占比 3.7 / 11.4 / 18.6 / 29.2 / 37.1 %，卷五未过 45% 报警线 | `balance-report` 无报警 |
+| 时长估算 | 单只经验基准从写死 14 改为**怪物表均值**：纯刷怪约 3.2 万只 / 39 小时；算上任务与地下城（1.8× 经验）落到 ~31 小时 | 修正 `xpSpan` 边界级漏算 |
+| **基底阶** | **保持 8 阶**（`BASE_TIERS = 8`）。删掉另一条线加的玄天 / 太虚 / 混元 / 无极四档（数据 52 行 + 武器 12 块 + `TIER_METAL` 4 项） | `test-m6` 断言 8 阶全绿 |
+| **ilvl 终局加速** | 8 阶时 40→60 装备只涨 1.40×，而怪血量涨 2.05×（TTK 涨 46%）。改为在 `items.js` 加 `ilvlScale(ilvl, k)`：40 级以下完全不动，40→60 乘一段 `1 + 0.464·t²` 的缓起加速，武器 / 护甲 / 词缀 / 打造四条路统一 | `40→60 武器 ×2.05 · 同级怪血量 ×2.05 ✓ 匹配`；`test-items` 21/21 |
+| 传世 20 → 40 件 | 老 20 件 ilvl 重映射到 40~60、词条按每级 +5.5% 同步放大；新增 20 件。部位 weapon 6 / offhand 5 / helm 4 / chest 4 / shoulders 3 / cloak 3 / gloves 3 / boots 3 / belt 3 / amulet 3 / ring 3（**披风原本 0 件，补 3 件**） | `check-uniques` ✓ 40 件 / 47 条特性 |
+| 传世「初期不掉」 | **零逻辑改动**：`uniquePool()` 只按 `u.ilvl <= ilvl` 过滤，40 件全部抬到 ilvl ≥ 40 即天然隔离 | 39 级池 0 件 / 40 级 3 件 / 60 级 40 件 |
+| 特性表 | `UNIQUE_TRAITS` 27 → **47 条**，新增 20 条纯 `stats` 型，全表 id 唯一 | `check-uniques` 唯一性 |
+| 套装 12 → 18 套 | 新增断岳 / 焚世 / 黄泉（三职业各 1）+ 山海 / 九霄（5 件）/ 归墟（通用 3）；`SET_TYPES` 每职业 4 条 + 通用 6 条 | `check-sets` ✓ 战士 4 / 术士 4 / 道人 4 / 通用 6 |
+| **关键 bug** | `items.js` 的 `ILVL_MAX` 40 → 60 —— 传世掉不出来的真凶不是池子过滤，而是 `rollItem` 把 ilvl CLAMP 在 40 | `check-endgame` 逐部位穿传世 3/11 → **11/11** |
+| 新增体检 | `dev/check-uniques.js`、`dev/check-sets.js`、`dev/check-endgame.js`（真浏览器：60 级 600 次掉落抽样、逐部位 recalc、图鉴 18 张卡、说明页件数文案）、`dev/act-check.js`（世界结构 486 项） | 四个脚本全绿 |
+| **世界结构体检** | 补上挂了很久的 `dev/act-check.js`：5 卷 / 12 章 / 30 图位的结构等式 —— 卷级数首尾相接盖满 1~60、章号每卷从 1 连续、图位无 `null` 无重复无孤儿、章间门只在本卷内（卷末回营地）、章首领真的摆在本章某张图上、图里的怪与首领都在各自表里 | 486 项全通过；顺带确认「卷末章不出跨卷门」是 M1 的设计而非 bug |
+| **终局难度回补** | `balance-report` 的逐图表暴露「终章反而最好打」：混沌海 TTK 1.7s、卷五三首领 14.7/16.6/17.0s，而卷四首领是 31~36s。三处修正：① 卷五首领血量 ×2（`mirrorlord` 83800→170000、`nineheaven` 86200→175000、`chaosavatar` 91000→195000）；② 混沌海怪池把 130 血的卷三杂兵 `shade` 换成同卷 `jadepuppet`（430 血）；③ 混沌海专属三只怪抬档（`mirrortwin` 330→420、`maskweaver` 300→400、`voidmoth` 280→380） | 混沌海 TTK 1.7s → **2.1s**；卷五首领 31.2 / 35.6 / 36.7s，与卷四（28~32s）同档 |
+| 回归 | `test-m6` 264/264 · `test-items` 21/21 · `act-check` 486 · `zone-check` ✅ · `zone-density` ✓ · `test-m4` 25 · `test-m5` 89 · `dungeon-sim` 60 · `check-uniques` ✓ · `check-sets` ✓ · `check-endgame` ✓ · `smoke` ERRORS none · `mobile-layout` 全通过 · `verify-perf` 报错 0 | 见 `docs/status` 各节 |
+
+### M4 交付明细（已完成）
+
+#### 1. 36 只新怪（`src/data/data-monsters.js`）
+
+| 卷 | 新怪（key） | 落点（章） |
+|---|---|---|
+| 一 · 9 只 | `foxfire` 狐火 / `cliffram` 崖羊 / `stonecrow` 石鸦 | 1-1 幽篁林 · 落霞坡 |
+| | `mirehorror` 泥魔 / `leechqueen` 蛭后 / `bonefisher` 捞骨人 | 1-2 血月沼泽 · 沉骨滩 |
+| | `ironmaw` 铁颚 / `cinderhand` 烬手 / `forgemaster` 铸主 | 1-3 骨塔祭场 · 玄铁矿洞 |
+| 二 · 9 只 | `frostwraith` 霜魇 / `iceveil` 冰帷 / `frozenwidow` 寒蛛 | 2-1 寒潭水牢 · 冰魄湖 |
+| | `ashhound` 灰犬 / `flamepriest` 炎祝 / `magmaworm` 熔脉虫 | 2-2 熔脉深沟 · 灰烬荒原 |
+| | `sootwraith` 煤魇 / `emberhound` 余烬犬 / `cinderlord` 烬王 | 2-3 赤炎峡谷 · 焚天祭坛 |
+| 三 · 6 只 | `soulgaoler` 囚魂吏 / `papereffigy` 纸俑 / `wantern` 灯翁 | 3-1 白骨长廊 · 3-2 忘川河滩 |
+| | `tidewretch` 潮鬼 / `scalekeeper` 鳞守 / `wraithlord` 魍魉主 | 3-3 九幽深渊 · 3-4 黄泉渡 |
+| 四 · 6 只 | `swordhusk` 剑壳 / `bladewisp` 刃魑 / `duelist` 剑客 | 4-1 天罡剑冢 · 4-3 剑冢绝巅 |
+| | `cloudserpent` 云螭 / `thunderdrum` 雷鼓 / `feathered` 羽民 | 5-1 云海断桥 · 5-2 南天残门 |
+| 五 · 6 只 | `jadepuppet` 玉傀 / `starfaller` 陨星使 / `silkweaver` 织天蛛 | 5-3 玉京废墟 · 5-4 星陨台 |
+| | `mirrortwin` 镜身 / `maskweaver` 织面者 / `voidmoth` 虚蛾 | 5-5 无相幻境 · 5-6 混沌海 |
+
+- **0 新模型**：全部复用既有 22 个程序化骨架（`lantern` / `beast` / `bat` / `golem` / `brute` /
+  `ghost` / `statue` / `humanoid` …），行为差异只来自 8 种 AI 原型 × 族群抗性的组合。
+- **数值口径**：以「所在章现有怪池的均值」为锚，血/攻都是放大前的基准值（实际按图等级放大）。
+  石系血厚攻慢、兽系血薄速快、妖灵系血薄攻高 —— 与老怪同一套手感，不另立一套曲线。
+  `dev/test-m4.js` 钉住 `xp` 落在 15~220（新怪不许落进老图专属段）。
+- **每只带 `lore`**：图鉴未收录只显示「？」，收录后显示这句。
+
+#### 2. 怪池接线（两份声明必须同步）
+
+| 位置 | 改动 |
+|---|---|
+| `data-world.js` 的 `MAPS[*].spawns` | 7 张手写老图 + 23 张骨架图，每图各补 3 只本章新怪；`spawnCount` 一个数没动（密度已验收） |
+| `data-maps.js` 的 `MAP_SPECS[*].kinds` | 23 张骨架图的 `kinds` 同步补齐 —— **两处必改，`test-m4` 第 3 段钉死**（长度相等 + 逐项包含） |
+| `data-maps.js` 的 `MAP_ZONES[*].spawns` | 7 张老图的**区级**怪池各补 1 只，让新怪出现在指定区而不是随机撒 |
+
+> 为什么老图要改两处（图级 `MAPS.spawns` + 区级 `MAP_ZONES.spawns`）：图级决定「这张图有什么怪」，
+> 区级决定「哪个区刷什么」。只改图级的话新怪会均匀撒满全图，任务点名的区反而刷不到。
+
+#### 3. 图鉴改 5 大卷（`CODEX_REGIONS` 换血）
+
+| 项 | 旧 | 新 |
+|---|---|---|
+| 分区 | 5 张老图 = 5 区（forest / swamp / mine / abyss / heaven） | **卷一~卷五**（part1~part5），每区 = 该卷所有图怪池的并集 |
+| 归区 | 按 `MAPS` 声明顺序取**第一个**刷它的图 | 数它在各卷怪池里出现的**次数**，归最多的那卷；平局归早 |
+| 收录口 | `codexRegionKinds(regionId)` 读 `MAPS[regionId].spawns`（新骨架图的 spawns 读不到） | 遍历 `MONSTERS` 全表按 `codexRegionOf` 过滤 |
+| 老档 | `state.codex.regions` 存 `forest: true` | `CODEX_REGION_LEGACY` 一次性搬到卷 key，删旧 key（幂等），再重跑全录检查 |
+
+- **为什么不用「首次出场」**：老怪池跨卷复用（`yaoguai` 从 1-3 一路铺到 3-1），按首次出场
+  卷一拿 38 只、卷五只剩 6 只 —— 一区要刷 38 只才全录、五区白送。按最多出场是 **31/14/13/9/9**，
+  每卷工作量跟游戏进度大致同步。
+- **加成不缩水**：`part1` 的加成 = 旧 forest+swamp+mine 三条之和（精英伤 4% / 毒抗 6% / 护甲穿透 5%），
+  老玩家迁移后拿到的和迁移前完全一致；`part3` = 旧 abyss（减伤 3%）、`part4` = 旧 heaven（技能伤 4%），
+  `part2` / `part5` 是新增的（暴击 4% / 全伤 5%）。
+- `codexRegionOf` 结果**进程内缓存**（`_codexRegionCache`）：数据静态，面板每次重渲染都全表扫一遍没必要。
+
+#### 4. 5 个卷末首领（就地取材，不推翻 M3 的布局）
+
+| 首领 | 卷 | 图 | lv | hp / atk | 处理 |
+|---|---|---|---|---|---|
+| `golemking` 石甲巨魔 | 一 | 铁山绝顶（+ 沼泽老巢双驻扎） | 15 → **18** | 6200/40 → **9000/50** | 重定级 + 卷末血量线；**不从 swamp 摘掉** —— `m1_3_1` 老档迁移仍指向沼泽那只 |
+| `flameemperor` 焚天炎帝 | 二 | 焚天祭坛 | 30 | 19000 不变 | 补 `actEnd` 标记 |
+| `yellowspring` 黄泉主宰 | 三 | 黄泉渡 | 40 | 不变 | 补 `actEnd` 标记 |
+| `heavenguard` 南天守门神 | 四 | 南天残门 | 50 | 不变 | 补 `actEnd` 标记 |
+| `chaosavatar` 混沌真身 | 五 | 混沌海 | 60 | 不变 | 补 `actEnd` + `final`（唯一的 15% 档） |
+
+- 计划书点名的 `firegeneral` 赤炎魔将 / `ferryman` 冥河渡者**不占卷末位**，改当章节首领：
+  `firegeneral` 23 → **21** 并从 `mine` 挪到 `frost`（`m2_1_1` 的任务图一直是寒潭水牢，
+  之前挂在矿洞 = 任务指过去打不到），`ferryman` 30 → **32** 留在九幽地宫对齐该图等级。
+- **钥匙钩子**：`BALANCE.keyDrop = { actBoss: 0.08, actBossFinal: 0.15 }`，`onEnemyDeath` 里
+  `bcfg.actEnd` 的怪按 `keyTier` 抽一次 `Game.addKey(tier, 1)`。M4 落地时 `Game.addKey` 还不存在，
+  这一抽静默不出；**M5 已把它接到 `Dungeon.addKey`**（同时补上小怪 / 精英 / 首领的常规供给）。
+- 为什么 8% 而不是必掉：首领可重复刷（`spawnBosses` 不读 `bossKilled`），低概率才形成刷子循环。
+
+#### 5. 回归
+
+| 项 | 结果 |
+|---|---|
+| `test-m4`（新增，纯 node） | **23/23** —— 36 只落表 / 字段健全 / 怪池引用完整 / 两份声明同步 / 图鉴 5 区全覆盖 / actEnd 5 只 / 迁移表合法 |
+| `test-save` / `test-quest` / `quest-ref` / `zone-check` / `zone-density` | 全通过 |
+| `smoke` 三职业 | `ERRORS none` |
+| `mobile-layout` 6 视口 | 60 项全通过（图鉴面板 2063px 高、页签 5 个不折行） |
+| `m3-check`（10 张抽样真机） | A/B/C 段全通过（37 只同屏、越界 0、小地图像素 77%）；**D 段帧率地板在当前机器状态下已无判定力**（见下） |
+| 浏览器专项 | 老档迁移幂等（`forest`/`abyss` → `part1`/`part3`、旧 key 消失）、图鉴 5 页签 / 31 张卡 / 归区正确、零 `pageerror` |
+
+> **`m3-check` 的 D 段（帧率地板 6 FPS）现在不具判定力**：本次三连跑对照 —— 干净 HEAD 基线
+> 1 项红（`bonestrand` 4.5）、本分支两次分别 4 项红（`ironpeak` / `flamealtar` / `abyssdeep` /
+> `chaossea`）与 2 项红（`bonestrand` 5.5 / `chaossea` 3.5）。**同一份代码两次跑失败项互相漂移**
+> （`chaossea` 5.0→3.5、`flamealtar` 5.5→9.0），且基线也红 —— 本机软件渲染目前整体就在 5~9 FPS
+> （台账早先记的是 10~24.5，机器状态已变）。B 段「视野外 0 只怪」是同一原因的连带：5 FPS 下
+> 1.8 秒只跑出 9 帧，远处的怪还没轮到 AI，`e.culled` 自然是 0。
+>
+> 两条由此得出的操作纪律：① **跑 `m3-check` 不许和别的 puppeteer 脚本并行**（两个浏览器抢 CPU
+> 必然红一片，本次第一轮就是这么红的）；② 真要判定性能回归，得**同机交替跑基线**对照，
+> 不能只看绝对 FPS。
+
+### M5 交付明细（已完成）
+
+#### 1. 数据层 · 新建 `src/data/data-dungeon.js`
+
+| 表 | 内容 |
+|---|---|
+| `KEY_TIERS`(5) | 朽骨 / 青铜 / 玄铁 / 赤金 / 九霄。`tier === part`（一阶对一卷），等级段 1~18 / 19~30 / 31~40 / 41~50 / 51~60 **连续无空洞**，`affixN = tier − 1`，`price` 400→15000 |
+| `DUNGEON_LAYERS`(3) | 入口厅 150㎡/20 只/清 70% · 主厅 140㎡/18 只/清 80% · 首领场 130㎡/**0 只** |
+| `DUNGEON_TYPES`(5) | 尸冢 `tomb`(ring/bone) · 塌井 `well`(spiral/rock) · 兽窟 `den`(isles/swamp) · 沉狱 `gaol`(twin/flood) · 坠天 `fall`(radial/void)。每类 8~11 种怪 + 自己的守卫 + 一个机制名 |
+| `DUNGEON_AFFIXES`(10) | minTier 2~5 逐阶解锁。`mob` 是乘到怪身上的系数，`player` / `loot` / `fog` / `healPct` / `ramp` / `teleport` / `chests` 是其它六种效果 |
+| `DUNGEON_CODEX`(25) | 5 类 × 5 阶，id = `类型+阶`（`tomb3`）。`DUNGEON_TYPE_BONUS` 单类全清、`DUNGEON_ALL_BONUS` 25 条全清 |
+| 纯函数 | `keyTierDef` / `dungeonTypeById` / `dungeonMobLevel`（`clamp(玩家+2, 该阶上下限)`）/ `dungeonAffixCount` / `rollDungeonAffixes` / `dungeonCodexId` / `dungeonBonusStats` / `dungeonCodexProgress` |
+
+#### 2. 运行时 · 新建 `src/dungeon.js`
+
+- **层 = 独立小图，不是一张图的三个区**。每层要自己的骨架（入口岔路 / 主厅侧室 / 首领场），
+  而一张图只有一种骨架；层间走地脉门 = 一次 `loadMap`（约 120ms），跟试炼换波次一个量级。
+- `loadLayer()` 运行时把 `dgn_<类型>_<层>` 写进 `MAPS` / `MAP_ZONES`，结构**和 `MAP_SPECS` 展开的
+  完全一致** —— `world.js` / `ui-minimap.js` / `spawnEnemies` 都不需要知道这是运行时图。
+- `DUNGEON_ATMOS` 按地貌取氛围，比野外暗一档（地下城本来就该更暗更闷）。
+- **首领血量以同阶小怪为锚**：`均血 × 14` / `均攻 × 3.2`，在 `spawnBoss` 里覆盖 `spawnEnemy`
+  按恒 4.5 倍算出来的值。这是唯一一处改 `spawnEnemy` 结果的合法场景 —— 同一个守卫要在 5 个阶
+  里出现，写死绝对值没法跟着阶走。
+- 词缀的怪物侧效果**一次性乘到已生成的怪身上**（`applyMobAffixes`），不改 `spawnEnemy`：
+  那条是世界图公用路径，为地下城改它会把词缀状态带进野外。
+- 死亡/退出分两段：`onPlayerDeath()` 只记账 + 打日志（死着的时候 `loadMap` 会让镜头卡在尸体上），
+  清理与换图放 `onRespawn()`（`Game.respawn()` 里 `dead` 已翻回 false）。
+
+#### 3. 接线
+
+| 位置 | 改动 |
+|---|---|
+| `index.html` | 两个 `<script>`（`data-dungeon.js` 紧跟 `data-trial.js`；`dungeon.js` 紧跟 `trial.js`）+ `#dgHud` DOM/CSS（与试炼同位置同骨架，只换配色 紫 → 青，两套 HUD 不会同时出现） |
+| `game.js` | `addKey` / `keyCount` 转发；钥匙常规供给（小怪 0.6% / 精英 10% / 首领必掉本阶，**跳过 `kmap.dungeon` 图**，否则「开地下城 → 地下城产钥匙」自循环）；`Dungeon.update/onKill/onBossDown`；`die` / `respawn` / `updateInteract` / `interact` / `openNPC` 四个分支；`damageEnemy` 加 `e.armorMul`；`loadSlot` 加 `dgn_` 前缀兜底（**必须先于**「未知图 → 村」，送回本卷营地） |
+| `core/save.js` | `_keys`（定长 5，`_int` 收敛 0~99）+ `_dungeonRec`（`cleared` / `runs` / `wins`），`pack`/`unpack` 双端接入 |
+| `items.js` | `dungeonBonusStats(p.dungeon)` 与 `codexBonusStats` 走**同一条并加通道** |
+| `data-monsters.js` | +4 只地下城专属怪（`shrouded` 裹尸 / `pitworm` 坑虫 / `broodmatron` 巢母 / `chainbound` 镣魂，带 `dungeon: '<tid>'`）；`BOSSES` +5 个 `dgb_*` 关卡守卫（`dungeon: true`，**不进任何 `MAPS[*].bosses`**）；`CODEX_REGIONS` 加第 6 区 `rift` |
+| `data-world.js` | 新 NPC `rift`（地脉守·幽提，`role: 'dungeon'`），5 座营地 `npcs` 各加一个 |
+| `world.js` | `buildNPC` 加 `dungeon` 角色配色 + 手持青灯 |
+| `data-core.js` | `BALANCE.keyDrop` 扩成 `{ actBoss: 0.08, actBossFinal: 0.15, mob: 0.006, elite: 0.10 }` |
+
+#### 4. 两个「0 被当成没传」的坑（本次真机才暴露）
+
+| 位置 | 症状 | 改法 |
+|---|---|---|
+| `data-maps.js` `buildZones` | `spec.spawnTotal \|\| suggestSpawnTotal(...)`：首领场传 `spawnTotal: 0`（0 是 falsy）→ 按公式刷了 **40 只杂兵**，而 `run.total` 记 1，清怪进度永远 0% | `undefined / null` 才走公式，`0` 是有效值 |
+| `game.js` `spawnEnemies` | 传承分支 `m.spawnCount \|\| 14`：首领场 `zoneSpawners` 为空 → 掉进旧图分支刷出 **14 只杂兵**，跟首领一起打玩家 | 同上，只有 `undefined / null` 回退 14 |
+
+> 两处都是「用 `||` 给可选参数兜底」的通病。**凡是「0 有意义」的数值参数，一律写
+> `=== undefined \|\| === null` 判断**，别用 `||`。
+
+#### 5. 回归
+
+| 项 | 结果 |
+|---|---|
+| `test-m5`（新增，纯 node + vm） | **89/89** —— 钥匙 5 阶（连续无空洞 / 词缀数 / 价格）· 三层 · 5 类怪池与守卫引用 · 词缀 200 轮抽取不重复不越阶 · 25 条图鉴加成键都是真属性键 · 纯函数钳制 · 存档往返与脏数据收敛 · `BALANCE`/NPC 接线 |
+| `dungeon-sim`（新增，无浏览器整局推演） | **59/59** —— 真实状态机跑穿三层：扣钥匙 / 开门阈值 / 门没开不能走 / 首领 `均血×14` / 结算（图鉴+装备+玄晶+金币+回营地+落盘）/ 死亡不换图 + 复活回营地 / `dgn_` 读档契约 |
+| `probe-dungeon`（新增，真机 headless） | **42/42** —— 装载 / 建档 / 地脉守对话 / 选阶选类型 / 三层推演 / HUD 文案（类型名·层数·阶名·击杀数）/ 首领走 `BOSSES.dgb_tomb` / 首领场只剩 3 个活物 / 结算产出 / HUD 收起 / 零 `pageerror` |
+| `test-m4` | 25/25（口径改为「76 野外 + 4 地下城 = 80」，`rift` 归区单独钉） |
+| `test-save` / `test-items` / `test-quest` / `quest-ref` / `zone-check` / `zone-density` | 全通过（`test-quest` 的营地 NPC 总数 7 → **8**） |
+| `smoke` 三职业 | `ERRORS none` |
+
+### M3b 交付明细（已完成）
+
+| 子项 | 落地内容 | 回归 |
+|---|---|---|
+| 4 种地貌 | `snow`（雪原）/ `bone`（白骨）/ `void`（虚空）/ `flood`（浅水）。每种 = `makeGroundTexture` 的 `conf` 表一行 + 专属细节（雪面亮点与雪堆 / 水纹）+ `BORDER_COL` 边界色 + `cfg.props` 一条分支（雪松冰柱 / 骨柱肋骨拱鬼火 / 黑曜石柱星屑 / 水洼枯木芦苇） | `smoke` 三职业 ERRORS none |
+| 19 张新图 | 卷一 4（落霞坡 / 沉骨滩 / 骨塔祭场 / 铁山绝顶）、卷三 4、卷四 5、卷五 6。`MAP_SPECS` 一条 6 行，尺寸 294~306（isles/twin 覆盖率低所以更大） | `zone-check` 30 张图全通过 |
+| 面积/密度 | 16,019~18,669㎡ · 40~46 只 · 391~409㎡/只 · max/min ≤1.33，全部达标 | `zone-density` 骨架图全绿 |
+| 骨架补强 | `twin` 只有 10 区（<§5.1 的 12），补「西深层 / 东深层」两个区；`ARCHETYPE_COVERAGE.twin` 0.1963 → 0.2128 并重测 | `zone-check` / `zone-density` |
+| 首领 | 新增 16 只（`boneabbot` 13 / `marrowlord` 34 / `riverwraith` 35 / `abysswyrm` 37 / `yellowspring` 40 / `swordguardian` 42 / `bladelord` 44 / `swordemperor` 45 / `cloudwarden` 49 / `heavenguard` 50 / `jadeemperor` 52 / `starlord` 54 / `mirrordemon` 56 / `mirrorlord` 57 / `nineheaven` 58 / `chaosavatar` 60）。数值两条线：`atk = 105 + (lv−38)×2.6`、`hp = 19000 + (lv−30)×2400` | `m3-check` A 段逐张查 BOSSES |
+| 任务 | 63 条（主线 39 / 支线 9 / 悬赏 15）。19 条新图主线**插进单链**（改 `require` 不改 legacy objectives），4 条新支线 `require: null` | `test-quest` 44/44 · `quest-ref` 全绿 |
+| 任务引用探针 | 新建 `dev/quest-ref.js`：map / zone / boss / monster / skill / next / require 七类引用 + 主线链可走通。**它抓到了 isles 图首领区叫 `nave` 不叫 `sanctum` 这个坑** | 63 条任务 0 错误 |
+| m3-check 扩容 | A 段改为跑全部 `MAP_SPECS`（23 张）；B/C/D 抽 10 张覆盖 4 种新地貌 + 8 种骨架；新增 `mapId === mid` 总闸（`travelTo` 因等级被拦时不抛异常，旧版会拿错图数据去比） | `m3-check` 全通过 |
+| 老图不动 | 7 张手写图坐标一个像素没改；`MAP_BOSS_POS` 老表照旧生效（新首领不在表里，自动走 `bossPosOf` 推导） | 老图首领落点不变 |
+
+### M3b 视觉补完（第三轮配色，已提交）
+
+数据层在 M3b 主体里就位了，但**四种新地貌第一眼认不出来**（截图逐张比对）：
+雪原是「过曝的白板」、白骨是「沙漠」、虚空是「一块紫渐变 + 满地小方块」、浅水是「暗绿水泥地」。
+这一轮只改 `src/world.js`，不动任何数据。
+
+| 地貌 | 症状（截图判定） | 改法 |
+|---|---|---|
+| `snow` | 整片近白，地形起伏全丢；树是白树长白地，一棵看不见 | 底色压到 `#cfdcec` / 中灰 `#b3c4d8`（**底色本身在往白抬是最初的错**）；雪松改**三层树冠由暗到白**（`0x3f5a70 → 0x6b8398 → 0xdde8f4`）；补 16 片贴地冰面（不规则多边形，y=0.04） |
+| `bone` | 暖黄底色在暖阳光下整片读成沙漠；骨堆像「撒了一把牙签」 | 配色往灰里收一档；贴图加 620 根白色骨屑 + 46 条短骨缝；新增 12 条**脊柱**（椎节 + 棘突，唯一有解剖结构的骨道具）与 10 个头骨；骨堆尺寸拉开到 0.7~2.0 |
+| `void` | 地面是一块纯紫渐变；星屑被渲染成**硬边正方形**；边界墙与黑荒原同色 → 图的边界消失 | 星屑补柔边圆点贴图（`PointsMaterial` 不给 `map` 画的就是方块）+ 贴地浮尘；补 26 块**地台碎板**（比地面亮一档、单侧描边）；`BORDER_COL.void` `0x1a1426 → 0x332a4a` |
+| `flood` | 水洼是硬边浅蓝圆片（像 UI 标记）；水纹在暗绿底上完全看不见 | 水洼改成**柔边贴图圆盘**（alpha 收到 0 + 两圈涟漪）+ 6 圈会扩散淡出的涟漪；贴图亮纹 alpha `0.08~0.36 → 0.14~0.5` 并补一层暗泥痕 |
+
+两个顺带的结论：
+
+1. **`PointsMaterial` 不给 `map` = 硬边正方形**。星屑第一版就是「一地淡紫小方块」，
+   远看像渲染出错。柔边贴图 32×32 一次生成、全场景共用（`markShared`）。
+2. **白骨图的骨堆从 60 个组改成 2 个 `InstancedMesh`**：原来一堆 = 10 个 mesh，
+   60 堆 = 600 次绘制，实测对象数 654 → 1080。改完 471 个 mesh、绘制 652 → 566，
+   视觉完全一致。**大数量散点一律先想 InstancedMesh**，这条对 M4 的 24 只新怪同样适用。
+
+回归：`smoke` 三职业 ERRORS none · `zone-check` 30 张 · `zone-density` 全达标 ·
+`m3-check` 全通过（10 张抽样，帧率 10~24.5 FPS 软件渲染）· `test-quest` 44/44 · `quest-ref` 39/39 主线链。
+
+### 23 张骨架图规格总表（M4/M5 的参照）
+
+尺寸一律按骨架覆盖率反推（294~306），**不是整齐的 300**；`size` 越小覆盖率越低骨架的图越大。
+
+| 卷 | 图 id | 名 | lv | 地貌 | 骨架 | size | 区数 |
+|---|---|---|---|---|---|---|---|
+| 一 | `sunset` | 落霞坡 | 6 | dirt | terrace | 294 | 12 |
+| 一 | `bonestrand` | 沉骨滩 | 11 | bone | isles | 302 | 14 |
+| 一 | `bonetower` | 骨塔祭场 | 13 | bone | spiral | 294 | 12 |
+| 一 | `ironpeak` | 铁山绝顶 | 18 | snow | terrace | 296 | 12 |
+| 二 | `magmagully` | 熔脉深沟 | 24 | rock | spiral | 290 | 12 |
+| 二 | `ashfield` | 灰烬荒原 | 26 | ash | canyon | 295 | 12 |
+| 二 | `flamecanyon` | 赤炎峡谷 | 28 | ash | canyon | 300 | 12 |
+| 二 | `flamealtar` | 焚天祭坛 | 30 | ash | radial | 295 | 12 |
+| 三 | `bonehall` | 白骨长廊 | 34 | bone | ring | 297 | 13 |
+| 三 | `forgetshore` | 忘川河滩 | 35 | flood | isles | 302 | 14 |
+| 三 | `abyssdeep` | 九幽深渊 | 37 | void | spiral | 298 | 12 |
+| 三 | `yellowferry` | 黄泉渡 | 40 | flood | canyon | 300 | 12 |
+| 四 | `swordtomb` | 天罡剑冢 | 42 | bone | radial | 296 | 12 |
+| 四 | `swordpit` | 万剑坑 | 44 | ash | canyon | 297 | 12 |
+| 四 | `swordapex` | 剑冢绝巅 | 45 | snow | terrace | 300 | 12 |
+| 五 | `cloudbridge` | 云海断桥 | 49 | heaven | twin | 306 | 12 |
+| 五 | `southgate` | 南天残门 | 50 | heaven | radial | 298 | 12 |
+| 五 | `jadecapital` | 玉京废墟 | 52 | void | ring | 297 | 13 |
+| 五 | `starfall` | 星陨台 | 54 | void | radial | 299 | 12 |
+| 五 | `mirrorrealm` | 无相幻境 | 56 | void | cross | 298 | 13 |
+| 五 | `mirrorabyss` | 镜渊 | 57 | void | spiral | 299 | 12 |
+| 五 | `nineapex` | 九霄之巅 | 58 | snow | terrace | 301 | 12 |
+| 五 | `chaossea` | 混沌海 | 60 | void | isles | 303 | 14 |
+
+分区命名全部写在 `MAP_SPECS[*].names` 里（12~14 条/图，key 与骨架的区 id 一一对应），
+**首领区的 key 不都是 `sanctum`** —— `isles` 用 `nave`，判定一律用 `kind === 'boss'`
+（`quest-ref.js` 抓到过两条写 `zone:'sanctum'` 的任务会静默失效）。
+
+### M2 交付明细（已完成）
+
+| 子项 | 落地内容 | 回归 |
+|---|---|---|
+| 前置补图 | `MAPS.frost`（寒潭水牢 lv20）+ `MAPS.icelake`（冰魄湖 lv22），8 区拓扑照抄九幽地宫；新增 `ice` 地貌（`world.js` `makeGroundTexture` + 墙体色）；`ACTS['2-1']` 两个图位填上真实 id | `zone-check` 全部通过（修掉 sanctum r19.6 越界 61.6>61.1，收到 19.0） |
+| 数据层 | 新建 `src/data/data-quests.js`，任务从 `data-world.js` 迁出（**任务与地图解耦**）。35 条：主线 15 / 支线 5 / 悬赏 15；6 种目标类型（kill / killAny / boss / reach / collect / dungeon） | 0 条任务指向不存在的图 |
+| 运行时 | 新建 `src/quests.js`（`QuestSys`）：接取上限（主线 1 / 支线 2）、复命发奖、悬赏 8 分钟冷却、任务区域倍率、追踪三行数据 | `test-quest` 44 项全绿 |
+| 老档迁移 | `QuestSys.migrate()` 认 `legacyId` 把 q1~q11 换成 m*；`QUEST_LEGACY_OBJECTIVES` 冻结旧目标结构，逐字一致才搬 `progress` 数组，不一致归零重做 | 单/双目标进度都原样搬过来；重复迁移幂等 |
+| 任务区域 | 接任务 → `zoneBoost` 生效（数量 ×1.4 上限 +6、目标怪 75% 直取≈权重 ×3）→ 进区 toast 报区名 → 复命/放弃立刻熄灭 | 非任务区无倍率；复命后倍率为 null |
+| 营地发布者 | 一营一个掌事 + 一个录事（`campB_main`~`campE_main` / `campA_side`~`campE_side`）；桃源村掌事 = 老村长（`NPC_ALIAS`，不新建 NPC）；所有 role=quest 的 NPC 都挂 `!`/`?` 标记 | 营地 7 NPC、两个发布者都有标记 |
+| 悬赏板 | 用对话而不是新面板（木板本身就是「走过去说话」的东西，手机上少一层面板少一处溢出）：一次列 3 条、8 分钟刷新、可重复 | 列 3 条 + 离开；交完进 ≈8 分钟冷却 |
+| 追踪三行 | 1 主线 + 2 支线（带「支线 ·」前缀）+ 悬赏只报数（三条都展开会撑出屏幕） | 面板与追踪条都能渲染 |
+| 回归 | `smoke` ERRORS none（三职业）· `zone-check` 全通过 · `test-save` 79/79 · `test-quest` 44/44 · `mobile-layout` 60 项全通过 | — |
+
+### M1 交付明细（已完成）
+
+| 子项 | 落地内容 | 回归 |
+|---|---|---|
+| 营地数据 | `MAPS.campB~E`（`props:'village'` 换皮，`ground` 各不同）+ `CAMPS.*.mapId` 补齐 + `campOfMap/campOfPart/campMapOfPart/campsUpToPart` | 4 座营地全部能加载，`calls` 97~355，零 pageerror |
+| 营地有人 | **修掉 `spawnNPCs()` 硬编码 `MAPS.village.npcs`**，改读当前图 `cfg.npcs`；`loadMap` 的 `mapId === 'village'` 条件改成「声明了 npcs 就摆人」 | 营地 5 NPC（铁匠/药师/僧人/炼金/仓管），对话正常；村仍 7 个 |
+| 营地门禁 | `travelTo` 加「营地仅限已抵达」：`camps` 已解锁或该营地本身去过，否则拦下并提示 | 1 级 / 19 级硬闯 campB、campC 均被拦，`mapId` 不变 |
+| 世界进度 | 进营地 → `part` 取营地所属卷、`act` 取该卷第一章；进野图 → 按 `actOfMap` 回写；营地按卷累积解锁 | 25 级进九幽 → part 3 / act 3-1 / camps A,B,C；再回忘川渡 → part 3 保持 |
+| 路标石 | 野图传送阵旁立碑（`px+7`），交互回本卷营地；安全区与试炼场不放 | 森林/沼泽/九幽均有；站碑边提示「路标石 · 回忘川渡」，按 F 落到 campC |
+| 章间出口门 | `isChapterTail` + `nextChapterMap` 两个纯函数；`world.js` 用传送阵同款门（0.72 缩放）挂在「本章最后一张已开放图」，直通下一章第一张已开放图 | 森林→沼泽（act 1-2）、沼泽→玄铁矿洞；矿洞/地宫/天阙无下一章图 → 不出门 |
+| 山河图 | 卷头加「营地」独立行：已抵达显示「回营地」按钮，未抵达显示「未抵达」，当前所在显示「当前所在」 | 320/375/414/768/1280 五视口 0 溢出、按钮不出屏 |
+| 回归 | `smoke` ERRORS none（三职业）· `test-save` 79/79 · `mobile-layout` 全部通过 · 预览站 `preview-check` PASS + 线上 M1 专项校验通过 | 预览 <https://718997675.github.io/jiuxiao-arpg/preview/act-expansion/> |
+
+### M0 交付明细（已完成，验收口径见 §12）
+
+| 子项 | 落地内容 | 回归 |
+|---|---|---|
+| 数据层 | `PARTS`(5) / `ACTS`(12) / `CAMPS`(5) + 5 个纯函数 | 12 章 · 30 图位 · 已开放 5 · 每卷 7/6/5/6/6 |
+| 存档 | `SCHEMA: 3`；`_isDoc()` 区间判断；`world.part/act/camps/portals/mapsSeen` | `test-save` 79/79 |
+| 传送 | `travelTo` 回头路（去过的图不受等级门禁）+ 进度写入 | `smoke` ERRORS none |
+| UI | 「传送阵」→「山河图」三层：卷 tab → 卷头 → 章分组 → 图行 | 5 视口 0 溢出 |
+| 老档 | v2 五个位置升级后卷章营地全对，就地落盘 v=3 | 就地升级，不写迁移函数 |
+
+## M3a 交付明细（已完成）
+
+| 子项 | 落地内容 | 回归 |
+|---|---|---|
+| zone 骨架 | `ZONE_ARCHETYPES` 8 种（cross / ring / twin / spiral / canyon / isles / radial / terrace），坐标全部 R 归一化（`R = size × 0.47`），换 size 不用改骨架 | 8 种 × 3 种尺寸全通过（连通 / 越界 / 重叠 / 唯一 sanctum） |
+| 骨架展开 | `MAP_SPECS` 一张图一行 `{archetype,size,ground,kinds,names}`；`buildZones` 展开坐标 + 分配刷怪 | `zone-check` 11 张图全通过 |
+| 刷怪公式 | `suggestSpawnTotal()` 按 `ARCHETYPE_COVERAGE` 反推（cross 23.5% … twin 19.6%），零头补**最少**的区 | 密度 396~407㎡/只、max/min 1.00~1.25 |
+| 密度体检 | 新增 `dev/zone-density.js`：面积 / 密度 / 刷怪数 / 区数 / max-min 五项，附 `--advise` 给未来 21 张图选尺寸 | 4 张新图全达标；老图只报参考（面积仅为目标 33~39%） |
+| 新地貌 | `ash` 火山灰（3 档灰 + 暗红裂缝），地面贴图按 type 缓存（41 张图只会生成 ≤12 张） | 熔脉深沟用 rock，其余三张 ash |
+| 新图 | 熔脉深沟 290 / 灰烬荒原 295 / 赤炎峡谷 300 / 焚天祭坛 295，各 12 区、40~43 只怪、雾距 178~194 | `m3-check` A/B 段：0 越界、首领在 sanctum 内 |
+| 新首领 | 4 只（熔脉之主·赤髓 24 / 灰烬守望者 26 / 焚风怨灵 28 / 焚天炎帝 30），复用既有模型换色 | `zone-check` 落点校验通过 |
+| 首领落点 | `bossPosOf(mapId, bossId, idx)`：本图覆盖 → 老坐标（若仍落在本图 sanctum 内）→ 按圆心推导；老图一个像素不变 | 6 张老图 + 4 张新图全部通过 |
+| 小地图 | `src/ui-minimap.js` 重做：**整图俯视**（固定圆心 + 包围盒半径）+ zone 轮廓 + 任务区金色虚线高亮 + 路标石 + 章出口 + 传送阵 | `m3-check` C 段：像素 77%、颜色 275~400 种、零异常 |
+| 刷怪轮转 | `spawnEnemies` 改成所有区轮着刷（原来按区顺序刷，同屏上限会把后殿 + 首领场整个截掉） | 37 只全部落位，越界 0 |
+| 性能 | ① 地面贴图按 type 缓存 ② 62 米外怪 AI 每 3 帧一次 | 37 只怪：视野外 29~32 只（占 80%）进降频；帧率 14~21 FPS（软件渲染） |
+| 任务 | 新增 5 条主线（m2_2_1~m2_2_3、m2_3_1~m2_3_2），总数 35 → 40，卷二任务链打通到 2-3 末 | `test-quest` 44 项全绿；引用完整性校验 40/40 通过 |
+
+## 下一步（M7 终章重做 → 合入 main）
+
+**M7 是当前唯一在做的节点**（用户 2026-10-28 追加）。开工顺序按 `M7.1 → M7.9`：
+
+1. **先做 M7.1 结构**（8 副本图位），因为它是后面所有东西的落点 ——
+   没有图位，魔将、印、终门都没有地方挂。
+2. **M7.2 + M7.3 一起做**（魔将数据 + 弱点机制），做完就能「打一次试试手感」，
+   这是最需要早验的一步：8 倍差是不是过头，只有真打才知道。
+3. **M7.5 模型放中间做**，因为 `verify-perf` 要看 `calls`；
+   9 个新模型如果推高太多，要回头改副本的同屏上限。
+4. **M7.7 掉落最后做**：概率与「未收集优先」依赖 `state.codexUnique` 已有数据，
+   前置没稳之前抽样验证没有意义。
+5. 全部 ✅ 之后再走「合入 main」那套（见下）。
+
+### P 系列（打磨 17 项，与 M7 并行 / 可插队）
+
+用户 2026-10-28 一次提了 17 条体验与平衡问题，已全部拆成方案写进 **`docs/POLISH-PLAN.md`**
+（每条四段：现状 / 根因 / 改法 / 验收，含文件清单与回归脚本）。
+
+**第 1 批（7 项）已完成（2026-10-28）**，节点表见下；第 2~4 批未开工。
+
+分 4 批，按这个顺序做：
+
+| 批次 | 内容 | 为什么先做这些 |
+|---|---|---|
+| **第 1 批**（3~4 天）✅ | P02、P09、P11、P03、P16、P01、P12 | 前四条是**真 bug**（玩家以为游戏坏了），后三条改数字就见效 |
+| **第 2 批**（4~5 天） | ~~P06、P10、P04~~ ✅、P07、P08、P17 | 战斗手感 + UI。P06 / P10 必须一起做（都是战斗数值，分开调会互相打脸） |
+| **第 3 批**（5~7 天） | P05、P14 | 数据量活（写 40 种怪、重排首领落点） |
+| **第 4 批**（6~8 天） | P13、P15 | 内容创作，要先出设计稿再写代码 |
+
+**5 项已拍板（用户 2026-10-28）**，结论见 `docs/POLISH-PLAN.md` §3，摘要：
+
+1. **P05** = 怪物（非 boss）**种类** 80 → 120，每图降到 6~7 种（不是每图刷 120 只）
+2. **P12** = **不设 20 级上限**，改成「难度随玩家等级动态上调 + 经验按『波数 ÷ 等级』衰减 +
+   传世只在高波（≥30 波）极小概率掉」—— 用户原话：「升级可以升难度也是增加的，这也是一种平衡」
+3. **P06** = **砍法师施法距离**（火球 16→12、冰锥 14→11、炎爆 16→13…最远 13 米 < Boss 14 米）
+   + **耗蓝加大**（「一个蓝条都用不完」）；伤害倍率先不动
+4. **P14** = 副区 Boss 血量 ×0.7 **接受**
+5. **P15** = 演出**只播一次**（落盘），设置里可重播
+
+> **无阻塞项，四个批次都可以直接开工。** 第 1 批工期因 P12 从规则改动变成机制改动，3~4 天 → 4~5 天。
+
+#### 第 1 批节点表（2026-10-28 全完，提交 `26dcd7c`）
+
+| # | 内容 | 改了哪里 | 状态 | 验收脚本 |
+|---|---|---|---|---|
+| P02 | 首领远处放技能 / 脱战 | `BALANCE.boss.skillRange 18 · leash 32`；`updateBossAI` 距离闸；`resetBoss`；`_bossAim` 夹落点 | ✅ | `dev/probe-boss.js`（一 / 二 / 四段） |
+| P09 | 多首领血条显示错的那只 | `damageEnemy` 打谁看谁；`_pickBoss` 粘性；`ui.js` 小血条行 + 切换闪烁 | ✅ | `dev/probe-boss.js`（三段） |
+| P11 | 悬赏交不掉 / 不知道交给谁 | `turnInOf/turnInNpcOf/turnInNameOf`；`readyOf` 按交付人匹配；金「!」可复命；追踪条 / 小地图 / 对话 | ✅ | `dev/test-quest.js`【11】 |
+| P03 | 小地图箭头错 + 不能放大 | `_faceAngle` 修 atan2 分子分母；箭头 +π/2；`#mapBig` 大图（0.5~4×、鼠标锚点、拖动、捏合）；`#miniWrap` 补 `pointer-events:auto` | ✅ | `dev/minimap-check.js` |
+| P16 | 符文爆率太高 | 普通 2.5%→0.8%、精英 18%→8%、seeker ×2→×1.6、首领 100% 不动 | ✅ | `dev/balance-report.js` 符文段 |
+| P01 | 任务怪要重进图才能刷满 | `updateRespawn`（6s / 60% / 25m / 单次 5 只，只补野图）；`killAny` 45~80 → 32~36 且奖励同比缩 | ✅ | `dev/respawn-check.js` |
+| P12 | 试炼升级太快 | `trialLevelMul`（10 级起 ×0.035/级）；`trialXpPace`（三次方衰减）；`TRIAL_UNIQUE`（30 波起、封顶 1.9%、首领 ×3、≥39 级） | ✅ | `dev/trial-check.js` + `trial-balance.js` |
+
+**三处按实测偏离计划书**（细节写在 `POLISH-PLAN.md` 各条的「落地」段，这里只记结论）：
+① P01 补位批量 1~2 → 5（原值追不上自己的 30 秒验收线）；
+② P09 血条归属从「就近切换」改成「粘性」（就近会让血条在相距 9 米的几只之间来回跳）；
+③ P12 经验衰减从线性改成三次方（线性实测 40 级打 10 波仍给 115%，验收线是 <15%）。
+
+#### 第 2 批节点表（P04 / P06 / P10 已完，P07 P08 P17 未开工）
+
+| # | 内容 | 改了哪里 | 状态 | 验收脚本 |
+|---|---|---|---|---|
+| P06 | 蓝耗太低 / 法师射程太远 | `SKILLS[x].cost` 改「占灵力上限百分比」口径；`skillCost` 加技能等级成长；法师射程 12/13/11/10/10/10/8/13/13/13、道士 ≤12；`STAT_CAPS` 加 `cdr: 40` / `costReduce: 20`；道士 `int → 回灵` 0.06 → 0.03 | ✅ | `dev/skill-ref.js` 四段 + `balance-report` 第八节 |
+| P10 | 卡位远程打死 Boss | `castRangeFail`（够不着不扣蓝不进 CD，三种 cast 分开判）；`resolveCast` 去掉 `range \|\| 99`；leash 随 P02 落地 | ✅ | `dev/skill-ref.js` 三段 |
+| P04 | 自动拾取 + 品质筛选 | `updateLoot` 加 `autoR 4.2` + 品质门槛 + 「未拾取」角标 + 行囊满 10 秒去重；`Settings` 加五项拾取设置；`ui.js` SET_ROWS 加「拾取」五行（`sub` 灰态）；`items.js` 加 `RARITY_ORDER` / `rarityRank` | ✅ | `dev/pickup-check.js` 52 项 |
+| P07 | 悬赏板 | — | ⬜ | `dev/mobile-layout.js` + 人工 |
+| P08 | 奖励预览 | — | ⬜ | `dev/test-quest.js` 加断言 |
+| P17 | 日志消息流 | — | ⬜ | `dev/log-check.js`（待建） |
+
+**P06 的结论值得单独记一笔**：问题不在「消耗调小了」，而在**口径**。
+`cost` 原来是固定点数（火球 10 点），而灵力上限随 `int` 线性涨到 60 级 4400+ ——
+比值只会越拉越大，40 级以后怎么调参都救不回来（旧口径实测满蓝连放 **332 秒**）。
+改成「占上限的百分比」之后，一管蓝恒定是「十来发」，换等级换装备都不漂。
+配套必须封 `cdr`（实测能堆到 86%，技能全贴 0.5 秒地板）和 `costReduce`（43% 等于白送半管蓝），
+否则百分比消耗会被这两个属性放大回无限蓝。三处都写在 `POLISH-PLAN.md` P06 的「落地」段里。
+
+**P04 也有一个「判断错了」的地方**：计划书写「装备必须走到 1.3 米内才捡」，
+但 1.3 米是 `grabR`（真正的拾取圈），玩家实际感受到的门槛是 **2.4 米的吸附圈** ——
+走进 2.4 米东西就自己滑过来了。所以自动拾取不是「把 `grabR` 调大」，而是
+**给够格的东西换一个更大的吸附圈**（`autoR = 4.2 + pickupRadius × 0.6`）。
+不够格的仍旧只有 2.4 米，于是「留在地上的白装不会跟着玩家满地图跑」这件事天然成立。
+另外五个设置项的语义统一成「**自动**」：关掉任何一项都不会让东西捡不起来，
+只是回到「走到脚边才捡」—— 否则「关掉金币拾取」就等于「金币永远捡不到」。
+顺手修了一个真 bug：`Settings.set()` 只对 `mute` 做 `!!v`，而 UI 传的是 `'0'`/`'1'` 字符串，
+`'0'` 是真值，表现就是「关掉了但还在自动捡」。
+
+**下一步**：第 2 批剩下的 P07（悬赏板）/ P08（奖励预览）/ P17（日志消息流），
+三条都是 UI / 交互，互不冲突，可以连着做。
+
+### 合入 main（M7 完成后）
+
+1. **合 main 前的固定动作**：`./dev/branch.sh --sync` → `dev/smoke.js` + `dev/mobile-layout.js`
+   + `dev/test-m6.js` + `dev/check-*.js` + `dev/check-bafo.js` 全绿 →
+   `./dev/publish-preview.sh` 看预览 → 才合。
+2. **合并顺序**：act 线先合，skill 线后合（skill 合时基于已含 act 的 main 重新对）。
+   两条线**绝不互相 merge**。
+3. **合完后收紧野图门禁**：M3 已经把 30 个图位填满（`id: null` 归零），
+   M1 留下的「野图仍是等级够 或 去过」这条妥协可以收回成「仅限已抵达」——
+   改 `ui.js` 的 `can` 一行即可。
+4. **`dev/act-check.js` 已在 M6 补齐**（486 项），见下「仍未处理的旧账」。
+
+## M3b 开工清单（已完成，留档）
+
+1. **4 种地貌**：`snow`（雪原）/ `bone`（白骨）/ `void`（虚空）/ `flood`（浅水）。
+   每种 = `makeGroundTexture` 一个 case + 3~5 个道具。贴图缓存已经就位，加 case 不会带来新开销。
+2. **21 张新图**：卷三 2 / 卷四 3 / 卷五 6 / 卷一补 3 / 卷二已满。每张就是在 `MAP_SPECS` 加一行，
+   尺寸用 `node dev/zone-density.js --advise 290 300` 选（低于 285 不达标）。
+   骨架已经覆盖 8 种形态，按 §5.2 的表格对号入座即可，不需要新骨架。
+3. **补任务的下一步**：每补一批图，就把 `data-quests.js` 里对应章的 3 条主线 + 1 条支线填上。
+   框架完全数据驱动，不需要改代码 —— 2-2/2-3 的 5 条就是照这个流程加的。
+4. **老图要不要重做**：`zone-density` 报老图面积只有目标的 33~39%（5,300~6,300㎡ vs 16,000）。
+   M3b 之后如果决定「老图也用骨架重铺」，改的是 `MAP_ZONES` → `MAP_SPECS` 的迁移，
+   但**老图的 NPC / 传送阵 / 首领坐标全是按老布局摆的**，迁移要连坐标一起改，风险不小。
+   建议先不动，等 21 张新图做完再看「新旧混在一起是否违和」。
+5. 回归重点：`zone-check` / `zone-density` 扩到 41 张图仍全通过；`m3-check` 扩到全部新图；
+   `test-quest` 不能掉；`mobile-layout` 0 溢出。
+
+### 仍未处理的旧账
+
+- ~~**`dev/act-check.js` 至今不存在**~~ → **M6 已补**（`node dev/act-check.js`，486 项）。
+  当初不建的理由是「图位没填满、写了也验不出东西」，M3 把 30 个图位填满之后这条就不成立了。
+  现在它验的是**结构等式**，与 `zone-check`（地形连通）/ `zone-density`（密度）不重叠：
+  卷的级数首尾相接、章号连续、图无孤儿、章间门只在本卷内、章首领真的摆在某张图上。
+  过程中顺带确认了一条 M1 的设计：**卷末章不出跨卷门**（回营地走大传送门），
+  所以 `nextChapterMap()` 在卷末返回 `null` 是正确行为，不是 bug。
+- **任务目标数**：现在 40 条（主线 20 / 支线 5 / 悬赏 15）。计划书的 42 主线 / 40 支线是最终目标，
+  剩下的要等 M3b 把图补完 —— 无图可落的任务写出来也验不了。
+
+## 卡点 / 待拍板
+
+**`docs/ACT-EXPANSION-PLAN.md` §14 有 10 项建议，其中 5 项用户还没表态：**
+
+| # | 问题 | 文档建议 |
+|---|---|---|
+| 1 | 等级上限 | 60 |
+| 2 | 卷的级数是否均分 | 不均分（18/12/10/10/10） |
+| 3 | 每章图数 | 1~5 浮动 |
+| 4 | 营地数量 | 5 座 |
+| 5 | 大传送门是否免费 | 免费，仅限已抵达 |
+| 6 | 钥匙是否带类型 | 不带，门口自选 5 类 |
+| 7 | 地下城层数 / 死亡惩罚 | 固定 3 层；钥匙作废 + 回营地 |
+| 8 | 章节解锁方式 | 击败上一卷卷末首领 |
+| 9 | 40 只新怪是否加新模型 | 0 新模型，全复用 |
+| 10 | 是否引入坐骑 | 暂不 |
+
+其中 **1 已在 M6 落地（等级上限 60）**，2~4 已定（三层结构、营地 5 座是用户自己提的）；**5 在 M1 已按「免费 + 仅限已抵达」落地**；
+**6 在 M2 先按「不带类型、门口自选」的方向留了口子**（`rewards.key = { tier, n }` 已进奖励结构，
+`QuestSys.turnIn` 里 `Game.addKey` 是空钩子，M5 落地时接上即可）；
+7~10 仍未表态，且都不挡 M3。
+
+**M2 的口径分歧（需要用户确认）**：计划书写「主线 42 + 支线 40」，
+但 25 个图位是 `id: null`，其中 27 条主线 / 35 条支线写出来无处可落。
+所以 M2 只填了**有图的部分**（35 条），框架做成数据驱动 —— M3 补一张图，对应任务立刻可接。
+
+**M1 落地时的口径分歧（需要用户知道）**：用户要求「仅限已抵达」严格收口，
+但**野图层没法严格收口** —— 25 个图位是 `id: null`，卷二整卷没图，
+如果野图也只能去「已抵达」的卷，玩家打到卷一最后一张（玄铁矿洞）就无路可走。
+所以只把**营地**这一层收成严格的「仅限已抵达」，野图仍是「等级够 或 去过」。
+等 M3 把卷二~卷五的图补完，再把野图门禁收紧（届时改 `ui.js` 的 `can` 一行即可）。
+
+## 决策记录
+
+| 日期 | 决策 | 理由 |
+|---|---|---|
+| 2026-10-28 | 出口门从「章间门」改成「**图间门**」（`nextMapInWorld`）：章内先串下一张，章尾才跨章 | 用户报「落霞坡还有其他新地图没有入口」。M1 只给章尾挂门，一章里第 2 张起的图（落霞坡 / 沉骨滩 / 玄铁矿洞 / 万剑坑 / 忘川河滩 …）在上一张图里怎么走都走不过去，只能翻山河图 —— 而计划书 §3.6 写的是「章的边界是门，不是按钮」，指每一张图都有门 |
+| 2026-10-28 | 门的三种「不出」保留：卷末章（回营地）、终章 `linear:false`（八部坛走 8 道门 + 8 印）、`id:null` 图位跳过 | 卷间靠营地 + 大传送门；八部是枢纽不是走廊，线性门会把「一坛八门」走成一条走廊 |
+| 2026-10-28 | 门上挂「→ 目标图名」名牌 | 门（`px-7`）和传送阵（`px`）长得一样，只差缩放 0.72；不加名牌玩家分不清「去下一张」和「开山河图」 |
+| 2026-10-28 | 出口门**移到首领区最深处**（`gatePosOf`：boss 区圆心以北 0.62×可用半径），不再放入口旁 | 用户：「到下一张地图的传送门应该设置在地图的最后一个区域，地图都是这么设计的」。入口已经有传送阵 + 路标石，三样挤在出生点；而且一进图就能穿门跳过整张图 |
+| 2026-10-28 | 出口门**本图首领第一次倒地才出现**，之后永久存在（`state.mapCleared[mapId]`） | 用户：「第一次首领死了才显示才对，以后就一直显示」。门在 boss 区，不打首领就走不到；标记按**图**记而不是按首领（同一只首领出现在多张图上，按 bossKilled 判会把两张图的门一起开）。老档用 `bossKilled` 反推，偏差方向是「多给门」 |
+| 2026-10-28 | `renderQuests` 的 `wbCard` 提到「无任务」分支之前 | 顺带修的真 bug：`const` 声明在分支之后，任务全交完再开山海志会读到 TDZ 抛 `Cannot access 'wbCard' before initialization`（`test-quest` §3 复命那步直接崩） |
+| 2026-10-27 | 结构定为三层：**卷(5) → 章(12) → 图(30)** | 用户提出「大章节套小章节，每个大章一营地一传送门」 |
+| 2026-10-27 | 卷的级数**不均分**（18/12/10/10/10），按暗黑 2 的节奏 | 均分会让卷一只有 20 分钟；经验曲线决定了后期天然更慢 |
+| 2026-10-27 | 钥匙阶 = 卷号（`keyTier = part`），一阶对一卷 | 结构简化的最大红利，玩家不用查表 |
+| 2026-10-27 | 卷末首领掉**次阶**钥匙只有 **8%**（终局混沌 15%），不是必掉 | 首领可重复刷（`spawnBosses` 不读 `bossKilled`），低概率才形成刷子循环 |
+| 2026-10-27 | 不做「锁章」，已抵达的卷永久可回 | 支线/地下城/材料散在各卷，锁章会让低阶内容永久错过 |
+| 2026-10-27 | schema 升 v3 **不写 `migrateV2toV3`**，让 `normalizeDoc` 补默认值、`readSlot` 见 `changed` 自动写回 | 就地升级，少一份迁移代码就少一处会腐烂的地方；`_isDoc()` 用区间判断兼容 v2 老档 |
+| 2026-10-28 | **基底保持 8 阶**，否决计划书 §10.3 与另一条线已落地的「8 → 12 阶」 | 用户明确「基地就8阶 不要弄12阶」。已删掉玄天 / 太虚 / 混元 / 无极四档（数据 52 行 + 武器 12 块 + `TIER_METAL` 4 项），`BASE_TIERS = 8` |
+| 2026-10-28 | 40→60 的成长改由 **`ilvlScale` 的终局加速**承担，不靠加阶 | 8 阶时装备 40→60 只涨 1.40×，怪血量涨 2.05×，TTK 会涨 46%。加一段 `1 + 0.464·t²`（40 级以下为 1）后两边都是 2.05×；写成乘系数而非加二次项，任何 k 都恰好放大 1.464 倍，武器 / 护甲 / 词缀 / 打造天然同步 |
+| 2026-10-28 | 传世 **20 → 40 件**，ilvl 全部 ≥ 40（封顶 60） | 用户「等级都到 60 了传世也要扩展」+「只有 40 级以上才有，初期不能有」 |
+| 2026-10-28 | 传世「初期不掉」**不改过滤逻辑**，只抬 ilvl | `uniquePool()` 本来就按 `u.ilvl <= ilvl` 过滤，抬到 40 即天然隔离 |
+| 2026-10-28 | 套装 **12 → 18 套**（用户说「18 件」，按「18 套」执行） | 与 40 件传世同批扩：职业套各 4 套 + 通用 6 套 |
+| 2026-10-28 | 另一条线（`e067c11`）的 8 件终局传世**不并入** | 那 8 件的词条是旧 20 件尺度（ilvl 48 的 `atkPct` 只 18~26），而新目录 ilvl 44 已是 24~42 —— 并进去会变成「同 ilvl 严格更差、掉了也不捡」的死件。设计仍可从该提交取回 |
+| 2026-10-28 | 曲线 `205 / 1.83` **不动**，只抬 `levelMax` | 1→60 是 1→40 的 3.19×，五卷占比最高 37.1%（<45%），曲线本身不需要改 |
+| 2026-10-28 | `ILVL_MAX` 40 → 60 | 不改这一处，40 件传世有 20 件永远掉不出来（`rollItem` 先把 ilvl 夹到 40 再查池） |
+| 2026-10-28 | 补 `dev/act-check.js`，不删 §12 那条 | 当初不建是因为 25 个图位是 `id: null`、验不出东西；M3 填满 30 图后这条理由消失了。它验的是「结构等式」，与 `zone-check`（地形连通）/ `zone-density`（密度）不重叠 |
+| 2026-10-28 | 卷末章**不出跨卷门**，`nextChapterMap()` 在卷末返回 `null` 是对的 | 卷与卷之间靠营地 + 大传送门。补 act-check 时一度以为是 bug，查 M1 实现后确认是设计，脚本按「本卷内验、卷末验 null」写 |
+| 2026-10-28 | 卷五首领血量 ×2、混沌海怪池换掉 130 血的 `shade` | 终章反而最好打（TTK 1.7s、首领 14.7s，卷四首领 31~36s）。玩家 DPS 在 58→60 有 1.5× 跳升（满级堆满天赋/技能/词条），而首领 `cfg.hp` 只比卷四高 30% |
+| 2026-10-27 | 老档卷章按 `mapId` **反推**，不是「一律落卷一」；且以「章」为准回写「卷」 | 已在九幽地宫的老档不能被降级；手改档出现「卷三 / 第 1-1 章」时以章为准修正 |
+| 2026-10-27 | 营地 / 传送门**按卷累积**反推（卷三 → campA/B/C） | 老档到过卷三却没解锁 campC，等 M1 做完营地会被误判成「没解锁」 |
+| 2026-10-27 | 回头路口径统一为 `seen \|\| level >= unlock`，UI 与 `travelTo` 同一判定 | 两处口径不一致会出现「UI 能点、点了没反应」 |
+| 2026-10-27 | 营地「仅限已抵达」**只收营地这一层**，野图保留「等级够 或 去过」 | 25 个图位 `id: null`、卷二整卷没图，野图严格收口会让主线停在玄铁矿洞无路可走 |
+| 2026-10-27 | 营地按卷累积解锁（`campsUpToPart`），`travelTo` 与 `normalizeDoc` 同一口径 | 只 push 当前卷时，「等级跳卷三」会让 campB 永远解锁不了，而重开档后又冒出来 |
+| 2026-10-27 | `spawnNPCs()` 改读当前图 `cfg.npcs`，`loadMap` 条件改成「声明了 npcs 就摆人」 | 原来写死 `MAPS.village.npcs` + `mapId === 'village'`，营地 npcs 写了等于没写（实测 0 个） |
+| 2026-10-27 | 章间出口门挂在「本章最后一张**已开放**的图」，不是图位最后一个 | 落霞坡这类 `id: null` 的图位没有实体地图，门挂上去永远不会出现 |
+| 2026-10-27 | 营地先不给 elder，等 M2 配「一营一个发布者」 | q1~q11 整条链挂在桃源村村长身上，营地再摆 elder 会让任务对话指错地方 |
+| 2026-10-27 | 路标石放野图传送阵旁（`px+7`），安全区与试炼场不放 | 营地自己就是家，放碑是冗余；试炼场的传送阵已经是「退场门」 |
+| 2026-10-27 | 任务数据从 `data-world.js` 拆到 `data-quests.js`，任务只记「目标图 + 区域」，不关心图做没做 | 任务与地图解耦：M3 补一张图，对应任务自动可接，不用回来改代码 |
+| 2026-10-27 | 老档迁移**认 `legacyId`**，不按 id 猜、不按 `bossKilled` 重算 | 按 boss 重算只能还原「打没打过」，还原不了击杀计数；认 legacyId 能把 `progress` 数组原样搬，一条进度不丢 |
+| 2026-10-27 | `QUEST_LEGACY_OBJECTIVES` 把 q1~q11 的目标结构**冻结**成一张表 | 拿新任务跟自己比永远相等，那层「结构变了就别搬进度」的保护等于没有。这张表是历史事实，不是配置 |
+| 2026-10-27 | 接取上限：主线同时 1 条、支线 2 条 | 不限的话一次点亮七八个任务区域，整张图都被标成任务区，倍率叠起来怪多到离谱 |
+| 2026-10-27 | 任务区域倍率 = 数量 ×1.4（上限 +6）、目标怪 75% 直取（≈权重 ×3） | 加权抽样要写一套通用权重器，75% 直取在 2~3 种怪的场景里等价，代码少一半 |
+| 2026-10-27 | 复命 / 放弃**立刻**清掉任务区域倍率 | 留着不清的话，刷完任务的人会看到一张怪多到离谱的图（§4.3 第 3 条） |
+| 2026-10-27 | 一营一个掌事 + 一个录事；桃源村掌事 = 老村长（`NPC_ALIAS` 别名，不新建 NPC） | 老档 q1~q11 的对话人是村长，换人等于把玩家的记忆切断；其余四营必须有本地发布者，否则一条动线跑三卷 |
+| 2026-10-27 | 悬赏板用**对话**而不是新面板 | 木板本身就是「走过去说话」的东西；手机上少一层面板就少一处溢出风险（`mobile-layout` 要新增视口） |
+| 2026-10-27 | 追踪三行：1 主线 + 2 支线，悬赏**只报数不展开** | 三条悬赏都展开会把追踪框撑到屏幕外，而悬赏本来就不需要盯着看 |
+| 2026-10-27 | 卷二先补 2-1 两张图（寒潭水牢 / 冰魄湖），其余 4 个图位留给 M3 | 任务链写出来要有地方落，否则测试只能改等级硬跳，验不出真问题 |
+| 2026-10-27 | zone 骨架用 **R 归一化坐标**（R = size×0.47），不写米 | 写米的话换 size 就有一半区越界；归一化后 8 种骨架 × 任意尺寸都成立 |
+| 2026-10-27 | 刷怪数**不手填**，由 `suggestSpawnTotal()` 从骨架覆盖率反推 | 覆盖率差很大（cross 23.5% / twin 19.6%），同一 size 下差 3000㎡；手填同一个数必然一半偏密一半偏稀 |
+| 2026-10-27 | 零头补给**最少**的区，不是最多的区 | 补给最多的区会让 max/min 从 1.4 拉到 2.0，超台账的 1.6 硬指标 |
+| 2026-10-27 | 新图 `size` 定 290~300，**不接受 240** | §5.1 的「面积 ≥16000㎡」与「密度 380~450㎡/只」在 285 以下数学上互斥（骨架只覆盖 21%），探针逐档验过 |
+| 2026-10-27 | 首领落点走 `bossPosOf()`，不再直读 `MAP_BOSS_POS` | 老表只有 12 条坐标且按 size 130 摆的；新图 size 290 直接套会把首领丢到祭坛外。老坐标若仍落在本图 sanctum 内则原样保留，老图手感不变 |
+| 2026-10-27 | 刷怪改成**所有区轮转**，不按区顺序 | 同屏上限 36（PC）/ 28（触屏），一张图 40~56 只必然截断；按顺序刷会把截断全落在后殿 + 首领场，北半边变空图 |
+| 2026-10-27 | 小地图改成**固定整图视角**，不跟随玩家 | 跟随 + 整图 span 两者不匹配：一出生就把北边的首领场挤出圆框。整图视角的职责是「我在哪个区」，身边细节交给主画面 |
+| 2026-10-27 | 小地图底色压到最暗一档 | 原来中心亮度和 zone 填充撞色，分不清「能走的房间」和「墙外」—— 这恰恰是小地图最重要的信息 |
+| 2026-10-27 | 62 米外怪 AI 每 3 帧一次，但**不补 dt** | debuff 计时器在插入点之前已按真实 dt 结算；`dt` 是形参，写 `dt +=` 会污染下一只怪 |
+| 2026-10-27 | 地面贴图按 type 缓存，**不随地图卸载 dispose** | 41 张图最多 12 种地貌，每张重画要 12~20ms；dispose 了第二次进同类型图会拿到已销毁的纹理（黑地面） |
+| 2026-10-27 | 新图首领**复用既有模型**换色，不建新模型 | §5.3 定的「新地貌不新模型」；造型工作留给美术，数据层先保证「走进祭坛有人」 |
+| 2026-10-28 | M4 新怪做 **36 只全量**，不是台账写的 24 只 | 24 是把 M3b 已加的 16 只首领误算进了新怪；计划书 §6.2 的 36 只一只都没落地，做一半反而要二次回炉改怪池 |
+| 2026-10-28 | 卷末首领**就地取材**：golemking 重定级，flameemperor/yellowspring/heavenguard/chaosavatar 原地补 `actEnd` | 计划书点名的 firegeneral/ferryman 与 M3 已放的首领撞位；推翻布局要连任务、图位、老档迁移一起改，收益只有「名字对得上」 |
+| 2026-10-28 | `golemking` **双驻扎**（沼泽老巢 + 铁山绝顶），不从 swamp 摘掉 | `m1_3_1` 老档迁移仍指向沼泽那只；摘掉等于让老档的任务目标凭空消失 |
+| 2026-10-28 | `firegeneral` 从 `mine` 挪到 `frost` | `m2_1_1` 的任务图一直是寒潭水牢，之前挂在矿洞 —— 任务指过去打不到（引用校验查不出，因为 boss 存在，只是不在这张图） |
+| 2026-10-28 | 图鉴从「5 张老图」改成「**5 大卷**」，归区按「出场最多的卷」，平局归早 | 旧口径读 `MAPS[id].spawns`，新骨架图和新怪根本收录不进去；按「首次出场」是 38/6 的畸形分布，按最多出场是 31/14/13/9/9 |
+| 2026-10-28 | `part1` 的加成 = 旧 forest + swamp + mine 三条**求和**，不重新发 | 老档迁移只搬 key 不发新奖；三区旧加成合起来正好是当前 part1 的三条，老玩家迁移前后收益分毫不差 |
+| 2026-10-28 | 卷末首领的次阶钥匙 **8%**（终局 15%），且 `Game.addKey` 不存在时**静默不出** | 首领可重复刷，低概率才形成刷子循环；钩子先空转，M5 落地时不用回来改掉落代码 |
+| 2026-10-28 | `m3-check` **不许和别的 puppeteer 脚本并行**跑 | 软件渲染下两个浏览器抢 CPU：帧率掉到地板以下、怪 AI 来不及跑，会误报「帧率 4.5 < 6」「视野外 0 只怪」（本次踩过） |
+| 2026-10-28 | 地下城的层 = **独立小图**，不是一张图的三个区 | 每层要自己的骨架（入口岔路 / 主厅侧室 / 首领场），一张图只有一种骨架；层间 `loadMap` 约 120ms，跟试炼换波次一个量级 |
+| 2026-10-28 | **地下城里的怪不掉钥匙** | 否则「钥匙开地下城、地下城再产钥匙」自循环，地下城变零成本刷装场（§8.1 要避免的正是这个）。次阶钥匙只来自通关结算 35% |
+| 2026-10-28 | 守卫首领的血量**运行时反解**（同阶小怪均血 × 14），不写绝对值 | 同一个守卫要在 5 个阶里出现，写死没法跟阶走；这也是唯一一处允许覆盖 `spawnEnemy` 结果的场景 |
+| 2026-10-28 | 词缀**进门时抽定并预告**，`preview` 先给一次拒绝机会（取消不扣钥匙） | 「这把不打了换一把」是刷子游戏的乐趣；钥匙在 `enter()` 才 `spendKey`，预告阶段纯读 |
+| 2026-10-28 | 死亡 = 失败，钥匙不返还；`onPlayerDeath` 只记账、`onRespawn` 才换图 | 死着的时候 `loadMap` 会让镜头卡在尸体上；死亡面板的「回城」才是真正的复活点 |
+| 2026-10-28 | 图鉴加第 6 区 `rift`，地下城专属怪**不摊进任何一卷** | 摊进去会让那卷的「全录」变成「必须去打地下城」，而地下城本来有自己的 25 条进度，等于罚两次 |
+| 2026-10-28 | 地下城专属怪只做 **4 只**（第 5 类「坠天」用现有妖灵池） | 为「5 类各一只」凑数会写出一只没机制的怪；妖灵池本来就有 `voidbeast` / `mirrortwin` / `voidmoth` 能撑起坠天 |
+| 2026-10-28 | `#dgHud` **复用试炼的位置与骨架，只换配色**（紫 → 青） | 两套 HUD 不会同时出现，位置冲突不是问题；换来的是肌肉记忆一致、CSS 少写一半 |
+| 2026-10-28 | **凡是「0 有意义」的数值参数，一律 `=== undefined \|\| === null` 判断，不用 `\|\|` 兜底** | 本次两个真机 bug 同源：`spawnTotal \|\| 公式` 与 `spawnCount \|\| 14` 都把 0 当成没传，首领场凭空多出 40 / 14 只杂兵 |
+| 2026-10-28 | 图鉴加成键必须是**真属性键**，`test-m5` 用 `BUFF_ADD` / `BUFF_MUL` 白名单钉死 | 写错的键会静默无效：面板看不见、战斗也不生效，是最典型的一类「改了没反应」 |
+| 2026-10-28 | `dungeon-sim`（假 Game 推演）与 `probe-dungeon`（真机）**两个都要** | 推演钉数字（开门阈值 / 首领倍率 / 结算），真机钉接不住的东西（HUD 的 DOM、`loadMap` 换图、词缀乘在活怪身上）。只有推演会漏掉上面那两个 `\|\|` 坑 |
+| 2026-10-28 | 终章改成「8 魔将副本 → 8 印 → 终门 → 五阶段终 boss」（M7） | 用户追加需求。原 5-2 只有一张图一个首领，打完就结束，没有终局内容 |
+| 2026-10-28 | 8 副本做成 **8 张独立小图**，不做「一张图 8 个区域」 | 同屏体量、独立重生、独立掉落都更干净；且能复用 M5 `dungeon.js`「运行时写 MAPS[id]」的既有做法，上层 UI / 小地图 / 刷怪都不用改 |
+| 2026-10-28 | 魔将弱点写进 `BOSSES[id].resist`，**不进族群表** | 族群表是公开的（图鉴会显示抗性），魔将弱点必须隐藏，玩家只能靠打出来的数字摸 |
+| 2026-10-28 | 弱点强度：未命中抗性 +80（吃 20%），命中 -60（吃 160%），叠破绽 ×1.5 | 8~12 倍差足以让「打对/打错」是两个游戏，但不像免疫那样完全打不动 |
+| 2026-10-28 | 魔将之印 50% 掉落 + **同一将第 3 次必掉** | 「有几率」是用户要的，但纯随机会出现「打 20 次不掉」的劝退情形，加保底兜住极端霉运 |
+| 2026-10-28 | 终 boss **P5 是独立第二血条**（满血 + 换模型 + 换技能），不是残血加强 | 用户明确「最后一个阶段会满血并变身」；独立血条才能让变身有分量 |
+| 2026-10-28 | 终 boss 掉全部 40 件传世，0.01% / 0.1%，**优先掉未收集的** | 用户要「有动力不断刷到所有传世」。0.01% 下没有「未收集优先」会变成纯运气，玩家感觉不到进展 |
+| 2026-10-28 | 9 个新模型全走程序化，**不引入 GLB** | 项目底线是「程序化建模零素材」；9 个 GLB 会多 20~40MB，且 `skel.js` 目前只服务玩家角色 |
+| 2026-10-28 | 二周目只做**最小闭环**（入轮回 / 等级上限 +10 / 掉率 ×1.5） | 剧情重跑、任务重置、装备清零是另一套系统，先不铺；用户提二周目是为了「刷的理由」 |
+| 2026-10-28 | P05 怪物扩充 = **种类 80 → 120**，不是每图刷 120 只 | 用户原话「怪物（非boss）种类80-120」。每图 120 只会撞 §5.1 的 380~450㎡/只（密 3 倍），且同屏上限 PC 36 / 触屏 28 直接截断，等于只有 36 只在动 |
+| 2026-10-28 | P12 试炼**不设等级上限**，改成「难度随等级涨 + 经验按波数衰减 + 传世挂高波」 | 用户原话「动态根据人物等级调整难度，升级可以升难度也是增加的，这也是一种平衡；只有高级层数才极小概率掉传世」。刷级的根因是「经验按升级所需比例给」+「难度乘区只看波数」，两条乘起来让「低波 × 高等级」零风险高收益 —— 卡等级上限只是把问题往后推 |
+| 2026-10-28 | P12 传世掉落加**等级闸**（< 39 级不掉） | 传世 40 件 ilvl 全部 ≥ 40，`reqLv = ilvl - 1`，39 级才穿得上。不加闸会出现「20 级捡到传世但穿不上」的挫败感 |
+| 2026-10-28 | P06 砍**法师施法距离**（最远 13 米 < Boss 技能 14 米）+ 加大耗蓝 | 用户原话「法师是释法距离砍，耗蓝要加大，不然一个蓝条都用不完」。射程是「站远打」的根，耗蓝是「无限输出」的根，只改一个没用 |
+| 2026-10-28 | P10 的解法是**硬拒绝施法**，不是「补 castRange」 | 复核发现所有技能**都有** castRange；`resolveCast` 只夹落点、从不拒绝，且 `nearestEnemy(pp, maxR)` 会自动改锁最近的怪 —— 射程对玩家根本不构成约束 |
+| 2026-10-28 | P14 副区 Boss 血量 ×0.7 **接受**；P15 演出**只播一次** | 副 Boss 独享一个区，不该和主 Boss 一样肉；刷子玩家每次进图都看 2.5 秒演出会烦 |
+
+## 热修记录
+
+| 日期 | 问题 | 根因 | 修法 | 提交 |
+|---|---|---|---|---|
+| 2026-10-28 | **道号框点一下就整页崩**：「输入名称时如果之前有名称，点击输入框会显示以前输入的，再次点击就会报错」→「山海未开 · 运行出错」，控制台 `Cannot read properties of undefined (reading 'toLowerCase')` @ `game.js:341` / `:382` | 两条叠加：① 三个输入框都没写 `autocomplete="off"`，Chrome 给道号框弹「历史输入」下拉（= 用户看到的「显示以前输入的」）；② 在历史下拉里点选时 Chrome 会发 **`e.key === undefined`** 的 keydown/keyup，而 `bindInput()` 里 `const k = e.key.toLowerCase()` 写在「输入框聚焦」判断**之前**，先抛 TypeError，被 `boot.js` 兜成运行出错页 | ① 三个输入框加 `autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"`；② `game.js` 两处 + `ui.js` 一处把 `e.key` 兜成 `''` 并提前 return；③ 顺手把「输入框聚焦」判断挪到 `keys[k] = true` **之前**（原来在道号框里打 w 会让角色往前走） | 见下 |
+| 2026-10-28 | 输入框里打字会误触全局热键 | `ui.js` 只挡了 `#nameInput`，`#newName`（存档面板新建角色）和 `#stashSearch`（仓库搜索）没挡 | 改成「INPUT / TEXTAREA / contentEditable 一律不吃热键」 | 同上 |
+
+**回归**：新建 `dev/input-keys.js`（浏览器 21 项：autocomplete 属性 / `e.key===undefined` 不崩 / 打字不点亮游戏按键 / 打字不触发热键 + 反证热键仍可用 / 零 pageerror）。
+用线上旧版跑同一脚本可复现 10 项红（`game.js:341` 与 `:382` 各抛一次），修完全绿 —— 这个脚本能抓到老 bug，不是空跑。

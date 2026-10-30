@@ -4,15 +4,17 @@
  */
 const puppeteer = require('puppeteer-core');
 const path = require('path');
+/* 跨平台浏览器路径：原来写死 macOS Chrome，Windows 上跑直接崩（[M6] 修） */
+const EXE = require('./_chrome');
 
 const ROOT = path.resolve(__dirname, '..');
 const wait = ms => new Promise(r => setTimeout(r, ms));
 
 (async () => {
   const b = await puppeteer.launch({
-    executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+    executablePath: EXE,
     headless: 'new',
-    args: ['--no-sandbox', '--enable-webgl', '--use-gl=angle', '--window-size=1440,900']
+    args: ['--no-sandbox', '--enable-unsafe-swiftshader', '--use-gl=angle', '--use-angle=swiftshader', '--window-size=1440,900']
   });
   // deviceScaleFactor=2 模拟 Windows 200% 缩放
   const p = await b.newPage();

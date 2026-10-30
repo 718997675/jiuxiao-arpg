@@ -144,6 +144,12 @@ const ok = (cond, msg, extra) => {
     doc.skills = {};
     doc.skills[old8[0]] = { lv: 5, v: 2 };
     doc.passives = { iron: 3 };
+    /* 这两行才是「老档」的关键：doc 是从当前 state 深拷的，而当前 state 是
+     * **新口径**建出来的（barVer 已经是 2、skillReset 已经是 1）。
+     * 不删掉它们，normalizeProgress 里两段一次性迁移全都不会跑 ——
+     * 于是补位不执行、③ / ⑤ 空着，断言红得莫名其妙（实测这两条一直红着，
+     * 查下来是 fixture 根本不是老档，不是产品问题）。 */
+    delete doc.barVer;
     delete doc.skillReset;
     const out = SaveManager.normalizeDoc(doc, 1).doc;
     /* 运行期整形（含一次性全退） */
@@ -166,8 +172,6 @@ const ok = (cond, msg, extra) => {
   console.log('迁移:', JSON.stringify({ len: mig.len, bar: mig.bar, reset: mig.reset, refund: mig.refund }));
   ok(mig.len === 5, '老 8 格档整形后必须是 5 格', mig.len);
   ok(mig.misplaced.length === 0, '每格都必须落在本位（越位的一个都不许有）', JSON.stringify(mig.misplaced));
-  /* 40 级老档：5 个位都有已领悟技能，补位后不该留空格（否则玩家要自己去面板找） */
-  ok(mig.bar.filter(Boolean).length === 5, '老档补位后 5 格应该都是满的', JSON.stringify(mig.bar));
   /* 40 级老档：5 个位都有已领悟技能，补位后不该留空格（否则玩家要自己去面板找） */
   ok(mig.bar.filter(Boolean).length === 5, '老档补位后 5 格应该都是满的', JSON.stringify(mig.bar));
   ok(mig.bar2 && mig.bar2.length === 5, '第二套栏也要收敛到 5 格', mig.bar2 && mig.bar2.length);

@@ -426,11 +426,17 @@ const ok = (c, m, d) => {
     const rageRun = (lv) => {
       setup('whirl', lv, 1, 1);
       Game.state.stats.mpMax = 9999;
-      Game.state.mp = 200;
+      /* 消耗是「占上限的百分比 × **等级系数**」（cost 10 → Lv9 ≈ 1480 点、
+       * Lv10 ≈ 1540 点），所以直接比两次 delta 会量到 −52 的差，
+       * 把「回怒从 8 翻到 16」的 8 点整个淹掉（写死 mp=200 的老写法更糟：
+       * 付不起消耗，施法直接被判「怒气不足」，delta 恒 0）。
+       * 回怒是台阶给的，与消耗无关 —— 用 _freeCast 把消耗这一项掐掉再读。 */
+      Game.state.mp = 5000;
       const before = Game.state.mp;
       const oldHit = Game.damageEnemy;
       Game.damageEnemy = () => { };
-      Game.castSkill('whirl');
+      Game._freeCast = true;
+      try { Game.castSkill('whirl'); } finally { Game._freeCast = false; }
       const delta = Game.state.mp - before;
       Game.damageEnemy = oldHit;
       /* 同 tearRun：Lv9 / Lv10 也带余震定时器，量完就作废 */
@@ -1248,7 +1254,12 @@ const ok = (c, m, d) => {
      * 就抛「reading 'time'」（x47 那种），而区域的跳是 setInterval，不依赖帧循环。 */
     const run = async (id, lv, form, aimZ, waitMs, expectBurst) => {
       const pp = setup(id, lv, form, aimZ);
-      const z = id === 'firewall' ? pp.z + 12 : pp.z + (aimZ || 6);
+      /* 火墙的落点是「施法方向 × 射程」的尽头（resolveCast 的 dir 分支），
+       * 所以假怪必须摆在射程尽头那一格，而不是某个写死的距离 —— 写死会在
+       * 射程被调小之后既打不到（[P10] 直接拒绝施法）又量不出段数。 */
+      const z = id === 'firewall'
+        ? pp.z + (SKILLS[id].castRange || 12)
+        : pp.z + (aimZ || 6);
       const es = [0, 4, 6].map((dx, i) => mkFoe(pp.x + dx, z, i));
       Game.enemies = es;
       let areas = 0, bursts = 0;
@@ -1287,7 +1298,10 @@ const ok = (c, m, d) => {
       return r;
     };
 
-    /* 火墙：cast:'dir'，落点恒在射程尽头（12），假怪就摆在 12 处 */
+    /* 火墙：cast:'dir'，落点恒在**射程尽头**，假怪就摆在落点上。
+     * 尽头不能写死 12 —— 射程是数据层调过的（P06 从 12 收到 10），而 [P10]
+     * 之后射程是**否决条件**：怪站在 12 码外，这一发在扣蓝之前就被判
+     * 「距离太远」丢掉，量到的是 0 段 0 伤害（实测把 7 条断言全打成假红）。 */
     out.fw1 = await run('firewall', 1, 1, 6, 620);
     out.fw3 = await run('firewall', 3, 1, 6, 620);
     out.fw7 = await run('firewall', 7, 1, 6, 620);
@@ -2143,9 +2157,12 @@ const ok = (c, m, d) => {
     reset(7);
     Game.blade = { i: 0, mask: 0b0111 };
     Game.cooldowns = {};
-    /* 怒气取**上限的一半**：__mkClean 把 mp 拉到 99999，超过 mpMax 的话
-     * 退回来的那点会被 Math.min(mpMax, …) 夹掉，看起来像「没退」 */
-    Game.state.mp = Math.floor(Game.state.stats.mpMax * 0.5);
+    /* 怒气取**满管**：__mkClean 把 mp 拉到 99999，超过 mpMax 的话退回来的
+     * 那点会被 Math.min(mpMax, …) 夹掉，看起来像「没退」。
+     * 不能取「半管」—— 消耗是占上限的百分比 × 等级系数（Lv7 剑神降世 =
+     * 40% × 1.36 ≈ 54.5% 上限），半管付不起，这一发会被判「怒气不足」
+     * 整个丢掉：刀式不换、冷却不进，三条断言一起假红。 */
+    Game.state.mp = Game.state.stats.mpMax;
     const mpBefore = Game.state.mp;
     Game.castSkill('avatar');
     out.switch7 = { i: Game.bladeStance(), mask: Game.blade.mask, cd: Game.cooldowns['avatar'], mpBefore: mpBefore, mp: Game.state.mp };

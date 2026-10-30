@@ -8,13 +8,30 @@
  *
  * type: melee / aoe / proj / dash / buff / heal / summon / zone / rain / nova / ultimate / bolt / chain / meteor / shield / swordrain
  * tree: 所属系（与天赋树同名，供技能面板分组）
+ *
+ * 【cost 的口径（P06 · 2026-10-28 改）】—— 改数之前先读这一段
+ *   `cost` **不是**固定点数，而是「占灵力上限的百分比」：
+ *     cost: 14 → 这一发吃掉当前灵力上限的 14%（Game.skillCost 换算成实际点数）。
+ *
+ *   为什么改：原来是固定点数（火球 10 点），而灵力上限随 `int` 线性涨到
+ *   60 级 3700+。于是「蓝/消耗」比值一路涨，40 级以后等于无限蓝 ——
+ *   用户原话「一个蓝条都用不完」。百分比口径下，一管蓝永远是「十来发」，
+ *   换等级、换装备都不会漂移。
+ *
+ *   调数只看一件事：**主输出技能 ≈ 8%~12%**（换算过来满蓝连放 10~18 秒），
+ *   大招 30%~43%（单发再贵就等于「一管蓝放不出第二发」，会变成摆设）。
+ *   改完跑 `node dev/skill-ref.js` + `node dev/balance-report.js`。
+ *
+ * 【castRange 的口径（P06）】法师 / 道士的远程一律 ≤ 13 米，**必须小于
+ *   Boss 技能的 14 米**（见 P02），否则「站射程边缘打」又是一条无风险策略。
+ *   战士保持原样（3.6~12）。`dev/skill-ref.js` 会逐条校验。
  * ============================================================ */
 
 /* ---------------- 技能 ---------------- */
 const SKILLS = {
   /* ==================== 战士 · 狂战 ==================== */
   whirl: {
-    id: 'whirl', name: '旋风斩', cls: 'warrior', tree: '狂战', glyph: '旋', unlock: 1, cd: 2.6, cost: 12,
+    id: 'whirl', name: '旋风斩', cls: 'warrior', tree: '狂战', glyph: '旋', unlock: 1, cd: 2.6, cost: 10,
     type: 'aoe', mult: 1.5, radius: 4.2, anim: 'spin', cast: 'self', castRange: 0,
     desc: '挥刀横斩，对身周所有敌人造成 {dmg} 点伤害。命中回复怒气。',
     variants: [
@@ -142,8 +159,8 @@ const SKILLS = {
 
   /* ==================== 法师 · 烈火 ==================== */
   fireball: {
-    id: 'fireball', name: '火球术', cls: 'mage', tree: '烈火', glyph: '火', unlock: 1, cd: 1.4, cost: 10,
-    type: 'proj', mult: 1.9, speed: 22, radius: 2.4, elem: 'fire', anim: 'cast', cast: 'dir', castRange: 16,
+    id: 'fireball', name: '火球术', cls: 'mage', tree: '烈火', glyph: '火', unlock: 1, cd: 1.4, cost: 8,
+    type: 'proj', mult: 1.9, speed: 22, radius: 2.4, elem: 'fire', anim: 'cast', cast: 'dir', castRange: 12,
     desc: '掷出爆裂火球，命中后爆炸造成 {dmg} 点火焰伤害。',
     variants: [
       { name: '连环', desc: '3 连发，单发伤害 -40%', mods: { count: 2, dmg: -40 } },
@@ -153,7 +170,7 @@ const SKILLS = {
   },
   meteor: {
     id: 'meteor', name: '炎爆术', cls: 'mage', tree: '烈火', glyph: '爆', unlock: 12, cd: 10, cost: 30,
-    type: 'meteor', mult: 4.2, radius: 5.5, delay: 0.9, elem: 'fire', anim: 'cast', cast: 'ground', castRange: 16,
+    type: 'meteor', mult: 4.2, radius: 5.5, delay: 0.9, elem: 'fire', anim: 'cast', cast: 'ground', castRange: 13,
     desc: '在指定位置召下陨火，1 秒后爆炸造成 {dmg} 点火焰伤害。',
     variants: [
       { name: '巨爆', desc: '范围 +25%，伤害 -10%', mods: { radius: 25, dmg: -10 } },
@@ -163,7 +180,7 @@ const SKILLS = {
   },
   firewall: {
     id: 'firewall', name: '火墙', cls: 'mage', tree: '烈火', glyph: '墙', unlock: 18, cd: 14, cost: 26,
-    type: 'zone', mult: 0.55, radius: 3, dur: 4, tick: 0.5, elem: 'fire', anim: 'cast', cast: 'dir', castRange: 12,
+    type: 'zone', mult: 0.55, radius: 3, dur: 4, tick: 0.5, elem: 'fire', anim: 'cast', cast: 'dir', castRange: 10,
     desc: '在指定方向升起火墙，4 秒内持续灼烧其中敌人，每 0.5 秒 {dmg} 点火焰伤害。',
     variants: [
       { name: '长墙', desc: '持续 +2 秒', mods: { dur: 2 } },
@@ -184,7 +201,7 @@ const SKILLS = {
   /* ==================== 法师 · 寒冰 ==================== */
   frostnova: {
     id: 'frostnova', name: '冰霜新星', cls: 'mage', tree: '寒冰', glyph: '冰', unlock: 4, cd: 7, cost: 20,
-    type: 'nova', mult: 2.2, radius: 6, slow: 0.45, slowDur: 3.5, elem: 'ice', anim: 'cast', cast: 'ground', castRange: 9,
+    type: 'nova', mult: 2.2, radius: 6, slow: 0.45, slowDur: 3.5, elem: 'ice', anim: 'cast', cast: 'ground', castRange: 8,
     desc: '在指定位置引爆寒气，造成 {dmg} 点冰霜伤害并减速 45%，持续 3.5 秒。',
     variants: [
       { name: '双重', desc: '额外 1 片新星，伤害 -20%', mods: { count: 1, dmg: -20 } },
@@ -194,7 +211,7 @@ const SKILLS = {
   },
   iceshard: {
     id: 'iceshard', name: '冰锥', cls: 'mage', tree: '寒冰', glyph: '锥', unlock: 14, cd: 3.2, cost: 14,
-    type: 'proj', mult: 1.2, speed: 26, radius: 2, elem: 'ice', anim: 'cast', cast: 'dir', castRange: 14,
+    type: 'proj', mult: 1.2, speed: 26, radius: 2, elem: 'ice', anim: 'cast', cast: 'dir', castRange: 11,
     desc: '扇形射出三枚冰锥，每枚造成 {dmg} 点冰霜伤害并减速。',
     variants: [
       { name: '三叉', desc: '冰锥 +2 枚，单枚 -25%', mods: { count: 2, dmg: -25 } },
@@ -214,7 +231,7 @@ const SKILLS = {
   },
   blizzard: {
     id: 'blizzard', name: '暴雪', cls: 'mage', tree: '寒冰', glyph: '雪', unlock: 22, cd: 18, cost: 32,
-    type: 'zone', mult: 0.6, radius: 6, dur: 5, tick: 0.7, elem: 'ice', anim: 'cast', cast: 'ground', castRange: 12,
+    type: 'zone', mult: 0.6, radius: 6, dur: 5, tick: 0.7, elem: 'ice', anim: 'cast', cast: 'ground', castRange: 10,
     desc: '召唤暴雪笼罩指定区域，5 秒内每 0.7 秒造成 {dmg} 点冰霜伤害并减速。',
     variants: [
       { name: '久雪', desc: '持续 +2 秒', mods: { dur: 2 } },
@@ -225,7 +242,7 @@ const SKILLS = {
   /* ==================== 法师 · 雷霆 ==================== */
   chain: {
     id: 'chain', name: '雷弧链', cls: 'mage', tree: '雷霆', glyph: '雷', unlock: 8, cd: 6, cost: 22,
-    type: 'chain', mult: 1.7, jumps: 5, range: 10, elem: 'lightning', anim: 'cast', cast: 'enemy', castRange: 12,
+    type: 'chain', mult: 1.7, jumps: 5, range: 10, elem: 'lightning', anim: 'cast', cast: 'enemy', castRange: 10,
     desc: '放出连环雷弧，在最多 5 名敌人间跳跃，每次造成 {dmg} 点雷电伤害。',
     variants: [
       { name: '多跳', desc: '跳跃 +2', mods: { count: 2 } },
@@ -234,8 +251,8 @@ const SKILLS = {
     ]
   },
   starfall: {
-    id: 'starfall', name: '陨星天火', cls: 'mage', tree: '雷霆', glyph: '星', unlock: 26, cd: 55, cost: 50,
-    type: 'rain', mult: 1.6, radius: 10, count: 16, dur: 4, elem: 'fire', anim: 'cast', cast: 'ground', castRange: 18,
+    id: 'starfall', name: '陨星天火', cls: 'mage', tree: '雷霆', glyph: '星', unlock: 26, cd: 55, cost: 43,
+    type: 'rain', mult: 1.6, radius: 10, count: 16, dur: 4, elem: 'fire', anim: 'cast', cast: 'ground', castRange: 13,
     desc: '天穹崩裂，4 秒内降下 16 颗陨星，每颗造成 {dmg} 点火焰伤害。',
     variants: [
       { name: '星雨', desc: '陨星 +6 颗', mods: { count: 6 } },
@@ -245,7 +262,7 @@ const SKILLS = {
   },
   thundercloud: {
     id: 'thundercloud', name: '雷云', cls: 'mage', tree: '雷霆', glyph: '云', unlock: 30, cd: 22, cost: 34,
-    type: 'zone', mult: 1.1, radius: 7, dur: 6, tick: 1, elem: 'lightning', anim: 'cast', cast: 'ground', castRange: 14,
+    type: 'zone', mult: 1.1, radius: 7, dur: 6, tick: 1, elem: 'lightning', anim: 'cast', cast: 'ground', castRange: 13,
     desc: '召来雷云笼罩指定区域，6 秒内每秒随机落雷击中最多 3 名敌人，每道 {dmg} 点雷电伤害。',
     variants: [
       { name: '久云', desc: '持续 +2 秒', mods: { dur: 2 } },
@@ -254,8 +271,8 @@ const SKILLS = {
     ]
   },
   judgement: {
-    id: 'judgement', name: '雷罚', cls: 'mage', tree: '雷霆', glyph: '罚', unlock: 40, cd: 45, cost: 48,
-    type: 'bolt', mult: 8.5, radius: 3, elem: 'lightning', anim: 'cast', cast: 'enemy', castRange: 16,
+    id: 'judgement', name: '雷罚', cls: 'mage', tree: '雷霆', glyph: '罚', unlock: 40, cd: 45, cost: 42,
+    type: 'bolt', mult: 8.5, radius: 3, elem: 'lightning', anim: 'cast', cast: 'enemy', castRange: 13,
     desc: '对目标降下天罚巨雷，造成 {dmg} 点雷电伤害；对首领额外 +30%。',
     variants: [
       { name: '天威', desc: '伤害 +30%', mods: { dmg: 30 } },
@@ -289,7 +306,7 @@ const SKILLS = {
   /* ==================== 道士 · 符箓 ==================== */
   talisman: {
     id: 'talisman', name: '五雷符', cls: 'taoist', tree: '符箓', glyph: '符', unlock: 1, cd: 1.2, cost: 8,
-    type: 'bolt', mult: 1.7, range: 16, elem: 'sigil', anim: 'cast', cast: 'enemy', castRange: 16,
+    type: 'bolt', mult: 1.7, range: 16, elem: 'sigil', anim: 'cast', cast: 'enemy', castRange: 12,
     desc: '掷出雷符，召下天雷击中目标，造成 {dmg} 点符法伤害。',
     variants: [
       { name: '双符', desc: '额外 1 张，单张 -30%', mods: { count: 1, dmg: -30 } },
@@ -299,7 +316,7 @@ const SKILLS = {
   },
   talismanarrow: {
     id: 'talismanarrow', name: '符箭', cls: 'taoist', tree: '符箓', glyph: '箭', unlock: 14, cd: 2.6, cost: 12,
-    type: 'bolt', mult: 1.0, range: 16, elem: 'sigil', anim: 'cast', cast: 'enemy', castRange: 16,
+    type: 'bolt', mult: 1.0, range: 16, elem: 'sigil', anim: 'cast', cast: 'enemy', castRange: 12,
     desc: '一次射出三张追踪符，每张造成 {dmg} 点符法伤害。',
     variants: [
       { name: '连珠', desc: '符箭 +2，单发 -25%', mods: { count: 2, dmg: -25 } },
@@ -308,8 +325,8 @@ const SKILLS = {
     ]
   },
   swordrain: {
-    id: 'swordrain', name: '万剑归宗', cls: 'taoist', tree: '符箓', glyph: '剑', unlock: 26, cd: 50, cost: 45,
-    type: 'swordrain', mult: 1.15, radius: 12, count: 22, dur: 3.5, elem: 'sigil', anim: 'cast', cast: 'ground', castRange: 18,
+    id: 'swordrain', name: '万剑归宗', cls: 'taoist', tree: '符箓', glyph: '剑', unlock: 26, cd: 50, cost: 41,
+    type: 'swordrain', mult: 1.15, radius: 12, count: 22, dur: 3.5, elem: 'sigil', anim: 'cast', cast: 'ground', castRange: 12,
     desc: '万道符剑自天而降，3.5 秒内对范围内敌人造成 22 次 {dmg} 点伤害。',
     variants: [
       { name: '万剑', desc: '符剑 +6 道', mods: { count: 6 } },
@@ -319,7 +336,7 @@ const SKILLS = {
   },
   mastersigil: {
     id: 'mastersigil', name: '天师符', cls: 'taoist', tree: '符箓', glyph: '师', unlock: 30, cd: 20, cost: 30,
-    type: 'zone', mult: 1.0, radius: 6, dur: 6, tick: 0.9, elem: 'sigil', anim: 'cast', cast: 'ground', castRange: 14,
+    type: 'zone', mult: 1.0, radius: 6, dur: 6, tick: 0.9, elem: 'sigil', anim: 'cast', cast: 'ground', castRange: 12,
     desc: '布下天师符阵，6 秒内每 0.9 秒对阵中敌人落雷，每次 {dmg} 点符法伤害。',
     variants: [
       { name: '久阵', desc: '持续 +2 秒', mods: { dur: 2 } },
@@ -349,7 +366,7 @@ const SKILLS = {
     ]
   },
   azuredragon: {
-    id: 'azuredragon', name: '青龙', cls: 'taoist', tree: '召唤', glyph: '龙', unlock: 38, cd: 45, cost: 45,
+    id: 'azuredragon', name: '青龙', cls: 'taoist', tree: '召唤', glyph: '龙', unlock: 38, cd: 45, cost: 41,
     type: 'summon', dur: 18, anim: 'cast', cast: 'self', castRange: 0,
     desc: '召出青龙助战 18 秒，继承 80% 攻击力，攻击为范围伤害。',
     variants: [
@@ -371,7 +388,7 @@ const SKILLS = {
   },
   poison: {
     id: 'poison', name: '蚀骨毒雾', cls: 'taoist', tree: '丹道', glyph: '毒', unlock: 12, cd: 8, cost: 24,
-    type: 'zone', mult: 0.75, radius: 5, dur: 6, tick: 0.8, elem: 'poison', anim: 'cast', cast: 'ground', castRange: 14,
+    type: 'zone', mult: 0.75, radius: 5, dur: 6, tick: 0.8, elem: 'poison', anim: 'cast', cast: 'ground', castRange: 12,
     desc: '布下毒雾，6 秒内持续腐蚀其中敌人，每 0.8 秒造成 {dmg} 点毒素伤害。',
     variants: [
       { name: '久毒', desc: '持续 +2 秒', mods: { dur: 2 } },

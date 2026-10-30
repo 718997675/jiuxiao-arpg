@@ -29,6 +29,18 @@ const FILES = [
 ];
 
 const ctx = { console, Math, JSON, Date, isFinite, Number, String, Array, Object, parseInt, parseFloat };
+/* 固定随机种子。
+ * 装备是 200 次随机取样平均出来的，默认 Math.random 会让每次跑的 atk / hpMax
+ * 抖动 3~5%，算出来的「崩盘点」跟着来回跳 1~2 波 —— 调参时根本分不清
+ * 是系数生效了还是运气变了。这里换成 LCG，同参数必然同结果。 */
+let _seed = 20261028;
+const _rand = () => {
+  _seed = (_seed * 1664525 + 1013904223) % 4294967296;
+  return _seed / 4294967296;
+};
+const M = Object.create(Math);
+M.random = _rand;
+ctx.Math = M;
 /* const/let 声明不会挂到 vm 的 global 上，取数据表要走一次求值 */
 const g = (expr) => vm.runInContext(expr, ctx);
 vm.createContext(ctx);
@@ -78,13 +90,15 @@ function dpsOf(st, skillMul = 1.9) {
 
 /* ---------- 2. 试炼曲线 ---------- */
 const MOB = g('BALANCE').mob;
-function enemyHp(cfgHp, lvl, wave) {
-  /* 与 game.js spawnEnemy 同口径（v1.11.0 起含 hpBase） */
+function enemyHp(cfgHp, lvl, wave, level) {
+  /* 与 game.js spawnEnemy 同口径（v1.11.0 起含 hpBase）。
+   * [P12] 再乘等级乘区 —— trialHpMul 的第二个参数是玩家等级，
+   * 不传就等于按「不加压」算，跟运行时对不上。 */
   const f = (MOB.hpBase || 1) + lvl * MOB.hpLv + lvl * lvl * MOB.hpLv2;
-  return cfgHp * f * g('trialHpMul')(wave);
+  return cfgHp * f * g('trialHpMul')(wave, level);
 }
-function enemyDmg(atk, lvl, wave) {
-  return atk * (1 + lvl * MOB.dmgLv) * g('trialDmgMul')(wave);
+function enemyDmg(atk, lvl, wave, level) {
+  return atk * (1 + lvl * MOB.dmgLv) * g('trialDmgMul')(wave, level);
 }
 /* 玩家承伤：与 game.js damagePlayer 同口径 ——
  *   reduce = min(0.75, def / (def + 320 + level×22))
@@ -160,9 +174,9 @@ function simulate(entryLevel, waves = 60, verbose = false) {
     const dps = dpsOf(st) * g('trialBlessingPower')(w);   // 祝福带来的乘区
     const count = g('trialWaveCount')(w);
     const prof = poolProfile(w);
-    const hp = enemyHp(prof.hp, elvl, w);
+    const hp = enemyHp(prof.hp, elvl, w, lv);
     const ttk = hp / Math.max(1, dps);
-    const hit = enemyDmg(prof.atk, elvl, w);
+    const hit = enemyDmg(prof.atk, elvl, w, lv);
     const ehp = ehpOf(st, lv);
     /* 承伤不是「一只怪打你多少刀」，而是「贴身 k 只时能撑几秒」。
      * k 取同屏数量的 25%（近战位有限，远程/包夹会分走一部分）。 */
@@ -210,4 +224,79 @@ for (const entry of [8, 20, 32]) {
 if (FULL) {
   console.log('\n=== 全量明细（20 级进入）===');
   simulate(20, 60, true);
+}
+
+/* ============================================================
+ * 各等级的「最远波数」（P12）
+ * ------------------------------------------------------------
+ * 上面三段是「从 N 级进入、边打边升级」的推演，回答的是「一场能走多远」。
+ * 这一段回答的是另一个问题：**同一个等级的玩家，靠装备碾压能推到第几波**。
+ *
+ * 所以这里**不涨等级**（`lv` 固定），只让波数往前走 —— 这正是 P12 要治的场景：
+ * 40 级玩家反复重开第 1~10 波。等级乘区 `trialLevelMul` 生效后，
+ * 高等级玩家在同一波的 TTK / 承伤都会变差，崩盘点提前。
+ *
+ * 崩判据与上面一致：TTK > 9 秒（打一只怪要挨 5 轮以上）或贴身可撑 < 6 秒。
+ * 目标（计划书 P12）：10/20/30/40/50/60 级都落在 25~40 波。
+ * ============================================================ */
+function simulateFixed(level, waves = 80) {
+  const st = statsAt(level);
+  const ehp = ehpOf(st, level);
+  for (let w = 1; w <= waves; w++) {
+    const elvl = Math.round(level + 1 + w * 0.12);
+    const dps = dpsOf(st) * g('trialBlessingPower')(w);
+    const count = g('trialWaveCount')(w);
+    const prof = poolProfile(w);
+    const hp = enemyHp(prof.hp, elvl, w, level);
+    const ttk = hp / Math.max(1, dps);
+    const hit = enemyDmg(prof.atk, elvl, w, level);
+    const k = Math.max(1, Math.round(count * 0.25));
+    const ttd = ehp / (k * hit / prof.cd);
+    if (ttk > 9 || ttd < 6) return { w, ttk, ttd };
+  }
+  return { w: waves, ttk: 0, ttd: 99 };
+}
+
+/* 注意「最远波数」的绝对值和计划书写的 25~40 对不上：
+ * 这个模型从 v1.x 起就用「贴身 25% 同屏、可撑 6 秒」当崩盘线，
+ * **P12 之前的基线本身就是 16~20 波**（不是 25~40）。所以这里不打印达标/不达标，
+ * 只打印「比 10 级早几波崩」—— 那才是 P12 真正要验的东西（等级越高越难）。
+ * 绝对波数要抬到 25~40 是另一件事（松 0.54 补偿系数），不在 P12 范围里。 */
+console.log('\n=== 各等级「最远波数」（等级固定 · 崩盘线：TTK>9s 或贴身可撑<6s）===');
+console.log('Lv   等级乘区   最远波数   比 10 级');
+const base = simulateFixed(10).w;
+for (const lv of [10, 20, 30, 40, 50, 60]) {
+  const r = simulateFixed(lv);
+  const mul = g('trialLevelMul')(lv);
+  const d = r.w - base;
+  console.log(
+    String(lv).padEnd(5) +
+    ('×' + mul.toFixed(2)).padStart(9) + '   ' +
+    String(r.w).padStart(6) + ' 波   ' +
+    (d === 0 ? '—' : (d > 0 ? '+' + d : String(d))) + ' 波'
+  );
+}
+
+/* 同一波、不同等级：这才是「等级乘区有没有生效」的直接证据。
+ * 上面那张表看的是「打到哪崩」，崩点由 ttd≈6 这条线决定，所以崩点处的 ttd
+ * 永远接近 6，看不出等级差；这里固定波数横向比，才看得出 60 级的同一波
+ * 到底比 10 级难多少。 */
+console.log('\n=== 同一波 · 不同等级的强度（TTK 应随等级上升）===');
+console.log('波次   Lv10 TTK   Lv30 TTK   Lv60 TTK   Lv60/Lv10');
+for (const w of [5, 10, 20]) {
+  const cell = (lv) => {
+    const st = statsAt(lv);
+    const elvl = Math.round(lv + 1 + w * 0.12);
+    const dps = dpsOf(st) * g('trialBlessingPower')(w);
+    const prof = poolProfile(w);
+    return enemyHp(prof.hp, elvl, w, lv) / Math.max(1, dps);
+  };
+  const a = cell(10), b = cell(30), c = cell(60);
+  console.log(
+    String(w).padStart(4) + '   ' +
+    a.toFixed(1).padStart(7) + 's  ' +
+    b.toFixed(1).padStart(8) + 's  ' +
+    c.toFixed(1).padStart(8) + 's  ' +
+    ('×' + (c / a).toFixed(2)).padStart(9)
+  );
 }

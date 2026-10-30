@@ -1,12 +1,13 @@
 const puppeteer = require('puppeteer-core');
 const path = require('path');
+const EXE = require('./_chrome');
 const wait = ms => new Promise(r => setTimeout(r, ms));
 
 (async () => {
   const browser = await puppeteer.launch({
-    executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+    executablePath: EXE,
     headless: 'new',
-    args: ['--no-sandbox', '--enable-webgl', '--use-gl=angle', '--window-size=1440,900']
+    args: ['--no-sandbox', '--enable-unsafe-swiftshader', '--use-gl=angle', '--use-angle=swiftshader', '--window-size=1440,900']
   });
   const page = await browser.newPage();
   await page.setViewport({ width: 1440, height: 900 });

@@ -24,6 +24,7 @@ const ARMOR_BASES = pick('ARMOR_BASES');
 const WEAPON_BASES = pick('WEAPON_BASES');
 const OFFHAND_BASES = pick('OFFHAND_BASES');
 const rollItem = pick('rollItem');
+const ILVL_MAX = pick('ILVL_MAX');
 const computePlayerStats = pick('computePlayerStats');
 
 let pass = 0, fail = 0;
@@ -41,7 +42,7 @@ let dupAffix = 0, badImplicit = 0, badAffix = 0, nanItem = 0;
 const t0 = Date.now();
 
 for (let i = 0; i < N; i++) {
-  const ilvl = 1 + Math.floor(Math.random() * 40);
+  const ilvl = 1 + Math.floor(Math.random() * ILVL_MAX);
   const it = rollItem(ilvl, { magicFind: Math.random() * 200 });
   names.set(it.slot + '|' + it.baseName, (names.get(it.slot + '|' + it.baseName) || 0) + 1);
   if (it.implicit) {
@@ -112,8 +113,8 @@ const clsList = ['warrior', 'mage', 'taoist'];
 for (let i = 0; i < 500; i++) {
   const cls = clsList[i % 3];
   const eq = {};
-  for (const s of slots) eq[s] = rollItem(1 + Math.floor(Math.random() * 40), { cls, rarity: 'legendary' });
-  const p = { cls, level: 1 + Math.floor(Math.random() * 40), equipment: eq };
+  for (const s of slots) eq[s] = rollItem(1 + Math.floor(Math.random() * ILVL_MAX), { cls, rarity: 'legendary' });
+  const p = { cls, level: 1 + Math.floor(Math.random() * ILVL_MAX), equipment: eq };
   const st = computePlayerStats(p);
   for (const k in st) {
     const v = st[k];
@@ -131,7 +132,7 @@ const median = a => a.sort((x, y) => x - y)[Math.floor(a.length / 2)];
 console.log('\nilvl 曲线（白装中位数）');
 console.log('ilvl   武器DPS   战甲护甲   头盔护甲');
 const curve = {};
-for (const lv of [1, 10, 20, 30, 40]) {
+for (const lv of [1, 10, 20, 30, 40, 50, 60]) {
   const dps = [], arm = [], hlm = [];
   for (let i = 0; i < 400; i++) {
     const w = rollItem(lv, { slot: 'weapon', cls: 'warrior', rarity: 'common' });
@@ -147,14 +148,17 @@ for (const lv of [1, 10, 20, 30, 40]) {
     curve[lv].hlm
   );
 }
-const lvs = [1, 10, 20, 30, 40];
+const lvs = [1, 10, 20, 30, 40, 50, 60];
 const mono = k => lvs.every((lv, i) => i === 0 || curve[lv][k] > curve[lvs[i - 1]][k]);
 ok(mono('dps'), '武器 DPS 不是随 ilvl 单调递增');
 ok(mono('arm'), '战甲护甲不是随 ilvl 单调递增');
 ok(mono('hlm'), '头盔护甲不是随 ilvl 单调递增');
 
 /* 涨幅要「前陡后缓」：低等级换装快，低档涨幅大是正常的；但每档都必须递增、
- * 单档不超过 3.5 倍，且 1→40 级总成长在 12~35 倍（ARPG 装备驱动就是这个量级）。 */
+ * 单档不超过 3.5 倍，且 1→40 级总成长在 12~35 倍（ARPG 装备驱动就是这个量级）。
+ * [M6] 上限 40 → 60 之后曲线延伸到 60：后两档的涨幅必须**明显小于**前期
+ * （40~60 只该涨 2 倍上下 —— 怪物血量同期也只涨 2.05 倍），
+ * 所以这里同时钉住「1→60 总成长 30~50 倍」与「末档涨幅 < 首档涨幅」。 */
 const jump = (a, b) => b / a;
 const ratios = [];
 for (let i = 1; i < lvs.length; i++) {
@@ -165,7 +169,12 @@ for (let i = 1; i < lvs.length; i++) {
 ok(ratios[0] >= ratios[ratios.length - 1], '武器 DPS 涨幅不是前陡后缓', ratios.map(r => r.toFixed(2)).join(' → '));
 const totalDps = curve[40].dps / curve[1].dps;
 ok(totalDps > 12 && totalDps < 35, '武器 1→40 级总成长倍率超出合理区间', totalDps.toFixed(1) + 'x');
-console.log('武器涨幅', ratios.map(r => r.toFixed(2) + 'x').join(' → '), ` 总计 ${totalDps.toFixed(1)}x`);
+const totalDps60 = curve[60].dps / curve[1].dps;
+ok(totalDps60 > 30 && totalDps60 < 50, '武器 1→60 级总成长倍率超出合理区间', totalDps60.toFixed(1) + 'x');
+const tailGrow = curve[60].dps / curve[40].dps;
+ok(tailGrow > 1.5 && tailGrow < 2.6, '武器 40→60 只涨 1.5~2.6 倍（与怪物血量同步）', tailGrow.toFixed(2) + 'x');
+console.log('武器涨幅', ratios.map(r => r.toFixed(2) + 'x').join(' → '),
+  ` 1→40 ${totalDps.toFixed(1)}x · 1→60 ${totalDps60.toFixed(1)}x · 40→60 ${tailGrow.toFixed(2)}x`);
 
 /* ---------------- 5. 词缀数值量级 ---------------- */
 console.log('\n词缀量级抽检（ilvl 40）');

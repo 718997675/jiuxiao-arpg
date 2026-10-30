@@ -250,7 +250,7 @@ Object.assign(UI, {
         reforge: '洗练只替换选中的那一条词缀；「定向」可锁定单条只升不降，或指定目标词条一键洗到为止。每次洗练费用 +35%。',
         enhance: '强化为装备扩充额外词缀，上限 +3 条；固定词条不参与强化，强化出来的词缀可以继续洗练。',
         craft: '锻造消耗匠材与铜钱，把凡品 / 灵品重铸成更高品质的同部位装备。匠材由妖兽、精英与首领掉落，不占行囊格。',
-        tier: '升阶把基底往上推一档（凡兵 → 精铁 → … → 太初）：护甲/伤害/固有属性重算，品质与词条原样保留。需要一件同名装备作引，另付铜钱与玄晶。'
+        tier: '升阶把基底往上推一档（' + (typeof BASE_TIER_NAME !== 'undefined' ? BASE_TIER_NAME[0] + ' → ' + BASE_TIER_NAME[1] + ' → … → ' + BASE_TIER_NAME[BASE_TIER_NAME.length - 1] : '凡兵 → 精铁 → … → 无极') + '）：护甲/伤害/固有属性重算，品质与词条原样保留。需要一件同名装备作引，另付铜钱与玄晶。'
       };
       hintEl.textContent = HINTS[this.forgeTab] || HINTS.rune;
     }
@@ -528,7 +528,7 @@ Object.assign(UI, {
     /* [UNIQUE-1] 传世没有基底阶：这里不画八阶进度条，换成一句说明，
      * 免得玩家看到「凡兵（第 1/8 阶）」这种明显不对的标签 */
     const tierless = !!(item.tierless || item.rarity === 'unique');
-    const subTier = tierless ? '不入八阶' : `${itemTierLabel(item)}（第 ${tierNow + 1}/${list.length} 阶）`;
+    const subTier = tierless ? '不入基底阶' : `${itemTierLabel(item)}（第 ${tierNow + 1}/${list.length} 阶）`;
     let h = `<div class="fhead">
       <span class="fi" style="color:${r.color};border-color:${r.color}44">${itemIcon(item)}</span>
       <div style="min-width:0">

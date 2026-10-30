@@ -1,9 +1,11 @@
 /* ============================================================
  * SaveManager —— 存档系统 v2（S0「存档地基」）
  *
- * · 3 个本地角色位（jiuxiao_save_v2_s1 / s2 / s3）
- * · schemaVersion = 2，doc 结构见下方 pack()
+ * · 10 个本地角色位（jiuxiao_save_v2_s1 … s10，数量见 SLOT_COUNT）
+ * · schemaVersion = 3（M0 世界结构：world.part/act/camps/portals/mapsSeen），doc 结构见下方 pack()
  * · migrate()：V1 单档（扁平 JSON）→ V2 doc，字段 1:1 搬迁，不改数值
+ *   V2 → V3 不需要单独的函数：normalizeDoc() 会按 mapId 反推卷/章并补默认值，
+ *   读档时 changed=true 自动写回，等于就地升级。
  * · export() / import()：JSON 文本 + 文件
  * · 原子写入：先写 <key>.tmp 并回读校验，再替换正式键
  *
@@ -22,8 +24,11 @@
  * ============================================================ */
 
 const SaveManager = {
-  SCHEMA: 2,
-  SLOT_COUNT: 3,
+  SCHEMA: 3,
+  /* [v1.13.1] 角色位 3 → 10。所有取位、遍历、校验都读这个常量，
+   * 所以改这一处就够；UI 那边只有中文数字表要跟着补。
+   * 存档键是 jiuxiao_save_v2_s{N}，旧的 1~3 号位原样不动。 */
+  SLOT_COUNT: 10,
 
   LEGACY_KEY: 'jiuxiao_save_v1',
   BACKUP_KEY: 'jiuxiao_save_v1.bak',
@@ -79,6 +84,10 @@ const SaveManager = {
     return n;
   },
   _obj(v) { return (v && typeof v === 'object' && !Array.isArray(v)) ? v : null; },
+  /* 是不是「本代 doc」：v2 ~ 当前 SCHEMA 都算。
+   * ⚠ 别写成 v === SCHEMA —— 那样每次升版本，所有老档都会读不出来（存档面板整排变空）。
+   * 升级本身不需要额外代码：normalizeDoc 会补默认值，readSlot 看到 changed 自动写回。 */
+  _isDoc(v) { return typeof v === 'number' && v >= 2 && v <= this.SCHEMA; },
   /* [试炼] 无尽试炼的永久记录：{ best, runs, bestAt }
    * 只存「最高波数 / 总轮数 / 达成时间」—— 波次进度本身不落盘
    * （中途退出即作废，这是 roguelite 的规矩），所以这里不存在「恢复本轮」的脏状态。 */
@@ -107,6 +116,65 @@ const SaveManager = {
     for (const k in rawReg) if (rawReg[k]) regions[k] = true;
     return { mon, regions };
   },
+  /* [M5] 地脉钥匙：固定长度 5 的整数数组，下标 = 阶 − 1。
+   * 旧档没有这个字段 → 全新 5 个 0（不是「送一把一阶」，钥匙必须打出来）。
+   * 手改档塞进字符串 / 超长数组 / 负数一律收敛：keys[i] 会被 UI 直接当数字显示，
+   * 出现 NaN 就是「钥匙 ×NaN」这种脏面板。 */
+  _keys(v) {
+    const out = [0, 0, 0, 0, 0];
+    if (!Array.isArray(v)) return out;
+    for (let i = 0; i < 5; i++) out[i] = this._int(v[i], 0, 99, 0);
+    return out;
+  },
+
+  /* [M5] 地下城进度：{ cleared: { 'tomb1': true, … }, runs, wins }
+   * cleared 的 key 是「类型 + 阶」（见 data-dungeon.js 的 dungeonCodexId），
+   * 这里不校验 key 是否合法 —— 类型表以后会扩，删掉的条目也只是查不到而已。 */
+  _dungeonRec(v) {
+    const src = this._obj(v) || {};
+    const cleared = {};
+    const raw = this._obj(src.cleared) || {};
+    for (const k in raw) if (raw[k]) cleared[k] = true;
+    return {
+      cleared,
+      runs: this._int(src.runs, 0, 999999, 0),
+      wins: this._int(src.wins, 0, 999999, 0)
+    };
+  },
+
+  /* [M18.2] 世界 Boss：一条记录（当前那只 / 冷却中的那一只）。
+   *
+   * 为什么整形到这么严：这是**唯一**「不玩也在走」的数据，
+   * 时间戳被写成字符串 / NaN 的话，`ensure()` 会永远判「已过期」，
+   * 每次 tick 都滚一只新的 —— 表现是「世界 Boss 每秒换一只」。
+   * 认不出的一律收敛成 null，让 WorldBoss 自己重新 roll。
+   *
+   * 不写迁移函数：老档没有这个字段，补 null 之后 `ensure()` 会滚一只，
+   * 跟新档第一次开局完全同一条路径。 */
+  _worldBossRec(v) {
+    const src = this._obj(v);
+    if (!src) return null;
+    if (typeof src.id !== 'string' || !src.id) return null;
+    if (typeof src.mapId !== 'string' || !src.mapId) return null;
+    /* 这里用 Number 而不是 this._num：`_num` 的兜底是 `def || 0`，
+     * 传 NaN 进去会得到 0 —— 于是「坏时间戳」会变成一个合法的 1970 年，
+     * 下面那条区间检查就形同虚设。 */
+    const x = Number(src.x), z = Number(src.z);
+    const spawnAt = Number(src.spawnAt), until = Number(src.until);
+    if (!isFinite(x) || !isFinite(z) || !isFinite(spawnAt) || !isFinite(until)) return null;
+    /* 时间戳必须落在合理区间：2001 年之后、2100 年之前。
+     * 秒级时间戳（少三位）会落在这里被拦下 —— 那是最常见的复制粘贴错误。 */
+    if (spawnAt < 1e12 || spawnAt > 4.1e12 || until < 1e12 || until > 4.1e12) return null;
+    if (until < spawnAt) return null;
+    return {
+      id: src.id, mapId: src.mapId,
+      x: x, z: z,
+      spawnAt: spawnAt, until: until,
+      killed: !!src.killed,
+      killAt: this._num(src.killAt, 0)
+    };
+  },
+
   /* 难度白名单校验：认不出的值（含旧档缺失）统一回落默认档，绝不让脏值进存档 */
   _difficulty(v) {
     const def = (typeof DEFAULT_DIFF !== 'undefined') ? DEFAULT_DIFF : 'normal';
@@ -141,7 +209,9 @@ const SaveManager = {
     n = this.validSlot(n);
     const d = this._parse(this._raw(n));
     if (!d) return null;
-    if (d.v === this.SCHEMA) return d;
+    /* 别写成「只认当前 SCHEMA」：那样每次升版本，存档面板都会把升级前的档显示成「空」。
+     * v2 结构对上层是兼容的（字段只增不减），照常返回；整形交给 readSlot/normalizeDoc。 */
+    if (typeof d.v === 'number' && d.v >= 2 && d.v <= this.SCHEMA) return d;
     return null;
   },
 
@@ -186,6 +256,9 @@ const SaveManager = {
     c.maxInv = this._int(c.maxInv, 10, 200, 40);
     c.playTime = this._num(c.playTime, m.playTime);
     c.bossKilled = this._obj(c.bossKilled) || {};
+    /* [M7.4] 魔将之印：8 个布尔位，值一律夹成 0/1，被手改过的档也不会算出 9 枚 */
+    c.seals = this._obj(c.seals) || {};
+    for (const k in c.seals) c.seals[k] = c.seals[k] ? 1 : 0;
     m.level = c.level;
     m.name = c.name;
     m.cls = c.cls;
@@ -208,13 +281,76 @@ const SaveManager = {
     pos.x = this._num(pos.x, 0);
     pos.z = this._num(pos.z, 6);
 
+    /* ---- M0 世界结构：卷 / 章 / 营地 / 已抵达 ----
+     * 老档（schema 2）只有 mapId，这里按图反推卷与章 —— 反推不到（村内、试炼场）就落卷一第 1 章。
+     * 反推而不是「一律从卷一重开」，是为了让已经在九幽地宫的老档不被降级。 */
+    const pv = Number(w.part);
+    w.part = (isFinite(pv) && pv >= 1 && pv <= 5) ? Math.round(pv) : 0;
+    if (typeof w.act !== 'string' || !w.act) w.act = '';
+    if (!w.part || !w.act) {
+      const p = (typeof partOfMap === 'function') ? partOfMap(w.mapId) : null;
+      const a = (typeof actOfMap === 'function') ? actOfMap(w.mapId) : null;
+      if (!w.part) w.part = p || 1;
+      if (!w.act) w.act = a || '1-1';
+    }
+    /* 章说了算：手改档里出现「卷三 / 第 1-1 章」这种不自洽的组合时，以章为准 */
+    if (typeof ACTS !== 'undefined' && ACTS[w.act]) w.part = ACTS[w.act].part;
+    else { w.act = '1-1'; w.part = 1; }
+
+    w.camps = Array.isArray(w.camps)
+      ? w.camps.filter(c => typeof c === 'string' && (typeof CAMPS === 'undefined' || CAMPS[c]))
+      : [];
+    if (!w.camps.length) w.camps = ['campA'];
+    w.portals = Array.isArray(w.portals) ? w.portals.filter(p => typeof p === 'string' && p) : [];
+    if (!w.portals.length) w.portals = ['portalA'];
+    /* 营地 / 传送门按卷累积：抵达卷 N 说明 campA..campN、portalA..portalN 都到过。
+     * M1 之前营地还没有实体地图（CAMPS[x].mapId 为空），但进度语义必须准 ——
+     * 否则卷三的老档只认 campA，等 M1 做完营地会被判成「没解锁」。 */
+    if (typeof PARTS !== 'undefined' && PARTS[w.part]) {
+      const SEQ = ['A', 'B', 'C', 'D', 'E'];
+      const upto = SEQ.indexOf(String(PARTS[w.part].camp || '').replace('camp', ''));
+      for (let i = 0; i <= upto; i++) {
+        const c = 'camp' + SEQ[i], p = 'portal' + SEQ[i];
+        if (w.camps.indexOf(c) < 0) w.camps.push(c);
+        if (w.portals.indexOf(p) < 0) w.portals.push(p);
+      }
+    }
+    w.mapsSeen = Array.isArray(w.mapsSeen) ? w.mapsSeen.filter(m => typeof m === 'string' && m) : [];
+    if (w.mapsSeen.indexOf('village') < 0) w.mapsSeen.push('village');
+    if (w.mapId && w.mapsSeen.indexOf(w.mapId) < 0) w.mapsSeen.push(w.mapId);
+
+    /* [M3b-fix] 出口门的开关：本图首领第一次倒地才立门，之后永久存在。
+     * 记的是「按图」而不是「按首领」—— 同一只首领可能出现在多张图上
+     * （chief 在血月沼泽和沉骨滩各一只），按 bossKilled 判会把两张图的门一起开。
+     *
+     * 老档没有这个字段，用 bossKilled 尽力反推（本图任一首领有击杀记录即算打过）。
+     * 反推的偏差方向是「多给门」：老档在血月沼泽杀过 chief，沉骨滩的门会提前出现。
+     * 比起「打过的图门不出现、玩家以为卡关」，这个方向的错更能接受；
+     * 新档一律走精确的 per-map 标记，不受影响。 */
+    const mc = this._obj(w.mapCleared);
+    if (mc) w.mapCleared = mc;
+    else {
+      w.mapCleared = {};
+      const bk = this._obj(c.bossKilled) || {};
+      if (typeof MAPS !== 'undefined') {
+        for (const id in MAPS) {
+          const bs = MAPS[id].bosses || [];
+          for (const b of bs) if (bk[b] > 0) { w.mapCleared[id] = 1; break; }
+        }
+      }
+    }
+
     const q = this._obj(w.quests);
     if (!q) {
-      w.quests = { active: [], done: [], next: 'q1', announced: {} };
+      w.quests = { active: [], done: [], next: null, announced: {}, board: { cd: {}, count: {} } };
     } else {
       if (!Array.isArray(q.active)) q.active = [];
       if (!Array.isArray(q.done)) q.done = [];
       const ann = this._obj(q.announced) || (q.announced = {});
+      /* [M2] 悬赏板：cd 是按任务 id 记的到期时间戳，count 是完成次数 */
+      const qb = this._obj(q.board) || (q.board = {});
+      qb.cd = this._obj(qb.cd) || (qb.cd = {});
+      qb.count = this._obj(qb.count) || (qb.count = {});
       // 未接任务时 next 指向下一个可接任务；全部做完是 null
       if (q.next === undefined) q.next = 'q1';
       q.active = q.active.filter(a => a && typeof a === 'object' && a.id).map(a => {
@@ -223,6 +359,10 @@ const SaveManager = {
       });
       q.done = q.done.filter(id => typeof id === 'string');
     }
+
+    /* [M18.2] 世界 Boss：放 world 段（它是「世界状态」，不是角色状态）。
+     * 老档补 null，不写迁移 —— 见 _worldBossRec 的注释。 */
+    w.worldBoss = this._worldBossRec(w.worldBoss);
 
     /* ---- V2 预留分区（S1/S3/S6/S7 会往这里加东西） ---- */
     d.stash = this._obj(d.stash) || { items: [], mats: {} };
@@ -287,12 +427,23 @@ const SaveManager = {
         inventory: Array.isArray(s.inventory) ? s.inventory.filter(Boolean) : [],
         maxInv: this._int(s.maxInv, 10, 200, 40),
         bossKilled: this._obj(s.bossKilled) || {},
+        seals: this._obj(s.seals) || {},
         playTime
       },
       world: {
         mapId: s.mapId || 'village',
         playerPos: { x: this._num((s.playerPos || {}).x, 0), z: this._num((s.playerPos || {}).z, 6) },
-        quests: this._obj(s.quests) || { active: [], done: [], next: 'q1', announced: {} }
+        quests: this._obj(s.quests) || { active: [], done: [], next: null, announced: {}, board: { cd: {}, count: {} } },
+        /* M0：卷 / 章 / 营地 / 大传送门 / 已抵达的图（具体整形在 normalizeDoc 里） */
+        part: s.part,
+        act: s.act,
+        camps: Array.isArray(s.camps) ? s.camps.slice() : undefined,
+        portals: Array.isArray(s.portals) ? s.portals.slice() : undefined,
+        mapsSeen: Array.isArray(s.mapsSeen) ? s.mapsSeen.slice() : undefined,
+        /* [M3b-fix] 出口门开关（本图首领打过才立门），整形在 normalizeDoc 里 */
+        mapCleared: this._obj(s.mapCleared) || {},
+        /* [M18.2] 世界 Boss：一条记录，整形交给 _worldBossRec */
+        worldBoss: this._worldBossRec(s.worldBoss)
       },
       stash: this._obj(s.stash) || { items: [], mats: {} },
       /* v1.0.4 商店刷新窗口 { at, items, rolls }。
@@ -304,6 +455,9 @@ const SaveManager = {
       talentBonus: this._int(s.talentBonus, 0, 40, 0),
       attrAlloc: this._attrAlloc(s.attrAlloc),
       trial: this._trialRec(s.trial),
+      /* [M5] 地脉钥匙（长度 5，下标 = 阶 − 1）+ 地下城进度 */
+      keys: this._keys(s.keys),
+      dungeon: this._dungeonRec(s.dungeon),
       /* S4：技能等级 / 变体 / 技能条 8 格 × 2 套（id 或 null） */
       skills: this._obj(s.skills) || {},
       skillbar: this._bar(s.skillbar),
@@ -324,7 +478,18 @@ const SaveManager = {
       skillFlags: c.skillFlags || {},
       equipment: c.equipment, inventory: c.inventory, maxInv: c.maxInv,
       bossKilled: c.bossKilled || {}, playTime: c.playTime || 0,
+      /* [M7.4] 魔将之印：跟着 bossKilled 一起搬。少了这一行就是「存得进、读不回」，
+       * 表现为「打完八只魔将、刷新一下印全没了、终门又关死」—— seal-live.js 抓过。 */
+      seals: this._obj(c.seals) || {},
       quests: w.quests, mapId: w.mapId, playerPos: w.playerPos,
+      /* M0：世界结构（normalizeDoc 保证这几个字段一定存在） */
+      part: w.part, act: w.act,
+      camps: Array.isArray(w.camps) ? w.camps.slice() : ['campA'],
+      portals: Array.isArray(w.portals) ? w.portals.slice() : ['portalA'],
+      mapsSeen: Array.isArray(w.mapsSeen) ? w.mapsSeen.slice() : ['village'],
+      mapCleared: this._obj(w.mapCleared) || {},
+      /* [M18.2] 世界 Boss（normalizeDoc 已经整形过，这里只是搬位置） */
+      worldBoss: this._worldBossRec(w.worldBoss),
       stash: doc.stash || { items: [], mats: {} },
       shop: (doc.shop && Array.isArray(doc.shop.items)) ? doc.shop : null,
       codex: this._codex(doc.codex),
@@ -332,6 +497,8 @@ const SaveManager = {
       talentBonus: this._int(doc.talentBonus, 0, 40, 0),
       attrAlloc: this._attrAlloc(doc.attrAlloc),
       trial: this._trialRec(doc.trial),
+      keys: this._keys(doc.keys),
+      dungeon: this._dungeonRec(doc.dungeon),
       skills: doc.skills || {},
       skillbar: this._bar(doc.skillbar),
       skillbar2: this._bar(doc.skillbar2),
@@ -354,7 +521,7 @@ const SaveManager = {
     if (!s || typeof s !== 'object' || Array.isArray(s)) return null;
 
     // 已经是 v2 就直接整形返回（导入时可能拿到 v2 doc）
-    if (s.v === this.SCHEMA && this._obj(s.char)) {
+    if (this._isDoc(s.v) && this._obj(s.char)) {
       return this.normalizeDoc(s, slot).doc;
     }
     // 认不出格式
@@ -378,7 +545,7 @@ const SaveManager = {
 
     // 角色位上若是旧格式（不应该发生，兜一手）
     let doc;
-    if (raw.v === this.SCHEMA && this._obj(raw.char)) {
+    if (this._isDoc(raw.v) && this._obj(raw.char)) {
       doc = this.normalizeDoc(raw, n);
     } else if (raw.cls) {
       const mig = this.migrate(raw, n);
@@ -506,7 +673,7 @@ const SaveManager = {
     if (!n) {
       for (let i = 1; i <= this.SLOT_COUNT; i++) { if (!this.peek(i)) { n = i; break; } }
     }
-    if (!n) return { ok: false, error: '三个角色位都满了，先删除一个再建。' };
+    if (!n) return { ok: false, error: `${this.SLOT_COUNT} 个角色位都满了，先删除一个再建。` };
     if (slot && this.peek(n)) {
       // 明确指定了已有角色的位：当作覆盖，但仍然先备份旧档
       const old = this._raw(n);
@@ -538,9 +705,12 @@ const SaveManager = {
       potions: { hp: 4, mp: 3 }, teleportStones: 0, hp: 100, mp: 50,
       equipment: { helm: null, chest: eq.chest, shoulders: null, cloak: null, gloves: null, boots: null, belt: null, amulet: null, ring1: null, ring2: null, weapon: eq.weapon, offhand: null, relic: null, fate: null },
       inventory: [], maxInv: 40,
-      quests: { active: [], done: [], next: 'q1', announced: {} },
+      quests: { active: [], done: [], next: null, announced: {}, board: { cd: {}, count: {} } },
       mapId: 'village', playerPos: { x: 0, z: 10 },
-      bossKilled: {}, playTime: 0
+      /* [M0] 世界结构（新档默认停在卷一第 1 章，只到过桃源村） */
+      part: 1, act: '1-1', camps: ['campA'], portals: ['portalA'], mapsSeen: ['village'],
+      mapCleared: {},
+      bossKilled: {}, seals: {}, playTime: 0
     };
   },
 
@@ -629,13 +799,13 @@ const SaveManager = {
 
     let doc = null;
     let from = 0;
-    if (obj.v === this.SCHEMA && this._obj(obj.char)) {
+    if (this._isDoc(obj.v) && this._obj(obj.char)) {
       doc = this.normalizeDoc(obj, slot).doc;
       from = 2;
     } else if (obj.cls) {
       doc = this.migrate(obj, slot);        // 允许直接吃 V1 单档
       from = 1;
-    } else if (this._obj(obj.save) && obj.save.v === this.SCHEMA) {
+    } else if (this._obj(obj.save) && this._isDoc(obj.save.v)) {
       doc = this.normalizeDoc(obj.save, slot).doc;
       from = 2;
     } else {
