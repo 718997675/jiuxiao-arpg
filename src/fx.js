@@ -1126,6 +1126,10 @@ const FX = {
       }
       if (p.life <= 0) { this.removeProjectile(i); }
     }
+    /* [V0] 原语层（src/fx-kit.js）：贴图粒子 / 拖尾 / 闪电 / 冲击波 / 贴花。
+     * 单独一个 update 而不是塞进上面几条循环 —— 它的对象形状和生命周期都不一样，
+     * 混进来会让这个函数更难读，而且它可能根本不存在（低画质档整层关掉）。 */
+    if (typeof FXK !== 'undefined' && FXK && typeof FXK.update === 'function') FXK.update(dt);
   },
 
   removeProjectile(i) {
@@ -1171,5 +1175,9 @@ const FX = {
      * 会跟着尾窗带进新图（新图起手第一发就莫名偏亮） */
     this.amp = 1;
     this.ampHold = 0;
+    /* [V0] 原语层（贴图粒子 / 拖尾 / 闪电 / 冲击波 / 贴花）跟着一起清。
+     * 不接这一句的话，换图时贴花池会留在旧地图坐标上，闪电 / 拖尾的
+     * 半透明面片也会挂在新场景里 —— 表现为「进新图先闪一下旧图的东西」。 */
+    if (typeof FXK !== 'undefined' && FXK && typeof FXK.clear === 'function') FXK.clear();
   }
 };

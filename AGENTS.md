@@ -433,7 +433,16 @@ node dev/pickup-check.js     # 自动拾取（离线 + 浏览器 52 项）：设
   **升一级就把精通和元素注入丢掉**。三条铁律见 §7.2，探针三条规矩见 §7.3。
   平衡体检 `dev/balance-skills.js`：**数量台阶是唯一的涨幅放大器，谁吃谁强 2.57 倍**
   （20 级涨幅中位数 刀客 ×2.02 / 法师 ×5.19 / 道士 ×2.02）—— 要不要压平等拍板。
-  **下一步按拍板顺序**：合 main（✅ 已完成）→ **V0 特效地基（下一步）** → P4 → P5。
+  **下一步按拍板顺序**：合 main（✅ 已完成）→ **V0 特效地基（进行中）** → P4 → P5。
+  **V0 原语层已落地（2026-10-30，`src/fx-kit.js`）**：图集 14 格（Canvas 现画、按需生成）
+  + `spr` / `trail` / `bolt` / `shock` / `decal` 五个原语，全部带 `FX.q` 降级，
+  `FX.update` / `FX.clear` 各接一行。**四条纪律写在文件头**：不挂 `PointLight`、
+  不逐帧 `new`、材质按档缓存（上限 96）、降级写在原语内部。
+  **贴花是固定池循环复用**（16 / 低画质只转前 6 个槽）—— 这是最容易写漏的一条：
+  每放一次技能 new 一个 quad，打十分钟就是几千个。
+  契约 `dev/test-vfx-kit.js` 58 项（THREE 桩里真跑，数实例 / 数顶点 / 数 dispose），
+  真机 `dev/probe-vfx-kit.js` 43 项（量 draw call 增量 ≤ 24）。
+  **还没做**：配方 DSL v2（`src/data/data-vfx.js`，`cast/loop/impact` 三段式）+ `vfx-bench` / `vfx-shot`。
   **合 main 已收口（2026-10-30）**：8 处冲突全按「两边都留」解完，唯一要动脑的是
   `damagePlayer` 的抗性结算块 —— `const sf` / `const inSword` 写进 `if (!pierce)` 块内
   会让块外的 Lv10 剑阵反击变成 `ReferenceError`（探针当场崩，合并时踩过）。
@@ -475,7 +484,7 @@ node dev/pickup-check.js     # 自动拾取（离线 + 浏览器 52 项）：设
 |---|---|---|
 | 1 | **P6 回归**：平衡 + 洗点 + 老档兼容 | ✅ 收口（查出三个存档 bug，见 §7.2） |
 | 2 | **合 main**（`feat/act-expansion` 的 5 个尾巴先合） | ✅ 完成（8 处冲突全解，契约 + 探针全绿） |
-| 3 | **V0 特效地基**：图集 + `spr`/`trail`/`bolt`/`shock`/`decal` | **下一步** |
+| 3 | **V0 特效地基**：图集 + `spr`/`trail`/`bolt`/`shock`/`decal` | 🔄 原语层完成（`src/fx-kit.js`）；配方 DSL 待做 |
 | 4 | **P4**：三职业 ⑤ 号位完整表现 | 待做 |
 | 5 | **P5**：45 套形态进化表现（建在 V0 上） | 待做 |
 

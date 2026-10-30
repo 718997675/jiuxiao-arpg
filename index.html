@@ -3113,6 +3113,9 @@
 <script src="src/wbmodels.js"></script>
 <script src="src/audio.js"></script>
 <script src="src/fx.js"></script>
+<!-- [V0] 特效原语层（图集 + spr / trail / bolt / shock / decal）。必须在 fx.js 之后：
+     它读 FX.scene / FX.cam / FX.q，并在 FX.update / FX.clear 里被回调 -->
+<script src="src/fx-kit.js"></script>
 <script src="src/world.js"></script>
 <script src="src/ui-mtree.js"></script>
 <script src="src/ui.js"></script>
