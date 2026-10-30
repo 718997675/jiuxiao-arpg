@@ -144,8 +144,8 @@ ok(elemReactionOn('fire', {}) === null, '目标身上什么都没有就不反应
  * 五、接线：三道闸门 + 双层 ICD + 面板同源
  * ============================================================ */
 console.log('五、接线');
-ok(/this\.tryElemReaction\(e, elem, final, opts, inj \? inj\.key : null\);/.test(gm),
-  'damageEnemy 里真的调了 tryElemReaction（所有伤害的唯一出口），并把注入元素当第二反应源');
+ok(/this\.tryElemReaction\(e, elem, final, opts, inj \? \[inj\.key, inj\.sub\]\.filter\(Boolean\) : null\);/.test(gm),
+  'damageEnemy 里真的调了 tryElemReaction（所有伤害的唯一出口），并把注入的主 / 副元素都当反应源');
 ok(/elemReactReady\(e, hitElem, opts = \{\}, altElem\) \{[\s\S]{0,400}opts\.silent \|\| opts\.react \|\| this\._reacting/.test(gm),
   '三道闸门齐了：silent（dot 不重复触发）/ react（反应伤害不再反应）/ _reacting（递归锁）');
 ok(/_reactCd\[r\.key\] = now \+ icd\.global/.test(gm) && /_reactAt\[r\.key\] = now \+ icd\.sameTarget/.test(gm),
@@ -159,8 +159,7 @@ ok(/\{ elem: elem, react: true, tag: 'aoe' \}/.test(gm) || /react: true/.test(gm
 ok(/e\._reactDot = false;/.test(gm), 'dot 跳完清掉「焚毒」标记（不会永久 ×1.5）');
 ok(/if \(\(e\.dotT \|\| 0\) > 0 && !e\._reactDot\)/.test(gm),
   '焚毒只在本轮 dot 里加一次（反复触发不叠乘）');
-ok(/this\.tryElemReaction\(e, elem, final, opts, inj \? inj\.key : null\);\s*\n\s*\/\*[\s\S]{0,80}\*\/\s*\n\s*\/\* \[P2b·法师⑤\] 法相命中附加/.test(gm)
-  || /tryElemReaction\(e, elem, final, opts, inj \? inj\.key : null\);[\s\S]{0,600}法相命中附加/.test(gm),
+ok(/tryElemReaction\(e, elem, final, opts, inj \? \[inj\.key, inj\.sub\]\.filter\(Boolean\) : null\);[\s\S]{0,600}法相命中附加/.test(gm),
   '反应判定在法相挂状态**之前**（否则同一发会跟自己挂的状态反应）');
 
 /* 面板文案与表同源 */
@@ -229,11 +228,15 @@ ok(/skillInject\(id\) \{[\s\S]{0,420}SKILL_INJECT\.at[\s\S]{0,200}skillCanInject
   'skillInject 里三道校验齐了：门槛 / 该位能不能注 / 键认不认识');
 ok(/curInject\(opts\) \{[\s\S]{0,260}this\._proj && this\._proj\.inj[\s\S]{0,80}this\._elem/.test(gm),
   'curInject 的优先级：投射物 > 施法窗口（飞出去的那一发要带自己的注入）');
-ok(/this\._elem = injKey \? \{ key: injKey, amt: this\.skillInjectAmt\(id\) \} : null;/.test(gm),
-  'castSkill 把注入折成 {key, amt} 放进施法窗口');
+ok(/this\._elem = \(typeof this\.skillInjectPack === 'function'\) \? this\.skillInjectPack\(id\) : null;/.test(gm),
+  'castSkill 把注入折成注入包放进施法窗口');
 ok(/this\._elem = null;\s*\/\/ \[P3b\]/.test(gm), '施法收尾把 _elem 清零（窗口之外不注入）');
-ok(/final \*= this\.elemHitMul\(e, elem, 1\) \+ this\.elemHitMul\(e, inj\.key, inj\.amt\);/.test(gm),
-  '**两段相加**：原伤害 100% + 附加 X%，各自过自己的抗性与元素词缀');
+/* [P3d] 从「两段相加」升级成「N 段相加」：段数由 injectSegs 决定（单元素 1 段、混搭 2 段），
+ * 每段各自过自己的抗性与元素词缀，最后和原伤害那段相加。 */
+ok(/const segs = \(elem === 'none'\) \? null : this\.injectSegs\(inj, elem\);/.test(gm),
+  'damageEnemy 把注入拆成若干段（injectSegs 负责剔除与命中元素相同的段）');
+ok(/let mul = this\.elemHitMul\(e, elem, 1\);\s*\n\s*for \(let i = 0; i < segs\.length; i\+\+\) mul \+= this\.elemHitMul\(e, segs\[i\]\.key, segs\[i\]\.w\);/.test(gm),
+  '**各段相加**：原伤害 100% + 附加 X%，各自过自己的抗性与元素词缀');
 ok(/const inj = \(opts\.react \|\| opts\.silent\) \? null : this\.curInject\(opts\);/.test(gm),
   '反应伤害与持续伤害不参与注入（否则反应的爆炸会再被注入一次）');
 ok(/elemHitMul\(e, key, w\) \{[\s\S]{0,240}elemAffixMul\(this\.state\.stats, key\)/.test(gm),

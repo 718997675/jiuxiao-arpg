@@ -876,8 +876,17 @@ const UI = {
           `再额外附加 ${SKILL_INJECT.minPct}%~${SKILL_INJECT.maxPct}% 的元素伤害（比例随技能有效等级提升，10 级 ${SKILL_INJECT.minPct}% → 20 级 ${SKILL_INJECT.maxPct}%），` +
           `两段各自过抗性与元素增伤。只作用于<b>这一次施法</b>与它扔出的投射物 —— 延迟落点、地板跳伤、持续伤害、召唤物出手不注入`
         : ''),
+      row('元素混搭', (typeof SKILL_INJECT === 'object' && SKILL_INJECT && SKILL_INJECT.split)
+        ? `境界 <b>${SKILL_INJECT.subAt}</b> 级解锁第二元素。面板「混搭」一栏再选一种（不能和主元素相同），` +
+          `之后这一发会带两段元素伤害。<b>总量不变</b>：${SKILL_INJECT.maxPct}% 按主 ${SKILL_INJECT.split.main}% / 副 ${SKILL_INJECT.split.sub}% ` +
+          `拆成两段（即 ${Math.round(SKILL_INJECT.maxPct * SKILL_INJECT.split.main / 100)}% + ${SKILL_INJECT.maxPct - Math.round(SKILL_INJECT.maxPct * SKILL_INJECT.split.main / 100)}%），` +
+          `两段各过自己的抗性与元素增伤。混搭的收益在<b>应对面</b>（两种元素都能参与反应、不被单一抗性吃满），` +
+          `不在数值更高 —— 否则单元素那条路直接作废。施法瞬间脚下会喷一簇注入元素色的火星（主 ${SKILL_INJECT.split.main}% / 副 ${SKILL_INJECT.split.sub}% 粒子数），` +
+          `技能本体光效保持原色：注入是<b>附魔层</b>，不是把技能元素换掉`
+        : ''),
       row('注入与反应', `注入的元素<b>也能当反应源</b>：火球注冰打燃烧目标 = 蒸汽爆裂。判定时<b>命中元素优先</b>，` +
-        `它跟目标状态同元素（或本身不参与反应）才用注入那一段兜底 —— 否则「火碰火」会白丢一次反应`),
+        `它跟目标状态同元素（或本身不参与反应）才用注入那一段兜底 —— 否则「火碰火」会白丢一次反应。` +
+        `混搭时按<b>主 → 副</b>顺序试，先撞上的那一组算数`),
       row('推荐流派', `${bdN} 套模板（每职业 ${bdPerCls} 套）。术法面板顶部「推荐流派」按<b>当前存档</b>计算契合度最高的三套：核心技能等级 / 取向 / 变体 / 被动 / 属性 / 标签六项加权求和即契合度。该值表示与模板的接近程度，不作强度排名（未接入伤害模拟）。卡片内仅支持一键切换变体，技能点与被动需逐项分配`),
       row('技能条', `${barSlots} 格 × ${barSets} 套（左键 + ${barKeyText}）。格位 = 功能位：① 基础攻击 / ② 中程爆发 / ③ 护身清场 / ④ 自身增益 / ⑤ 职业核心，**每格只能放本位的技能**。在术法面板详情卡底部点格位配置；按 ${K(SKILL_BAR_SET_LABEL)} 切换栏位（同一格换不同技能，首领 / 刷图各一套）`),
       row('秘技', `传世授予的技能（可跨职业）在面板内单独分组，带青色「秘」角标；卸下装备后失效，不占用技能点`),

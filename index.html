@@ -1123,6 +1123,12 @@
   .sb-v.on{border-color:rgba(120,208,255,.28);background:rgba(120,208,255,.06)}
   .sb-v.on b{color:#bfe0f2}
   .sb-vhint{font-size:9px;color:#5f5a4e}
+  /* [P3d] 副元素那一行：横向排（主元素竖排 5 个，副元素只 4 个，横排更省高度），
+   * 用暖色描边和「元素」那行区分开 —— 两行都是元素名，不区分会看成重复项。 */
+  .sb-i2list{flex-direction:row;flex-wrap:wrap;gap:4px}
+  .sb-i2list .sb-v{width:auto;flex:0 0 auto;padding:3px 7px}
+  .sb-i2list .sb-v.on{border-color:rgba(216,178,90,.42);background:rgba(216,178,90,.08)}
+  .sb-i2list .sb-v.on b{color:#ffd479}
   /* [PICK-ROW-CLICKABLE] 取向那两条也是按钮：要花点数，所以用暖色区别于变体（蓝）。
    * 以前这里只有一行纯文字，入口躲在树上节点的小记号里 —— 玩家会一直点节点
    * （每点一次 +1 级），然后问「我都 4 级了怎么还选不了」。 */

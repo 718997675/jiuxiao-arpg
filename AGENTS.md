@@ -133,7 +133,7 @@ git fetch origin                 # 分支都在远程，clone 完就全能看到
 | 术法（技能树、变体） | `src/ui-skills.js` |
 | 技能实际行为 / 被动 | `src/skill-beh.js` / `src/skill-passive.js` |
 | 元素定义 / 元素反应 | `src/data/data-elem.js`（表）+ `src/game.js` 的 `tryElemReaction` / `applyElemReaction`。**反应挂在 `damageEnemy` 一个口上**，别去各技能 case 里加 |
-| 元素注入（技能位注火/冰/雷/毒） | `src/data/data-elem.js` 的 `SKILL_INJECT` / `skillCanInject` + `src/game.js` 的 `curInject`（三级取值）。**`castSkill` 只开窗口，投射物靠 `FX.projectile` 的 `inj` 自己带** |
+| 元素注入（技能位注火/冰/雷/毒，单 / 双元素） | `src/data/data-elem.js` 的 `SKILL_INJECT`（`at` 单元素门槛 / `subAt` 混搭门槛 / `split` 70-30）/ `skillInjectSplit` / `skillCanInject` + `src/game.js` 的 `skillInjectPack`（注入包）与 `injectSegs`（拆段）。**`castSkill` 只开窗口，投射物靠 `FX.projectile` 的 `inj` 自己带** |
 | 元素增伤词缀（统一 / 专属两层） | `src/data/data-elem.js` 的 `ELEM_AFFIX`（通用 `elemDmg`）/ `ELEM_AFFIX_EX`（专属）/ **`elemAffixMul`（唯一出口）**。加新词条走 `data-items.js` 的 `AFFIXES`；**别再写第二处 `1 + st[键]/100`** |
 | 手机端摇杆、键位、面板滚动 | `src/mobile.js` + `index.html` 的 `@media` |
 | 手机横向树排版 | `src/ui-mtree.js` |
@@ -225,7 +225,13 @@ node dev/preview-check.js --url <预览地址>   # 预览站：能开局 + 资�
   （被动 高压/毒经/符力、符文之语 雷引/炎心、命格固有），两层**叠乘**。
   道途面板补上元素增伤 6 行。**折算只能跑在 `normalizeItem` 的 `STATS[key]` 过滤之前**，
   否则就是静默删玩家词缀（契约有源码顺序断言钉着）。
-  下一步 **P3d 双元素混搭**（主 70% / 副 30% + 特效混色）。
+  **P3d 双元素混搭已落地**：境界 **40 级**解锁第二元素（不能与主元素相同，
+  摘主元素时副元素一起走）。**总量不变**，按主 70% / 副 30% 拆两段
+  （50% → 35% + 15%），两段各过自己的抗性与元素增伤；与命中元素相同的段
+  自动剔除。反应按「命中元素 → 主 → 副」顺序试（`elemReactReady` 的 `altElem`
+  收数组）。视觉只加一簇注入元素色火星（8 + 4 颗），**技能本体光效不换色** ——
+  FX 是全局的，换色会连敌人技能和血一起染，而且会让玩家以为元素被转换了。
+  **P3 到此收口**（反应表 6/10 + 单/双元素注入 + 词缀统一）。
 - **待拍板**：大地图扩展（12 章 / 80 怪 / 24 首领 / 12 营地 + 任务网 / 5 类地下城 × 5 阶钥匙）。
   方案在 `docs/ACT-EXPANSION-PLAN.md`（2026-10-27 草案，**未动代码**）。
   §14 有 10 项待拍板，**拍板前不要开工**。

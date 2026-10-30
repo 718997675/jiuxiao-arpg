@@ -804,14 +804,19 @@ Object.assign(UI, {
     const injCan = (typeof skillCanInject === 'function') ? skillCanInject(id) : false;
     const injOpen = !!injDefs && ((Game.state && Game.state.level) || 1) >= injDefs.at;
     const injCur = (typeof Game.skillInject === 'function') ? Game.skillInject(id) : null;
+    const injCur2 = (typeof Game.skillInject2 === 'function') ? Game.skillInject2(id) : null;
     const injPct = (typeof skillInjectPct === 'function') ? skillInjectPct(lv) : 0;
+    const injSplit = (typeof skillInjectSplit === 'function')
+      ? skillInjectSplit(injPct) : { total: injPct, main: injPct, sub: 0 };
+    const dualOpen = !!injDefs && ((Game.state && Game.state.level) || 1) >= (injDefs.subAt || 99);
     const slotInfo = (typeof skillSlotOf === 'function') ? skillSlotOf(id) : null;
     const nativeKey = (slotInfo && typeof SKILL_ARCHETYPE !== 'undefined'
       && SKILL_ARCHETYPE.classes[slotInfo.cls]) ? SKILL_ARCHETYPE.classes[slotInfo.cls].elem : 'phys';
     const nativeName = (typeof elemDef === 'function' && elemDef(nativeKey)) ? elemDef(nativeKey).name : '物理';
+    const elemName = k => ((typeof elemDef === 'function' && elemDef(k)) ? elemDef(k).name : k);
     const injItems = (injDefs ? [null].concat(injDefs.elems) : []).map(k => {
       const on = (k || null) === injCur;
-      const nm = k ? ((typeof elemDef === 'function' && elemDef(k)) ? elemDef(k).name : k) : '本命';
+      const nm = k ? elemName(k) : '本命';
       const tip = k
         ? '注入' + nm + '：原伤害保留，另附加 ' + injPct + '% 的' + nm + '伤害（免费，随时可换）'
         : '不注入，按本命元素（' + nativeName + '）结算';
@@ -819,13 +824,39 @@ Object.assign(UI, {
         aria-pressed="${on ? 'true' : 'false'}" title="${tip}">
         <b>${nm}</b><em>${k ? '+' + injPct + '%' : nativeName}</em>${on ? '<i class="sd-tag on">当前</i>' : ''}</button>`;
     }).join('');
+    /* [P3d] 副元素一行：门槛是角色等级 `subAt`（方案 §6.1：40 级解锁混搭）。
+     * 主元素没选时整行不出现 —— 没有「只注副不注主」这种状态，
+     * 摆一个全灰的行只会让人以为坏了。选项里剔掉主元素本身。 */
+    const subItems = (injDefs && injCur && dualOpen)
+      ? [null].concat(injDefs.elems.filter(k => k !== injCur)).map(k => {
+        const on = (k || null) === injCur2;
+        const nm = k ? elemName(k) : '无';
+        const tip = k
+          ? '混搭' + nm + '：总量不变，主 ' + injSplit.main + '% + 副 ' + injSplit.sub + '%'
+          : '只注入主元素';
+        return `<button class="sb-v${on ? ' on' : ''}" data-inj2="${id}:${k || ''}"
+          aria-pressed="${on ? 'true' : 'false'}" title="${tip}">
+          <b>${nm}</b><em>${k ? '+' + injSplit.sub + '%' : '单元素'}</em>${on ? '<i class="sd-tag on">当前</i>' : ''}</button>`;
+      }).join('')
+      : '';
+    const injHint = !injCur
+      ? '不注入 · 附加比例随技能有效等级提升（10 级 30% → 20 级 50%）'
+      : (injCur2
+        ? '原伤害保留 + 主 ' + elemName(injCur) + ' ' + injSplit.main + '% + 副 ' + elemName(injCur2) + ' '
+          + injSplit.sub + '%（总量 ' + injSplit.total + '% 不变）· 可随时更换'
+        : '原伤害保留 + 附加 ' + injPct + '% 的' + elemName(injCur) + '伤害 · 可随时更换'
+          + (dualOpen ? '；也可再混搭一种元素' : '（境界 ' + (injDefs.subAt || 40) + ' 级解锁混搭）'));
     const injBlock = (injCan && injItems)
       ? (injOpen
         ? `<div class="sb-vwrap"><span class="sb-k">元素</span>
           <div class="sb-vlist sb-ilist">${injItems}</div>
-          <em class="sb-vhint">${injCur
-            ? '原伤害保留 + 附加 ' + injPct + '% 的' + ((typeof elemDef === 'function' && elemDef(injCur)) ? elemDef(injCur).name : injCur) + '伤害 · 可随时更换'
-            : '不注入 · 附加比例随技能有效等级提升（10 级 30% → 20 级 50%）'}</em></div>`
+          <em class="sb-vhint">${injHint}</em></div>`
+          + (subItems
+            ? `<div class="sb-vwrap"><span class="sb-k">混搭</span>
+            <div class="sb-vlist sb-ilist sb-i2list">${subItems}</div>
+            <em class="sb-vhint">双元素：总量不变，按主 ${injDefs.split.main}% / 副 ${injDefs.split.sub}% 拆成两段，
+            各过自己的抗性与元素增伤；主副两种元素都能参与反应</em></div>`
+            : '')
         : `<div class="sb-vwrap"><span class="sb-k">元素</span>
           <div class="sb-vlist sb-ilist"><button class="sb-v na" disabled>
             <b>未开启</b><em>境界 ${injDefs.at} 级</em></button></div>
@@ -1505,6 +1536,16 @@ Object.assign(UI, {
       if (this._panMoved) return;
       const parts = el.dataset.inj.split(':');
       if (Game.setSkillInject(parts[0], parts[1] || null)) this.renderSkillPanel();
+    });
+
+    /* [P3d] 副元素（混搭）：与主元素同一条规矩 —— 免费、随时可换。
+     * `data-inj2="id:"` 表示摘掉副元素（回到单元素）。 */
+    document.addEventListener('click', e => {
+      const el = (e.target && e.target.closest) ? e.target.closest('#skList .sb-i2list [data-inj2]') : null;
+      if (!el || el.disabled) return;
+      if (this._panMoved) return;
+      const parts = el.dataset.inj2.split(':');
+      if (Game.setSkillInject2(parts[0], parts[1] || null)) this.renderSkillPanel();
     });
 
     /* [P2c] 精通层三条：免费、随时可换，所以不需要「草稿 → 确认」。

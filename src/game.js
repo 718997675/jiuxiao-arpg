@@ -3367,12 +3367,22 @@ const Game = {
     if (typeof FX !== 'undefined' && typeof FX.setAmp === 'function') {
       FX.setAmp((typeof skillFxAmp === 'function') ? skillFxAmp(this.skillLevel(id)) : 1);
     }
-    /* [P3b] 元素注入：这一发带出去的注入（null = 不注入）。
+    /* [P3b/P3d] 元素注入：这一发带出去的注入包（null = 不注入）。
      * 与 `_castSkill` 同一个窗口 —— 收尾一起清零，所以「这一次施法」才是它的
      * 作用域：投射物在创建时把 inj 复制到自己身上（FX.projectile），
      * 命中时由 curInject 从 `_proj` 取回。 */
-    const injKey = (typeof this.skillInject === 'function') ? this.skillInject(id) : null;
-    this._elem = injKey ? { key: injKey, amt: this.skillInjectAmt(id) } : null;
+    this._elem = (typeof this.skillInjectPack === 'function') ? this.skillInjectPack(id) : null;
+    /* [P3d] 注入的视觉标记：施法瞬间在脚下喷一簇注入元素色的火星，
+     * 主元素 70% / 副元素 30%（方案 §6.1 的视觉口径）。
+     * 为什么不做「整块屏幕换色」：FX 是全局的，同一帧敌人放的技能、命中喷的血
+     * 都会跟着变色 —— 那不是「这一下带火」，那是整块屏幕在说谎。而且技能本体
+     * 的颜色是它的身份（火球就是橙的），注入是附魔层，不是转换。 */
+    if (this._elem && typeof FX !== 'undefined' && typeof FX.elemSpark === 'function') {
+      const cm = (typeof elemDef === 'function' && elemDef(this._elem.key)) ? elemDef(this._elem.key).color : 0xffffff;
+      const cs = (this._elem.sub && typeof elemDef === 'function' && elemDef(this._elem.sub))
+        ? elemDef(this._elem.sub).color : null;
+      FX.elemSpark(this.playerGroup.position, cm, cs);
+    }
     const st = s.stats;
     /* [S2] 回响之语 / 紫府套：15% 概率不进入冷却
      * [P3] 不竭（变体）：本技能不进冷却，只留 0.2 秒硬直 ——
@@ -5009,10 +5019,11 @@ const Game = {
    * ============================================================ */
 
   /* ============================================================
-   * [P3b] 元素注入（单元素）
+   * [P3b / P3d] 元素注入（单元素 / 双元素）
    *
-   * 状态存在 `state.skills[id].el`（与 lv / f / m 同一张表，save 的 `_obj(d.skills)`
-   * 整块保留，不用加 normalizeDoc 白名单）。null / 未知值 = 不注入（本命元素）。
+   * 状态存在 `state.skills[id].el`（主）与 `.el2`（副）—— 与 lv / f / m 同一张表，
+   * save 的 `_obj(d.skills)` 整块保留，不用加 normalizeDoc 白名单。
+   * null / 未知值 = 不注入（本命元素）。
    *
    * 作用范围**故意收窄**：只作用于「施法当帧的伤害 + 这一次施法扔出去的投射物」。
    * 延迟落点（陨石砸地 0.9 秒后）、地板跳伤、持续伤害、召唤物出手都**不注入** ——
@@ -5031,13 +5042,43 @@ const Game = {
     return list.indexOf(s.el) >= 0 ? s.el : null;
   },
 
-  /* 这一发注入的附加比例（0.30 ~ 0.50，跟技能**有效等级**走） */
+  /* 副元素。比主元素多三道校验：角色等级要够「混搭」门槛、不能等于主元素、
+   * 主元素不存在时副元素也不成立（没有「只注副不注主」这种状态）。 */
+  skillInject2(id) {
+    const s = this.state && this.state.skills && this.state.skills[id];
+    if (!s || !s.el2) return null;
+    const main = this.skillInject(id);
+    if (!main) return null;
+    if ((this.state.level || 1) < (SKILL_INJECT.subAt || 99)) return null;
+    const list = (SKILL_INJECT && SKILL_INJECT.elems) || [];
+    if (list.indexOf(s.el2) < 0) return null;
+    return s.el2 === main ? null : s.el2;      // 主副同色 = 没有副元素
+  },
+
+  /* 这一发注入的附加比例（0.30 ~ 0.50，跟技能**有效等级**走）。
+   * 单元素时这就是全部；双元素时它是**总量**，主副按 `SKILL_INJECT.split` 拆。 */
   skillInjectAmt(id) {
     const pct = (typeof skillInjectPct === 'function') ? skillInjectPct(this.skillLevel(id)) : 30;
     return pct / 100;
   },
 
-  /* 换注入元素。key 为空 = 摘掉。免费、随时可换（与变体 / 精通同一条规矩） */
+  /* 这一次施法带出去的完整注入包（null = 没注入）。
+   *   { key, amt, sub, subAmt, pct }
+   * 单元素：sub = null，amt = pct/100（30%~50%）
+   * 双元素：amt + subAmt = pct/100（50% → 0.35 + 0.15），总量与单元素一致 */
+  skillInjectPack(id) {
+    const key = this.skillInject(id);
+    if (!key) return null;
+    const pct = (typeof skillInjectPct === 'function') ? skillInjectPct(this.skillLevel(id)) : 30;
+    const sub = this.skillInject2(id);
+    if (!sub) return { key: key, amt: pct / 100, sub: null, subAmt: 0, pct: pct };
+    const sp = (typeof skillInjectSplit === 'function')
+      ? skillInjectSplit(pct) : { total: pct, main: pct, sub: 0 };
+    return { key: key, amt: sp.main / 100, sub: sub, subAmt: sp.sub / 100, pct: pct };
+  },
+
+  /* 换注入元素。key 为空 = 摘掉。免费、随时可换（与变体 / 精通同一条规矩）。
+   * 摘掉主元素时副元素一并清掉 —— 没有「只注副不注主」这种状态。 */
   setSkillInject(id, key) {
     const s = this.state && this.state.skills && this.state.skills[id];
     if (!s) { UI.log('尚未领悟这只技能'); SFX.ui(); return false; }
@@ -5052,10 +5093,51 @@ const Game = {
       }
       if (SKILL_INJECT.elems.indexOf(key) < 0) return false;
       s.el = key;
+      /* 主元素换成和副元素一样的 → 副元素自动摘掉（不然面板上会出现「主冰副冰」） */
+      if (s.el2 === key) delete s.el2;
     } else {
       delete s.el;
+      delete s.el2;
     }
     return true;
+  },
+
+  /* 换副元素（双元素混搭）。key 为空 = 摘掉。 */
+  setSkillInject2(id, key) {
+    const s = this.state && this.state.skills && this.state.skills[id];
+    if (!s) { UI.log('尚未领悟这只技能'); SFX.ui(); return false; }
+    if (key) {
+      if (typeof SKILL_INJECT !== 'object' || !SKILL_INJECT) return false;
+      if ((this.state.level || 1) < (SKILL_INJECT.subAt || 99)) {
+        UI.log('境界达到 ' + SKILL_INJECT.subAt + ' 级才能混搭第二元素');
+        SFX.ui(); return false;
+      }
+      const main = this.skillInject(id);
+      if (!main) { UI.log('先选一个主元素'); SFX.ui(); return false; }
+      if (key === main) { UI.log('副元素不能和主元素相同'); SFX.ui(); return false; }
+      if (SKILL_INJECT.elems.indexOf(key) < 0) return false;
+      s.el2 = key;
+    } else {
+      delete s.el2;
+    }
+    return true;
+  },
+
+  /* 这一发要把注入拆成几段。返回 [{ key, w }]，与命中元素相同 / 重复的段剔掉。
+   * 剔掉「与命中元素相同」这一段，与 P3b 的单段口径一致：
+   * 注入自己的本命元素等于白送 30% 伤害，那不该发生。 */
+  injectSegs(inj, elem) {
+    if (!inj || !inj.key) return null;
+    const out = [];
+    const seen = {};
+    const add = (k, w) => {
+      if (!k || !(w > 0) || k === elem || seen[k]) return;
+      seen[k] = 1;
+      out.push({ key: k, w: w });
+    };
+    add(inj.key, inj.amt);
+    add(inj.sub, inj.subAmt);
+    return out.length ? out : null;
   },
 
   /* 这一次命中实际带出去的注入（投射物 > 施法窗口 > 没有） */
@@ -5072,14 +5154,18 @@ const Game = {
     return w * f;
   },
 
-  /* 反应能不能触发（只判定，不产生副作用）—— 契约测试直接调它 */
+  /* 反应能不能触发（只判定，不产生副作用）—— 契约测试直接调它。
+   * `altElem` 收**一个元素或一组元素**：命中元素跟目标状态同元素（或本身不参与反应）时，
+   * 依次试注入的主元素、副元素兜底。传字符串也能用（P3b 的老签名，别的地方还在调）。 */
   elemReactReady(e, hitElem, opts = {}, altElem) {
     if (!e || e.dead) return null;
     if (opts.silent || opts.react || this._reacting) return null;
     if (typeof elemReactionOn !== 'function') return null;
-    /* 命中元素优先；它跟状态同元素（或本身不参与反应）时，再看注入那一段 */
-    const r = elemReactionOn(hitElem, e)
-      || (altElem ? elemReactionOn(altElem, e) : null);
+    const alts = Array.isArray(altElem) ? altElem : (altElem ? [altElem] : []);
+    let r = elemReactionOn(hitElem, e);
+    for (let i = 0; !r && i < alts.length; i++) {
+      if (alts[i]) r = elemReactionOn(alts[i], e);
+    }
     if (!r) return null;
     const now = this.time || 0;
     const icd = (typeof ELEM_REACT_ICD === 'object' && ELEM_REACT_ICD) || { global: 0.5, sameTarget: 2 };
@@ -5241,8 +5327,13 @@ const Game = {
      * 为什么不做归一化：方案 §6.1 拍板的是「附加，不转换」—— 附加就该真的多打
      * 那 30%~50%，归一化等于把注入变成纯色换皮。 */
     const inj = (opts.react || opts.silent) ? null : this.curInject(opts);
-    if (inj && inj.key !== elem && elem !== 'none') {
-      final *= this.elemHitMul(e, elem, 1) + this.elemHitMul(e, inj.key, inj.amt);
+    /* [P3d] 双元素：主段 + 副段各自过抗性与元素词缀，再和原伤害那段相加。
+     * 段数不写死 2 —— `injectSegs` 已经把「跟命中元素相同」「重复」的段剔掉了。 */
+    const segs = (elem === 'none') ? null : this.injectSegs(inj, elem);
+    if (segs) {
+      let mul = this.elemHitMul(e, elem, 1);
+      for (let i = 0; i < segs.length; i++) mul += this.elemHitMul(e, segs[i].key, segs[i].w);
+      final *= mul;
     } else {
       const res = e.resist ? (e.resist[elem] || 0) : 0;
       if (res) final *= 1 - CLAMP(res, -60, 85) / 100;
@@ -5382,8 +5473,9 @@ const Game = {
      * 也放在死亡判定之后：打死的那一下不必再反应。 */
     /* 注入的元素也能当反应源：火球（火）+ 注入冰 打在燃烧目标上，
      * 原伤害那段是火（同元素不反应），附加那段是冰 —— 该炸蒸汽就炸。
-     * 先看原伤害再看附加：命中元素优先，避免「注入元素抢了本命元素的反应」。 */
-    this.tryElemReaction(e, elem, final, opts, inj ? inj.key : null);
+     * 先看原伤害再看附加：命中元素优先，避免「注入元素抢了本命元素的反应」。
+     * [P3d] 双元素时按「主 → 副」顺序试，先撞上的那一组算数。 */
+    this.tryElemReaction(e, elem, final, opts, inj ? [inj.key, inj.sub].filter(Boolean) : null);
 
     /* [P2b·法师⑤] 法相命中附加（台阶 Lv5）：窗口内的**每一次命中**都带上主元素效果。
      *

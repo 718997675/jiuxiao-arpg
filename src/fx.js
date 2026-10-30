@@ -380,6 +380,24 @@ const FX = {
     return _cLit.getHex();
   },
 
+  /* [P3d] 元素注入的视觉标记：主元素 70% / 副元素 30% 的粒子数。
+   *
+   * 为什么不给整块光效换色：`FX` 是全局的，同一帧敌人放的技能、命中喷的血
+   * 都会跟着变色 —— 那不是「这一下带火」，那是整块屏幕在说谎。而且技能本体
+   * 的颜色是它的身份（火球就是橙的），元素注入是**附魔层**，不是转换。
+   * 所以只加一簇「这一发带了什么」的火星，技能本体一个像素都不动。
+   *
+   * 也不画圈：圈是判定的视觉契约，画多大就得打多大，而注入不改范围。 */
+  elemSpark(pos, colorMain, colorSub) {
+    if (!pos || !colorMain) return;
+    const n = 12;
+    const wMain = (typeof SKILL_INJECT === 'object' && SKILL_INJECT && SKILL_INJECT.split)
+      ? SKILL_INJECT.split.main : 70;
+    const nMain = colorSub ? Math.max(1, Math.round(n * wMain / 100)) : n;
+    this.burst(pos, colorMain, nMain, { speed: 3.2, size: 0.13, life: 0.55, additive: true, gravity: 6 });
+    if (colorSub) this.burst(pos, colorSub, n - nMain, { speed: 2.4, size: 0.11, life: 0.5, additive: true, gravity: 6 });
+  },
+
   init(scene, cam, layer) { this.scene = scene; this.cam = cam; this.layer = layer; },
 
   burst(pos, color, count = 10, opts = {}) {
