@@ -30,6 +30,8 @@ const skillCountTierTable = pick('skillCountTierTable');
 const SKILL_COUNT_BASE = pick('SKILL_COUNT_BASE');
 const SKILL_COUNT_CAP = pick('SKILL_COUNT_CAP');
 const SKILL_COUNT_DECAY = pick('SKILL_COUNT_DECAY');
+const SKILL_RING_STEP = pick('SKILL_RING_STEP');
+const SKILL_RING_DECAY = pick('SKILL_RING_DECAY');
 const skillCountBase = pick('skillCountBase');
 const skillCountCap = pick('skillCountCap');
 const skillCountCapable = pick('skillCountCapable');
@@ -41,6 +43,7 @@ const skillArchSlot = pick('skillArchSlot');
 const skillArchSlotOf = pick('skillArchSlotOf');
 const skillSlotTierDone = pick('skillSlotTierDone');
 const SKILL_TIER_EVO = pick('SKILL_TIER_EVO');
+const SKILL_TIER_BODY = pick('SKILL_TIER_BODY');
 const skillTierEvoList = pick('skillTierEvoList');
 const skillTierEvo = pick('skillTierEvo');
 const skillTierBeh = pick('skillTierBeh');
@@ -188,10 +191,13 @@ for (const cls of CLASSES) {
   for (const slot of skillArchList(cls)) {
     const gets = (slot.inherit || []).filter(id => skillTierCount(id, 7) > 0);
     const evo7 = (slot.inherit || []).some(id => (SKILL_TIER_EVO[id] || {})[7]);
+    /* [P2b 收尾] 第三路：本体台阶 —— 刀客 ② 的 Lv7「三连震」是 skysfall
+     * （天崩）本体天生的行为，不在 evo 表里，登记在 SKILL_TIER_BODY。 */
+    const body7 = (SKILL_TIER_BODY[cls] || {})[slot.no] || [];
     const done = skillSlotTierDone(cls, slot.no, 7);
-    ok(done === (gets.length > 0 || evo7),
-      cls + ' ' + slot.no + ' 号位的 Lv7 实装状态 == 有发数 或 有形态台阶',
-      { done, gets: gets.length, evo7 });
+    ok(done === (gets.length > 0 || evo7 || body7.indexOf(7) >= 0),
+      cls + ' ' + slot.no + ' 号位的 Lv7 实装状态 == 有发数 / 有形态台阶 / 本体兑现',
+      { done, gets: gets.length, evo7, body: body7 });
   }
 }
 
@@ -717,6 +723,72 @@ const behSrc = readSrc('src/skill-beh.js');
   ok(/sf\.dr > 0/.test(game) && /sf\.counter > 0/.test(game),
     'damagePlayer 真的消费 arrayGuard / arrayCounter（不是只登记了键）');
   ok(/this\.swordCounterCd = 0\.4/.test(game), '阵内反击有内置冷却（不记账等于群体秒杀）');
+
+  /* --- 刀客 ③ 的 Lv3 / Lv7「双圈 / 三圈」：同心多层剑气环 ---
+   * 这一档不走数量轴（swordarray 不在 SKILL_COUNT_BASE 里），
+   * 而是「一层圈 = 一个伤害档」。三条纪律要钉住：
+   *   ① 层数只加圈，不加伤害（否则双圈就是白送一倍）；
+   *   ② 一只怪只吃**它所在那一层**（判层必须由内向外 + break）；
+   *   ③ 环画到哪，减伤 / 反击就管到哪（场地半径取最外圈）。 */
+  ok(SKILL_TIER_EVO.swordarray[3].beh.arrayRings === 1 &&
+    SKILL_TIER_EVO.swordarray[7].beh.arrayRings === 2,
+    'Lv3 / Lv7 登记的是**额外圈数**（1 = 双圈、2 = 三圈）',
+    { lv3: SKILL_TIER_EVO.swordarray[3].beh, lv7: SKILL_TIER_EVO.swordarray[7].beh });
+  {
+    const b7 = skillTierBeh('swordarray', 7) || {};
+    ok(b7.arrayRings === 2, 'Lv7 累积后是 2 层额外圈（不是 1 + 2 = 3）', b7);
+    ok(b7.slowField === 45, 'Lv7 同时保留 Lv5 的减速（累积合并不是覆盖整张表）', b7);
+    const b2 = skillTierBeh('swordarray', 2) || {};
+    ok(b2.arrayRings === undefined, 'Lv2 一圈都不多（3 级之前不许白送）', b2);
+  }
+  ok(SKILL_RING_DECAY === SKILL_COUNT_DECAY,
+    '外层伤害系数与多发递减同一口径（要分家先改这条断言）',
+    { ring: SKILL_RING_DECAY, count: SKILL_COUNT_DECAY });
+  ok(SKILL_RING_STEP > 0.2 && SKILL_RING_STEP < 1,
+    '每层外扩比例在 (0.2, 1) 之间（太小看不见、太大一圈顶满屏）', SKILL_RING_STEP);
+  ok(/arrayRings: \{ ph: 'hook'/.test(behSrc), 'arrayRings 已在 SKILL_BEH 登记');
+  ok(/const rings = 1 \+ Math\.max\(0, Math\.min\(2, \(bBeh && bBeh\.arrayRings\) \|\| 0\)\)/
+    .test(game), '圈数封顶三圈（多登记一层就溢出）');
+  ok(/ringRad = i => rad \* \(1 \+ i \* SKILL_RING_STEP\)/.test(game) &&
+    /ringMul = i => Math\.pow\(SKILL_RING_DECAY, i\)/.test(game),
+    '层半径 / 层伤害都读数据常量（不把 0.42 / 0.85 散在 game.js 里）');
+  /* 判层由内向外 + break：倒过来的话站在内圈的怪会被算成外圈，
+   * 点了台阶伤害反而比没点更低 —— 这是最容易写反的一行。 */
+  ok(/for \(let ri = 0; ri < rings; ri\+\+\) \{\s*\n\s*if \(d < ringRad\(ri\) \+ e\.radius\) \{ layer = ri; break; \}/
+    .test(game), '判层由内向外、命中即 break（一只怪只吃一层）');
+  ok(/rollDamage\(st\.atk \* 0\.9 \* spow \* ringMul\(layer\)\)/.test(game),
+    '每跳伤害乘的是**所在层**的系数（不是总层数）');
+  ok(/rad: outerRad/.test(game),
+    '场地半径取最外圈 —— 环画到哪，减伤 / 反击就管到哪');
+  ok(/for \(let ri = 0; ri < rings; ri\+\+\) \{\s*\n\s*FX\.ring\(/.test(game),
+    '画几圈 = 判几层（光效圈是判定的视觉契约，不许少画）');
+  ok(skillSlotTierDone('warrior', 3, 3) && skillSlotTierDone('warrior', 3, 7),
+    '面板上剑阵位的 3 / 7 不再标「待」');
+  ok(skillSlotTierDone('warrior', 2, 3) && skillSlotTierDone('warrior', 2, 7),
+    '面板上裂地震击位的 3 / 7 也不再标「待」（Lv3 走 evo、Lv7 走本体）');
+}
+
+/* --- SKILL_TIER_BODY 是「本体台阶」的逃生口，三道闸门防止它变成后门 ---
+ * 它存在的唯一理由：有些档**天生就在技能本体里**（天崩本来就震三次），
+ * 硬塞进 evo 表等于给 quake 加一个它没有的行为。但逃生口必须有边界，
+ * 否则以后所有没做的档都能往里一塞、面板立刻变绿。 */
+{
+  const bad = [];
+  for (const cls in SKILL_TIER_BODY) {
+    for (const no in SKILL_TIER_BODY[cls]) {
+      const slot = skillArchSlot(cls, Number(no));
+      if (!slot) { bad.push('位不存在 ' + cls + no); continue; }
+      for (const lv of SKILL_TIER_BODY[cls][no]) {
+        if (!(slot.tiers || {})[lv]) { bad.push('没文案 ' + cls + no + ' Lv' + lv); continue; }
+        if (SKILL_TIERS.visible.indexOf(lv) < 0) { bad.push('不是可见档 ' + cls + no + ' Lv' + lv); continue; }
+        /* 能被 evo / 发数表达出来的档，不许走逃生口 */
+        const evo = (slot.inherit || []).some(id => (SKILL_TIER_EVO[id] || {})[lv]);
+        const cnt = (slot.inherit || []).some(id => skillTierCount(id, lv) > skillTierCount(id, lv - 1));
+        if (evo || cnt) bad.push('能写正经台阶却走了本体 ' + cls + no + ' Lv' + lv);
+      }
+    }
+  }
+  ok(bad.length === 0, 'SKILL_TIER_BODY 只登记「evo / 发数都表达不了、本体天生兑现」的档', bad);
 }
 
 /* ============================================================

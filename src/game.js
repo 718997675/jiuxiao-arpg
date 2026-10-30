@@ -3700,19 +3700,43 @@ const Game = {
         const slowDur = Math.max(0.2, (bBeh && bBeh.slowFieldDur) || 0.9);
         const drPct = CLAMP((bBeh && bBeh.arrayGuard) || 0, 0, 50);
         const counterPct = Math.max(0, (bBeh && bBeh.arrayCounter) || 0);
+        /* [P2b] Lv3 / Lv7「双圈 / 三圈」：同心多层剑气环。
+         * 每层向外扩 `SKILL_RING_STEP`（42%），同一次剑鸣里一只怪只吃
+         * **它所在那一层**的伤害（内 100% / 中 85% / 外 72%，
+         * 与「多发 ×0.85^n」同一口径，见 `SKILL_RING_DECAY`）。
+         * 层数不是「同一圈打三次」—— 那样双圈就是白送一倍伤害，
+         * 而台阶文案说的是「圈」，不是「伤害翻倍」。
+         * 判层的顺序必须**由内向外**：break 在第一个命中层，
+         * 倒过来的话站在内圈的怪会被算成外圈（伤害反而比没点台阶低）。 */
+        const rings = 1 + Math.max(0, Math.min(2, (bBeh && bBeh.arrayRings) || 0));
+        const ringRad = i => rad * (1 + i * SKILL_RING_STEP);
+        const ringMul = i => Math.pow(SKILL_RING_DECAY, i);
+        const outerRad = ringRad(rings - 1);
         /* 只有带台阶时才铺这份运行时状态；没台阶就是空，damagePlayer 里两个
-         * 消费点自然短路（不给没点台阶的玩家白送减伤） */
+         * 消费点自然短路（不给没点台阶的玩家白送减伤）。
+         * 场地半径取**最外圈**：环画到哪，减伤 / 反击就管到哪 —— 画小一圈
+         * 玩家站在看得见的环里却吃不到减伤，那是光效向玩家谎报范围。 */
         this.swordField = (drPct || counterPct)
-          ? { rad: rad, dr: drPct, counter: counterPct, ctr: fieldCtr, t: dur, gen: gen }
+          ? { rad: outerRad, dr: drPct, counter: counterPct, ctr: fieldCtr, t: dur, gen: gen }
           : null;
         const iv = setInterval(() => {
           if (this.mapGen !== gen || this.dead) { clearInterval(iv); return; }
           pulses++;
           const pp2 = fieldCtr();
-          FX.ring(new THREE.Vector3(pp2.x, 0.2, pp2.z), rad, 0xd8ffe0, 0.4, 0.18);
+          /* 每层一个环；越外越淡，免得三圈糊成一团亮环 */
+          for (let ri = 0; ri < rings; ri++) {
+            FX.ring(new THREE.Vector3(pp2.x, 0.2, pp2.z), ringRad(ri), 0xd8ffe0, 0.4,
+              Math.max(0.1, 0.18 - ri * 0.04));
+          }
           for (const e of this.enemies) {
             if (e.dead) continue;
-            if (DIST2D(e.pos, pp2) >= rad + e.radius) continue;
+            const d = DIST2D(e.pos, pp2);
+            /* 落在**最内层**的哪一圈 → 吃那一层的伤害；出最外圈就不打 */
+            let layer = -1;
+            for (let ri = 0; ri < rings; ri++) {
+              if (d < ringRad(ri) + e.radius) { layer = ri; break; }
+            }
+            if (layer < 0) continue;
             /* Lv5 减速：每跳刷新一次，出阵后 slowFieldDur 秒解除 ——
              * 是「站在阵里会被黏住」而不是「中一次减速走三步」 */
             if (slowPct) {
@@ -3720,7 +3744,7 @@ const Game = {
               e.slowT = Math.max(e.slowT || 0, slowDur);
               e.slowLabel = e.slowLabel || '剑阵';
             }
-            const { dmg, crit } = this.rollDamage(st.atk * 0.9 * spow);
+            const { dmg, crit } = this.rollDamage(st.atk * 0.9 * spow * ringMul(layer));
             this.damageEnemy(e, dmg, crit, { tag: 'aoe', silent: true });
           }
           if (pulses >= Math.ceil(dur / 0.6)) clearInterval(iv);

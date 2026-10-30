@@ -564,7 +564,10 @@ const SKILL_ARCHETYPE = {
         },
         {
           /* P1 对账：`skysfall`（天崩·三连震）本就是本位的「三连震」台阶，
-             `execute`（斩杀）是单体高伤，归「高伤」桶。原来这两个是孤儿。 */
+             `execute`（斩杀）是单体高伤，归「高伤」桶。原来这两个是孤儿。
+             3 / 7 两档的分工：Lv3「溅射」登记在 `SKILL_TIER_EVO.quake`（范围 +30%），
+             Lv7「三连震」是 **skysfall 本体**天生的连震三次，登记在
+             `SKILL_TIER_BODY.warrior[2]`。 */
           no: 2, title: '裂地震击', inherit: ['quake', 'leap', 'thrust', 'execute', 'skysfall'],
           tiers: {
             /* 10 原稿「眩晕 1.5 秒」是倒退：1 级就晕 1.6 秒。
@@ -577,9 +580,10 @@ const SKILL_ARCHETYPE = {
           no: 3, title: '剑阵', inherit: ['swordarray', 'riposte'],
           tiers: {
             /* 5 原稿「剑阵跟随移动」是现状不是台阶（本来就跟随），改成减速；
-               5/9/10 与 SKILL_TIER_EVO.swordarray 的 label 逐字一致。
-               3 / 7 的「双圈 / 三圈」还没接数量轴（swordarray 不在
-               SKILL_COUNT_BASE 里），面板照旧标「待」。 */
+               1/3/5/7/9/10 与 SKILL_TIER_EVO.swordarray 的 label 逐字一致。
+               3 / 7 的「双圈 / 三圈」不走数量轴（swordarray 不在
+               SKILL_COUNT_BASE 里）—— 走的是**同心多层剑气环**：
+               每层向外扩 42%，一只怪只吃它所在那一层的伤害。 */
             1: '单圈剑鸣', 3: '双圈', 5: '剑阵内敌人减速', 7: '三圈',
             9: '剑阵内减伤', 10: '剑阵内自动反击'
           }
@@ -1025,6 +1029,19 @@ const SKILL_COUNT_BASE = {
  * 1→2→3 发的总伤是 1.85 / 2.57 倍，而不是 2 / 3 倍。 */
 const SKILL_COUNT_DECAY = 0.85;
 
+/* 剑阵「双圈 / 三圈」的两条口径（Lv3 / Lv7，见 `SKILL_TIER_EVO.swordarray`）。
+ *
+ *   step  —— 每层向外扩的比例：内 1.00 / 中 1.42 / 外 1.84 倍半径
+ *   decay —— 外层伤害系数：内 100% / 中 85% / 外 72%
+ *
+ * decay 与多发递减 `SKILL_COUNT_DECAY` **同一口径**（「多出来的那一份按 0.85
+ * 递减」），但**故意分成两个常量**：数量轴与范围轴该各自调，绑成一个的话
+ * 调火球的多发惩罚会顺手改掉剑阵的伤害。
+ * 契约里断言 `SKILL_RING_DECAY === SKILL_COUNT_DECAY` —— 要分家就得先改断言，
+ * 那时候至少有人会想一下「这两条真的该不一样吗」。 */
+const SKILL_RING_STEP = 0.42;
+const SKILL_RING_DECAY = 0.85;
+
 function skillCountBase(id) {
   return SKILL_COUNT_BASE[id] || 0;
 }
@@ -1193,6 +1210,13 @@ const SKILL_TIER_EVO = {
    *   Lv10「眩晕 1.5 秒」—— 1 级就晕 1.6 秒，写了等于倒扣 0.1 秒。
    *        改成「二次崩塌」（echo 80%），才配得上「终极形态」。 */
   quake: {
+    /* Lv3「溅射」：quake 本来就是范围判定，对它溅射就是**半径变大**
+     * （与法师 ② judgement 同口径 —— 只有单体技能才需要 `splash` 键）。
+     * 只挂 quake：`leap` / `thrust` / `execute` 是单点位移与处决，
+     * 「溅射」对它们不成立，宁可这一档在它们身上不兑现，也不写一句空话。
+     * Lv7「三连震」**不在这里**：那是 skysfall（天崩）本体天生的行为
+     * （`castSkill` 里就是连震三次），登记在 `SKILL_TIER_BODY` 里。 */
+    3: { label: '溅射', mods: { radius: 30 } },
     5: { label: '余震钉住敌人', beh: { aftershockStun: 0.5 } },
     9: { label: '地裂范围扩大', mods: { radius: 35 } },
     10: { label: '地裂二次崩塌', beh: { echo: 80 } }
@@ -1206,9 +1230,19 @@ const SKILL_TIER_EVO = {
    *
    * 三条台阶的共同点：都要判「阵在哪、人还在不在阵里」。钉阵变体下
    * 玩家能走出去 —— 无条件常驻就把这个选择吃掉了。所以三条全部由
-   * swordarray case 铺一份 Game.swordField，由 damagePlayer 消费。 */
+   * swordarray case 铺一份 Game.swordField，由 damagePlayer 消费。
+   *
+   * Lv3 / Lv7「双圈 / 三圈」走的是另一条通道：**同心多层剑气环**。
+   * 每层向外扩 `SKILL_RING_STEP`（42%），同一次剑鸣里一只怪只吃
+   * **它所在那一层**的伤害（内层 100% / 中层 85% / 外层 72%，
+   * 与「多发 ×0.85^n」同一口径，系数见 `SKILL_RING_DECAY`）——
+   * 层数不是「同一圈打三次」，否则双圈就是白送一倍伤害。
+   * 值 = **额外圈数**（1 = 双圈、2 = 三圈），不是总圈数 —— 写总圈数的话
+   * 「没点台阶」与「点了一级」都得登记，漏一处就变成 0 圈。 */
   swordarray: {
+    3: { label: '双圈', beh: { arrayRings: 1 } },
     5: { label: '剑阵内敌人减速', beh: { slowField: 45, slowFieldDur: 0.9 } },
+    7: { label: '三圈', beh: { arrayRings: 2 } },
     9: { label: '剑阵内减伤', beh: { arrayGuard: 20 } },
     /* 不和 counter（格挡反击）撞键：那个只在「挡下来」时走、要过格挡判定、
        数值乘盾墙；这个不要求格挡、有 0.4 秒内置冷却、口径独立。 */
@@ -1540,9 +1574,10 @@ function skillArchSlot(cls, no) {
 
 /* 某一级台阶「实装了没有」（面板据此标「待」角标）。
  *
- * 判据两路，都不写死等级：
+ * 判据三路，都不写死等级：
  *   数量台阶 —— 位内至少一只技能**在这一级新增了发数**（n 比 n−1 多）
  *   形态台阶 —— 位内至少一只技能在 SKILL_TIER_EVO 里登记了这一级
+ *   本体台阶 —— 位内某只技能的**本体行为**天生就是这一档（见 SKILL_TIER_BODY）
  * Lv1 是基础形态，永远成立。
  *
  * 「新增」这个限定是必须的：发数是**累计**的（Lv7 之后一直是 +2），只判
@@ -1553,11 +1588,32 @@ function skillArchSlot(cls, no) {
  * 与「持续 +3 秒」；法师 ② 的发数在 5 / 7，而 3 级是「溅射」。写死 3 / 7 的后果
  * 两头都错 —— 法师 ② 的 Lv3 会因为 starfall 吃 count 被判成已生效（假绿），
  * 真正给了发数的 Lv5 反倒显示「待」。 */
+
+/* 由**技能本体**兑现的台阶 —— 不登记的话面板会给它标「待」。
+ *
+ * 为什么需要这张表：台阶文案是按**功能位**写的，而一个位里躺着好几只技能。
+ * 刀客 ②「三连震」不是给 quake 加出来的，而是 skysfall（天崩）**天生**就连震
+ * 三次（`castSkill` 里那个 `for i < 3`）—— 玩家把天崩放进 ② 位，Lv7 就有三连震；
+ * 放裂地震击就没有。这跟「法师 ② 的 Lv5 双陨只有陨石能兑现」是同一种情况。
+ *
+ * 只认 SKILL_TIER_EVO 的话，这类档会被误标「待」—— 东西明明能用，面板说没接，
+ * 那是反过来的文案与实装不对齐。所以单开一张表，只登记**真的能从本体兑现**的。
+ * 键 = 职业 → 位号 → [等级...] */
+const SKILL_TIER_BODY = {
+  warrior: {
+    2: [7]   // 地裂 Lv7「三连震」= 天崩（skysfall）本体；quake 不是
+  }
+};
+
 function skillSlotTierDone(cls, no, lv) {
   const slot = skillArchSlot(cls, no);
   if (!slot) return false;
   const n = Math.round(Number(lv) || 0);
   if (n === 1) return true;
+  /* 本体兑现的档：判据必须认，否则面板给已经做出来的东西标「待」，
+   * 玩家会以为这一级没接（反向的文案与实装不对齐）。 */
+  const body = (SKILL_TIER_BODY[cls] || {})[no] || [];
+  if (body.indexOf(n) >= 0) return true;
   const own = slot.inherit || [];
   if (own.some(id => skillTierCount(id, n) > skillTierCount(id, n - 1))) return true;
   return own.some(id => {

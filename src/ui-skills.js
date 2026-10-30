@@ -108,6 +108,11 @@ Object.assign(UI, {
       </div>`;
     }).join('');
     const first = T.curve[0].pct;
+    /* 「待」角标的存量：本职业 5 个位里还有几档没接进战斗。
+     * 一个都没有时不许再说「带待的是还没接的部分」—— 那是欠账期的说明，
+     * 全部接完还挂着就等于告诉玩家「这游戏还有一半没做」。 */
+    const todoAll = list.reduce((n, slot) => n + T.visible.filter(lv =>
+      (typeof skillSlotTierDone === 'function' ? !skillSlotTierDone(slot.cls, slot.no, lv) : false)).length, 0);
     /* 数量台阶的读数全部现算：写死「1.85 倍」迟早在改系数后变成假话 */
     const DECAY = (typeof SKILL_COUNT_DECAY === 'number') ? SKILL_COUNT_DECAY : 0.85;
     const c3 = 1 + DECAY;
@@ -120,8 +125,10 @@ Object.assign(UI, {
         Lv10 终极形态；11→20 为精进层（来自装备词缀，不占技能点），共 ${skillLvMul(T.cap)} 倍。
         台阶名：${T.visible.map(lv => lv + ' ' + stepName(lv)).join(' · ')}。
         动作条 ${SKILL_BAR_SLOTS} 格：左键 = ①，1~4 = ②③④⑤。
-        <b>带「待」的台阶目前只有文案，战斗尚未接入</b>（Lv3 / Lv7 数量已接，位内有连发 / 多片 / 多数符类技能才给；
-        Lv5 / Lv9 / Lv10 形态逐技能接，已经接好的位不再带「待」）。</div>
+        ${todoAll
+    ? `<b>带「待」的台阶目前只有文案，战斗尚未接入</b>（本职业还有 ${todoAll} 档；Lv3 / Lv7 数量
+        要给位内有连发 / 多片 / 多数符类技能才兑现，Lv5 / Lv9 / Lv10 形态逐技能接）。`
+    : '<b>5 个位的台阶全部已接入战斗</b>（没有「待」角标 = 每一档都能在游戏里兑现）。'}</div>
     </details>`;
   },
 

@@ -246,15 +246,17 @@ const ok = (c, m, d) => {
   ok(panel.perCard.every(c => c.total === 6), '每张卡 6 个台阶（1/3/5/7/9/10）', panel.perCard.map(c => c.total));
   ok(panel.perCard[0].todoLv.join(',') === '',
     '刀客 ① 三个进化台阶都已接（不再带「待」）', panel.perCard[0].todoLv);
-  ok(panel.perCard[1].todoLv.join(',') === '3,7',
-    '刀客 ② 只剩 3 / 7 带「待」（位内没有吃 count 通道的技能）', panel.perCard[1].todoLv);
-  ok(panel.perCard[2].todoLv.join(',') === '3,7',
-    '刀客 ③ 的 5 / 9 / 10 已接，只剩「双圈 / 三圈」（swordarray 不吃 count 通道）',
+  ok(panel.perCard[1].todoLv.join(',') === '',
+    '刀客 ② 不再带「待」：Lv3 走 evo（范围 +30%）、Lv7 走本体（天崩天生三连震）',
+    panel.perCard[1].todoLv);
+  ok(panel.perCard[2].todoLv.join(',') === '',
+    '刀客 ③ 的「双圈 / 三圈」已接（同心多层剑气环，不走数量轴）',
     panel.perCard[2].todoLv);
   ok(panel.perCard.every(c => c.badge === c.todoLv.length), '每个「待」台阶都带角标（不只是压暗）',
     panel.perCard.map(c => [c.badge, c.todoLv.length]));
   ok(/1\.85/.test(panel.tip) && /2\.57/.test(panel.tip), '卡区说明写着 1.85 / 2.57 倍', panel.tip.slice(0, 140));
-  ok(/待/.test(panel.tip), '卡区说明写明「带待的是还没接的部分」', panel.tip.slice(-70));
+  ok(/待/.test(panel.tip), '卡区说明写清「待」的含义（有欠账就解释、全接完就说已全部接入）',
+    panel.tip.slice(-90));
 
   const magePanel = await p.evaluate(() => {
     Game.state.cls = 'mage';
@@ -693,8 +695,13 @@ const ok = (c, m, d) => {
     };
     out.q4 = await quakeRun(4, 0);
     out.q5 = await quakeRun(5, 0);
-    out.q8 = await quakeRun(8, 6.6);       // 基础 5.8 码外、Lv9 扩范围后进圈
-    out.q9 = await quakeRun(9, 6.6);
+    /* Lv3「溅射」= 范围 +30%（5.8 → 7.54）。7 码是这两档的分界：
+     * 2 级砸不到、3 级砸得到 —— 否则「溅射」对本来就范围的技能就是空话。 */
+    out.q2 = await quakeRun(2, 7.0);
+    out.q3 = await quakeRun(3, 7.0);
+    /* Lv9 再 +35%（7.54 → 10.18）：8.8 码是 Lv8 / Lv9 的分界 */
+    out.q8 = await quakeRun(8, 8.8);
+    out.q9 = await quakeRun(9, 8.8);
     out.q10 = await quakeRun(10, 0);
 
     /* ---------------- 刀客 ③ 剑阵：减速 / 减伤 / 反击 ----------------
@@ -722,6 +729,49 @@ const ok = (c, m, d) => {
     };
     out.sw4 = await swRun(4);
     out.sw5 = await swRun(5);
+
+    /* ---------------- 刀客 ③ Lv3 / Lv7「双圈 / 三圈」 ----------------
+     * 一层圈 = 一个伤害档（内 100% / 中 85% / 外 72%）。量法：四只假怪摆在
+     * 内 / 中 / 外 / 圈外四个距离上，只数**第一跳**。
+     * rollDamage 换成恒等函数 —— 它带暴击与浮动，绝对值没法比；换了之后
+     * 读到的就是「这一层乘了几倍」。比值以最内圈为 1 归一。 */
+    const swRings = async (lv) => {
+      Game.state.cls = 'warrior';
+      /* 变体显式切 1 号：0 号「钉阵」自带 +45% 范围与施法瞬间的提示环，
+       * 两样都会把「第几圈打谁」量歪（实测第一圈变成 5.22）。 */
+      const es = setup('swordarray', lv, 4, 1);
+      const pp = Game.playerGroup.position;
+      /* 基础半径 3.6（+怪半径 0.5 → 4.1）：第二圈 5.11 + 0.5 = 5.61，
+       * 第三圈 7.06 + 0.5 = 7.56。四只分别落在 1.5 / 4.8 / 6.8 / 9.0。 */
+      const dist = [1.5, 4.8, 6.8, 9.0];
+      es.forEach((e, i) => e.pos.set(pp.x + dist[i], 0, pp.z));
+      Game.aimPoint = new THREE.Vector3(pp.x, 0, pp.z);
+      Game.aimDir = new THREE.Vector3(1, 0, 0);
+      const got = [];
+      const radii = [];
+      const oldHit = Game.damageEnemy;
+      const oldRoll = Game.rollDamage;
+      const oldRing = FX.ring;
+      Game.castSkill('swordarray');
+      /* 施法瞬间还有一圈 0.9 倍半径的提示环 + 一次附加爆发（半径 5），
+       * 两者都会把「第几圈打谁」量歪 —— 等到 450ms 再装探针，
+       * 只截 600ms 那一跳剑鸣。 */
+      await wait(450);
+      Game.rollDamage = v => ({ dmg: v, crit: false });
+      Game.damageEnemy = (en, dmg) => { const i = es.indexOf(en); if (i >= 0) got[i] = (got[i] || 0) + dmg; };
+      FX.ring = (pos, r) => { radii.push(Math.round(r * 100) / 100); };
+      await wait(300);                        // 剑阵 600ms 一跳
+      Game.damageEnemy = oldHit;
+      Game.rollDamage = oldRoll;
+      FX.ring = oldRing;
+      Game.mapGen = (Game.mapGen || 0) + 1;   // 掐掉 8 秒的定时器
+      const base = got[0] || 1;
+      return { rings: radii.length, radii: radii,
+        ratio: dist.map((d, i) => (got[i] ? Math.round(got[i] / base * 1000) / 1000 : 0)) };
+    };
+    out.r2 = await swRings(2);
+    out.r3 = await swRings(3);
+    out.r7 = await swRings(7);
 
     /* 减伤：只留「剑阵这一层」，其余乘数两次相同，比的是比值 */
     const swGuard = async (lv, out) => {
@@ -872,8 +922,10 @@ const ok = (c, m, d) => {
     'Lv5 才把「余震钉人」交给余震 handler（Lv4 不带这个参数）',
     { q4: evo.q4.pin, q5: evo.q5.pin });
   ok(pinWorks === 0.5, '余震 handler 真的把 pin 写进 e.stun（0.5 秒）', pinWorks);
-  ok(evo.q8.first === 0, 'Lv8 砸不到 6.6 码外的怪（基础半径 5.8）', evo.q8);
-  ok(evo.q9.first === 1, 'Lv9 范围扩大后能砸到 6.6 码外（+35%）', evo.q9);
+  ok(evo.q8.first === 0, 'Lv8 砸不到 8.8 码外的怪（溅射之后半径 7.54）', evo.q8);
+  ok(evo.q9.first === 1, 'Lv9 再 +35% 后能砸到 8.8 码外（7.54 → 10.18）', evo.q9);
+  ok(evo.q2.first === 0, 'Lv2 砸不到 7 码外的怪（基础半径 5.8）', evo.q2);
+  ok(evo.q3.first === 1, 'Lv3「溅射」把半径撑到 7.54，7 码外的怪进圈', evo.q3);
   ok(evo.q10.echo > evo.q10.first, 'Lv10 地裂结束再崩一次（0.45 秒后）', evo.q10);
   ok(evo.sk10.bases.some(b => Math.abs(b / evo.sk10.bases[0] - 0.7) < 0.02),
     '改追那一下按 70% 结算（不是白送一次全额）', evo.sk10.bases);
@@ -890,6 +942,23 @@ const ok = (c, m, d) => {
   ok(evo.sc9.one === 0 && evo.sc10.one === 1,
     'Lv10 挨打会自动反击（Lv9 不反）', { lv9: evo.sc9.one, lv10: evo.sc10.one });
   ok(evo.sc10.two === 1, '反击有 0.4 秒内置冷却（连挨两下只反一次）', evo.sc10);
+
+  /* --- Lv3 / Lv7「双圈 / 三圈」：一层圈一个伤害档 ---
+   * 三条一起看才钉得住：圈数、每层系数、圈外不吃。
+   * 只测「圈数变多」的话，一个「同一圈打三次」的假实现也能全绿 ——
+   * 那种实现的双圈等于白送一倍伤害，而文案说的是「圈」。 */
+  ok(evo.r2.rings === 1, 'Lv2 只画一圈', evo.r2.radii);
+  ok(evo.r2.ratio[1] === 0 && evo.r2.ratio[2] === 0,
+    'Lv2 中 / 外两只都打不到（4.8 / 6.8 码在 3.6 半径之外）', evo.r2.ratio);
+  ok(evo.r3.rings === 2, 'Lv3 画两圈（双圈）', evo.r3.radii);
+  ok(Math.abs(evo.r3.ratio[0] - 1) < 0.01 && Math.abs(evo.r3.ratio[1] - 0.85) < 0.01,
+    'Lv3 内圈 100% / 中圈 85%（第二圈不是白送一整份伤害）', evo.r3.ratio);
+  ok(evo.r3.ratio[2] === 0, 'Lv3 还没有第三圈（6.8 码那只打不到）', evo.r3.ratio);
+  ok(evo.r7.rings === 3, 'Lv7 画三圈', evo.r7.radii);
+  ok(Math.abs(evo.r7.ratio[1] - 0.85) < 0.01 &&
+    Math.abs(evo.r7.ratio[2] - 0.7225) < 0.01,
+    'Lv7 三圈：中 85% / 外 72%（0.85²，与多发递减同一口径）', evo.r7.ratio);
+  ok(evo.r7.ratio[3] === 0, 'Lv7 圈外 9 码那只不吃伤害（环外就是环外）', evo.r7.ratio);
 
   /* ---------------- 8. 刀客 ④ 血怒：三只增益共用一个格位 ----------------
    * 这一位最容易被做假：只接 bloodrage 一只，玩家把 warcry 放进 ④ 号位

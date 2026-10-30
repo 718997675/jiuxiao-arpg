@@ -397,6 +397,10 @@ const SKILL_BEH = {
   slowFieldDur: { ph: 'hook', label: '减速残留', run() { /* 由 slowField 一并消费 */ } },
   arrayGuard: { ph: 'hook', label: '阵内减伤', run() { /* 由 damagePlayer 消费 */ } },
   arrayCounter: { ph: 'hook', label: '阵内反击', run() { /* 由 damagePlayer 消费 */ } },
+  /* 剑阵 Lv3 / Lv7「双圈 / 三圈」：值 = **额外圈数**（1 = 双圈、2 = 三圈）。
+   * 由 swordarray case 铺成同心多层环，一只怪只吃它所在那一层的伤害
+   * （内 100% / 中 85% / 外 72%）—— 层数不是「同一圈打三次」。 */
+  arrayRings: { ph: 'hook', label: '剑气圈数', run() { /* 由 swordarray case 消费 */ } },
 
   /* [P2b] 刀客 ⑤ 兵形（四个键，全部由 game.js 的兵形状态机消费）。
    * 这一位不是一个行为键能接完的 —— 它是「刀式状态 + 刃势记账 + 终结技」三件套，
