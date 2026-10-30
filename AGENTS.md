@@ -134,6 +134,7 @@ git fetch origin                 # 分支都在远程，clone 完就全能看到
 | 技能实际行为 / 被动 | `src/skill-beh.js` / `src/skill-passive.js` |
 | 元素定义 / 元素反应 | `src/data/data-elem.js`（表）+ `src/game.js` 的 `tryElemReaction` / `applyElemReaction`。**反应挂在 `damageEnemy` 一个口上**，别去各技能 case 里加。圣系靠**圣印** `e.sigilT` 判状态（`SIGIL_MARK`，`sigil` 命中盖 6 秒、`opts.react` 不盖）；**`ELEM_STATUS` 的键序就是优先级，圣必须排最后**（道士符箓全是 `sigil`，排前面会把火+冰整组吃掉） |
 | 元素注入（技能位注火/冰/雷/毒，单 / 双元素） | `src/data/data-elem.js` 的 `SKILL_INJECT`（`at` 单元素门槛 / `subAt` 混搭门槛 / `split` 70-30）/ `skillInjectSplit` / `skillCanInject` + `src/game.js` 的 `skillInjectPack`（注入包）与 `injectSegs`（拆段）。**`castSkill` 只开窗口，投射物靠 `FX.projectile` 的 `inj` 自己带** |
+| 技能光效 / 领域（剑阵·太极·毒雾·符阵） | `src/fx.js`（`FX.field` 四剪影 + `fieldTexture` 五张贴图；`FX.amp` 只许乘亮度，**不许乘半径**） |
 | 元素增伤词缀（统一 / 专属两层） | `src/data/data-elem.js` 的 `ELEM_AFFIX`（通用 `elemDmg`）/ `ELEM_AFFIX_EX`（专属）/ **`elemAffixMul`（唯一出口）**。加新词条走 `data-items.js` 的 `AFFIXES`；**别再写第二处 `1 + st[键]/100`** |
 | 手机端摇杆、键位、面板滚动 | `src/mobile.js` + `index.html` 的 `@media` |
 | 手机横向树排版 | `src/ui-mtree.js` |
@@ -152,6 +153,9 @@ node dev/mobile-layout.js    # 6 视口 × 10 页签：键位重叠/出屏/裁�
 node dev/live-check.js       # 线上能否开局（推完 30~60s 后跑）
 node dev/mobile-layout.js --live   # 线上版布局回归
 node dev/preview-check.js --url <预览地址>   # 预览站：能开局 + 资源不越界 + 存档隔离
+node dev/test-vfx-field.js   # 领域四剪影：源码契约（半径不听亮度 / 贴图缓存 / 逐帧不 new）
+node dev/probe-vfx-field.js  # 领域四剪影：真机部件构成 + 回收 + 4 张截图
+node dev/audit-tiers.js      # 面板欠账审计：三个职业还剩几档「待」
 ```
 
 ## 6. 踩过的坑（改之前先看一眼，能省几小时）
@@ -247,6 +251,11 @@ node dev/preview-check.js --url <预览地址>   # 预览站：能开局 + 资�
   `SKILL_TIER_BODY` 有四道闸门（位号 / 文案 / 可见档 / evo 与发数都表达不了），
   契约钉住 —— **别把没做的档往里一塞就完事**。
   面板卡区说明改成读「待」的存量：零欠账时说「全部已接入」，不再挂欠账期的话术。
+  **特效移植已开工（2026-10-30）**：`FX.field` 四剪影（法阵 / 太极 / 雾 / 剑阵）进游戏，
+  接入剑阵、天师符阵、蚀骨毒雾、太极玄阵 4 处。**半径一律由调用方按判定半径传**，
+  `FX.amp` 只乘亮度不乘半径（契约里 `R * this.amp` 一处都不许有）。
+  其余原语（`spr` / `trail` / `bolt` / `shock` / `decal`）**仍是 0** ——
+  下一步按 `SKILL-VFX-PLAN §12` 走 V0（图集 + 五个原语），再谈签名特效。
 - **待拍板**：大地图扩展（12 章 / 80 怪 / 24 首领 / 12 营地 + 任务网 / 5 类地下城 × 5 阶钥匙）。
   方案在 `docs/ACT-EXPANSION-PLAN.md`（2026-10-27 草案，**未动代码**）。
   §14 有 10 项待拍板，**拍板前不要开工**。

@@ -336,8 +336,145 @@ function talismanTexture() {
 }
 const fxPlane = (w, h) => _fxGeo(`p${w}_${h}`, () => new THREE.PlaneGeometry(w, h));
 
+/* ---------------- 领域贴图（程序化，仍然零素材） ----------------
+ * 五张图一次生成、全局共用：sigil（法阵纹）/ taiji（双鱼）/ beam（竖直光柱）/
+ * smoke（雾团）/ blade（剑身）。与 talismanTexture 同一套做法 —— 本仓库不引入
+ * 任何图片素材，贴图全靠 Canvas 现画。
+ *
+ * 约定：**白 = 全亮，透明 = 不画**。加色混合下黑色与透明等价，
+ * 所以"暗部"用低 alpha 画，不要用黑色（黑色在 NormalBlending 的雾里会变脏）。
+ * 纹理只生成一次：每次 new CanvasTexture 都会重传一遍显存，
+ * 技能连放时会直接把上传带宽吃满（与当初投射物挂 PointLight 是同一类问题）。 */
+const _fieldTex = {};
+function fieldTexture(kind) {
+  if (_fieldTex[kind]) return _fieldTex[kind];
+  const c = document.createElement('canvas');
+  const g = c.getContext('2d');
+  const W = (kind === 'beam' || kind === 'blade') ? 64 : (kind === 'smoke' ? 128 : 512);
+  const H = (kind === 'beam' || kind === 'blade') ? 256 : W;
+  c.width = W; c.height = H;
+
+  if (kind === 'sigil') {
+    /* 法阵纹：双环 + 24 道刻度 + 8 根辐条 + 中心符胆。
+     * 不画汉字 —— 512 的图铺到 7 码半径上，笔画会糊成一团黑。 */
+    const cx = W / 2, cy = H / 2;
+    g.strokeStyle = 'rgba(255,255,255,.85)';
+    g.lineWidth = 5;
+    g.beginPath(); g.arc(cx, cy, W * 0.46, 0, Math.PI * 2); g.stroke();
+    g.lineWidth = 2;
+    g.beginPath(); g.arc(cx, cy, W * 0.385, 0, Math.PI * 2); g.stroke();
+    g.beginPath(); g.arc(cx, cy, W * 0.235, 0, Math.PI * 2); g.stroke();
+    g.strokeStyle = 'rgba(255,255,255,.6)';
+    for (let i = 0; i < 24; i++) {
+      const a = (i / 24) * Math.PI * 2;
+      const r1 = W * 0.385, r2 = i % 3 === 0 ? W * 0.46 : W * 0.425;
+      g.beginPath();
+      g.moveTo(cx + Math.cos(a) * r1, cy + Math.sin(a) * r1);
+      g.lineTo(cx + Math.cos(a) * r2, cy + Math.sin(a) * r2);
+      g.stroke();
+    }
+    g.strokeStyle = 'rgba(255,255,255,.42)';
+    g.lineWidth = 3;
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2 + Math.PI / 8;
+      g.beginPath();
+      g.moveTo(cx + Math.cos(a) * W * 0.235, cy + Math.sin(a) * W * 0.235);
+      g.lineTo(cx + Math.cos(a) * W * 0.385, cy + Math.sin(a) * W * 0.385);
+      g.stroke();
+    }
+    /* 中心符胆：一个小六边 + 内点 */
+    g.strokeStyle = 'rgba(255,255,255,.9)';
+    g.lineWidth = 4;
+    g.beginPath();
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2;
+      const x = cx + Math.cos(a) * W * 0.115, y = cy + Math.sin(a) * W * 0.115;
+      i ? g.lineTo(x, y) : g.moveTo(x, y);
+    }
+    g.closePath(); g.stroke();
+    g.fillStyle = 'rgba(255,255,255,.95)';
+    g.beginPath(); g.arc(cx, cy, W * 0.032, 0, Math.PI * 2); g.fill();
+  } else if (kind === 'taiji') {
+    /* 双鱼：整盘压暗（0.30），再把「阳鱼」那一半提亮到 0.85 ——
+     * 加色混合下这正好是「一边亮一边暗」，灰度截图里 S 分界线就是剪影。 */
+    const cx = W / 2, cy = H / 2, R = W * 0.46;
+    g.fillStyle = 'rgba(255,255,255,.34)';
+    g.beginPath(); g.arc(cx, cy, R, 0, Math.PI * 2); g.fill();
+    g.fillStyle = 'rgba(255,255,255,.95)';
+    g.beginPath();
+    g.arc(cx, cy, R, -Math.PI / 2, Math.PI / 2, false);          // 右半大圆
+    g.arc(cx, cy + R / 2, R / 2, Math.PI / 2, -Math.PI / 2, true); // 下小鱼
+    g.arc(cx, cy - R / 2, R / 2, Math.PI / 2, -Math.PI / 2, false); // 上小鱼
+    g.closePath(); g.fill();
+    /* 鱼眼：一亮一暗（暗的用低 alpha，加色下等于"少加一点"） */
+    g.fillStyle = 'rgba(255,255,255,.95)';
+    g.beginPath(); g.arc(cx, cy - R / 2, R * 0.13, 0, Math.PI * 2); g.fill();
+    g.fillStyle = 'rgba(255,255,255,.16)';
+    g.beginPath(); g.arc(cx, cy + R / 2, R * 0.13, 0, Math.PI * 2); g.fill();
+    g.strokeStyle = 'rgba(255,255,255,.5)';
+    g.lineWidth = 4;
+    g.beginPath(); g.arc(cx, cy, R, 0, Math.PI * 2); g.stroke();
+  } else if (kind === 'beam') {
+    /* 竖直光柱：底亮顶透。**不做横向渐变** —— 圆柱 UV 横向是环绕的，
+     * 横向渐变会在接缝处留一道竖线，转起来像根栅栏。 */
+    const grd = g.createLinearGradient(0, 0, 0, H);
+    grd.addColorStop(0, 'rgba(255,255,255,0)');
+    grd.addColorStop(0.55, 'rgba(255,255,255,.35)');
+    grd.addColorStop(1, 'rgba(255,255,255,.95)');
+    g.fillStyle = grd;
+    g.fillRect(0, 0, W, H);
+  } else if (kind === 'smoke') {
+    /* 雾团：几团重叠的径向柔光。**不用纯圆** —— 纯圆的雾看起来是绿饼。 */
+    for (let i = 0; i < 9; i++) {
+      const x = W * (0.3 + Math.random() * 0.4);
+      const y = H * (0.3 + Math.random() * 0.4);
+      const r = W * (0.18 + Math.random() * 0.22);
+      const grd = g.createRadialGradient(x, y, 0, x, y, r);
+      grd.addColorStop(0, 'rgba(255,255,255,.72)');
+      grd.addColorStop(0.6, 'rgba(255,255,255,.34)');
+      grd.addColorStop(1, 'rgba(255,255,255,0)');
+      g.fillStyle = grd;
+      g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill();
+    }
+    /* 外圈柔化：方图直接贴上去会看见四条直边 */
+    const mask = g.createRadialGradient(W / 2, H / 2, W * 0.2, W / 2, H / 2, W * 0.5);
+    mask.addColorStop(0, 'rgba(255,255,255,1)');
+    mask.addColorStop(1, 'rgba(255,255,255,0)');
+    g.globalCompositeOperation = 'destination-in';
+    g.fillStyle = mask;
+    g.fillRect(0, 0, W, H);
+    g.globalCompositeOperation = 'source-over';
+  } else if (kind === 'blade') {
+    /* 剑身：细长多边形 + 中脊亮线。贴地画弧会跟旋风斩的刀气撞，
+     * 所以剑必须是"立着的剑" —— 靠 plane + 朝相机来立起来。 */
+    const cx = W / 2;
+    g.fillStyle = 'rgba(255,255,255,.9)';
+    g.beginPath();
+    g.moveTo(cx, H * 0.04);
+    g.lineTo(cx + W * 0.20, H * 0.30);
+    g.lineTo(cx + W * 0.15, H * 0.86);
+    g.lineTo(cx + W * 0.26, H * 0.90);
+    g.lineTo(cx + W * 0.26, H * 0.96);
+    g.lineTo(cx - W * 0.26, H * 0.96);
+    g.lineTo(cx - W * 0.26, H * 0.90);
+    g.lineTo(cx - W * 0.15, H * 0.86);
+    g.lineTo(cx - W * 0.20, H * 0.30);
+    g.closePath(); g.fill();
+    g.strokeStyle = 'rgba(255,255,255,1)';
+    g.lineWidth = 2;
+    g.beginPath(); g.moveTo(cx, H * 0.06); g.lineTo(cx, H * 0.88); g.stroke();
+  }
+
+  const t = new THREE.CanvasTexture(c);
+  t.needsUpdate = true;
+  _fieldTex[kind] = t;
+  return t;
+}
+
 /* 追踪用的临时向量：每帧每个投射物都 new 一个 Vector3 会造成 GC 抖动 */
 const _vHome = new THREE.Vector3();
+/* 领域脉冲环用的临时向量（每 2 秒一次，但纪律一样：逐帧路径不 new） */
+const _vField = new THREE.Vector3();
 /* 亮度调色的临时色（避免每个原语都 new 一个 Color） */
 const _cLit = new THREE.Color();
 const _cWhite = new THREE.Color(1, 1, 1);
@@ -522,6 +659,231 @@ const FX = {
     return m;
   },
 
+  /* ============================================================
+   * [VFX·移植] 领域：**四种剪影，不是四种颜色**
+   *
+   * 以前所有领域共用同一副骨架（地面圆盘 + 边沿亮圈），换的只是颜色与半径。
+   * 灰度截图里太极 / 毒雾 / 剑阵 / 法阵读起来是同一个东西 —— 玩家分不出
+   * 「我站在什么阵里」，技能的身份就没了。这里按 kind 分开：
+   *
+   *   sigil   法阵：地纹 + 中央光柱 + 双层环墙 + 2 秒脉冲
+   *   taiji   太极：双鱼地纹 + 两根气旋柱（长在鱼眼上、跟着双鱼一起转）
+   *   mist    雾  ：没有地纹、没有边界，只有翻滚的雾团
+   *   blades  剑阵：淡地纹 + 立着环绕的剑影（椭圆轨道）
+   *
+   * 外轮廓分别是「圆 + 柱」「双螺旋」「不规则的团」「轨道」，遮住颜色也分得开。
+   *
+   * 三条硬约束（写在这里，防止以后加东西时忘掉）：
+   *   ① **半径由调用方按判定半径传进来**，这里绝不自己放大 ——
+   *      领域圈就是判定的视觉契约，画大一圈就是向玩家谎报范围。
+   *   ② **不挂 PointLight**、**不在 update 里 new 对象** —— 与其它原语同一套纪律。
+   *   ③ 低画质档（`FX.q < 0.7`）去掉环墙与剑影数量，只留地纹 ——
+   *      手机端同屏两三个领域是常事。
+   * ============================================================ */
+  field(pos, opts = {}) {
+    const kind = opts.kind || 'sigil';
+    const R = Math.max(0.6, opts.r || 3.2);
+    const life = Math.max(0.4, opts.life || 4.5);
+    const color = opts.color != null ? opts.color : 0x9fe8c8;
+    const op = Math.min(0.9, opts.opacity != null ? opts.opacity : 0.85);
+    const spin = opts.spin != null ? opts.spin : 0.22;
+    const grp = new THREE.Group();
+    grp.position.set(pos.x, 0, pos.z);
+    this.scene.add(grp);
+
+    const mats = [];
+    const mkMat = (extra) => {
+      const m = new THREE.MeshBasicMaterial(Object.assign({
+        color: this.lit(color), transparent: true, opacity: 0,
+        depthWrite: false, blending: THREE.AdditiveBlending, fog: false
+      }, extra || {}));
+      mats.push(m);
+      return m;
+    };
+
+    /* 地纹：雾**不画**。带着一圈清晰圆边的"雾"读起来是一张绿饼，
+     * 而雾的身份恰恰是「没有边界」。剑阵压到 0.26 —— 它的主体是剑影。 */
+    let sig = null, sigOp = 0;
+    if (kind !== 'mist') {
+      const tex = fieldTexture(kind === 'taiji' ? 'taiji' : 'sigil');
+      sigOp = kind === 'taiji' ? op * 0.62 : kind === 'blades' ? op * 0.26 : op;
+      const mat = mkMat({ map: tex });
+      sig = new THREE.Mesh(fxPlane(1, 1), mat);
+      sig.rotation.x = -Math.PI / 2;
+      sig.position.y = 0.03;
+      sig.scale.setScalar(R * 2);
+      grp.add(sig);
+    }
+
+    /* 柱与环墙只属于法阵。太极换成气旋柱，雾什么都不长。 */
+    let colMesh = null, walls = [];
+    if (kind === 'sigil') {
+      const cGeo = _fxGeo('fxcol' + R.toFixed(2), () =>
+        new THREE.CylinderGeometry(R * 0.92, R * 0.92, 2.6, 28, 1, true));
+      colMesh = new THREE.Mesh(cGeo, mkMat({ map: fieldTexture('beam'), side: THREE.DoubleSide }));
+      colMesh.position.y = 1.3;
+      grp.add(colMesh);
+
+      const wGeo = _fxGeo('fxwall' + R.toFixed(2), () =>
+        new THREE.CylinderGeometry(R, R, 1.5, 36, 1, true));
+      /* 低画质只留一层墙：两层墙是 2 次 draw call，手机上是纯浪费 */
+      const wallN = this.q < 0.7 ? 1 : 2;
+      for (let i = 0; i < wallN; i++) {
+        const m = new THREE.Mesh(wGeo, mkMat({ map: fieldTexture('beam'), side: THREE.DoubleSide }));
+        m.position.y = 0.55;
+        m.userData.s = i ? -1 : 1;
+        grp.add(m);
+        walls.push(m);
+      }
+    }
+
+    /* 太极的体积感：两根气旋柱，长在两个鱼眼上、跟双鱼图同速公转。
+     * 只靠撒粒子做螺旋，在 51° 俯角下会投影成中心一坨白雾 ——
+     * 而"两根柱"是实打实的竖直物体，俯视时最占屏幕的正是竖直方向。 */
+    const cols = [];
+    if (kind === 'taiji') {
+      for (let i = 0; i < 2; i++) {
+        const g = _fxGeo('fxtj' + R.toFixed(2), () =>
+          new THREE.CylinderGeometry(R * 0.30, R * 0.18, 2.9, 16, 1, true));
+        const m = new THREE.Mesh(g, mkMat({ map: fieldTexture('beam'), side: THREE.DoubleSide }));
+        m.position.y = 1.45;
+        grp.add(m);
+        cols.push(m);
+      }
+    }
+
+    /* 雾片：**NormalBlending**。加色混合的雾会变成一团荧光绿，反而更像光效。 */
+    const puffs = [];
+    if (kind === 'mist') {
+      const n = this.q < 0.7 ? 5 : 9;
+      const tex = fieldTexture('smoke');
+      for (let i = 0; i < n; i++) {
+        const a = (i / n) * Math.PI * 2 + RND(-0.3, 0.3);
+        const rr = Math.sqrt(RND(0.05, 1)) * R * 0.78;
+        const s0 = R * RND(0.75, 1.25);
+        const mat = new THREE.MeshBasicMaterial({
+          map: tex, color: this.lit(color), transparent: true, opacity: 0,
+          depthWrite: false, blending: THREE.NormalBlending, fog: false
+        });
+        mats.push(mat);
+        const m = new THREE.Mesh(fxPlane(1, 1), mat);
+        m.scale.set(s0, s0 * 0.78, 1);
+        /* 雾片是**竖着的 billboard**，中心得抬到自身高度的一半以上，
+         * 否则下半片会插进地面、被地面裁出一条直边（看起来像贴了张方纸）。 */
+        const oy = 0.28 + s0 * 0.42;
+        m.position.set(Math.cos(a) * rr, oy, Math.sin(a) * rr);
+        m.renderOrder = 6;
+        m.userData = { s0, oy, ph: RND(0, 7), ox: Math.cos(a) * rr, oz: Math.sin(a) * rr, ry: RND(0, 7) };
+        grp.add(m);
+        puffs.push(m);
+      }
+    }
+
+    /* 剑影：得是**立着的剑**，不是贴地的弧 —— 贴地弧就是刀气，会跟旋风斩撞。 */
+    const swords = [];
+    if (kind === 'blades') {
+      const n = this.q < 0.7 ? 2 : 4;
+      for (let i = 0; i < n; i++) {
+        const mat = new THREE.MeshBasicMaterial({
+          map: fieldTexture('blade'), color: this.lit(color), transparent: true, opacity: 0,
+          depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false
+        });
+        mats.push(mat);
+        const m = new THREE.Mesh(fxPlane(1, 1), mat);
+        m.renderOrder = 5;
+        grp.add(m);
+        swords.push({ m, a: (i / n) * Math.PI * 2, r: R * 0.74 + (i % 2) * 0.3 });
+      }
+    }
+
+    const z = {
+      mesh: grp, mat: mats[0], mats, life, max: life, type: 'field',
+      kind, R, op, spin, t: 0, sig, sigOp, colMesh, walls, cols, puffs, swords,
+      pulseT: 0, follow: opts.follow || null, color
+    };
+    this.zones.push(z);
+    return grp;
+  },
+
+  /* 领域逐帧：入场缓出 → 稳定 → 收尾淡出（时间轴三段式，SKILL-VFX-PLAN §5）。
+   * 单独一个方法而不是塞进 update 的 if-else：领域有 4 种 kind、7 类部件，
+   * 塞进去会把那个 switch 撑成一屏。 */
+  _fieldTick(z, dt) {
+    z.t += dt;
+    const t = z.t;
+    const k = Math.min(1, t / z.max);
+    const e = 1 - Math.pow(1 - Math.min(1, t / 0.35), 3);   // 入场缓出
+    const outK = k > 0.85 ? Math.max(0, 1 - (k - 0.85) / 0.15) : 1;
+    const f = e * outK;
+    /* 跟随：剑阵的「跟随」变体与毒雾的「追随」都要跟着人走。
+     * 传函数而不是传坐标 —— 阵心每帧都在变，传快照就会「阵留在了原地」。 */
+    if (z.follow) {
+      const p = z.follow();
+      if (p) z.mesh.position.set(p.x, 0, p.z);
+    }
+    const camQ = this.cam ? this.cam.quaternion : null;
+
+    if (z.sig) {
+      z.sig.rotation.z += dt * z.spin;
+      z.sig.material.opacity = z.sigOp * f;
+      z.sig.scale.setScalar(z.R * 2 * (0.55 + e * 0.45));
+    }
+    if (z.colMesh) {
+      z.colMesh.material.opacity = 0.10 * f * (0.8 + 0.2 * Math.sin(t * 3));
+      z.colMesh.rotation.y += dt * 0.35;
+    }
+    for (const w of z.walls) {
+      w.material.opacity = 0.28 * f * (0.75 + 0.25 * Math.sin(t * 5 + w.userData.s));
+      w.rotation.y += dt * 0.55 * w.userData.s;
+    }
+    /* 法阵每 2 秒一次脉冲环：领域"活着"的读数。半径仍取 R（判定口径） */
+    if (z.kind === 'sigil') {
+      z.pulseT += dt;
+      if (z.pulseT >= 2) {
+        z.pulseT = 0;
+        this.ring(_vField.set(z.mesh.position.x, 0.15, z.mesh.position.z),
+          z.R, z.color, 0.5, 0.14);
+      }
+    }
+    if (z.kind === 'taiji') {
+      const eyeA = z.sig ? z.sig.rotation.z : t * z.spin;
+      z.cols.forEach((m, i) => {
+        const a = eyeA + i * Math.PI;
+        m.position.x = Math.cos(a) * z.R * 0.50;
+        m.position.z = Math.sin(a) * z.R * 0.50;
+        m.rotation.y += dt * (i ? -2.2 : 2.2);
+        m.material.opacity = (i ? 0.36 : 0.46) * f * (0.8 + 0.2 * Math.sin(t * 4 + i * 2));
+      });
+    }
+    if (z.kind === 'mist') {
+      for (const m of z.puffs) {
+        const ud = m.userData;
+        ud.ry += dt * 0.3;
+        if (camQ) m.quaternion.copy(camQ);
+        m.rotateZ(ud.ry);
+        const br = 1 + Math.sin(t * 0.9 + ud.ph) * 0.10;
+        m.scale.set(ud.s0 * br, ud.s0 * 0.78 * br, 1);
+        m.position.x = ud.ox + Math.sin(t * 0.5 + ud.ph) * 0.22;
+        m.position.z = ud.oz + Math.cos(t * 0.43 + ud.ph) * 0.22;
+        m.position.y = ud.oy + Math.sin(t * 0.6 + ud.ph) * 0.10;
+        m.material.opacity = 0.62 * f * (0.72 + 0.28 * Math.sin(t * 1.3 + ud.ph));
+      }
+    }
+    if (z.kind === 'blades') {
+      z.swords.forEach((s, i) => {
+        s.a += dt * 2.2;
+        const x = Math.cos(s.a) * s.r;
+        const zz = Math.sin(s.a) * s.r * 0.78;
+        const y = 0.95 + Math.sin(s.a * 2 + i) * 0.22;
+        s.m.position.set(x, y, zz);
+        if (camQ) s.m.quaternion.copy(camQ);
+        s.m.rotateZ(-s.a + Math.PI / 2);
+        s.m.scale.set(0.55, 1.55, 1);
+        s.m.material.opacity = 0.85 * outK;
+      });
+    }
+  },
+
   beam(a, b, color = 0x88ddff, dur = 0.16, width = 1) {
     const pts = [];
     const seg = 8;
@@ -695,8 +1057,18 @@ const FX = {
       } else if (z.type === 'slash') {
         z.mat.opacity = Math.max(0, (z.op0 || 0.85) * (1 - k));
         z.mesh.rotation.z += dt * 2;
+      } else if (z.type === 'field') {
+        this._fieldTick(z, dt);
       }
-      if (z.life <= 0) { this.scene.remove(z.mesh); z.mat.dispose(); this.zones.splice(i, 1); }
+      if (z.life <= 0) {
+        this.scene.remove(z.mesh);
+        /* 领域是一整个 Group、材质有好几份（地纹 / 柱 / 墙 / 剑影各自一份），
+         * 只 dispose 一个 `z.mat` 会漏掉其余材质 —— 连放技能就是一路涨显存。
+         * 几何体走 `_fxGeo` 的共享缓存，不在这里释放。 */
+        if (z.mats) { for (const m of z.mats) m.dispose(); }
+        else if (z.mat) z.mat.dispose();
+        this.zones.splice(i, 1);
+      }
     }
     // 光束
     for (let i = this.beams.length - 1; i >= 0; i--) {

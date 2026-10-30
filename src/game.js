@@ -3583,6 +3583,16 @@ const Game = {
         const bc = id === 'taiji' || id === 'antidote' ? 0x88ffd0
           : (id === 'riposte' ? 0xd8b25a : (id === 'shieldwall' ? 0x8ab0ff : (id === 'warcry' ? 0xff8a4a : 0xff4a4a)));
         this.addBuff(sk.name, buff, bc, { type: 'buff', icon: sk.glyph, key: 'skill:' + id, refresh: true });
+        /* [VFX·移植] 太极玄阵：双鱼地纹 + 两根气旋柱（长在鱼眼上、跟着双鱼转）。
+         * 这一位是**自身增益**、没有判定范围 —— 阵是「玄阵护体」的视觉，
+         * 不是「站进去就有效」。所以半径只给 2.6 码（贴身），
+         * 也不画法阵那种 2 秒脉冲环（脉冲读起来像"周期性打伤害"）。 */
+        if (id === 'taiji') {
+          FX.field(this.playerGroup.position, {
+            kind: 'taiji', r: 2.6, life: buff.dur || 8, color: bc, opacity: 0.7,
+            follow: () => this.playerGroup.position
+          });
+        }
         /* [P2] hook 相位的分支行为折进增益本体：
          * 嗜血（critHeal）由 damageEnemy 的暴击钩子消费，
          * 战鼓（killExtend + maxExtend）由 onBehKill 的击杀钩子消费。
@@ -3719,6 +3729,14 @@ const Game = {
         this.swordField = (drPct || counterPct)
           ? { rad: outerRad, dr: drPct, counter: counterPct, ctr: fieldCtr, t: dur, gen: gen }
           : null;
+        /* [VFX·移植] 剑影：立着的剑绕圈飞 —— 这是剑阵的「身份」。
+         * 半径与判定同源（`outerRad`），**不自己放大**：环负责报判定、
+         * 剑影负责让人一眼认出这是剑阵，两者画的是同一个圈。
+         * 跟随变体传 `follow`：阵心每帧都在变，传快照会让阵留在原地。 */
+        FX.field(fieldCtr(), {
+          kind: 'blades', r: outerRad, life: dur, color: 0xd8ffe0,
+          follow: pinOn ? null : fieldCtr
+        });
         const iv = setInterval(() => {
           if (this.mapGen !== gen || this.dead) { clearInterval(iv); return; }
           pulses++;
@@ -4733,6 +4751,13 @@ const Game = {
          * 两只 —— 只给增益加时长的话，把天师符放进 ③ 号位的玩家这一级就是假话。 */
         const dur = 6 + sdur + ((bBeh && bBeh.tierDur) || 0);
         const zona = FX.area(c, rad, 0xffd24a, dur, { opacity: 0.22 });
+        /* [VFX·移植] 法阵剪影：地纹 + 中心光柱 + 环墙 + 2 秒脉冲。
+         * 以前符阵与毒雾、剑阵共用同一个"圆片 + 亮边"，玩家分不出脚下是什么阵。
+         * 半径取 `rad`（判定半径）—— 领域圈就是判定的视觉契约。 */
+        FX.field(c, {
+          kind: 'sigil', r: rad, life: dur, color: 0xffd24a,
+          follow: (bBeh && bBeh.follow) ? (() => c) : null
+        });
         /* [P3] 贴身印（变体）：符印贴在身上跟着走 */
         if (bBeh && bBeh.follow) this.attachFollow([c], [zona], dur);
         let ticks = 0;
@@ -4837,6 +4862,14 @@ const Game = {
           const off = patches === 1 ? 0 : prad * 0.55;
           const c = new THREE.Vector3(aim.x + Math.cos(ang) * off, 0, aim.z + Math.sin(ang) * off);
           const zona = FX.area(c, prad, 0x2f9a3c, pdur, { opacity: 0.3 });
+          /* [VFX·移植] 雾团剪影：没有地纹、没有边界，只有翻滚的雾片 ——
+           * 雾的身份就是「边界看不见」。带着一圈清晰圆边的"雾"读起来是一张绿饼。
+           * 半径取 `prad`；台阶「蔓延」长大时下面会连 grp 一起缩放，
+           * 保证「看着罩住了」与「伤害到了」是同一个数。 */
+          const mistField = FX.field(c, {
+            kind: 'mist', r: prad, life: pdur, color: 0x7fbf5a,
+            follow: (bBeh && bBeh.follow) ? (() => c) : null
+          });
           /* [P3] 追随（变体）：毒雾跟着人走 */
           if (bBeh && bBeh.follow) this.attachFollow([c], [zona], pdur);
           let radNow = prad;
@@ -4848,6 +4881,9 @@ const Game = {
               const k = Math.min(1, ticks * 0.8 / Math.max(1, pdur));
               radNow = prad * (1 + (grow / 100) * k);
               if (zona && zona.scale) zona.scale.setScalar(radNow);
+              /* 雾片跟着一起长：只放大圆片、不放大雾团的话，
+               * 玩家看到的是「一层薄雾罩住了一小片，伤害却打到了雾外面」。 */
+              if (mistField) mistField.scale.setScalar(radNow / prad);
             }
             for (const e of this.enemies) {
               if (e.dead) continue;
