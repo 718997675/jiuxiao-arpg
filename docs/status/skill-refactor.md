@@ -49,7 +49,7 @@ P1 起才动 `SKILL_BAR_SLOTS` 与面板的三列树。
 | P3d | **双元素混搭**：境界 **40 级**解锁第二元素，①②③⑤ 位可再注一种（不能与主元素相同，摘主元素时副元素一起走）。**总量不变**，按主 70% / 副 30% 拆成两段（50% → 35% + 15%），两段各过自己的抗性与元素增伤；与命中元素相同的段自动剔除。反应按「命中元素 → 主 → 副」顺序试。视觉：施法瞬间脚下喷一簇注入元素色火星（8 + 4 颗，主 70% / 副 30%），**技能本体光效不换色**（FX 是全局的，换色会连敌人技能和血一起染） | ✅ | `data-elem.js`（`SKILL_INJECT.subAt` / `split` / `skillInjectSplit`）、`game.js`（`skillInject2` / `skillInjectPack` / `injectSegs` / `setSkillInject2` + `elemReactReady` 收数组）、`fx.js`（`elemSpark`）、`ui-skills.js`（混搭一行 + `data-inj2` 委托）、`index.html`（`.sb-i2list`）、`ui.js`（说明页两行） | `dev/test-elem-dual.js` 40 · `dev/probe-elem-dual.js` 30 |
 | P4 | 三职业独立 ⑤ 号位：刀客兵形/刃势、法师法相、道士召唤 | ⬜ | `src/fx.js`、`src/charforge.js` | — |
 | P5 | 形态进化表现：5 槽 × 3 职业 × 3 段 = 45 套 | ⬜ | `src/fx.js`、模型 | — |
-| P6 | 平衡、洗点、老档兼容回归 | ⬜ | — | — |
+| P6 | **回归**：①老档兼容（8 格条 / 只有 `v` 通道 / 无 passives 的档）；②洗点（只退花点的，免费字段保留，阶梯价落盘）；③平衡体检（`dev/balance-skills.js`）。**查出三个「无声消失」的存档 bug，全部修完** | ✅ | `core/save.js`（`_skillLedger` / `_passives` + `barVer`/`skillReset`/`passives`/`treeRespecCount` 落盘）、`game.js`（`keepPick` 名单化、`newState` 标已迁移）、`data-skill-tree.js`（`skillEntryKeep` 单一出口） | `dev/test-skill-p6.js` 97 · `dev/probe-skill-p6.js` 53 · `dev/balance-skills.js` 17（+6 条观察项） |
 
 ## 执行顺序（2026-10-30 拍板）
 
@@ -1601,3 +1601,149 @@ r / life / color / opacity / spin / follow
 表现是 `test-skill-p2b` 从 903/0 变成 893/4，报的全是「frostnova / meteor / swordrain
 的 case 块没读 sextra」这种八竿子打不着的条目（因为 `castSkill` 块的切分锚点是
 `'\n  },\n'`，CRLF 下永远匹配不到）。已写进 `AGENTS.md §3`。
+
+### 2026-10-30 · P6 回归（收口）：三个「无声消失」的存档 bug
+
+**起因**：拍板的顺序里 P6 排在合 main 之前，理由是「不做就合 = 拿玩家存档赌」。
+试合只出 8 处冲突、6 处 game.js 全是「两边各加一段」，所以按 3~4 天排的 P6
+压缩成一轮回归。结果这一轮抓出三个真 bug，全都不是冲突引起的 ——
+是**分支自己的账本从来没落过盘**。
+
+#### 1. `barVer` / `skillReset` 两个一次性迁移标记从来没进存档白名单（最贵的一个）
+
+`normalizeProgress` 里有两段只该跑一次的迁移：
+
+```js
+if (s.barVer !== 2)     { s.barVer = 2;  this.fillBarByRole(...); }
+if (s.skillReset !== 1) { s.skillReset = 1; skillRefundAll(s.skills, s.passives); }
+```
+
+判据是「标记 ≠ 目标值」。而这两个标记**不在 `pack` / `unpack` 里**，
+`this.state = flat` 之后它们恒为 `undefined` —— 于是**每次读档都以为自己第一次跑**，
+每次都把技能点全退一遍。
+
+命中路径是最常见的那条：建号 → 投 20 点 → 存档 → 重开 → 全没了。
+不报错、不崩、只是每次都得重点一遍，玩家会以为是「存档坏了」。
+
+修法两层，缺一不可：
+- `pack` / `unpack` / `normalizeDoc` 三处补齐（`AGENTS.md §7.2`）；
+- `newState` 里**直接写** `barVer: 2` / `skillReset: 1`。
+  只补落盘不补新档的话，「建号 → 投点 → 存档 → 读档」这条路径
+  第一次读档时标记还是空，照样退款一次。
+
+#### 2. `passives` 与 `treeRespecCount` 也没落盘
+
+- `passives` 是技能点的**另一半去向**（`passiveSpent()` 从池里扣，加成经
+  `passiveBonusStats` 进 `computePlayerStats`）。不存 = 重开被动全没、
+  点数还回来 —— 表面上「白送」，实际是把玩家的构筑清空了。
+- `treeRespecCount` 决定洗点价（800 → 2400 → 6000 → 15000 → 35000 封顶）。
+  不存 = 每次读档都退回第一档 800 金 = 无限便宜洗点，经济直接破。
+
+#### 3. `keepPick` 只认 `p`，P2 / P3 新加的字段全被吞
+
+```js
+function keepPick(prev, next) {
+  if (prev && prev.p !== undefined) next.p = prev.p;   // ← 只保取向
+  return next;
+}
+```
+
+升级 / 降级 / 换变体三处都是「重建对象」。P2 加了 `m`（精通）、P3 加了
+`el` / `el2`（元素注入），这个函数没跟着改 —— **升一级就把精通和元素注入丢掉**。
+面板上还显示着（面板读的是 `state.skills[id]`，而对象已经被换掉了），
+进战斗没效果。这类 bug 最难查：看起来「设置了」，实际下一帧就没了。
+
+改成反向写法，以后加字段不用回来改：
+
+```js
+const SKILL_ENTRY_KEEP = ['v', 'f', 'p', 'm', 'el', 'el2'];
+function keepPick(prev, next) {
+  if (!prev) return next;
+  for (const k of SKILL_ENTRY_KEEP) {
+    if (next[k] === undefined && prev[k] !== undefined) next[k] = prev[k];
+  }
+  return next;
+}
+```
+
+#### 顺带收掉的三处
+
+1. **`skillEntryKeep` 收成一处**（`data-skill-tree.js`）。`skillRefundAll` 与
+   `skillTreeRespecApply` 原来各写一份保留逻辑，各自只保 `v` / `f` —— 洗点会把
+   精通和元素注入洗掉。现在两处共用同一个出口，且正确保留
+   `v / f / m / el / el2`，只清 `lv`（归 1）与 `p`（取向）。
+   **界线是「花不花技能点」**，这条写进 `AGENTS.md §7.2`。
+2. **`normalizeDoc` 逐条整形技能账本**。以前只有 `d.skills = this._obj(d.skills) || {}`，
+   条目一个都不看：
+   - 一条 `skills: { fireball: null }` 就能让 `skillPoints()` 在「读档后第一次点技能」
+     时抛 `TypeError`，整个面板白掉；
+   - 一个认不出的 id 带着 `lv: 10` 躺在里面，`skillPoints()` 是对全表求和的
+     （不查 `SKILLS`），白吃 9 点。
+   现在 `_skillLedger` 在边界上收干净：认不出的 id 丢掉（与 `Game` 开局清理同一规矩），
+   剩下的收敛成 `{ lv, v, f?, m?, p?, el?, el2? }`，免费字段只在值合法时留。
+3. **`setSkillVariant` 同时写 `f`**。`skillFormIdx` 优先读 `f`，只写 `v` 的话
+   老档升级过一次（`f` 被带过来了）就再也换不动变体。
+
+#### 平衡体检：`dev/balance-skills.js`
+
+新增的离线报表，与 `balance-report.js` 分工明确（那份是「基础攻击 + 装备」的主线口径）。
+口径三层，全部来自数据层：
+
+```
+单发 = skillLvMul(lv) × (1 + 台阶 dmg% / 100)
+发数 = skillCountBase(id) + skillTierCount(id, lv)
+单体输出 = 单发 × 发数        战斗价值 = 单体输出 × (1 + 台阶 radius% / 100)
+```
+
+**踩坑（差点把结论算错一倍）**：`skillTierMods` 里的 `dmg` **就是多发折算本身**
+（等于 `skillCountDmgPct(id, extra)`）。总输出里再乘一次衰减，3 级双发会被算成
+「两发各 85%，再整体 85%」。报表第 0 节有一条断言钉死这点。
+
+硬断言只放「明显是 bug」的（单调性、分段边界、注入占比、点数池下限），
+数值离散度只**打印不判红** —— 平衡是设计决定，不由脚本替人改。
+
+**六条观察项（要人拍板）**
+
+| 观察 | 数字 |
+|---|---|
+| 三职业 20 级涨幅中位数差 | **×2.57**（刀客 ×2.02 / 法师 ×5.19 / 道士 ×2.02） |
+| 数量型 / 单体型 20 级涨幅比 | **×2.57**（数量型 15 只 ×5.19 / 单体型 22 只 ×2.02） |
+| 同一位内换技能的涨幅差 | 道士② ×2.40 · 法师② ×2.34 · 法师① ×1.96 |
+| 法师位内离散 | iceshard ×3.08 / chain ×2.66 / starfall ×2.22 / 其余 ×2.02 |
+| 刀客位内离散 | whirl ×5.19 / 其余 ×2.02 |
+| 技能点池 | 5 位满级 45 + 全部被动 66 = 111 > 池 60（取舍成立） |
+
+**一句话结论**：**数量台阶是唯一的涨幅放大器，谁吃谁强 2.57 倍。**
+这是 P2b「只给吃 count 通道的技能加发数」的直接后果 —— 不是 bug，
+但「法师 8/13 只吃、刀客 1/12 只吃」让职业中位数被拉开。
+要不要压平（给单体型补一条伤害台阶，或把刀客 ② 的半径台阶换成 dmg）
+是设计决定，**P6 只负责把数摆出来**。
+
+#### 验证
+
+- 契约：`test-skill-p6` **97/0**（含真跑老档 / 脏档：`loadData` 灌数据层后
+  直接 `SaveManager.normalizeDoc` 一个 `skills: { fireball: null }` 的档）
+- 真机：`probe-skill-p6` **53/0**（存 → 刷新 → 读全链路、脏档、老档、零报错）
+- 平衡：`balance-skills` **17/0 + 6 条观察项**
+- 全量回归：p0 250 · p1 52 · p1c 363 · p2 41 · p2b 903 · p2c 99 · p3 106 ·
+  affix 60 · dual 40 · holy 50 · vfx 35 · save 79 · items 17 —— **全绿**
+- 探针：p6 53 · vfx 19 · p2b 292 · p2c 62 · p3 41 · affix 22 · dual 30 · holy 26 —— 全绿
+
+#### 踩坑：探针的假红是「读数窗口混进了别的东西」
+
+`probe-skill-p2b` 这一轮红了三次，三次都是**探针自己的问题**，不是产品回归：
+
+1. **数圈数不能数 `radii.length`**。剑气环是等比阶梯
+   （第 i 圈 = 第 0 圈 × (1 + 0.42 i)），但那个 300ms 窗口里还会混进
+   「附加爆发（半径 5）」和命中火花（2.97），偶尔落进窗口读数就从 2 变 3。
+   改成**按阶梯逐级对号，数到第一处断档为止**，与窗口里混进什么无关。
+2. **`mastersigil` 的准星必须显式归位**。它是「丢在准星上的符阵」，
+   `aimPoint` 还停在上一个用例丢的远处时，阵心落到那边，假怪不在阵内 →
+   `slow` / `stun` 读成 0。`setup()` 里补 `aimPoint` / `aimDir`。
+3. **等收尾爆燃不能死等固定毫秒**。火墙 4 秒、雷云 6 秒，收尾是「定时器到点后的
+   下一跳」才触发，机器一慢就卡在边界外，读数 0 → 假红（三次里红一次）。
+   改成**轮询到出现为止**（上限仍是原等待时长），不期待爆燃的用例走原路径。
+
+修完连跑五次 **292/0**。教训写进 `AGENTS.md §7.3`：
+**探针读「某一瞬间的副作用计数」时，要么按契约形状对号，要么轮询到出现，
+不要数「窗口里发生了多少次」。**
