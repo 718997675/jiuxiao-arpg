@@ -40,7 +40,8 @@ P1 起才动 `SKILL_BAR_SLOTS` 与面板的三列树。
 | P2a | **等级上限 5 → 10** + 分段曲线真的进战斗（`skillLvMul` 取代旧「每级固定 8%」）+ 点数供给 等级 × 1.5；面板 10 格 / 满级金环 / 洗点全额退回 | ✅ | `data-skills.js`（`SKILL_LV_MAX` / `SKILL_POINT_RATE` / `skillPointPool`）、`data-skill-tree.js`（`lvMax` 同源）、`game.js`（`castSkill` / `skillPoints`）、`ui-skills.js`、`ui.js`、`index.html` | `dev/test-skill-p2.js` 41 · `dev/probe-skill-p2.js` 26 |
 | P2b | **数量 / 形态台阶接进 `castSkill`**。①数量：默认 Lv3 / Lv7 各 +1，接 `smod.count`（13 个技能消费），第 n 发 ×0.85^n 防三倍伤害；**发数节奏可按技能覆盖**（`SKILL_COUNT_TIER`，法师 ② 在 Lv5 / Lv7）。②进化：新建 `SKILL_TIER_EVO`（挂**技能 id** 不挂技能位），合并顺序 **台阶最前 → 精研 / 取向 / 变体覆盖同名键**（花点的选择必须盖过等级送的）。**15 个位 / 45 条全部接完**：刀客①旋风斩、法师①火球、道士①符箓、道士②毒雾、刀客②地裂、刀客③剑阵、刀客④血怒、道士④回春、法师③火墙、法师④护盾、道士③太极、法师②陨石（3 溅射 / 5 双陨 / 7 三连落）、道士⑤召灵兽（三只各召各的）、**刀客⑤兵形（刀式状态机 + 刃势 + 断岳斩）**、**法师⑤元素法相（净新增技能：法相窗口 + 换相 + 命中附加 + 收窗新星 + 免控）** —— 细则见下面「P2b 收口要点」。**✅ 15/15 个位、45/45 条：P2b 收口** | ✅ | `data-skills.js`（`SKILL_TIER_EVO` / `SKILL_COUNT_TIER` / `skillTierEvo` / `skillTierMods` / `skillTierBeh`）、`skill-beh.js`（`branchBeh` 台阶排最前 + `killProlong` / `lifesteal` / `ccImmune` / `healOnCast` / `tierDur` / `splash` / `stanceUnlock` / `edgeFinisher` / `edgeKeep` / `edgeUltimate`）、`game.js`（autoTarget / rageMul / firePatch / swordField / applyPlayerSlow / ccImmuneNow / behTierNova / shieldT+sdur / 符阵 dur+tierDur / meteor·blizzard·judgement·starfall 多发 / spawnTierField 落点领域 / **bladeXxx 兵形状态机**）、`ui.js`（说明页读数现算 + 动作条刀式角标）、`ui-skills.js` | `dev/test-skill-p2b.js` 878 · `dev/probe-skill-p2b.js` 282 |
 | P2c | **精通层 11~20**（不新增形态）：①有效等级 20 与分段曲线 P2a 已接；②**精进轨道**（11~20 十格 + 「精进 x/20」+ 渐进披露 + 15/20 里程碑）；③**Lv15 精通三选一**（烈 / 疾 / 省，走 mods，门槛看有效等级，存 `skills[id].m`）；④**Lv20 最终精通「归一」**（三条精通各 60% 同时生效，与 15 级所选**叠加**，走 `effSkillMods` 第六层）—— 已完成；⑤**光效随等级变亮**（`skillFxAmp` → `FX.setAmp`，只乘亮度 / 不透明度 / 粒子数，不乘半径）—— 已完成。**P2c 收口** | ✅ | `data-skills.js`（`SKILL_TIERS.mastery` / `SKILL_TIERS.capstone` / `skillMasteryOn` / `skillMasteryIdx` / `skillMasteryOpt` / `skillCapstoneOn` / `skillCapstoneBonus`）、`game.js`（`skillMastery` / `skillMasteryMods` / `setSkillMastery` / `skillCapstoneMods` / `effSkillMods` 第五·六层）、`ui-skills.js`（mstRow + 精通行 + 60% 角标）、`index.html`、**`fx.js`（`amp` / `setAmp` / `lit` + 7 个原语调亮）** | `dev/test-skill-p2c.js` 99 · `dev/probe-skill-p2c.js` 62 |
-| P3 | 元素注入 + 反应表：伤害管线支持双元素、特效混色、词缀口径 | ⬜ | 战斗 + 词缀 + `src/fx.js` | — |
+| P3a | **元素反应表 6/10**：触发口径 = 「目标身上已有 A 元素状态 + 这一下带 B 元素」（不依赖注入）。蒸汽爆裂 / 等离子 / 焚毒 / 感电冻结 / 腐霜 / 腐蚀链，走 `damageEnemy` 一个口，三道闸门（silent / react / `_reacting`）+ 双层 ICD（0.5s 全局 · 2s 同目标）。**圣系 4 组未做** —— 引擎里 sigil 只是伤害类型，没有状态位 | ✅ | `data-elem.js`（新建：`ELEM_DEFS` / `ELEM_STATUS` / `ELEM_REACTIONS` / `elemReactionOn`）、`game.js`（`elemReactReady` / `tryElemReaction` / `applyElemReaction` / `chainReaction` / `knockEnemy`）、`ui.js`（说明页「元素反应」行）、`index.html`（加载 data-elem.js） | `dev/test-skill-p3.js` 62 · `dev/probe-skill-p3.js` 26 |
+| P3b | **元素注入**：每个技能位注 1~2 种元素、附加 30%~50%、特效主 70%/副 30% 混色、元素词缀统一口径 | ⬜ | 战斗 + 词缀 + `src/fx.js` | — |
 | P4 | 三职业独立 ⑤ 号位：刀客兵形/刃势、法师法相、道士召唤 | ⬜ | `src/fx.js`、`src/charforge.js` | — |
 | P5 | 形态进化表现：5 槽 × 3 职业 × 3 段 = 45 套 | ⬜ | `src/fx.js`、模型 | — |
 | P6 | 平衡、洗点、老档兼容回归 | ⬜ | — | — |
@@ -1081,3 +1082,56 @@ s1 ✓ · smoke ERRORS none · p2b 探针 282 · p2 26 · p1d 36 · arch 29 · b
 mobile-layout ✓。
 
 **P2c 到此收口**（①精进轨道 ②Lv15 三选一 ③Lv20 归一 ④光效变亮 全部落地）。
+
+### 2026-10-30 · P3a 元素反应表（6/10）
+
+方案 §6.2 有 10 组反应，前提是「元素注入」——每个技能位塞 1~2 种元素。那套系统是 P3b，
+但**反应表本身不需要它**。触发口径换成：
+
+> **目标身上带着 A 元素的状态** + **这一下打的是 B 元素**
+
+这比「一个技能同时带两种元素」更早能玩，也更贴实际打法：法师先一记冰环把怪冻住、
+再补一发火球 —— 玩家心里那就是「火碰冰」，不该等注入系统上线。将来注入做完，
+只是多了一个触发源，同一张表原样复用（`elemReactionOn(hitElem, e)` 的入参本来就是「这一下带什么」）。
+
+| 反应 | 组合 | 落地效果（全部落在**已有字段**上） |
+|---|---|---|
+| 蒸汽爆裂 | 火 + 冰 | 命中点爆一圈（35%）+ 击退（`knockEnemy`） |
+| 等离子 | 火 + 雷 | 追加一发**必暴**雷伤（40% × 暴伤） |
+| 焚毒 | 火 + 毒 | `e.dotDmg` ×1.5（本轮 dot 有效，`_reactDot` 防叠乘） |
+| 感电冻结 | 冰 + 雷 | `e.slowT` ×1.5 + 连锁 1 个（25%） |
+| 腐霜 | 冰 + 毒 | `e.shred` 20% / 5 秒（damageEnemy 本来就在读它） |
+| 腐蚀链 | 雷 + 毒 | 连锁 2 个（各 25%），绿电弧 |
+
+- **圣系 4 组（净化烈焰 / 圣霜 / 天罚 / 解毒雾）没做**：引擎里 `sigil` 只是一个伤害类型
+  （`sigilDmg`），没有任何状态位；硬做就得先新造一个「圣印」debuff —— 那是新机制，
+  不属于「元素反应」这一步。面板上**明说未做**，不写假的。
+- **三道闸门**（缺一个都出事故）：
+  1. `opts.silent` —— dot 每跳都会再来一次，dot 触发反应会滚成无限反应；
+  2. `opts.react` + `_reacting` —— 反应自己造成的伤害（爆炸 / 连锁）不许再触发反应；
+  3. 双层 ICD —— 全局 0.5 秒 + 同目标同反应 2 秒，否则一次 AoE 打 8 只怪就是 8 次反应。
+- **判定放在法相命中附加之前**：法相会往目标身上挂状态，先挂再判的话，同一发就能跟
+  自己刚挂上去的状态反应（「火球 + 火法相」自己炸自己）。
+- **反应伤害也要过减伤**：追加的那一发是**独立一击**，会再过一遍护甲 / 抗性，所以
+  账面的 35%~40% 落到实际伤害上约 25%~39%（等离子实测 76.9 → 107.2，+39%）。
+  这不是 bug，与「技能写 320% 伤害、实际打出来更低」是同一个口径。
+- **状态探针只读已有字段**：`dotElem` / `slowT+slow` / `stun` 或 `vulnT+vuln` / `poisonT`。
+  一个新状态位都没造 —— 反应是「元素之间互相利用现有状态」，不是第二套 buff 系统。
+
+**验证**：`test-skill-p3` **62 通过 / 0 失败**（表结构 / 顺序无关 / 四种状态探针 /
+命中判定 / 三道闸门与双层 ICD 在源码里 / 面板文案与表同源 / 反向断言「没有圣系反应」）；
+`probe-skill-p3` **26 通过 / 0 失败**（真打：六组反应各触发一次、同元素与物理不反应、
+同目标第二发被 ICD 拦住、焚毒 100→150 且不叠乘、腐霜写进 `shred`、连锁打到旁边两只、
+感电把 `slowT` 2→3、等离子必暴总伤 ×1.39、silent 跳伤不触发）。
+其余全绿：p0 250 · p1 52 · p1c 363 · p2 41 · p2b 878 · p2c 99 · items 17 · save 79 ·
+smoke ERRORS none · p2b 探针 282 · p2c 探针 62 · p2 26 · p1d 36 · arch 29 · bar5 30 · p1c 23 ·
+mobile-layout ✓。
+
+**踩坑**：
+1. 探针里 `__reacts` 是**累积**数组，第二发读到的是第一发的记录 —— ICD 那条假红
+   （明明拦住了，却看见上一发的 `steam`）。每次命中前清空记录。
+2. `probe-skill-p2b` 又出现一次 3 条红（雷云收尾 / 符阵减速 / 符阵定身），紧接着单独重跑
+   就 282/0 —— 与台账里那条「不能并发跑」的老坑同一个原因（前面刚关掉一个 headless Chrome，
+   CPU 还没缓过来，一批 `setTimeout` 类断言随机红）。**不是本次改动**。
+3. 面板文案用 `ELEM_REACTIONS.map(...)` 生成，不手写 6 条 —— 以后加一组反应，
+   说明页自动跟着变；写死文案迟早和表对不上。

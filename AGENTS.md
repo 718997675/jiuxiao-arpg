@@ -132,6 +132,7 @@ git fetch origin                 # 分支都在远程，clone 完就全能看到
 | 主菜单 / 行囊 / 天赋 / 设置 UI | `src/ui.js` |
 | 术法（技能树、变体） | `src/ui-skills.js` |
 | 技能实际行为 / 被动 | `src/skill-beh.js` / `src/skill-passive.js` |
+| 元素定义 / 元素反应 | `src/data/data-elem.js`（表）+ `src/game.js` 的 `tryElemReaction` / `applyElemReaction`。**反应挂在 `damageEnemy` 一个口上**，别去各技能 case 里加 |
 | 手机端摇杆、键位、面板滚动 | `src/mobile.js` + `index.html` 的 `@media` |
 | 手机横向树排版 | `src/ui-mtree.js` |
 | 存档 / 设置持久化 | `src/core/save.js` / `src/core/settings.js` |
@@ -206,7 +207,12 @@ node dev/preview-check.js --url <预览地址>   # 预览站：能开局 + 资�
   `skillFxAmp()` → `FX.setAmp()`，**只乘亮度 / 不透明度 / 粒子数，不乘半径** ——
   光效圈是判定的视觉契约，画大了就是谎报范围（契约里有正反两条断言钉着）。
   **别顺手加新机制**，那会把 P2c 变成第二个 P2b。
-  下一步只剩 P3（元素注入 + 反应表）与「特效移植」（台账「特效」一节，仍是 0%）。
+  **P3a 已落地**：元素反应 **6/10**（蒸汽爆裂 / 等离子 / 焚毒 / 感电冻结 / 腐霜 / 腐蚀链）。
+  触发口径是「**目标身上已有 A 元素状态 + 这一下带 B 元素**」，不依赖元素注入；
+  表在 `src/data/data-elem.js`，结算在 `damageEnemy` 一个口，三道闸门
+  （`silent` / `react` / `_reacting`）+ 双层 ICD（0.5s 全局 · 2s 同目标）。
+  **圣系 4 组没做**（引擎里 `sigil` 只是伤害类型，没有状态位，面板上明说）。
+  下一步 **P3b 元素注入**（每技能位注 1~2 种元素 + 附加 30%~50% + 特效混色 + 元素词缀统一）。
 - **待拍板**：大地图扩展（12 章 / 80 怪 / 24 首领 / 12 营地 + 任务网 / 5 类地下城 × 5 阶钥匙）。
   方案在 `docs/ACT-EXPANSION-PLAN.md`（2026-10-27 草案，**未动代码**）。
   §14 有 10 项待拍板，**拍板前不要开工**。

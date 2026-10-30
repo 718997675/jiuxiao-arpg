@@ -4976,6 +4976,164 @@ const Game = {
     return st.meleeDmg || 0;
   },
 
+  /* ============================================================
+   * [P3a] 元素反应
+   *
+   * 触发口径：**目标身上带着 A 元素的状态 + 这一次命中带的是 B 元素**（见
+   * `data-elem.js` 文件头）。不需要「元素注入」那套系统，因为玩家实际的打法是
+   * 先冻住再补火 —— 那本来就是「火碰冰」。
+   *
+   * 为什么挂在 damageEnemy 而不是各技能 case 里：它是**所有伤害的唯一出口**
+   * （法相命中附加当初选这里也是同一个理由）。挂在 case 里等于加几十处，
+   * 漏一处就是「这个技能不参与反应」。
+   *
+   * 三道闸门，缺一个都会出事故：
+   *   1. `opts.silent` —— 持续伤害每跳都会再来一次，dot 触发反应会滚成无限反应；
+   *   2. `opts.react` + `_reacting` —— 反应自己造成的伤害（爆炸 / 连锁）不许再触发反应；
+   *   3. 双层 ICD —— 全局 0.5 秒 + 同目标同反应 2 秒，否则一次 AoE 打 8 只怪
+   *      就是 8 次反应、8 圈特效、伤害直接翻倍。
+   * ============================================================ */
+
+  /* 反应能不能触发（只判定，不产生副作用）—— 契约测试直接调它 */
+  elemReactReady(e, hitElem, opts = {}) {
+    if (!e || e.dead) return null;
+    if (opts.silent || opts.react || this._reacting) return null;
+    if (typeof elemReactionOn !== 'function') return null;
+    const r = elemReactionOn(hitElem, e);
+    if (!r) return null;
+    const now = this.time || 0;
+    const icd = (typeof ELEM_REACT_ICD === 'object' && ELEM_REACT_ICD) || { global: 0.5, sameTarget: 2 };
+    if (this._reactCd && (this._reactCd[r.key] || 0) > now) return null;
+    const at = e._reactAt;
+    if (at && (at[r.key] || 0) > now) return null;
+    return r;
+  },
+
+  /* 记 ICD 并结算 */
+  tryElemReaction(e, hitElem, final, opts = {}) {
+    const r = this.elemReactReady(e, hitElem, opts);
+    if (!r) return null;
+    const now = this.time || 0;
+    const icd = (typeof ELEM_REACT_ICD === 'object' && ELEM_REACT_ICD) || { global: 0.5, sameTarget: 2 };
+    if (!this._reactCd) this._reactCd = {};
+    this._reactCd[r.key] = now + icd.global;
+    if (!e._reactAt) e._reactAt = {};
+    e._reactAt[r.key] = now + icd.sameTarget;
+    this._reacting = true;
+    try { this.applyElemReaction(r, e, final); } finally { this._reacting = false; }
+    return r;
+  },
+
+  /* 击退：与 damageEnemy 里那段同口径（Boss 免疫、按玩家→目标的方向推） */
+  knockEnemy(e, power) {
+    if (!e || e.dead || e.boss || !(power > 0)) return;
+    const dx = e.pos.x - this.playerGroup.position.x;
+    const dz = e.pos.z - this.playerGroup.position.z;
+    const d = Math.hypot(dx, dz) || 1;
+    e.pos.x += dx / d * power * 0.5;
+    e.pos.z += dz / d * power * 0.5;
+  },
+
+  /* 连锁：从 from 出发，找最近的、还没被点过的目标，各打一发 dmg（带电弧） */
+  chainReaction(from, count, dmg, color, elem) {
+    const used = [from];
+    let src = from;
+    let n = 0;
+    for (let i = 0; i < count; i++) {
+      let best = null, bd = 9;
+      for (const o of this.enemies) {
+        if (o.dead || used.indexOf(o) >= 0) continue;
+        const d = DIST2D(o.pos, src.pos);
+        if (d < bd) { bd = d; best = o; }
+      }
+      if (!best) break;
+      FX.beam(new THREE.Vector3(src.pos.x, 1.1, src.pos.z), new THREE.Vector3(best.pos.x, 1.1, best.pos.z), color, 0.18, 0.7);
+      this.damageEnemy(best, dmg, false, { elem: elem, react: true, tag: 'aoe' });
+      used.push(best);
+      src = best;
+      n++;
+    }
+    return n;
+  },
+
+  /* 结算一组反应：视觉 + 数值。数值全部落在**已有字段**上（shred / dotDmg / slowT），
+   * 不新造 debuff —— 反应是「元素之间互相利用现有状态」，不是第二套 buff 系统。 */
+  applyElemReaction(r, e, final) {
+    const pos = new THREE.Vector3(e.pos.x, 0.2, e.pos.z);
+    const c1 = r.color, c2 = r.color2 || r.color;
+    const label = new THREE.Vector3(e.pos.x, e.boss ? 4.2 : 2.4, e.pos.z);
+    FX.text(label, r.name, 'info', { life: 0.9, color: '#' + ('000000' + c1.toString(16)).slice(-6) });
+    switch (r.key) {
+      case 'steam': {
+        /* 白汽浪：一圈扩张环 + 向内翻卷的烟（负重力 = 上升） */
+        FX.flashCircle(pos, r.radius, c1, 0.35);
+        FX.ring(pos, r.radius, c2, 0.55, 0.25);
+        for (let i = 0; i < 3; i++) {
+          FX.burst(new THREE.Vector3(e.pos.x + RND(-1.2, 1.2), RND(0.2, 1.6), e.pos.z + RND(-1.2, 1.2)),
+            c1, 8, { speed: 3.2, size: 0.16, life: 0.9, gravity: -3, additive: true });
+        }
+        this.explodeAt(pos, r.radius, final * r.dmg / 100, c1, false, true, 'aoe');
+        this.knockEnemy(e, r.knock);
+        break;
+      }
+      case 'plasma': {
+        /* 紫白电弧球：几个随机点向目标收束的折线 */
+        FX.flashCircle(pos, r.radius, c1, 0.3);
+        for (let i = 0; i < 4; i++) {
+          const a = Math.random() * 6.283, rr = r.radius * (0.6 + Math.random() * 0.5);
+          FX.beam(new THREE.Vector3(e.pos.x + Math.cos(a) * rr, RND(0.4, 2.4), e.pos.z + Math.sin(a) * rr),
+            new THREE.Vector3(e.pos.x, 1.2, e.pos.z), c2, 0.16);
+        }
+        FX.burst(new THREE.Vector3(e.pos.x, 1.2, e.pos.z), c1, 18, { speed: 8, size: 0.1, life: 0.5, additive: true });
+        /* 「必定暴击」：命中已经结算过了，没法回头改那一发的暴击 ——
+         * 所以补一发**按暴击倍率算好**的雷伤，读数上就是一次暴击。 */
+        const st = this.state.stats;
+        const extra = final * r.dmg / 100 * (st.critDmg || 150) / 100;
+        this.damageEnemy(e, extra, true, { elem: 'lightning', react: true, tag: 'aoe' });
+        break;
+      }
+      case 'burnpoison': {
+        /* 绿火：绿色外焰 + 橙色芯，缓慢上卷 */
+        FX.ring(pos, 1.8, c1, 0.5, 0.22);
+        FX.burst(new THREE.Vector3(e.pos.x, 0.8, e.pos.z), c1, 14, { speed: 2.6, size: 0.14, life: 0.9, gravity: -3, additive: true });
+        FX.burst(new THREE.Vector3(e.pos.x, 0.8, e.pos.z), c2, 8, { speed: 2.2, size: 0.12, life: 0.7, gravity: -3, additive: true });
+        /* 只在**这一轮 dot** 里加一次，且跳完自动失效 —— 否则反复触发会滚雪球 */
+        if ((e.dotT || 0) > 0 && !e._reactDot) {
+          e._reactDot = true;
+          e.dotDmg = Math.round((e.dotDmg || 0) * r.dotMul);
+        }
+        break;
+      }
+      case 'frozele': {
+        FX.ring(pos, 2.0, c1, 0.5, 0.22);
+        FX.flashCircle(pos, 1.6, c2, 0.25);
+        for (let i = 0; i < 3; i++) {
+          const a = Math.random() * 6.283;
+          FX.beam(new THREE.Vector3(e.pos.x + Math.cos(a) * 1.6, RND(0.6, 2), e.pos.z + Math.sin(a) * 1.6),
+            new THREE.Vector3(e.pos.x, 1.1, e.pos.z), c1, 0.15);
+        }
+        if ((e.slowT || 0) > 0) e.slowT *= r.freezeMul;   // 冻结 / 减速时长延长
+        this.chainReaction(e, r.chain, final * r.dmg / 100, c2, 'lightning');
+        break;
+      }
+      case 'frostrot': {
+        /* 霜面腐蚀：白霜底 + 绿斑 */
+        FX.area(pos, 1.8, c1, 2.2, { opacity: 0.16 });
+        FX.burst(new THREE.Vector3(e.pos.x, 0.9, e.pos.z), c2, 10, { speed: 3, size: 0.12, life: 0.8, gravity: 6 });
+        e.shred = Math.max(e.shred || 0, r.shred);
+        e.shredT = Math.max(e.shredT || 0, r.dur);
+        break;
+      }
+      case 'corrochain': {
+        /* 链式绿电弧 */
+        FX.flashCircle(pos, 1.8, c1, 0.25);
+        this.chainReaction(e, r.chain, final * r.dmg / 100, c1, 'poison');
+        break;
+      }
+      default: break;
+    }
+  },
+
   damageEnemy(e, dmg, crit, opts = {}) {
     if (e.dead) return;
     const st = this.state.stats;
@@ -5130,6 +5288,12 @@ const Game = {
       if (this._castSkill) e.lastHitBy = this._castSkill;
       this.onEnemyDeath(e); return;
     }
+
+    /* [P3a] 元素反应：目标身上**原有的** A 元素状态 + 这一下带的 B 元素。
+     * 放在法相命中附加之前 —— 法相会往目标身上挂状态，若先挂再判，同一发
+     * 就能跟自己刚挂上去的状态反应（「火球 + 火法相」自己炸自己）。
+     * 也放在死亡判定之后：打死的那一下不必再反应。 */
+    this.tryElemReaction(e, elem, final, opts);
 
     /* [P2b·法师⑤] 法相命中附加（台阶 Lv5）：窗口内的**每一次命中**都带上主元素效果。
      *
@@ -5691,7 +5855,9 @@ const Game = {
           e.dotTick = 1;
           this.damageEnemy(e, e.dotDmg, false, { silent: true, elem: e.dotElem || undefined, tag: 'dot' });
         }
-        if (e.dotT <= 0) { e.dotT = 0; e.dotDmg = 0; e.dotElem = null; }
+        /* dot 跳完时把「焚毒」的加成标记一起清掉：下一轮 dot 重新算，
+         * 否则一次焚毒会让目标此后所有 dot 都永久 ×1.5（滚雪球） */
+        if (e.dotT <= 0) { e.dotT = 0; e.dotDmg = 0; e.dotElem = null; e._reactDot = false; }
       }
 
       const d = DIST2D(e.pos, pp);
