@@ -180,6 +180,14 @@ console.log('六、源码接线：该调的地方都调了');
   ok(has(/bladeFinisherVfx\(stance\)/), 'bladeFinisherVfx 存在');
   ok(has(/bladeEdgeVfx\(dt\)/), 'bladeEdgeVfx（刃势满层脉冲）存在');
   ok(has(/updateFormAura\(dt\)/) && has(/_mkFormAura\(/), '法身：建 / 更新两个入口都在');
+  ok(has(/FX\.formTexture\(\)/), '法身贴图走 FX.formTexture（人形剪影，不是图集里的方块）');
+  {
+    const fxSrc = fs.readFileSync(path.join(ROOT, 'src/fx.js'), 'utf8');
+    ok(/function formTexture\(\)/.test(fxSrc), 'fx.js 里有 formTexture 的画法');
+    ok(/^\s*formTexture,\s*$/m.test(fxSrc), '而且挂在了 FX 上（否则 game.js 拿不到）');
+    /* 竖长图 + 按比例给尺寸：拉变形会让「人形」立刻读不出来 */
+    ok(has(/sp\.scale\.set\(4\.0, 6\.0, 1\)/), '法身按 2:3 给尺寸（不拉变形）');
+  }
   ok(has(/_dropFormAura\(/), '法身：摘除入口在（换图要能作废）');
   ok(has(/this\.updateSkillForm\(dt\)/), 'update() 每帧调 updateSkillForm');
   ok(has(/updateFormAura\(dt\);\s*\n\s*this\.bladeEdgeVfx\(dt\);/), 'updateSkillForm 同时驱动法身与刃势脉冲');

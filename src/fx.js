@@ -471,9 +471,75 @@ function fieldTexture(kind) {
   return t;
 }
 
+/* ============================================================
+ * 法身贴图（P4 · 元素法相）
+ *
+ * 「背后浮现一尊巨大的元素相」—— 这张图就是那尊相。
+ * 为什么是**剪影**而不是细节齐全的像：它是背景，玩家要读到的是
+ * 「身后站着一个比我高很多的东西」，细节一多就会跟自己的角色抢注意力；
+ * 而 51° 俯角下，能读出来的只有「头光 + 肩线 + 下摆」这三笔。
+ *
+ * 与 `data-skill-icons.js` 里法相图标同一套画法（头光 + 肩线），
+ * 认得出是同一个东西 —— 图标和场上不该是两个物种。
+ *
+ * 单独一份缓存、不塞进 `FXK_CELLS`：图集是给**粒子**用的方形格，
+ * 这张是 2:3 的竖长 billboard，尺寸语义都不一样（和 `fieldTexture` 同一个理由）。
+ * ============================================================ */
+let _formTex = null;
+function formTexture() {
+  if (_formTex) return _formTex;
+  const W = 256, H = 384;
+  const c = document.createElement('canvas');
+  c.width = W; c.height = H;
+  const g = c.getContext('2d');
+  const cx = W / 2;
+
+  /* 头光：法相最先被读到的是「后面有一团更大的光」 */
+  const halo = g.createRadialGradient(cx, H * 0.24, 0, cx, H * 0.24, W * 0.52);
+  halo.addColorStop(0, 'rgba(255,255,255,.50)');
+  halo.addColorStop(0.42, 'rgba(255,255,255,.14)');
+  halo.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = halo;
+  g.fillRect(0, 0, W, H);
+
+  /* 袍摆：肩宽 → 底宽，**越往下越淡** —— 不淡的话像一块板子插在地上 */
+  const robe = g.createLinearGradient(0, H * 0.3, 0, H);
+  robe.addColorStop(0, 'rgba(255,255,255,.78)');
+  robe.addColorStop(0.55, 'rgba(255,255,255,.34)');
+  robe.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = robe;
+  g.beginPath();
+  g.moveTo(cx - 46, H * 0.32);
+  g.quadraticCurveTo(cx, H * 0.24, cx + 46, H * 0.32);
+  g.lineTo(cx + 84, H);
+  g.lineTo(cx - 84, H);
+  g.closePath();
+  g.fill();
+
+  /* 肩线：图标里那两条弧，同一个记忆点 */
+  g.strokeStyle = 'rgba(255,255,255,.9)';
+  g.lineWidth = 9;
+  g.lineCap = 'round';
+  g.beginPath();
+  g.moveTo(cx - 46, H * 0.33);
+  g.quadraticCurveTo(cx, H * 0.245, cx + 46, H * 0.33);
+  g.stroke();
+
+  /* 头 */
+  g.fillStyle = 'rgba(255,255,255,.95)';
+  g.beginPath(); g.arc(cx, H * 0.2, 24, 0, Math.PI * 2); g.fill();
+
+  const t = new THREE.CanvasTexture(c);
+  t.needsUpdate = true;
+  t.minFilter = THREE.LinearFilter;
+  t.magFilter = THREE.LinearFilter;
+  t.generateMipmaps = false;
+  _formTex = t;
+  return t;
+}
+
 /* 追踪用的临时向量：每帧每个投射物都 new 一个 Vector3 会造成 GC 抖动 */
-const _vHome = new THREE.Vector3();
-/* 领域脉冲环用的临时向量（每 2 秒一次，但纪律一样：逐帧路径不 new） */
+const _vHome = new THREE.Vector3();/* 领域脉冲环用的临时向量（每 2 秒一次，但纪律一样：逐帧路径不 new） */
 const _vField = new THREE.Vector3();
 /* 亮度调色的临时色（避免每个原语都 new 一个 Color） */
 const _cLit = new THREE.Color();
@@ -501,6 +567,10 @@ const FX = {
   amp: 1,
   ampHold: 0,
   ampMax: 1.25,
+
+  /* [P4] 法身贴图（懒生成 + 缓存）。放出来的原因是「谁的图谁生成」——
+   * game.js 只负责把它挂成 Sprite 并跟着人走，不该知道这张图怎么画 */
+  formTexture,
 
   setAmp(v, hold = 1.2) {
     const n = Number(v);

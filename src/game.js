@@ -3616,13 +3616,19 @@ const Game = {
    * 就得每帧重发（10 秒 × 60 帧 = 600 次绘制）；Sprite 一次 draw call 挂全程，
    * 还能跟着人走、随时换色（换相）。这也是方案 §7.2 写的「一个大号 billboard」。 */
   _mkFormAura(color) {
-    if (typeof THREE === 'undefined' || typeof FXK === 'undefined' || !FXK.cellTex) return null;
+    if (typeof THREE === 'undefined') return null;
+    /* 贴图：人形剪影（头光 + 肩线 + 下摆），与法相图标同一套画法。
+     * 没有 FX.formTexture 时退回图集里的 rune —— 少一层好看的，但不能没有。 */
+    let map = null;
+    if (typeof FX !== 'undefined' && typeof FX.formTexture === 'function') map = FX.formTexture();
+    else if (typeof FXK !== 'undefined' && FXK && FXK.cellTex) map = FXK.cellTex('rune');
     const mat = new THREE.SpriteMaterial({
-      map: FXK.cellTex('rune'), color: color, transparent: true, opacity: 0,
+      map: map, color: color, transparent: true, opacity: 0,
       depthWrite: false, blending: THREE.AdditiveBlending, fog: false
     });
     const sp = new THREE.Sprite(mat);
-    sp.scale.set(4.6, 5.4, 1);
+    /* 2:3 的竖长图，按比例给尺寸 —— 拉变形会让「人形」立刻读不出来 */
+    sp.scale.set(4.0, 6.0, 1);
     sp.renderOrder = 7;
     if (this.scene) this.scene.add(sp);
     this._formAura = { sp, mat, t: 0, out: 0 };
@@ -3654,12 +3660,13 @@ const Game = {
       const d = this.lastMoveDir || { x: 0, z: 1 };
       /* 站在**身后** 1.2 米：法相是「相在身后」，站到身前会挡住自己的人 */
       f.sp.position.set(pp.x - d.x * 1.2, 2.5, pp.z - d.z * 1.2);
-      /* 入场 0.3 秒淡入，之后呼吸。上限压到 0.29 —— 加法混合在暗场景里
-       * 0.3 已经很亮，再高就把自己的角色盖住了（这层是背景，不是主体）。 */
+      /* 入场 0.3 秒淡入，之后呼吸。上限压到 0.32 —— 加法混合在暗场景里
+       * 0.3 已经很亮，再高就把自己的角色盖住了（这层是背景，不是主体）；
+       * 但也不能更低：白天的桃源村地面本身就亮，0.24 实测几乎读不出来。 */
       const fade = Math.min(1, f.t / 0.3);
-      f.mat.opacity = fade * (0.24 + Math.sin(f.t * 2.2) * 0.05);
+      f.mat.opacity = fade * (0.29 + Math.sin(f.t * 2.2) * 0.05);
       const s = 0.9 + fade * 0.1;
-      f.sp.scale.set(4.6 * s, 5.4 * s, 1);
+      f.sp.scale.set(4.0 * s, 6.0 * s, 1);
       return;
     }
     if (!f) return;
