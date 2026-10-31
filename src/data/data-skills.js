@@ -1325,8 +1325,9 @@ const SKILL_TIER_EVO = {
    * 这里用了一条 **叠加键**（`+drPct`）：`drPct` 是 antidote 精研「固元」的键，
    * 直接写同名键会被精研覆盖（选过的人白升一级）。带 `+` 前缀的键在 branchBeh
    * 合并**之后**再加一遍，两份都拿到。
-   * Lv5 / Lv7 都写 `+drPct`：台阶 beh 是**高档覆盖低档**（见 skillTierEvo），
-   * 所以 7 级拿到的是 15% 而不是 8+15 —— 面板文案写的是「那一档的值」。 */
+   * Lv5 / Lv7 都写 `+drPct`：skillTierEvo 取 ≤lv 的全部档**累加**，只有**同名键**
+   * 才被高档顶掉 —— 所以 7 级拿到的是 15% 而不是 8+15（面板文案写的是「那一档的值」），
+   * 而 Lv3 的 `tierShield` 与 Lv9 的 `cleanse` 会一直留着（递进不倒退）。 */
   heal: {
     3: { label: '施法后 4 秒内获得 12% 最大生命护盾', beh: { tierShield: 12 } },
     5: { label: '施法后 4 秒受伤 -8%', beh: { '+drPct': 8 } },
