@@ -3547,20 +3547,29 @@ const Game = {
    *      常驻的只有法身一个，所以它必须自己管（见 updateFormAura）。
    * ============================================================ */
 
-  /* 统一播放口。调用方只说「哪个技能、在哪」，配方与台阶由 data-vfx 决定 */
+  /* 统一播放口。调用方只说「哪个技能、在哪」，配方与台阶由 data-vfx 决定。
+   *
+   * `color` 是**可选覆盖**（[P5b] 加的）：少数位在 case 里已经有一套自己的配色
+   * （太极的绿、解毒的青），配方默认按元素材质取色，那会把这个位的身份色冲掉。
+   * 传了就用传的 —— 优先级与 `FX.ring(pos, r, color)` 的老口径一致。 */
   playSkillVfx(id, opts) {
     if (typeof VFX === 'undefined' || !VFX || typeof VFX.playFor !== 'function') return 0;
     const o = opts || {};
     const sk = (typeof SKILLS !== 'undefined') ? SKILLS[id] : null;
     const pos = o.pos || this.playerGroup.position;
     const r = Number(o.radius);
-    return VFX.playFor(id, {
+    const ctx = {
       pos: pos,
       aim: o.aim || pos,
       dir: o.dir || this.lastMoveDir || null,
       radius: (isFinite(r) && r > 0) ? r : ((sk && sk.radius) || 3),
       delay: o.delay || 0
-    });
+    };
+    if (o.color !== undefined) ctx.color = o.color;
+    if (o.tex !== undefined) ctx.tex = o.tex;
+    if (o.decal !== undefined) ctx.decal = o.decal;
+    if (o.segments) ctx.segments = o.segments;
+    return VFX.playFor(id, ctx);
   },
 
   /* 刀气按刀式换形（P4 · 兵形）。
@@ -4032,6 +4041,10 @@ const Game = {
         SFX.swing(); SFX.hit();
         const mult = 1.5 * (st.flags.thunder ? 2.2 : 1);
         const rad = 4.3 * srad;
+        /* [P5b] 剪影交给配方（`SKILL_VFX.whirl`：倾斜刀气绕圈 + 脚下螺旋）。
+         * 原来这里自己画「一圈地面环 + 一簇方块」—— 那正是方案 §1.2 点名的
+         * 「人转了一下 + 地上冒出个圈，脑子里的旋风斩没被画出来」。 */
+        this.playSkillVfx(id, { pos: pp, aim: pp, dir: dir, radius: rad });
         /* [P3] 聚怪变体：旋风斩本来带 1.2 码击退，等于把刚聚起来的怪又推开 ——
          * 选了聚怪就把击退去掉，否则这个变体自己打自己。 */
         const formOptW = (typeof this.formOpt === 'function') ? this.formOpt(id) : null;
@@ -4060,8 +4073,10 @@ const Game = {
           }
           if (passes > 1) FX.ring(pp, rad * (1 + 0.07 * ps), 0xffd8a0, 0.3, 0.1 + 0.05 * ps);
         }
-        FX.ring(pp, rad, 0xffd8a0, 0.4);
-        FX.spark(new THREE.Vector3(pp.x, 1, pp.z), 0xffd8a0, 18);
+        /* 多段那一圈（`passes` 里画的）留着：它是**发数**台阶的读数（Lv3 双发 /
+         * Lv7 三连斩），配方只负责剪影，不管「打了几下」。
+         * 原来这里的 `FX.ring(pp, rad)` + `FX.spark` 已经由配方接管 —— 再画一遍
+         * 就是同一圈画两次，而且方块粒子正好盖住新的刀气。 */
         this.shake = 0.25; this.hitstop = 60;
         /* [P2b] 台阶 Lv10「命中回怒翻倍」：基数 8 点乘 rageMul。
          * 用倍率而不是再加一条 ragePerHit —— 后者是「每命中一个 +N」，
@@ -4107,8 +4122,16 @@ const Game = {
             this.cooldowns.thrust = 0;
             FX.text(new THREE.Vector3(p2.x, 2.6, p2.z), '冲撞重置', 'info', { life: 0.9 });
           }
-          FX.flashCircle(p2, 3.4, 0xff7a30, 0.3);
-          FX.burst(new THREE.Vector3(p2.x, 1, p2.z), 0xff7a30, 22, { speed: 8, size: 0.12, life: 0.5, additive: true });
+          /* [P5b] 突刺的落点走裂地位配方（`SKILL_VFX.quake` 的命中段：地面塌陷 +
+           * 尘环）。原来那一行 flashCircle + 一簇方块，正是「所有技能都是地面一个
+           * 圆片 + 一簇方块」的原型；配方给的是**向下**的塌陷，读作「撞进去了」。
+           * 颜色照旧传橙色：突刺的身份色是火橙，不是元素材质给的白 ——
+           * 这一位三只技能共用剪影，靠色区分（§3 形色分离）。 */
+          this.playSkillVfx(id, {
+            pos: p2, aim: p2, dir: dir, radius: 3.4, color: 0xff7a30, segments: ['impact']
+          });
+          /* 起跑扬尘留着：它不是剪影，是「人从这儿窜出去」的痕迹，
+           * 配方里没有对应层，删了就少了「位移从哪儿开始」的读法 */
           FX.burst(new THREE.Vector3(start.x, 0.6, start.z), 0xffaa50, 16, { speed: 5, size: 0.1, life: 0.45, additive: true });
           SFX.explode();
         }, 200);
@@ -4177,8 +4200,15 @@ const Game = {
           const cb2 = this.buffs.find(x => x.key === 'skill:' + id);
           if (cb2) cb2.noDR = true;
         }
-        FX.ring(pp, 5, bc, 0.7, 0.25);
-        FX.burst(new THREE.Vector3(pp.x, 1.2, pp.z), bc, 26, { speed: 3, size: 0.12, life: 0.8, gravity: -2, additive: true });
+        /* [P5b] 增益位的剪影交给配方（血怒 / 战吼 / 盾墙 → 从脚下往上冒；
+         * 太极 → 阵内雾粒子；解毒 → 由下而上）。原来的「一圈环 + 一簇方块」
+         * 已经由配方接管，再画一遍就是同一句话画两次。
+         * 太极的半径跟它自己那张双鱼阵走（2.6，贴身护体），其余 5 码 ——
+         * 阵画多大，配方就该画多大。 */
+        this.playSkillVfx(id, {
+          pos: pp, aim: pp, dir: dir, color: bc,
+          radius: id === 'taiji' ? 2.6 : 5
+        });
         SFX.cast();
         UI.toast(sk.name);
         /* [S4] 解毒：立即清除自身中毒与减速 */
@@ -4193,8 +4223,8 @@ const Game = {
         this.actor.atkAnim = 1; this.actor.atkType = 'cast';
         SFX.cast(); SFX.heal();
         this.reviveT = 25 + sdur;
-        FX.ring(pp, 2.6, 0xffd166, 0.8, 0.3);
-        FX.burst(new THREE.Vector3(pp.x, 1.4, pp.z), 0xffd166, 22, { speed: 3, size: 0.12, life: 1, gravity: -2, additive: true });
+        /* [P5b] 回春位的剪影（由下而上生长的光点）—— 还魂是同一个位的「守命」变体 */
+        this.playSkillVfx(id, { pos: pp, aim: pp, dir: dir, radius: 2.6, color: 0xffd166 });
         UI.toast('还魂 · ' + this.reviveT + ' 秒');
         break;
       }
@@ -4209,10 +4239,17 @@ const Game = {
           const lowHp = target.hp < target.maxHp * 0.3;
           const { dmg, crit } = this.rollDamage(st.atk * 5.0 * (lowHp ? 2 : 1) * spow);
           this.damageEnemy(target, dmg, crit, { knock: 1.4 });
-          FX.flashCircle(target.pos, 2.2, lowHp ? 0xff3b3b : 0xffaa50, 0.3);
-          FX.burst(new THREE.Vector3(target.pos.x, 1.2, target.pos.z), lowHp ? 0xff3b3b : 0xffaa50, 20, { speed: 6, size: 0.12, life: 0.5, additive: true });
+          /* [P5b] 处决的落点走裂地位配方。**颜色必须由这里给**：低血处决是
+           * 红色、普通是橙色，这一位三只技能共用同一条剪影，色就是唯一的区别。
+           * 原来那两行（地面圆片 + 一簇方块）由配方的塌陷环 + 尘环接管。 */
+          this.playSkillVfx(id, {
+            pos: target.pos, aim: target.pos, dir: dir, radius: 2.2,
+            color: lowHp ? 0xff3b3b : 0xffaa50, segments: ['impact']
+          });
           if (lowHp) FX.text(new THREE.Vector3(target.pos.x, 2.4, target.pos.z), '处决', 'lv', { life: 0.8 });
         } else {
+          /* 挥空：给一个「刀落在空处」的小圈就够，不要整套塌陷 ——
+           * 打空了还塌一块地，玩家会以为自己打中了 */
           FX.flashCircle(cp, 2.2, 0xffaa50, 0.25);
         }
         break;
@@ -4230,6 +4267,10 @@ const Game = {
         if (!inPlace) this.lastMoveDir = { x: dir.x, z: dir.z };
         SFX.fire(); SFX.swing();
         this.shake = 0.3;
+        /* [P5b] 跃击是「先起跳、再落地」，两件事隔着 200ms 与最多 10 码 ——
+         * 所以必须分段：起手段（地裂预警）留在起跳点，命中段跟着落点走。
+         * 整条一起在落点播的话，玩家看到的是「落点凭空多了一圈预警」。 */
+        this.playSkillVfx(id, { pos: pp, aim: aim, dir: dir, radius: 4.5 * srad, segments: ['cast'] });
         setTimeout(() => {
           if (this.dead) return;
           const p2 = this.playerGroup.position;
@@ -4238,9 +4279,9 @@ const Game = {
             const { dmg, crit } = this.rollDamage(st.atk * 2.2 * spow);
             this.damageEnemy(e, dmg, crit, { knock: 2.4 });
           }
-          FX.flashCircle(p2, 4.5 * srad, 0xffb060, 0.35);
-          FX.ring(p2, 4.5 * srad, 0xffb060, 0.5, 0.25);
-          FX.burst(new THREE.Vector3(p2.x, 0.8, p2.z), 0xffb060, 24, { speed: 7, size: 0.13, life: 0.5, additive: true });
+          /* [P5b] 落地那一下走裂地位配方的命中段 ——
+           * 跃击和裂地是同一个位：都是「纵向塌陷」，只是起手多了 10 码位移 */
+          this.playSkillVfx(id, { pos: p2, aim: p2, dir: dir, radius: 4.5 * srad, segments: ['impact'] });
           SFX.explode();
         }, 200);
         break;
@@ -4291,6 +4332,11 @@ const Game = {
           kind: 'blades', r: outerRad, life: dur, color: 0xd8ffe0,
           follow: pinOn ? null : fieldCtr
         });
+        /* [P5b] 剑阵位配方补「剑轨 + 剑鸣火花」（`SKILL_VFX.swordarray`）。
+         * 这里**不删**任何东西：`FX.field` 是领域本体（每跳的剑鸣环也在用它报层数），
+         * 配方加的是它缺的那一层 —— 半透明剑影拖出的椭圆轨道。
+         * 半径传 `outerRad`：画多大 = 打多大，和 Lv9 减伤 / Lv10 反击同一把尺子。 */
+        this.playSkillVfx(id, { pos: fieldCtr(), aim: fieldCtr(), dir: dir, radius: outerRad });
         const iv = setInterval(() => {
           if (this.mapGen !== gen || this.dead) { clearInterval(iv); return; }
           pulses++;
@@ -4335,6 +4381,16 @@ const Game = {
             if (this.dead || this.mapGen !== gen) return;
             const t = new THREE.Vector3(cp.x + RND(-2, 2), 0, cp.z + RND(-2, 2));
             this.explodeAt(t, 5 * srad, st.atk * 2.4 * spow, 0xffaa60, true);
+            /* [P5b] 只有**最后一发**补配方的命中段（塌陷环 + 尘柱）。
+             * 三发都补就是同一句话画三遍，而且 `explodeAt` 自己已经带
+             * 闪光 + 圆环 + 一簇方块 —— 那是判定与手感，不能删。
+             * 所以这一位接的是「收尾比前两发重」，不是「每发都换皮」。 */
+            if (i === 2) {
+              this.playSkillVfx(id, {
+                pos: t, aim: t, dir: dir, radius: 5 * srad,
+                color: 0xffaa60, segments: ['impact']
+              });
+            }
             SFX.explode();
           }, 300 + i * 450);
         }
@@ -4352,11 +4408,10 @@ const Game = {
           this.damageEnemy(e, dmg, crit, { knock: 1.6 });
           e.stun = Math.max(e.stun, 1.6);
         }
-        FX.ring(cp, 6 * srad, 0xffaa60, 0.6, 0.3);
-        FX.flashCircle(cp, 5.8 * srad, 0xffcc88, 0.35);
-        for (let i = 0; i < 3; i++) setTimeout(() => {
-          FX.burst(new THREE.Vector3(cp.x + RND(-4, 4), 0.2, cp.z + RND(-4, 4)), 0xaa8866, 12, { speed: 6, size: 0.14, life: 0.7, gravity: 16 });
-        }, i * 70);
+        /* [P5b] 裂地位：裂纹预警 → 地面塌陷 → 垂直尘柱（`SKILL_VFX.quake`）。
+         * 原来那三行「大环 + 地面圆片 + 三簇方块」正是方案 §1.2 说的
+         * 「所有技能都是地面一个环 + 一簇方块粒子」。 */
+        this.playSkillVfx(id, { pos: pp, aim: cp, dir: dir, radius: 5.8 * srad });
         break;
       }
       /* [P2b·刀客⑤] 兵形 / 刃势：整只技能从「召唤剑神」改成一台刀式状态机。
@@ -4434,11 +4489,11 @@ const Game = {
           if (bBlade.edgeUltimate && sk.buff) {
             this.addBuff(sk.name, Object.assign({}, sk.buff, { dur: (sk.buff.dur || 12) + sdur }),
               0xffd166, { type: 'buff', icon: sk.glyph, key: 'skill:avatar', refresh: true });
-            FX.ring(pp, 7, 0xffd166, 0.9, 0.4);
-            for (let i = 0; i < 24; i++) {
-              FX.burst(new THREE.Vector3(pp.x + RND(-4, 4), RND(0, 3), pp.z + RND(-4, 4)),
-                0xffd166, 2, { speed: 4, size: 0.14, life: 0.9, gravity: -4, additive: true });
-            }
+            /* [P5b] 剑神降世的「开窗」走兵形位配方的起手段（金环 + 上升光柱）。
+             * 原来这里是 1 个 7 码环 + **24 次 `FX.burst`**（24 次绘制）：
+             * 那 24 簇是「地面上一堆金方块」，而这一档要说的是「剑神开了个窗」——
+             * 一根柱比一堆方块准，还便宜 22 次。 */
+            this.playSkillVfx(id, { radius: 3.4, segments: ['cast'] });
             FX.text(new THREE.Vector3(pp.x, 3.2, pp.z), '剑 神 降 世', 'lv', { life: 1.2 });
           }
           /* 终结技吃技能自己的冷却（与 castSkill 入口那套同口径，含冷却修正） */
@@ -4499,12 +4554,12 @@ const Game = {
           const k = this.elemAuraKind();
           this.actor.atkAnim = 1; this.actor.atkType = 'cast'; this.actor.atkSpeed = 1.6;
           SFX.cast();
-          FX.ring(new THREE.Vector3(pp.x, 0.2, pp.z), 3.4, k.color, 0.55, 0.25);
-          FX.burst(new THREE.Vector3(pp.x, 1.4, pp.z), k.color, 18,
-            { speed: 4, size: 0.12, life: 0.7, gravity: -2, additive: true });
           /* [P4] 换相：配方重播一次（换色），法身由 updateFormAura 当场改色 ——
-           * 换相最怕「只有动作条角标变了」，所以画面上要有两处同时响应 */
-          this.playSkillVfx('elementavatar', { radius: 2.4 });
+           * 换相最怕「只有动作条角标变了」，所以画面上要有两处同时响应。
+           * [P5b] 原来这上面还有一行 `FX.ring` + 一簇 18 颗 `FX.burst`，
+           * 与配方的起手段是同一句话（脚下换色一圈），删掉；**色改由这里传**
+           * —— 位配方的元素取自「主元素注入」，而换相要的是**刚换成的那个**元素。 */
+          this.playSkillVfx('elementavatar', { radius: 3.4, color: k.color });
           FX.text(new THREE.Vector3(pp.x, 3, pp.z), k.name, 'lv', { life: 0.95 });
           UI.toast('法相 · ' + k.name);
           this.cooldowns[id] = 1.2;
@@ -4542,18 +4597,15 @@ const Game = {
         }
         this.actor.atkAnim = 1; this.actor.atkType = 'cast'; this.actor.atkSpeed = 1.4;
         SFX.cast(); this.shake = Math.max(this.shake, 0.3);
+        /* [P5b] 7 码外环留着 —— 它是「窗口」的边界，配方给的是贴身的阵环；
+         * 中间那圈 4.2 与 22 次 `FX.burst`（22 次绘制）删掉：
+         * 阵环 + 上升光柱由配方的起手段给，一堆金方块说不出「开窗」。 */
         FX.ring(new THREE.Vector3(pp.x, 0.2, pp.z), 7, kind.color, 0.8, 0.35);
-        FX.ring(new THREE.Vector3(pp.x, 0.2, pp.z), 4.2, kind.color, 0.6, 0.25);
-        for (let i = 0; i < 22; i++) {
-          const ang = Math.random() * 7, r = RND(0.5, 5);
-          FX.burst(new THREE.Vector3(pp.x + Math.cos(ang) * r, RND(0.2, 3.4), pp.z + Math.sin(ang) * r),
-            kind.color, 2, { speed: 3, size: 0.13, life: 0.9, gravity: -3, additive: true });
-        }
         FX.text(new THREE.Vector3(pp.x, 3.3, pp.z), kind.name, 'lv', { life: 1.2 });
         /* [P4] 开窗：法阵 + 上升光柱（配方 cast 段），法身由 updateFormAura 建。
          * 半径 3.4 而不是技能半径 2.6 —— 开窗是「场上多了一个状态」，
          * 读法要比一发技能大一圈，否则会被当成普通的起手特效 */
-        this.playSkillVfx('elementavatar', { radius: 3.4 });
+        this.playSkillVfx('elementavatar', { radius: 3.4, color: kind.color });
         UI.toast('元素法相 · ' + kind.name + ' ' + Math.round(dur) + ' 秒', 'lv');
         UI.log('法相已开：' + Math.round(dur) + ' 秒内全抗 +'
           + (bf.allRes || 0) + (ea.rider ? '，命中附带' + kind.glyph + '效果' : ''));
@@ -4565,6 +4617,9 @@ const Game = {
         this.actor.atkAnim = 1; this.actor.atkType = 'cast';
         SFX.fire();
         const radius = 2.4 * (st.flags.firetrail ? 1.6 : 1) * srad;
+        /* [P5b] 起手 + 飞行段（`cast` / `loop`）：手里那簇火星与 Lv9 的环绕火球。
+         * 命中段**不在这里播** —— 它在 `onHit` 里（弹道飞到了才炸）。 */
+        this.playSkillVfx(id, { pos: pp, aim: aim, dir: dir, radius: radius, segments: ['cast', 'loop'] });
         /* [S4] 连环变体：1 + sextra 连发，扇形展开 */
         const n = 1 + Math.max(0, sextra);
         const up = new THREE.Vector3(0, 1, 0);
@@ -4578,6 +4633,12 @@ const Game = {
             /* [P2] 集束（取向）：贯穿弹，不再被第一个敌人挡下 */
             pierce: !!(bBeh && bBeh.pierce),
             onHit: (e, proj) => {
+              /* [P5b] 命中段：闪白 + 爆点 + 元素残留（火海 / 霜痕 / 酸斑由元素决定）。
+               * 跟着**弹道的实际命中点**，不是施法落点 —— 后者恒在射程尽头。 */
+              this.playSkillVfx(id, {
+                pos: proj.pos.clone(), aim: proj.pos.clone(), dir: d2, radius: radius,
+                segments: ['impact']
+              });
               this.explodeAt(proj.pos.clone(), radius, st.atk * 1.9 * spow, 0xff7a30);
               if (st.flags.firetrail) this.createFirePatch(proj.pos.clone(), radius);
               /* [P2b] 台阶 Lv5「爆炸处留火海」：必须写在命中点。
@@ -4618,10 +4679,15 @@ const Game = {
           }
           FX.ring(c2, 6 * srad, 0x8ad8ff, 0.7, 0.3);
           FX.flashCircle(c2, 6 * srad, 0x8ad8ff, 0.45);
-          for (let i = 0; i < 30; i++) {
-            const ang = Math.random() * 7, r = RND(1, 6);
-            FX.burst(new THREE.Vector3(c2.x + Math.cos(ang) * r, RND(0.1, 1), c2.z + Math.sin(ang) * r), 0xaae8ff, 2, { speed: 2, size: 0.12, life: 0.8, gravity: -1, additive: true });
-          }
+          /* [P5b] 新星的「推出去」那一层交给火墙位的 `cast`（一排竖直冰舌）。
+           * 方案 §486 明写：冰霜新星 / 雷云**收敛为火墙的冰 / 雷元素形态** ——
+           * 所以它读作「一圈冰墙从脚下炸开」，而不是「地面多了一簇方块」。
+           *
+           * 原来这里是一个 30 次的 `FX.burst` 循环：**30 次绘制**（一簇 2 颗
+           * 粒子 = 一个 Points），一次新星就把预算打穿 5 倍。换成配方是 3 次。 */
+          this.playSkillVfx(id, {
+            pos: c2, aim: c2, dir: dir, radius: 6 * srad, segments: ['cast']
+          });
           /* [P2b] 台阶 Lv10「收尾爆燃」：新星没有「结束」这一说，所以落点
            * 0.6 秒后再炸一发 —— 与变体「霜爆」的 aftershock 是同族观感，
            * 但走的是 endBurst 这个键，两条会叠加而不是互相顶掉。 */
@@ -4642,6 +4708,9 @@ const Game = {
       case 'chain': {
         this.actor.atkAnim = 1; this.actor.atkType = 'cast';
         SFX.thunder();
+        /* [P5b] 起手：手上一簇电（飞弹位 `cast`）。原来这一位只有几道 beam 飞出去，
+         * 玩家按完看不出「是从我手上起的」。 */
+        this.playSkillVfx(id, { pos: pp, aim: aim, dir: dir, radius: 3.2, segments: ['cast'] });
         let cur = this.nearestEnemy(aim, 12) || this.nearestEnemy(pp, 12);
         const hitSet = new Set();
         let from = new THREE.Vector3(pp.x, 1.5, pp.z);
@@ -4660,6 +4729,17 @@ const Game = {
             if (d < bd) { bd = d; next = e; }
           }
           cur = next;
+        }
+        /* [P5b] 命中段**只在最后一跳**播。连锁闪电是同一帧里连跳 5 下的：
+         * 每跳都播一遍命中段就是 5 套闪白 + 冰花同时压上来（5 × 2 = 10 次绘制，
+         * 硬指标是 6）。而「连」这件事本来就已经由那 5 道折线说完了 ——
+         * 配方在这里补的是**收尾**：电弧最后砸中的那一下比前面都亮。 */
+        if (jumps) {
+          this.playSkillVfx(id, {
+            pos: new THREE.Vector3(from.x, 0, from.z),
+            aim: new THREE.Vector3(from.x, 0, from.z),
+            dir: dir, radius: 2.4, segments: ['impact']
+          });
         }
         if (jumps) this.shake = 0.2;
         break;
@@ -4684,13 +4764,17 @@ const Game = {
           const a = k * Math.PI * 2 / Math.max(1, mCnt - 1);
           const off = k === 0 ? 0 : mRad * 0.55;
           const c = new THREE.Vector3(target.x + Math.cos(a) * off, 0, target.z + Math.sin(a) * off);
+          /* [P5b] 起手段：落点预警圈 + 天降火线（`SKILL_VFX.meteor` 的 cast）。
+           * 0.9 秒的前摇里玩家就靠这两样判断「砸哪儿、砸多大」，一颗石头一份。 */
+          this.playSkillVfx(id, {
+            pos: c, aim: c, dir: dir, radius: mRad, segments: ['cast']
+          });
           FX.telegraph(c, mRad, 0.9 + k * 0.12, () => {
+            /* [P5b] 命中段：冲击环 + 倒挂尘柱 + 焦痕（台阶越高尘柱越大、焦痕越久） */
+            this.playSkillVfx(id, { pos: c, aim: c, dir: dir, radius: mRad, segments: ['impact'] });
             this.explodeAt(c, mRad, st.atk * 4.2 * spow, 0xff5522, true);
             if (mField) this.spawnTierField(c, mRad * 0.75, mField, mFieldDur, 0xff5522);
             SFX.explode(); this.shake = 0.6;
-            for (let i = 0; i < 4; i++) setTimeout(() => {
-              FX.burst(new THREE.Vector3(c.x + RND(-4, 4), 0.3, c.z + RND(-4, 4)), 0xff7a20, 14, { speed: 9, size: 0.16, life: 0.8, gravity: -3, additive: true });
-            }, i * 60);
           });
           // 落下的陨石视觉
           const rock = new THREE.Mesh(sphGeo(0.8, 6), new THREE.MeshBasicMaterial({ color: 0xff5522 }));
@@ -4713,7 +4797,9 @@ const Game = {
         /* [P2b] 时长必须带 sdur：变体「永冻」的 mods {dur:6} 就是「持续 +6 秒」，
          * 原来这里写死 10，那一整条变体一个字都没生效（面板还写着 +6 秒）。 */
         this.shieldT = 10 + sdur;
-        FX.ring(pp, 2, 0x9ae0ff, 0.6, 0.2);
+        /* [P5b] 护盾位配方：起手长出一簇贴合轮廓的冰晶（Lv5 起两层）+ 持续段的
+         * 冰晶浮动。破盾那一下在 `breakShield` 里补 `impact`。 */
+        this.playSkillVfx(id, { pos: pp, aim: pp, dir: dir, radius: 2, segments: ['cast', 'loop'] });
         UI.toast('玄冰护盾 ' + Math.round(this.shield));
         break;
       }
@@ -4752,6 +4838,10 @@ const Game = {
           n++;
           const off = new THREE.Vector3(RND(-9, 9), 0, RND(-9, 9));
           const t = center.clone().add(off);
+          /* [P5b] 每一颗陨星走陨石位的**命中段**（冲击环 + 尘柱 + 焦痕）。
+           * 起手段不播：一场雨落 16 颗，16 条天降火线会把屏幕糊死 ——
+           * 这个位的「从天而降」由 case 自己的落点节奏读出来，不需要配方再说一遍。 */
+          this.playSkillVfx(id, { pos: t, aim: t, dir: dir, radius: 3.2 * srad, segments: ['impact'] });
           this.explodeAt(t, 3.2 * srad, st.atk * 1.6, 0xff7a30, false, true);
           if (sfField) this.spawnTierField(t, 3.2 * srad * 0.75, sfField, sfFieldDur, 0xff7a30);
           /* 星阙 5 件：陨星 +8 颗（count 修正）。
@@ -4786,8 +4876,15 @@ const Game = {
             onHit: (e, proj) => {
               this.damageEnemy(e, proj.dmg, false, { tag: 'proj', elem: 'ice' });
               e.slow = Math.max(e.slow || 0, 0.4); e.slowT = Math.max(e.slowT || 0, 2);
-              FX.flashCircle(proj.pos, 1.6, 0x9ae0ff, 0.25);
-              FX.burst(new THREE.Vector3(proj.pos.x, 1, proj.pos.z), 0x9ae0ff, 8, { speed: 3, size: 0.1, life: 0.4, additive: true });
+              /* [P5b] 命中段走飞弹位配方（闪白 + 冰晶迸溅）。
+               * **`decal: null` 是这里必须的**：这一发是 3~8 连射，每发都留一块
+               * 元素残留，一次齐射就能把贴花池（16 个 quad）吃掉一半，
+               * 而且地上会变成一堆互相叠着的霜斑。冰枪的「残留」是敌人身上的减速，
+               * 不是地上的痕迹 —— 这一位的 `decal` 让位给慢速。 */
+              this.playSkillVfx(id, {
+                pos: proj.pos.clone(), aim: proj.pos.clone(), dir: d2, radius: 1.6,
+                decal: null, segments: ['impact']
+              });
             }
           });
         }
@@ -4811,6 +4908,14 @@ const Game = {
           const ck = new THREE.Vector3(core.x + Math.cos(a) * off, 0, core.z + Math.sin(a) * off);
           cs.push(ck);
           zfx.push(FX.area(ck, rad, 0x9ad8ff, dur, { opacity: 0.26 }));
+          /* [P5b] 每一片各播一次陨石位的 `cast`（落点预警圈 + 天降光柱）。
+           * 「暴雪从天上来」是这一位的身份，一片一根柱；只在主落点播的话，
+           * 另外两片会「凭空出现一片圆盘」—— 那正是 §1.1 说的老问题。
+           * 三片齐播是 9 次绘制，但只在这一帧（光柱 0.9 秒后自己灭），
+           * 持续段仍然只有 area + 每 0.7 秒一簇，与改造前同价。 */
+          this.playSkillVfx(id, {
+            pos: ck, aim: ck, dir: dir, radius: rad, segments: ['cast']
+          });
         }
         /* [P3] 暴风（变体）：区域跟着人走。锚点是伤害循环真正在读的那些对象，
          * 网格一并挪，判定与观感才不会分家 */
@@ -4904,6 +5009,11 @@ const Game = {
             }
           }
         }
+        /* [P5b] 火墙位配方：沿施法方向排开的竖直火舌（`cone` 的 `line` 排数）。
+         * `FX.area` 留着 —— 那是**判定圈**（怪站进去才烧），火舌是剪影。
+         * 方案 §7.2 说的「火墙是线、太极是圆」，说的正是这一层：
+         * 以前两者都是圆片，唯一的差别是颜色。 */
+        this.playSkillVfx(id, { pos: pp, aim: aim, dir: dir, radius: rad, segments: ['cast', 'loop'] });
         /* [P2b] 台阶 Lv9 场内易伤 / Lv5 命中挂持续伤害。
          * 领域类技能不能靠通用 hit 通道：那个只在施法瞬间、以准星为圆心结算一次，
          * 而怪是**后来走进火里**的。所以两条都在每一跳上结算。
@@ -4976,12 +5086,12 @@ const Game = {
           const { dmg, crit } = this.rollDamage(st.atk * 3.6 * spow);
           this.damageEnemy(e, dmg, crit, { knock: 1.2, elem: 'fire' });
         }
+        /* [P5b] 焚天的「炸开」交给护盾位的命中段（`spr` 各向散开 = 一圈火舌推出去）。
+         * **`FX.ring` 留着** —— 它是 7 码的判定边界（画多大 = 打多大），
+         * 配方里的 cast 环只有半径的一半，用它替就是「看着打到了、其实没到」。
+         * 原来那 36 次 `FX.burst` 循环是 36 次绘制，换成配方是 1~2 次。 */
+        this.playSkillVfx(id, { pos: pp, aim: pp, dir: dir, radius: rad, segments: ['impact'] });
         FX.ring(pp, rad, 0xff7a30, 0.9, 0.4);
-        FX.flashCircle(pp, rad, 0xff9040, 0.5);
-        for (let i = 0; i < 36; i++) {
-          const ang = (i / 36) * 6.2832, r = RND(1, rad);
-          FX.burst(new THREE.Vector3(pp.x + Math.cos(ang) * r, RND(0.2, 1.6), pp.z + Math.sin(ang) * r), 0xff9040, 2, { speed: 5, size: 0.13, life: 0.7, gravity: -2, additive: true });
-        }
         this.shake = 0.55; this.hitstop = 90;
         /* [P2b] 台阶 Lv10「爆发时定身」：焚天没有护盾，走的是「爆发」这个入口 ——
          * 结算与破盾侧共用 behTierNova，两个入口的数值不会漂。 */
@@ -5010,6 +5120,12 @@ const Game = {
           const off = clouds === 1 ? 0 : rad * 0.55;
           const c = new THREE.Vector3(aim.x + Math.cos(ang) * off, 0, aim.z + Math.sin(ang) * off);
           const zona = FX.area(c, rad, 0x8a7aff, dur, { opacity: 0.2 });
+          /* [P5b] 云落地：火墙位的 `cast`（一排竖直雷丝）。方案 §486 的
+           * 「雷云收敛为火墙的雷元素形态」就落在这句上 —— 云不是一块紫圆盘，
+           * 是「一排电在云底烧」。`FX.area` 留着当判定圈，落雷（`beam`）留着当本体。 */
+          this.playSkillVfx(id, {
+            pos: c, aim: c, dir: dir, radius: rad, segments: ['cast']
+          });
           /* [P3] 随身（变体）：雷云跟着人走 */
           if (bBeh && bBeh.follow) this.attachFollow([c], [zona], dur);
           let ticks = 0;
@@ -5049,6 +5165,11 @@ const Game = {
               if (bBeh && bBeh.endBurst) {
                 this.explodeAt(c.clone(), rad * 0.9,
                   st.atk * (bBeh.endBurst / 100) * spow, 0xa9c8ff, false, true, 'aoe');
+                /* [P5b] 云散那一下补命中段（火墙位的 `decal` = 一道雷痕）。
+                 * 这是「收尾」的读法：云走了，地上还留着一道被打过的印子。 */
+                this.playSkillVfx(id, {
+                  pos: c, aim: c, dir: dir, radius: rad, segments: ['impact']
+                });
                 if (ci === 0) FX.text(new THREE.Vector3(c.x, 2.8, c.z), '雷爆', 'lv', { life: 0.9 });
                 this.shake = Math.max(this.shake, 0.24);
               }
@@ -5071,6 +5192,14 @@ const Game = {
           let jt = 0;
           const genJ = this.mapGen;
           UI.toast('雷柱 · 引导 ' + chJ + ' 秒');
+          /* [P5b] 雷柱（变体）的**成形**那一拍走陨石位的 `cast`：落点圈 + 天降光柱。
+           * 这一支是**提前 break** 的分支，不补这一句的话，选了「雷柱」的玩家
+           * 整只技能一个配方都播不到 —— 探针就是这么发现它的（契约 grep 是绿的，
+           * 因为 `playSkillVfx` 确实写在文件里，只是写在另一条分支上）。
+           * 之后每 0.4 秒那一道 `beam` 是「柱在劈」，与成形的光柱不是同一层。 */
+          this.playSkillVfx(id, {
+            pos: cj, aim: cj, dir: dir, radius: 3.4 * srad, segments: ['cast']
+          });
           const ivJ = setInterval(() => {
             if (this.mapGen !== genJ || this.dead) { clearInterval(ivJ); return; }
             jt++;
@@ -5115,7 +5244,13 @@ const Game = {
             FX.beam(new THREE.Vector3(tgt.pos.x, 10, tgt.pos.z), new THREE.Vector3(tgt.pos.x, 1, tgt.pos.z), 0xd8e8ff, 0.3);
             const { dmg, crit } = this.rollDamage(st.atk * 8.5 * spow * bossMul);
             this.damageEnemy(tgt, dmg, crit, { elem: 'lightning', knock: 1 });
-            FX.flashCircle(tgt.pos, 3.4 * srad, 0xd8e8ff, 0.4);
+            /* [P5b] 落雷的命中段走陨石位配方（冲击环 + 尘柱 + 焦痕）。
+             * 雷的残留是 `crack`（元素材质给的），不是焦痕 —— 形色分离在这儿生效。
+             * 原来的 `FX.flashCircle` 是一块平铺地面圆片，正是方案 §1.1 说的那类。 */
+            this.playSkillVfx(id, {
+              pos: tgt.pos.clone(), aim: tgt.pos.clone(), dir: dir,
+              radius: 3.4 * srad, segments: ['impact']
+            });
             if (jField) this.spawnTierField(tgt.pos, 3.2 * srad * 0.75, jField, jFieldDur, 0xd8e8ff);
             if (jSplash) {
               for (const e of this.enemies) {
@@ -5180,9 +5315,14 @@ const Game = {
               const { dmg, crit } = this.rollDamage(st.atk * 1.7 * spow * seekMul);
               this.damageEnemy(e, dmg, crit, { tag: 'proj' });
               // 符纸炸开 → 天雷落地
-              FX.beam(new THREE.Vector3(e.pos.x, 4.2, e.pos.z), new THREE.Vector3(e.pos.x, 0.9, e.pos.z), 0x9affd0, 0.16);
-              FX.flashCircle(e.pos, 1.9, 0x9affd0, 0.26);
-              FX.burst(new THREE.Vector3(e.pos.x, 1.2, e.pos.z), 0x9affd0, 12, { speed: 4, size: 0.1, life: 0.4, additive: true });
+              /* [P5b] 命中段走符箓位配方：折线雷（`bolt`，带分叉）+ 朱砂字。
+               * 原来这里是一条直 `beam` + 一块地面圆片 + 一簇方块 —— 三样加起来
+               * 读作「闪了一下」，而配方给的折线才有「雷」的形状。
+               * Lv9 的阵环、Lv10 的延迟符字都在这一条上（台阶自动生效）。 */
+              this.playSkillVfx(id, {
+                pos: e.pos.clone(), aim: e.pos.clone(), dir: tdir,
+                radius: 1.9, segments: ['impact']
+              });
               SFX.thunder();
               this.shake = Math.max(this.shake, 0.12);
               /* [P2b] Lv5 雷符连锁：从落雷点继续跳，最多 talChain 个。
@@ -5250,14 +5390,22 @@ const Game = {
             }
           });
         }
-        // 出手瞬间手边亮一下，抬手动作才有落点
-        FX.flashCircle(new THREE.Vector3(pp.x + dir.x * 0.9, 0.08, pp.z + dir.z * 0.9), 1.1, 0xffd24a, 0.18);
+        /* [P5b] 出手瞬间手边亮一下，抬手动作才有落点 —— 走符箓位配方的
+         * `cast` 段（一簇朱砂符字从手里散开），不是一块地面圆片：
+         * 圆片画在脚边，读起来像「脚下有东西」，而这一发是从手上飞出去的。 */
+        this.playSkillVfx(id, {
+          pos: new THREE.Vector3(pp.x + dir.x * 0.9, 1.2, pp.z + dir.z * 0.9),
+          aim: aim, dir: dir, radius: 1.1, color: 0xffd24a, segments: ['cast']
+        });
         break;
       }
       /* [S4] 符箭：三张追踪符 */
       case 'talismanarrow': {
         this.actor.atkAnim = 1; this.actor.atkType = 'cast';
         SFX.cast();
+        /* [P5b] 起手：万剑位的 `cast` 段（脚下一圈阵环）。三张符是同一发出去的，
+         * 起手只该有一次 —— 每张符各播一遍就是三个同心圆。 */
+        this.playSkillVfx(id, { pos: pp, aim: aim, dir: dir, radius: 3.2, segments: ['cast'] });
         /* [P3] 符雨（变体）：不再三张追踪，改成往落点砸一片符 ——
          * 单发低、覆盖面大，清群用；单体杀伤交给另外两条 */
         if (bBeh && bBeh.rain) {
@@ -5270,8 +5418,12 @@ const Game = {
             if (this.mapGen !== genR || this.dead) { clearInterval(rIv); return; }
             rn++;
             const t = new THREE.Vector3(c.x + RND(-spread, spread), 0, c.z + RND(-spread, spread));
-            FX.beam(new THREE.Vector3(t.x, 9, t.z), new THREE.Vector3(t.x, 0.5, t.z), 0xd8f0a0, 0.2);
-            FX.flashCircle(t, 1.9, 0xd8f0a0, 0.22);
+            /* [P5b] 每一张符走配方的 `loop` 段（自上而下的符柱）。
+             * 原来是一道直 beam + 一块地面圆片（3 次绘制）说「有东西落下来」，
+             * 而这一位剪影的本义就是**从天而降** —— 一根柱比一道线准，还便宜 2 次。 */
+            this.playSkillVfx(id, {
+              pos: t, aim: t, dir: dir, radius: 1.9, segments: ['loop']
+            });
             for (const e of this.enemies) {
               if (e.dead || DIST2D(e.pos, t) >= 1.9 + e.radius) continue;
               const { dmg, crit } = this.rollDamage(st.atk * 0.7 * spow);
@@ -5302,7 +5454,12 @@ const Game = {
             onHit: (e, proj) => {
               const { dmg, crit } = this.rollDamage(st.atk * 1.0 * spow);
               this.damageEnemy(e, dmg, crit, { tag: 'proj' });
-              FX.burst(new THREE.Vector3(e.pos.x, 1.1, e.pos.z), 0xd8f0a0, 8, { speed: 3, size: 0.1, life: 0.4, additive: true });
+              /* [P5b] 命中段走万剑位配方（剑痕 / 冲击）。符是三张各飞各的，
+               * 落点不同、落地时间也不同，所以不会在同一帧叠成一摞 ——
+               * 这正是它可以直接整段播、而「连锁闪电」必须收着播的原因。 */
+              this.playSkillVfx(id, {
+                pos: e.pos.clone(), aim: e.pos.clone(), dir: tdir, radius: 1.9, segments: ['impact']
+              });
             }
           });
         }
@@ -5325,6 +5482,10 @@ const Game = {
           kind: 'sigil', r: rad, life: dur, color: 0xffd24a,
           follow: (bBeh && bBeh.follow) ? (() => c) : null
         });
+        /* [P5b] 太极位配方补「阵内贴地雾粒子 + 脉冲环」（`SKILL_VFX.taiji`）。
+         * `FX.field` 是阵的**本体**（双鱼 / 地纹），配方补的是阵里飘着的那层，
+         * 两者分工不同，不重复。半径取 `rad`：画多大 = 打多大。 */
+        this.playSkillVfx(id, { pos: c, aim: c, dir: dir, radius: rad, color: 0xffd24a, segments: ['cast', 'loop'] });
         /* [P3] 贴身印（变体）：符印贴在身上跟着走 */
         if (bBeh && bBeh.follow) this.attachFollow([c], [zona], dur);
         let ticks = 0;
@@ -5352,8 +5513,10 @@ const Game = {
         this.summonWolf();
         /* [P4] 召唤阵 + 灵兽从阵里升起（登场动作在 updateAllies 的 spawnT） */
         this.summonGate(pp, 0x9affd0);
-        this.playSkillVfx('summon', { radius: 1.9 });
-        FX.flashCircle(pp, 2.4, 0x9affd0, 0.5);
+        /* [P5b] 阵环 + 中心光柱由配方给；**色必须传**：三只灵兽共用同一条剪影，
+         * 绿 / 金 / 蓝就是它们的身份（§3 形色分离）。原来那一行 flashCircle
+         * 是「地面一块圆片」，与配方的阵环是同一句话，删。 */
+        this.playSkillVfx('summon', { radius: 1.9, color: 0x9affd0 });
         break;
       }
       /* [S4] 白虎：高攻速近战召唤 */
@@ -5364,8 +5527,7 @@ const Game = {
          * 数字抄第二遍就多一处漂移的机会） */
         this.summonBeast({ kind: 'tiger' });
         this.summonGate(pp, 0xffe0b0);
-        this.playSkillVfx('summon', { radius: 2.2 });
-        FX.flashCircle(pp, 3, 0xffe0b0, 0.5);
+        this.playSkillVfx('summon', { radius: 2.2, color: 0xffe0b0 });
         break;
       }
       /* [S4] 青龙：范围攻击召唤 */
@@ -5378,8 +5540,10 @@ const Game = {
           this._dragonT = Math.max(1, bBeh.transform);
           this._dragonTickT = 0;
           this._dragonMul = spow;
-          FX.flashCircle(pp, 4.2, 0x6ac8ff, 0.55);
-          FX.ring(pp, 4.6, 0x6ac8ff, 0.7, 0.3);
+          /* [P5b] 化龙是「自己变成龙」，不是召一只出来 —— 走召灵位的起手段
+           * （阵环 + 中心光柱从脚下升起），半径比召龙那一下大一圈，
+           * 读作「变身是从人这儿开始的」。原来那两行（圆片 + 环）就是同一句话。 */
+          this.playSkillVfx('summon', { radius: 3.2, color: 0x6ac8ff });
           FX.text(new THREE.Vector3(pp.x, 2.9, pp.z), '化龙', 'lv', { life: 1.1 });
           UI.toast('化龙 · ' + Math.round(this._dragonT) + ' 秒');
           break;
@@ -5387,14 +5551,13 @@ const Game = {
         this.summonBeast({ kind: 'dragon' });
         /* [P4] 青龙的阵比另两只大一圈：它是三只里唯一的范围型灵兽 */
         this.summonGate(pp, 0x6ac8ff);
-        this.playSkillVfx('summon', { radius: 2.6 });
+        this.playSkillVfx('summon', { radius: 2.6, color: 0x6ac8ff });
         /* [P2] 龙息（取向）：青龙在场时每 N 秒喷吐一次范围伤害。
          * 标记在召唤物身上，updateAllies 里逐帧倒数 */
         if (bBeh && bBeh.breath && this.allies.length) {
           const al = this.allies[this.allies.length - 1];
           al.breath = { every: Math.max(2, bBeh.breath), t: Math.max(2, bBeh.breath) };
         }
-        FX.flashCircle(pp, 3.6, 0x6ac8ff, 0.55);
         break;
       }
       case 'heal': {
@@ -5406,8 +5569,10 @@ const Game = {
         this.healPlayer(amount);
         this.regen = (this.regen || 0) + st.hpMax * 0.03 * spow;
         setTimeout(() => { this.regen = Math.max(0, (this.regen || 0) - st.hpMax * 0.03 * spow); }, hotDur * 1000);
-        FX.ring(pp, 2.2, 0x8affb0, 0.6);
-        for (let i = 0; i < 14; i++) FX.burst(new THREE.Vector3(pp.x + RND(-1, 1), RND(0.3, 2.2), pp.z + RND(-1, 1)), 0x8affb0, 2, { speed: 1.5, size: 0.1, life: 0.9, gravity: -3, additive: true });
+        /* [P5b] 回春位配方：由下而上生长的光点（不是「炸开」）。
+         * 原来那 1 圈环 + 14 簇方块是「原地炸一下」，读起来更像伤害技能；
+         * 配方给的是从脚下升到头顶的一条光柱，方向本身就是「回复」的语义。 */
+        this.playSkillVfx(id, { pos: pp, aim: pp, dir: dir, radius: 2.2, color: 0x8affb0 });
         if (st.flags.groupheal) this.shield = Math.max(this.shield, st.hpMax * 0.2 * (1 + (st.shieldBonus || 0) / 100));   // [S1]
         break;
       }
@@ -5446,6 +5611,14 @@ const Game = {
           const mistField = FX.field(c, {
             kind: 'mist', r: prad, life: pdur, color: 0x7fbf5a,
             follow: (bBeh && bBeh.follow) ? (() => c) : null
+          });
+          /* [P5b] 起手段：雾团落地的一圈阵环（万剑位的 `cast`）。
+           * **只接 cast** —— 这一位的 `loop`（剑从天降）和 `impact`（剑痕 / 冲击）
+           * 都是「剑」的读法，雾没有剑。领域类技能的命中形状由它自己的
+           * `FX.field(kind:'mist')` 表达，配方在这里只负责「它是什么时候落下来的」。
+           * 颜色必须由这里给：位配方是道士的朱砂材质，绿色是毒雾的身份色。 */
+          this.playSkillVfx(id, {
+            pos: c, aim: c, dir: dir, radius: prad, color: 0x7fbf5a, segments: ['cast']
           });
           /* [P3] 追随（变体）：毒雾跟着人走 */
           if (bBeh && bBeh.follow) this.attachFollow([c], [zona], pdur);
@@ -5494,6 +5667,9 @@ const Game = {
         const c = aim.clone();
         let n = 0;
         const gen = this.mapGen;
+        /* [P5b] 起手：剑阵开的一圈地纹（万剑位 `cast`）。
+         * 22 把剑要落 3 秒多，玩家得先知道「这片地要挨雨」—— 这一圈就是那句话。 */
+        this.playSkillVfx(id, { pos: c, aim: c, dir: dir, radius: 3.2, segments: ['cast'] });
         const iv = setInterval(() => {
           if (this.mapGen !== gen) { clearInterval(iv); return; }
           n++;
@@ -5509,6 +5685,14 @@ const Game = {
             else {
               this.scene.remove(sword);
               this.explodeAt(t, 2.6, st.atk * sk.mult * spow, 0x9affd0, false, true);
+              /* [P5b] 命中段只在**最后一把**剑落地时补（冲击波 + 剑痕 + 6 秒焦痕）。
+               * 22 把各补一次 = 22 套 shock，那是把预算打穿 20 倍；
+               * 中间每一把的「砸到地上」由 `explodeAt` 自带的三件套表达。 */
+              if (n >= 22 + sextra) {
+                this.playSkillVfx(id, {
+                  pos: t, aim: t, dir: dir, radius: 2.6, segments: ['impact']
+                });
+              }
             }
           };
           anim();
@@ -6584,6 +6768,13 @@ const Game = {
       FX.text(new THREE.Vector3(this.playerGroup.position.x, 2.4, this.playerGroup.position.z), '吸收 ' + Math.round(absorbed), 'info');
       if (this.shield <= 0) {
         this.shield = 0; UI.log('护盾破碎');
+        /* [P5b] 破盾那一下走护盾位配方的命中段：冰锥四散 + 霜痕（Lv10 起）。
+         * 放在这里而不是 castSkill 里 —— 破盾可能发生在任何一次挨打上，
+         * 跟「什么时候按的键」没有关系。 */
+        if (typeof this.playSkillVfx === 'function') {
+          const bp = this.playerGroup.position;
+          this.playSkillVfx('iceshield', { pos: bp, aim: bp, radius: 2, segments: ['impact'] });
+        }
         /* [P2] 冰刺（iceshield 取向）：破盾瞬间向四周射出冰锥 */
         if (typeof this.onBehShieldBreak === 'function') this.onBehShieldBreak();
       }

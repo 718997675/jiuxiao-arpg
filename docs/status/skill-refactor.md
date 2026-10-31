@@ -3,7 +3,7 @@
 - 分支：`feat/skill-refactor`（优先级 **低**，排在大型扩展之后）
 - 计划文档：`docs/SKILL-REDESIGN-PLAN.md`（16 节）
 - 预览站：暂不发（2026-10-27 用户口径：本地验证即可，别再折腾线上）
-- 更新：2026-10-31 · **P5 收口（45 套形态进化表现）** · P0~P6 + V0 + P4 + P5 全绿，剩下的是 ①~④ 位的接线（P5b）
+- 更新：2026-10-31 · **P5b 收口（①~④ 位的接线）** · 30 个 case 全部接到 `playSkillVfx`，双播清干净（少掉 112 次「一簇方块」绘制）
 
 > 当前：**P0 ~ P3 + P6 全部收口，已合入 main**。动作条 5 格、格位 = 功能位；
 > 技能树已按「三线并行」结算 —— 没有必点主干、没有主动↔被动二选一，
@@ -49,7 +49,7 @@ P1 起才动 `SKILL_BAR_SLOTS` 与面板的三列树。
 | P3d | **双元素混搭**：境界 **40 级**解锁第二元素，①②③⑤ 位可再注一种（不能与主元素相同，摘主元素时副元素一起走）。**总量不变**，按主 70% / 副 30% 拆成两段（50% → 35% + 15%），两段各过自己的抗性与元素增伤；与命中元素相同的段自动剔除。反应按「命中元素 → 主 → 副」顺序试。视觉：施法瞬间脚下喷一簇注入元素色火星（8 + 4 颗，主 70% / 副 30%），**技能本体光效不换色**（FX 是全局的，换色会连敌人技能和血一起染） | ✅ | `data-elem.js`（`SKILL_INJECT.subAt` / `split` / `skillInjectSplit`）、`game.js`（`skillInject2` / `skillInjectPack` / `injectSegs` / `setSkillInject2` + `elemReactReady` 收数组）、`fx.js`（`elemSpark`）、`ui-skills.js`（混搭一行 + `data-inj2` 委托）、`index.html`（`.sb-i2list`）、`ui.js`（说明页两行） | `dev/test-elem-dual.js` 40 · `dev/probe-elem-dual.js` 30 |
 | P4 | **三职业 ⑤ 号位的签名表现**（机制 P2b 已有，这一轮只补「看得出来」）：①刀客兵形 —— 刀气按刀式换形（斩锋一道细长弧 / 镇岳两道立起的半圆 / 摧城三道短粗裂弧 + 地面裂痕），刃势满层每 0.6 秒一次「刀身发烫」脉冲；②法师法相 —— 背后一尊 4.0×6.0 米的半透明**人形剪影**（头光 + 肩线 + 下摆，`FX.formTexture` 现画；billboard 跟人走 / 呼吸 / 换相当场换色 / 收窗 0.3 秒淡出）；③道士召唤 —— 脚下 sigil 法阵 + 灵兽从地下升起（0.42 秒 smoothstep 缩放 + 抬升）。全部走 `VFX.playFor` / `vfxBladeForm` 的同一套配方，**不新增手写特效** | ✅ | `data-vfx.js`（`BLADE_FORM_VFX` / `vfxBladeForm` / `vfxBladeImpact`）、`game.js`（`playSkillVfx` / `bladeFormVfx` / `bladeFinisherVfx` / `bladeEdgeVfx` / `_mkFormAura` / `_dropFormAura` / `updateFormAura` / `updateSkillForm` / `summonGate` / `spawnT`）、`fx-kit.js`（无改动，只用现成原语） | `dev/test-skill-p4.js` 56 · `dev/probe-skill-p4.js` 29 |
 | P5 | **形态进化表现**：15 位 × 3 段（Lv5 进化 Ⅰ / Lv9 进化 Ⅱ / Lv10 终极）= **45 套**，等级与 `SKILL_TIER_EVO` 逐档对齐；①每段都必须改「结构」（指令类型 / 贴图 / 刀数 / 圈数 / 排数 / `at` 延迟），只把半径调大不算；②**全等级 ≤ 6 draw call**（真机复量 1/5/9/10 四档）；③**配方按功能位解析**（`vfxSlotKey`）—— 37 只技能全部取得到剪影，之前只有 6 个位的技能能播；④新增指令修饰键 **`at`**（相对施法瞬间的延迟），「余震 / 二次崩塌 / 收尾爆燃 / 收窗新星」全部靠它，**不花绘制预算**；⑤成本表 `vfxCost` 搬进数据层，测试与 bench 共用一把尺子 | ✅ | `src/data/data-vfx.js`（45 个 patch + `VFX_SLOT_KEY` / `vfxSlotKey` / `vfxCost` / `vfxOpCost`）、`src/vfx.js`（`_emit` + `at`）、`dev/vfx-bench.js`（四档量法） | `dev/test-skill-p5.js` **973** · `dev/probe-skill-p5.js` **13** · `vfx-bench` **186** · `vfx-dsl` **342** |
-| P5b | **①~④ 位的接线**：`playSkillVfx` 现在只有三个 ⑤ 号位在调（P4），①~④ 的 14 条配方在游戏里还没接。**不能一行通接**：各 case 里已有手写 FX（`FX.ring` / `FX.spark` / `FX.area`），直接叠会双播。要做的是「逐 case 用配方替掉手写那几行」，一轮一个职业 | ⬜ | `src/game.js`（`castSkill` 的 12 个 case） | — |
+| P5b | **①~④ 位的接线**：30 个 case 全部接到 `playSkillVfx`（29 只技能 + 兵形），判据不是「接上了没有」而是**「配方替掉了哪几行」** —— ①**分段播** `ctx.segments`（起手在手上、命中在弹道落点，`cast` / `loop` / `impact` 三选）：投射物 / 延时命中 18 处必须带；②**不许双播**：配方旁边紧挨着手写剪影的 5 处全部登记理由（判定圈 / 边界环 / 挥空小圈）；③删掉 5 个「一簇方块」大循环（30 / 36 / 24 / 22 次 `FX.burst` = 112 次绘制 → 7 次）；④**连射要 `decal: null`**（冰枪 3~8 连射会把贴花池吃空）；⑤**同形三只靠 `color` 区分**（召狼绿 / 白虎金 / 青龙蓝）；⑥探针逮到一个真漏：天罚的**雷柱变体**提前 `break`，整只技能一个配方都播不到 | ✅ | `src/game.js`（30 个 case）、`src/vfx.js`（`segments` 过滤）、`src/data/data-vfx.js`（无改动） | `dev/test-skill-p5b.js` **116** · `dev/probe-skill-p5b.js` **13** |
 | P6 | **回归**：①老档兼容（8 格条 / 只有 `v` 通道 / 无 passives 的档）；②洗点（只退花点的，免费字段保留，阶梯价落盘）；③平衡体检（`dev/balance-skills.js`）。**查出三个「无声消失」的存档 bug，全部修完** | ✅ | `core/save.js`（`_skillLedger` / `_passives` + `barVer`/`skillReset`/`passives`/`treeRespecCount` 落盘）、`game.js`（`keepPick` 名单化、`newState` 标已迁移）、`data-skill-tree.js`（`skillEntryKeep` 单一出口） | `dev/test-skill-p6.js` 97 · `dev/probe-skill-p6.js` 53 · `dev/balance-skills.js` 17（+6 条观察项） |
 | V0 | **特效地基**（✅ 收口）：①图集 14 格 + 原语 `spr` / `trail` / `bolt` / `shock` / `decal`（外加 `arc` / `vortex` / `cone` / `geyser` / `ring` / `beam` / `flash`），全部带 `FX.q` 降级；②**配方 DSL v2**：`data-vfx.js`（15 条剪影 × 形/色/时 三层，台阶用 patch）+ `src/vfx.js` 解释器 `VFX.play(recipe, ctx)` / `playFor(id, ctx)`；③`dev/vfx-bench.js`（真机 draw call 预算）+ `dev/vfx-shot.js`（15 条剪影 × 起手/收势两帧截图）。**15 条配方全部 ≤ 6 draw call**（方案 §2 硬指标） | ✅ | `src/fx-kit.js`、`src/fx.js`（`update` / `clear` 各接一行）、`src/vfx.js`、`src/data/data-vfx.js`、`index.html`（两个 `<script>`） | `dev/test-vfx-dsl.js` 291 · `dev/vfx-bench.js` 48 · `dev/vfx-shot.js` 62 · `dev/test-vfx-kit.js` 58 · `dev/probe-vfx-kit.js` 43 |
 
@@ -2026,3 +2026,99 @@ vfx-kit 58 · vfx-field 35 · items 21 · save 79 · holy 50 · dual 40 · affix
 `playSkillVfx` 目前只有三个 ⑤ 号位在调（P4）。①~④ 的 14 条配方**在游戏里还没接** ——
 各 case 里已有手写 FX（`FX.ring` / `FX.spark` / `FX.area`），一行通接会双播。
 正确的做法是逐 case 用配方替掉手写那几行，一轮一个职业。已登记为 **P5b**。
+
+---
+
+## 2026-10-31 · P5b 收口（①~④ 位的接线）
+
+P5 把**配方**做完了（45 套剪影，`test-skill-p5` 钉住）；这一轮把**接线**做完：
+让游戏里真的去调 `playSkillVfx`，并且**不双播**。
+
+判据从一开始就不是「接上了没有」。「一行通接」最省事，但每个 case 里本来就有一堆
+手写 FX（`FX.ring` / `FX.burst` / `FX.flashCircle`），叠上去等于同一个意思画两遍 ——
+玩家看到的是更亮，不是更准，绘制预算还翻倍。所以这一轮的验收标准是
+**「配方替掉了哪几行」**。
+
+### 30 个 case 一览（谁替掉了什么）
+
+| 技能 | 位 | 替掉的手写 FX | 接的段 |
+|---|---|---|---|
+| `whirl` | 刀① | `FX.ring` + `FX.spark`（多发环留着，那是层数） | 全段 |
+| `thrust` | 刀② | `flashCircle` + 落点 `burst`（起跑扬尘留着） | impact |
+| `execute` | 刀② | `flashCircle` + `burst`（**色由 case 给**：残血红 / 普通橙） | impact |
+| `leap` | 刀② | 无（原来整条播在落点，会「凭空多一圈预警」） | cast 在起跳点 + impact 在落点 |
+| `skysfall` | 刀② | 无（`explodeAt` 自带三件套，是判定不是剪影） | 只有**最后一发** impact |
+| `quake` | 刀② | `ring` + `flashCircle` + 3×`burst` | 全段 |
+| `swordarray` | 刀③ | 只加不删（`FX.field` 是领域本体） | 全段 |
+| `avatar` | 刀⑤ | 剑神降世的 24×`burst` | 剑神降世只播 cast |
+| `fireball` | 法① | 起手 / 命中各自的手写簇 | cast+loop 在手上、impact 在 `onHit` |
+| `iceshard` | 法① | `flashCircle` + `burst`（每发） | impact + **`decal: null`** |
+| `chain` | 法① | 无（`beam` 就是「连」的本体） | cast 在手上 + **只最后一跳** impact |
+| `meteor` | 法② | 4×`burst`（`explodeAt` 留着） | cast 在 telegraph 前、impact 在回调 |
+| `blizzard` | 法② | 无（`FX.area` 是判定圈） | 每片 cast（落点圈 + 天降光柱） |
+| `judgement` | 法② | `flashCircle` | impact；**雷柱变体补 cast** |
+| `starfall` | 法② | 16 条火线 | 只 impact（起手不播，否则糊屏） |
+| `firewall` | 法③ | 无（`FX.area` 是判定圈） | cast + loop |
+| `frostnova` | 法③ | **30×`burst`** | 每片 cast（ring + flashCircle 留着：新星是环） |
+| `thundercloud` | 法③ | 无（`area` + 每跳 `beam` 是本体） | 每朵 cast + Lv10 收尾 impact |
+| `iceshield` | 法④ | 无 | cast + loop；impact 接在 `damagePlayer` 破盾分支 |
+| `pyroclasm` | 法④ | `flashCircle` + **36×`burst`** | 只 impact（7 码 `ring` 是判定边界） |
+| `talisman` | 道① | 手边 `flashCircle` | cast 在手上 + impact 已有 |
+| `talismanarrow` | 道② | 每发 `burst`；符雨的 `beam` + `flashCircle` | cast + 每发 impact / 符雨每张 loop |
+| `poison` | 道② | 无（雾团 `FX.field` 是本体） | 只有 cast（「雾什么时候落下来」） |
+| `swordrain` | 道② | 无 | cast + **最后一把剑** impact |
+| `mastersigil` / `heal` / `revive` | 道③④ | 原有的环 | 全段 |
+| `summon` / `whitetiger` / `azuredragon` | 道⑤ | 登场 `flashCircle` ×3 | 全段 + **三色** |
+
+### 三个新概念（都写进代码注释了）
+
+1. **`ctx.segments`（分段播）**。投射物类技能的「起手」和「命中」隔着飞行时间甚至
+   一次 `onHit` 回调，整条一起播会让爆炸出现在**施法者脚下**。`VFX.play` 里
+   `on('cast' | 'loop' | 'impact')` 三选，不传就是老行为（P4 的调用点一个都没改）。
+2. **`decal: null`（关残留）**。`playSkillVfx` 的透传判据必须是 `!== undefined`，
+   写成 `if (o.decal)` 会把 `null` 当「没传」。冰枪 3~8 连射每发都留一块元素残留，
+   一次齐射能把贴花池（16 个 quad）吃空 —— 它的「残留」是敌人身上的减速，不是地上的痕迹。
+3. **同形靠色**。三只灵兽共用 `summon` 一条剪影，绿 / 金 / 蓝就是身份；
+   刀客② 五只共用 `quake`，突刺橙 / 处决红。**位配方按元素取色，会把这些身份色冲掉**，
+   所以凡是有自己配色的位，`color` 必须由 case 传。
+
+### 踩到的三个坑
+
+1. **`_ctx` 不读配方 → 染色从未生效**（P5 收口时发现、这一轮才真的用上）。
+   `playFor` 调 `play(tinted, ctx)` 时没把 elem 塞进 ctx，`ELEM_PROFILE[undefined]`
+   落到 `phys`：15 条配方在游戏里全是「物理白 + spark + crack」。
+   P4 没暴露是因为刀客每条指令都写死 `color: 0xffd166`。**不修这个，P5b 接的每条
+   火 / 冰 / 雷 / 毒技能都会是白火球。**
+2. **探针逮到「写在另一条分支上」的漏**。天罚的雷柱变体在 case 开头就 `break`，
+   而 `playSkillVfx` 写在它下面 —— 契约 grep 是绿的（文件里确实有那一行），
+   选了「雷柱」的玩家却一个配方都播不到。**源码级 grep 证明不了「走得通」**，
+   必须真按一次。
+3. **探针的假敌人会把主循环弄崩**。手搓的 `{pos, radius, dead, hp}` 缺字段，
+   主循环每帧抛 `Cannot read properties of undefined (reading 'time')`，
+   而抛异常的那一帧里**弹道根本不推进** —— 于是「火球打不中」是假象。
+   改成 `Game.spawnEnemy(Object.keys(MONSTERS)[0], x, z)`，只把 `damageEnemy` 换空。
+
+### 验证
+
+`test-skill-p5b` **116/0**（30 个 case 全部接线 / 18 处延时命中都带 `segments` /
+段名只允许 cast·loop·impact / 紧挨配方的手写剪影 5 处全部登记理由 / 5 个「一簇方块」
+大循环确实删了 / `decal: null` 与三色透传 / `playSkillVfx` 四个键的透传判据 /
+`VFX.play` 的分段语义拿桩跑一遍）；
+`probe-skill-p5b` **13/0**（29 只技能按下去都调到 / 火球起手帧不含 impact /
+命中段落在敌人身上 1.92 码而离自己 2.14 码 / 三只灵兽三色 / 零报错）。
+
+回归全绿：p0 250 · p1 52 · p1c 363 · p2 41 · p2b 903 · p2c 99 · p3 106 · p4 60 · p5 973 ·
+p6 97 · vfx-dsl 342 · vfx-kit 58 · vfx-field 35 · **vfx-bench 186** ·
+probe-p4 29 · probe-vfx-kit 43 · probe-vfx-field 19 · probe-p5 13。
+
+### 绘制预算的实际收益
+
+删掉的「一簇方块」循环合计 **112 次 draw call**（冰霜新星 30 / 焚天 36 / 剑神降世 24 /
+法相开窗 22），换成配方的 7 次。`vfx-bench` 的五连放基线仍然是 **+3.6%**（改动前 717 → 743）。
+
+### 没做的（写清楚）
+
+- **回春位（道士④）返工**：回血下放到 `BALANCE.classPassive.taoist` + 台阶改护盾 / 减伤，
+  还躺在备份分支 `backup/local-1030-wip`，**没有合到当前基线**。等拍板。
+- **V2 逐位重做配方**（亮度 / 尺寸）：`spr` 类在白天地面上几乎看不见（逐原语量过差异像素），
+  这条从 V0 就挂着，属于配方本身的事，不是接线能解决的。

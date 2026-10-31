@@ -50,18 +50,26 @@ const VFX = {
     return out;
   },
 
-  /* 主入口：播一条已经染好色的配方 */
+  /* 主入口：播一条已经染好色的配方
+   *
+   * `ctx.segments` 是**可选**的分段播放（[P5b]）：只播 `['cast']` 或只播
+   * `['impact']`。为什么需要它 —— 投射物类技能（火球 / 陨石 / 符箓 / 剑雨）
+   * 的「起手」和「命中」隔着飞行时间甚至一次 `setTimeout`，中间还要等
+   * `onHit` 回调。整条一起播的话，爆炸会出现在施法者脚下。
+   * 不传就还是老行为（三段全播），所以 P4 的调用点一个都不用改。 */
   play(recipe, ctx) {
     if (!recipe || !ctx || !ctx.pos) return 0;
-    const c = this._ctx(ctx);
+    const c = this._ctx(ctx, recipe);
+    const segs = ctx.segments;
+    const on = k => (!segs || segs.indexOf(k) >= 0);
     let n = 0;
-    for (const op of (recipe.cast || [])) n += this._emit(op, c) ? 1 : 0;
-    for (const op of (recipe.loop || [])) n += this._emit(op, c) ? 1 : 0;
+    if (on('cast')) for (const op of (recipe.cast || [])) n += this._emit(op, c) ? 1 : 0;
+    if (on('loop')) for (const op of (recipe.loop || [])) n += this._emit(op, c) ? 1 : 0;
     /* 命中段延后：`delay` 是「起手 → 命中」的那段前摇（陨石 0.9 秒是真的
      * 从天上掉下来，不能和起手同一帧出） */
     const delay = ctx.delay === undefined ? 0 : ctx.delay;
     const impact = recipe.impact || [];
-    if (impact.length) {
+    if (on('impact') && impact.length) {
       if (delay > 0) {
         this._later(() => {
           for (const op of impact) this._emit(op, c);
@@ -114,19 +122,39 @@ const VFX = {
     return this.play(tinted, ctx);
   },
 
-  /* ctx 归一化：半径 / 颜色 / 贴图 / 残留 一次算清，后面每个指令直接用 */
-  _ctx(ctx) {
+  /* ctx 归一化：半径 / 颜色 / 贴图 / 残留 一次算清，后面每个指令直接用
+   *
+   * [P5b·修 bug] 第二个参数是**配方本身**，这一版才真的读它。
+   *
+   * 原来的写法只从 `ctx` 取元素（`ELEM_PROFILE[ctx.elem]`），而 `playFor`
+   * 调 `play(tinted, ctx)` 时**没把 elem 塞进 ctx** —— 于是 `ELEM_PROFILE[undefined]`
+   * 落到 `phys`：`vfxTint` 算出来的火色 / 冰贴图 / 焦痕**一个都没用上**，
+   * 15 条配方在游戏里全是「物理白 + spark + crack」。
+   *
+   * 为什么一直没被发现：刀客的配方（兵形 / 三式）每条指令都写死了
+   * `color: 0xffd166`，显式色优先于 `c.color`，所以 P4 的截图看不出问题。
+   * 火球 / 火墙 / 毒雾一接进来就露馅了。
+   *
+   * 优先级（高 → 低）：调用方 `ctx.*` > 配方顶层（`'elem'` 视为「没写」）> 元素材质。
+   * 调用方传值仍然最高 —— 换相 / 注入要能当场改色，那条路不能断。 */
+  _ctx(ctx, recipe) {
     const r = Number(ctx.radius);
     const radius = (isFinite(r) && r > 0) ? r : 3;
-    const p = ctx.profile || (typeof ELEM_PROFILE === 'object' ? ELEM_PROFILE[ctx.elem] : null) || ELEM_PROFILE.phys;
+    const rec = recipe || {};
+    const elemKey = ctx.elem || rec.elem;
+    const p = ctx.profile
+      || (typeof ELEM_PROFILE === 'object' ? ELEM_PROFILE[elemKey] : null)
+      || ELEM_PROFILE.phys;
+    /* `'elem'` 是「从材质取」的占位符，不是颜色值 */
+    const pick = (v, fb) => (v === undefined || v === 'elem' ? fb : v);
     return {
       pos: ctx.pos,
       aim: ctx.aim || ctx.pos,
       dir: ctx.dir || null,
       radius: radius,
-      color: ctx.color === undefined ? p.color : ctx.color,
-      tex: ctx.tex || p.tex,
-      decal: ctx.decal === undefined ? p.decal : ctx.decal,
+      color: ctx.color === undefined ? pick(rec.color, p.color) : ctx.color,
+      tex: ctx.tex || pick(rec.tex, p.tex),
+      decal: ctx.decal === undefined ? pick(rec.decal, p.decal) : ctx.decal,
       profile: p,
       gen: (typeof Game !== 'undefined' && Game) ? Game.mapGen : 0
     };
