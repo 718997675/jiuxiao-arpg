@@ -6622,7 +6622,12 @@ NR.yellowspring = {
     delay(3.2, ()=>{
       const inside = Math.hypot(DUMMY.pos.x - m.x, DUMMY.pos.z - m.z) <= m.r;
       BFX.shock(V3(m.x, 0, m.z), m.r*3.2, { color:0xffffff, dur:.5, thi:.9 });
-      BFX.column({ x:m.x, z:m.z, r:m.r, h:9, life:1.2, color:0xffd24a });
+      /* 结算这一下**不能是光柱**：9 米高的加法混合柱子在 45° 俯视下就是一大块
+         白斑，正好把"圈里是活的"这个唯一的答案盖住。改成"圈被点亮"——
+         地上的符文亮起来 + 边界再收一次，人还看得见自己站在圈里。 */
+      BFX.decal({ x:m.x, z:m.z, tex:'rune', r:m.r*1.02, life:1.6, color:0xfff0b0, a0:.9 });
+      BFX.shock(V3(m.x, 0, m.z), m.r*2.0, { color:0xffd24a, dur:.85, thi:.45 });
+      BFX.column({ x:m.x, z:m.z, r:.85, h:2.2, life:1.1, color:0xffd24a });
       shake(1.2, .35);
       say(V3(DUMMY.pos.x, 1.3, DUMMY.pos.z),
         inside ? '判：生' : '判：死（圈外全灭）', inside ? '#8fd05a' : '#ff5a5a');
@@ -7531,7 +7536,9 @@ NR.dgb_tomb = {
     const N = 16;
     for(let w=0;w<3;w++){
       delay(w*.75, ()=>{
-        const rad = R(17 - w*4.5);
+        /* 17 米在固定镜头里是画面外：第一波等于没画。收到 11 起，
+           最后一波 4 米 —— 中心那一小块才是安全区。 */
+        const rad = R(11 - w*3.5);
         for(let i=0;i<N;i++){
           const a = Math.PI*2*i/N + w*.2;
           const px = P.x + Math.sin(a)*rad, pz = P.z + Math.cos(a)*rad;
@@ -7649,30 +7656,54 @@ NR.dgb_gaol = {
   hit(){ return { shape:'self', note:'水位持续上涨' }; },
   run(){
     const say = nSay(), P = BOSS.pos.clone();
-    /* 水：一个大圆片，慢慢抬高。到 1.2 米就是"没过脚" */
-    const water = flatMesh(TEX.poison, 0x3a7aa8, THREE.AdditiveBlending, .42);
-    water.rotation.x = -Math.PI/2; water.position.set(P.x, .05, P.z);
-    water.scale.setScalar(R(30)*2); water.renderOrder = 2;
-    /* 三块高台 */
-    const plats = [];
+    /* 高台是**石头**，不是光柱 —— 上一版这里用了 BFX.column（加法混合），
+       0x8a7550 打出来是一根纯白发光管，跟我给火柱踩的是同一个坑。
+       石头必须走不透明的 Standard 材质，只让「水位线」发光。 */
+    const plats = [], trash = [];
+    const HPLAT = 1.5;
+    const stMat = new THREE.MeshStandardMaterial({ color:0x6d6250, roughness:.95,
+      metalness:.02, flatShading:true });
+    const capMat = new THREE.MeshStandardMaterial({ color:0x8b7f68, roughness:.9,
+      metalness:.02, flatShading:true });
     for(let i=0;i<3;i++){
       const a = Math.PI*2*i/3 + .6, d = R(9);
-      const px = P.x + Math.sin(a)*d, pz = P.z + Math.cos(a)*d;
-      BFX.column({ x:px, z:pz, r:R(2.6), h:1.6, life:8.0, color:0x8a7550 });
-      BFX.decal({ x:px, z:pz, tex:'rock', r:R(2.4), life:8.0, color:0xb8a890, a0:.6 });
-      plats.push({ x:px, z:pz, r:R(2.4) });
+      const px = P.x + Math.sin(a)*d, pz = P.z + Math.cos(a)*d, pr = R(2.5);
+      const g = new THREE.CylinderGeometry(pr, pr*1.14, HPLAT, 14);
+      const m = new THREE.Mesh(g, stMat);
+      m.position.set(px, HPLAT/2, pz); scene.add(m);
+      const cap = new THREE.Mesh(new THREE.CylinderGeometry(pr*.94, pr*.94, .1, 14), capMat);
+      cap.position.set(px, HPLAT, pz); scene.add(cap);
+      /* 台顶一圈微光：让"还能站人"这块读得出来，不是靠整根柱子发光 */
+      const rim = flatMesh(TEX.ring, 0x9ad8ff, THREE.AdditiveBlending, .5);
+      rim.rotation.x = -Math.PI/2; rim.position.set(px, HPLAT+.06, pz);
+      rim.scale.setScalar(pr*2.05); rim.renderOrder = 3;
+      trash.push(g, m, cap, rim);
+      plats.push({ x:px, z:pz, r:pr*.95 });
     }
+    /* 水面：平铺的圆片 + 同高度的**亮水位线**。只有色片没有线，
+       45° 俯视下读成"地上有块蓝斑"，读不出"涨到多高了"。 */
+    const WATR = R(13);
+    const water = flatMesh(TEX.poison, 0x2a5f8a, THREE.AdditiveBlending, .5);
+    water.rotation.x = -Math.PI/2; water.position.set(P.x, .05, P.z);
+    water.scale.setScalar(WATR*2); water.renderOrder = 2;
+    const wline = flatMesh(TEX.ring, 0x8fe4ff, THREE.AdditiveBlending, .85);
+    wline.rotation.x = -Math.PI/2; wline.position.set(P.x, .08, P.z);
+    wline.scale.setScalar(WATR*2); wline.renderOrder = 4;
+    trash.push(water, wline);
     let t = 0;
     const say2 = nSay();
     addUpdate({ update(dt){
       t += dt;
-      if(t > 8.0){ disposeMesh(water); this.dead = true; return; }
-      /* 0 → 3.2 米，每秒涨 0.4 */
-      const h = Math.min(3.2, t*.4);
-      water.position.y = .05 + h*.5;
-      water.material.opacity = .42 * Math.min(1, t*.8);
-      /* 水过 0.8 米 = 开始淹脚；站在高台上就没事 */
-      if(h > .8){
+      if(t > 8.0){ trash.forEach(disposeMesh); this.dead = true; return; }
+      /* 0 → 1.45 米：涨到齐平台顶为止，再高就把"高台"这个答案抹掉了 */
+      const h = Math.min(1.45, t*.38);
+      water.position.y = .05 + h;
+      wline.position.y = .07 + h;
+      /* 水位线跟着涨的时候抖一下，像水面在找平 */
+      wline.material.opacity = .85 * Math.min(1, t*.7) * (.82 + .18*Math.sin(t*9));
+      water.material.opacity = .5 * Math.min(1, t*.8);
+      /* 水过 0.6 米 = 开始淹脚；站在高台上就没事 */
+      if(h > .6){
         const onPlat = plats.some(p=>Math.hypot(DUMMY.pos.x-p.x, DUMMY.pos.z-p.z) < p.r);
         if(!onPlat)
           say2(V3(DUMMY.pos.x, 1.4, DUMMY.pos.z), '水淹到脚 · 站高台', '#6ad0ff');
