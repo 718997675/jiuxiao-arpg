@@ -1089,8 +1089,10 @@ const ok = (c, m, d) => {
   }
 
   /* ---------------- 9. 道士 ④ 回春：治疗 / 解毒 / 还魂 共用一个位 ----------------
+   * 返工后这一位**不再卖回血**：回血下放成道士职业自带（BALANCE.classPassive），
+   * 格位改卖药品给不了的东西 —— 护盾窗口 / 减伤 / 驱散 + 无敌 / 低血自动。
    * 同血怒位：放哪只就该吃到哪只的台阶。这一位另有两条「+键」叠加台阶
-   * （Lv5 hotPct / Lv7 drPct），必须证明**精研已经给了的时候还能再加**。 */
+   * （Lv5 / Lv7 都写 `+drPct`），必须证明**精研已经给了的时候还能再加**。 */
   console.log('九、道士 ④ 回春（三条台阶 × 三只）');
   const healTiers = await p.evaluate(async () => {
     const out = {};
@@ -1111,6 +1113,8 @@ const ok = (c, m, d) => {
       Game.dead = false;
       /* 起手带一份减速：Lv9 该把它驱散掉 */
       Game.playerSlow = 0.5; Game.playerSlowT = 2.5; Game.invuln = 0;
+      /* 护盾必须清零：tierShield 是「取大不叠加」，不清零就量到上一发的余量 */
+      Game.shield = 0; Game.shieldT = 0;
       /* heal 的 regen 会跨施法累加（每次 +3%/秒，4 秒后自己减回去）——
        * 不清零的话第二段量到的是两发的和 */
       Game.regen = 0;
@@ -1124,7 +1128,10 @@ const ok = (c, m, d) => {
         dr: Math.round(Game.state.stats.dmgReduce || 0),
         slowT: Math.round((Game.playerSlowT || 0) * 100) / 100,
         invuln: Math.round((Game.invuln || 0) * 100) / 100,
-        hot: beh ? beh.tierHot : undefined
+        shield: Math.round(Game.shield || 0),
+        shieldT: Math.round((Game.shieldT || 0) * 10) / 10,
+        low: beh ? beh.lowHpCast : undefined,
+        keys: beh ? Object.keys(beh) : []
       };
     };
     for (const id of ['heal', 'antidote', 'revive']) {
@@ -1134,20 +1141,63 @@ const ok = (c, m, d) => {
       for (const lv of [2, 3, 5, 7, 9, 10]) o['lv' + lv] = cast(id, lv, 2);
       out[id] = o;
     }
-    /* Lv5 持续回复：真等一跳。heal case 自带每秒 3% 的 regen，
-     * 所以 Lv4 / Lv5 各量一次再比 —— 差值才是台阶那一份。 */
+    /* 返工的另一半：回血下放成道士职业兜底（BALANCE.classPassive）。
+     * 直接推 updateClassPassive，三组对照 —— 只量「有没有在回」不够，
+     * 还要量「战斗中不回」（否则等于给道士一条常驻续航，怪打不死你）。
+     * 循环是同步的，这 6 秒里 rAF 插不进来，假怪不会真的动。 */
     {
-      const wait = ms => new Promise(r => setTimeout(r, ms));
-      const hotRun = async (lv) => {
-        cast('heal', lv, 2);
+      const regenRun = (cls, withEnemy) => {
+        Game.mapGen = (Game.mapGen || 0) + 1;
+        Game.state.cls = cls;
+        Game.state.skills = {};
+        window.__mkClean();
+        Game.recalc();
+        Game.dead = false; Game.buffs = []; Game._outT = 0;
+        Game.state.hp = Math.round(Game.state.stats.hpMax * 0.4);
+        Game.enemies = [];
+        if (withEnemy) {
+          const pp = Game.playerGroup.position;
+          Game.spawnEnemy(Object.keys(MONSTERS)[0], pp.x + 6, pp.z);
+          for (const e of Game.enemies) { e.aggro = true; e.pos.set(pp.x + 6, 0, pp.z); }
+        }
         const h0 = Game.state.hp;
-        Game.enemies = [];        // 等帧的时候别让假怪进帧循环
-        await wait(1150);
-        return Math.round(Game.state.hp - h0);
+        const run = Game.running;
+        Game.running = true;                      // 暂停状态会让它直接 return
+        /* 跑 10 秒：`regenDelay` 2.5 秒是脱战延迟，前 2.5 秒一分不回。
+         * 只跑 6 秒的话量到的其实是「7.5 秒 × 1.2%」= 9% 的 3.5 秒版本，
+         * 一开始我按 6 秒 × 1.2% 去对，差了一半还以为没生效。 */
+        for (let i = 0; i < 100; i++) Game.updateClassPassive(0.1);
+        Game.running = run;
+        const gain = Game.state.hp - h0;
+        Game.enemies = [];
+        return { gain, pct: Math.round(gain / Game.state.stats.hpMax * 1000) / 10 };
       };
-      out.hot4 = await hotRun(4);
-      out.hot5 = await hotRun(5);
-      Game.mapGen = (Game.mapGen || 0) + 1;
+      out.regen = {
+        taoist: regenRun('taoist', false),
+        combat: regenRun('taoist', true),
+        warrior: regenRun('warrior', false)
+      };
+    }
+    /* 「净体」：负面时长 ×0.8。走乘算，所以 ccResist 先清零看纯的 20% */
+    {
+      const ccRun = (cls) => {
+        Game.mapGen = (Game.mapGen || 0) + 1;
+        Game.state.cls = cls;
+        Game.state.skills = {};
+        window.__mkClean();
+        Game.recalc();
+        Game.state.stats.ccResist = 0;
+        Game.invuln = 0; Game.buffs = [];
+        Game.playerSlowT = 0; Game.poisonT = 0;
+        Game.applyPlayerSlow(50, 3);
+        Game.playerPoison(100);
+        return {
+          slow: Math.round((Game.playerSlowT || 0) * 100) / 100,
+          poison: Math.round((Game.poisonT || 0) * 100) / 100
+        };
+      };
+      out.cc = { taoist: ccRun('taoist'), warrior: ccRun('warrior') };
+      Game.playerSlowT = 0; Game.playerSlow = 0; Game.poisonT = 0;
     }
     /* Lv10 低血自动施放：放进 ④ 号位（下标 3），血拉到 20%，蓝设为 0 ——
      * 「免费」这条必须验，否则救命技能会被蓝条卡住。 */
@@ -1179,21 +1229,51 @@ const ok = (c, m, d) => {
   });
   for (const id of ['heal', 'antidote', 'revive']) {
     const o = healTiers[id];
-    ok(o.lv3.heal - o.lv2.heal >= o.lv3.hpMax * 0.07,
-      id + ' Lv3 多回 8% 最大生命（Lv2 没有这一份）', { lv2: o.lv2.heal, lv3: o.lv3.heal });
-    ok(o.lv5.hot === 2 && o.lv2.hot === undefined,
-      id + ' Lv5 才带 tierHot（每秒 2% 最大生命）', { lv2: o.lv2.hot, lv5: o.lv5.hot });
-    ok(o.lv7.dr > o.lv5.dr, id + ' Lv7 多一层 15% 减伤', { lv5: o.lv5.dr, lv7: o.lv7.dr });
+    /* 台阶卖的是「药品给不了的东西」：护盾窗口 / 减伤 / 驱散 + 无敌 / 低血自动。
+     * 回血已经下放成职业兜底，所以这里一条 heal 都不该再出现。 */
+    /* heal 这只技能**自带** `hot` / `hotPct`（case 里每秒 3% 的 regen），
+     * 那不是台阶卖的 —— 只钉「台阶新增的回血键」不许出现。 */
+    ok(!o.lv3.keys.some(k => /healOnCast|tierHot/.test(k)),
+      id + ' 台阶里不再卖回血（已下放职业兜底）', o.lv3.keys);
+    ok(o.lv2.shield === 0, id + ' Lv2 没有护盾（对照）', o.lv2.shield);
+    ok(o.lv3.shield >= o.lv3.hpMax * 0.11 && o.lv3.shield <= o.lv3.hpMax * 0.13,
+      id + ' Lv3 给 12% 最大生命的护盾窗口',
+      { shield: o.lv3.shield, hpMax: o.lv3.hpMax });
+    ok(o.lv3.shieldT >= 3.4, id + ' 护盾窗口挂 4 秒（不是一闪而过）', o.lv3.shieldT);
+    ok(o.lv5.dr - o.lv2.dr >= 7,
+      id + ' Lv5 施法后受伤 -8%', { lv2: o.lv2.dr, lv5: o.lv5.dr });
+    ok(o.lv7.dr - o.lv5.dr >= 6,
+      id + ' Lv7 换成 -15%（台阶是覆盖不是累加）', { lv5: o.lv5.dr, lv7: o.lv7.dr });
+    /* 台阶是**累加**的（skillTierEvoList 取 ≤lv 的全部档），同键才覆盖：
+     * 所以 Lv9 不该把 Lv7 的减伤 / Lv3 的护盾收回去 —— 文案写的是「又多了」，
+     * 玩家花到 9 级反而变脆，那才是 bug。 */
+    ok(o.lv9.dr >= o.lv7.dr,
+      id + ' Lv9 保留 Lv7 的减伤（台阶递进不倒退）', { lv7: o.lv7.dr, lv9: o.lv9.dr });
+    ok(o.lv9.shield >= o.lv3.shield,
+      id + ' Lv9 也还在给护盾窗口', { lv3: o.lv3.shield, lv9: o.lv9.shield });
     ok(o.lv9.slowT === 0, id + ' Lv9 已经把身上的减速驱散', o.lv9);
     ok(o.lv9.invuln >= 1.4, id + ' Lv9 同时给 1.5 秒无敌', o.lv9.invuln);
+    ok(o.lv10.low === 40, id + ' Lv10 阈值 40%（不是 30）', o.lv10.low);
     /* antidote 本来就会驱散（case 里写死），所以只有 heal / revive 能证明「Lv9 才驱散」 */
     if (id !== 'antidote') {
       ok(o.lv7.slowT > 0, id + ' Lv7 还驱散不了（对照）', o.lv7.slowT);
     }
   }
-  ok(healTiers.hot5 - healTiers.hot4 > 0,
-    'Lv5 每秒真的多回一份（Lv4 只有 case 自带的 3% regen）',
-    { lv4: healTiers.hot4, lv5: healTiers.hot5 });
+  /* 职业兜底：道士脱战 10 秒 ≈ 9% 最大生命（延迟 2.5 秒 + 1.2%/秒 × 7.5 秒），
+   * 且**战斗中不回** */
+  ok(healTiers.regen.taoist.gain > 0 && healTiers.regen.taoist.pct >= 7,
+    '道士脱战后真的在回血（10 秒 ≈ 9%，前 2.5 秒是脱战延迟）', healTiers.regen.taoist);
+  ok(healTiers.regen.combat.gain === 0,
+    '16 米内有仇恨的怪时**不回**（战斗中不回血）', healTiers.regen.combat);
+  ok(healTiers.regen.warrior.gain === 0,
+    '刀客没有这一份（只给道士）', healTiers.regen.warrior);
+  /* 「净体」：负面时长 ×0.8，走乘算 */
+  ok(Math.abs(healTiers.cc.taoist.slow - 2.4) < 0.06,
+    '道士身上 3 秒减速变 2.4 秒（净体 -20%）', healTiers.cc);
+  ok(healTiers.cc.warrior.slow >= 2.95,
+    '刀客还是完整 3 秒（对照）', healTiers.cc.warrior);
+  ok(Math.abs(healTiers.cc.taoist.poison - 3.2) < 0.06,
+    '中毒 4 秒同样缩到 3.2 秒', healTiers.cc.taoist);
   ok(healTiers.auto.heal > 0, 'Lv10 血量 20% 时真的自动施放了一次', healTiers.auto);
   ok(healTiers.auto.mp === 0, '自动施放不收资源（蓝 0 也放得出来）', healTiers.auto);
   ok(healTiers.auto.cd > 0, '自动施放照走冷却（不会每帧刷）', healTiers.auto);

@@ -41,7 +41,7 @@ P1 起才动 `SKILL_BAR_SLOTS` 与面板的三列树。
 | P1c | **取消二选一**：三线并行结算（等级门 `reqLv` + 关键被动软前置 `needPts`），`levelUpSkill` / `levelUpPassive` 的 fork 拦截整块删除，面板去掉「或/锁」标记与互斥虚线，说明页同步 | ✅ | `data-skill-tree.js`、`game.js`、`skill-passive.js`、`ui-skills.js`、`ui.js`、`index.html` | `dev/test-skill-p1c.js` 353 · `dev/probe-skill-p1c.js` 23 |
 | P1d | 面板**视觉**重排：一条线一列、列内按 `reqLv` 递增，被动小一圈挂在主动右边，只留同线淡引导线；手机上三条线分页签、一页一列 | ✅ | `ui-skills.js`（`skTreeLayout` / `skTreeHTML` / `renderSkillTreeDOM` / `skTreeTabsHTML`）、`index.html`（SKG + 被动腰围）、`ui.js`（说明页「技能树布局」） | `dev/probe-skill-p1d.js` 36 |
 | P2a | **等级上限 5 → 10** + 分段曲线真的进战斗（`skillLvMul` 取代旧「每级固定 8%」）+ 点数供给 等级 × 1.5；面板 10 格 / 满级金环 / 洗点全额退回 | ✅ | `data-skills.js`（`SKILL_LV_MAX` / `SKILL_POINT_RATE` / `skillPointPool`）、`data-skill-tree.js`（`lvMax` 同源）、`game.js`（`castSkill` / `skillPoints`）、`ui-skills.js`、`ui.js`、`index.html` | `dev/test-skill-p2.js` 41 · `dev/probe-skill-p2.js` 26 |
-| P2b | **数量 / 形态台阶接进 `castSkill`**。①数量：默认 Lv3 / Lv7 各 +1，接 `smod.count`（13 个技能消费），第 n 发 ×0.85^n 防三倍伤害；**发数节奏可按技能覆盖**（`SKILL_COUNT_TIER`，法师 ② 在 Lv5 / Lv7）。②进化：新建 `SKILL_TIER_EVO`（挂**技能 id** 不挂技能位），合并顺序 **台阶最前 → 精研 / 取向 / 变体覆盖同名键**（花点的选择必须盖过等级送的）。**15 个位 / 45 条全部接完**：刀客①旋风斩、法师①火球、道士①符箓、道士②毒雾、刀客②地裂、刀客③剑阵、刀客④血怒、道士④回春、法师③火墙、法师④护盾、道士③太极、法师②陨石（3 溅射 / 5 双陨 / 7 三连落）、道士⑤召灵兽（三只各召各的）、**刀客⑤兵形（刀式状态机 + 刃势 + 断岳斩）**、**法师⑤元素法相（净新增技能：法相窗口 + 换相 + 命中附加 + 收窗新星 + 免控）** —— 细则见下面「P2b 收口要点」。**✅ 15/15 个位、45/45 条：P2b 收口** | ✅ | `data-skills.js`（`SKILL_TIER_EVO` / `SKILL_COUNT_TIER` / `skillTierEvo` / `skillTierMods` / `skillTierBeh`）、`skill-beh.js`（`branchBeh` 台阶排最前 + `killProlong` / `lifesteal` / `ccImmune` / `healOnCast` / `tierDur` / `splash` / `stanceUnlock` / `edgeFinisher` / `edgeKeep` / `edgeUltimate`）、`game.js`（autoTarget / rageMul / firePatch / swordField / applyPlayerSlow / ccImmuneNow / behTierNova / shieldT+sdur / 符阵 dur+tierDur / meteor·blizzard·judgement·starfall 多发 / spawnTierField 落点领域 / **bladeXxx 兵形状态机**）、`ui.js`（说明页读数现算 + 动作条刀式角标）、`ui-skills.js` | `dev/test-skill-p2b.js` 878 · `dev/probe-skill-p2b.js` 282 |
+| P2b | **数量 / 形态台阶接进 `castSkill`**。①数量：默认 Lv3 / Lv7 各 +1，接 `smod.count`（13 个技能消费），第 n 发 ×0.85^n 防三倍伤害；**发数节奏可按技能覆盖**（`SKILL_COUNT_TIER`，法师 ② 在 Lv5 / Lv7）。②进化：新建 `SKILL_TIER_EVO`（挂**技能 id** 不挂技能位），合并顺序 **台阶最前 → 精研 / 取向 / 变体覆盖同名键**（花点的选择必须盖过等级送的）。**15 个位 / 45 条全部接完**：刀客①旋风斩、法师①火球、道士①符箓、道士②毒雾、刀客②地裂、刀客③剑阵、刀客④血怒、道士④回春、法师③火墙、法师④护盾、道士③太极、法师②陨石（3 溅射 / 5 双陨 / 7 三连落）、道士⑤召灵兽（三只各召各的）、**刀客⑤兵形（刀式状态机 + 刃势 + 断岳斩）**、**法师⑤元素法相（净新增技能：法相窗口 + 换相 + 命中附加 + 收窗新星 + 免控）** —— 细则见下面「P2b 收口要点」。**✅ 15/15 个位、45/45 条：P2b 收口** | ✅ | `data-skills.js`（`SKILL_TIER_EVO` / `SKILL_COUNT_TIER` / `skillTierEvo` / `skillTierMods` / `skillTierBeh`）、`skill-beh.js`（`branchBeh` 台阶排最前 + `killProlong` / `lifesteal` / `ccImmune` / `healOnCast` / `tierShield` / `tierDur` / `splash` / `stanceUnlock` / `edgeFinisher` / `edgeKeep` / `edgeUltimate`）、`game.js`（autoTarget / rageMul / firePatch / swordField / applyPlayerSlow / clsCcShort / updateClassPassive / ccImmuneNow / behTierNova / shieldT+sdur / 符阵 dur+tierDur / meteor·blizzard·judgement·starfall 多发 / spawnTierField 落点领域 / **bladeXxx 兵形状态机**）、`ui.js`（说明页读数现算 + 动作条刀式角标）、`ui-skills.js` | `dev/test-skill-p2b.js` 920 · `dev/probe-skill-p2b.js` 315 |
 | P2c | **精通层 11~20**（不新增形态）：①有效等级 20 与分段曲线 P2a 已接；②**精进轨道**（11~20 十格 + 「精进 x/20」+ 渐进披露 + 15/20 里程碑）；③**Lv15 精通三选一**（烈 / 疾 / 省，走 mods，门槛看有效等级，存 `skills[id].m`）；④**Lv20 最终精通「归一」**（三条精通各 60% 同时生效，与 15 级所选**叠加**，走 `effSkillMods` 第六层）—— 已完成；⑤**光效随等级变亮**（`skillFxAmp` → `FX.setAmp`，只乘亮度 / 不透明度 / 粒子数，不乘半径）—— 已完成。**P2c 收口** | ✅ | `data-skills.js`（`SKILL_TIERS.mastery` / `SKILL_TIERS.capstone` / `skillMasteryOn` / `skillMasteryIdx` / `skillMasteryOpt` / `skillCapstoneOn` / `skillCapstoneBonus`）、`game.js`（`skillMastery` / `skillMasteryMods` / `setSkillMastery` / `skillCapstoneMods` / `effSkillMods` 第五·六层）、`ui-skills.js`（mstRow + 精通行 + 60% 角标）、`index.html`、**`fx.js`（`amp` / `setAmp` / `lit` + 7 个原语调亮）** | `dev/test-skill-p2c.js` 99 · `dev/probe-skill-p2c.js` 62 |
 | P3a | **元素反应表 10/10**：触发口径 = 「目标身上已有 A 元素状态 + 这一下带 B 元素」（不依赖注入）。**6 组元素互碰**（蒸汽爆裂 / 等离子 / 焚毒 / 感电冻结 / 腐霜 / 腐蚀链）+ **4 组圣系**（净化烈焰 / 圣霜 / 天罚 / 解毒雾），走 `damageEnemy` 一个口，三道闸门（silent / react / `_reacting`）+ 双层 ICD（0.5s 全局 · 2s 同目标）。圣系的前提是 **圣印**（`e.sigilT`，sigil 命中盖 6 秒印记，只刷新不叠加）；**圣排在状态表最后** —— 顺序即优先级，否则道士常驻的圣印会把「火 + 冰」的蒸汽爆裂整组吃掉。圣系收益落在**玩家身上**（回血 / 护盾 / 对亡灵与首领增伤），全部当场结算、**不做窗口 buff**（面板看不见的增益等于没做）。方案写的「击杀回血」改成立刻回 3%（打不死目标时那组反应否则等于白触发） | ✅ | `data-elem.js`（`ELEM_DEFS` / `ELEM_STATUS` / `SIGIL_MARK` / `ELEM_REACTIONS` / `elemReactionOn`）、`game.js`（`elemReactReady` / `tryElemReaction` / `applyElemReaction` 的 4 个圣系 case / `chainReaction` / `knockEnemy` / **`sigilT` 盖印与递减** / **`healMist` 回血雾** / 护盾字段通用化）、`ui.js`（说明页「元素反应」行）、`index.html`（加载 data-elem.js） | `dev/test-skill-p3.js` 106 · `dev/probe-skill-p3.js` 41 · **`dev/test-elem-holy.js` 50 · `dev/probe-elem-holy.js` 26** |
 | P3b | **元素注入（单元素版 ✅）**：①②③⑤ 位可注火 / 冰 / 雷 / 毒，门槛角色 20 级，附加 30%~50%（跟技能有效等级走），**附加不转换**（原伤害 100% + 附加 X%，两段各过自己的抗性与元素词缀）。三级取值 `opts.inj → _proj.inj → _elem`；注入元素可当反应源（命中元素优先、注入兜底）。**延迟落点 / dot / 召唤物不注入**（已拍板）。**P3b 收口** —— 当初挂在这一行尾巴上的另外两块已经拆出去各自做完：双元素混搭见 **P3d**，元素词缀统一见 **P3c** | ✅ | `data-elem.js`（`SKILL_INJECT` / `skillInjectPct` / `skillSlotOf` / `skillCanInject`）、`game.js`（`skillInject` / `skillInjectAmt` / `setSkillInject` / `curInject` / `elemHitMul` + `castSkill` 窗口 + `damageEnemy` 两段式）、`fx.js`（`projectile` 的 `inj`）、`ui-skills.js`（注入块 + 点击委托） | `dev/test-skill-p3.js` 97 · `dev/probe-skill-p3.js` 41 |
@@ -235,14 +235,19 @@ P1 起才动 `SKILL_BAR_SLOTS` 与面板的三列树。
     「等级送的 + 花点选的两份都拿到」，而不是后者把前者顶掉。但形态类键
     （`move` / `follow` / `ring`…）必须保持「分支覆盖台阶」，不能全局改相加。
     折中：台阶里写 `'+drPct': 15`，`branchBeh` 在合并**之后**再把这份加上去。
-    目前只有回春位 Lv7 用它（`drPct` 是 antidote 精研「固元」的键）。
+    目前回春位（Lv5 `+drPct 8` / Lv7 `+drPct 15`，同键高档覆盖低档）与道士③太极位
+    （Lv9 `+drPct 12`，`drPct` 正是 antidote 精研「固元」的键）在用它。
 23. **口径不同的量不能借同一个键**。回春位 Lv5 一开始想用 `+hotPct`，但 heal 精研
     「余春」的 `hotPct: 25` 意思是「治疗量的 25%」，而台阶要的是「最大生命的 2%」——
     两者相加会算成每秒 27%，而消费方还按 `<1 才算比例` 判断，直接退化成 2%。
-    所以另开 `tierHot`（每秒最大生命百分比 × 6 跳）。
+    所以当时另开了 `tierHot`（每秒最大生命百分比 × 6 跳）。
+    **10-31 返工后台阶不再卖回血，`tierHot` 只剩太极位 Lv10 在用**；
+    但这条教训仍然成立 —— 换任何一个新键之前先确认「两边量的是不是同一个东西」。
 24. **`healOnCast` 是通用收尾，不许写在某个 case 里**。它原先写在增益 case 内，
     结果 heal / revive 这类非增益技能永远吃不到 —— 面板写着「瞬回 8%」、血条纹丝不动。
     现在放在 `switch` 之后、`applySkillBeh` 之前，对所有技能生效。
+    **10-31 返工后台阶不再给瞬回**（回血下放成职业兜底），这个 handler 留着给别处用；
+    「通用收尾必须放在 switch 之后」的教训与回血无关，仍然有效。
 25. **`_freeCast`：低血自动施放不收资源**。救命技能卡在「蓝不够」上等于没做；
     冷却照走（`castSkill` 自己置），所以不会刷。
 26. **数量台阶的间距必须小过半径**。火墙多道一开始按 1.15 倍半径排，结果
@@ -765,6 +770,10 @@ arch 29 · smoke ERRORS none。
 ③ 顺手让探针的 `pageerror` 带前 4 行栈，否则这条错永远只能猜到 handler 名字。
 
 ### 2026-10-28 · P2b 道士 ④ 回春（治疗 / 解毒 / 还魂 共用一个位）
+
+> **这一节的 Lv3 / Lv5 已被 2026-10-31 的「回春位返工」覆盖**：瞬回 8% 与 `tierHot`
+> 全部撤掉，回血下放成道士职业兜底，台阶改卖护盾窗口 / 减伤。下面留作「当时为什么这么写」的记录，
+> 撞键与 `+键` 通道的分析仍然有效（`+drPct` 现在还是这条路）。
 
 同血怒位：一个格位只放一只，三条台阶必须三只都接。这一位真正麻烦的是**撞键**比血怒位深 ——
 `hotPct` 是 heal 精研「余春」的、`drPct` 是 antidote 精研「固元」的、`autoTrigger` 是
@@ -2118,7 +2127,106 @@ probe-p4 29 · probe-vfx-kit 43 · probe-vfx-field 19 · probe-p5 13。
 
 ### 没做的（写清楚）
 
-- **回春位（道士④）返工**：回血下放到 `BALANCE.classPassive.taoist` + 台阶改护盾 / 减伤，
-  还躺在备份分支 `backup/local-1030-wip`，**没有合到当前基线**。等拍板。
+- ~~**回春位（道士④）返工**~~ —— 2026-10-31 已在当前基线上重做，见下一节。
 - **V2 逐位重做配方**（亮度 / 尺寸）：`spr` 类在白天地面上几乎看不见（逐原语量过差异像素），
   这条从 V0 就挂着，属于配方本身的事，不是接线能解决的。
+
+## 2026-10-31 · 回春位返工（回血下放成职业兜底）
+
+### 为什么返工
+
+上一版把「活下去」卖在格位上：Lv3 瞬回 8%、Lv5 每秒 2% 持续 6 秒。
+问题是**这两条嗑药就能解决** —— 玩家为了活命被迫占一个动作条格位，
+而格位是这个游戏最稀缺的东西。等于用最贵的资源买最便宜的效果。
+
+所以拆成两半：
+
+1. **回血下放**成道士职业自带（`BALANCE.classPassive.taoist`），不花点、不占格、开局就有；
+2. **格位改卖药品给不了的东西** —— 时间窗（护盾 / 减伤）、状态解除（驱散 + 无敌）、
+   自动化（低血自动施放）。这些东西药瓶里没有，才有理由占一格。
+
+### 回血这一半：`BALANCE.classPassive`
+
+```js
+classPassive: { taoist: { regenDelay: 2.5, regenPct: 1.2, ccShort: 20 } }
+```
+
+- **只给道士**。刀客的「活下去」是格挡、法师是护盾，在这里补一份就是三职业同质化的开始。
+  测试里有一条反面断言钉住 `!cp.warrior && !cp.mage`。
+- **回得慢**（1.2%/秒，`regenDelay` 2.5 秒后才开始）。快过药就等于「不用带药」，
+  那是把失衡从格位挪到药瓶，问题没解决。契约上限 `≤2%/秒`。
+- **脱战判定与音乐层同口径**：16 米内有 `e.aggro` 的敌人 = 在战斗中。
+  但**不抄 `_combatHold` 那 4 秒** —— 音乐是为了「别在两首曲子之间反复横跳」，
+  回血是为了「打完了能不能歇」，两件事的容忍度不同，用 `regenDelay` 自己的 2.5 秒。
+- **不进 stats、不进面板预览**。它是帧循环里的运行时账，不是一条词缀。
+  写进 stats 会让「面板攻击力」这类读数跟着跳，而且存档要跟着迁移。
+- **帧循环顺序**：`updateClassPassive` 必须排在 `updateEnemies` **之前**。
+  反了就会出现「怪还在打你、血条也在涨」——判定用的是上一帧的仇恨状态。
+
+顺带把「净体」也放进 `classPassive`：`ccShort: 20`（负面时长 -20%）。
+**必须乘算**，不能加进 `ccResist`：那条会被 `CLAMP(60)` 封顶吃掉，
+堆满控制抗性的道士反而一点都吃不到职业特性。`clsCcShort()` 单独一个读口。
+
+### 格位这一半：台阶换货
+
+| 档 | 旧 | 新 |
+|---|---|---|
+| Lv3 | 瞬回 8% 最大生命 | 施法后 4 秒内 12% 最大生命护盾 |
+| Lv5 | 每秒 2% 持续 6 秒 | 施法后 4 秒受伤 -8% |
+| Lv7 | 受伤 -15% | 受伤 -15%（不变） |
+| Lv9 | 驱散 + 1.5 秒无敌 | 不变 |
+| Lv10 | 生命低于 30% 自动 | 阈值抬到 40% |
+
+- **新 handler `tierShield`**：走现成的 `Game.shield` / `shieldT`，不另开一套字段 ——
+  破盾照常触发 `onBehShieldBreak`，冰刺取向的连带效果也跟着生效。
+  **取大不叠加**（`Math.max`）：连按两下不该刷出两层盾，那会让「窗口」变成「常驻」。
+  视觉用手写 `GFX.ring` 而不是 `playSkillVfx`：它是「状态窗」不是「招式」，
+  ④ 号位的配方（回春 = 向上生长）说的是治疗，两件事不该同一张脸。
+- **`tierHot` 保留但不再用于台阶**。太极位 Lv10「定身 + 持续回复」还在用它，
+  所以这个键不是死代码 —— 注释里写清了，免得下次清理时被删。
+- **`+drPct` 仍然是叠加键**：`drPct` 是 antidote 精研「固元」的键，
+  台阶与花点撞名时靠 `+` 前缀各算各的（15+15 = 30，不是覆盖成 15）。
+
+### 台阶是「累加 + 同键覆盖」，不是「高档顶掉低档」
+
+返工中途我按「Lv9 只拿 Lv9 那一档」去写断言，探针当场红了三条：
+Lv9 实测仍有 15% 减伤和 12% 护盾。查 `skillTierEvoList` 才确认语义是
+**取 ≤lv 的全部档累加**，只有**同名键**才被高档覆盖（`+drPct` 8 → 15 而不是 8+15）。
+
+这是对的设计 —— 文案写的是递进（「又多了驱散」），玩家花到 9 级反而变脆才是 bug。
+断言改成「Lv9 的减伤 ≥ Lv7、护盾 ≥ Lv3」，把「递进不倒退」当成契约钉住。
+
+### 验证
+
+`test-skill-p2b` 903 → **920/0**（回春 15 条按新口径重写：`tierShield === 12` /
+`'+drPct' === 8` / `lowHpCast === 40`，并加了一条反面断言「台阶里不许再出现
+`healOnCast|tierHot|hotPct`」；新增一整节「回血下放成道士职业兜底」钉
+`regenPct ≤ 2` / `ccShort === 20` / 只给道士 / `updateClassPassive` 排在 `updateEnemies` 之前 /
+脱战判定读 16 米 + `e.aggro` / `_outT = 0` 至少 3 处 / 净体是乘算 / `tierShield` 走现成
+`shield` 且取大不叠加）。
+
+`probe-skill-p2b` 292 → **315/0**（第九节重写 47 条：三只 × 无回血键 / Lv2 无盾 /
+Lv3 12% 盾 + 4 秒 / Lv5 -8% / Lv7 -15% / Lv9 递进不倒退 / 驱散 + 无敌 / Lv10 阈值 40；
+外加职业兜底三组对照 —— 道士脱战 10 秒 ≈ 9%（前 2.5 秒是延迟）、16 米内有仇恨怪时
+**一分不回**、刀客一分不回；「净体」3 秒减速 → 2.4 秒、中毒 4 秒 → 3.2 秒、刀客对照仍是 3 秒）。
+
+回归全绿：p0 250 · p1 52 · p1c 363 · p2 41 · **p2b 920** · p2c 99 · p3 106 · p4 60 · p5 973 ·
+p5b 116 · p6 97 · vfx-dsl 342 · vfx-field 35 · vfx-kit 58；
+probe-p1c 23 · p1d 36 · p2 26 · **p2b 315** · p2c 62 · p3 41 · p4 29 · p5 13 · p5b 13 · p6 53 ·
+vfx-field 19 · vfx-kit 43 · arch 29 · smoke ERRORS none · `audit-tiers` 三职业 0 欠账。
+
+### 踩到的两个坑
+
+1. **探针把「方法定义」按「调用点 ±2000 字符」去截，切了个空**。
+   `updateClassPassive` 定义在帧循环后面一百多行，断言当场假红。
+   教训：切**方法体**（按 `xxx(dt) {` 定位），不要按调用点偏移。
+2. **量回血不能只跑 6 秒**。`regenDelay` 2.5 秒是脱战延迟，6 秒里只有 3.5 秒在回
+   （实测 4.3% 而不是 7.2%），差点被当成「没生效」。改成跑 10 秒并把延迟写进断言说明。
+
+### 留的口子
+
+**道士③太极位 Lv3 还是「施法瞬间回复 8% 生命」**（`healOnCast: 8`）。按这次返工的同一条理由
+（嗑药就能解决的事不该占格位），它也该换掉。没顺手改的原因：太极位三条台阶是
+「瞬回 / 减速 / 延长 / 减伤 / 定身 + 持续回复」的整体设计，Lv3 换成什么要连带考虑
+Lv10 的 `tierHot`（那里也在卖回血），单独换一档会把这一位的递进关系弄乱。
+**要改就整位一起改，别单抽一档。**

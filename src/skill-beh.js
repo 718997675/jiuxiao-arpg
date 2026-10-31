@@ -811,13 +811,40 @@ const SKILL_BEH = {
   /* [P2b] 持续回复（回春位 Lv5）：值 = 每秒回复的最大生命百分比，共 6 跳。
    * **不复用 hotPct** —— 那是 heal 精研「余春」的键，而且它的值是「治疗量的百分比」，
    * 与本条的口径（最大生命的百分比）根本不是一个东西，硬加会算错。
-   * 另开一个键，两条各按各的口径回血。 */
+   * 另开一个键，两条各按各的口径回血。
+   * [回春位返工] 台阶上不再用它（Lv5 换成减伤窗口），但太极位 Lv10
+   * 「定身 + 持续回复」还在用 —— 所以这个键留着，不是死代码。 */
   tierHot: { ph: 'self', label: '持续回复（台阶）', run(c, v, b) {
     const pct = Math.max(0, Number(v) || 0) / 100;
     if (!pct) return;
     c.tick(Math.max(1, Math.round(behDur(b, 6))), () => {
       c.G.healPlayer(c.G.state.stats.hpMax * pct, true);
     });
+  } },
+
+  /* [P2b] 护盾窗口（回春位 Lv3，返工后的新档）：施法后 4 秒内吸收 X% 最大生命。
+   *
+   * 为什么换成护盾而不是留着回血：回血**嗑药就能解决** —— 让它占一个格位，
+   * 等于逼玩家用格位去补药品的缺口，这一格既没职业特色、也挡住「我想带个别的」。
+   * 护盾是药给不了的：药是「事后把血补回来」，护盾是「这一下根本不掉血」，
+   * 而且它有**时限**，窗口一过就没了 —— 与主动治疗的「即时到账」是两种东西。
+   *
+   * 走 Game.shield / shieldT 的现有口径，**不另开一套**：
+   * 这样破盾会照常触发 onBehShieldBreak，冰刺取向连带生效。
+   * 厚度取大不叠加 —— 同一时间有两份护盾来源时不会变成双倍。 */
+  tierShield: { ph: 'self', label: '护盾窗口（台阶）', run(c, v, b) {
+    const pct = Math.max(0, Number(v) || 0) / 100;
+    if (!pct) return;
+    const G = c.G;
+    const add = G.state.stats.hpMax * pct;
+    G.shield = Math.max(G.shield || 0, add);
+    G.shieldT = Math.max(G.shieldT || 0, behDur(b, 4));
+    /* 视觉：一圈冰蓝护体环。**不复用配方**：这一条是「状态窗」不是「招式」，
+     * 而 ④ 号位的配方（回春 = 向上生长）说的是治疗，两件事不该同一张脸。 */
+    if (c.GFX && G.playerGroup) {
+      c.GFX.ring(new THREE.Vector3(G.playerGroup.position.x, 0.15, G.playerGroup.position.z),
+        2.4, 0x9ae0ff, 0.5, 0.22);
+    }
   } },
 
   /* [P2b] 命中挂持续伤害（火墙位 Lv5）：值 = 每秒的攻击力百分比，共 3 秒。

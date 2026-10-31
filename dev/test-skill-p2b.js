@@ -511,26 +511,34 @@ const behSrc = readSrc('src/skill-beh.js');
   }
 
   /* --- 道士 ④ 回春：治疗 / 解毒 / 还魂 共用一个位，同样是三只都要接 ---
-   * 这一位的两条数值台阶撞了精研（hotPct = heal「余春」、drPct = antidote「固元」），
-   * 所以走 `+键` 叠加通道 —— 花点选的与等级送的都拿到。 */
+   *
+   * [返工] 这一位原来 Lv3 瞬回 8% / Lv5 每秒 2% 持续 6 秒 —— 两条**嗑药就能解决**，
+   * 玩家为了活命被迫占一个动作条格位。现在回血下放成道士职业兜底
+   * （`BALANCE.classPassive.taoist`），格位改卖药品给不了的东西：
+   *   3 护盾窗口 → 5 减伤 -8% → 7 减伤 -15% → 9 驱散 + 无敌 → 10 低血自动
+   * 所以这里除了「三只都接」，还要钉住「台阶里不再卖回血」。 */
   {
     const slot4 = ['heal', 'antidote', 'revive'];
     for (const id of slot4) {
       const e = SKILL_TIER_EVO[id];
       ok(!!e && !!e[3] && !!e[5] && !!e[7] && !!e[9] && !!e[10],
         id + ' 五条台阶都在（回春位只放一只，漏一只就是假话）');
-      ok(e && e[3].beh.healOnCast === 8, id + ' Lv3 施法瞬回 8%', e && e[3].beh);
-      ok(e && e[5].beh.tierHot === 2,
-        id + ' Lv5 走 tierHot（不撞「余春」的 hotPct，口径也不同）', e && e[5].beh);
-      ok(e && e[7].beh['+drPct'] === 15, id + ' Lv7 走 +drPct 叠加键', e && e[7].beh);
+      ok(e && e[3].beh.tierShield === 12,
+        id + ' Lv3 走 tierShield（护盾窗口 12%，不是瞬回）', e && e[3].beh);
+      ok(e && e[5].beh['+drPct'] === 8, id + ' Lv5 走 +drPct 叠加键（-8%）', e && e[5].beh);
+      ok(e && e[7].beh['+drPct'] === 15, id + ' Lv7 走 +drPct 叠加键（-15%）', e && e[7].beh);
       ok(e && e[9].beh.cleanse === 1 && e[9].beh.immune === 1.5,
         id + ' Lv9 驱散 + 1.5 秒无敌', e && e[9].beh);
-      ok(e && e[10].beh.lowHpCast === 30, id + ' Lv10 走 lowHpCast（不是替身的 autoTrigger）', e && e[10].beh);
+      ok(e && e[10].beh.lowHpCast === 40, id + ' Lv10 走 lowHpCast（不是替身的 autoTrigger）', e && e[10].beh);
+      /* 返工的硬断言：这一位的台阶里不许再出现任何回血键 */
+      const flat = JSON.stringify(e);
+      ok(!/healOnCast|tierHot|hotPct/.test(flat),
+        id + ' 台阶里不再卖回血（已下放职业兜底）', flat);
     }
     /* 为什么非要 `+`：drPct 在 antidote 取向里已经占了，直接写同名键会被合并顺序顶掉 */
     const healBr = skillBranches('heal');
     ok(!!(healBr && healBr.core && healBr.core.beh && 'hotPct' in healBr.core.beh),
-      'hotPct 确实是 heal 精研「余春」的键 —— 所以持续回复另开了 tierHot（口径也不同）',
+      'hotPct 确实是 heal 精研「余春」的键（回血下放后它仍在，是花点买的那一份）',
       healBr && healBr.core && healBr.core.name);
     ok(!/\+hotPct/.test(JSON.stringify(SKILL_TIER_EVO)),
       '回春位不许用 +hotPct（余春那条的 25 是「治疗量的百分比」，硬加会算成每秒 27%）');
@@ -549,6 +557,55 @@ const behSrc = readSrc('src/skill-beh.js');
       const todo = [1, 3, 5, 7, 9, 10].filter(lv => !skillSlotTierDone(cls, 4, lv));
       ok(todo.length === 0, '道士 ④ 面板不再有「待」角标', todo);
     }
+  }
+
+  /* --- 回春位返工的另一半：回血下放成**道士职业兜底** ---
+   *
+   * 只把格位改卖护盾 / 减伤，却不动「不放技能也活得下去」的底线，等于把生存成本
+   * 从格位挪到药瓶 —— 玩家照样得带一瓶。所以这一节钉的是那份兜底：
+   * 数据在 BALANCE.classPassive、帧循环在 updateClassPassive、负面时长走 clsCcShort。 */
+  {
+    const BAL = pick('BALANCE');
+    const cp = BAL.classPassive || {};
+    const me = cp.taoist || {};
+    ok(!!me.regenDelay && !!me.regenPct,
+      '道士自带兜底：脱战 regenDelay 秒后每秒 regenPct% 最大生命', me);
+    ok(me.regenPct > 0 && me.regenPct <= 2,
+      '回得慢（≤2%/秒）—— 快过药就是「不用带药」，那是另一种失衡', me.regenPct);
+    ok(me.ccShort === 20, '道士「净体」：负面时长 -20%', me.ccShort);
+    ok(!cp.warrior && !cp.mage,
+      '只给道士（刀客靠格挡、法师靠护盾，三职业都塞一份就是同质化的开始）', Object.keys(cp));
+
+    /* 帧循环真的在跑它，而且**在刷怪之前**（顺序反了会出现「怪还在打你、血在涨」） */
+    ok(/updateClassPassive\(dt\) \{/.test(game), 'game.js 有 updateClassPassive');
+    const loopAt = game.indexOf('this.updateClassPassive(dt);');
+    const enemyAt = game.indexOf('this.updateEnemies(dt);', loopAt);
+    ok(loopAt > 0 && enemyAt > loopAt, '帧循环里调用它，且排在 updateEnemies 之前', { loopAt, enemyAt });
+    /* 脱战判定必须与音乐层同一个口径（16 米内有仇恨的敌人）。
+       注意切的是**方法体**而不是调用点：方法定义在帧循环后面一百多行，
+       按调用点 ±2000 字符去截会漏掉正文，测试自己先瞎了。 */
+    const bodyAt = game.indexOf('updateClassPassive(dt) {');
+    ok(/if \(!e \|\| e\.dead \|\| !e\.aggro\) continue;[\s\S]{0,80}DIST2D\(e\.pos, pp\) < 16/
+      .test(game.slice(bodyAt, bodyAt + 1600)),
+      '脱战判定读的是「16 米内有已仇恨的敌人」（与 bgm 同一口径）');
+    /* 换图 / 洗点 / 重生都要归零，否则进新图第一秒就在回血 */
+    ok((game.match(/this\._outT = 0;/g) || []).length >= 3,
+      '洗点 / 换图 / 重生三处都把脱战计时归零',
+      (game.match(/this\._outT = 0;/g) || []).length);
+
+    /* 净体走**乘算**：加进 ccResist 会被 CLAMP(60) 吃掉 */
+    ok(/clsCcShort\(\) \{/.test(game), 'game.js 有 clsCcShort');
+    ok(/\(1 - CLAMP\(this\.state\.stats\.ccResist \|\| 0, 0, 60\) \/ 100\) \* \(1 - this\.clsCcShort\(\) \/ 100\)/
+      .test(game), '减速与中毒的时长都乘了「净体」缩减');
+    ok(!/ccResist \|\| 0\) \+ this\.clsCcShort/.test(game),
+      '净体没有直接加进 ccResist（那样会被 CLAMP(60) 封顶吃掉）');
+
+    /* tierShield 走现成的 Game.shield / shieldT，不另开一套字段 */
+    ok(/tierShield: \{ ph: 'self'/.test(behSrc), 'skill-beh.js 登记了 tierShield');
+    ok(/G\.shield = Math\.max\(G\.shield \|\| 0, add\)/.test(behSrc),
+      'tierShield 取大不叠加（两份护盾来源不会变双倍）');
+    ok(!/G\.tierShield|this\.tierShield\b/.test(behSrc),
+      'tierShield 没有另开一套护盾字段（走现成的 shield / shieldT）');
   }
 
   /* --- 法师 ③ 火墙：火墙 / 冰霜新星 / 雷云 共用一个位 ---

@@ -1403,6 +1403,8 @@ const Game = {
     s.treeRespecCount = (s.treeRespecCount || 0) + 1;
     this.behStack = {}; this._drainOn = null; this._follows = null;
     this._recharge = null; this._dragonT = 0; this._autoReviveCd = 0; this._pasT = 0;
+    /* [P2b] 脱战计时：洗点 / 换图 / 重生都归零，否则进新图第一秒就在回血 */
+    this._outT = 0;
     this.recalc();
     if (typeof UI !== 'undefined' && UI.log) {
       UI.log('已洗去 ' + r.cleaned + ' 点技能树投入（-' + r.cost + ' 金）。', 'good');
@@ -1741,6 +1743,8 @@ const Game = {
     /* 技能树分支叠层（stack）：换图 / 重开都归零 */
     this.behStack = {}; this._drainOn = null; this._follows = null;
     this._recharge = null; this._dragonT = 0; this._autoReviveCd = 0; this._pasT = 0;
+    /* [P2b] 脱战计时：洗点 / 换图 / 重生都归零，否则进新图第一秒就在回血 */
+    this._outT = 0;
     /* [P2] 剑魄的资源记账跟着换图清零；被动计时器归位 */
     this.state.rageSpent = 0;
     this.undyingCd = 0; this.stormT = 6; this.talismanT = 10; this.elixirT = 60; this.phoenixKeyT = 0;
@@ -2772,6 +2776,9 @@ const Game = {
     /* [M12] 换区提示：进入新区域时报一次名，让「区域 + 走廊」结构被玩家看见 */
     this.tickZone(dt);
     this.updateAuras(dt);
+    /* [P2b] 职业兜底放在刷怪更新**之前**：本帧刚被怪贴脸时先重置脱战计时再判回血，
+     * 顺序反了会出现「怪还在打你、血条也在涨」。 */
+    this.updateClassPassive(dt);
     this.updateEnemies(dt);
     /* [P01] 地图内补位：清完的区会慢慢长回来，任务不必出图重进 */
     this.updateRespawn(dt);
@@ -2849,6 +2856,42 @@ const Game = {
       if (this._combatHold > 0) mode = 'combat';
     }
     AudioSys.bgm(mode);
+  },
+
+  /* [P2b] 职业自带兜底（回春位返工的另一半）
+   *
+   * 回春位原来把「瞬回 8% / 每秒 2% 持续 6 秒」挂在台阶上 —— 这两条**嗑药就能解决**，
+   * 玩家为了活命被迫占一个动作条格位，而这一格既没职业特色、也挡住了「我想带个别的」。
+   * 现在格位改卖药品给不了的东西（护盾 / 减伤 / 驱散 / 无敌 / 自动触发），
+   * 「不放技能也活得下去」的底线就得由职业自己兜住 —— 否则返工只是把生存成本
+   * 从格位挪到药瓶，玩家照样得带一瓶。
+   *
+   * 与主动治疗的口径区分（别做成两份一样的）：
+   *   被动 = 脱战后的**缓慢续航**（不占手、回得慢、只在脱战后生效）
+   *   主动 = 战斗中的**爆发回血**（要按键、有 CD、能救急）
+   * 所以被动**不进 stats / 不进面板预览**，它是帧循环里的运行时账。
+   *
+   * 脱战判定跟音乐层同一个口径（16 米内有已仇恨的敌人 = 在战斗中）：
+   * 自己另发明一套条件，会出现「音乐还在战斗中、血已经回起来了」。
+   * 但**不抄 `_combatHold` 那 4 秒**：音乐要等是因为切歌比切状态更刺眼，
+   * 而回血等 4 秒等于「脱战了还不敢停」—— 这里用 `regenDelay` 自己的 2.5 秒。 */
+  updateClassPassive(dt) {
+    const s = this.state;
+    if (!s || !s.stats || this.dead || !this.running) return;
+    const cp = (typeof BALANCE !== 'undefined' && BALANCE.classPassive) || {};
+    const me = cp[s.cls];
+    if (!me) return;
+    let near = false;
+    const pp = this.playerGroup && this.playerGroup.position;
+    if (pp) for (const e of this.enemies) {
+      if (!e || e.dead || !e.aggro) continue;
+      if (DIST2D(e.pos, pp) < 16) { near = true; break; }
+    }
+    this._outT = near ? 0 : (this._outT || 0) + dt;
+    if (this._outT < (me.regenDelay || 0)) return;
+    if (s.hp >= s.stats.hpMax) return;
+    /* silent：每秒一次弹字会把屏幕刷满，血条自己在涨就够了 */
+    this.healPlayer(s.stats.hpMax * (me.regenPct || 0) / 100 * dt, true);
   },
 
   /* [M1/C5] 光环结算：装备词缀给的「以自身为中心」常驻范围效果。
@@ -6977,6 +7020,8 @@ const Game = {
     /* 分支叠层（技能树 stack）跟着 buff 一起清：复活后不该留着满层战意 */
     this.behStack = {}; this._drainOn = null; this._follows = null;
     this._recharge = null; this._dragonT = 0; this._autoReviveCd = 0; this._pasT = 0;
+    /* [P2b] 脱战计时：洗点 / 换图 / 重生都归零，否则进新图第一秒就在回血 */
+    this._outT = 0;
     /* [P2] 被动的战场状态同样清零（剑魄记账 / 计时器 / 护身符） */
     s.rageSpent = 0;
     this.undyingCd = 0; this.stormT = 6; this.talismanT = 10; this.elixirT = 60; this.phoenixKeyT = 0;
@@ -7752,6 +7797,18 @@ const Game = {
     return false;
   },
 
+  /* [P2b] 职业自带兜底「净体」：负面时长额外缩减的百分比。
+   * 走**乘算**而不是加到 ccResist 上 —— ccResist 在消费处被 CLAMP 到 60，
+   * 加进去会被封顶吃掉，堆了抗性的人一点都拿不到。
+   * 数据在 `BALANCE.classPassive[cls].ccShort`，目前只有道士有。 */
+  clsCcShort() {
+    const s = this.state;
+    if (!s) return 0;
+    const cp = (typeof BALANCE !== 'undefined' && BALANCE.classPassive) || {};
+    const me = cp[s.cls];
+    return (me && me.ccShort) || 0;
+  },
+
   /* [P2b] 玩家侧减速的唯一施加口。三处 boss / 精英技能原本各写各的
    * （0.5 / 2.5 秒等字面量），免控要拦就得三处都改 —— 收成一个口，
    * 漏一处的代价是「免控在冰霜面前无效」，而这恰好是最常见的那一种控制。 */
@@ -7761,8 +7818,8 @@ const Game = {
         '免疫', 'info', { life: 0.7 });
       return false;
     }
-    /* [S1] 控制抗性同时缩短减速持续时间 */
-    const k = 1 - CLAMP(this.state.stats.ccResist || 0, 0, 60) / 100;
+    /* [S1] 控制抗性同时缩短减速持续时间；[P2b] 再乘道士的「净体」缩减 */
+    const k = (1 - CLAMP(this.state.stats.ccResist || 0, 0, 60) / 100) * (1 - this.clsCcShort() / 100);
     this.playerSlow = Math.max(this.playerSlow || 0, amount);
     this.playerSlowT = Math.max(this.playerSlowT || 0, dur * k);
     return true;
@@ -7774,8 +7831,9 @@ const Game = {
         '免疫', 'info', { life: 0.7 });
       return;
     }
-    /* [S1] 控制抗性同时缩短中毒持续时间 */
-    this.poisonT = 4 * (1 - CLAMP(this.state.stats.ccResist || 0, 0, 60) / 100);
+    /* [S1] 控制抗性同时缩短中毒持续时间；[P2b] 再乘道士的「净体」缩减 */
+    const k = (1 - CLAMP(this.state.stats.ccResist || 0, 0, 60) / 100) * (1 - this.clsCcShort() / 100);
+    this.poisonT = 4 * k;
     this.poisonDps = dps;
   },
 
