@@ -3,7 +3,7 @@
 - 分支：`feat/skill-refactor`（优先级 **低**，排在大型扩展之后）
 - 计划文档：`docs/SKILL-REDESIGN-PLAN.md`（16 节）
 - 预览站：暂不发（2026-10-27 用户口径：本地验证即可，别再折腾线上）
-- 更新：2026-10-30 · **已合 main（8 处冲突全解，契约 + 探针全绿）** · P0~P3 + P6 收口 · **V0 特效地基收口**，下一站 P4（三职业 ⑤ 号位表现）
+- 更新：2026-10-31 · **P4 收口（三职业 ⑤ 号位表现）** · P0~P3 + P4 + P6 + V0 全绿，下一站 P5（45 套形态进化）
 
 > 当前：**P0 ~ P3 + P6 全部收口，已合入 main**。动作条 5 格、格位 = 功能位；
 > 技能树已按「三线并行」结算 —— 没有必点主干、没有主动↔被动二选一，
@@ -47,7 +47,8 @@ P1 起才动 `SKILL_BAR_SLOTS` 与面板的三列树。
 | P3b | **元素注入（单元素版 ✅）**：①②③⑤ 位可注火 / 冰 / 雷 / 毒，门槛角色 20 级，附加 30%~50%（跟技能有效等级走），**附加不转换**（原伤害 100% + 附加 X%，两段各过自己的抗性与元素词缀）。三级取值 `opts.inj → _proj.inj → _elem`；注入元素可当反应源（命中元素优先、注入兜底）。**延迟落点 / dot / 召唤物不注入**（已拍板）。**P3b 收口** —— 当初挂在这一行尾巴上的另外两块已经拆出去各自做完：双元素混搭见 **P3d**，元素词缀统一见 **P3c** | ✅ | `data-elem.js`（`SKILL_INJECT` / `skillInjectPct` / `skillSlotOf` / `skillCanInject`）、`game.js`（`skillInject` / `skillInjectAmt` / `setSkillInject` / `curInject` / `elemHitMul` + `castSkill` 窗口 + `damageEnemy` 两段式）、`fx.js`（`projectile` 的 `inj`）、`ui-skills.js`（注入块 + 点击委托） | `dev/test-skill-p3.js` 97 · `dev/probe-skill-p3.js` 41 |
 | P3c | **元素词缀统一口径**：随机词缀从「火伤 / 冰伤 / 雷伤 / 毒伤」四族 12 条并成「**元素伤害 +X%**」3 条（全元素通用，含符法）；老档按 **1:1 相加折算**（火 20 + 冰 10 → 元素 30），只增不减。另留一条**元素专属**通道（被动 高压 / 毒经 / 符力、符文之语 雷引 / 炎心、命格固有），两层叠乘。道途面板补上元素增伤 6 行（以前这一族面板一行都没有） | ✅ | `data-core.js`（`elemDmg` + 四旧键标 `legacy`）、`data-items.js`（`AFFIXES` 12→3、`AFFIX_SLOT_ALLOW.fate`、**`foldElemAffixes` + `normalizeItem` 折算**）、`data-elem.js`（`ELEM_AFFIX` / `ELEM_AFFIX_EX` / `elemAffixMul`）、`game.js`（`damageEnemy` / `elemHitMul` 改走 `elemAffixMul`）、`ui.js`（道途面板 + 说明页两行）、`data-builds.js` / `data-trial.js` | `dev/test-elem-affix.js` 60 · `dev/probe-elem-affix.js` 22 |
 | P3d | **双元素混搭**：境界 **40 级**解锁第二元素，①②③⑤ 位可再注一种（不能与主元素相同，摘主元素时副元素一起走）。**总量不变**，按主 70% / 副 30% 拆成两段（50% → 35% + 15%），两段各过自己的抗性与元素增伤；与命中元素相同的段自动剔除。反应按「命中元素 → 主 → 副」顺序试。视觉：施法瞬间脚下喷一簇注入元素色火星（8 + 4 颗，主 70% / 副 30%），**技能本体光效不换色**（FX 是全局的，换色会连敌人技能和血一起染） | ✅ | `data-elem.js`（`SKILL_INJECT.subAt` / `split` / `skillInjectSplit`）、`game.js`（`skillInject2` / `skillInjectPack` / `injectSegs` / `setSkillInject2` + `elemReactReady` 收数组）、`fx.js`（`elemSpark`）、`ui-skills.js`（混搭一行 + `data-inj2` 委托）、`index.html`（`.sb-i2list`）、`ui.js`（说明页两行） | `dev/test-elem-dual.js` 40 · `dev/probe-elem-dual.js` 30 |
-| P4 | 三职业独立 ⑤ 号位：刀客兵形/刃势、法师法相、道士召唤 | ⬜ | `src/fx.js`、`src/charforge.js` | — || P5 | 形态进化表现：5 槽 × 3 职业 × 3 段 = 45 套 | ⬜ | `src/fx.js`、模型 | — |
+| P4 | **三职业 ⑤ 号位的签名表现**（机制 P2b 已有，这一轮只补「看得出来」）：①刀客兵形 —— 刀气按刀式换形（斩锋一道细长弧 / 镇岳两道立起的半圆 / 摧城三道短粗裂弧 + 地面裂痕），刃势满层每 0.6 秒一次「刀身发烫」脉冲；②法师法相 —— 背后一尊 4.6×5.4 米的半透明法身（billboard，跟人走 / 呼吸 / 换相当场换色 / 收窗 0.3 秒淡出）；③道士召唤 —— 脚下 sigil 法阵 + 灵兽从地下升起（0.42 秒 smoothstep 缩放 + 抬升）。全部走 `VFX.playFor` / `vfxBladeForm` 的同一套配方，**不新增手写特效** | ✅ | `data-vfx.js`（`BLADE_FORM_VFX` / `vfxBladeForm` / `vfxBladeImpact`）、`game.js`（`playSkillVfx` / `bladeFormVfx` / `bladeFinisherVfx` / `bladeEdgeVfx` / `_mkFormAura` / `_dropFormAura` / `updateFormAura` / `updateSkillForm` / `summonGate` / `spawnT`）、`fx-kit.js`（无改动，只用现成原语） | `dev/test-skill-p4.js` 56 · `dev/probe-skill-p4.js` 29 |
+| P5 | 形态进化表现：5 槽 × 3 职业 × 3 段 = 45 套 | ⬜ | `src/fx.js`、模型 | — |
 | P6 | **回归**：①老档兼容（8 格条 / 只有 `v` 通道 / 无 passives 的档）；②洗点（只退花点的，免费字段保留，阶梯价落盘）；③平衡体检（`dev/balance-skills.js`）。**查出三个「无声消失」的存档 bug，全部修完** | ✅ | `core/save.js`（`_skillLedger` / `_passives` + `barVer`/`skillReset`/`passives`/`treeRespecCount` 落盘）、`game.js`（`keepPick` 名单化、`newState` 标已迁移）、`data-skill-tree.js`（`skillEntryKeep` 单一出口） | `dev/test-skill-p6.js` 97 · `dev/probe-skill-p6.js` 53 · `dev/balance-skills.js` 17（+6 条观察项） |
 | V0 | **特效地基**（✅ 收口）：①图集 14 格 + 原语 `spr` / `trail` / `bolt` / `shock` / `decal`（外加 `arc` / `vortex` / `cone` / `geyser` / `ring` / `beam` / `flash`），全部带 `FX.q` 降级；②**配方 DSL v2**：`data-vfx.js`（15 条剪影 × 形/色/时 三层，台阶用 patch）+ `src/vfx.js` 解释器 `VFX.play(recipe, ctx)` / `playFor(id, ctx)`；③`dev/vfx-bench.js`（真机 draw call 预算）+ `dev/vfx-shot.js`（15 条剪影 × 起手/收势两帧截图）。**15 条配方全部 ≤ 6 draw call**（方案 §2 硬指标） | ✅ | `src/fx-kit.js`、`src/fx.js`（`update` / `clear` 各接一行）、`src/vfx.js`、`src/data/data-vfx.js`、`index.html`（两个 `<script>`） | `dev/test-vfx-dsl.js` 291 · `dev/vfx-bench.js` 48 · `dev/vfx-shot.js` 62 · `dev/test-vfx-kit.js` 58 · `dev/probe-vfx-kit.js` 43 |
 
@@ -1845,3 +1846,50 @@ function keepPick(prev, next) {
 
 **验证**：`test-vfx-dsl` 291/0 · `vfx-bench` 48/0 · `vfx-shot` 62/0 ·
 `test-vfx-kit` 58/0 · `test-vfx-field` 35/0 · `probe-vfx-kit` 43/0 · `probe-vfx-field` 19/0。
+
+### 2026-10-31 · P4 收口：三职业 ⑤ 号位的签名表现
+
+P2b 把三个 ⑤ 的**机制**做完了（刀式 / 刃势 / 断岳斩、法相窗口、灵兽），
+但 V0 只做到「配方写完 + 截图验收」——**游戏里一行都没调**。
+`grep -rn "VFX\." src/` 只搜到注释，这就是 P4 的起点。
+
+这一轮不加新技能、不动任何数值，只把「按下去有画面」接上：
+
+| 位 | 表现 | 落点 |
+|---|---|---|
+| 刀客 ⑤ | 刀气随刀式换形 + 刃势满层脉冲 | `BLADE_FORM_VFX` 三式（形在 `tilt`/`n`，不在颜色）+ `bladeFormVfx` / `bladeFinisherVfx` / `bladeEdgeVfx` |
+| 法师 ⑤ | 背后法身（4.6×5.4 米半透明 billboard） | `_mkFormAura` / `updateFormAura` / `_dropFormAura` |
+| 道士 ⑤ | 召唤阵 + 灵兽从阵里升起 | `summonGate`（`FX.field` kind:sigil）+ `spawnT` / `spawnLift` |
+
+**四个设计决定（都是「为什么不是另一种写法」）**
+
+1. **换式不吃台阶**。`SKILL_VFX.avatar` 的 Lv5（冲击）/ Lv10（星火）属于
+   断岳斩与剑神降世那两个瞬间；换式是 1.2 秒一次的小动作，跟着满级播
+   就是「每两秒炸一次」，而且绘制预算从 5 涨到 9（实测）。所以
+   `vfxBladeForm(stance)` 固定按基础段取，`vfxBladeImpact(stance)` 只取刀气那一段。
+2. **刀式补丁只替换 `arc` 那一条**，不是整段覆盖 `impact`。
+   整段覆盖会把以后别人加进基础段的指令悄悄吃掉（改的人会以为是自己的 bug）。
+3. **法身用 Sprite，不用 `FXKit.spr`**。`spr` 是一簇一次性粒子，撑 10 秒要每帧重发
+   （600 次绘制）；Sprite 一次 draw call 挂全程，还能跟人走、随时换色。
+   `_dropFormAura` **只 dispose 材质不 dispose map** —— 贴图来自 `fxCellTexture`
+   的全局缓存，dispose 掉会把别的特效一起废掉。
+4. **灵兽登场高度记在 `spawnLift` 上**，不直接写 `group.position.y`：
+   `updateAllies` 末尾每帧 `position.set(x, 0, z)` 贴地，同一帧就把 y 抹掉了。
+
+**踩的两个坑**
+
+1. **`a.group.traverse` 的假异常**（P2b 探针遗留的那条红）：假怪 `actor` 里没有
+   `group` / `parts`，而 ⑥ 里要 `await` 半秒，那段时间帧循环会真的跑到阴影裁剪。
+   给假怪补 `group: new THREE.Group()` 与 `parts: {}` 就干净了 —— **不是产品 bug**。
+2. **headless 的 rAF 只有 ~10fps**，而游戏内计时走 `dt`（每帧 16ms 量级）。
+   「0.3 秒的游戏时间」在墙上要走两秒，写死 `await wait(700)` 必然假红。
+   改成 `__until(fn, 6000)` 轮询到条件成立（台账 §7.3 那条教训的第二次应用）。
+
+**验证**：`test-skill-p4` **56/0**（三式形状互不相同 / 补丁只换 arc / 不污染数据表 /
+越界落回斩锋 / 指令与贴图对账 / 6 条绘制读数 ≤ 6 / 17 条源码接线）；
+`probe-skill-p4` **29/0**（换式真播配方、三式参数不同、满层 1.4 秒 ≥2 跳且未满层 0 跳、
+法身进场景 / 有透明度 / 颜色=主元素 / 站身后 1.2 米 / 5.4 米高 / 换相换色 / 收窗摘除、
+召唤阵在脚下 / 灵兽缩小 + 地下升起 + 归位、换图摘法身、零控制台报错）。
+回归全绿：p0 250 · p1 52 · p1c 363 · p2 41 · **p2b 903** · p2c 99 · p3 106 · p4 56 · p6 97 ·
+vfx-dsl 291 · vfx-kit 58 · vfx-field 35 · items 21 · save 79 · holy 50 · dual 40 · affix 60 ·
+smoke ERRORS none · **probe-p2b 292** · probe-p2c 62 · probe-vfx-field 19。

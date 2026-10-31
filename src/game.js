@@ -1716,6 +1716,9 @@ const Game = {
     this.enemies = [];
     for (const a of this.allies) disposeTree(a.actor.group);
     this.allies = [];
+    /* [P4] 法身是常驻 Sprite，不归 FX 的 gen 管 —— 换图必须自己摘，
+     * 否则它会跟着旧场景一起被丢弃，`_formAura` 里留下一个已经不在场景上的空壳 */
+    if (typeof this._dropFormAura === 'function') this._dropFormAura();
     for (const l of this.loot) disposeTree(l.obj);
     this.loot = [];
     for (const id in this.npcs) disposeTree(this.npcs[id].group);
@@ -2777,6 +2780,10 @@ const Game = {
     if (typeof this.tickPassives === 'function') this.tickPassives(dt);
     /* [P2] 分支行为的帧级钩子（变身自动旋斩等） */
     if (typeof this.tickBeh === 'function') this.tickBeh(dt);
+    /* [P4] ⑤ 号位的常驻表现：法身跟随 / 刃势满层脉冲。
+     * 放在 tickBeh 之后 —— 法相的收窗与刃势的清零都发生在 tickBeh 里，
+     * 这一帧就该按**新状态**画，晚一帧会看到「窗口已经关了但法身还在呼吸」。 */
+    this.updateSkillForm(dt);
     this.updateProjectiles(dt);
     this.updateLoot(dt);
     this.updateSpawner(dt);
@@ -3504,7 +3511,8 @@ const Game = {
     this.recalc();
     const pp = this.playerGroup.position;
     const nm = this.bladeFormName(st.i);
-    FX.ring(new THREE.Vector3(pp.x, 0.2, pp.z), 2.4, 0xffd166, 0.5, 0.25);
+    /* 起手那一圈由 `vfxBladeForm` 的 cast 段播（同一个动作，形状在 impact 段），
+     * 这里不再自己画 ring —— 两个同心圆看起来像「放了两下」 */
     FX.text(new THREE.Vector3(pp.x, 2.6, pp.z), nm, 'lv', { life: 0.9 });
     UI.toast('兵形 · ' + nm);
     return st.i;
@@ -3520,6 +3528,163 @@ const Game = {
   /* 动作条角标的读数：`斩锋式 · 刃势 2/4` */
   bladeTip() {
     return this.bladeFormName(this.bladeStance()) + ' · 刃势 ' + this.bladeEdge() + '/' + this.bladeEdgeMax();
+  },
+
+  /* ============================================================
+   * [P4] 三个 ⑤ 号位的签名表现
+   *
+   * P2b 已经把「机制」做完了（刀式 / 刃势 / 断岳斩、法相窗口、灵兽），
+   * 这一层只补「看得出来」：
+   *   刀客 → 刀气随刀式换形 + 刃势满层刀身发烫
+   *   法师 → 背后法身（法相窗口的实体读法）
+   *   道士 → 召唤阵 + 灵兽从地里升起来
+   *
+   * 三条纪律（与 vfx.js 同源，这里再钉一遍）：
+   *   1. **只播特效**：这一节不改数值、不判定、不写状态（唯一例外是
+   *      `_formAura` 自己的生命周期，那是「特效自己的状态」）。
+   *   2. **画多大 = 打多大**：半径不传就用 `SKILLS[id].radius`。
+   *   3. **换图要能作废**：一次性特效由 FX / VFX 的 gen 管；
+   *      常驻的只有法身一个，所以它必须自己管（见 updateFormAura）。
+   * ============================================================ */
+
+  /* 统一播放口。调用方只说「哪个技能、在哪」，配方与台阶由 data-vfx 决定 */
+  playSkillVfx(id, opts) {
+    if (typeof VFX === 'undefined' || !VFX || typeof VFX.playFor !== 'function') return 0;
+    const o = opts || {};
+    const sk = (typeof SKILLS !== 'undefined') ? SKILLS[id] : null;
+    const pos = o.pos || this.playerGroup.position;
+    const r = Number(o.radius);
+    return VFX.playFor(id, {
+      pos: pos,
+      aim: o.aim || pos,
+      dir: o.dir || this.lastMoveDir || null,
+      radius: (isFinite(r) && r > 0) ? r : ((sk && sk.radius) || 3),
+      delay: o.delay || 0
+    });
+  },
+
+  /* 刀气按刀式换形（P4 · 兵形）。
+   * 形在 `tilt` 不在 `n`：斩锋细长 / 镇岳立起半圆 / 摧城三道短粗 —— 见 data-vfx
+   * 的 `BLADE_FORM_VFX`。这里不判断「有没有解锁」，`bladeStance()` 已经是合法值。 */
+  bladeFormVfx(stance) {
+    if (typeof VFX === 'undefined' || !VFX || typeof vfxBladeForm !== 'function') return 0;
+    const st = (stance == null) ? this.bladeStance() : stance;
+    /* 换式固定按基础段播：5 / 10 级那两道是**终结技**的规格（冲击 + 星火），
+     * 换式是 1.2 秒一次的小动作，跟着满级播就是「每两秒炸一次」 */
+    const rec = vfxBladeForm(st);
+    if (!rec) return 0;
+    const pp = this.playerGroup.position;
+    return VFX.play(rec, {
+      pos: pp, aim: pp, dir: this.lastMoveDir || null, radius: 3.2, elem: 'phys'
+    });
+  },
+
+  /* 断岳斩的刀气：只取刀式那一段（`vfxBladeImpact`）。
+   * 终结技自己已经有动作 / 前摇 / 三段震，不需要再叠一遍换式的起手圈。 */
+  bladeFinisherVfx(stance) {
+    if (typeof VFX === 'undefined' || !VFX || typeof vfxBladeImpact !== 'function') return 0;
+    const rec = vfxBladeImpact(stance == null ? this.bladeStance() : stance);
+    if (!rec) return 0;
+    const pp = this.playerGroup.position;
+    return VFX.play(rec, {
+      pos: pp, aim: pp, dir: this.lastMoveDir || null, radius: 3.4, elem: 'phys'
+    });
+  },
+
+  /* 刃势满层：刀身在发烫。
+   * 不做常驻 mesh —— 那要跟着人走、要管换图、要管死亡，三条都是坑；
+   * 0.6 秒一次的脉冲在 51° 俯角下已经足够读出「满了、该放终结技了」。 */
+  bladeEdgeVfx(dt) {
+    const s = this.state;
+    if (!s || s.cls !== 'warrior' || !this.bladeFinisherOn()) { this._edgeFxT = 0; return; }
+    if (this.bladeEdge() < this.bladeEdgeMax()) { this._edgeFxT = 0; return; }
+    this._edgeFxT = (this._edgeFxT || 0) + dt;
+    if (this._edgeFxT < 0.6) return;
+    this._edgeFxT = 0;
+    const pp = this.playerGroup.position;
+    FX.ring(new THREE.Vector3(pp.x, 0.2, pp.z), 1.2, 0xffd166, 0.34, 0.08);
+    if (typeof FXK !== 'undefined' && FXK && typeof FXK.spr === 'function') {
+      FXK.spr(new THREE.Vector3(pp.x, 1.5, pp.z), {
+        n: 5, tex: 'spark', color: 0xffe6a8, size: 0.16, life: 0.42,
+        speed: 0.7, spread: 0.45, up: 0.9, grav: -1.2, additive: true
+      });
+    }
+  },
+
+  /* ---------------- 法相 · 法身 ----------------
+   * 为什么是 Sprite 而不是 FXKit.spr：`spr` 是一簇**一次性**粒子，要撑 10 秒
+   * 就得每帧重发（10 秒 × 60 帧 = 600 次绘制）；Sprite 一次 draw call 挂全程，
+   * 还能跟着人走、随时换色（换相）。这也是方案 §7.2 写的「一个大号 billboard」。 */
+  _mkFormAura(color) {
+    if (typeof THREE === 'undefined' || typeof FXK === 'undefined' || !FXK.cellTex) return null;
+    const mat = new THREE.SpriteMaterial({
+      map: FXK.cellTex('rune'), color: color, transparent: true, opacity: 0,
+      depthWrite: false, blending: THREE.AdditiveBlending, fog: false
+    });
+    const sp = new THREE.Sprite(mat);
+    sp.scale.set(4.6, 5.4, 1);
+    sp.renderOrder = 7;
+    if (this.scene) this.scene.add(sp);
+    this._formAura = { sp, mat, t: 0, out: 0 };
+    return this._formAura;
+  },
+
+  /* 摘掉法身。**只 dispose 材质，不 dispose map** ——
+   * 贴图来自 `fxCellTexture` 的全局缓存，dispose 掉会把其它特效的贴图一起废掉。 */
+  _dropFormAura() {
+    const f = this._formAura;
+    this._formAura = null;
+    if (!f) return;
+    if (f.sp && this.scene) this.scene.remove(f.sp);
+    if (f.mat) f.mat.dispose();
+  },
+
+  updateFormAura(dt) {
+    const on = (typeof this.elemAuraOn === 'function') && this.elemAuraOn();
+    let f = this._formAura;
+    if (on) {
+      const k = this.elemAuraKind();
+      if (!f) f = this._mkFormAura(k.color);
+      if (!f || !f.sp) return;
+      f.out = 0;
+      f.t += dt;
+      /* 换相：颜色直接改、不做渐变 —— 法身是「相」，换相就该当场换 */
+      if (f.mat.color.getHex() !== k.color) f.mat.color.setHex(k.color);
+      const pp = this.playerGroup.position;
+      const d = this.lastMoveDir || { x: 0, z: 1 };
+      /* 站在**身后** 1.2 米：法相是「相在身后」，站到身前会挡住自己的人 */
+      f.sp.position.set(pp.x - d.x * 1.2, 2.5, pp.z - d.z * 1.2);
+      /* 入场 0.3 秒淡入，之后呼吸。上限压到 0.29 —— 加法混合在暗场景里
+       * 0.3 已经很亮，再高就把自己的角色盖住了（这层是背景，不是主体）。 */
+      const fade = Math.min(1, f.t / 0.3);
+      f.mat.opacity = fade * (0.24 + Math.sin(f.t * 2.2) * 0.05);
+      const s = 0.9 + fade * 0.1;
+      f.sp.scale.set(4.6 * s, 5.4 * s, 1);
+      return;
+    }
+    if (!f) return;
+    /* 收窗：0.3 秒淡出再摘。直接 remove 是「啪」地消失，
+     * 玩家会读成「被打断了」—— 收窗和被打断必须是两种读法。 */
+    f.out += dt;
+    if (f.mat) f.mat.opacity = Math.max(0, f.mat.opacity - dt * 1.2);
+    if (f.out >= 0.3) this._dropFormAura();
+  },
+
+  /* 每帧的 ⑤ 号位表现总闸（在 tickBeh 之后调用，位置与 updateAuras 同源） */
+  updateSkillForm(dt) {
+    this.updateFormAura(dt);
+    this.bladeEdgeVfx(dt);
+  },
+
+  /* 召唤阵：道士 ⑤ 与三只召唤技能共用。
+   * 用 `FX.field`（领域）而不是撒一圈粒子 —— 阵要有**边界和柱子**，
+   * 那是「门」的读法；一圈粒子只会像「地上有个亮圈」。 */
+  summonGate(pos, color) {
+    if (typeof FX === 'undefined' || typeof FX.field !== 'function') return;
+    const p = pos || this.playerGroup.position;
+    FX.field(new THREE.Vector3(p.x, 0, p.z + 0.8), {
+      kind: 'sigil', r: 1.9, life: 1.15, color: color || 0x9affd0, opacity: 0.72, spin: 0.7
+    });
   },
 
   /* ============================================================
@@ -4211,6 +4376,9 @@ const Game = {
         if (bBlade.edgeFinisher && edgeFull) {
           /* ---------------- 断岳斩 ---------------- */
           const stance = this.bladeStance();
+          /* [P4] 终结技的刀气跟着当前刀式走 —— 「换刀式决定了这一发是点杀
+           * 还是清场」，视觉上也必须是两种形状，否则玩家只在数字上看到差别 */
+          this.bladeFinisherVfx(stance);
           this.bladeState().mask = 0;              // 一层刃势只放一次
           if (typeof UI !== 'undefined' && UI.syncBladeBadge) UI.syncBladeBadge();
           /* 破军系大节点·剑神：终结技立刻刷新烈焰突刺冷却 */
@@ -4273,6 +4441,9 @@ const Game = {
           this.actor.atkAnim = 1; this.actor.atkType = 'cast'; this.actor.atkSpeed = 1.6;
           SFX.ui(); SFX.cast();
           this.bladeCycle();
+          /* [P4] 换式的刀光按**新刀式**播（不是旧的）：玩家按下去看到的就是
+           * 「换成了什么样」，这是这一格唯一能一眼读懂的反馈 */
+          this.bladeFormVfx();
           this.cooldowns[id] = 1.2;
           /* 换式不收资源：怒气是打出来的，不该花在「换个姿势」上 */
           s.mp = Math.min(st.mpMax, s.mp + cost);
@@ -4324,6 +4495,9 @@ const Game = {
           FX.ring(new THREE.Vector3(pp.x, 0.2, pp.z), 3.4, k.color, 0.55, 0.25);
           FX.burst(new THREE.Vector3(pp.x, 1.4, pp.z), k.color, 18,
             { speed: 4, size: 0.12, life: 0.7, gravity: -2, additive: true });
+          /* [P4] 换相：配方重播一次（换色），法身由 updateFormAura 当场改色 ——
+           * 换相最怕「只有动作条角标变了」，所以画面上要有两处同时响应 */
+          this.playSkillVfx('elementavatar', { radius: 2.4 });
           FX.text(new THREE.Vector3(pp.x, 3, pp.z), k.name, 'lv', { life: 0.95 });
           UI.toast('法相 · ' + k.name);
           this.cooldowns[id] = 1.2;
@@ -4369,6 +4543,10 @@ const Game = {
             kind.color, 2, { speed: 3, size: 0.13, life: 0.9, gravity: -3, additive: true });
         }
         FX.text(new THREE.Vector3(pp.x, 3.3, pp.z), kind.name, 'lv', { life: 1.2 });
+        /* [P4] 开窗：法阵 + 上升光柱（配方 cast 段），法身由 updateFormAura 建。
+         * 半径 3.4 而不是技能半径 2.6 —— 开窗是「场上多了一个状态」，
+         * 读法要比一发技能大一圈，否则会被当成普通的起手特效 */
+        this.playSkillVfx('elementavatar', { radius: 3.4 });
         UI.toast('元素法相 · ' + kind.name + ' ' + Math.round(dur) + ' 秒', 'lv');
         UI.log('法相已开：' + Math.round(dur) + ' 秒内全抗 +'
           + (bf.allRes || 0) + (ea.rider ? '，命中附带' + kind.glyph + '效果' : ''));
@@ -5165,6 +5343,9 @@ const Game = {
         this.actor.atkAnim = 1; this.actor.atkType = 'cast';
         SFX.heal();
         this.summonWolf();
+        /* [P4] 召唤阵 + 灵兽从阵里升起（登场动作在 updateAllies 的 spawnT） */
+        this.summonGate(pp, 0x9affd0);
+        this.playSkillVfx('summon', { radius: 1.9 });
         FX.flashCircle(pp, 2.4, 0x9affd0, 0.5);
         break;
       }
@@ -5175,6 +5356,8 @@ const Game = {
         /* 参数统一读 BEAST_PRESET（台阶「四象同场」要凭空补召同一只，
          * 数字抄第二遍就多一处漂移的机会） */
         this.summonBeast({ kind: 'tiger' });
+        this.summonGate(pp, 0xffe0b0);
+        this.playSkillVfx('summon', { radius: 2.2 });
         FX.flashCircle(pp, 3, 0xffe0b0, 0.5);
         break;
       }
@@ -5195,6 +5378,9 @@ const Game = {
           break;
         }
         this.summonBeast({ kind: 'dragon' });
+        /* [P4] 青龙的阵比另两只大一圈：它是三只里唯一的范围型灵兽 */
+        this.summonGate(pp, 0x6ac8ff);
+        this.playSkillVfx('summon', { radius: 2.6 });
         /* [P2] 龙息（取向）：青龙在场时每 N 秒喷吐一次范围伤害。
          * 标记在召唤物身上，updateAllies 里逐帧倒数 */
         if (bBeh && bBeh.breath && this.allies.length) {
@@ -7855,6 +8041,9 @@ const Game = {
         coef, dmgMul,
         atkRate: o.atkRate || 1.1, aoe: !!o.aoe,
         atkCd: 0,
+        /* [P4] 登场：从阵里升起来（0.42 秒）。baseScale 存的是**召唤时**的缩放，
+         * 登场动画只乘在它上面 —— 直接写死 1 会把不同体型的灵兽拉成一样大。 */
+        spawnT: 0.42, baseScale: (a.group.scale && a.group.scale.x) || 1,
         revive: { kind: o.kind || 'wolf' }
       });
       made++;
@@ -7964,6 +8153,24 @@ const Game = {
     let reviveQ = null;
     for (let i = this.allies.length - 1; i >= 0; i--) {
       const al = this.allies[i];
+      /* [P4] 登场动作：从地里升起来 + 由小放大。
+       * 灵兽以前是「啪」地出现在场上，玩家分不清「刚召的」和「本来就在的」；
+       * 召唤阵 + 这 0.42 秒合起来才是「从阵里走出来」。
+       * 用 smoothstep 而不是线性：线性收尾会「顿」一下，像卡帧。 */
+      if (al.spawnT > 0) {
+        al.spawnT = Math.max(0, al.spawnT - dt);
+        const k = 1 - al.spawnT / 0.42;
+        const e = k * k * (3 - 2 * k);
+        const bs = al.baseScale || 1;
+        al.actor.group.scale.setScalar(bs * (0.35 + 0.65 * e));
+        /* 高度偏移记在 `spawnLift` 上（本帧末尾统一贴地时读它），
+         * 不要直接写 group.position.y —— 那一行每帧都会把它抹掉 */
+        al.spawnLift = -0.7 * (1 - e);
+        if (al.spawnT === 0) {
+          al.actor.group.scale.setScalar(bs);
+          al.spawnLift = 0;
+        }
+      }
       /* [P3] 灵兽增益（allyBuff）：伤害 / 出手间隔 / 存续流失三样。
        * [P2b·兽群] 灵兽现在有血了 —— 「drain」从「烧寿命」改成「持续掉血」，
        * 描述里的「持续流失」才有了字面意思。 */
@@ -8073,7 +8280,10 @@ const Game = {
           al.actor.group.rotation.y = Math.atan2(dx, dz);
         } else al.actor.moving = false;
       }
-      al.actor.group.position.set(al.pos.x, 0, al.pos.z);
+      /* [P4] 登场时的高度偏移由 `spawnLift` 带进来 ——
+       * 这里每帧都会把 y 重置成 0（贴地），所以登场动作**不能**自己写
+       * `group.position.y`，否则同一帧就被这一行抹掉，看起来像「没有升起」 */
+      al.actor.group.position.set(al.pos.x, al.spawnLift || 0, al.pos.z);
       updateActorAnim(al.actor, dt);
     }
     if (reviveQ) {

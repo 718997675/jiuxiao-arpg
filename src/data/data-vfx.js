@@ -258,6 +258,36 @@ const SKILL_VFX = {
   }
 };
 
+/* ============================================================
+ * 兵形 · 三种刀式的刀气（P4）
+ *
+ * 方案 §7.1 那一行：「切刀式瞬间，刀气形状改变：斩锋=细长弧、镇岳=半圆盾弧、
+ * 摧城=短粗裂弧」。**形在 `tilt`，不在 `n`** ——
+ *   tilt 小 = 弧压得平 = 又长又细（斩锋）
+ *   tilt 大 = 弧立起来 = 半圆护体（镇岳）
+ *   n 多 + tilt 最小 = 三道短粗的裂口（摧城）
+ * 所以三式共用 `arc` 一条指令，只换参数 —— 这也是 §3「形色时分离」的本意：
+ * 加第四种刀式时不用再写一套几何。
+ *
+ * 这张表**只写「命中段」**（刀气本体）。起手那一圈沿用 `SKILL_VFX.avatar`
+ * 的 cast —— 换式是同一个动作，差别只在刀气形状，没必要抄第二份。
+ * ============================================================ */
+const BLADE_FORM_VFX = {
+  0: {
+    sil: 'slash', color: 0xffd166, tex: 'slash', decal: null,
+    impact: [{ t: 'arc', n: 1, tilt: 0.16, color: 0xffd166 }]
+  },
+  1: {
+    sil: 'guard', color: 0xffe6a8, tex: 'slash', decal: null,
+    impact: [{ t: 'arc', n: 2, tilt: 0.5, color: 0xffe6a8 }]
+  },
+  2: {
+    sil: 'ruin', color: 0xffb060, tex: 'slash', decal: 'crack',
+    /* 裂弧要留痕：摧城式的身份是「砸开」，地上没有裂口就只是换了颜色 */
+    impact: [{ t: 'arc', n: 3, tilt: 0.1, color: 0xffb060 }, { t: 'decal', r: 0.5 }]
+  }
+};
+
 /* 复制一段指令数组 —— **连指令对象一起复制**。
  * 只 `slice()` 数组是不够的：数组里的 `{t:'arc', n:2}` 还是同一份引用，
  * 调用方（比如元素混搭要改某一条的色）一改就把数据表污染了，
@@ -309,6 +339,52 @@ function vfxRecipe(id, lv) {
   out.tier = applied.length ? applied[applied.length - 1] : 0;
   out.applied = applied;
   return out;
+}
+
+/* 取刀式配方（P4）：**在 `SKILL_VFX.avatar` 的基础段上打「刀式补丁」**。
+ *
+ * 不另写一份完整配方，是为了「起手那圈」只有一个来源 ——
+ * 以后调兵形的起手手感，改 `SKILL_VFX.avatar` 一处，三式全跟。
+ *
+ * **刻意不吃台阶**（固定按 1 级取）：换式是 1.2 秒一次的小动作，
+ * 5 级的冲击 + 10 级的星火属于「断岳斩 / 剑神降世」那两个瞬间。
+ * 让换式跟着满级播，等于每两秒炸一次，而且绘制预算直接翻倍（实测 9 次）。
+ *
+ * **只替换 `arc` 那一条**，其余指令原样保留 —— 整段覆盖会把基础段里的
+ * 别的东西一起吃掉，以后加指令的人会莫名其妙地发现自己的指令不生效。
+ * 越界的 stance 一律落回斩锋式：面板点错、存档脏值都不该崩。 */
+function vfxBladeForm(stance) {
+  const out = vfxRecipe('avatar', 1);
+  if (!out) return null;
+  const f = BLADE_FORM_VFX[stance | 0] || BLADE_FORM_VFX[0];
+  out.sil = f.sil;
+  out.color = f.color;
+  out.tex = f.tex;
+  out.decal = f.decal;
+  const kept = [];
+  let put = false;
+  for (const op of (out.impact || [])) {
+    if (op && op.t === 'arc') {
+      if (!put) { for (const s of f.impact) kept.push(Object.assign({}, s)); put = true; }
+      continue;
+    }
+    kept.push(op);
+  }
+  if (!put) for (const s of f.impact) kept.push(Object.assign({}, s));
+  out.impact = kept;
+  return out;
+}
+
+/* 只取「刀气那一段」（断岳斩用）。
+ * 终结技自己已经有动作与前摇，再播一遍换式的起手圈就是同一个动作画两遍；
+ * 而且 5 / 10 级的冲击属于「换式」的规格，不该叠到终结技上把预算打穿。 */
+function vfxBladeImpact(stance) {
+  const f = BLADE_FORM_VFX[stance | 0] || BLADE_FORM_VFX[0];
+  return {
+    sil: f.sil, color: f.color, tex: f.tex, decal: f.decal,
+    cast: [], loop: [], impact: _vfxCloneOps(f.impact),
+    lv: 1, tier: 0, applied: []
+  };
 }
 
 /* ============================================================
