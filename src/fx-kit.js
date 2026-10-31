@@ -200,6 +200,21 @@ function fxCellTexture(name) {
     }
     /* 符文：三笔朱砂风格的白描（这里只画形状，颜色交给材质） */
     case 'rune': {
+      /* 先铺一层柔光，再画符字。
+       *
+       * 只画符字时这一格几乎是空的：128px 画布上笔画只有 6~7px 宽，
+       * 覆盖率不到 6%。大尺寸（贴花 / 法阵）没问题，但当**粒子**用的时候
+       * 一颗只有 14 像素，笔画落在亚像素上，整颗等于没画 —— 实测同一尺寸下
+       * `soft` 818 像素、`rune` 只有 288，道士① 的符箓整只 531 像素就是这个原因。
+       *
+       * 柔光让「这一颗是亮的」在远处也成立，符字的形在大尺寸下仍然读得出。
+       * 这也是这一轮反复出现的那条：**形状要按它真正被画的尺寸设计**。 */
+      const halo = g.createRadialGradient(H, H, 0, H, H, H * 0.82);
+      halo.addColorStop(0, 'rgba(255,255,255,.40)');
+      halo.addColorStop(0.55, 'rgba(255,255,255,.15)');
+      halo.addColorStop(1, 'rgba(255,255,255,0)');
+      g.fillStyle = halo;
+      g.fillRect(0, 0, S, S);
       g.strokeStyle = 'rgba(255,255,255,.95)';
       g.lineCap = 'round';
       g.lineWidth = 7;

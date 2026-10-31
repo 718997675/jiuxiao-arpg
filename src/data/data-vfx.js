@@ -224,7 +224,14 @@ const SKILL_VFX = {
   /* ④ 血怒：**从脚下冒** —— 不是包在外面的壳（那是 ④ 护盾的语义） */
   bloodrage: {
     sil: 'riser', elem: 'phys', color: 'elem', tex: 'ember', decal: null,
-    cast: [{ t: 'spr', n: 14, tex: 'ember', r: 0.5, dir: 'up', dur: 0.8 }],
+    /* 增益的读法是「**力量从脚下升上来**」，不是「脚边冒几个火星」。
+     * 16 米机位上，贴地的环被压成一条扁线、14 颗火星只有 30 像素 ——
+     * 实测整只技能 679 像素，等于放了个寂寞。加一道 0.66 米粗的血柱
+     * （`shock:false` = 1 次绘制，不连带冲击波），纵向把体积撑起来。 */
+    cast: [
+      { t: 'spr', n: 18, tex: 'ember', r: 0.7, dir: 'up', dur: 1.0 },
+      { t: 'geyser', r: 0.30, n: 16, dir: 'up', dur: 0.9, shock: false }
+    ],
     loop: [{ t: 'ring', r: 0.6, dur: 0.5 }],
     impact: [],
     tiers: {
@@ -400,15 +407,17 @@ const SKILL_VFX = {
   iceshield: {
     sil: 'shell', elem: 'ice', color: 'elem', tex: 'shard', decal: 'frost',
     cast: [{ t: 'ring', r: 0.5, dur: 0.3 }],
-    loop: [{ t: 'spr', n: 4, tex: 'shard', r: 0.6, h: 1.0, dur: 1.5 }],
-    impact: [{ t: 'spr', n: 18, tex: 'shard', r: 0.4, dir: 'out' }],
+    /* 冰壳是**围着人一圈的碎片**，不是光柱 —— 加的是密度不是高度：
+     * 4 颗摊在 1.8 米半径上等于没长壳（实测 722 像素），12 颗才连成轮廓。 */
+    loop: [{ t: 'spr', n: 22, tex: 'shard', r: 0.72, h: 1.0, dur: 1.5 }],
+    impact: [{ t: 'spr', n: 34, tex: 'shard', r: 0.7, dir: 'out' }],
     tiers: {
       /* 进化 Ⅰ「护甲 +30%」：起手补一簇贴合轮廓的冰晶（壳开始「长出来」） */
-      5: { cast: [{ t: 'ring', r: 0.5, dur: 0.3 }, { t: 'spr', n: 10, tex: 'shard', r: 0.55 }] },
+      5: { cast: [{ t: 'ring', r: 0.5, dur: 0.3 }, { t: 'spr', n: 16, tex: 'shard', r: 0.55 }] },
       /* 进化 Ⅱ「暴击 +15%」：壳外面多一圈 1.4 秒慢扩的护罩环 */
       9: {
         loop: [
-          { t: 'spr', n: 4, tex: 'shard', r: 0.6, h: 1.0, dur: 1.5 },
+          { t: 'spr', n: 22, tex: 'shard', r: 0.72, h: 1.0, dur: 1.5 },
           { t: 'ring', r: 0.62, dur: 1.4 }
         ]
       },
@@ -446,29 +455,60 @@ const SKILL_VFX = {
   /* ① 符箓：**竖长纸片** —— 符纸旋转飞行（本体是 mesh，这里补命中炸开的朱砂字） */
   talisman: {
     sil: 'talis', elem: 'sigil', color: 'elem', tex: 'rune', decal: null,
-    cast: [{ t: 'spr', n: 4, tex: 'rune', r: 0.18 }],
+    /* 道士① 的基础符箓。原来起手 4 颗符字、命中 10 颗，在 16 米机位上
+     * 只有 20 像素一粒 —— 实测整只 531 像素，读起来像「按了没反应」。
+     *
+     * 两个改动：
+     * ① 发数加大（不进绘制预算，一簇仍然是一个 Points）；
+     * ② **散布半径只放到 0.5**：试过 0.65，符字散开之后单颗更淡，
+     *    整只反而掉到 1348 —— 这一簇要读的是「落点炸开一团朱砂」，
+     *    不是「天上撒了一把纸」。
+     * 起手那一簇是「手上一张符」，所以半径一直是 0.26，不能跟着放。 */
+    cast: [{ t: 'spr', n: 18, tex: 'rune', r: 0.26, size: 0.95 }],
     loop: [],
-    impact: [{ t: 'bolt', r: 0.0 }, { t: 'spr', n: 10, tex: 'rune', r: 0.3 }],
+    /* 命中段加一次 `flash`：落雷必须有「炸开」的那一下。
+     * 只靠符字（哪怕是 34 颗）量到 1403 就上不去了 —— 那是「撒了一把亮片」，
+     * 不是「砸了一下」。`flash` 是 1 次绘制，换来的是落点的体积感。 */
+    impact: [
+      { t: 'bolt', r: 0.0 },
+      { t: 'flash', r: 0.3 },
+      { t: 'spr', n: 34, tex: 'rune', r: 0.5, size: 1.05 }
+    ],
     tiers: {
-      /* 进化 Ⅰ「雷符连锁」：起手多一簇符字（两张符一起飞出去） */
-      5: { cast: [{ t: 'spr', n: 4, tex: 'rune', r: 0.18 }, { t: 'spr', n: 6, tex: 'rune', r: 0.28 }] },
+      /* 进化 Ⅰ「雷符连锁」：起手多一簇符字（两张符一起飞出去）。
+       * [预算] 起手多花的那 1 次绘制从命中段的 `flash` 里出 —— 5 级之后
+       * 「炸开」由两簇符字一起给，不再靠白闪。顶格 6，不能两边都要。 */
+      5: {
+        cast: [
+          { t: 'spr', n: 18, tex: 'rune', r: 0.26, size: 0.95 },
+          { t: 'spr', n: 12, tex: 'rune', r: 0.4, size: 0.9 }
+        ],
+        impact: [{ t: 'bolt', r: 0.0 }, { t: 'spr', n: 40, tex: 'rune', r: 0.5, size: 1.05 }]
+      },
       /* 进化 Ⅱ「雷符阵」：命中处留一圈 1 秒的阵环。
        * [P5·预算] 起手退回单簇，把这一次绘制让给阵环（`bolt` 一个人就 3 次）。 */
       9: {
-        cast: [{ t: 'spr', n: 4, tex: 'rune', r: 0.18 }],
-        impact: [{ t: 'bolt', r: 0.0 }, { t: 'spr', n: 10, tex: 'rune', r: 0.3 }, { t: 'ring', r: 0.55, dur: 1.0 }]
+        cast: [{ t: 'spr', n: 18, tex: 'rune', r: 0.26, size: 0.95 }],
+        /* [预算] 阵环和符字二选一时留阵环：9 级的卖点就是「地上留了个阵」，
+         * 而符字已经被 flash 替掉了体积感。 */
+        impact: [
+          { t: 'bolt', r: 0.0 },
+          { t: 'flash', r: 0.35 },
+          { t: 'ring', r: 0.55, dur: 1.0 }
+        ]
       },
       /* 终极「雷符自动追踪」：朱砂字晚 0.1 秒才炸（追上去再爆），阵环留着 */
       10: {
-        cast: [{ t: 'spr', n: 4, tex: 'rune', r: 0.18 }],
+        cast: [{ t: 'spr', n: 18, tex: 'rune', r: 0.26, size: 0.95 }],
         impact: [
           { t: 'bolt', r: 0.0 },
           { t: 'ring', r: 0.55, dur: 1.0 },
-          { t: 'spr', n: 12, tex: 'rune', r: 0.3, at: 0.1 }
+          { t: 'flash', r: 0.4, at: 0.1 }
         ]
       }
     }
   },
+
   /* ② 万剑归宗 / 毒雾：**从天而降的剑** —— 多把剑斜插地面，每把留一根短剑影 */
   swordrain: {
     sil: 'rain', elem: 'sigil', color: 'elem', tex: 'shard', decal: 'crack',
@@ -493,15 +533,15 @@ const SKILL_VFX = {
   /* ③ 太极玄阵：**圆形领域** —— 地面纹 + 边界 + 脉冲（field 原语已有，这里补边缘） */
   taiji: {
     sil: 'circle', elem: 'sigil', color: 'elem', tex: 'soft', decal: null,
-    cast: [{ t: 'ring', r: 0.95, dur: 0.6 }, { t: 'spr', n: 12, tex: 'soft', r: 0.9 }],
-    loop: [{ t: 'ring', r: 0.8, dur: 1.2 }],
+    cast: [{ t: 'ring', r: 1.15, dur: 0.6 }, { t: 'spr', n: 20, tex: 'soft', r: 0.9 }],
+    loop: [{ t: 'ring', r: 0.95, dur: 1.2 }],
     impact: [],
     tiers: {
       /* 进化 Ⅰ「阵内敌人减速 40%」：阵内飘起一圈贴地的雾粒子（领域有「内容物」了） */
       5: {
         loop: [
-          { t: 'ring', r: 0.8, dur: 1.2 },
-          { t: 'spr', n: 8, tex: 'soft', r: 0.7, h: 0.6, dur: 1.2 }
+          { t: 'ring', r: 0.95, dur: 1.2 },
+          { t: 'spr', n: 12, tex: 'soft', r: 0.7, h: 0.6, dur: 1.2 }
         ]
       },
       /* 进化 Ⅱ「施法后 4 秒受伤 -12%」：0.2 秒后的一次脉冲环（阵在「跳」） */
@@ -518,7 +558,13 @@ const SKILL_VFX = {
   /* ④ 回春：**向上生长** —— 从脚下往上冒的光点，不是炸开 */
   heal: {
     sil: 'grow', elem: 'sigil', color: 'elem', tex: 'soft', decal: null,
-    cast: [{ t: 'ring', r: 0.45, dur: 0.4 }, { t: 'spr', n: 14, tex: 'soft', r: 0.4, dir: 'up', dur: 0.9 }],
+    /* 同血怒：回春是「从脚下升起一道光」。只靠环 + 火星时实测 1051 像素。
+     * [预算] 起手只留「升起」（火星 + 光柱），地面圈挪到 5 级 ——
+     * 三个都要的话，5 级台阶再给 loop 加一个环，10 级就顶到 7 次绘制了。 */
+    cast: [
+      { t: 'spr', n: 14, tex: 'soft', r: 0.4, dir: 'up', dur: 0.9 },
+      { t: 'geyser', r: 0.42, n: 20, dir: 'up', dur: 1.0, shock: false }
+    ],
     loop: [{ t: 'spr', n: 6, tex: 'soft', r: 0.35, dir: 'up', dur: 1.2 }],
     impact: [],
     tiers: {
@@ -531,11 +577,13 @@ const SKILL_VFX = {
       },
       /* 进化 Ⅱ「瞬间驱散并 1.5 秒无敌」：0.15 秒后一次护体环 */
       9: { impact: [{ t: 'ring', r: 0.6, at: 0.15, dur: 0.9 }] },
-      /* 终极「生命低于 30% 时自动施放」：护体环之后再升起一簇星芒（自动触发的那一下） */
+      /* 终极「生命低于 40% 时自动施放」：护体环之后再跳一次。
+       * **星芒那一簇撤了**：起手已经有光柱，「升起」这件事不用再说第二遍，
+       * 而预算只有 6 次绘制（加光柱后这一档刚好顶格），撤掉的这次让给光柱。 */
       10: {
         impact: [
           { t: 'ring', r: 0.6, at: 0.15, dur: 0.9 },
-          { t: 'spr', n: 10, tex: 'star', r: 0.5, dir: 'up', dur: 1.0, at: 0.1 }
+          { t: 'ring', r: 0.45, at: 0.45, dur: 0.8 }
         ]
       }
     }
