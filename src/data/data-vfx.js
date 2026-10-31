@@ -31,35 +31,47 @@
  *   up    垂直初速（正 = 向上）
  *   grav  重力（正 = 下坠；负 = 上飘）
  *   drag  阻尼（越大停得越快 → 冰就是靠这个「硬停」）
+ *
+ * ---------------- size 为什么是 0.6~0.86（2026-10-31 调过） ----------------
+ * 相机在 16 米外、画布高 660px，**1 米 ≈ 20 像素**。原来写 0.2~0.3，
+ * 一颗粒子只有 5 像素，而贴图是软边（中心到 62% 半径就淡到 0），
+ * 真正能过「Δ≥8」的只剩 2~3 像素 —— 白天站在桃源村的亮地面上，
+ * 一发火球打出去等于什么都没画（V0 就记过这条：`spr` 差异像素 0~20）。
+ * 地牢里看着还行，是因为暗背景把加色混合的微弱增量放大了；
+ * **「只在地牢里好看」不算好看**，所以按亮地面定尺寸。
+ *
+ * 现在的值 = 让一颗粒子在 16 米处有 14~17 像素、软核 6~8 像素。
+ * 判据是 `dev/vfx-vis.js`（可复跑的差异像素，不是人眼），
+ * 别再凭手感往下调 —— 往下调 30% 就是回到「看不见」。
  */
 const ELEM_PROFILE = {
   phys: {
     tex: 'spark', decal: 'crack', color: 0xffe0c0,
-    up: 0.6, grav: 9, drag: 2.0, scatter: 1.0, size: 0.22
+    up: 0.6, grav: 9, drag: 2.0, scatter: 1.0, size: 0.70
   },
   fire: {
     tex: 'ember', decal: 'scorch', color: 0xff7a30,
     /* 火往上走：负重力 + 正向初速。drag 小一点，让它飘得久 */
-    up: 1.8, grav: -2.4, drag: 0.9, scatter: 1.15, size: 0.26
+    up: 1.8, grav: -2.4, drag: 0.9, scatter: 1.15, size: 0.92
   },
   ice: {
     tex: 'shard', decal: 'frost', color: 0x8ad8ff,
     /* 冰「直线硬停」：初速有，但 drag 很大 + 重力大，甩出去就掉地上不动了 */
-    up: 0.4, grav: 10, drag: 4.2, scatter: 0.75, size: 0.2
+    up: 0.4, grav: 10, drag: 4.2, scatter: 0.75, size: 0.62
   },
   lightning: {
     tex: 'spark', decal: 'crack', color: 0x9ad8ff,
     /* 雷是瞬时的：散射最散、阻尼最小，靠 bolt 的折线撑形状 */
-    up: 0.5, grav: 6, drag: 0.7, scatter: 1.7, size: 0.2
+    up: 0.5, grav: 6, drag: 0.7, scatter: 1.7, size: 0.62
   },
   poison: {
     tex: 'smoke', decal: 'acid', color: 0x9adf60,
     /* 毒往下沉、翻滚：负初速 + 负重力 + 低阻尼（一直往下漂） */
-    up: -0.8, grav: -1.2, drag: 1.2, scatter: 0.9, size: 0.3
+    up: -0.8, grav: -1.2, drag: 1.2, scatter: 0.9, size: 0.86
   },
   sigil: {
     tex: 'rune', decal: 'frost', color: 0xfff2b0,
-    up: 1.0, grav: 2.2, drag: 1.6, scatter: 0.85, size: 0.24
+    up: 1.0, grav: 2.2, drag: 1.6, scatter: 0.85, size: 0.68
   }
 };
 

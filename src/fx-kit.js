@@ -53,6 +53,29 @@ function fxCellTexture(name) {
   const H = S / 2;
   g.clearRect(0, 0, S, S);
 
+  /* ---------------- 贴花的「暗底」 ----------------
+   * 亮地面上白色贴花几乎看不见：地面本身已经很亮，正常混合下白贴花只是
+   * 「再亮一点点」，对比只剩几个灰阶（V0 量过：`decal` 的峰值 Δ 只有 48/255，
+   * 而 `arc` 是 150）。地牢里没问题，所以这个缺陷只在白天暴露 ——
+   * 「只在地牢里好看」不算好看。
+   *
+   * 做法：贴花贴图里**先铺一层黑**。材质 `color` 是乘法，黑底乘任何颜色还是黑，
+   * 于是亮地面上看到的是「一块暗斑 + 元素色的纹路」，暗场景里黑等于没有，
+   * 只剩元素色 —— 两种背景都对，而且**不多一次绘制**（不是再叠一层 quad，
+   * 那样贴花就从 1 次变 2 次，预算直接翻倍）。
+   *
+   * 代价：这四格从此只能当贴花用（走 Mesh + NormalBlending）。当粒子贴图会被
+   * 加色混合吃掉（黑加不出任何东西 = 粒子凭空消失），`test-vfx-dsl` 里有一条
+   * 钉住「没有配方拿这四格当 `tex`」。 */
+  const decalBase = (a) => {
+    const grd = g.createRadialGradient(H, H, 0, H, H, H * 0.95);
+    grd.addColorStop(0, 'rgba(0,0,0,' + a + ')');
+    grd.addColorStop(0.6, 'rgba(0,0,0,' + (a * 0.62).toFixed(2) + ')');
+    grd.addColorStop(1, 'rgba(0,0,0,0)');
+    g.fillStyle = grd;
+    g.beginPath(); g.arc(H, H, H * 0.95, 0, Math.PI * 2); g.fill();
+  };
+
   switch (name) {
     /* 径向柔光：最常用的一格，火花 / 光晕 / 尘埃都从它派生 */
     case 'soft': {
@@ -228,6 +251,7 @@ function fxCellTexture(name) {
     }
     /* ---- 以下四格是贴花（decal）：形状即 alpha，颜色由材质给 ---- */
     case 'scorch': {
+      decalBase(0.55);
       const grd = g.createRadialGradient(H, H, 0, H, H, H);
       grd.addColorStop(0, 'rgba(255,255,255,.85)');
       grd.addColorStop(0.55, 'rgba(255,255,255,.45)');
@@ -245,6 +269,7 @@ function fxCellTexture(name) {
       break;
     }
     case 'frost': {
+      decalBase(0.42);
       g.strokeStyle = 'rgba(255,255,255,.9)';
       g.lineCap = 'round';
       for (let i = 0; i < 9; i++) {
@@ -274,6 +299,7 @@ function fxCellTexture(name) {
       break;
     }
     case 'acid': {
+      decalBase(0.46);
       for (let i = 0; i < 20; i++) {
         const a = Math.random() * Math.PI * 2;
         const r = H * Math.pow(Math.random(), 0.7) * 0.75;
@@ -290,6 +316,7 @@ function fxCellTexture(name) {
       break;
     }
     case 'crack': {
+      decalBase(0.40);
       g.strokeStyle = 'rgba(255,255,255,.92)';
       g.lineCap = 'round';
       /* 从中心往外裂的几条折线，越往外越细 */
@@ -373,7 +400,10 @@ function fxDecalMat(cell, color) {
     opacity: 1,
     depthWrite: false,
     side: THREE.DoubleSide,
-    blending: THREE.NormalBlending
+    blending: THREE.NormalBlending,
+    /* 贴花和地面共面：不加 polygonOffset 会被地面 / 广场按深度吃掉一半，
+     * 表现是「贴花时有时无」，而且只在某些角度看得到 */
+    polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4
   });
   _fxkDecalMat.set(key, m);
   return m;
@@ -720,11 +750,12 @@ const FXK = {
     const ringGeo = fxkRing(0.86, 1, 40);
     const ringMat = new THREE.MeshBasicMaterial({
       color: color, transparent: true, opacity: 0.9, side: THREE.DoubleSide,
-      depthWrite: false, blending: THREE.AdditiveBlending
+      depthWrite: false, blending: THREE.AdditiveBlending,
+      polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4
     });
     const ring = new THREE.Mesh(ringGeo, ringMat);
     ring.rotation.x = -Math.PI / 2;
-    ring.position.set(pos.x, 0.09, pos.z);
+    ring.position.set(pos.x, pos.y + 0.09, pos.z);
     ring.scale.setScalar(rad * 0.2);
     scene.add(ring);
 
@@ -737,13 +768,13 @@ const FXK = {
         depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending
       });
       sheet = new THREE.Mesh(fxkPlane(2, 1), sheetMat);
-      sheet.position.set(pos.x, 0.5, pos.z);
+      sheet.position.set(pos.x, pos.y + 0.5, pos.z);
       sheet.scale.set(rad * 1.1, rad * 0.9, 1);
       scene.add(sheet);
     }
 
     /* 3) 尘环：往外甩 + 往下沉（正重力），所以它落地后还在滚 */
-    this.spr(new THREE.Vector3(pos.x, 0.15, pos.z), {
+    this.spr(new THREE.Vector3(pos.x, pos.y + 0.15, pos.z), {
       n: Math.round(14 * (o.dust === undefined ? 1 : o.dust)),
       tex: 'dust', color: o.dustColor === undefined ? color : o.dustColor,
       size: 0.7, life: 0.55, speed: rad * 3.2, grav: 6, drag: 1.1,
@@ -808,7 +839,7 @@ const FXK = {
     const cell = o.tex || 'scorch';
     const color = o.color === undefined ? 0x1a0f08 : o.color;
     slot.mesh.material = fxDecalMat(cell, color);
-    slot.mesh.position.set(pos.x, (o.y === undefined ? 0.045 : o.y), pos.z);
+    slot.mesh.position.set(pos.x, pos.y + (o.y === undefined ? 0.045 : o.y), pos.z);
     slot.mesh.scale.setScalar((o.size === undefined ? 2.2 : o.size) * RND(0.85, 1.15));
     /* 随机朝向：同一张贴花铺两次不重叠才像「世界」而不是「印章」 */
     slot.mesh.rotation.z = Math.random() * Math.PI * 2;

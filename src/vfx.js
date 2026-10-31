@@ -184,7 +184,9 @@ const VFX = {
       case 'spr': {
         const dir = this._dirOf(op.dir, c, _vfxV).clone();
         return !!FXK.spr(c.pos, {
-          n: op.n || 10,
+          /* 默认 14 颗（原 10）。发数**不进 draw call**（一簇一个 Points），
+           * 只吃填充率；而 10 颗在 16 米机位上读不出「一簇」，读成「几点火星」。 */
+          n: op.n || 14,
           tex: op.tex || c.tex,
           color: op.color === undefined ? c.color : op.color,
           size: (op.size || p.size) * (0.8 + R * 0.06),
@@ -292,7 +294,10 @@ const VFX = {
         for (let t = 0; t < turns; t++) {
           const rr = k * (0.75 + t * 0.18);
           FXK.spr(new THREE.Vector3(c.pos.x, c.pos.y + 0.2 + t * 0.5, c.pos.z), {
-            n: op.n || 8, tex: c.tex, color: c.color, size: p.size * 0.9,
+            /* 一圈 14 颗（原 8）：8 颗摊在周长 10 米的圈上，间隔 1.2 米、
+             * 而粒子直径不到 1 米 —— 画出来是**一串断开的点**，不是气流。
+             * 发数不加绘制次数（一圈 = 一个 Points），所以这里可以放开。 */
+            n: op.n || 14, tex: c.tex, color: c.color, size: p.size * 1.15,
             life: op.dur || 0.6, speed: 1.6, grav: -3.2, drag: 0.8,
             up: 1.6 + t * 0.5, spread: 0.08, additive: true,
             ring: rr, phase: t * 0.6
@@ -307,12 +312,14 @@ const VFX = {
         const dir = this._dirOf('fwd', c, _vfxV).clone();
         const perp = new THREE.Vector3(-dir.z, 0, dir.x);
         const rows = Math.max(1, op.line || 1);
-        const n = op.n || 10;
+        const n = op.n || 14;
         for (let row = 0; row < rows; row++) {
           const off = (row - (rows - 1) / 2) * R * 0.95;
           FXK.spr(new THREE.Vector3(c.aim.x + perp.x * off, c.aim.y + 0.1, c.aim.z + perp.z * off), {
             n: n, tex: c.tex, color: c.color,
-            size: (op.size || p.size) * 1.1,
+            /* 火舌比普通粒子再大 25%：它是**一整片墙**的构成单元，
+             * 和「一颗火星」不是同一种东西（原 1.1 倍时一排读成虚线）。 */
+            size: (op.size || p.size) * 1.35,
             life: op.dur || 0.5,
             speed: 0.6, spread: R * 0.3,
             up: (op.h || 1.4) * 0.9, grav: -2.2, drag: 1.1,

@@ -674,10 +674,10 @@ const FX = {
     /* [P2c] 变亮只走「颜色 + 不透明度」，radius 一个字节都不动 ——
      * 这个环画多大，就是这一发真的能打到多大。 */
     const op0 = Math.min(1, 0.9 * this.amp);
-    const mat = new THREE.MeshBasicMaterial({ color: this.lit(color), transparent: true, opacity: op0, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending });
+    const mat = new THREE.MeshBasicMaterial({ color: this.lit(color), transparent: true, opacity: op0, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 });
     const m = new THREE.Mesh(geo, mat);
     m.rotation.x = -Math.PI / 2;
-    m.position.set(pos.x, 0.08, pos.z);
+    m.position.set(pos.x, pos.y + 0.08, pos.z);
     m.scale.setScalar(radius * 0.25);
     this.scene.add(m);
     this.zones.push({ mesh: m, mat, life: dur, max: dur, type: 'ring', radius, t: 0, op0 });
@@ -686,10 +686,10 @@ const FX = {
   flashCircle(pos, radius, color = 0xffffff, dur = 0.4) {
     const geo = fxCircle(28);
     const op0 = Math.min(1, 0.55 * this.amp);
-    const mat = new THREE.MeshBasicMaterial({ color: this.lit(color), transparent: true, opacity: op0, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending });
+    const mat = new THREE.MeshBasicMaterial({ color: this.lit(color), transparent: true, opacity: op0, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 });
     const m = new THREE.Mesh(geo, mat);
     m.rotation.x = -Math.PI / 2;
-    m.position.set(pos.x, 0.07, pos.z);
+    m.position.set(pos.x, pos.y + 0.07, pos.z);
     m.scale.setScalar(radius);
     this.scene.add(m);
     this.zones.push({ mesh: m, mat, life: dur, max: dur, type: 'flash', op0 });
@@ -700,7 +700,7 @@ const FX = {
     const geo = fxCircle(40);
     const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.22, side: THREE.DoubleSide, depthWrite: false });
     const m = new THREE.Mesh(geo, mat);
-    m.rotation.x = -Math.PI / 2; m.position.set(pos.x, 0.06, pos.z); m.scale.setScalar(radius);
+    m.rotation.x = -Math.PI / 2; m.position.set(pos.x, pos.y + 0.06, pos.z); m.scale.setScalar(radius);
     this.scene.add(m);
     const ringGeo = fxRingThin(0.94, 1, 40);
     const rm = new THREE.Mesh(ringGeo, new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.7, side: THREE.DoubleSide, depthWrite: false }));
@@ -719,7 +719,7 @@ const FX = {
     const baseOp = Math.min(0.75, (opts.opacity || Math.max(0.07, 0.3 - lum * 0.22)) * this.amp);
     const mat = new THREE.MeshBasicMaterial({ color: this.lit(color), transparent: true, opacity: baseOp, side: THREE.DoubleSide, depthWrite: false });
     const m = new THREE.Mesh(geo, mat);
-    m.rotation.x = -Math.PI / 2; m.position.set(pos.x, 0.05, pos.z); m.scale.setScalar(radius);
+    m.rotation.x = -Math.PI / 2; m.position.set(pos.x, pos.y + 0.05, pos.z); m.scale.setScalar(radius);
     this.scene.add(m);
     /* 边沿亮圈，避免大色块显得扁平。
      * `opts.rim === false` 时不要 —— 毒雾这种「边界本来就看不见」的领域，
@@ -762,7 +762,7 @@ const FX = {
     const op = Math.min(0.9, opts.opacity != null ? opts.opacity : 0.85);
     const spin = opts.spin != null ? opts.spin : 0.22;
     const grp = new THREE.Group();
-    grp.position.set(pos.x, 0, pos.z);
+    grp.position.set(pos.x, pos.y, pos.z);
     this.scene.add(grp);
 
     const mats = [];
@@ -985,7 +985,7 @@ const FX = {
     const m = new THREE.Mesh(geo, mat);
     m.rotation.x = -Math.PI / 2;
     m.rotation.z = angle - arc / 2;
-    m.position.set(pos.x, 0.6, pos.z);
+    m.position.set(pos.x, pos.y + 0.6, pos.z);
     this.scene.add(m);
     this.zones.push({ mesh: m, mat, life: 0.2, max: 0.2, type: 'slash', op0 });
   },
