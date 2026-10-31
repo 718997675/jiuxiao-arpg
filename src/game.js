@@ -2824,6 +2824,27 @@ const Game = {
     if (this.state.hp <= 0) this.die();
   },
 
+  /* ---------------- 交火判定（唯一实现） ----------------
+   * 「半径内有没有正在打你的敌人」。两个消费方：音乐层（切战斗曲）与
+   * 职业兜底（脱战才回血）。**只留这一份** —— 两边各写一遍循环，口径就只
+   * 存在于注释里：谁改了一边、另一边会悄悄漂，最后变成「音乐还在战斗中、
+   * 血已经回起来了」这种自相矛盾。
+   *
+   * 半径 16 米：近战 2~3 米、远程怪在 10~12 米开火，取 16 米能把「正在打你」
+   * 的全包住，又不至于走到隔壁房间就进战斗曲。
+   * 注意它只回答「有没有」，**不含任何迟滞** —— 音乐那 4 秒 `_combatHold`
+   * 是切歌的缓冲，回血那 2.5 秒是 `regenDelay`，两件事各自记各自的账。 */
+  nearAggroEnemy(rad) {
+    const pp = this.playerGroup && this.playerGroup.position;
+    if (!pp) return false;
+    const r = rad || 16;
+    for (const e of this.enemies) {
+      if (!e || e.dead || !e.aggro) continue;
+      if (DIST2D(e.pos, pp) < r) return true;
+    }
+    return false;
+  },
+
   /* ---------------- 音频心跳（S16） ----------------
    * 每帧要做且必须便宜的只有三件：听者跟随相机、环境点缀、BGM 换层。
    * 「现在该放哪一层」需要遍历敌人找仇恨目标，所以做 0.25 秒节流 ——
@@ -2841,14 +2862,8 @@ const Game = {
     let mode = 'explore';
     if (this.boss && this.boss.active && !this.boss.dead) mode = 'boss';
     else {
-      /* 交火半径 16 米：近战 2~3 米、远程怪在 10~12 米开火，
-       * 取 16 米能把「正在打你」的全包住，又不至于走到隔壁房间就进战斗曲。 */
-      const pp = this.playerGroup.position;
-      let near = false;
-      for (const e of this.enemies) {
-        if (e.dead || !e.aggro) continue;
-        if (DIST2D(e.pos, pp) < 16) { near = true; break; }
-      }
+      /* 交火判定读 nearAggroEnemy（与职业兜底同一份实现，见那个方法上的注释） */
+      const near = this.nearAggroEnemy(16);
       /* 脱战要等 4 秒才淡回探索层：否则打死一只、下一只还没贴上来的空档
        * 音乐会来回抽两次，比不切还出戏 */
       if (near) this._combatHold = 4;
@@ -2871,8 +2886,8 @@ const Game = {
    *   主动 = 战斗中的**爆发回血**（要按键、有 CD、能救急）
    * 所以被动**不进 stats / 不进面板预览**，它是帧循环里的运行时账。
    *
-   * 脱战判定跟音乐层同一个口径（16 米内有已仇恨的敌人 = 在战斗中）：
-   * 自己另发明一套条件，会出现「音乐还在战斗中、血已经回起来了」。
+   * 脱战判定读 `nearAggroEnemy(16)` —— 与音乐层**同一份实现**，不是「同一个数字
+   * 各写一遍」。自己另发明一套条件，会出现「音乐还在战斗中、血已经回起来了」。
    * 但**不抄 `_combatHold` 那 4 秒**：音乐要等是因为切歌比切状态更刺眼，
    * 而回血等 4 秒等于「脱战了还不敢停」—— 这里用 `regenDelay` 自己的 2.5 秒。 */
   updateClassPassive(dt) {
@@ -2881,12 +2896,7 @@ const Game = {
     const cp = (typeof BALANCE !== 'undefined' && BALANCE.classPassive) || {};
     const me = cp[s.cls];
     if (!me) return;
-    let near = false;
-    const pp = this.playerGroup && this.playerGroup.position;
-    if (pp) for (const e of this.enemies) {
-      if (!e || e.dead || !e.aggro) continue;
-      if (DIST2D(e.pos, pp) < 16) { near = true; break; }
-    }
+    const near = this.nearAggroEnemy(16);
     this._outT = near ? 0 : (this._outT || 0) + dt;
     if (this._outT < (me.regenDelay || 0)) return;
     if (s.hp >= s.stats.hpMax) return;

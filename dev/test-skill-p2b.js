@@ -581,13 +581,26 @@ const behSrc = readSrc('src/skill-beh.js');
     const loopAt = game.indexOf('this.updateClassPassive(dt);');
     const enemyAt = game.indexOf('this.updateEnemies(dt);', loopAt);
     ok(loopAt > 0 && enemyAt > loopAt, '帧循环里调用它，且排在 updateEnemies 之前', { loopAt, enemyAt });
-    /* 脱战判定必须与音乐层同一个口径（16 米内有仇恨的敌人）。
+    /* 脱战判定与音乐层**共用一份实现**（nearAggroEnemy），不是「同一个 16
+       各写一遍循环」—— 两套循环等于口径只活在注释里，改一边另一边会悄悄漂。
        注意切的是**方法体**而不是调用点：方法定义在帧循环后面一百多行，
        按调用点 ±2000 字符去截会漏掉正文，测试自己先瞎了。 */
     const bodyAt = game.indexOf('updateClassPassive(dt) {');
-    ok(/if \(!e \|\| e\.dead \|\| !e\.aggro\) continue;[\s\S]{0,80}DIST2D\(e\.pos, pp\) < 16/
+    ok(/const near = this\.nearAggroEnemy\(16\);/
       .test(game.slice(bodyAt, bodyAt + 1600)),
-      '脱战判定读的是「16 米内有已仇恨的敌人」（与 bgm 同一口径）');
+      '脱战判定读 nearAggroEnemy(16)，不自己再扫一遍敌人');
+    ok(/nearAggroEnemy\(rad\) \{/.test(game), 'nearAggroEnemy 有定义');
+    ok(/if \(!e \|\| e\.dead \|\| !e\.aggro\) continue;[\s\S]{0,40}DIST2D\(e\.pos, pp\) < r/
+      .test(game.slice(game.indexOf('nearAggroEnemy(rad) {'),
+        game.indexOf('nearAggroEnemy(rad) {') + 700)),
+      'nearAggroEnemy 的判据是「活着 + 已仇恨 + 半径内」');
+    /* 音乐层也读同一份（切战斗曲），否则「音乐还在打、血已经回了」 */
+    ok(/const near = this\.nearAggroEnemy\(16\);[\s\S]{0,200}this\._combatHold = 4/
+      .test(game), '音乐层（tickAudio）也读 nearAggroEnemy');
+    /* 全库只允许一处「扫敌人找 aggro」的循环 */
+    ok((game.match(/if \(!?e \|\| e\.dead \|\| !e\.aggro\) continue;/g) || []).length === 1,
+      '交火判定只剩一份实现（多一份就是两套真相）',
+      (game.match(/if \(!?e \|\| e\.dead \|\| !e\.aggro\) continue;/g) || []).length);
     /* 换图 / 洗点 / 重生都要归零，否则进新图第一秒就在回血 */
     ok((game.match(/this\._outT = 0;/g) || []).length >= 3,
       '洗点 / 换图 / 重生三处都把脱战计时归零',
