@@ -122,8 +122,29 @@ const T_SAMPLES = [0.4, 2.0, 4.0];
       if (kits[k]) dupKit.push([kits[k], id]);
       kits[k] = id;
     }
+    /* 全库重名：112 个键跨 5 个系统（机制/套路/签名/本命/世界）。
+       **跨系统撞名不会报错** —— 只会在界面上出现两个「尸潮」。
+       同一只的 5 格里更不许有两格同名（点了才知道是两招）。 */
+    const allNames = {}, allDup = [];
+    for (const k of Object.keys(SKILL_INDEX)) {
+      const nm = SKILL_INDEX[k].name;
+      if (!nm) continue;
+      (allNames[nm] = allNames[nm] || []).push(k);
+    }
+    for (const nm of Object.keys(allNames)) if (allNames[nm].length > 1) allDup.push(nm + ' → ' + allNames[nm].join(' / '));
+    const kitSameName = [];
+    for (const id of ids) {
+      const seen = {};
+      for (const k of (KIT[id] || [])) {
+        const nm = (SKILL_INDEX[k] || {}).name;
+        if (!nm) continue;
+        if (seen[nm]) kitSameName.push(id + ' 的两格都叫「' + nm + '」');
+        seen[nm] = 1;
+      }
+    }
     /* 世界 Boss 那 6 只没有 rule（四格全独占，不走「本命技」这套） */
-    return { n: ids.length, ids, nrIds: nr, nrn: nr.length, miss, extra, badSlot, dupRule, dupName, dupKit, noRule };
+    return { n: ids.length, ids, nrIds: nr, nrn: nr.length, miss, extra, badSlot, dupRule, dupName, dupKit, noRule,
+      allDup, kitSameName };
   });
   ok(meta.miss.length === 0, '45 只守卫都有本命技（NR 覆盖）', meta.miss);
   ok(meta.extra.length === 0, 'NR 里没有野键', meta.extra);
@@ -132,6 +153,8 @@ const T_SAMPLES = [0.4, 2.0, 4.0];
   ok(meta.dupRule.length === 0, '45 条 rule 互不相同', meta.dupRule);
   ok(meta.dupName.length === 0, '45 个技能名互不相同', meta.dupName);
   ok(meta.dupKit.length === 0, '51 只技能组两两不同', meta.dupKit);
+  ok(meta.allDup.length === 0, '112 个技能名跨系统 0 重名', meta.allDup);
+  ok(meta.kitSameName.length === 0, '同一只的 5 格里没有两格同名', meta.kitSameName);
   console.log('  ' + meta.n + ' 只 / ' + meta.nrn + ' 条本命技');
 
   /* ---------------- 二、全量施放（不判像素，只判不炸） ---------------- */

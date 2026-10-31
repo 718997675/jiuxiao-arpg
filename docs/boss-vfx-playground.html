@@ -3351,7 +3351,7 @@ SHARED.summon = {
 
 /* ⑥ 落石：5 个圆 R2.2 洒在玩家周围 ±8，石头真掉 */
 SHARED.rocks = {
-  name:'落石', warm:0.9, mul:1.2, hitR:2.2,
+  name:'石雨', warm:0.9, mul:1.2, hitR:2.2,
   hit:()=>({ shape:'circle', x:DUMMY.pos.x, z:DUMMY.pos.z, r:R(2.2) }),
   run(){
     for(let i=0;i<5;i++){
@@ -3547,39 +3547,32 @@ SHARED.fireline = {
   }
 };
 
-/* ⑪ 诅咒：**锁定标记挂在玩家脚下**（不是一条看起来能躲的连线），0.7s 后生效 */
+/* ⑪ 诅咒：**脚下长出一根紫钉**，挪 2 米就躲得掉。
+   ------------------------------------------------------------------
+   它以前和 `SIGN.soulchain`（万魂缚）长得一模一样：同色紫、都从 Boss 拉丝过来、
+   都在脚下升环。而 `ghostlord` / `boneabbot` / `bafo_gandharva` / `dgb_gaol`
+   四只的技能组里**同时带着这两招** —— 一样的画面，玩家只能读出「又被标了」，
+   而且读两次。现在按**动作**分开，不是按颜色：
+     · 诅咒   = 小范围（2.2）、就地、**可躲** → 动作是「挪一步」
+     · 万魂缚 = 大范围（9）、缠身、**必中** → 动作是「认了，把接下来那招躲好」 */
 SHARED.curse = {
   name:'诅咒', warm:0.7, mul:0.6, hitR:14,
   hit:()=>({ shape:'circle', x:DUMMY.pos.x, z:DUMMY.pos.z, r:2.2 }),
   run(){
     const warm = WM(.7);
     const hit = { shape:'circle', x:DUMMY.pos.x, z:DUMMY.pos.z, r:2.2 };
-    markOnPlayer(0xaa66ff, warm, 1.3);
-    // 魂丝：从 Boss 胸口连到玩家，真正的"管"而不是 1px 线
-    BFX.ribbon({ from:V3(BOSS.pos.x, 2.0, BOSS.pos.z), to:V3(DUMMY.pos.x, 1.0, DUMMY.pos.z),
-      color:0xaa66ff, life:warm, thick:.06, sag:.6, wobble:.25 });
-    BFX.burst(V3(BOSS.pos.x, 2.0, BOSS.pos.z), 10, { tex:'soft', sp:2, s0:.24, a0:.6, r:.7,g:.45,b:1 });
+    markOnPlayer(0xaa66ff, warm, 1.1);
+    /* 预告钉：细、暗，刚好看得见它在哪 */
+    BFX.spikes({ x:DUMMY.pos.x, z:DUMMY.pos.z, n:1, r:.3, h:2.6, color:0x2e1c40,
+      glow:0xaa66ff, dur:warm + .5, thick:.9 });
+    delay(warm*0.45, ()=> BFX.decal({ x:DUMMY.pos.x, z:DUMMY.pos.z, tex:'rune', r:1.9,
+      life:warm + .7, color:0xaa66ff, a0:.45 }));
     delay(warm, ()=>{
-      // 缠绕：三圈紫色环从脚下升到胸口
-      for(let i=0;i<3;i++){
-        const m = new THREE.Mesh(new THREE.TorusGeometry(0.55, 0.045, 6, 22),
-          new THREE.MeshBasicMaterial({ color:0xaa66ff, transparent:true, opacity:.9,
-            blending:THREE.AdditiveBlending, depthWrite:false, fog:false }));
-        m.position.set(DUMMY.pos.x, .3, DUMMY.pos.z);
-        m.rotation.x = Math.PI/2;
-        scene.add(m);
-        const t0 = i*0.09;
-        addUpdate({ t:0, update(dt){
-          this.t += dt;
-          const k = Math.max(0, Math.min(1, (this.t - t0)/0.7));
-          m.position.y = .3 + k*1.1;
-          m.rotation.z += dt*4;
-          m.scale.setScalar(1 - k*0.25);
-          m.material.opacity = .9*(1-k);
-          if(k >= 1){ disposeMesh(m); this.dead = true; }
-        }});
-      }
-      BFX.burst(V3(DUMMY.pos.x, .4, DUMMY.pos.z), 16, { tex:'soft', sp:2.4, s0:.26, a0:.7, grav:1.6, r:.7,g:.45,b:1 });
+      /* 真实的钉子扎下来：只在脚下这一小块，不跟人、不放光 */
+      BFX.spikes({ x:DUMMY.pos.x, z:DUMMY.pos.z, n:1, r:.52, h:3.6, color:0x40265c,
+        glow:0xc6a4ff, dur:1.2, thick:1.25 });
+      BFX.shock(V3(DUMMY.pos.x, 0, DUMMY.pos.z), 2.6, { color:0xaa66ff, dur:.4, a0:.75 });
+      BFX.burst(V3(DUMMY.pos.x, .4, DUMMY.pos.z), 14, { tex:'soft', sp:2.4, s0:.26, a0:.7, grav:1.6, r:.7,g:.45,b:1 });
       floatText(V3(DUMMY.pos.x, 1.4, DUMMY.pos.z), inHit(hit,DUMMY.pos.x,DUMMY.pos.z) ? '诅咒 ×0.6' : '闪开', '#c9a0ff');
       hurtVignette();
     });
@@ -3879,41 +3872,60 @@ SIGN.soulchain = {
   }
 };
 
-/* ⑦ 赤炎魔将 · 焚天斩：一把巨刃横斩 → 斩线上推进火墙 */
+/* ⑦ 赤炎魔将 · 焚天斩：**一刀**。刀光扫过去，只在地上留一道烧焦的弧痕
+   ------------------------------------------------------------------
+   上一版它是「三道 arcSlash + 9 根火柱」—— 那不是斩，那是**沿弧排了一排
+   火柱**，跟 `MECH.firewall`（两排火柱切场地）、`SHARED.fireline`（一列火柱推过来）
+   是同一件事。三只火系首领的技能组里同时有这三招，打出来就是三道火墙。
+   现在它只剩一个动作：**斩**。一道刀光从左扫到右，然后痕迹**从中间往两头**
+   一寸寸烧开（而不是一起窜起来）。节奏不同了，读法也不同：火墙是「绕缺口」，
+   这个是「躲开这一刀，然后别踩在痕上」。 */
 SIGN.flamecleave = {
   name:'焚天斩', warm:1.0, mul:1.9, hitR:7.5, kind:'sector',
   hit(){ return { shape:'sector', x:BOSS.pos.x, z:BOSS.pos.z, r:R(7.5), angle:aimAngle(), span:Math.PI*0.7 }; },
   run(){
     const a = aimAngle(), r = R(7.5), hit = this.hit(), warm = WM(1.0);
-    BFX.zone({ shape:'sector', x:BOSS.pos.x, z:BOSS.pos.z, r, angle:a, span:Math.PI*0.7, dur:warm, color:0xff4a18 });
+    const span = Math.PI*0.7;
+    BFX.zone({ shape:'sector', x:BOSS.pos.x, z:BOSS.pos.z, r, angle:a, span, dur:warm, color:0xff4a18 });
     swingArm(0, -2.3, warm*1.6);
-    // 刀刃蓄火
+    // 刀刃蓄火：一条暗红的热线先在弧上亮起来（同一根线，斩的时候才亮到全白）
     delay(warm*0.6, ()=>{
-      BFX.arcSlash({ x:BOSS.pos.x, z:BOSS.pos.z, y:1.5, r:r*0.9, span:Math.PI*0.7,
-        color:0xffd8a0, yaw:a, tiltX:0, life:.3, sweep:1 });
+      const R0 = r*0.97, A0 = V3(BOSS.pos.x + Math.sin(a - span/2)*R0, 1.15, BOSS.pos.z + Math.cos(a - span/2)*R0);
+      const B0 = V3(BOSS.pos.x + Math.sin(a + span/2)*R0, 1.15, BOSS.pos.z + Math.cos(a + span/2)*R0);
+      BFX.ribbon({ from:A0, to:B0, color:0xff8a44, life:.36, thick:.08, sag:0, wobble:0 });
       lightPulse(V3(BOSS.pos.x, 1.8, BOSS.pos.z), 0xff5a20, 4.0, .5);
       shake(.6, .3);
     });
     delay(warm, ()=>{
-      // 沿斩线推进的火墙：三道
-      for(let i=0;i<3;i++){
-        delay(i*0.12, ()=>{
-          BFX.arcSlash({ x:BOSS.pos.x, z:BOSS.pos.z, y:1.2, r:r*(0.5+i*0.22),
-            span:Math.PI*0.7, color:0xff6a2c, yaw:a, tiltX:0, life:.5, sweep:1 });
-        });
+      /* 一刀：刀路**沿弧**划过去，不是一条直线拉过去。
+       * 上一版用 `arcSlash`（竖着的月牙，弧心还偏 90°），再上一版用 9 根火柱，
+       * 都读不出"斩"。这里把弧切成 14 段用 `ribbon` 拼，从一端依次点亮 ——
+       * 一刀从左划到右，前后差 0.16 秒，看得见方向。 */
+      const N = 16, R1 = r*0.97;
+      const pts = [];
+      for(let i=0;i<=N;i++){
+        const aa = a - span/2 + span*(i/N);
+        pts.push(V3(BOSS.pos.x + Math.sin(aa)*R1, 1.15, BOSS.pos.z + Math.cos(aa)*R1));
       }
-      const n = N(9);
-      for(let i=0;i<n;i++){
-        const aa = a - Math.PI*0.35 + Math.PI*0.7*(i/(n-1));
-        const rr = r*(0.45 + Math.random()*0.5);
-        const p = V3(BOSS.pos.x + Math.sin(aa)*rr, 0, BOSS.pos.z + Math.cos(aa)*rr);
-        delay(0.06*i, ()=>{
-          BFX.column({ x:p.x, z:p.z, r:1.1, h:3.2 + Math.random()*1.8, color:0xff4a18,
-            life:.9, up:.12, core:0xffd8a0 });
-          BFX.decal({ x:p.x, z:p.z, tex:'scorch', r:1.7, life:5 });
-        });
+      /* 用 `trail` 而不是 16 段 `ribbon`：ribbon 两头是圆帽，
+       * 拼起来是一串香肠；trail 是一条连续的带子，宽度还能沿线收（尾巴细、头粗）。 */
+      const tr = BFX.trail({ color:0xffc078, w:.62, y:1.15, opacity:.95, max:24, tex:TEX.soft });
+      for(let i=0;i<=N;i++) delay(i*0.010, ()=> tr.push(pts[i].x, pts[i].z, 1.15));
+      delay(N*0.010 + .03, ()=> tr.fade(.26));
+      /* 斩痕：**地上那条还在发红的裂缝**。用第二条 trail 贴地画，慢慢冷掉。
+       * 不用 `decal`：这张地面近黑，`crack` 贴图的暗部在加法混合下就是没画；
+       * `scorch` 走 NormalBlending 又变成"地上一个洞"。发红的线只有 trail 画得出。 */
+      const scar = BFX.trail({ color:0xff5a1e, w:.5, y:.05, opacity:.85, max:24, tex:TEX.soft });
+      for(let i=0;i<=N;i++) scar.push(pts[i].x, pts[i].z, .05);
+      scar.fade(3.6);
+      /* 火星沿弧溅一下（只在四段上，够读） */
+      for(let i=0;i<=N;i+=5){
+        const p = pts[i];
+        delay(i*0.010, ()=> BFX.burst(V3(p.x, .3, p.z), 8,
+          { tex:'ember', sp:3.4, s0:.22, a0:.8, grav:3, r:1,g:.5,b:.2 }));
       }
-      BFX.burst(V3(DUMMY.pos.x, .4, DUMMY.pos.z), 18, { tex:'ember', sp:6, s0:.26, a0:.9, grav:4, r:1,g:.5,b:.2 });
+      BFX.shock(V3(BOSS.pos.x, 0, BOSS.pos.z), r*0.5, { color:0xff8844, dur:.35, a0:.6 });
+      shake(.9, .34);
       settle(hit, '斩 ×1.9');
     });
   }
@@ -8333,7 +8345,7 @@ NR.bafo_mahoraga = {
 /* 41 · 尸潮 —— 骨手一波波从场边往里爬，**是实体在爬**，不是圈在跳。
     一波比一波深：场地的可用面积一层层被啃掉。 */
 NR.dgb_tomb = {
-  n:'尸潮', tag:'骨手一波波爬进来', warm:1.0, mul:.2,
+  n:'骨浪', tag:'骨手一波波爬进来', warm:1.0, mul:.2,
   kind:'爬行的骨手（实体 ×N，一波波）', dmg:'dot · 被抓住持续掉', answer:'往中间收',
   rule:'骨手从**场边一波波往里爬**，一波比一波深 —— 得往中间退',
   hit(){ return { shape:'self', note:'骨手一波波从边缘爬入' }; },
@@ -8473,7 +8485,7 @@ NR.dgb_den = {
 /* 44 · 牢 —— 水从地面升起，只有三块高台还在水面以上。
     高台会被淹：得在淹没前**换到另一块**。 */
 NR.dgb_gaol = {
-  n:'水位', tag:'涨上来，得换台', warm:1.0, mul:.3,
+  n:'没顶', tag:'台子一块块沉下去', warm:1.0, mul:.3,
   kind:'上涨的水面（pool）+ 三块高台', dmg:'dot · 泡在水里持续掉', answer:'站高台，淹了就换',
   rule:'水从地面升起，**只有高台还在水面以上** —— 而高台会被淹，得换',
   hit(){ return { shape:'self', note:'水位持续上涨' }; },
@@ -8547,7 +8559,7 @@ NR.dgb_gaol = {
 /* 45 · 堕天者 —— 一道龙卷绕场转圈，速度还会变。
     唯一一只"危险是个会走的物体"：躲的是它下一格，不是它现在。 */
 NR.dgb_fall = {
-  n:'风压', tag:'龙卷绕着场转', warm:1.0, mul:.65,
+  n:'游龙', tag:'龙卷绕着场转', warm:1.0, mul:.65,
   kind:'绕场移动的龙卷（实体危险物）', dmg:'crush · 卷进去持续疼', answer:'预判它下一秒在哪',
   rule:'龙卷绕着场转，**转速还是变的** —— 躲的是它下一秒的位置，不是现在这一格',
   hit(){ return { shape:'circle', x:BOSS.pos.x, z:BOSS.pos.z, r:R(3.6) }; },
@@ -8657,15 +8669,15 @@ const KIT = {
   golemking     : ['stonearmor', 'slam', 'rocks', 'stonespear'],
   snakequeen    : ['petrify', 'poisonnova', 'ringshot', 'venomfang'],
   ghostlord     : ['soulpull', 'ringshot', 'curse', 'soulchain'],
-  firegeneral   : ['firewall', 'slam', 'fireline', 'flamecleave'],
+  firegeneral   : ['firewall', 'slam', 'summon', 'flamecleave'],
   icequeen      : ['freeze', 'frostnova', 'ringshot', 'glacial'],
   spidermother  : ['eggs', 'summon', 'poisonnova', 'web'],
   ferryman      : ['ferry', 'quake', 'ringshot', 'tide'],
   swordlord     : ['bladedomain', 'swordrain', 'charge', 'bladering'],
   magmalord     : ['rockfall', 'slam', 'fireline', 'stonespear'],
   ashwarden     : ['firewall', 'quake', 'rocks', 'flamecleave'],
-  flamewraith   : ['sporecloud', 'ringshot', 'fireline', 'flamecleave'],
-  flameemperor  : ['firewall', 'slam', 'fireline', 'flamecleave'],
+  flamewraith   : ['sporecloud', 'ringshot', 'curse', 'flamecleave'],
+  flameemperor  : ['firewall', 'slam', 'quake', 'flamecleave'],
   boneabbot     : ['eggs', 'curse', 'summon', 'soulchain'],
   marrowlord    : ['stonearmor', 'quake', 'slam', 'stonespear'],
   riverwraith   : ['soulpull', 'ringshot', 'curse', 'tide'],

@@ -50,7 +50,14 @@ function hitText(h) {
   let s = h.shape;
   if (s === 'circle') return '圆 R' + f(h.r);
   if (s === 'ring') return '环 外R' + f(h.r) + ' 内R' + f(h.r0);
-  if (s === 'fan' || s === 'sector') return '扇 ' + f(h.r) + ' 米 · ' + (h.deg || Math.round((h.a1 - h.a0) * 180 / Math.PI)) + '°';
+  if (s === 'fan' || s === 'sector') {
+    /* 角度有三种写法：`deg`（直接给）、`a0/a1`（起止角）、`span`（张角）。
+     * 只认前两种的话，天门转那一行的「张角」会写成 **NaN°** —— 上一版就是。 */
+    const deg = h.deg != null ? h.deg
+      : (h.a1 != null && h.a0 != null) ? (h.a1 - h.a0) * 180 / Math.PI
+      : (h.span != null ? h.span * 180 / Math.PI : 0);
+    return '扇 ' + f(h.r) + ' 米 · ' + Math.round(deg) + '°';
+  }
   if (s === 'line' || s === 'rect') return '线 ' + f(h.w || h.r) + '×' + f(h.len || h.l || 0);
   if (s === 'scatter') {
     const p = h.pts || [];
