@@ -3,7 +3,7 @@
 - 分支：`feat/skill-refactor`（优先级 **低**，排在大型扩展之后）
 - 计划文档：`docs/SKILL-REDESIGN-PLAN.md`（16 节）
 - 预览站：暂不发（2026-10-27 用户口径：本地验证即可，别再折腾线上）
-- 更新：2026-10-31 · **P4 收口（三职业 ⑤ 号位表现）** · P0~P3 + P4 + P6 + V0 全绿，下一站 P5（45 套形态进化）
+- 更新：2026-10-31 · **P5 收口（45 套形态进化表现）** · P0~P6 + V0 + P4 + P5 全绿，剩下的是 ①~④ 位的接线（P5b）
 
 > 当前：**P0 ~ P3 + P6 全部收口，已合入 main**。动作条 5 格、格位 = 功能位；
 > 技能树已按「三线并行」结算 —— 没有必点主干、没有主动↔被动二选一，
@@ -48,7 +48,8 @@ P1 起才动 `SKILL_BAR_SLOTS` 与面板的三列树。
 | P3c | **元素词缀统一口径**：随机词缀从「火伤 / 冰伤 / 雷伤 / 毒伤」四族 12 条并成「**元素伤害 +X%**」3 条（全元素通用，含符法）；老档按 **1:1 相加折算**（火 20 + 冰 10 → 元素 30），只增不减。另留一条**元素专属**通道（被动 高压 / 毒经 / 符力、符文之语 雷引 / 炎心、命格固有），两层叠乘。道途面板补上元素增伤 6 行（以前这一族面板一行都没有） | ✅ | `data-core.js`（`elemDmg` + 四旧键标 `legacy`）、`data-items.js`（`AFFIXES` 12→3、`AFFIX_SLOT_ALLOW.fate`、**`foldElemAffixes` + `normalizeItem` 折算**）、`data-elem.js`（`ELEM_AFFIX` / `ELEM_AFFIX_EX` / `elemAffixMul`）、`game.js`（`damageEnemy` / `elemHitMul` 改走 `elemAffixMul`）、`ui.js`（道途面板 + 说明页两行）、`data-builds.js` / `data-trial.js` | `dev/test-elem-affix.js` 60 · `dev/probe-elem-affix.js` 22 |
 | P3d | **双元素混搭**：境界 **40 级**解锁第二元素，①②③⑤ 位可再注一种（不能与主元素相同，摘主元素时副元素一起走）。**总量不变**，按主 70% / 副 30% 拆成两段（50% → 35% + 15%），两段各过自己的抗性与元素增伤；与命中元素相同的段自动剔除。反应按「命中元素 → 主 → 副」顺序试。视觉：施法瞬间脚下喷一簇注入元素色火星（8 + 4 颗，主 70% / 副 30%），**技能本体光效不换色**（FX 是全局的，换色会连敌人技能和血一起染） | ✅ | `data-elem.js`（`SKILL_INJECT.subAt` / `split` / `skillInjectSplit`）、`game.js`（`skillInject2` / `skillInjectPack` / `injectSegs` / `setSkillInject2` + `elemReactReady` 收数组）、`fx.js`（`elemSpark`）、`ui-skills.js`（混搭一行 + `data-inj2` 委托）、`index.html`（`.sb-i2list`）、`ui.js`（说明页两行） | `dev/test-elem-dual.js` 40 · `dev/probe-elem-dual.js` 30 |
 | P4 | **三职业 ⑤ 号位的签名表现**（机制 P2b 已有，这一轮只补「看得出来」）：①刀客兵形 —— 刀气按刀式换形（斩锋一道细长弧 / 镇岳两道立起的半圆 / 摧城三道短粗裂弧 + 地面裂痕），刃势满层每 0.6 秒一次「刀身发烫」脉冲；②法师法相 —— 背后一尊 4.0×6.0 米的半透明**人形剪影**（头光 + 肩线 + 下摆，`FX.formTexture` 现画；billboard 跟人走 / 呼吸 / 换相当场换色 / 收窗 0.3 秒淡出）；③道士召唤 —— 脚下 sigil 法阵 + 灵兽从地下升起（0.42 秒 smoothstep 缩放 + 抬升）。全部走 `VFX.playFor` / `vfxBladeForm` 的同一套配方，**不新增手写特效** | ✅ | `data-vfx.js`（`BLADE_FORM_VFX` / `vfxBladeForm` / `vfxBladeImpact`）、`game.js`（`playSkillVfx` / `bladeFormVfx` / `bladeFinisherVfx` / `bladeEdgeVfx` / `_mkFormAura` / `_dropFormAura` / `updateFormAura` / `updateSkillForm` / `summonGate` / `spawnT`）、`fx-kit.js`（无改动，只用现成原语） | `dev/test-skill-p4.js` 56 · `dev/probe-skill-p4.js` 29 |
-| P5 | 形态进化表现：5 槽 × 3 职业 × 3 段 = 45 套 | ⬜ | `src/fx.js`、模型 | — |
+| P5 | **形态进化表现**：15 位 × 3 段（Lv5 进化 Ⅰ / Lv9 进化 Ⅱ / Lv10 终极）= **45 套**，等级与 `SKILL_TIER_EVO` 逐档对齐；①每段都必须改「结构」（指令类型 / 贴图 / 刀数 / 圈数 / 排数 / `at` 延迟），只把半径调大不算；②**全等级 ≤ 6 draw call**（真机复量 1/5/9/10 四档）；③**配方按功能位解析**（`vfxSlotKey`）—— 37 只技能全部取得到剪影，之前只有 6 个位的技能能播；④新增指令修饰键 **`at`**（相对施法瞬间的延迟），「余震 / 二次崩塌 / 收尾爆燃 / 收窗新星」全部靠它，**不花绘制预算**；⑤成本表 `vfxCost` 搬进数据层，测试与 bench 共用一把尺子 | ✅ | `src/data/data-vfx.js`（45 个 patch + `VFX_SLOT_KEY` / `vfxSlotKey` / `vfxCost` / `vfxOpCost`）、`src/vfx.js`（`_emit` + `at`）、`dev/vfx-bench.js`（四档量法） | `dev/test-skill-p5.js` **973** · `dev/probe-skill-p5.js` **13** · `vfx-bench` **186** · `vfx-dsl` **342** |
+| P5b | **①~④ 位的接线**：`playSkillVfx` 现在只有三个 ⑤ 号位在调（P4），①~④ 的 14 条配方在游戏里还没接。**不能一行通接**：各 case 里已有手写 FX（`FX.ring` / `FX.spark` / `FX.area`），直接叠会双播。要做的是「逐 case 用配方替掉手写那几行」，一轮一个职业 | ⬜ | `src/game.js`（`castSkill` 的 12 个 case） | — |
 | P6 | **回归**：①老档兼容（8 格条 / 只有 `v` 通道 / 无 passives 的档）；②洗点（只退花点的，免费字段保留，阶梯价落盘）；③平衡体检（`dev/balance-skills.js`）。**查出三个「无声消失」的存档 bug，全部修完** | ✅ | `core/save.js`（`_skillLedger` / `_passives` + `barVer`/`skillReset`/`passives`/`treeRespecCount` 落盘）、`game.js`（`keepPick` 名单化、`newState` 标已迁移）、`data-skill-tree.js`（`skillEntryKeep` 单一出口） | `dev/test-skill-p6.js` 97 · `dev/probe-skill-p6.js` 53 · `dev/balance-skills.js` 17（+6 条观察项） |
 | V0 | **特效地基**（✅ 收口）：①图集 14 格 + 原语 `spr` / `trail` / `bolt` / `shock` / `decal`（外加 `arc` / `vortex` / `cone` / `geyser` / `ring` / `beam` / `flash`），全部带 `FX.q` 降级；②**配方 DSL v2**：`data-vfx.js`（15 条剪影 × 形/色/时 三层，台阶用 patch）+ `src/vfx.js` 解释器 `VFX.play(recipe, ctx)` / `playFor(id, ctx)`；③`dev/vfx-bench.js`（真机 draw call 预算）+ `dev/vfx-shot.js`（15 条剪影 × 起手/收势两帧截图）。**15 条配方全部 ≤ 6 draw call**（方案 §2 硬指标） | ✅ | `src/fx-kit.js`、`src/fx.js`（`update` / `clear` 各接一行）、`src/vfx.js`、`src/data/data-vfx.js`、`index.html`（两个 `<script>`） | `dev/test-vfx-dsl.js` 291 · `dev/vfx-bench.js` 48 · `dev/vfx-shot.js` 62 · `dev/test-vfx-kit.js` 58 · `dev/probe-vfx-kit.js` 43 |
 
@@ -1913,3 +1914,115 @@ smoke ERRORS none · **probe-p2b 292** · probe-p2c 62 · probe-vfx-field 19。
 契约随之补 4 条（`formTexture` 的画法 / 挂在 `FX` 上 / 2:3 尺寸 / 调用点），
 `test-skill-p4` 56 → **60/0**；`probe-skill-p4` 仍 **29/0**；
 `probe-vfx-kit` 43/0、`probe-skill-p2b` 292/0、`smoke` ERRORS none 全部复跑绿。
+
+### 2026-10-31 · P5 收口：45 套形态进化表现
+
+台账那一行写的是「5 槽 × 3 职业 × 3 段 = 45 套」。V0 交付的是**15 条基础剪影**，
+台阶只有 6 条有、而且节奏五花八门（3 / 5 / 7 / 9 / 10 混着来，`iceshield` /
+`swordrain` / `taiji` / `heal` / `summon` 一条都没有）。这一轮把它补成 45。
+
+**三段 = 5 / 9 / 10，不是拍脑袋定的**
+
+`SKILL_TIER_EVO` 里 15 个位的**形态**台阶全部落在 5 / 9 / 10（3 / 7 是数量台阶：
+多一发、多一圈，那是 `smod.count` 的事，不该改剪影）。所以特效台阶也钉在这三级，
+并且契约里有一条**逐档对账**：机制表登记的每一条形态台阶，特效必须也有。
+唯一例外是法师 ② 的 Lv5（「双陨」是数量台阶），它的 5 级特效照样有（补倒挂尘柱），
+只是不进那张对账表 —— 期望值现算，不写死 45。
+
+**45 套各自改了什么（一句话版）**
+
+| 位 | Lv5 进化 Ⅰ | Lv9 进化 Ⅱ | Lv10 终极 |
+|---|---|---|---|
+| 刀客① 连斩 | 螺旋 2 圈 + 命中环拖到 1.8 秒 | 第三道刀气 + 焦痕 | 闭合刀轨 + 焦痕 8 秒 |
+| 刀客② 裂地 | 补垂直尘柱 | 裂纹撑到 0.95 + 尘柱晚 0.08 秒 | 0.3 秒后第二圈塌陷环 |
+| 刀客③ 剑阵 | 第二圈剑轨（高 1.9 米） | 护罩环 1.2 秒 | 贴地横斩（自动反击） |
+| 刀客④ 血怒 | 血雾向外摊开 | 0.2 秒后心跳脉冲环 | 护体血轨绕身一圈 |
+| 刀客⑤ 兵形 | 第二道立起的刀气 | 地上留刀痕 | 开窗光柱 + 双刀气 + 2 秒长环 |
+| 法师① 飞弹 | 焦痕 6 秒 + 0.1 秒后慢扩环 | 环绕火球（0.55 米椭圆轨） | 命中后 0.12 秒追索环 + 火海 8 秒 |
+| 法师② 陨石 | 倒挂尘柱（蘑菇的伞） | 焦痕 4 秒 | 焦痕 8 秒 + 尘柱晚 0.08 秒 |
+| 法师③ 火墙 | 持续段铺成两排 | 焦带两条 + 6 秒 | 0.55 秒后整条墙爆燃 |
+| 法师④ 护盾 | 起手长出一簇冰晶 | 壳外 1.4 秒护罩环 | 破盾留 5 秒霜痕 + 冰锥 22 颗 |
+| 法师⑤ 法相 | 起手第二圈符文 | 收窗新星（`ring` 不是 `shock`） | 新星延后 0.12 秒 |
+| 道士① 符箓 | 双簇符字 | 命中留 1 秒阵环 | 朱砂字晚 0.1 秒炸 |
+| 道士② 毒雾 | 落地余波环 0.7 秒 | 补回最后一下冲击波 | 冲击晚 0.12 秒 + 剑痕 6 秒 |
+| 道士③ 太极 | 阵内飘起贴地雾粒子 | 0.2 秒后脉冲环 | 阵心升起定身光柱 |
+| 道士④ 回春 | 慢扩暖环（HoT 的读法） | 0.15 秒后护体环 | 环后再升一簇星芒 |
+| 道士⑤ 召唤 | 登场炸开一簇符文 | 持续段护体环 | 阵撑到 0.9 米 + 符文晚 0.12 秒 |
+
+**新增：指令修饰键 `at`（相对施法瞬间的延迟，秒）**
+
+「余震 / 二次崩塌 / 收尾爆燃 / 收窗新星」这四类台阶要的是**同一套几何晚一点再播一次**，
+不是新形状。没有 `at` 只能「再加一条 `shock`」—— 那是 3 次绘制，而预算早满了。
+加了之后，进化只花时间轴，不花绘制预算。
+
+延迟统一放在 `VFX._emit`（分发之前），不放进 12 个 case 里各判一次 ——
+漏一个的表现只是「这条配方延迟不生效」，在游戏里看起来就是「手感有点平」，
+没人会去查。`_emit` 走的仍是 `_later`，所以换图一样作废（探针第 4 节验的就是这条）。
+
+**新增：配方按功能位解析（`vfxSlotKey`）**
+
+15 条剪影是 **15 个功能位**的，但 `VFX.playFor(id)` 拿到的是**技能 id**：
+`poison` / `leap` / `frostnova` 在 `SKILL_VFX` 里根本没有键，`vfxRecipe` 返回 null，
+解释器直接 `return 0` —— **一声不响地什么都不播**，也不报错。
+V0 之后 15 个位里只有 6 个位的技能有特效，剩下 9 个位全是哑的。
+
+补了一张 `VFX_SLOT_KEY`（位 → 代表剪影）。**不按 `inherit[0]` 推**：道士 ② 的
+`inherit` 是 `talismanarrow, swordrain, poison`，首项是符箭，而剪影的代表键是
+`swordrain` —— 按首项推会错位。写死 15 行，但每一行都能和 `SKILL_ARCHETYPE` 对上。
+
+**成本表搬进数据层（`vfxCost` / `vfxOpCost`）**
+
+P5 的三段台阶全靠「先腾预算再进化」，腾的时候和验的时候必须是**同一把尺子**。
+以前成本函数只活在测试里，改一处忘一处就会「测试说 6 次、真机跑出 9 次」
+（V0 真的踩过：把 `cone` 按粒子数算，算出 29 次）。
+
+`vfx-bench` 也跟着改成**四个等级各量一次**（1 / 5 / 9 / 10），并加了一条
+「实测不许超过数据层估算」—— 实测更小是正常的（`at` 把指令推迟到后面的帧）。
+
+**真机读数（`dev/vfx-bench.js`，Lv1/5/9/10）**
+
+```
+whirl      4 5 6 6    quake      4 6 5 5    swordarray 3 4 5 6
+bloodrage  2 3 3 4    avatar     2 3 4 5    fireball   5 4 5 4
+meteor     4 5 6 5    firewall   5 6 6 5    iceshield  3 4 5 6
+elementavatar 4 5 6 5 talisman   5 6 6 5    swordrain  3 3 6 3
+taiji      3 4 4 5    heal       3 4 4 4    summon     4 5 6 5
+```
+
+峰值 6，5 技能满级连放 +26 draw call（基线 703，+3.7%）。
+
+**踩的三个坑**
+
+1. **「进化」的判据不能只比 JSON**。第一版想用 `JSON.stringify` 比两档配方是否不同，
+   结果 `r: 0.55 → 0.6` 也算进化 —— 而 51° 俯角下 0.55 米和 0.6 米的环一模一样。
+   改成只认「改剪影」的参数：指令类型 / 贴图 / `arc.n`（刀数）/ `vortex.helix`（圈数）/
+   `cone.line`、`decal.line`（排数）/ `at`。并补两条**反面样本**钉住判据本身
+   （只改 `r`/`dur` 不算；刀数 2→3 算），防止以后有人把它改回 `JSON.stringify`
+   让这条测试变得毫无意义。
+2. **「单调不减」比的是数据，不是同帧实测**。第一版 bench 里断言「Lv10 的同帧
+   draw call ≥ Lv1」，结果 `fireball` Lv10=4 < Lv1=5 假红 —— 因为 Lv10 有两条指令
+   带 `at`，被推迟到后面的帧了。**同帧读数会低估带 `at` 的配方**，
+   所以单调性只能在数据层（`vfxCost`）验，bench 只验「实测 ≤ 估算」。
+3. **三段都加一层，基础段就得先让出预算**。`quake` / `meteor` / `firewall` /
+   `swordrain` / `iceshield` / `talisman` 的基础段都超 4 次，直接加必到 7。
+   做法是把**最后才被注意到的那一层**下放（尘柱 → Lv5、冲击波 → Lv9、焦痕 → Lv9），
+   预警圈与冲击波永远留在基础段 —— 玩家靠它们判断「打哪儿、打多大」。
+
+**验证**
+
+`test-skill-p5` **973/0**（45 套齐全 + 等级与机制表逐档对账 + 每段结构可指认 +
+判据两条反面样本 + Lv1~20 每级 ≤6 且单调不减 + 37 只技能全部解析到本位剪影 +
+`at` 的延迟/记账/换图作废 + 7 条源码接线）；
+`probe-skill-p5` **13/0**（60 发全播得出来 / 台阶档位对 / 三段剪影在浏览器里两两不同 /
+`at` 施法帧只 1 圈、0.6 秒后 2 圈 / 换图后延迟那圈一次都不画 / 道士②三只都解析到
+`swordrain` / 刀客②五只都解析到 `quake` / 零控制台报错）；
+`vfx-bench` **186/0**（四档量法）；`vfx-dsl` 291 → **342/0**（新增三段台阶与按位解析断言）。
+
+回归全绿：p0 250 · p1 52 · p1c 363 · p2 41 · p2b 903 · p2c 99 · p3 106 · p4 60 · p6 97 ·
+vfx-kit 58 · vfx-field 35 · items 21 · save 79 · holy 50 · dual 40 · affix 60。
+
+**没做的（写清楚，别让下一轮以为漏了）**
+
+`playSkillVfx` 目前只有三个 ⑤ 号位在调（P4）。①~④ 的 14 条配方**在游戏里还没接** ——
+各 case 里已有手写 FX（`FX.ring` / `FX.spark` / `FX.area`），一行通接会双播。
+正确的做法是逐 case 用配方替掉手写那几行，一轮一个职业。已登记为 **P5b**。

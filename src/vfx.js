@@ -55,8 +55,8 @@ const VFX = {
     if (!recipe || !ctx || !ctx.pos) return 0;
     const c = this._ctx(ctx);
     let n = 0;
-    for (const op of (recipe.cast || [])) n += this._op(op, c) ? 1 : 0;
-    for (const op of (recipe.loop || [])) n += this._op(op, c) ? 1 : 0;
+    for (const op of (recipe.cast || [])) n += this._emit(op, c) ? 1 : 0;
+    for (const op of (recipe.loop || [])) n += this._emit(op, c) ? 1 : 0;
     /* 命中段延后：`delay` 是「起手 → 命中」的那段前摇（陨石 0.9 秒是真的
      * 从天上掉下来，不能和起手同一帧出） */
     const delay = ctx.delay === undefined ? 0 : ctx.delay;
@@ -64,15 +64,33 @@ const VFX = {
     if (impact.length) {
       if (delay > 0) {
         this._later(() => {
-          for (const op of impact) this._op(op, c);
+          for (const op of impact) this._emit(op, c);
         }, delay * 1000);
       } else {
-        for (const op of impact) n += this._op(op, c) ? 1 : 0;
+        for (const op of impact) n += this._emit(op, c) ? 1 : 0;
       }
     }
     this.played += n;
     this.lastBudget = (typeof vfxBudget === 'function') ? vfxBudget(recipe) : null;
     return n;
+  },
+
+  /* 单条指令的播放，带 `at`（相对施法瞬间的延迟，秒）。
+   *
+   * 为什么延迟放在**分发之前**而不是各 case 里各写一遍：`at` 是给所有 12 个
+   * 原语用的同一个修饰键（余震 / 二次崩塌 / 收尾爆燃 / 收窗新星都是它）。
+   * 放进 `_op` 就得 12 个 case 各判一次，漏一个就是「这条配方延迟不生效」，
+   * 而那种 bug 在游戏里看起来只是「手感有点平」，没人会去查。
+   *
+   * 返回值语义：**认识这条指令就算播了**（延迟的那条也算 1）——
+   * 播放账是「配方被消费了几条」，不是「这一帧画了几次」。 */
+  _emit(op, c) {
+    const at = Number(op && op.at);
+    if (isFinite(at) && at > 0) {
+      this._later(() => { this._op(op, c); }, at * 1000);
+      return !!op.t;
+    }
+    return this._op(op, c);
   },
 
   /* 按技能 id 播：自动取「这一发是几级、什么元素」，调用方只给位置和朝向。

@@ -104,7 +104,7 @@ console.log('二、指令与贴图：每个名字都真的存在');
       }
     }
   }
-  ok(opCount > 50, '配方里一共 ' + opCount + ' 条指令（不是空壳）', opCount);
+  ok(opCount > 40, '基础段一共 ' + opCount + ' 条指令（不是空壳；台阶另算）', opCount);
   ok(badOp.length === 0, '没有不认识的指令', badOp);
   ok(badTex.length === 0, 'op.tex 都在图集里', badTex);
   ok(badDecal.length === 0, '顶层 decal 都在图集里', badDecal);
@@ -126,11 +126,15 @@ console.log('三、台阶：patch 覆盖，不是拼接');
   ok(r1.loop[0].helix === 1, '1 级：单螺旋', r1.loop[0].helix);
   ok(r5.loop[0].helix === 2, '5 级：螺旋加到 2 圈', r5.loop[0].helix);
   ok(r5.cast[0].n === 2, '5 级不动 cast（只改 loop）', r5.cast[0].n);
-  ok(r9.cast.length === 1 && r9.cast[0].n === 4, '9 级：四刀（覆盖，不是 2+4=6）', r9.cast);
+  ok(r9.cast.length === 1 && r9.cast[0].n === 3, '9 级：三刀（覆盖，不是 2+3=5）', r9.cast);
   ok(r9.loop[0].helix === 2, '9 级仍带着 5 级那条（台阶是累加的）', r9.loop[0].helix);
   ok(r9.decal === 'scorch', '9 级把残留换成焦痕', r9.decal);
   ok(r9.tier === 9 && r9.applied.join(',') === '5,9', '台阶记账：9 级吃到了 5 和 9', r9.applied);
-  ok(vfxRecipe('whirl', 10).tier === 9, '没有 10 级 patch 时沿用 9 级', vfxRecipe('whirl', 10).tier);
+  /* [P5] 三段台阶：5 / 9 / 10 各一条，10 级不再「沿用 9 级」 */
+  const r10 = vfxRecipe('whirl', 10);
+  ok(r10.tier === 10 && r10.applied.join(',') === '5,9,10', '10 级吃到三段（5,9,10）', r10.applied);
+  ok(r10.loop.some(op => op.t === 'trail'), '10 级 loop 换成「闭合刀轨 + 螺旋」（同价换形）', r10.loop);
+  ok(r10.impact[0].dur === 8, '10 级焦痕留 8 秒（「常驻」的读法）', r10.impact);
   ok(vfxRecipe('nope', 1) === null, '没有配方的技能返回 null（不编一个空壳）');
   /* 不污染：连调两次结果一致 */
   const a = vfxRecipe('whirl', 9), b = vfxRecipe('whirl', 9);
@@ -138,7 +142,7 @@ console.log('三、台阶：patch 覆盖，不是拼接');
   ok(SKILL_VFX.whirl.cast[0].n === 2, '调用方改返回值不会写回数据表', SKILL_VFX.whirl.cast[0].n);
   /* 只 slice 数组是不够的：数组里的指令对象还是同一份引用 */
   a.cast[0].n = 99;
-  ok(SKILL_VFX.whirl.cast[0].n === 2 && vfxRecipe('whirl', 9).cast[0].n === 4,
+  ok(SKILL_VFX.whirl.cast[0].n === 2 && vfxRecipe('whirl', 9).cast[0].n === 3,
     '改指令对象也不影响下一次取（指令是逐个复制的）', [SKILL_VFX.whirl.cast[0].n, vfxRecipe('whirl', 9).cast[0].n]);
 }
 
@@ -198,11 +202,12 @@ console.log('七、欠账：哪些技能还没配方（面板要能报出来）'
 {
   const all = Object.keys(SKILLS);
   const miss = vfxMissing(all);
-  ok(miss.length === all.length - 15, '37 个技能里 15 个有剪影，其余 ' + miss.length + ' 个待补', [all.length, miss.length]);
+  /* [P5] 走功能位解析之后，**所有**技能都该能取到剪影 —— 一个位里的兄弟技能
+   * （裂地 / 跃击 / 突刺 / 处决 / 天崩）共用同位那一条。一个都不许缺：
+   * 缺了就是「这只技能放出去什么都不播」，而且不会报错。 */
+  ok(miss.length === 0, all.length + ' 个技能全部能解析到剪影（按功能位共用）', miss);
   ok(vfxMissing([]).length === 0, '空列表不炸');
-  /* 这 15 个是「每职业每位的第一个技能」，其余同位的兄弟技能共用剪影即可，
-   * 但必须能通过 skillArchSlotOf 找到同位的代表 —— 这里只记数，不判红。 */
-  console.log('   待补：', miss.length, '个（同位兄弟技能会共用剪影，V2/V3 逐职业补齐）');
+  ok(vfxMissing(['__nope__']).length === 1, '真的没有位的 id 仍会被报出来（不是一律放行）');
 }
 
 console.log('\n' + (fail === 0 ? '✓' : '✗') + ' VFX 配方契约：' + pass + ' 通过 / ' + fail + ' 失败');
