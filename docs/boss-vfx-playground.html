@@ -183,6 +183,10 @@ button{font-family:inherit;color:inherit;background:none;border:none;cursor:poin
 .slot.wbsk{border-color:rgba(255,138,92,.5)}
 .slot.wbsk:after{content:"专";position:absolute;right:3px;top:2px;font-size:8px;color:#2a1010;
   background:#ff8a5c;border-radius:2px;padding:0 2px}
+/* 本命技（紫）：第 5 格，45 只各一条，谁都不共用 —— 角标用"本" */
+.slot.nt{border-color:rgba(160,106,224,.55)}
+.slot.nt:after{content:"本";position:absolute;right:3px;top:2px;font-size:8px;color:#fff;
+  background:#a06ae0;border-radius:2px;padding:0 2px}
 /* 技能行里的额外信息：类型徽章 + 应对提示 */
 .skrow .tagx{font-size:8.5px;color:#9fc67e;border:1px solid rgba(143,208,90,.28);
   border-radius:2px;padding:0 3px;letter-spacing:0}
@@ -5656,6 +5660,713 @@ const BOSSES_DEF = [
    玩家点开任意一只，第一格永远是不同的题。 */
 
 
+/* =====================================================================
+   10. 本命技 · NATIVE（45 只章节守卫，一人一条）
+   ---------------------------------------------------------------------
+   三条规矩：
+
+   1. **一条本命技只属于一只 Boss**。它不从 12 个签名里挑，名字、几何、
+      时序都为这一只写。前面的机制/套路/签名三格保留不动 —— 那三格是
+      "它像谁"，第 5 格才是"它是谁"。
+   2. **共用动作语法，不共用动作**。8 个语法（喷/扫/砸/追/围/标记/回响/
+      改地），同一语法内部靠**排布 × 时序**分开：6 种排布 × 5 种时序。
+      脚本里查重的是三元组 (语法, 排布, 时序)，45 只取 45 个互不相同的。
+   3. **判定与预警同源**。`hit()` 与 `run()` 各自调同一个 `mk()` 拿同一组
+      数字；多段落点先算一次再分发，`delay` 里读的是算好的那份。
+
+   为什么不做成 45 段手写：手写必然互相抄，抄到最后又变成换色 ——
+   这正是这一批要修的病。参数进表、行为进函数，加第 46 只只加一行。
+   ===================================================================== */
+
+/* =====================================================================
+   10. 本命技 · NATIVE（45 只章节守卫，一人一条）
+   ---------------------------------------------------------------------
+   三条规矩：
+
+   1. **一条本命技只属于一只 Boss**。它不从 12 个签名里挑，名字、几何、
+      时序都为这一只写。前面四格（机制 / 套路 ×2 / 签名）保留不动 ——
+      那四格说明"它像谁"，第 5 格才是"它是谁"。
+   2. **共用动作语法，不共用动作**。8 个语法（喷/扫/砸/追/围/标记/回响/
+      改地），同一语法内部靠**排布 × 时序**分开：6 种排布 × 5 种时序。
+      查重的是三元组 (语法, 排布, 时序)，45 只取 45 个互不相同的。
+   3. **判定与预警同源**。`hit()` 与 `run()` 各自调同一个 `mk()` 拿同一组
+      数字；多段落点先算一次再分发，`delay` 里读的是算好的那份。
+
+   为什么不做成 45 段手写：手写必然互相抄，抄到最后又变成换色 ——
+   这正是这一批要修的病。参数进表、行为进函数，加第 46 只只加一行。
+   ===================================================================== */
+
+/* 元素只在这里取色/取贴图，本命技自己不许写 hex */
+const NEL = {
+  wood  : { c:0x7dbb52, fg:0xc8f090, tex:'smoke',  decal:'web'    },
+  blood : { c:0xc02c38, fg:0xff7a6a, tex:'ember',  decal:'crack'  },
+  iron  : { c:0xc9d4e0, fg:0xffffff, tex:'spark',  decal:'rune'   },
+  earth : { c:0xb8935a, fg:0xe8c890, tex:'smoke',  decal:'crack',  rock:0x4a3b28 },
+  poison: { c:0x8fd05a, fg:0xd8ff9a, tex:'poison', decal:'poison' },
+  soul  : { c:0x7fe0d0, fg:0xd8fff4, tex:'smoke',  decal:'rune'   },
+  fire  : { c:0xff7a3c, fg:0xffd08a, tex:'ember',  decal:'scorch' },
+  ember : { c:0xff5a2a, fg:0xffc070, tex:'ember',  decal:'scorch' },
+  ice   : { c:0x8fd8ff, fg:0xe8faff, tex:'frost',  decal:'frost'  },
+  wind  : { c:0xa8e8d0, fg:0xe8fff8, tex:'smoke',  decal:'crack'  },
+  water : { c:0x5aa8e0, fg:0xc0e8ff, tex:'soft',   decal:'poison' },
+  holy  : { c:0xffd24a, fg:0xfff4c0, tex:'spark',  decal:'rune'   },
+  star  : { c:0x9ab8ff, fg:0xe0e8ff, tex:'spark',  decal:'crack'  },
+  mirror: { c:0xd8e4ff, fg:0xffffff, tex:'soft',   decal:'rune'   },
+  chaos : { c:0xd05ac0, fg:0xff9ae8, tex:'ember',  decal:'scorch' }
+};
+
+function hexs(hex){ return '#' + hex.toString(16).padStart(6, '0'); }
+function nRGB(hex){ const c = col(hex); return { r:c.r, g:c.g, b:c.b }; }
+/* 前摇：阶段 2 统一 −15%；`delay` 时序额外 +0.6 秒（先亮全场再一起落） */
+function nWarm(t, base){ return WM(t.w != null ? t.w : base) + (t.tm === 'delay' ? .6 : 0); }
+
+/* ---------- 排布 ----------
+   两套坐标系，用哪套由"这一招打的是谁"决定：
+   · **场地排布**（砸 / 改地）：落点围着 Boss 摆 —— `nPlace`
+   · **轨迹排布**（追 / 标记 / 回响）：落点跟着玩家走，只在左右加宽 —— `nSpread`
+   六种排布各解决一件事：
+     line   一字/不加宽 —— 逼你侧移，或干脆没有侧向空间
+     arc    沿弧/左右交替 —— 逼你沿弧走，别站在中轴上
+     spiral 螺旋/正弦摆动 —— 逼你走螺旋或反着冲
+     grid   棋盘/两倍加宽 —— 逼你认格子
+     side   贴一侧 —— 只留一条走廊，或只堵你顺手的那边
+     cross  十字交错 —— 只留斜缝 */
+function nPlace(k, lay, D, S, P, A){
+  const s = Math.sin(A), c = Math.cos(A);
+  const w = (dx, dz)=>({ x: P.x + dx*c + dz*s, z: P.z - dx*s + dz*c });
+  const out = [];
+  if(lay === 'arc'){
+    const sp = Math.min(Math.PI*1.15, Math.max(.5, k*.26));
+    for(let i=0;i<k;i++){ const a = (k === 1 ? 0 : (i/(k-1) - .5)*sp);
+      out.push(w(Math.sin(a)*D, Math.cos(a)*D)); }
+  }else if(lay === 'spiral'){
+    for(let i=0;i<k;i++){ const u = (k === 1 ? 0 : i/(k-1)), a = u*Math.PI*1.55;
+      const r = D*(.42 + .95*u); out.push(w(Math.sin(a)*r, Math.cos(a)*r)); }
+  }else if(lay === 'grid'){
+    const cols = Math.ceil(Math.sqrt(k)), rows = Math.ceil(k/cols);
+    for(let i=0;i<k;i++){ const cx = i%cols, cz = Math.floor(i/cols);
+      out.push(w((cx-(cols-1)/2)*S, D + (cz-(rows-1)/2)*S)); }
+  }else if(lay === 'side'){
+    for(let i=0;i<k;i++) out.push(w(D*.85, (i-(k-1)/2)*S));
+  }else if(lay === 'cross'){
+    for(let i=0;i<k;i++){ const j = Math.floor(i/2) + 1, neg = (i%2) ? -1 : 1;
+      const horiz = Math.floor(i/4)%2 === 0;
+      out.push(horiz ? w(neg*j*S, D) : w(0, D + neg*j*S)); }
+  }else{
+    for(let i=0;i<k;i++) out.push(w((i-(k-1)/2)*S, D));
+  }
+  return out;
+}
+/* 右手侧偏移：A 是 Boss→玩家 的方向，右手 = (cosA, −sinA) */
+function nOff(base, A, off){
+  return { x: base.x + Math.cos(A)*off, z: base.z - Math.sin(A)*off };
+}
+function nSpread(lay, i, u){
+  if(lay === 'arc')    return (i % 2 ? 1 : -1) * u;
+  if(lay === 'side')   return u * 1.8;
+  if(lay === 'spiral') return Math.sin(i*1.7) * u * 1.4;
+  if(lay === 'grid')   return (i % 2 ? 1 : -1) * u * 2.2;
+  if(lay === 'cross')  return (i % 4 < 2 ? 1 : -1) * u * 2.2;
+  return 0;                                        /* line */
+}
+/* 时序：**同一批落点，先后顺序就是难度** */
+function nWhen(tm, i, k, gap){
+  if(tm === 'all')   return 0;
+  if(tm === 'rev')   return (k-1-i)*gap;
+  if(tm === 'wave')  return (i%2 ? 1 : 0)*.6 + Math.floor(i/2)*.26;
+  if(tm === 'delay') return 0;
+  return i*gap;                                    /* seq */
+}
+/* 一句话：一拍最多一句，否则十二段连爆会把屏幕刷满 */
+function nSay(){
+  let last = -9;
+  return (pos, txt, hex)=>{
+    if(TIME.t - last < .34) return;
+    last = TIME.t;
+    floatText(pos.clone(), txt, hex || '#ff9a6a');
+  };
+}
+/* 一块"被改写过"的地：**硬边 + 淡面**。
+   只用 decal 画不出边界 —— 贴图边缘是柔的，玩家分不清格子到哪儿为止。 */
+function nField(x, z, r, color, life){
+  const ring = flatMesh(TEX.ring, color, THREE.AdditiveBlending, .95);
+  ring.position.set(x, .075, z); ring.scale.setScalar(r*2.1); ring.renderOrder = 6;
+  const fill = flatMesh(TEX.soft, color, THREE.AdditiveBlending, .17);
+  fill.position.set(x, .06, z); fill.scale.setScalar(r*1.9);
+  addUpdate({ t:0, update(dt){
+    this.t += dt;
+    const k = Math.min(1, this.t/life);
+    const a = k < .82 ? 1 : Math.max(0, 1 - (k-.82)/.18);
+    ring.material.opacity = .95*a; fill.material.opacity = .17*a;
+    if(k >= 1){ disposeMesh(ring); disposeMesh(fill); this.dead = true; }
+  }});
+}
+/* 跟着玩家走的记号（标记类专用）。**必须跟着走**：画在原地就是骗人。
+   `lay` 换记号的样子 —— 同一套"跟"，六种形状。 */
+function nFollow(r, color, dur, lay){
+  const base = flatMesh(TEX.tele, color, THREE.AdditiveBlending, .72);
+  base.position.y = .06; base.scale.setScalar(r*2); base.renderOrder = 5;
+  const bits = [];
+  if(lay === 'arc' || lay === 'grid' || lay === 'spiral'){
+    const m = flatMesh(TEX.ring, color, THREE.AdditiveBlending, .85);
+    m.position.y = .078; m.scale.setScalar(r*(lay === 'grid' ? 1.5 : 2.1)); m.renderOrder = 6;
+    bits.push({ m, spin: lay === 'spiral' ? 1 : 0 });
+  }
+  if(lay === 'cross' || lay === 'grid'){
+    for(let i=0;i<2;i++){
+      const m = flatMesh(TEX_BAND, color, THREE.AdditiveBlending, .42);
+      m.position.y = .082; m.rotation.z = i*Math.PI/2;
+      m.scale.set(.42, r*2.2, 1); m.renderOrder = 6;
+      bits.push({ m });
+    }
+  }
+  if(lay === 'side'){
+    const m = flatMesh(TEX_BAND, color, THREE.AdditiveBlending, .38);
+    m.position.y = .082; m.rotation.z = Math.PI/2;
+    m.scale.set(.5, r*2.5, 1); m.renderOrder = 6;
+    bits.push({ m });
+  }
+  addUpdate({ t:0, update(dt){
+    this.t += dt;
+    const k = Math.min(1, this.t/dur);
+    base.position.x = DUMMY.pos.x; base.position.z = DUMMY.pos.z;
+    base.material.opacity = .72 * (1 - k*k*.2) * (.62 + .38*Math.sin(this.t*17));
+    bits.forEach(b=>{
+      b.m.position.x = DUMMY.pos.x; b.m.position.z = DUMMY.pos.z;
+      if(b.spin) b.m.rotation.z = this.t*2.4;
+      b.m.material.opacity = .82*(1 - k*.25);
+    });
+    if(k >= 1){ disposeMesh(base); bits.forEach(b=>disposeMesh(b.m)); this.dead = true; }
+  }});
+}
+function dAng(a, b){ let d = Math.abs(a-b) % (Math.PI*2); return d > Math.PI ? Math.PI*2 - d : d; }
+
+const NSYN = {};
+
+/* ---------------------------------------------------------------
+   1 · 喷 spray —— 多口朝外射，缝留给会侧身半步的人
+   `lay` 改的是**扇面的落位**：line 居中对称 / arc 偏一侧 /
+   side 全在顺手侧 / cross 正反十字 / grid 铺满整个前方
+   --------------------------------------------------------------- */
+NSYN.spray = function(t){
+  const e = NEL[t.el] || NEL.fire, k = t.k || 1;
+  const span = t.span || .44, gapA = t.gapA || .26, mul = t.mul || .5;
+  const say = nSay();
+  function centreOff(){
+    if(t.lay === 'arc')   return -gapA*k*.5;        /* 从右往左扇过来 */
+    if(t.lay === 'side')  return gapA*k*.9;         /* 全部挤在一侧 */
+    return 0;
+  }
+  function mk(){
+    const A = aimAngle(), D = Math.min(18, Math.max(7, aimDist())), P = BOSS.pos.clone();
+    const stepA = t.lay === 'grid' ? gapA*1.7 : gapA;
+    const off = centreOff(), list = [];
+    for(let i=0;i<k;i++){
+      /* cross：**等分整圈**，四臂就是 0/90/180/270，三头就是 0/120/240。
+         用"居中对称"算出来永远是斜的（±45°/±135°），四个臂变成一个 X。 */
+      const a = t.lay === 'cross' ? A + i*(Math.PI*2/k)
+                                  : A + off + (i - (k-1)/2)*stepA;
+      list.push({ a, r:R(D), tip:{ x:P.x + Math.sin(a)*D*.9, z:P.z + Math.cos(a)*D*.9 } });
+    }
+    return { P, list, primary:{ shape:'fan', x:P.x, z:P.z, angle:list[0].a, span, r:list[0].r } };
+  }
+  return {
+    name:t.n, tag:'本命 · 喷', warm:nWarm(t, .55), mul, counter:t.c,
+    hit(){ return mk().primary; },
+    run(){
+      const z = mk(), W = nWarm(t, .55);
+      z.list.forEach((s, i)=>{
+        delay(nWhen(t.tm, i, k, .13), ()=>{
+          const hp = { shape:'fan', x:z.P.x, z:z.P.z, angle:s.a, span, r:s.r };
+          BFX.zone({ shape:'fan', x:z.P.x, z:z.P.z, angle:s.a, span, r:s.r, dur:W, color:e.c });
+          delay(W, ()=>{
+            BFX.column({ x:s.tip.x, z:s.tip.z, r:1.2, h:3.2, color:e.c, life:.5 });
+            BFX.burst(V3(s.tip.x, .6, s.tip.z), 12,
+              Object.assign({ tex:e.tex, sp:4.6, s0:.34, a0:.75, grav:-2.2 }, nRGB(e.fg)));
+            BFX.decal({ x:s.tip.x, z:s.tip.z, tex:e.decal, r:1.8, life:2.4, color:e.c, a0:.42 });
+            lightPulse(V3(s.tip.x, 1, s.tip.z), e.c, 1.6, .3);
+            if(inHit(hp, DUMMY.pos.x, DUMMY.pos.z)) say(V3(DUMMY.pos.x,1.25,DUMMY.pos.z), '被喷到 ×' + mul, hexs(e.fg));
+          });
+        });
+      });
+    }
+  };
+};
+
+/* ---------------------------------------------------------------
+   2 · 扫 sweep —— 一道刀/墙**绕着身扫**，扫到的顺序才是解法
+   `lay` 改的是**起手角**：line 正前 / arc 侧前 / spiral 每道再错 /
+   side 背后起手 / cross、grid 各差 90°
+   --------------------------------------------------------------- */
+NSYN.sweep = function(t){
+  const e = NEL[t.el] || NEL.fire, k = t.k || 1;
+  const span = t.span || Math.PI*1.15, mul = t.mul || .55, steps = 12;
+  const say = nSay();
+  function startOff(i){
+    if(t.lay === 'arc')    return span*.5;
+    if(t.lay === 'spiral') return i*.8;
+    if(t.lay === 'side')   return Math.PI;
+    if(t.lay === 'cross' || t.lay === 'grid') return i*(Math.PI/2);
+    return 0;
+  }
+  function mk(){
+    const A = aimAngle(), D = Math.min(17, Math.max(8, aimDist())), P = BOSS.pos.clone();
+    const arcs = [];
+    for(let i=0;i<k;i++){
+      const base = A - span/2 + startOff(i) + i*(Math.PI*2/Math.max(1, k));
+      const dir = (t.tm === 'rev') ? -1 : 1;
+      arcs.push({ start: dir > 0 ? base : base + span, dir, r:R(D) });
+    }
+    /* 覆盖面 = 各道扫过的并集。**不许只画第一道** —— 那样玩家会把
+       别的方向当安全区，是"假安全"，比不画还坏。 */
+    /* k=1 时**不许加余量**：207° 的弧会被画成 279°，玩家会以为背后也不安全 */
+    const cover = Math.min(Math.PI*2, k*span + (k > 1 ? Math.PI*.25 : 0));
+    const primary = cover >= Math.PI*1.7
+      ? { shape:'ring', x:P.x, z:P.z, r:R(D), r0:2.0 }
+      : { shape:'fan', x:P.x, z:P.z, angle:A, span:cover, r:R(D) };
+    return { P, arcs, primary };
+  }
+  return {
+    name:t.n, tag:'本命 · 扫', warm:nWarm(t, 1.1), mul, counter:t.c,
+    hit(){ return mk().primary; },
+    run(){
+      const z = mk(), W = nWarm(t, 1.1);
+      z.arcs.forEach((a, ai)=>{
+        delay(nWhen(t.tm === 'rev' ? 'seq' : t.tm, ai, k, .32), ()=>{
+          BFX.zone({ shape:'fan', x:z.P.x, z:z.P.z,
+            angle:a.start + a.dir*span/2, span, r:a.r, dur:W, color:e.c });
+          for(let j=0;j<steps;j++){
+            const u = j/(steps-1), ang = a.start + a.dir*span*u;
+            delay(W*u, ()=>{
+              const hp = { shape:'fan', x:z.P.x, z:z.P.z, angle:ang, span:span/steps*1.8, r:a.r };
+              BFX.arcSlash({ x:z.P.x, z:z.P.z, y:1.1, r:a.r*.92, span:.55,
+                yaw:ang - Math.PI/2, color:e.c, life:.3 });
+              BFX.burst(V3(z.P.x + Math.sin(ang)*a.r*.6, .5, z.P.z + Math.cos(ang)*a.r*.6), 3,
+                Object.assign({ tex:e.tex, sp:2.6, s0:.3, a0:.5, grav:-1.6 }, nRGB(e.fg)));
+              if(inHit(hp, DUMMY.pos.x, DUMMY.pos.z)) say(V3(DUMMY.pos.x,1.25,DUMMY.pos.z), '被扫到 ×' + mul, hexs(e.fg));
+            });
+          }
+          BFX.shock(z.P, 2.1, { color:e.c, dur:.4, y:.08 });
+          shake(1.4, .2);
+        });
+      });
+    }
+  };
+};
+
+/* ---------------------------------------------------------------
+   3 · 砸 drop —— 落点先摆好，**先后顺序**才是题
+   --------------------------------------------------------------- */
+NSYN.drop = function(t){
+  const e = NEL[t.el] || NEL.earth, k = t.k || 1;
+  const mul = t.mul || .55;
+  const say = nSay();
+  function mk(){
+    const A = aimAngle(), D = Math.min(16, Math.max(6, aimDist())), P = BOSS.pos.clone();
+    /* 半径先定，间距跟着半径走 —— 否则 12 块会把整个场地铺满 */
+    const r = R(t.r || (k >= 7 ? 2.0 : 2.4));
+    const S = Math.max(t.step || 3.4, r*2.15);
+    const pts = nPlace(k, t.lay, D, S, P, A).map(p=>({ x:p.x, z:p.z, r }));
+    return { P, pts, primary: k === 1
+      ? { shape:'circle', x:pts[0].x, z:pts[0].z, r }
+      : { shape:'scatter', pts } };
+  }
+  return {
+    name:t.n, tag:'本命 · 砸', warm:nWarm(t, .75), mul, counter:t.c,
+    hit(){ return mk().primary; },
+    run(){
+      const z = mk(), W = nWarm(t, .75);
+      z.pts.forEach((p, i)=>{
+        delay(nWhen(t.tm, i, k, .12), ()=>{
+          BFX.zone({ shape:'circle', x:p.x, z:p.z, r:p.r, dur:W, color:e.c });
+          delay(W, ()=>{
+            BFX.spikes({ x:p.x, z:p.z, n:9, r:p.r*.78, h:2.3,
+              color:e.rock || 0x2a241f, glow:e.c, dur:1.5 });
+            BFX.shock(V3(p.x, 0, p.z), p.r*1.5, { color:e.c, dur:.45 });
+            BFX.decal({ x:p.x, z:p.z, tex:e.decal, r:p.r*1.1, life:3.2, color:e.c, a0:.5 });
+            BFX.burst(V3(p.x, .4, p.z), 14,
+              Object.assign({ tex:e.tex, sp:5, s0:.4, a0:.8, grav:-3 }, nRGB(e.fg)));
+            lightPulse(V3(p.x, 1, p.z), e.c, 2, .35);
+            shake(p.r*.22, .18);
+            if(inHit({ shape:'circle', x:p.x, z:p.z, r:p.r }, DUMMY.pos.x, DUMMY.pos.z))
+              say(V3(DUMMY.pos.x,1.25,DUMMY.pos.z), '被砸中 ×' + mul, hexs(e.fg));
+          });
+        });
+      });
+    }
+  };
+};
+
+/* ---------------------------------------------------------------
+   4 · 追 seek —— 一颗一颗锁你**当时**的位置：一直跑就一直在弹道外
+   **落点围着玩家转，不围着 Boss 转** —— 第一版围着 Boss 摆一排，
+   标题写"锁在你身上"而红圈在十几米外，是自相矛盾的。
+   `lay` 只决定这一串落点往两边散多宽
+   --------------------------------------------------------------- */
+NSYN.seek = function(t){
+  const e = NEL[t.el] || NEL.star, k = t.k || 1;
+  const mul = t.mul || .45, fly = .8;
+  const say = nSay();
+  let last = null;
+  function mk(){
+    const P = BOSS.pos.clone(), r = R(t.r || 1.4);
+    const pts = (last && last.length ? last : [{ x:DUMMY.pos.x, z:DUMMY.pos.z }])
+      .map(p=>({ x:p.x, z:p.z, r }));
+    return { P, pts, primary: pts.length === 1
+      ? { shape:'circle', x:pts[0].x, z:pts[0].z, r }
+      : { shape:'scatter', pts } };
+  }
+  return {
+    name:t.n, tag:'本命 · 追', warm:nWarm(t, .5), mul, counter:t.c,
+    hit(){ return mk().primary; },
+    run(){
+      const z = mk(), P = z.P, r = R(t.r || 1.4);
+      const rec = [];
+      for(let i=0;i<k;i++){
+        delay(nWhen(t.tm, i, k, .16), ()=>{
+          const A = aimAngle();
+          const q = nOff(DUMMY.pos, A, nSpread(t.lay, i, r*1.15));
+          rec.push(q);
+          const from = V3(P.x, 2.6, P.z), to = V3(q.x, .2, q.z);
+          BFX.zone({ shape:'circle', x:q.x, z:q.z, r, dur:fly, color:e.c });
+          BFX.ribbon({ from, to, color:e.c, life:fly, thick:.05, sag:.35, wobble:.12 });
+          for(let j=0;j<8;j++){
+            const u = j/7;
+            delay(fly*u, ()=>{
+              BFX.spr(from.x + (to.x-from.x)*u, from.y + (to.y-from.y)*u, from.z + (to.z-from.z)*u,
+                Object.assign({ tex:e.tex, life:.26, s0:.5, a0:.85 }, nRGB(e.fg)));
+            });
+          }
+          delay(fly, ()=>{
+            BFX.shock(V3(q.x, 0, q.z), r*1.6, { color:e.c, dur:.4 });
+            BFX.burst(V3(q.x, .5, q.z), 10,
+              Object.assign({ tex:e.tex, sp:4, s0:.32, a0:.75, grav:-2.4 }, nRGB(e.fg)));
+            BFX.decal({ x:q.x, z:q.z, tex:e.decal, r:r*.9, life:2.2, color:e.c, a0:.4 });
+            lightPulse(V3(q.x, 1, q.z), e.c, 1.5, .3);
+            if(inHit({ shape:'circle', x:q.x, z:q.z, r }, DUMMY.pos.x, DUMMY.pos.z))
+              say(V3(DUMMY.pos.x,1.25,DUMMY.pos.z), '被追上 ×' + mul, hexs(e.fg));
+          });
+        });
+      }
+      /* 记下这一串，下一次 `hit()` 才有东西可画（判定叠加层与面板） */
+      delay(nWhen(t.tm, k-1, k, .16) + fly + .2, ()=>{ last = rec.slice(); });
+    }
+  };
+};
+
+/* ---------------------------------------------------------------
+   5 · 围 cage —— **围在玩家身上**，留一个缺口：冲出去，不是绕
+   第一版围着 Boss 摆了一圈（半径 13 米、7 根柱），俯视角下只是一圈
+   稀疏的刺，既不像"围"、缺口也读不出来。围栏必须比人小。
+   --------------------------------------------------------------- */
+NSYN.cage = function(t){
+  const e = NEL[t.el] || NEL.earth, k = t.k || 10;
+  const mul = t.mul || .5, gaps = t.gap || 1;
+  const say = nSay();
+  function mk(){
+    const A = aimAngle(), C = DUMMY.pos.clone();
+    /* 围栏半径**由柱子数量推出来**，不拍脑袋给：柱子的判定圆直径必须略小于
+       弧长（D×stepA），一圈才连得起来。第一版固定 D=5.6 配 r=3.6，
+       七根柱子变成七朵互相重叠的大花 —— 那不是"围"，是"铺"。 */
+    const stepA = Math.PI*2/k;
+    const D = t.d || Math.min(7, Math.max(3.2, k*0.36));
+    /* 缺口朝哪：side 在顺手侧（横着挤出去）/ arc 在朝它那一侧（别往那跑）
+       / 其余斜前方 45°（要冲） */
+    const gA = t.lay === 'side' ? A + Math.PI*.5
+             : t.lay === 'arc'  ? A + Math.PI
+             : A + Math.PI*.25;
+    const r = Math.max(1.05, D*stepA*.46);
+    const pts = [];
+    for(let i=0;i<k;i++){
+      const a = i*stepA;
+      if(dAng(a, gA) < stepA*gaps*.7) continue;   /* 这一段留空 */
+      pts.push({ x:C.x + Math.sin(a)*D, z:C.z + Math.cos(a)*D, r, a });
+    }
+    return { C, D, pts, gA, primary: pts.length === 1
+      ? { shape:'circle', x:pts[0].x, z:pts[0].z, r }
+      : { shape:'scatter', pts } };
+  }
+  return {
+    name:t.n, tag:'本命 · 围', warm:nWarm(t, .8), mul, counter:t.c,
+    hit(){ return mk().primary; },
+    run(){
+      const z = mk(), W = nWarm(t, .8);
+      /* 底圈：一条细环把"围"读出来（不参与判定，只是框） */
+      const ring = flatMesh(TEX.ring, e.c, THREE.AdditiveBlending, .55);
+      ring.position.set(z.C.x, .07, z.C.z); ring.scale.setScalar(z.D*2.1); ring.renderOrder = 6;
+      let rt = 0;
+      addUpdate({ update(dt){
+        rt += dt;
+        const k2 = Math.min(1, rt/(W + 1.1));
+        ring.material.opacity = .55 * (1 - k2*k2);
+        if(k2 >= 1){ disposeMesh(ring); this.dead = true; }
+      }});
+      z.pts.forEach((p, i)=>{
+        delay(nWhen(t.tm, i, z.pts.length, .07), ()=>{
+          BFX.zone({ shape:'circle', x:p.x, z:p.z, r:p.r, dur:W, color:e.c });
+          delay(W, ()=>{
+            BFX.spikes({ x:p.x, z:p.z, n:6, r:p.r*.72, h:3.6,
+              color:e.rock || 0x2a241f, glow:e.c, dur:2.4 });
+            BFX.burst(V3(p.x, .8, p.z), 6,
+              Object.assign({ tex:e.tex, sp:3, s0:.3, a0:.6, grav:-2 }, nRGB(e.fg)));
+            if(inHit({ shape:'circle', x:p.x, z:p.z, r:p.r }, DUMMY.pos.x, DUMMY.pos.z))
+              say(V3(DUMMY.pos.x,1.25,DUMMY.pos.z), '被围住 ×' + mul, hexs(e.fg));
+          });
+        });
+      });
+      /* 缺口位置给一个很轻的标记：不是高亮，是"那边没东西" */
+      delay(W*.7, ()=>{
+        BFX.decal({ x:z.C.x + Math.sin(z.gA)*z.D, z:z.C.z + Math.cos(z.gA)*z.D,
+          tex:'rune', r:1.4, life:1.6, color:e.fg, a0:.26 });
+      });
+    }
+  };
+};
+
+/* ---------------------------------------------------------------
+   6 · 标记 mark —— 记号**跟着你走**，落地才炸：带毒走位
+   --------------------------------------------------------------- */
+NSYN.mark = function(t){
+  const e = NEL[t.el] || NEL.soul, k = t.k || 1;
+  const mul = t.mul || .5, rr0 = t.r || 2.2;
+  const say = nSay();
+  function mk(){
+    const P = BOSS.pos.clone(), p0 = DUMMY.pos.clone(), r = R(rr0);
+    return { P, r, primary:{ shape:'circle', x:p0.x, z:p0.z, r } };
+  }
+  return {
+    name:t.n, tag:'本命 · 标记', warm:nWarm(t, .9), mul, counter:t.c,
+    hit(){ return mk().primary; },
+    run(){
+      const z = mk(), W = nWarm(t, .9);
+      for(let i=0;i<k;i++){
+        delay(nWhen(t.tm, i, k, .55), ()=>{
+          nFollow(z.r, e.c, W, t.lay);
+          delay(W, ()=>{
+            const x = DUMMY.pos.x, zz = DUMMY.pos.z;
+            BFX.shock(V3(x, 0, zz), z.r*1.7, { color:e.c, dur:.42 });
+            BFX.column({ x, z:zz, r:z.r*.55, h:5, color:e.c, life:.45 });
+            BFX.burst(V3(x, .5, zz), 16,
+              Object.assign({ tex:e.tex, sp:5, s0:.4, a0:.8, grav:-2.6 }, nRGB(e.fg)));
+            BFX.decal({ x, z:zz, tex:e.decal, r:z.r*.9, life:2.4, color:e.c, a0:.45 });
+            lightPulse(V3(x, 1, zz), e.c, 1.9, .32);
+            if(inHit({ shape:'circle', x, z:zz, r:z.r }, DUMMY.pos.x, DUMMY.pos.z))
+              say(V3(DUMMY.pos.x,1.25,DUMMY.pos.z), '被标记炸到 ×' + mul, hexs(e.fg));
+          });
+        });
+      }
+    }
+  };
+};
+
+/* ---------------------------------------------------------------
+   7 · 回响 echo —— 打你**刚才站过的地方**：直线往返的人被自己打死
+   与"追"的区别：追打的是**现在**（跑就对），回响打的是**过去**
+   （跑还不够，得换方向，否则一串脚印连成一条正好被你踩回去的线）。
+   --------------------------------------------------------------- */
+NSYN.echo = function(t){
+  const e = NEL[t.el] || NEL.mirror, k = t.k || 5;
+  const mul = t.mul || .45, rr0 = t.r || 2.0, gap = .16;
+  const say = nSay();
+  let last = null;                       /* 上一次真正采到的轨迹 */
+  function mk(){
+    const P = BOSS.pos.clone(), r = R(rr0);
+    const pts = (last && last.length === k ? last : Array.from({ length:k }, ()=>({
+      x:DUMMY.pos.x, z:DUMMY.pos.z })))
+      .map(p=>({ x:p.x, z:p.z, r }));
+    return { P, r, pts, primary: pts.length > 1 ? { shape:'scatter', pts }
+      : { shape:'circle', x:pts[0].x, z:pts[0].z, r } };
+  }
+  return {
+    name:t.n, tag:'本命 · 回响', warm:nWarm(t, .6), mul, counter:t.c,
+    hit(){ return mk().primary; },
+    run(){
+      const z = mk(), W = nWarm(t, .6);
+      const rec = [];
+      /* 采样：k 个点，间隔 gap —— 这就是"回响"的判定本体 */
+      for(let i=0;i<k;i++){
+        delay(i*gap, ()=>{
+          const A = aimAngle();
+          const q = nOff(DUMMY.pos, A, nSpread(t.lay, i, z.r*.9));
+          rec.push(q);
+          BFX.decal({ x:q.x, z:q.z, tex:'rune', r:.7, life:1.4, color:e.c, a0:.5 });
+        });
+      }
+      /* 爆发：按 seq/rev 顺序把刚才那串脚印逐颗炸回去 */
+      delay(k*gap + W, ()=>{
+        last = rec.slice();
+        rec.forEach((p, i)=>{
+          const at = (t.tm === 'rev' ? (k-1-i) : i)*.14;
+          delay(at, ()=>{
+            BFX.zone({ shape:'circle', x:p.x, z:p.z, r:z.r, dur:.42, color:e.c });
+            delay(.42, ()=>{
+              BFX.shock(V3(p.x, 0, p.z), z.r*1.5, { color:e.c, dur:.38 });
+              BFX.burst(V3(p.x, .4, p.z), 10,
+                Object.assign({ tex:e.tex, sp:4, s0:.34, a0:.75, grav:-2.2 }, nRGB(e.fg)));
+              BFX.decal({ x:p.x, z:p.z, tex:e.decal, r:z.r*.85, life:2, color:e.c, a0:.4 });
+              if(inHit({ shape:'circle', x:p.x, z:p.z, r:z.r }, DUMMY.pos.x, DUMMY.pos.z))
+                say(V3(DUMMY.pos.x,1.25,DUMMY.pos.z), '被回响打到 ×' + mul, hexs(e.fg));
+            });
+          });
+        });
+      });
+    }
+  };
+};
+
+/* ---------------------------------------------------------------
+   8 · 改地 rewrite —— 不是打你，是**把能站的地方换掉**
+   --------------------------------------------------------------- */
+NSYN.rewrite = function(t){
+  const e = NEL[t.el] || NEL.fire, k = t.k || 4;
+  const mul = t.mul || .35, life = t.life || 9;
+  const say = nSay();
+  function mk(){
+    const A = aimAngle(), D = Math.min(15, Math.max(6, aimDist())), P = BOSS.pos.clone();
+    const r = R(t.r || 2.4);
+    const S = Math.max(t.step || 3.8, r*2.15);     /* 格子不许互相压住 */
+    const pts = nPlace(k, t.lay, D, S, P, A).map(p=>({ x:p.x, z:p.z, r }));
+    return { P, pts, primary: k === 1
+      ? { shape:'circle', x:pts[0].x, z:pts[0].z, r }
+      : { shape:'scatter', pts } };
+  }
+  return {
+    name:t.n, tag:'本命 · 改地', warm:nWarm(t, .6), mul, counter:t.c,
+    hit(){ return mk().primary; },
+    run(){
+      const z = mk(), W = nWarm(t, .6);
+      z.pts.forEach((p, i)=>{
+        delay(nWhen(t.tm, i, k, .18), ()=>{
+          BFX.zone({ shape:'circle', x:p.x, z:p.z, r:p.r, dur:W, color:e.c });
+          delay(W, ()=>{
+            BFX.decal({ x:p.x, z:p.z, tex:e.decal, r:p.r*.96, life, color:e.c, a0:.34 });
+            nField(p.x, p.z, p.r, e.c, life);
+            BFX.burst(V3(p.x, .3, p.z), 12,
+              Object.assign({ tex:e.tex, sp:4, s0:.4, a0:.7, grav:-1.6 }, nRGB(e.fg)));
+            lightPulse(V3(p.x, .8, p.z), e.c, 1.4, .3);
+            /* 站上去就每 0.8 秒掉一次 —— 地块是"持续"的，不是一次性的 */
+            const ticks = Math.floor(life/.8);
+            for(let n=0;n<ticks;n++){
+              delay(.8 + n*.8, ()=>{
+                BFX.burst(V3(p.x, .2, p.z), 2,
+                  Object.assign({ tex:e.tex, sp:1.4, s0:.24, a0:.45, grav:-1.2 }, nRGB(e.fg)));
+                if(inHit({ shape:'circle', x:p.x, z:p.z, r:p.r }, DUMMY.pos.x, DUMMY.pos.z))
+                  say(V3(DUMMY.pos.x,1.25,DUMMY.pos.z), '站在地上 ×' + mul, hexs(e.fg));
+              });
+            }
+          });
+        });
+      });
+    }
+  };
+};
+
+/* =====================================================================
+   本命技表：45 行。字段只有参数，没有一行行为代码。
+   n 名字 / syn 语法 / k 发数 / lay 排布 / tm 时序 / el 元素 / c 解法
+   可选：w 前摇 / mul 倍率 / r 单点半径 / step 间距 / span 角度 /
+         gap 缺口数 / d 围栏半径 / life 地面存续
+   **三元组 (syn, lay, tm) 45 行互不相同**（dev 侧脚本查重）
+   ===================================================================== */
+const NATIVE = {
+  /* ---------------- 卷一 ---------------- */
+  treeking : { n:'根须坟场', syn:'cage',   k:7,  lay:'spiral', tm:'rev',   el:'wood',   gap:1,
+    c:'七根须从外往里卷，倒着卷 —— 缺口在它最先卷的那一侧，往回冲' },
+  batking  : { n:'血月低掠', syn:'echo',   k:5,  lay:'arc',    tm:'seq',   el:'blood',
+    c:'它打的是你半秒前站过的地方 —— 走直线折返的人会被自己的脚印打死' },
+  chief    : { n:'连环踏地', syn:'drop',   k:3,  lay:'line',   tm:'seq',   el:'earth', step:4.4,
+    c:'三下往前踩，一下比一下远 —— 前两下别退，第三下才闪' },
+  golemking: { n:'落石阵',   syn:'drop',   k:7,  lay:'grid',   tm:'delay', el:'earth', step:4.6,
+    c:'七块石头先把落点全亮出来，两秒后一起砸 —— 站到两块之间' },
+  snakequeen:{ n:'毒牙喷涌', syn:'spray',  k:3,  lay:'line',   tm:'all',   el:'poison',
+    c:'三道毒牙一起喷，中间那道最窄 —— 侧身半步就够' },
+  boneabbot: { n:'往生咒',   syn:'mark',   k:3,  lay:'line',   tm:'delay', el:'soul',
+    c:'咒落在你身上，圈跟着你走，三秒后原地爆 —— 跑起来，别在原地等' },
+  ghostlord: { n:'引魂幡',   syn:'cage',   k:8,  lay:'arc',    tm:'seq',   el:'soul',   gap:1,
+    c:'八面幡依次立起，最后一面立起时才收拢 —— 认准还没立起来的那面' },
+  firegeneral:{ n:'焦土推进', syn:'rewrite', k:4, lay:'line',  tm:'seq',   el:'fire',   step:4.2,
+    c:'四道火墙依次往前推，地面烧九秒 —— 记住哪块地还是冷的' },
+  icequeen : { n:'千里冰封', syn:'rewrite', k:6, lay:'grid',   tm:'all',   el:'ice',    step:4.6,
+    c:'棋盘状结冰，只剩斜角能站 —— 踩错一格就滑出去' },
+  spidermother:{ n:'蛛丝牵引', syn:'seek', k:6,  lay:'spiral', tm:'seq',   el:'poison',
+    c:'六缕丝一颗一颗追，越追越密 —— 别停，也别回头' },
+  magmalord: { n:'熔柱喷发', syn:'drop',   k:9,  lay:'spiral', tm:'seq',   el:'fire',   step:3.2,
+    c:'九根熔柱沿螺旋顶出，从脚下往外 —— 顺着螺旋跑出去，别横穿' },
+  ashwarden: { n:'灰烬壁',   syn:'rewrite', k:2, lay:'side',   tm:'wave',  el:'ember',  step:5.0,
+    c:'两道灰墙贴着一边来回扫，中间留一条走廊 —— 贴着它走，别横穿' },
+  flamewraith:{ n:'焚风',    syn:'sweep',  k:1,  lay:'arc',    tm:'seq',   el:'fire',
+    c:'一道火弧从右往左扫过半场 —— 跟着弧尾跑，别迎着它' },
+  flameemperor:{ n:'天火焚世', syn:'drop', k:5,  lay:'cross',  tm:'rev',   el:'fire',   step:4.0,
+    c:'五团天火先外后内反着落 —— 先往里躲，最后一刻再出去' },
+  /* ---------------- 卷二 ---------------- */
+  ferryman : { n:'双渡',     syn:'sweep',  k:2,  lay:'spiral', tm:'rev',   el:'water',
+    c:'两道水刃反着转，交汇点一直在移 —— 站在交汇点的外侧' },
+  swordlord: { n:'万剑归宗', syn:'seek',   k:12, lay:'arc',    tm:'delay', el:'iron',   r:1.5,
+    c:'十二柄剑全锁在你身上，两秒后一起落 —— 往一边跑到底，别走直线' },
+  marrowlord: { n:'抽髓',    syn:'mark',   k:2,  lay:'side',   tm:'seq',   el:'earth',
+    c:'印记落你身上，一秒后从脚下抽一根骨刺 —— 印记一亮就横移' },
+  riverwraith:{ n:'拖水',    syn:'seek',   k:4,  lay:'line',   tm:'rev',   el:'water',
+    c:'四股水绳倒着追，最后发的先到 —— 先躲最后那股' },
+  abysswyrm: { n:'缠绞',     syn:'cage',   k:10, lay:'spiral', tm:'all',   el:'poison', gap:1,
+    c:'十段身子同时收一圈，圈心是唯一安全区 —— 往它身子里钻' },
+  yellowspring:{ n:'黄泉引', syn:'mark',   k:5,  lay:'arc',    tm:'seq',   el:'soul',
+    c:'印记连爆五次，一次比一次靠前 —— 每次爆完再挪一步，别连走' },
+  /* ---------------- 卷三 ---------------- */
+  swordguardian:{ n:'剑冢',  syn:'rewrite', k:8, lay:'grid',   tm:'seq',   el:'iron',   r:2.2,
+    c:'八柄剑依次插成剑林，九秒才散 —— 记住哪几格已经被占了' },
+  bladelord: { n:'断岳',     syn:'sweep',  k:1,  lay:'line',   tm:'delay', el:'iron',
+    c:'一柄巨剑横扫满场，先亮一秒半才动 —— 看准方向，从它背后穿过去' },
+  swordemperor:{ n:'剑指',   syn:'spray',  k:1,  lay:'side',   tm:'delay', el:'iron', span:.20,
+    c:'一道细剑气贴地刺来，起手很长 —— 起手时往侧面一步就够' },
+  cloudwarden:{ n:'云墙',    syn:'cage',   k:6,  lay:'grid',   tm:'delay', el:'wind',   gap:1,
+    c:'六团云先定住位置，一秒后同时合拢 —— 提前站进空档里' },
+  heavenguard:{ n:'门闩',    syn:'sweep',  k:1,  lay:'arc',    tm:'all',   el:'holy',
+    c:'一道光闩从门口横推过来 —— 退到门柱后面，别站在正门前' },
+  jadeemperor:{ n:'玉阶',    syn:'drop',   k:4,  lay:'line',   tm:'wave',  el:'holy',   step:4.2,
+    c:'四道玉阶一波一波压过来，每波往前一格 —— 跟着节奏退一格' },
+  starlord : { n:'陨星雨',   syn:'drop',   k:9,  lay:'spiral', tm:'rev',   el:'star',   step:3.2,
+    c:'九颗星从外圈往内砸，反着落 —— 站中心，等最后一颗' },
+  /* ---------------- 卷四 ---------------- */
+  mirrordemon:{ n:'镜影',    syn:'echo',   k:6,  lay:'cross',  tm:'rev',   el:'mirror',
+    c:'它把你六步前的走位原样打回来 —— 走圆，不要走直线' },
+  mirrorlord:{ n:'镜面',     syn:'rewrite', k:3, lay:'arc',    tm:'rev',   el:'mirror', r:2.8,
+    c:'三面镜子依次立起把光反回来，先立的后炸 —— 站到镜背那一侧' },
+  nineheaven:{ n:'九霄落雷', syn:'drop',   k:9,  lay:'arc',    tm:'seq',   el:'holy',   step:2.8,
+    c:'九道雷沿弧线依次劈下 —— 差一拍，跑起来就能躲' },
+  chaosavatar:{ n:'万象归一', syn:'sweep', k:3,  lay:'spiral', tm:'delay', el:'chaos',
+    c:'三道不同方向的扫描同时亮，一秒后一起动 —— 只能钻三角中心' },
+  chaos    : { n:'无常',     syn:'seek',   k:8,  lay:'cross',  tm:'delay', el:'chaos',
+    c:'八道追光一起锁死，两秒后一起落 —— 先往一个方向跑到底，再折' },
+  /* ---------------- 八部 ---------------- */
+  bafo_deva:{ n:'金刚杵',    syn:'spray',  k:5,  lay:'arc',    tm:'seq',   el:'holy',   gapA:.22,
+    c:'五道杵光沿弧依次射出 —— 跟着弧的间隔走，别踏回上一道' },
+  bafo_naga:{ n:'盘渊',      syn:'cage',   k:12, lay:'grid',   tm:'rev',   el:'poison', gap:2,
+    c:'十二根毒柱从棋盘边缘往里塌，反着塌 —— 缺口在最先塌的那一格' },
+  bafo_yaksa:{ n:'四臂',     syn:'spray',  k:4,  lay:'cross',  tm:'all',   el:'earth',  gapA:1.5,
+    c:'四臂同时往四个方向劈 —— 站十字缝里，别站对角' },
+  bafo_gandharva:{ n:'弦音', syn:'mark',   k:4,  lay:'line',   tm:'wave',  el:'soul',
+    c:'弦音一波一波打在你站过的位置 —— 每波之间必须换一次方向' },
+  bafo_asura:{ n:'三头',     syn:'spray',  k:3,  lay:'cross',  tm:'seq',   el:'fire',   gapA:1.1,
+    c:'三个头依次转过来喷 —— 站在它还没转过去的那一边' },
+  bafo_garuda:{ n:'掠空',    syn:'sweep',  k:1,  lay:'spiral', tm:'seq',   el:'wind',
+    c:'从天上俯冲扫一整圈，扫得很慢 —— 贴着它的内侧跑' },
+  bafo_kimnara:{ n:'鹿鸣',   syn:'mark',   k:3,  lay:'arc',    tm:'rev',   el:'soul',
+    c:'三声鹿鸣在身上连爆，倒着来 —— 最后一声最大，别提前停' },
+  bafo_mahoraga:{ n:'腹壁',  syn:'rewrite', k:5, lay:'spiral', tm:'rev',   el:'earth',
+    c:'五道腹壁从外往里收，反着收 —— 从最先收的那一侧挤出去' },
+  /* ---------------- 地宫 ---------------- */
+  dgb_tomb : { n:'坑杀',     syn:'drop',   k:2,  lay:'cross',  tm:'all',   el:'earth',  step:4.4,
+    c:'两波同时落，一前一后 —— 站两波之间那条缝' },
+  dgb_well : { n:'塌方',     syn:'drop',   k:8,  lay:'grid',   tm:'wave',  el:'earth',  r:2.2,
+    c:'八块顶板一波一波塌 —— 每波之后缺口都会换位置' },
+  dgb_den  : { n:'兽群',     syn:'seek',   k:7,  lay:'arc',    tm:'seq',   el:'blood',
+    c:'七头兽一只一只扑，每只都锁你当时的位置 —— 跑动就行，别停' },
+  dgb_gaol : { n:'上枷',     syn:'mark',   k:2,  lay:'line',   tm:'all',   el:'soul',
+    c:'两副枷同时落，一副在你身上一副在你身后 —— 往前一步' },
+  dgb_fall : { n:'坠天',     syn:'sweep',  k:1,  lay:'arc',    tm:'rev',   el:'wind',
+    c:'一道坠落的光从上往下扫过全场 —— 躲到它已经扫过的那一侧' }
+};
+
 const SKILL_INDEX = {};
 /* 三类技放在同一张索引里（机制 / 套路 / 签名），UI 只负责分组显示 */
 Object.keys(MECH).forEach(k=>{ SKILL_INDEX[k] = MECH[k]; SKILL_INDEX[k].id = k; SKILL_INDEX[k].group = 'mech'; });
@@ -5729,6 +6440,20 @@ const KIT = {
   xingtian      : ['dom_warcry',    'wb_axecleave',   'wb_shieldbash',  'wb_warcry'],
   jiuweihu      : ['dom_illusion',  'wb_foxfire',     'wb_tailbind',    'wb_phantomdash'],
 };
+
+/* ---- 45 只守卫的第 5 格：本命技 ----
+   前四格原样不动（机制 / 套路 ×2 / 签名）—— 那四格说明"它属于哪个家族"；
+   第 5 格是**这一只自己的招**，谁都不共用。
+   挂在这里而不是逐个改 KIT，是因为表里已经写全了：45 行 = 45 个键，
+   加第 46 只只要在 NATIVE 里加一行，这里不用动。 */
+Object.keys(NATIVE).forEach(id=>{
+  if(!KIT[id]){ console.warn('[native] KIT 里没有这只：' + id); return; }
+  const key = 'nt_' + id;
+  const sk = NSYN[NATIVE[id].syn](NATIVE[id]);
+  sk.id = key; sk.group = 'native'; sk.native = id;
+  SKILL_INDEX[key] = sk;
+  KIT[id] = KIT[id].concat(key);
+});
 
 /* =====================================================================
    12. 舞台装配
@@ -6094,7 +6819,8 @@ function rowHtml(id, idx){
   const badge = sk.group === 'sign' ? '<b>签名</b>'
               : sk.group === 'mech' ? '<b style="background:#8fd05a">机制</b>'
               : sk.group === 'wb' ? (sk.dom ? '<b style="background:#ffd24a;color:#2a2010">领域</b>'
-                                             : '<b style="background:#ff8a5c;color:#2a1010">专属</b>') : '';
+                                             : '<b style="background:#ff8a5c;color:#2a1010">专属</b>')
+              : sk.group === 'native' ? '<b style="background:#a06ae0">本命</b>' : '';
   const tag = sk.tag ? '　<span class="tagx">' + sk.tag + '</span>' : '';
   return '<button class="skrow' + on + '" data-sk="' + id + '">'
     + '<span class="k">' + (idx + 1) + '</span>'
@@ -6114,7 +6840,8 @@ function renderBar(){
     const on = curSkill === id ? ' on' : '';
     const cls = sk.group === 'sign' ? ' sign'
               : sk.group === 'mech' ? ' mech'
-              : sk.group === 'wb' ? (sk.dom ? ' dom' : ' wbsk') : '';
+              : sk.group === 'wb' ? (sk.dom ? ' dom' : ' wbsk')
+              : sk.group === 'native' ? ' nt' : '';
     return '<button class="slot' + on + cls + '" data-sk="' + id + '"'
       + ' style="--sc:#' + curBoss.glow.toString(16).padStart(6,'0') + '">'
       + '<span class="gl"></span><span class="k">' + (i+1) + '</span>'
