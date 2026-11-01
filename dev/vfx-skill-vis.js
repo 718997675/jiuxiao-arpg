@@ -34,8 +34,10 @@
  * 这两个数不是拍的 —— 是这一轮实测里「读得出形状」的最低档（fireball 类单体
  * 投射物 ≈ 1800，AoE ≈ 3000+），往下留了约 20% 余量。
  *
- * 机位 / 地图固定：桃源村（白天）· 落点在身前 3 码（**不是脚下**，脚下会被
- * 角色自己挡住 —— `vfx-vis` 踩过这个坑，见那边的注释）· 俯视三分之四。
+ * 机位 / 地图固定：桃源村（白天）· 俯视三分之四。
+ * 落点分两种，跟着技能自己的施法方式走：**自身增益落在脚下**（含角色遮挡，
+ * 那才是玩家看到的），**指向性技能落在身前 3 码**（脚下会被角色挡住，
+ * `vfx-vis` 踩过这个坑）。
  * ============================================================ */
 'use strict';
 const puppeteer = require('puppeteer-core');
@@ -114,7 +116,7 @@ const minOf = it => (it.self && BUFF_TYPES[it.type] ? MIN_BUFF : (it.radius > 3.
   });
   const list = ids.filter(o => !only.length || only.indexOf(o.id) >= 0);
 
-  console.log('一、量 ' + list.length + ' 只技能（白天亮地面，落点在身前 3 码）');
+  console.log('一、量 ' + list.length + ' 只技能（白天亮地面；增益落在脚下，指向性落在身前 3 码）');
   const rows = [];
   for (const it of list) {
     const r = await p.evaluate((it) => {
@@ -156,16 +158,23 @@ const minOf = it => (it.self && BUFF_TYPES[it.type] ? MIN_BUFF : (it.radius > 3.
       };
       const A = grab();
       const pp = Game.playerGroup.position;
-      /* **自身施法的技能，落点就是自己**（`cast:'self'`）。游戏里 buff 走的是
-       * `playSkillVfx(id, { pos: pp, aim: pp })`；探针要是把 aim 摆到 5 码外，
-       * 增益位那些「0.2 秒后的脉冲环」就全画在别人脚下了 —— 量出来一片黑，
-       * 而游戏里其实是有的。第一版就是这么把 ④ 位九只全判成欠账的。 */
+      /* **自身施法的技能，落点就是脚下**（`cast:'self'`），和游戏里
+       * `playSkillVfx(id, { pos: pp, aim: pp })` 完全一致。
+       *
+       * 这里踩过两次坑，两次都是「量到的不是特效，是站在哪」：
+       * ① aim 摆到 5 码外 → 增益位那些「0.2 秒后的脉冲环」全画在别人脚下，
+       *    量出来一片黑，④ 位九只全被判成欠账；
+       * ② pos 也摆到身前 3 码 → 量的是**空地**上的读数，比游戏里高一大截
+       *    （角色挡不住），于是「数字过线了但画面上还是看不见」。
+       * 现在 pos / aim 都跟着 `self` 走：脚下的读数**包含角色自己的遮挡**，
+       * 那才是玩家眼睛收到的东西。 */
+      const base = it.self ? pp.z : pp.z + 3;
       const aim = it.self
-        ? new THREE.Vector3(pp.x, 0, pp.z + 3)
-        : new THREE.Vector3(pp.x, 0, pp.z + 3 + Math.max(2, it.radius));
+        ? new THREE.Vector3(pp.x, 0, base)
+        : new THREE.Vector3(pp.x, 0, base + Math.max(2, it.radius));
       /* 走真实入口：功能位兜底 / 台阶 patch / 元素染色都在里面 */
       Game.playSkillVfx(it.id, {
-        pos: new THREE.Vector3(pp.x, 0, pp.z + 3),
+        pos: new THREE.Vector3(pp.x, 0, base),
         aim: aim,
         dir: new THREE.Vector3(0, 0, 1),
         radius: it.radius
