@@ -199,7 +199,23 @@ const ok = (c, m, d) => {
       const impacts = [];
       Game.playSkillVfx = function (sid, opts) {
         if (opts && opts.segments && opts.segments.indexOf('impact') >= 0) {
-          impacts.push({ x: opts.pos.x, z: opts.pos.z });
+          /* 记「落点到最近一只活怪的**表面**距离」，不记某一只的坐标。
+           *
+           * 这里踩过两个坑：
+           * ① 拿 `foe` 的出生点比 —— 怪会朝玩家走，900ms 能走 0.3 码，
+           *    实测 1.66 / 1.94 / 1.99 来回跳，红不红看它走没走；
+           * ② 拿 `foe` 的实时坐标比也不行 —— **场上不止它一只**：
+           *    `Game.running = true` 期间地图刷怪逻辑会补怪，
+           *    弹道先撞上的是补出来的那只（实测落点离 foe 1.6 码）。
+           * 这条断言真正想说的是「炸在怪身上，不是炸在空气或自己脚下」，
+           * 所以扫一遍活的怪、取最近的表面距离。 */
+          let near = 999;
+          for (const en of (Game.enemies || [])) {
+            if (!en || en.dead || !en.pos) continue;
+            const d = Math.hypot(opts.pos.x - en.pos.x, opts.pos.z - en.pos.z) - (en.radius || 0);
+            if (d < near) near = d;
+          }
+          impacts.push({ x: opts.pos.x, z: opts.pos.z, near: near });
         }
         return oldVfx.call(this, sid, opts);
       };
@@ -217,13 +233,12 @@ const ok = (c, m, d) => {
     ok(r.foe, '真的刷出了一只怪（弹道有东西可打）');
     ok(r.impacts.length >= 1, '弹道命中后补了命中段', r.impacts.length);
     const hit = r.impacts[0];
-    const dToTarget = hit ? Math.hypot(hit.x - r.target.x, hit.z - r.target.z) : 999;
     const dToPlayer = hit ? Math.hypot(hit.x - r.pp.x, hit.z - r.pp.z) : 0;
-    /* 判据是「打在怪的身上」而不是「打在怪的圆心」：弹道撞上的是**碰撞半径**，
-     * 体型大的怪从表面就炸了 —— 离圆心 1.9 码对它来说正中靶心。
-     * 拿 1.6 这种写死的数去卡，怪一大就假红。 */
-    ok(hit && dToTarget <= r.foeR + 1.2,
-      '命中段落在敌人身上（离圆心 ' + dToTarget.toFixed(2) + ' 码 / 半径 ' + r.foeR.toFixed(2) + '）', r);
+    /* 判据是「炸在怪身上」，用**表面距离**（圆心距 − 怪的半径）。
+     * 上限是算出来的，不是拍的：弹道 `hitRadius` 0.62 + 一帧推进
+     * （速度 21 × 1/60 ≈ 0.35）= 0.97 —— 超过这个数说明它是在半空里炸的。 */
+    ok(hit && hit.near <= 0.97,
+      '命中段落在敌人身上（离最近一只怪的表面 ' + (hit ? hit.near.toFixed(2) : '—') + ' 码）', r);
     ok(hit && dToPlayer > 1.5, '没有落在施法者脚下（离自己 ' + dToPlayer.toFixed(2) + ' 码）', r);
   }
 
