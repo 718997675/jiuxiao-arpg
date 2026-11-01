@@ -142,9 +142,23 @@ const T_SAMPLES = [0.4, 2.0, 4.0];
         seen[nm] = 1;
       }
     }
+    /* 两两「同招」：第 5 格是本命技（天然独占），能撞的只有前 4 格。
+       `dupKit` 只查「整组一字不差」，可三只剑各 4/4 相同照样溜过去 ——
+       所以再加一条更强、也更像人话的：**任意两只最多共享 2 格**。
+       共享 1~2 格是家族语言（剑家都懂剑域和万剑归宗）；
+       共享 3 格以上就不是家族语言了，是同一只怪换了身皮。 */
+    const over = [];
+    for (let i = 0; i < ids.length; i++) {
+      for (let j = i + 1; j < ids.length; j++) {
+        const A = (KIT[ids[i]] || []).slice(0, 4);
+        const B = (KIT[ids[j]] || []).slice(0, 4);
+        const hit = A.filter(x => B.indexOf(x) >= 0);
+        if (hit.length >= 3) over.push(ids[i] + ' / ' + ids[j] + ' 共享 ' + hit.length + ' 格：' + hit.join(','));
+      }
+    }
     /* 世界 Boss 那 6 只没有 rule（四格全独占，不走「本命技」这套） */
     return { n: ids.length, ids, nrIds: nr, nrn: nr.length, miss, extra, badSlot, dupRule, dupName, dupKit, noRule,
-      allDup, kitSameName };
+      allDup, kitSameName, over };
   });
   ok(meta.miss.length === 0, '45 只守卫都有本命技（NR 覆盖）', meta.miss);
   ok(meta.extra.length === 0, 'NR 里没有野键', meta.extra);
@@ -155,6 +169,7 @@ const T_SAMPLES = [0.4, 2.0, 4.0];
   ok(meta.dupKit.length === 0, '51 只技能组两两不同', meta.dupKit);
   ok(meta.allDup.length === 0, '112 个技能名跨系统 0 重名', meta.allDup);
   ok(meta.kitSameName.length === 0, '同一只的 5 格里没有两格同名', meta.kitSameName);
+  ok(meta.over.length === 0, '任意两只最多共享 2 格（3 格以上就是同一只换皮）', meta.over);
   console.log('  ' + meta.n + ' 只 / ' + meta.nrn + ' 条本命技');
 
   /* ---------------- 二、全量施放（不判像素，只判不炸） ---------------- */

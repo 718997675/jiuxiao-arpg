@@ -28,6 +28,12 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
 const DOC = path.resolve(__dirname, '..', 'docs', 'BOSS-KITS.md');
 const BEGIN = '<!-- EXPORT:NR:BEGIN -->';
 const END = '<!-- EXPORT:NR:END -->';
+/* 第二块：§2 的「五格配招总表」。
+   这张表以前也是手抄的 —— 一改 KIT 就开始说旧话（实测剑帝那一行还写着
+   「剑域 / 剑雨 / 冲撞」，而代码里早换成令旗+剑侍）。既然五格全在 `KIT` 里、
+   「这一战考什么」全在机制技的 `counter` 里，就没有手抄的理由。 */
+const BEGIN_KIT = '<!-- EXPORT:KIT:BEGIN -->';
+const END_KIT = '<!-- EXPORT:KIT:END -->';
 
 /* 卷标题以 BOSSES_DEF 的 `act` / `kind` 为键。名字写在这里而不是从数据推，
  * 因为「卷」是叙事概念，数据里只有编号。 */
@@ -41,6 +47,17 @@ const GROUPS = [
   { key: 'dgb', title: '地宫首领（Lv 36）' }
 ];
 const groupOf = d => (d.kind === 'bafo' || d.kind === 'dgb') ? d.kind : 'act' + d.act;
+
+/* §2 用的卷名（跟 §7.3 是两套叫法，别合并） */
+const GROUPS_KIT = [
+  { key: 'act1', title: '卷一 · 朽骨钥（Lv 1~18）' },
+  { key: 'act2', title: '卷二 · 青铜钥（Lv 19~30）' },
+  { key: 'act3', title: '卷三 · 玄铁钥（Lv 31~40）' },
+  { key: 'act4', title: '卷四 · 赤金钥（Lv 41~50）' },
+  { key: 'act5', title: '卷五 · 九霄钥（Lv 51~60）' },
+  { key: 'bafo', title: '八部天龙（破防 + 元素弱点）' },
+  { key: 'dgb', title: '地宫首领（场地机制）' }
+];
 
 /* 判定写成一行中文：形状 + 尺寸。**只有这 6 种形状**，多一种就说明
  * `normShape` 那里漏了归一（旧称 rect/sector 折进 line/fan）。 */
@@ -92,6 +109,16 @@ function hitText(h) {
     };
   }).filter(Boolean));
 
+  /* §2 那张表要的是「五格 + 这一战考什么」。五格在 `KIT`，
+     那句话在机制技的 `counter` —— 两份都在运行时，没有手抄的余地。 */
+  const kits = await p.evaluate(() => BOSSES_DEF.map(d => ({
+    id: d.id, name: d.name, kind: d.kind, act: d.act,
+    slots: (KIT[d.id] || []).slice(0, 4).map(k => {
+      const s = SKILL_INDEX[k] || {};
+      return { k, name: s.name || k, counter: s.counter || '' };
+    })
+  })));
+
   const lines = [BEGIN, ''];
   for (const g of GROUPS) {
     const rs = rows.filter(r => groupOf(r) === g.key);
@@ -109,17 +136,42 @@ function hitText(h) {
   lines.push('> 本表由 `node dev/boss-kits-export.js --write` 生成，**不要手改**。', END);
   const block = lines.join('\n');
 
+  /* ---- 第二块：§2 五格总表 ---- */
+  const kl = [BEGIN_KIT, ''];
+  for (const g of GROUPS_KIT) {
+    /* 世界 Boss 也有 `act:5`，不排掉就会混进卷五（实测多出 6 只）——
+       它们有自己的 §2-B。 */
+    const rs = kits.filter(r => r.kind !== 'wb' && groupOf(r) === g.key);
+    if (!rs.length) continue;
+    kl.push('#### ' + g.title + ' · ' + rs.length + ' 只', '');
+    kl.push('| Boss | 机制位（第 1 格） | 套路位（第 2/3 格） | 签名位（第 4 格） | 这一战考什么 |');
+    kl.push('| --- | --- | --- | --- | --- |');
+    for (const r of rs) {
+      const s = r.slots, cell = i => (s[i] ? s[i].name : '—');
+      kl.push('| ' + [r.name, '**' + cell(0) + '**', cell(1) + ' / ' + cell(2), cell(3),
+        ((s[0] && s[0].counter) || '—').replace(/\|/g, '/')].join(' | ') + ' |');
+    }
+    kl.push('');
+  }
+  kl.push('> 本表由 `node dev/boss-kits-export.js --write` 生成，**不要手改**。', END_KIT);
+  const kitBlock = kl.join('\n');
+
   await b.close();
 
-  if (!write) { console.log(block); return; }
+  if (!write) { console.log(block + '\n\n' + kitBlock); return; }
 
   const doc = fs.readFileSync(DOC, 'utf8');
-  const i = doc.indexOf(BEGIN), j = doc.indexOf(END);
-  if (i < 0 || j < 0) {
-    console.error('✗ 文档里找不到导出标记 ' + BEGIN + ' / ' + END);
-    process.exit(1);
-  }
-  fs.writeFileSync(DOC, doc.slice(0, i) + block + doc.slice(j + END.length));
+  const swap = (src, bm, em, txt) => {
+    const i = src.indexOf(bm), j = src.indexOf(em);
+    if (i < 0 || j < 0) {
+      console.error('✗ 文档里找不到导出标记 ' + bm + ' / ' + em);
+      process.exit(1);
+    }
+    return src.slice(0, i) + txt + src.slice(j + em.length);
+  };
+  let out = swap(doc, BEGIN, END, block);
+  out = swap(out, BEGIN_KIT, END_KIT, kitBlock);
+  fs.writeFileSync(DOC, out);
   console.log('✓ 已重写 ' + path.relative(path.resolve(__dirname, '..'), DOC) +
-    ' §7.3（' + rows.length + ' 行）');
+    ' §7.3（' + rows.length + ' 行）+ §2（' + kits.filter(r=>r.kind!=='wb').length + ' 只）');
 })().catch(e => { console.error(e); process.exit(1); });

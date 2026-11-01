@@ -122,10 +122,11 @@ const norm = s => String(s).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*
       Object.keys(o).sort().forEach(k => {
         const v = o[k];
         if (POS.has(k) || COLORISH.has(k)) return;
+        if (typeof v === 'boolean') return;              /* three.js 的 isVector3 / isColor 之类 */
         if (typeof v === 'number') {
           if (!isFinite(v) || Math.abs(v) > 65535) return;   /* 颜色值都是大整数 */
           out.push(k + '=' + (Math.round(v * 10) / 10));
-        } else if (typeof v === 'string' || typeof v === 'boolean') out.push(k + '=' + v);
+        } else if (typeof v === 'string') out.push(k + '=' + v);
       });
       return out;
     };
@@ -134,10 +135,17 @@ const norm = s => String(s).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*
       if (typeof f !== 'function') return;
       saved[n] = f;
       BFX[n] = function (...args) {
-        let o = args[0];
         if (n === 'spr') return saved[n].apply(this, args);
-        if (!o || typeof o !== 'object') o = args.find(a => a && typeof a === 'object' && !a.isObject3D) || {};
-        LOG.push(n + '|' + describe(o).join(','));
+        /* 以前只取 `args[0]`，而 `burst(pos, 30, opts)` 的第一个对象参数是 Vector3
+           （x/y/z 全在 POS 里被丢掉）—— 于是**数量和 opts 一个都没记**，
+           31 次 burst 和 1 次 burst 指纹一模一样，环射和玉玺因此判出 100%。
+           现在：所有对象参数合并描述，位置上的裸数字按参数位记下来。 */
+        const parts = [];
+        args.forEach((a, i) => {
+          if (typeof a === 'number') parts.push('a' + i + '=' + (Math.round(a * 10) / 10));
+          else parts.push(...describe(a));
+        });
+        LOG.push(n + '|' + parts.join(','));
         return saved[n].apply(this, args);
       };
     });
@@ -162,18 +170,24 @@ const norm = s => String(s).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*
 
   /* 指纹：数字量化到粗档（同一个"量级"就算同一件事），再比 Jaccard */
   const Q = v => v <= .3 ? 0 : v <= 1 ? 1 : v <= 2 ? 2 : v <= 4 ? 3 : v <= 6 ? 4 : v <= 9 ? 5 : v <= 12 ? 6 : 7;
+  /* 次数也进指纹：环射打 1 发 splat 和玉玺砸 31 发，不是同一件事。
+     之前用 Set 去重，31 发和 1 发压成同一个元素，这就是 100% 的另一半原因。 */
+  const QN = v => v === 1 ? 1 : v <= 3 ? 2 : v <= 8 ? 3 : v <= 16 ? 4 : v <= 40 ? 5 : 6;
   const fp = {};
   Object.keys(rts).forEach(id => {
-    const set = new Set();
+    const cnt = {};
     (rts[id].calls || []).forEach(c => {
-      const [prim, rest] = [c.split('|')[0], c.split('|').slice(1).join('|')];
+      const prim = c.split('|')[0];
+      const rest = c.split('|').slice(1).join('|');
       const norm2 = rest.split(',').filter(Boolean).map(kv => {
         const m = kv.split('=');
         const num = parseFloat(m[1]);
         return m[0] + (isFinite(num) && String(num) === m[1] ? '=q' + Q(num) : '=' + m[1]);
       }).sort().join(',');
-      set.add(prim + '|' + norm2);
+      const key = prim + '|' + norm2;
+      cnt[key] = (cnt[key] || 0) + 1;
     });
+    const set = new Set(Object.keys(cnt).map(k => k + '×' + QN(cnt[k])));
     fp[id] = { set, n: (rts[id].calls || []).length };
   });
   const sim = (a, b) => {
@@ -232,6 +246,36 @@ const norm = s => String(s).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*
     }
   });
   console.log(n4 ? '  小计 ' + n4 + ' 处' : '  ✓ 无');
+
+  line('五、两两「同招」：两只 Boss 的技能组重叠了几格');
+  /* 第四节只看「同一只内部」，可最伤的是**两只之间**：三只剑各 4/4 相同、
+     摆渡人跟黄泉 4/4 相同，第四节一格都报不出来（每只内部没撞）。
+     判据分档：
+       4 格 —— 同一只怪换了个名字，必须改
+       3 格 —— 也是换皮，只剩一格差别，必须改
+       2 格 —— 家族语言（剑家都懂剑域、镜家都懂无相），允许 */
+  const wbId = {};
+  meta.defs.forEach(d => { if (d.wb) wbId[d.id] = 1; });
+  const gids = Object.keys(meta.kits).filter(id => !wbId[id]);
+  const overlaps = [];
+  for (let i = 0; i < gids.length; i++) {
+    for (let j = i + 1; j < gids.length; j++) {
+      const A = (meta.kits[gids[i]] || []).slice(0, 4);
+      const B = (meta.kits[gids[j]] || []).slice(0, 4);
+      const hit = A.filter(x => B.indexOf(x) >= 0);
+      if (hit.length >= 2) overlaps.push([hit.length, gids[i], gids[j], hit]);
+    }
+  }
+  overlaps.sort((a, b) => b[0] - a[0] || (a[1] < b[1] ? -1 : 1));
+  const tier = { 4: 0, 3: 0, 2: 0 };
+  overlaps.forEach(([n, a, b, hit]) => {
+    tier[n]++;
+    if (n < 3) return;
+    console.log('  ✗ ' + (bossName[a] || a).padEnd(11) + ' / ' + (bossName[b] || b).padEnd(11) +
+      ' 共享 ' + n + ' 格：' + hit.map(k => k + '「' + (byKey[k] || {}).name + '」').join(' · '));
+  });
+  console.log('  4 格 ' + tier[4] + ' 对 · 3 格 ' + tier[3] + ' 对 · 2 格 ' + tier[2] + ' 对（2 格是家族语言，允许）');
+  console.log(tier[4] + tier[3] === 0 ? '  ✓ 没有换皮' : '  ✗ 上面那些要拆');
 
   if (pageErrs.length) console.log('\n页面异常：\n  ' + pageErrs.join('\n  '));
   await browser.close();
