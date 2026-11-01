@@ -271,6 +271,38 @@ function skillInjectSplit(pct) {
   return { total, main, sub: total - main };
 }
 
+/* ============================================================
+ * 蚀骨（叠毒 / 毒爆）—— 道士独占机制
+ *
+ * 方案 §3.2 / §12 拍板：「毒、符是道士的独占玩法」，理由是元素平权之后
+ * 谁都能扔毒，道士的身份会被稀释。落到代码里就一句话：
+ *   **层数只有一个来源 —— 蚀骨毒雾（道士 ②）的每一跳**。
+ * 其他职业注入毒元素拿到的只是 30~50% 的附加伤害（P3b），既不叠层、
+ * 也没有引爆口 —— 那不是「限制作弊」，而是「毒雾这只技能只有道士有」。
+ *
+ * 三条数值口径（写在这里而不是散在 game.js 里）：
+ *   1. 叠层：雾每跳 +1，上限 `maxStacks`；每跳刷新 `stackDur` 秒，断档即清零。
+ *   2. 引爆：**符（sigil）命中带层目标**才炸，消耗全部层数。
+ *      符是道士的另一个身份（五雷符 / 符箭 / 万剑 / 天师符），
+ *      所以「先铺雾、再点符」是这套机制唯一的正确玩法。
+ *   3. 每层伤害 `burstPerStack` × 施法者攻击力：5 层 = 3.0 × atk。
+ *      毒雾单跳是 0.75 × atk，也就是「炸一次 ≈ 在雾里多站 4 跳」——
+ *      够让玩家愿意换循环，但不至于把毒雾变成一颗手雷。
+ * ============================================================ */
+const POISON_RULES = {
+  maxStacks: 5,
+  stackDur: 4,
+  burstPerStack: 0.6,
+  /* 引爆的最小层数：1 层就炸等于「每跳都能爆」，层数失去意义 */
+  burstAt: 2
+};
+
+/* 引爆伤害：层数 × 每层系数 × 攻击力（调用方保证 n 已截断） */
+function poisonBurstDmg(atk, n) {
+  const k = Math.max(0, Math.min(POISON_RULES.maxStacks, Math.round(Number(n) || 0)));
+  return (Number(atk) || 0) * POISON_RULES.burstPerStack * k;
+}
+
 /* 某个技能属于哪个功能位（秘技 / 不在 5 位体系里的返回 null） */
 function skillSlotOf(id) {
   if (typeof SKILL_ARCHETYPE === 'undefined' || !SKILL_ARCHETYPE.classes) return null;

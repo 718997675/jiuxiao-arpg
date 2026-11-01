@@ -2166,6 +2166,10 @@ const Game = {
       pos: new THREE.Vector3(x, 0, z), dead: false,
       atkCd: RND(0.3, 1.4), windup: 0, anim: 0, hitFlash: 0,
       stun: 0, slow: 0, slowT: 0, poisonT: 0, poisonDmg: 0, venomT: 0,
+      /* [P0·毒] 蚀骨层数：**只有蚀骨毒雾的每一跳**会加，见 POISON_RULES。
+       * 别的来源（装备「中毒几率」、元素注入的毒附加）只刷新 DoT 计时器，
+       * 不碰这两个字段 —— 这就是「道士独占」在代码里的落地方式。 */
+      poisonN: 0, poisonNT: 0,
       dotT: 0, dotTick: 0, dotDmg: 0, dotElem: null, dotLabel: '',
       /* [P3a] 圣印：sigil 元素命中盖上的印记（秒），圣系 4 组反应的状态位 */
       sigilT: 0,
@@ -5695,6 +5699,19 @@ const Game = {
                 this.damageEnemy(e, dmg, false, { silent: true, elem: 'poison' });
                 /* [S4] 蚀骨印记：天师套「打中毒目标增伤」靠它判定 */
                 e.venomT = Math.max(e.venomT || 0, 2.5);
+                /* [P0·毒] **蚀骨 +1 层** —— 全工程只有这一行加层数。
+                 * 这就是「道士独占」的实现：别的职业可以注毒（拿 30~50% 附加伤害），
+                 * 但没有毒雾这只技能，也就没有层数，符打上去自然爆不了。
+                 * 满层后仍然刷新计时器，否则「满层再放雾」会是一坨什么都不做的绿雾。 */
+                if (typeof POISON_RULES === 'object' && POISON_RULES) {
+                  const was = e.poisonN || 0;
+                  e.poisonN = Math.min(POISON_RULES.maxStacks, was + 1);
+                  e.poisonNT = Math.max(e.poisonNT || 0, POISON_RULES.stackDur);
+                  if (e.poisonN !== was) {
+                    FX.text(new THREE.Vector3(e.pos.x, e.boss ? 3.9 : 2.2, e.pos.z),
+                      '蚀骨 ×' + e.poisonN, 'info', { life: 0.6 });
+                  }
+                }
                 /* 雾内减速：每跳刷新，出雾后 slowDur 秒解除。
                  * 首领砍半 —— 与剑阵同口径，否则一坨雾能把首领黏在原地 5 秒。 */
                 if (slowPct) {
@@ -6401,6 +6418,29 @@ const Game = {
     }
     e.hp -= final;
     if (e.hp < 0) e.overkill = -e.hp;      // [S1] 记下溢出量，击杀时可能转成护盾
+    /* [P0·毒] **符引爆蚀骨**：道士的「先铺雾、再点符」。
+     *
+     * 四道闸门，缺一个就会变成「每跳自爆」或「谁都能爆」：
+     *   ① `elem === 'sigil'` —— 只有符能引爆。毒 / 火 / 物理打上去都只是打伤害；
+     *   ② `!opts.silent` —— 毒雾的每跳是 silent 的，不引爆（否则 0.8 秒一发自爆）；
+     *   ③ `!opts.react` —— 元素反应的追加伤害不算「玩家点了符」；
+     *   ④ `e.hp > 0` —— 这一符已经把人打死就不再多算一次。
+     *
+     * 引爆伤害走 `explodeAt`：它是**范围**伤害，主目标吃满、周围吃同样的数。
+     * 层数当场清零，且爆炸本身带 `elem:'poison'`（不再引爆，也不会叠层）。 */
+    if (!opts.silent && !opts.react && elem === 'sigil' && e.hp > 0
+      && typeof POISON_RULES === 'object' && POISON_RULES) {
+      const n0 = (e.poisonN || 0);
+      if (n0 >= (POISON_RULES.burstAt || 2)) {
+        const bd = (typeof poisonBurstDmg === 'function') ? poisonBurstDmg(st.atk, n0) : 0;
+        e.poisonN = 0; e.poisonNT = 0;
+        if (bd > 0) {
+          FX.text(new THREE.Vector3(e.pos.x, e.boss ? 3.9 : 2.2, e.pos.z),
+            '毒爆 ×' + n0, 'lv', { life: 1 });
+          this.explodeAt(e.pos.clone(), 2.4, bd, 0x7fbf5a, false, false, 'poisonburst', 'poison');
+        }
+      }
+    }
     if (crit && st.aspdOnCrit) this.aspdCritT = 2.5;   // [S1] 暴击后攻速
     /* 传世特性·裂魂：暴击时小概率引发小范围爆炸（爆炸伤害不再连锁触发） */
     if (crit && !opts.silent && !this._critbursting && st.specials && st.specials.critburst && CHANCE(0.2)) {
@@ -6581,7 +6621,7 @@ const Game = {
   },
 
   /* [S1] 爆炸一律算范围伤害（tag='aoe'），不管是谁触发的爆炸 */
-  explodeAt(pos, radius, baseDmg, color, big, silent, tag = 'aoe') {
+  explodeAt(pos, radius, baseDmg, color, big, silent, tag = 'aoe', elem) {
     if (!silent) { SFX.explode(); this.shake = Math.max(this.shake, big ? 0.5 : 0.25); this.hitstop = 50; }
     FX.flashCircle(pos, radius, color, 0.35);
     FX.ring(pos, radius * 1.2, color, 0.45, 0.2);
@@ -6590,7 +6630,9 @@ const Game = {
       if (e.dead) continue;
       if (DIST2D(e.pos, pos) < radius + e.radius) {
         const { dmg, crit } = this.rollDamage(baseDmg);
-        this.damageEnemy(e, dmg, crit, { knock: 0.5, tag });
+        /* `elem` 可选：只有需要「按元素算抗性」的爆炸（毒爆）才传。
+         * 不传就是原来的物理口径，老调用点一个字节都没变。 */
+        this.damageEnemy(e, dmg, crit, { knock: 0.5, tag, elem: elem });
       }
     }
   },
@@ -7124,6 +7166,13 @@ const Game = {
       if (e.antiHealT > 0) e.antiHealT = Math.max(0, e.antiHealT - dt);
       /* [S4] 蚀骨印记（毒雾留下的增伤窗口） */
       if (e.venomT > 0) e.venomT = Math.max(0, e.venomT - dt);
+      /* [P0·毒] 蚀骨层数断档清零：层数只在「雾还在跳」的时候活着。
+       * 不写衰减的话，毒雾一结束层数会永远挂着，玩家隔一分钟补一符还能引爆 ——
+       * 那就不叫「铺雾再点符」，而是「一次铺雾，终身可用」。 */
+      if (e.poisonNT > 0) {
+        e.poisonNT = Math.max(0, e.poisonNT - dt);
+        if (e.poisonNT <= 0) e.poisonN = 0;
+      }
       /* [P3] 三个「动 AI」的状态（结算在下面的普怪 AI 段）：
        *   aspdT / aspdMul  攻速压制：atkCd 倒数放慢
        *   fearT            恐惧：掉头逃、不挥刀
@@ -7875,6 +7924,7 @@ const Game = {
     e.slow = 0; e.slowT = 0; e.stun = 0; e.freeze = 0;
     e.fearT = 0; e.tauntT = 0; e.tauntPt = null;
     e.poisonT = 0; e.poisonTick = 0; e.poisonDmg = 0;
+    e.poisonN = 0; e.poisonNT = 0;
     e.dotT = 0; e.dotDmg = 0; e.dotElem = null;
     e.vulnT = 0; e.shredT = 0; e.antiHealT = 0; e.venomT = 0;
     e.aspdT = 0; e.aspdMul = 0;
