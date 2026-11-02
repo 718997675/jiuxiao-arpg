@@ -3,7 +3,7 @@
 - 分支：`feat/skill-refactor`（专题台账，同分支；做完后并进分支台账再删这份）
 - 设计文档：`docs/BOSS-KITS.md`（§7 = 45 只本命技；§7.7 = 活物原语）
 - 实验场：`docs/boss-vfx-playground.html`（单文件，内联 three.js，`file://` 直接开）
-- 更新：2026-11-02 21:40
+- 更新：2026-11-02 22:05
 
 > 当前：**51 只全部进特效台；演出层（BFX 17 个原语）已经搬进游戏（`src/fx2.js`），
 > 玩家的「被拖拽」状态位、可破坏目标（图腾 / 卵囊，带读秒）、正面格挡（岩甲 / 盾）都补上了**。
@@ -47,14 +47,14 @@
 | B16.3 | 可破坏目标：图腾 / 卵囊的血量与仇恨 | ✅ | `game.js`（`spawnDestructible` / `_buildDestructibleModel` / `destroyDestructible`、四处放行）、`dev/test-destructible.js`、`dev/probe-destructible.js`；`BOSS-KITS.md` §10 | 本次提交 |
 | B16.4 | 减伤朝向：`e.guardFront {arc,mul,turn}`，`stonearmor` 用它 | ✅ | `game.js`（`FRONT_GUARD_DEFAULT` / `frontGuardOf` / `setGuardFront` / `damageEnemy` / 转身插值）、`dev/test-frontguard.js`、`dev/probe-frontguard.js`；`BOSS-KITS.md` §11 | 本次提交 |
 | B16.5 | 限时 / 读条：可破坏目标的读秒 | ✅ | 同 B16.3（`d.ttl` 按帧递减 + `onExpire`）；Boss 自己的读条等状态机 | 本次提交 |
-| B16.6 | 领域乘区：照 `worldboss.js` 的 `domainTick` 抄，别新起一套 | ⬜ | —— | —— |
+| B16.6 | 领域乘区：`Domains.add({preset,x,z,r,ttl,owner})` | ✅ | 新建 `src/domain.js`（6 预设 / `fieldSlow`+`fieldAspd` 独立字段 / 视野借 `WorldBoss._applySight`）、`dev/test-domain.js`、`dev/probe-domain.js`；`game.js` / `ui-minimap.js` / `index.html` 接线；`BOSS-KITS.md` §12 | 本次提交 |
 | B17 | 两只之间撞招：剑族 3 只、镜族 3 只、石族 2 只各 4 格完全相同；摆渡人 == 黄泉 | ✅ | 只改 `KIT` 表，把「家族语言」从 4 格压到 ≤2 格；§8.5 整章 | 本次提交 |
 | B18 | 指纹工具的 bug：`burst(pos,30,opts)` 只取第一个对象参数 → **数量全丢**，31 发和 1 发判成同一招 | ✅ | `describe` 合并全部对象参数 + 位置裸数字；次数进指纹（`×N` 分档） | 本次提交 |
 | B19 | §2 五格总表也是手抄的（剑帝还写着旧配招） | ✅ | 加 `EXPORT:KIT` 标记，`boss-kits-export.js --write` 一起生成（45 只） | 本次提交 |
 
 ## 下一步（按顺序，别跳）
 
-**已经做完的三件**（细节见 `BOSS-KITS.md` §9 / §10）：
+**B16 六件已全部完成**（细节见 `BOSS-KITS.md` §9 / §10 / §11 / §12）：
 
 - B16.1 `src/fx2.js` —— 17 个原语进游戏，**生成物**，改特效台后跑
   `node dev/build-fx2.js --write`。四处接线：`FX.init` 里 `bind`、
@@ -66,27 +66,28 @@
 - B16.4 正面格挡 —— `e.guardFront = { arc, mul, turn }` + `setGuardFront()`。
   `arc` 是总张角（半角只在 `π·arc/360` 一处换算）；`turn` 接进了转身插值，
   所以「转身 1.2 秒」是真的。默认值 = 刑天那三个数，世界 Boss 的数值一个没变。
+- B16.6 领域乘区 —— `Domains.add({ preset, x, z, r, ttl, owner })` → `{ zone, kill }`。
+  写**另外两个字段** `fieldSlow` / `fieldAspd`（世界 Boss 每帧归位 `domSlow`，
+  共用一个字段迟早互相抹掉）；视野**借** `WorldBoss._applySight`、不抄一份夜色算法。
 
-**接着要做的**：
-
-1. **施法运行时**（最大的一块）：`NR` / `KIT` 还是数据表，得有一层把
+**接着要做的 —— 只剩一件**：**施法运行时**（最大的一块）。`NR` / `KIT` 还是数据表，得有一层把
    「这一招什么时候放、命中谁、扣多少」接起来。建议落点 `src/boss-cast.js`：
    `pickSkill(boss, dist)` → `castBossSkill(boss, id)` → 前摇 telegraph →
    结算（复用 `inHit` 的四种形状）→ `settle`。
    **判定与预警必须读同一组数字**，否则「圈画在这里、打到那里」。
    **前置**：`KIT` / `NR` 现在只活在特效台的 HTML 里，游戏侧还没有这份数据 ——
-   要么照 `fx2.js` 的路子再生成一个 `src/data/data-bosskits.js`，
-   要么施法运行时无从查表。这一步别跳过。
-2. **领域乘区**：视野 / 移速 / 持续掉血 / 吸力 / 攻速 / 小地图。
-   世界 Boss 的 `WBDOM` 已经有实现（`src/worldboss.js` 的 `domainTick`），
-   先照它抄一遍，别新起一套。
+   照 `fx2.js` 的路子再生成一个 `src/data/data-bosskits.js` + 一层适配垫片
+   （`BOSS`/`DUMMY`/`delay`/`settle`/`N`/`R`/`WM`/`aimAngle` 那套脚手架）。
+   这一步别跳过，也别手抄。
 
 ## 卡点 / 已知短板
 
 - **共享招只有 31 个，45 只摊下来必然有 2 格重合**（92 对）—— 这是池子决定的，
   不是漏查。判据已落到「最多 2 格」，别再往上加共享格。
-- **特效台里那 45 只还没有任何一只进游戏**。这一轮搬的是「怎么画」，
-  没搬「什么时候画」—— 别看到 `src/fx2.js` 就以为 Boss 战能打了。
+- **特效台里那 45 只还没有任何一只进游戏**。搬完的是「怎么画」（`fx2.js`）
+  与「踩上去会发生什么」（可破坏目标 / 正面格挡 / 领域乘区），
+  **没搬「什么时候画」**—— 施法运行时一行没写。别看到 `src/fx2.js`
+  就以为 Boss 战能打了。
 - **机制位的文案是共享的**：`counter` 写在机制技上，换一只怪不会换措辞。
   实测把「魂锁拖拽」放到剑魂身上时，面板会说「脚下落腐蚀圈」—— 配表时要连带读文案，
   搭不上就换机制位，别只看形状。

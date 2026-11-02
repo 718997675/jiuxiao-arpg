@@ -1747,6 +1747,10 @@ const Game = {
      * FX.clear 只删了看得见的圆，伤害记账还在 `WBFight._hazards` 里 ——
      * 不清的话换图后新地图的落脚点上会继续掉血，而且再也找不到源头。 */
     if (typeof WBFight !== 'undefined') WBFight.clear();
+    /* [B16.6] 章节 Boss 的领域同理：`FX.clear` 只删了地上那个法阵，
+     * 结算还挂在 `Domains.list` 里 —— 不清的话回城之后人还站在毒圈上，
+     * 而且新图里根本找不到是谁放的。 */
+    if (typeof Domains !== 'undefined') Domains.clear();
 
     this.buffs = []; this.shield = 0; this.shieldT = 0; this.regen = 0; this.poisonT = 0; this.playerSlow = 0; this.playerSlowT = 0; this.reviveT = 0;
     /* [P3a] 解毒雾（圣系反应的玩家侧计时器），换图 / 重开都要清 */
@@ -3033,6 +3037,11 @@ const Game = {
      * 放在 anim 之后、`hp <= 0 → die()` 之前：
      * 毒沼把人毒死的那一帧要能正常走死亡流程。 */
     if (typeof WorldBoss !== 'undefined') WorldBoss.domainTick(dt);
+    /* [B16.6] 章节 Boss 的领域（毒沼 / 水天 / 吞噬 / 幻域）。
+     * 排在 `domainTick` **之后**：那个函数每帧都会把 `domSlow/domAspd` 归位，
+     * 而视野是两边共用的槽位，必须让"最后说话的是这里"。
+     * 写的是另外两个字段（`fieldSlow` / `fieldAspd`），所以互不覆盖 —— 见 domain.js 文件头。 */
+    if (typeof Domains !== 'undefined') Domains.tick(dt);
     /* [M18.7] 场地效果（相柳毒沼 / 九尾狐狐火）每帧结算。
      * 没有场地时 `tick` 第一行就返回，代价可忽略。
      * 必须**在 die 判定之前**：站在毒沼里被毒死的那一帧要能走死亡流程。 */
@@ -3333,7 +3342,7 @@ const Game = {
        * [M18.5] 领域减速用**独立字段** `domSlow`，不并进 `playerSlow`：
        * 并进去的话，出圈时要把它减掉，而「减掉多少」在敌人也给过减速时
        * 是算不清的 —— 少减会留永久残留，多减会顺手抹掉冰霜减速。 */
-      const slow = Math.min(0.85, (this.playerSlow || 0) + (this.domSlow || 0));
+      const slow = Math.min(0.85, (this.playerSlow || 0) + (this.domSlow || 0) + (this.fieldSlow || 0));
       /* [M18.7] 定身（九尾狐 P2「尾缚」）：速度直接归零，不是「减到最慢」。
        * 不能复用上面的 `slow` —— 它封顶 0.85，拉满也还能走 15%，
        * 玩家会以为「定身只是变慢」，而数据里 `root: 2.5` 承诺的是「定住」。
@@ -3454,8 +3463,10 @@ const Game = {
       * (this.lootRushT > 0 ? 1.15 : 1)
       /* [M18.5] 战意领域（刑天）：攻速 -15%。
        * 走独立字段而不是 buffs —— 领域压制不该被「净化」驱散，
-       * 也不该和药水 / 技能的攻速加成互相覆盖。 */
-      * Math.max(0.4, 1 + (this.domAspd || 0) / 100);
+       * 也不该和药水 / 技能的攻速加成互相覆盖。
+       * [B16.6] `fieldAspd` 是章节 Boss 的领域（同一套理由，分成两个字段
+       * 是因为世界 Boss 每帧都会把 `domAspd` 归位）。 */
+      * Math.max(0.4, 1 + ((this.domAspd || 0) + (this.fieldAspd || 0)) / 100);
     const cdBase = 0.72 / (st.aspd * wpSpeed * aspdK);
     this.atkCd = cdBase;
     this.attacking = 0.32;
@@ -6103,6 +6114,12 @@ const Game = {
     if (typeof WorldBoss !== 'undefined' && WorldBoss.domainBuff) {
       const db = WorldBoss.domainBuff();
       if (db) out.push(db);
+    }
+    /* [B16.6] 章节 Boss 的领域同理，走同一个形状。两套系统互斥（不同图），
+     * 真同时出现也只是 buff 条上多一条 —— 各有各的名字与颜色。 */
+    if (typeof Domains !== 'undefined' && Domains.buff) {
+      const fb = Domains.buff();
+      if (fb) out.push(fb);
     }
     /* 护盾条目标题不写死「玄冰」：圣霜护盾（P3a 圣系反应）走同一个字段，
      * 写死名字会让玩家以为吃到的是法师的冰盾 */

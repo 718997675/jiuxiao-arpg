@@ -352,7 +352,12 @@ const Minimap = {
      * 铺在敌人 / 掉落**之后**、世界 Boss 星标**之前**：
      * 压暗的是「地形与杂兵」，星标和玩家箭头必须留着 ——
      * 玩家连自己在哪都看不见就不叫「幻域」，叫「小地图坏了」。 */
-    const dimA = (typeof WorldBoss !== 'undefined' && WorldBoss.dim) ? WorldBoss.dim() : 0;
+    /* [B16.6] 压暗系数两个来源取较大的：世界 Boss 的幻域，和章节 Boss
+     * 放的圈（`Domains.dim()` 内部已经跟 WorldBoss 取过 max，这里直读它，
+     * 免得以后再加第三个来源时要在三个地方各写一次） */
+    const dimA = (typeof Domains !== 'undefined' && Domains.dim)
+      ? Domains.dim()
+      : ((typeof WorldBoss !== 'undefined' && WorldBoss.dim) ? WorldBoss.dim() : 0);
     if (dimA > 0) {
       g.save();
       g.globalAlpha = Math.min(0.75, dimA);
