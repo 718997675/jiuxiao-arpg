@@ -990,3 +990,76 @@ NODE_PATH=/Users/niekai/node_modules node dev/probe-domain.js      # 16 项真�
 
 `Game.invuln > 0` 会让 `damagePlayer` 第一行就 return —— 探针开头为了安全
 开了无敌，量伤害之前必须先归零，否则量到的是「0 点伤害，且全程没报错」。
+
+---
+
+## 13. 施法运行时的第一步：技能表出得来了
+
+要「让这 45 只真的放招」，第一件事不是写 AI，是**把表和招式搬过去** ——
+`KIT` / `NR` / `MECH` / `SHARED` / `SIGN` 全在特效台的 HTML 里，游戏侧根本没有这份数据。
+
+### 13.1 又是生成物，但切法不一样
+
+`src/fx2.js` 是**按锚点整块切**的：BFX 是连续的一大段。
+技能不行 —— 88 个对象散在 2600 行里，按锚点切只会切出一堆半截对象。
+
+所以这一份用 `Function.prototype.toString()`：拿到的是**那段源码本身**，
+和排版无关（行号会漂，源码不会）。`--check` 才能当契约用：
+
+```bash
+node dev/build-bosskits.js --write    # 重写
+node dev/build-bosskits.js --check    # 只检查（test-bosskits 第 8 条跑它）
+```
+
+产物 `src/data/data-bosskits.js`：**88 招 / 45 只 × 5 格 / 2344 行 / 91 KB**。
+
+| 分组 | 数量 | 是什么 |
+|---|---|---|
+| `mech` | 18 | 机制位：这一战考什么 |
+| `shared` | 13 | 套路位：共享池，两只最多共享 2 格 |
+| `sign` | 12 | 签名位 |
+| `native` | 45 | 本命技，一只一个，**没有语法表** |
+
+### 13.2 三个「会静默出错」的地方
+
+**① 45 只对得上，才是真的对上了。**
+`BOSSES`（`data-monsters.js`）里已经有 45 只，id 和特效台**完全同名**。
+契约里专门有一条断言两边的 id 集合相等 —— 它绿了才说明「游戏里那 45 只真有配招」，
+而不是「特效台里有个漂亮的名册」。这条红了别改断言，去看是谁改了 id。
+
+**② `SKILL_INDEX` 是唯一入口，别再遍历 `NR`。**
+本命技那 45 条是特效台里一段代码把 `NR` 包成 `SKILL_INDEX['nt_'+id]` 生成的
+（顺带补了 `warm` 兜底、`mul`、`kind/dmg/answer`）。两边都遍历 = 每个 `nt_`
+加两遍，对象字面量**后写静默盖掉前写**，生成出来是一份没有报错的错表。
+生成器的第一道闸门就是抓这个 —— 第一次跑就抓到了 12 条。
+
+**③ 「遗忘」那一招原来直接摸 DOM。**
+它要「灰掉一格」：`document.querySelector('.slot[data-sk=…]')` + `setTimeout(…, 4000)`。
+搬进游戏就是「摸一个不存在的按钮 + 用真实时间（切图不取消）」。
+改成 `markForgotten(id)` 交回宿主：特效台灰格子，游戏里由施法运行时决定怎么表现。
+契约里钉住生成物**不含** `document.` / `setTimeout` / `requestAnimationFrame`。
+
+### 13.3 还没做的：那一层垫片
+
+`run()` / `hit()` 是从特效台原样搬过来的，引用的是那边整套脚手架。
+在游戏里它们会按名字去找全局：`BFX`（`fx2.js` 已有）、`N` / `R` / `WM`（阶段缩放）、
+`aimAngle` / `aimDist`、`inHit` / `settle`、`floatText` / `nSay` / `hurtVignette`、
+`moveDummy` / `markOnPlayer` / `bossGlide` / `bossLean` / `swingArm` / `speedSmear`、
+`G` / `M` / `dot` / `limb`（几何与材质工厂）……
+
+**少一个就是运行时才炸的 ReferenceError**（特效台里永远发现不了，因为那边全都有）。
+所以下一节点 `src/boss-cast.js` 要做的第一件事是把这套名字补齐，
+第二件事才是 `pickSkill → 前摇 → 结算 → 收尾`。
+按引擎里的调用频次排，前十位是：`BFX` 80、`floatText` 60、`addUpdate` 57、
+`P` 53、`aimAngle` 53、`nSay` 45、`moveDummy` 43、`TEX` 41、`hurtVignette` 38、
+`shake` 36 —— 其中 `addUpdate` / `TEX` / `P` / `shake` 已经在 `fx2.js` 里了。
+
+### 13.4 怎么验的
+
+```bash
+node dev/test-bosskits.js     # 27 项（含一次 --check 比对）
+```
+
+八节：数量与分组 / 45 只对得上 `BOSSES` / 每只 5 格且第 1 格是机制第 5 格是本命 /
+225 格都查得到实体 / 判定形状只有那九种 / 没有 DOM 与真实时间 / 装进页面不重名 /
+生成物没走散。

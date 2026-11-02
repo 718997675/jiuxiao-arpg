@@ -3,7 +3,7 @@
 - 分支：`feat/skill-refactor`（专题台账，同分支；做完后并进分支台账再删这份）
 - 设计文档：`docs/BOSS-KITS.md`（§7 = 45 只本命技；§7.7 = 活物原语）
 - 实验场：`docs/boss-vfx-playground.html`（单文件，内联 three.js，`file://` 直接开）
-- 更新：2026-11-02 22:05
+- 更新：2026-11-02 22:40
 
 > 当前：**51 只全部进特效台；演出层（BFX 17 个原语）已经搬进游戏（`src/fx2.js`），
 > 玩家的「被拖拽」状态位、可破坏目标（图腾 / 卵囊，带读秒）、正面格挡（岩甲 / 盾）都补上了**。
@@ -50,6 +50,7 @@
 | B16.6 | 领域乘区：`Domains.add({preset,x,z,r,ttl,owner})` | ✅ | 新建 `src/domain.js`（6 预设 / `fieldSlow`+`fieldAspd` 独立字段 / 视野借 `WorldBoss._applySight`）、`dev/test-domain.js`、`dev/probe-domain.js`；`game.js` / `ui-minimap.js` / `index.html` 接线；`BOSS-KITS.md` §12 | 本次提交 |
 | B17 | 两只之间撞招：剑族 3 只、镜族 3 只、石族 2 只各 4 格完全相同；摆渡人 == 黄泉 | ✅ | 只改 `KIT` 表，把「家族语言」从 4 格压到 ≤2 格；§8.5 整章 | 本次提交 |
 | B18 | 指纹工具的 bug：`burst(pos,30,opts)` 只取第一个对象参数 → **数量全丢**，31 发和 1 发判成同一招 | ✅ | `describe` 合并全部对象参数 + 位置裸数字；次数进指纹（`×N` 分档） | 本次提交 |
+| B17.1 | **技能表出得来**：`src/data/data-bosskits.js`（生成物，88 招 / 45×5） | ✅ | 新建 `dev/build-bosskits.js`（`--write` / `--check`）、`src/data/data-bosskits.js`、`dev/test-bosskits.js`；`index.html` 引入；特效台「遗忘」改成 `markForgotten()`；`BOSS-KITS.md` §13 | 本次提交 |
 | B19 | §2 五格总表也是手抄的（剑帝还写着旧配招） | ✅ | 加 `EXPORT:KIT` 标记，`boss-kits-export.js --write` 一起生成（45 只） | 本次提交 |
 
 ## 下一步（按顺序，别跳）
@@ -70,15 +71,19 @@
   写**另外两个字段** `fieldSlow` / `fieldAspd`（世界 Boss 每帧归位 `domSlow`，
   共用一个字段迟早互相抹掉）；视野**借** `WorldBoss._applySight`、不抄一份夜色算法。
 
-**接着要做的 —— 只剩一件**：**施法运行时**（最大的一块）。`NR` / `KIT` 还是数据表，得有一层把
-   「这一招什么时候放、命中谁、扣多少」接起来。建议落点 `src/boss-cast.js`：
+**接着要做的 —— 只剩一件**：**施法运行时**（最大的一块）。表已经有了
+（B17.1：`BOSS_KIT` 45 只 / `BOSS_SKILLS` 88 招，全是生成物），差的是**垫片 + 调度**：
+一层把「这一招什么时候放、命中谁、扣多少」接起来的代码。落点 `src/boss-cast.js`：
    `pickSkill(boss, dist)` → `castBossSkill(boss, id)` → 前摇 telegraph →
    结算（复用 `inHit` 的四种形状）→ `settle`。
    **判定与预警必须读同一组数字**，否则「圈画在这里、打到那里」。
-   **前置**：`KIT` / `NR` 现在只活在特效台的 HTML 里，游戏侧还没有这份数据 ——
-   照 `fx2.js` 的路子再生成一个 `src/data/data-bosskits.js` + 一层适配垫片
-   （`BOSS`/`DUMMY`/`delay`/`settle`/`N`/`R`/`WM`/`aimAngle` 那套脚手架）。
-   这一步别跳过，也别手抄。
+   **垫片清单**（少一个 = 运行时 ReferenceError，特效台里发现不了）：
+   `BOSS`/`DUMMY`、`N`/`R`/`WM`/`ph`、`aimAngle`/`aimDist`、`inHit`/`settle`、
+   `floatText`/`nSay`/`hurtVignette`/`flashScreen`/`hitstop`、
+   `moveDummy`/`markOnPlayer`/`bossGlide`/`bossLean`/`bossReset`/`bossLabelY`/
+   `swingArm`/`speedSmear`/`label3d`/`labels`/`markForgotten`、
+   `G`/`M`/`dot`/`limb`（几何与材质工厂，建议并进 `fx2.js` 的切片表）。
+   `BFX`/`TEX`/`addUpdate`/`delay`/`seq`/`P`/`shake` 已经在 `fx2.js` 里。
 
 ## 卡点 / 已知短板
 

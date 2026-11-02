@@ -7051,11 +7051,11 @@ NR.riverwraith = {
             const pick = kit[Math.floor(Math.random()*kit.length)];
             const nm = SKILL_INDEX[pick] ? SKILL_INDEX[pick].name : '一格';
             say(V3(DUMMY.pos.x, 1.5, DUMMY.pos.z), '遗忘：' + nm + ' 灰 4 秒', '#b48cd0');
-            const btn = document.querySelector('.slot[data-sk="' + pick + '"]');
-            if(btn){
-              btn.classList.add('off');
-              setTimeout(()=>btn.classList.remove('off'), 4000);
-            }
+            /* 灰掉一格是**这套 UI 的事**，不是这一招的事。
+             * 直接写 document.querySelector + setTimeout 的话，这一招搬进游戏就
+             * 会摸一个不存在的按钮、并且用真实时间（切图不会取消）——
+             * 所以交回宿主：特效台里灰格子，游戏里由 BossCast 决定怎么表现。 */
+            markForgotten(pick);
           }
         }else{
           halo.material.opacity *= .92;
@@ -8644,6 +8644,15 @@ NR.dgb_fall = {
 
 
 const SKILL_INDEX = {};
+/* 「忘掉一格」的表现。宿主不同表现不同：特效台灰掉技能按钮 4 秒，
+   游戏里没有 Boss 技能条（玩家看不到那 5 格），所以只弹字。
+   **不要**在技能体里直接摸 DOM —— 那一招搬进游戏就会摸一个不存在的按钮。 */
+function markForgotten(id){
+  const btn = document.querySelector('.slot[data-sk="' + id + '"]');
+  if(!btn) return;
+  btn.classList.add('off');
+  delay(4, ()=>btn.classList.remove('off'));
+}
 /* 三类技放在同一张索引里（机制 / 套路 / 签名），UI 只负责分组显示 */
 Object.keys(MECH).forEach(k=>{ SKILL_INDEX[k] = MECH[k]; SKILL_INDEX[k].id = k; SKILL_INDEX[k].group = 'mech'; });
 Object.keys(SHARED).forEach(k=>{ SKILL_INDEX[k] = SHARED[k]; SKILL_INDEX[k].id = k; SKILL_INDEX[k].group = 'shared'; });

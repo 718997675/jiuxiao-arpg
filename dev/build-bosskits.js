@@ -1,0 +1,191 @@
+#!/usr/bin/env node
+/* ============================================================
+ * dev/build-bosskits.js —— 把 KIT / 88 个技能生成到 src/data/data-bosskits.js
+ *
+ *   node dev/build-bosskits.js            # 打到屏幕（只看统计）
+ *   node dev/build-bosskits.js --check    # 只检查是否过期（过期退出码 1）
+ *   node dev/build-bosskits.js --write    # 重写 src/data/data-bosskits.js
+ *
+ * ---------------- 为什么又是个「生成物」 ----------------
+ * 45 只首领的 5 格配招、88 个技能的前摇 / 判定 / 演出，全部只存在于
+ * `docs/boss-vfx-playground.html`（那边能一只一只真放出来看）。
+ * 手抄一份进游戏 = 两天后两边开始说不同的话，而且**没人会发现**：
+ * 两边都"能跑"，只是打得不一样。
+ *
+ * 所以照 §9 的规矩：**特效台是唯一的源**，这里是生成器，`--check` 进契约。
+ *
+ * ---------------- 为什么不切文本，而是 `toString()` ----------------
+ * BFX 是连续的一大段，能按锚点整块切（见 build-fx2.js）。
+ * 技能不是：88 个对象散在 2600 行里，按锚点切会切出一堆半截对象。
+ * `Function.prototype.toString()` 拿到的就是**那段源码本身**，
+ * 而且跟文件排版无关 —— 特效台里加个注释、挪个位置，生成结果都不变
+ * （这正是 `--check` 能当契约用的前提）。
+ *
+ * ---------------- 只导非世界 Boss 的 88 个 ----------------
+ * 世界 Boss 的 24 个技能（`group==='wb'`）不进这张表：它们的实现是
+ * `src/worldboss-fight.js` 里那套三阶段状态机，特效台里那份只是**演示**。
+ * 导进来会变成第二份谁也不认识的实现。
+ * ============================================================ */
+'use strict';
+const puppeteer = require('puppeteer-core');
+const path = require('path');
+const fs = require('fs');
+const EXE = require('./_chrome');
+
+const ROOT = path.resolve(__dirname, '..');
+const SRCFILE = path.join(ROOT, 'docs', 'boss-vfx-playground.html');
+const OUT = path.join(ROOT, 'src', 'data', 'data-bosskits.js');
+const wait = ms => new Promise(r => setTimeout(r, ms));
+
+/* 一个函数源码 → 能放进对象字面量的值。
+ * 三种写法都会遇到：`run(){}`（方法简写）、`run:function(){}`、`hit:()=>…`。 */
+function toFn(src) {
+  let s = String(src).trim();
+  if (/^function\b/.test(s)) return s;
+  if (/=>/.test(s.split('\n')[0]) && /^\(?[\w$,\s]*\)?\s*=>/.test(s)) return s;   // 箭头
+  /* 方法简写：去掉名字，补 function —— `run(a){…}` → `function(a){…}` */
+  s = s.replace(/^[A-Za-z_$][\w$]*\s*\(/, '(');
+  return 'function' + s;
+}
+
+/* 值的序列化：字符串用单引号，数字原样，函数走 toFn，其余 JSON */
+function emit(v, ind) {
+  if (typeof v === 'function') return toFn(v.toString());
+  if (typeof v === 'string') return "'" + v.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, '\\n') + "'";
+  if (typeof v === 'number') return String(v);
+  if (typeof v === 'boolean') return String(v);
+  if (v == null) return 'null';
+  if (Array.isArray(v)) return '[' + v.map(x => emit(x, ind)).join(', ') + ']';
+  return JSON.stringify(v);
+}
+
+(async () => {
+  const mode = process.argv[2] || '';
+  const b = await puppeteer.launch({
+    executablePath: EXE, headless: 'new',
+    args: ['--no-sandbox', '--enable-unsafe-swiftshader', '--use-gl=angle', '--use-angle=swiftshader']
+  });
+  const p = await b.newPage();
+  await p.goto('file://' + SRCFILE, { waitUntil: 'load' });
+  await p.waitForFunction('typeof NR === "object" && typeof KIT === "object"');
+  await wait(500);
+
+  /* 一次取全：技能元信息 + 两段源码 + 配招表。**只取不改**，
+   * 生成物里一个数字都不是这里算出来的 —— 算出来的数字迟早和代码对不上。 */
+  const data = await p.evaluate(() => {
+    /* `SKILL_INDEX` 是**唯一入口**：三类共用技 + 45 个本命技都在里面
+     * （本命技那 45 条是下面 8753 行那段代码把 `NR` 包进 `SKILL_INDEX['nt_'+id]`
+     * 生成的）。所以**别再单独遍历 NR** —— 那样每个 `nt_` 会被加两遍，
+     * 生成出来是个后写盖前写的重复键。这一条是生成器自己的闸门抓到的。 */
+    const META = ['name', 'warm', 'tag', 'counter', 'rule', 'desc',
+      'mul', 'kind', 'dmg', 'answer', 'native'];
+    const out = { skills: [], kit: [] };
+    for (const k of Object.keys(SKILL_INDEX)) {
+      const s = SKILL_INDEX[k];
+      /* 世界 Boss 的 24 条不进这张表（理由见文件头） */
+      if (s.group === 'wb') continue;
+      const o = { id: k, group: s.group || '' };
+      for (const m of META) if (s[m] !== undefined) o[m] = s[m];
+      if (s.hit) o.hit = s.hit.toString();
+      if (s.run) o.run = s.run.toString();
+      out.skills.push(o);
+    }
+    for (const id of Object.keys(KIT)) {
+      const slots = (KIT[id] || []).slice(0, 5);
+      /* 世界 Boss 的配招里全是 `group==='wb'` 的招 —— 它们不进这张表
+       * （否则游戏侧查表会拿到 24 个根本不存在的 id） */
+      if (slots.some(k => SKILL_INDEX[k] && SKILL_INDEX[k].group === 'wb')) continue;
+      /* 万一哪天有人写错一个 id，这里就该炸，
+       * 而不是生成一条谁也放不出来的配招 */
+      if (slots.some(k => !SKILL_INDEX[k])) out.kit.push({ id, slots, bad: true });
+      else out.kit.push({ id, slots, bad: false });
+    }
+    return out;
+  });
+  await b.close();
+
+  const skills = data.skills;
+  const kit = data.kit;
+
+  /* ---- 三道闸门：宁可生成失败，也不要生成一份「看起来对」的表 ---- */
+  const problems = [];
+  const seen = new Map();
+  for (const s of skills) {
+    if (seen.has(s.id)) problems.push('重复的技能 id：' + s.id + '（对象字面量后写会静默盖掉前写）');
+    seen.set(s.id, 1);
+    if (!s.run) problems.push('没有 run：' + s.id);
+    if (!s.hit) problems.push('没有 hit：' + s.id);
+    if (!s.name) problems.push('没有名字：' + s.id);
+  }
+  for (const k of kit) if (k.bad) problems.push('配招表引用了不存在的技能：' + k.id + ' → ' + k.slots.join('/'));
+  if (problems.length) {
+    console.error('✗ 生成中止：');
+    for (const x of problems) console.error('  · ' + x);
+    process.exit(1);
+  }
+
+  /* ---- 拼文件 ---- */
+  const lines = [];
+  lines.push('/* ============================================================');
+  lines.push(' * 首领技能表 —— 45 只的五格配招 + 88 个技能的判定与演出');
+  lines.push(' *');
+  lines.push(' *   ⚠️ **本文件是生成物**，别直接改：改完下次一生成就没了。');
+  lines.push(' *   源 = `docs/boss-vfx-playground.html`（那边能一只一只真放出来看）');
+  lines.push(' *   重新生成：`node dev/build-bosskits.js --write`；只检查：`--check`');
+  lines.push(' *');
+  lines.push(' * `run()` / `hit()` 是从特效台**原样搬过来**的源码，它们引用的是');
+  lines.push(' * 特效台那套脚手架（`BFX` / `N` / `R` / `WM` / `aimAngle` / `settle` …）。');
+  lines.push(' * 游戏侧由 `src/boss-cast.js` 提供同名全局 —— 少一个就是**运行时**才炸的');
+  lines.push(' * ReferenceError，所以 `dev/test-bosskits.js` 会把用到的那套名字全列出来核对。');
+  lines.push(' *');
+  lines.push(' * 世界 Boss 的 24 个技能**不在**这里：它们的实现是 `worldboss-fight.js`');
+  lines.push(' * 的三阶段状态机，特效台里那份只是演示，导进来就是第二份实现。');
+  lines.push(' * ============================================================ */');
+  lines.push("'use strict';");
+  lines.push('');
+  lines.push('/* 45 只 × 5 格：机制 / 套路 / 套路 / 签名 / 本命（`nt_` 前缀） */');
+  lines.push('const BOSS_KIT = {');
+  for (const k of kit) lines.push('  ' + k.id + ": [" + k.slots.map(s => "'" + s + "'").join(', ') + '],');
+  lines.push('};');
+  lines.push('');
+  lines.push('/* 88 个技能。`group`：mech 机制 / shared 套路 / sign 签名 */');
+  lines.push('const BOSS_SKILLS = {');
+  for (const s of skills) {
+    lines.push('  ' + s.id + ': {');
+    lines.push("    id: '" + s.id + "', group: '" + s.group + "',");
+    lines.push('    name: ' + emit(s.name) + ',');
+    if (s.warm !== undefined) lines.push('    warm: ' + emit(s.warm) + ',');
+    if (s.tag !== undefined) lines.push('    tag: ' + emit(s.tag) + ',');
+    if (s.rule !== undefined) lines.push('    rule: ' + emit(s.rule) + ',');
+    if (s.counter !== undefined) lines.push('    counter: ' + emit(s.counter) + ',');
+    if (s.desc !== undefined) lines.push('    desc: ' + emit(s.desc) + ',');
+    lines.push('    hit: ' + toFn(s.hit) + ',');
+    lines.push('    run: ' + toFn(s.run));
+    lines.push('  },');
+  }
+  lines.push('};');
+  lines.push('');
+  const out = lines.join('\n');
+
+  /* ---- 用法 ---- */
+  if (mode === '--check') {
+    const cur = fs.existsSync(OUT) ? fs.readFileSync(OUT, 'utf8') : '';
+    if (cur !== out) {
+      console.error('✗ src/data/data-bosskits.js 与特效台不一致（改过特效台但没重新生成）');
+      console.error('  修：node dev/build-bosskits.js --write');
+      process.exit(1);
+    }
+    console.log('✓ 首领技能表与特效台一致（' + skills.length + ' 招 / ' + kit.length + ' 只 / ' +
+      out.split('\n').length + ' 行）');
+  } else if (mode === '--write') {
+    fs.writeFileSync(OUT, out);
+    console.log('✓ 已重写 src/data/data-bosskits.js（' + skills.length + ' 招 / ' + kit.length +
+      ' 只 / ' + out.split('\n').length + ' 行 / ' + (out.length / 1024).toFixed(1) + ' KB）');
+  } else {
+    const byGroup = {};
+    for (const s of skills) byGroup[s.group] = (byGroup[s.group] || 0) + 1;
+    console.log('技能 ' + skills.length + ' 招：' + JSON.stringify(byGroup));
+    console.log('配招 ' + kit.length + ' 只，共 ' + kit.reduce((a, k) => a + k.slots.length, 0) + ' 格');
+    console.log('预计文件 ' + (out.length / 1024).toFixed(1) + ' KB / ' + out.split('\n').length + ' 行');
+  }
+})().catch(e => { console.error(e); process.exit(1); });
