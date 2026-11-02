@@ -3,23 +3,24 @@
 - 分支：`feat/skill-refactor`（专题台账，同分支；做完后并进分支台账再删这份）
 - 设计文档：`docs/BOSS-KITS.md`（§7 = 45 只本命技；§7.7 = 活物原语）
 - 实验场：`docs/boss-vfx-playground.html`（单文件，内联 three.js，`file://` 直接开）
-- 更新：2026-11-02 20:40
+- 更新：2026-11-02 21:05
 
 > 当前：**51 只全部进特效台；演出层（BFX 17 个原语）已经搬进游戏（`src/fx2.js`），
-> 玩家的「被拖拽」状态位补上了**。还差的是「谁在什么时候放招」—— 施法运行时一行没写，
+> 玩家的「被拖拽」状态位、可破坏目标（图腾 / 卵囊，带读秒）都补上了**。
+> 还差的是「谁在什么时候放招」—— 施法运行时一行没写，
 > 所以玩家在游戏里仍然见不到这 45 只的技能。
-> 回归：特效台 `probe-playground` 102 项、新层 `probe-fx2` 23 项、`probe-drag` 11 项，
-> 契约 `test-fx2` 24 项 —— 全绿；重名 / 效果重复两轮清零（§8）。
+> 回归：特效台 `probe-playground` 102 项、新层 `probe-fx2` 23 项、`probe-drag` 11 项、
+> `probe-destructible` 28 项，契约 `test-fx2` 24 项 / `test-destructible` 29 项 —— 全绿；
+> 重名 / 效果重复两轮清零（§8）。
 
 ## 一句话现状
 
 旧的病是「换 Boss 只是换颜色」：13 种共享技撑 39 个技能位。现在三步走完了前两步 ——
 **机制各自不同**（§7.2 判据：这一招逼玩家做的动作，和别的 44 只都不一样）、
 **演出各自是"活物"**（留在场上、自己会动，不是画一下就没）。
-第三步（进游戏）才刚起步：演出层已经搬进去了（`src/fx2.js`），玩家的「被拖拽」
-也有了口子；但**施法运行时一行没写** —— 谁在什么时候放哪一招、命中谁、扣多少，
-这套还全在特效台的假人身上。可破坏目标 / 减伤朝向 / 状态机定时器 / 领域乘区
-四件也还在等。
+第三步（进游戏）走到一半：演出层 + 拖拽状态位 + 可破坏目标（带读秒）都在了；
+但**施法运行时一行没写** —— 谁在什么时候放哪一招、命中谁、扣多少，
+这套还全在特效台的假人身上。减伤朝向 / 领域乘区两件也还在等。
 
 ## 节点表
 
@@ -42,9 +43,9 @@
 | B15 | 导出器把扇面角度写成 `NaN°`（天门转） | ✅ | `hitText` 补 `span` 分支 | 本次提交 |
 | B16.1 | **`src/fx2.js`**：17 个原语搬进游戏，**生成物**（源还是特效台） | ✅ | 新建 `src/fx2.js`、`dev/build-fx2.js`、`dev/test-fx2.js`、`dev/probe-fx2.js`；`index.html` / `fx.js` / `game.js` 四处接线；§9 整章 | 本次提交 |
 | B16.2 | **玩家「被拖拽」状态位**：`Game.dragPlayer(x,z,dur)`，与定身分开 | ✅ | `game.js`（`pull` / `updatePlayer` 入口 / `statusBuffs`）、`dev/probe-drag.js` | 本次提交 |
-| B16.3 | 可破坏目标：图腾 / 卵囊的血量与仇恨 | ⬜ | —— | —— |
-| B16.4 | 减伤朝向：石甲 / 刑天盾（入口 `damagePlayer`） | ⬜ | —— | —— |
-| B16.5 | 限时 / 读条挂 Boss 状态机（卵囊 6s / 图腾 5s / 九首齐啸 3s） | ⬜ | —— | —— |
+| B16.3 | 可破坏目标：图腾 / 卵囊的血量与仇恨 | ✅ | `game.js`（`spawnDestructible` / `_buildDestructibleModel` / `destroyDestructible`、四处放行）、`dev/test-destructible.js`、`dev/probe-destructible.js`；`BOSS-KITS.md` §10 | 本次提交 |
+| B16.4 | 减伤朝向：石甲 / 刑天盾（入口 `damageEnemy`） | ⬜ | —— | —— |
+| B16.5 | 限时 / 读条：可破坏目标的读秒 | ✅ | 同 B16.3（`d.ttl` 按帧递减 + `onExpire`）；Boss 自己的读条等状态机 | 本次提交 |
 | B16.6 | 领域乘区：照 `worldboss.js` 的 `domainTick` 抄，别新起一套 | ⬜ | —— | —— |
 | B17 | 两只之间撞招：剑族 3 只、镜族 3 只、石族 2 只各 4 格完全相同；摆渡人 == 黄泉 | ✅ | 只改 `KIT` 表，把「家族语言」从 4 格压到 ≤2 格；§8.5 整章 | 本次提交 |
 | B18 | 指纹工具的 bug：`burst(pos,30,opts)` 只取第一个对象参数 → **数量全丢**，31 发和 1 发判成同一招 | ✅ | `describe` 合并全部对象参数 + 位置裸数字；次数进指纹（`×N` 分档） | 本次提交 |
@@ -52,12 +53,15 @@
 
 ## 下一步（按顺序，别跳）
 
-**已经做完的两件**（细节见 `BOSS-KITS.md` §9）：
+**已经做完的三件**（细节见 `BOSS-KITS.md` §9 / §10）：
 
 - B16.1 `src/fx2.js` —— 17 个原语进游戏，**生成物**，改特效台后跑
   `node dev/build-fx2.js --write`。四处接线：`FX.init` 里 `bind`、
   `FX.update` 里 `update`、`FX.clear` 里 `clear`、`Game.syncFx2Actors()` 每帧同步锚点。
 - B16.2 拖拽 —— `Game.dragPlayer(x, z, dur)`，和定身分开两个字段（理由见 §4 的注）。
+- B16.3 / B16.5 可破坏目标 —— `Game.spawnDestructible({x,z,hp,ttl,onExpire,onDeath})`。
+  复用 `enemies`，四处显式放行（同屏上限 / AI 段 / 击杀结算 / 读秒环回收）；
+  读秒按帧递减，**不许 `setTimeout`**。
 
 **接着要做的**：
 
@@ -66,14 +70,13 @@
    `pickSkill(boss, dist)` → `castBossSkill(boss, id)` → 前摇 telegraph →
    结算（复用 `inHit` 的四种形状）→ `settle`。
    **判定与预警必须读同一组数字**，否则「圈画在这里、打到那里」。
-2. **可破坏目标**（§4.2）：图腾 / 卵囊 / 经幡 / 兽鼓要有血量与仇恨。
-   最小做法：复用 `enemies`，加 `enemy.destructible = { hp, timer, onExpire }`，
-   **优先打它**（点击选中 + 自动锁定优先级）靠 `nearestAggroEnemy` 那条口子扩。
-3. **减伤朝向**（§4.3）：石甲 / 刑天盾 —— 伤害来源与 Boss 朝向的点积。
-   入口是 `damagePlayer`，别在各技能 case 里加。
-4. **定时器挂在状态机上**（§4.4）：卵囊 6 秒、图腾 5 秒、九首齐啸 3 秒。
-   `setTimeout` 切图会漏，一律记在 boss 状态里按帧递减。
-5. **领域乘区**（§4.5）：视野 / 移速 / 持续掉血 / 吸力 / 攻速 / 小地图。
+   **前置**：`KIT` / `NR` 现在只活在特效台的 HTML 里，游戏侧还没有这份数据 ——
+   要么照 `fx2.js` 的路子再生成一个 `src/data/data-bosskits.js`，
+   要么施法运行时无从查表。这一步别跳过。
+2. **减伤朝向**：把世界 Boss 的 `e.wbBlockFront` 抽成通用 `guardFront {arc, mul, turn}`。
+   `stonearmor` 要 120° / −80% / 转身 1.2 秒，三个数都得可配；
+   入口是 `damageEnemy`（§4 原来写的 `damagePlayer` 是笔误）。
+3. **领域乘区**：视野 / 移速 / 持续掉血 / 吸力 / 攻速 / 小地图。
    世界 Boss 的 `WBDOM` 已经有实现（`src/worldboss.js` 的 `domainTick`），
    先照它抄一遍，别新起一套。
 

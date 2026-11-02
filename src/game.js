@@ -2026,7 +2026,7 @@ const Game = {
     this.respawnCd = RESPAWN_TICK;
 
     let alive = 0, total = 0;
-    for (const e of this.enemies) if (!e.dead && !e.boss) alive++;
+    for (const e of this.enemies) if (!e.dead && !e.boss && !e.destructible) alive++;
     for (const p of this.spawnPlan) total += p.cap;
     if (!total || alive >= total * RESPAWN_FLOOR) return;
 
@@ -2074,7 +2074,7 @@ const Game = {
        * this.mobCap 由 applyPerfLevel 写入，没初始化时退回常量 */
       const cap = this.mobCap || (IS_TOUCH ? MOB_CAP_TOUCH : MOB_CAP_PC);
       let alive = 0;
-      for (const e of this.enemies) if (!e.dead && !e.boss) alive++;
+      for (const e of this.enemies) if (!e.dead && !e.boss && !e.destructible) alive++;
       if (alive >= cap) return null;
     }
     const mapLv = MAPS[this.state.mapId].level;
@@ -2303,6 +2303,171 @@ const Game = {
 
     this.enemies.push(e);
     return e;
+  },
+
+  /* ============================================================
+   * [B16.3 / B16.5] 可破坏目标：图腾 / 卵囊 / 经幡 / 兽鼓
+   *
+   * **为什么复用 `enemies` 而不是新开一个数组**：自动锁定（`nearestEnemy`）、
+   * 点选、AoE 溅射、伤害结算（`damageEnemy` 的护甲 / 抗性 / 暴击 / 暴击字）
+   * 全都已经长在一条道上。新开数组等于把这些逐条再写一遍，
+   * 而它们每一处都是「改了这边忘了那边」的高发区。
+   *
+   * **但它不是怪**，所以四处必须显式放行（漏一处就是一个真 bug）：
+   *   ① `spawnEnemy` 的同屏上限 —— 否则图腾会挤掉真怪的名额，
+   *      表现是「场上只有图腾，怪不刷了」；
+   *   ② `updateEnemies` 的 AI 段 —— 图腾不追人、不挥刀、不吃击退；
+   *   ③ `onEnemyDeath` 的结算段 —— 打掉图腾不给经验、不给掉落、不算击杀。
+   *      图腾可以被 Boss 反复召唤，接上结算就是一条无限刷经验的路；
+   *   ④ 地上读秒环的回收 —— 走 `disposeTree`，和血条同一套。
+   *
+   * **读秒不用 `setTimeout`**：切图 / 死亡 / 重开都会漏，漏了的表现是
+   * 「回城之后图腾还在读秒并炸你一次」。计时器一律挂在实体上按帧递减。
+   * ============================================================ */
+
+  /* 模型：图腾是一根带箍的柱子，卵囊是一颗会跳的囊。
+   * 不塞进 `actors.js` 的 `buildMonster` —— 那两个不是生物，
+   * 骨架 / 行走摆臂 / 武器挂点全用不上，塞进去只会多两条永远走不到的分支。 */
+  _buildDestructibleModel(o) {
+    const g = new THREE.Group();
+    const stone = M(o.color, { rough: 0.96, flat: true });
+    const dark = M(o.color2, { rough: 1.0, flat: true });
+    const glow = M(0x000000, { emissive: o.glow, ei: 1.7 });
+    if (o.kind === 'sac') {
+      const b = mesh(sphGeo(0.62, 10), M(o.color, { rough: 0.5, transparent: true, opacity: 0.93 }), 0, 1.05, 0, g);
+      b.scale.set(1, 1.28, 1);
+      /* 囊上的脉络：三圈暗箍。没有它们就只是一个球，读不出「活的」 */
+      for (let i = 0; i < 3; i++) {
+        const r = mesh(torusGeo(0.5 - i * 0.05, 0.035, 6, 14), dark, 0, 0.68 + i * 0.38, 0, g);
+        r.rotation.x = Math.PI / 2;
+      }
+      mesh(sphGeo(0.16, 6), glow, 0, 1.1, 0, g);
+    } else {
+      mesh(cylGeo(0.34, 0.46, 0.28, 8), dark, 0, 0.14, 0, g);   // 底座
+      mesh(cylGeo(0.2, 0.26, 2.1, 8), stone, 0, 1.19, 0, g);    // 柱身
+      for (let i = 0; i < 3; i++) {                              // 三道箍
+        mesh(cylGeo(0.3, 0.3, 0.11, 8), dark, 0, 0.62 + i * 0.62, 0, g);
+      }
+      const head = mesh(coneGeo(0.34, 0.5, 6), stone, 0, 2.5, 0, g);
+      head.rotation.y = Math.PI / 6;
+      mesh(sphGeo(0.14, 6), glow, 0, 2.28, 0.24, g);            // 祭火
+    }
+    return g;
+  },
+
+  /* 立一个可破坏目标。返回实体（调用方拿它当"这一根"的句柄），
+   * 拿不到（没场景 / 超出兜底上限）返回 null —— 调用方必须处理 null。 */
+  spawnDestructible(opts) {
+    if (!this.scene || !this.playerGroup) return null;
+    /* 兜底：一张图同时存在 24 个以上就不再生。这是给「Boss 每 3 秒召一根」
+     * 这类写法留的安全阀 —— 没有它，一次设错参数就是满屏柱子和血条。 */
+    let n = 0;
+    for (const x of this.enemies) if (!x.dead && x.destructible) n++;
+    if (n >= 24) return null;
+
+    const o = Object.assign({
+      x: 0, z: 0, kind: 'totem', name: '图腾',
+      hp: 120, radius: 0.72,
+      color: 0x7d6a4e, color2: 0x3a2c1c, glow: 0xffb04a,
+      ttl: 0,                  // 0 = 不自己消失，只能打掉
+      onExpire: null,          // 读秒归零（该「惩罚」玩家了）
+      onDeath: null,           // 被玩家打掉（该「奖励」玩家了）
+      quiet: false
+    }, opts || {});
+
+    const g = this._buildDestructibleModel(o);
+    g.position.set(o.x, 0, o.z);
+    g.rotation.y = Math.random() * 6.28;
+    this.scene.add(g);
+    /* `parts.torso` 挂自己：`updateActorAnim` 的 die 分支要它才肯演「倒下」。
+     * 没有它，图腾死后会笔直站满 3 秒才消失，看起来像"没打死"。 */
+    const a = { group: g, mats: [], parts: { torso: g }, time: 0 };
+
+    const e = {
+      id: 'd' + Math.random().toString(36).slice(2),
+      kind: 'destructible',
+      cfg: { name: o.name, hp: o.hp, xp: 0, level: 1, model: o.kind },
+      actor: a, boss: false, elite: false,
+      destructible: {
+        ttl: o.ttl, maxTtl: o.ttl,
+        onExpire: o.onExpire, onDeath: o.onDeath,
+        ring: null, shatter: o.kind === 'sac' ? 0x9be07a : 0xffb04a
+      },
+      home: { x: o.x, z: o.z },
+      level: 1, hp: o.hp, maxHp: o.hp,
+      dmg: 0, spd: 0, range: 0, reach: 0, radius: o.radius,
+      pos: new THREE.Vector3(o.x, 0, o.z), dead: false,
+      atkCd: 999, windup: 0, anim: 0, hitFlash: 0,
+      stun: 0, slow: 0, slowT: 0, poisonT: 0, poisonDmg: 0, venomT: 0,
+      /* [P0·毒] 层数也要有：道士的毒雾能把它烧掉，引爆时它是合法目标 */
+      poisonN: 0, poisonNT: 0,
+      dotT: 0, dotTick: 0, dotDmg: 0, dotElem: null, dotLabel: '',
+      sigilT: 0, phase: 0, patternCd: 999, tag: 'destructible',
+      facing: new THREE.Vector3(0, 0, 1),
+      spawnPos: new THREE.Vector3(o.x, 0, o.z), active: true, hitT: 0,
+      affixes: [], aff: {}, resist: {}, wardElem: null,
+      armorMul: 1, family: 'construct', size: 1.4, name: o.name,
+      shield: 0, shieldCd: 0, summonStep: 0,
+      ai: { kind: 'idle', state: 'idle', t: 0, cd: 0 }
+    };
+    e.bar = makeHpBar(a.group, { gap: 0.22 });
+    /* 读秒环：「还剩几秒」用**缩放**表达比数字省眼，也不用每帧改 DOM */
+    if (o.ttl > 0) {
+      const ring = new THREE.Mesh(ringGeo(0.9, 1.12, 24), new THREE.MeshBasicMaterial({
+        color: 0xff7a3c, transparent: true, opacity: 0.5, side: THREE.DoubleSide, depthWrite: false
+      }));
+      ring.rotation.x = -Math.PI / 2; ring.position.y = 0.04;
+      a.group.add(ring);
+      e.destructible.ring = ring;
+    }
+    this.enemies.push(e);
+    if (!o.quiet && typeof UI !== 'undefined' && UI.log) {
+      UI.log(o.ttl > 0
+        ? (o.name + '立起 —— ' + Math.round(o.ttl) + ' 秒内打掉')
+        : (o.name + '立起 —— 打掉它'), 'bad');
+    }
+    return e;
+  },
+
+  /* 每帧：读秒 + 抖。**不移动、不追人、不挥刀** —— 它是场地的一部分。
+   * 快到期时抖起来：这是「你要来不及了」唯一不靠读数的提示。 */
+  _tickDestructible(e, dt) {
+    const a = e.actor, d = e.destructible;
+    if (d.ttl > 0) {
+      d.ttl = Math.max(0, d.ttl - dt);
+      if (d.ring) {
+        const k = d.maxTtl > 0 ? d.ttl / d.maxTtl : 0;
+        d.ring.scale.setScalar(Math.max(0.15, k));
+        d.ring.material.opacity = 0.26 + k * 0.34;
+      }
+      if (d.ttl <= 0) { this.destroyDestructible(e, true); return; }
+    }
+    const panic = (d.maxTtl > 0 && d.ttl < 1.6) ? (1.6 - d.ttl) : 0;
+    a.group.rotation.z = panic ? Math.sin((a.time || 0) * 34) * 0.05 * panic : 0;
+  },
+
+  /* 唯一的两条收场路径都走这里：`expired` 区分「到点」与「被打掉」。
+   * `onExpire` / `onDeath` 是**回调**，不是特效 —— 由 Boss 的状态机决定
+   * 到点之后干什么（放一波、回一次血、把诅咒解掉），这里只管把场上的东西收干净。 */
+  destroyDestructible(e, expired) {
+    if (!e || e.dead || !e.destructible) return false;
+    const d = e.destructible;
+    e.dead = true; e.hp = 0; e.deadT = 0;
+    e.actor.anim = 'die'; e.actor.moving = false;
+    if (e.bar) e.bar.group.visible = false;
+    if (d.ring) { disposeTree(d.ring); d.ring = null; }
+    const p = e.pos.clone();
+    const col = d.shatter;
+    FX.burst(new THREE.Vector3(p.x, 1.1, p.z), col, expired ? 12 : 26,
+      { speed: expired ? 2.2 : 4.2, size: 0.12, life: 0.8, gravity: -6, additive: true });
+    if (!expired) {
+      FX.ring(new THREE.Vector3(p.x, 0.15, p.z), 2.2, col, 0.55, 0.22);
+      this.shake = Math.max(this.shake, 0.12);
+      if (typeof SFX !== 'undefined' && SFX.die) SFX.die();
+    }
+    const cb = expired ? d.onExpire : d.onDeath;
+    if (typeof cb === 'function') cb(e, p);
+    return true;
   },
 
   spawnBosses() {
@@ -7290,6 +7455,11 @@ const Game = {
         if (e.dotT <= 0) { e.dotT = 0; e.dotDmg = 0; e.dotElem = null; e._reactDot = false; }
       }
 
+      /* [B16.3] 可破坏目标：读秒 + 抖，到此为止。
+       * 放在 debuff 计时**之后**是故意的 —— 毒 / 流血照样能把它烧掉，
+       * 道士的毒雾铺在卵囊上应该是有效的，不该因为"它不追人"就免疫 DoT。 */
+      if (e.destructible) { this._tickDestructible(e, dt); continue; }
+
       const d = DIST2D(e.pos, pp);
       /* [S16] 没仇恨的怪偶尔叫一声（每只 6~12 秒一次，15 米内才发）。
        * 这是「地图有生气」的主要来源 —— 走过林子能听见东西在动。 */
@@ -9151,6 +9321,11 @@ const Game = {
 
   onEnemyDeath(e) {
     if (e.dead) return;
+    /* [B16.3] 可破坏目标不是怪：**不走**击杀结算。
+     * 接上结算的后果很具体 —— 图腾可以被 Boss 反复召唤，
+     * 于是「打图腾」= 白拿经验 + 白拿掉落 + 任务计数，一条无限刷的口子。
+     * 它自己的收场（爆散 / 回调）在 `destroyDestructible` 里。 */
+    if (e.destructible) { this.destroyDestructible(e, false); return; }
     e.dead = true;
     e.hp = 0;
     /* [P2] 击杀钩子（战鼓延长 / 补刀重置 / 血旋引爆）。
