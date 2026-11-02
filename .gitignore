@@ -8,6 +8,10 @@
 
 # 本地截图与调试产物（体积大，不纳入版本管理）
 shots/
+# 工作台探针的截图（probe-doll --shots 落这里，按需生成，不入库）
+dev/_shots/
+# 一次性调试脚本（硬编码绝对路径 / 只服务某次排查）
+dev/_dbg-*.js
 dev/shot-*.png
 dev/*-smoke.png
 dev/*.log

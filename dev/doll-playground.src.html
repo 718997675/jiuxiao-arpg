@@ -1,0 +1,993 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>九霄 · 装备模组工作台</title>
+<style>
+:root{
+  --gold:#d8b25a; --gold-dim:rgba(216,178,90,.22);
+  --ink:#07090d; --panel:rgba(11,14,20,.90);
+  --txt:#e9e3d5; --dim:#8f8878; --dim2:#6a6456;
+  --line:rgba(216,178,90,.16);
+  --ok:#8fd05a; --warn:#ffc857; --bad:#e0483c;
+}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{width:100%;height:100%;overflow:hidden;background:var(--ink);color:var(--txt);
+  font-family:system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
+  user-select:none;-webkit-user-select:none}
+canvas#gl{display:block;position:absolute;inset:0;z-index:0}
+button{font-family:inherit;color:inherit;background:none;border:none;cursor:pointer}
+.hide{display:none!important}
+
+/* ---------- 顶栏 ---------- */
+#top{position:absolute;left:0;right:0;top:0;height:44px;z-index:20;display:flex;
+  align-items:center;justify-content:space-between;padding:0 16px;pointer-events:none;
+  background:linear-gradient(180deg,rgba(0,0,0,.62),transparent)}
+#top .brand{font-family:"Songti SC","STSong",serif;font-size:13.5px;letter-spacing:.30em;color:var(--gold)}
+#top .brand small{font-size:9.5px;letter-spacing:.08em;color:var(--dim2);margin-left:10px;
+  font-family:system-ui;letter-spacing:.02em}
+#perf{display:flex;gap:13px;font-size:10.5px;color:var(--dim);font-variant-numeric:tabular-nums}
+#perf b{color:#cfe6c0;font-weight:500}
+#perf i{font-style:normal;color:var(--dim2)}
+
+/* ---------- 左侧槽位 ---------- */
+#slots{position:absolute;left:12px;top:54px;width:186px;z-index:22;
+  background:var(--panel);border:1px solid var(--line);border-radius:4px;
+  padding:8px 7px 9px;backdrop-filter:blur(9px);max-height:calc(100vh - 132px);overflow:auto;
+  scrollbar-width:thin}
+#slots::-webkit-scrollbar{width:4px}
+#slots::-webkit-scrollbar-thumb{background:var(--gold-dim)}
+#slots .st{font-size:9.5px;letter-spacing:.16em;color:var(--dim2);margin:2px 0 6px 4px}
+.slotbtn{width:100%;display:flex;align-items:center;gap:7px;padding:5px 6px;margin-bottom:2px;
+  border:1px solid transparent;border-radius:3px;text-align:left;transition:.11s}
+.slotbtn:hover{background:rgba(255,255,255,.045)}
+.slotbtn.on{background:rgba(216,178,90,.13);border-color:rgba(216,178,90,.45)}
+.slotbtn .fc{font-size:10px;width:13px;text-align:center;color:var(--dim2)}
+.slotbtn.on .fc{color:var(--gold)}
+.slotbtn .nm{flex:1;font-size:11.5px;color:#cfc6b2;white-space:nowrap}
+.slotbtn.on .nm{color:#ffe9b8}
+.slotbtn .tg{width:7px;height:7px;border-radius:50%;flex:0 0 7px;
+  background:#2a2a24;border:1px solid #3c3a32;transition:.12s}
+.slotbtn.eq .tg{background:var(--ok);border-color:transparent;box-shadow:0 0 6px rgba(143,208,90,.7)}
+/* 有几何的槽位与只有光效的槽位，用左侧色条区分 */
+.slotbtn[data-kind="geo"] .fc{color:#8fb4d8}
+.slotbtn[data-kind="fx"] .fc{color:#b48cff}
+.slotbtn.off .nm{opacity:.42}
+
+/* ---------- 右侧详情 ---------- */
+#detail{position:absolute;right:12px;top:54px;width:248px;z-index:22;
+  background:var(--panel);border:1px solid var(--line);border-radius:4px;
+  padding:10px 10px 11px;backdrop-filter:blur(9px);max-height:calc(100vh - 132px);overflow:auto;
+  scrollbar-width:thin}
+#detail::-webkit-scrollbar{width:4px}
+#detail::-webkit-scrollbar-thumb{background:var(--gold-dim)}
+#detail h3{font-family:"Songti SC","STSong",serif;font-size:14px;color:var(--gold);
+  letter-spacing:.08em;font-weight:400;display:flex;align-items:baseline;gap:7px}
+#detail h3 em{font-style:normal;font-size:9.5px;color:var(--dim2);letter-spacing:.04em}
+#detail .axis{font-size:10.5px;color:var(--dim);line-height:1.5;margin:5px 0 9px;
+  padding-left:7px;border-left:2px solid var(--gold-dim)}
+.rowlab{font-size:9.5px;letter-spacing:.14em;color:var(--dim2);margin:11px 0 5px}
+.seg{display:flex;gap:3px}
+.seg button{flex:1;padding:5px 2px;border:1px solid #2a2822;border-radius:3px;
+  font-size:11px;color:#a9a08c;background:rgba(255,255,255,.02);transition:.1s;
+  display:flex;flex-direction:column;align-items:center;gap:1px;line-height:1.25}
+.seg button:hover{border-color:rgba(216,178,90,.4);color:#e2d8bf}
+.seg button.on{background:rgba(216,178,90,.16);border-color:rgba(216,178,90,.62);color:#ffe9b8}
+.seg button span{font-size:8.5px;opacity:.62}
+.seg.t3 button{padding:6px 2px}
+.seg.t8 button{padding:5px 0;font-size:10.5px}
+
+#kits{font-size:10.5px;color:var(--dim);line-height:1.62;font-variant-numeric:tabular-nums}
+#kits b{color:#cfc6b2;font-weight:400}
+#kits .k{color:var(--dim2);display:inline-block;min-width:52px}
+#kits .hl{color:var(--gold)}
+.plist{font-size:10px;color:var(--dim);line-height:1.5;max-height:118px;overflow:auto;
+  font-variant-numeric:tabular-nums;border-top:1px solid rgba(255,255,255,.06);padding-top:6px;margin-top:8px}
+.plist span{display:inline-block;color:#7e7a6c;margin-right:5px}
+.plist span i{font-style:normal;color:#a9a08c}
+
+/* ---------- 底栏 ---------- */
+#bar{position:absolute;left:0;right:0;bottom:0;height:52px;z-index:22;display:flex;
+  align-items:center;justify-content:center;gap:7px;padding:0 14px;
+  background:linear-gradient(0deg,rgba(0,0,0,.72),transparent)}
+.btn{padding:6px 11px;border:1px solid #2e2b24;border-radius:3px;font-size:11px;
+  color:#bab098;background:rgba(14,17,23,.86);transition:.11s;white-space:nowrap}
+.btn:hover{border-color:rgba(216,178,90,.5);color:#ffe9b8}
+.btn.on{background:rgba(216,178,90,.18);border-color:rgba(216,178,90,.62);color:#ffe9b8}
+.btn.pri{border-color:rgba(216,178,90,.45);color:var(--gold)}
+#bar .sep{width:1px;height:20px;background:rgba(255,255,255,.09);margin:0 3px}
+
+/* ---------- 对比模式的角色标签 ---------- */
+#tags{position:absolute;left:0;right:0;top:52px;z-index:19;pointer-events:none;
+  display:flex;justify-content:center;gap:0}
+#tags div{font-size:11px;color:#cfc6b2;letter-spacing:.1em;text-align:center;
+  font-variant-numeric:tabular-nums}
+#tags div b{display:block;font-family:"Songti SC",serif;font-size:15px;color:var(--gold);
+  font-weight:400;letter-spacing:.16em}
+#tags div s{text-decoration:none;font-size:9.5px;color:var(--dim2)}
+
+/* ---------- 提示条 ---------- */
+#hint{position:absolute;left:50%;transform:translateX(-50%);bottom:62px;z-index:21;
+  font-size:10.5px;color:var(--dim2);background:rgba(8,10,15,.7);padding:4px 11px;
+  border-radius:20px;border:1px solid rgba(255,255,255,.05);pointer-events:none;
+  transition:opacity .35s;white-space:nowrap}
+#hint.fade{opacity:0}
+
+/* ---------- 导出面板 ---------- */
+#export{position:absolute;inset:0;z-index:40;background:rgba(4,5,8,.86);
+  display:flex;align-items:center;justify-content:center;padding:40px}
+#export .box{width:min(760px,100%);max-height:100%;display:flex;flex-direction:column;
+  background:#0c0f15;border:1px solid var(--line);border-radius:5px;overflow:hidden}
+#export .hd{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;
+  border-bottom:1px solid rgba(255,255,255,.06)}
+#export .hd span{font-family:"Songti SC",serif;font-size:13px;color:var(--gold);letter-spacing:.1em}
+#export textarea{flex:1;min-height:320px;background:transparent;border:none;color:#b6c8a8;
+  font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;line-height:1.6;
+  padding:12px 14px;resize:none;outline:none}
+
+@media (max-width:900px){
+  #slots{width:132px}
+  #slots .nm{font-size:10.5px}
+  #detail{width:188px}
+  #perf{display:none}
+}
+@media (max-width:620px){
+  #slots,#detail{display:none}
+  #bar{gap:4px;padding:0 6px}
+  .btn{padding:5px 7px;font-size:10px}
+}
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+
+<div id="top">
+  <div class="brand">装备模组工作台<small>EQUIP MODULE · 33 族 × 3 段 LOD</small></div>
+  <div id="perf">
+    <span><i>draw</i> <b id="pDraw">0</b></span>
+    <span><i>tri</i> <b id="pTri">0</b></span>
+    <span><i>geo</i> <b id="pGeo">0</b></span>
+    <span><i>mat</i> <b id="pMat">0</b></span>
+    <span><i>fps</i> <b id="pFps">0</b></span>
+  </div>
+</div>
+
+<div id="slots"></div>
+<div id="detail"></div>
+<div id="tags" class="hide"></div>
+
+<div id="bar">
+  <button class="btn" id="bCls">战士</button>
+  <span class="sep"></span>
+  <button class="btn on" data-view="front">正视</button>
+  <button class="btn" data-view="side">侧视</button>
+  <button class="btn" data-view="back">背视</button>
+  <button class="btn" data-view="close">特写</button>
+  <span class="sep"></span>
+  <button class="btn on" data-anim="idle">待机</button>
+  <button class="btn" data-anim="walk">行走</button>
+  <button class="btn" data-anim="atk">挥砍</button>
+  <span class="sep"></span>
+  <button class="btn" id="bSilh">剪影</button>
+  <button class="btn" id="bCmp">三族对比</button>
+  <button class="btn" id="bIou">算 IoU</button>
+  <span class="sep"></span>
+  <button class="btn" id="bRand">随机一套</button>
+  <button class="btn pri" id="bDump">导出</button>
+</div>
+
+<div id="hint">拖动旋转 · 滚轮缩放 · 空格切换剪影</div>
+
+<div id="export" class="hide">
+  <div class="box">
+    <div class="hd"><span>当前装配（可粘回 data-doll.js 的对照值）</span>
+      <div><button class="btn" id="bCopy">复制</button>
+      <button class="btn" id="bClose">关闭</button></div>
+    </div>
+    <textarea id="exportTxt" spellcheck="false"></textarea>
+  </div>
+</div>
+
+<script src="../lib/three.min.js"></script>
+<script src="../src/weapons.js"></script>
+<script src="../src/charforge.js"></script>
+<script src="../src/data/data-doll.js"></script>
+<script src="../src/doll.js"></script>
+<script>
+/* ============================================================
+ * 装备模组工作台
+ *
+ * 它不是「预览器」，是**产线**：左侧 14 格 × 右侧族/阶/品质 → 立刻看到模组。
+ * 三个用途，按重要性排：
+ *   1. 造型评审 —— 三族摆一起，剪影是否真的不同（判据不是形容词）
+ *   2. 验收 —— IoU / draw call / 顶点数 / 缓存命中，都是数字
+ *   3. 排错 —— 换装 50 轮看显存是否增长（对应方案 §11 第 5 条）
+ *
+ * 它调用的是 src 下的真实文件（data-doll.js / doll.js / charforge.js / weapons.js），
+ * 不是复制品 —— 所以这里看到的就是游戏里会得到的。
+ * ============================================================ */
+(function () {
+'use strict';
+
+const $ = s => document.querySelector(s);
+const el = (t, c, h) => { const e = document.createElement(t); if (c) e.className = c; if (h != null) e.innerHTML = h; return e; };
+
+/* ---------------- 槽位定义 ---------------- */
+const SLOT_ORDER = ['helm', 'chest', 'shoulders', 'cloak', 'gloves', 'boots', 'belt',
+  'amulet', 'ring1', 'ring2', 'weapon', 'offhand', 'relic', 'fate'];
+const SLOT_NAME = {
+  helm: '头盔', chest: '战甲', shoulders: '护肩', cloak: '披风', gloves: '护手',
+  boots: '战靴', belt: '腰带', amulet: '项链', ring1: '戒指·左', ring2: '戒指·右',
+  weapon: '武器', offhand: '副手', relic: '法器', fate: '命格'
+};
+const SLOT_GLYPH = {
+  helm: '盔', chest: '甲', shoulders: '肩', cloak: '氅', gloves: '手', boots: '靴',
+  belt: '带', amulet: '链', ring1: '戒', ring2: '戒', weapon: '武', offhand: '副',
+  relic: '法', fate: '命'
+};
+/* 哪一格是谁在画：geo = 有实体几何，fx = 只做光效，weapon = 走 WeaponForge */
+const SLOT_KIND = {
+  helm: 'geo', chest: 'geo', shoulders: 'geo', cloak: 'geo', gloves: 'geo',
+  boots: 'geo', belt: 'geo', amulet: 'geo', relic: 'geo',
+  ring1: 'fx', ring2: 'fx', fate: 'fx',
+  weapon: 'weapon', offhand: 'weapon'
+};
+const RARITY = [
+  { id: 'common', name: '凡品' }, { id: 'magic', name: '灵品' }, { id: 'rare', name: '玄品' },
+  { id: 'legendary', name: '神品' }, { id: 'set', name: '套装' }, { id: 'unique', name: '传世' }
+];
+const TIER_NAME = ['凡兵', '精铁', '玄铁', '地煞', '天罡', '仙品', '神兵', '太初'];
+const WEAPON_SHAPE = {
+  warrior: ['saber', 'saber', 'saber'],
+  mage: ['staff', 'staff', 'staff'],
+  taoist: ['taojian', 'taojian', 'taojian'],
+  offhand_w: ['shield', 'shield', 'shield'],
+  offhand_m: ['orb', 'orb', 'orb'],
+  offhand_t: ['charm', 'charm', 'charm']
+};
+
+/* ---------------- 状态 ---------------- */
+const S = {
+  cls: 'warrior',
+  sel: 'helm',
+  view: 'front',
+  anim: 'idle',
+  silh: false,
+  cmp: false,
+  /* 每格：{ fam, tier, rarity, on } */
+  eq: {}
+};
+for (const s of SLOT_ORDER) {
+  S.eq[s] = { fam: 'A', tier: 3, rarity: 'rare', on: false };
+}
+/* 开场给一套像样的：中阶三族混搭，能立刻看出差别 */
+S.eq.helm.on = true; S.eq.helm.tier = 5; S.eq.helm.rarity = 'rare';
+S.eq.chest.on = true; S.eq.chest.tier = 4; S.eq.chest.rarity = 'legendary';
+S.eq.shoulders.on = true; S.eq.shoulders.tier = 4;
+S.eq.gloves.on = true; S.eq.gloves.tier = 3;
+S.eq.boots.on = true; S.eq.boots.tier = 3;
+S.eq.belt.on = true; S.eq.belt.tier = 4;
+S.eq.weapon.on = true; S.eq.weapon.tier = 5; S.eq.weapon.rarity = 'rare';
+
+/* ---------------- 渲染器 ---------------- */
+const canvas = $('#gl');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
+renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.outputEncoding = THREE.sRGBEncoding;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.06;
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0a0c11);
+scene.fog = new THREE.Fog(0x0a0c11, 9, 22);
+
+const cam = new THREE.PerspectiveCamera(30, 1, 0.1, 100);
+const camTarget = new THREE.Vector3(0, 0.98, 0);
+
+/* 灯光：主光偏右上（和游戏一致），补光冷色，地面反光弱 */
+const hemi = new THREE.HemisphereLight(0xbfd4e8, 0x2a2018, 0.62);
+scene.add(hemi);
+const key = new THREE.DirectionalLight(0xfff0d8, 2.0);
+key.position.set(2.6, 4.6, 3.2);
+key.castShadow = true;
+key.shadow.mapSize.set(1024, 1024);
+key.shadow.camera.near = 1; key.shadow.camera.far = 14;
+key.shadow.camera.left = -2.2; key.shadow.camera.right = 2.2;
+key.shadow.camera.top = 2.6; key.shadow.camera.bottom = -0.4;
+key.shadow.bias = -0.0016;
+scene.add(key);
+const rim = new THREE.DirectionalLight(0x7fa8d8, 0.85);
+rim.position.set(-3.0, 2.2, -2.6);
+scene.add(rim);
+const fill = new THREE.DirectionalLight(0xffd9b0, 0.32);
+fill.position.set(-1.2, 1.4, 3.4);
+scene.add(fill);
+
+/* 地面：深色圆盘只用来接影 */
+const ground = new THREE.Mesh(
+  new THREE.CircleGeometry(3.4, 48),
+  new THREE.MeshStandardMaterial({ color: 0x14161c, roughness: 0.96, metalness: 0.0 })
+);
+ground.rotation.x = -Math.PI / 2;
+ground.receiveShadow = true;
+scene.add(ground);
+const gridHelper = new THREE.GridHelper(6, 12, 0x232732, 0x15181f);
+gridHelper.position.y = 0.001;
+gridHelper.material.transparent = true;
+gridHelper.material.opacity = 0.42;
+scene.add(gridHelper);
+
+/* ---------------- 挂点安装 ----------------
+ * charforge 已经给了 helmG / shoulderL,R / capeG / armL,R / elbowL,R / kneeL,R / skirt，
+ * 缺的是 torsoG / skirtG（= skirt）/ footG / relicG —— 这里补上，**不动 charforge**。
+ * 游戏侧将来由 actors.js 的 applyPaperDoll 做同样四行。 */
+function slotGroup(parent, x, y, z) {
+  const g = new THREE.Group();
+  g.position.set(x || 0, y || 0, z || 0);
+  parent.add(g);
+  return g;
+}
+function installAnchors(a) {
+  const P = a.parts;
+  P.torsoG = slotGroup(P.torso, 0, 0, 0);
+  P.skirtG = P.skirt;
+  P.footG = slotGroup(a.group, 0, 0, 0);
+  P.relicG = slotGroup(P.torso, 0.19, 0.07, 0.06);
+  return a;
+}
+
+/* ---------------- 角色 ---------------- */
+const actors = [];      // 至少一个；对比模式三个
+let A = null;
+
+function itemOf(slotName, cfg, cls) {
+  const base = slotName === 'ring1' || slotName === 'ring2' ? 'ring' : slotName;
+  const it = {
+    slot: base,
+    baseVar: { A: 0, B: 1, C: 2 }[cfg.fam] || 0,
+    baseTier: cfg.tier,
+    ilvl: cfg.tier * 5 + 3,
+    rarity: cfg.rarity
+  };
+  if (base === 'weapon' || base === 'offhand') {
+    it.cls = cls;
+    const key = base === 'weapon' ? cls : ('offhand_' + (cls === 'warrior' ? 'w' : cls === 'mage' ? 'm' : 't'));
+    it.shape = (WEAPON_SHAPE[key] || WEAPON_SHAPE.saber)[{ A: 0, B: 1, C: 2 }[cfg.fam] || 0];
+  }
+  return it;
+}
+
+/* 单格挂载：每格每挂点一个 wrapper Group —— 这样卸一格不会碰到别的格共用的挂点
+ * （chest 用 torsoG + skirtG + armL/R，belt 也用 torsoG）。
+ * **表挂在 actor 自己身上**：对比模式下有三个角色，全局单例会互相覆盖。 */
+function slotsOf(a) { return a.__mounted || (a.__mounted = {}); }
+
+/* 戒指一族几何会生成左右手两份（成对挂点由 Doll 自动镜像），
+ * 而左右手是两个独立槽 → 各取一侧，否则两个戒指叠在同一只手上。 */
+const SIDE_ONLY = { ring1: 'elbowL', ring2: 'elbowR' };
+
+function unequip(a, slotName) {
+  const h = slotsOf(a)[slotName];
+  if (!h) return;
+  for (const an in h) {
+    const w = h[an];
+    if (w.parent) w.parent.remove(w);
+    /* 只清 wrapper，不 dispose：geometry 归 Doll 的缓存所有，
+     * 但要 tell 它「我用完了」—— 引用计数归零后淘汰才会真的拆。 */
+    while (w.children.length) w.remove(w.children[0]);
+  }
+  if (h.__res) Doll.release(h.__res);
+  delete slotsOf(a)[slotName];
+}
+
+function equip(a, slotName, cfg) {
+  const it = itemOf(slotName, cfg, S.cls || 'warrior');
+  const res = Doll.build(it, S.cls || 'warrior');
+  if (!res) return 0;
+  const holder = {};
+  const only = SIDE_ONLY[slotName] || null;
+  for (const an in res) {
+    if (an.charAt(0) === '_') continue;
+    if (only && an !== only) continue;
+    const target = a.parts[an];
+    if (!target) continue;
+    const wrap = new THREE.Group();
+    wrap.userData.slot = slotName;      // 剪影比对时按这个筛，只留当前格
+    wrap.add(res[an]);
+    target.add(wrap);
+    holder[an] = wrap;
+  }
+  /* 用不可枚举属性挂 res：不参与 for...in 的挂点遍历，但卸载时能还给缓存 */
+  Object.defineProperty(holder, '__res', { value: res, enumerable: false });
+  slotsOf(a)[slotName] = holder;
+  return Object.keys(holder).length;
+}
+
+function clearEquip(a) {
+  for (const s of Object.keys(slotsOf(a))) unequip(a, s);
+}
+
+function rebuild() {
+  /* 拆掉旧角色。**每个 actor 都要 clearEquip**：对比模式下有三个，
+   * 只放掉 A 的话 B/C 的缓存引用永远不归零 → 淘汰时不敢 dispose → 显存只涨不落。 */
+  for (const a of actors) clearEquip(a);
+  for (const a of actors) scene.remove(a.group);
+  actors.length = 0;
+
+  A = installAnchors(CharForge.build(S.cls || 'warrior', { noWeapon: true }));
+  scene.add(A.group);
+  actors.push(A);
+
+  /* 对比模式：三个纸娃娃并排，只有当前格的族不同 */
+  if (S.cmp) {
+    A.group.position.x = 0;
+    for (const pair of [[-1.05, 'A'], [1.05, 'C']]) {
+      const b = installAnchors(CharForge.build(S.cls || 'warrior', { noWeapon: true }));
+      b.group.position.x = pair[0];
+      const fam = pair[1];
+      scene.add(b.group);
+      actors.push(b);
+      cfgByActor.set(b, fam);
+    }
+    cfgByActor.set(A, 'B');
+  } else {
+    cfgByActor.clear();
+  }
+
+  applyAll();
+}
+
+/* 对比模式下，某个 actor 的「当前格族」被强制成它的标签 */
+const cfgByActor = new Map();
+
+function applyAll() {
+  for (const a of actors) {
+    clearEquip(a);
+    for (const s of SLOT_ORDER) {
+      const c = S.eq[s];
+      if (!c.on) continue;
+      const over = cfgByActor.get(a);
+      const cfg = (over && s === S.sel) ? Object.assign({}, c, { fam: over }) : c;
+      equip(a, s, cfg);
+    }
+  }
+  /* 对比标签跟着状态走 —— 只在 onclick 里切的话，外部改 S.cmp 会留下残留标签 */
+  const tags = document.getElementById('tags');
+  if (tags) {
+    tags.classList.toggle('hide', !S.cmp);
+    if (S.cmp && !tags.children.length) buildTags();
+  }
+  refreshDetail();
+  refreshStats();
+}
+
+/* ---------------- 视角 ---------------- */
+const VIEW = {
+  front: { pos: [0, 1.02, 4.15], tgt: [0, 0.98, 0] },
+  side:  { pos: [3.95, 1.05, 0.35], tgt: [0, 0.98, 0] },
+  back:  { pos: [0, 1.05, -4.05], tgt: [0, 0.98, 0] },
+  close: { pos: [0.75, 1.62, 1.72], tgt: [0, 1.55, 0] }
+};
+let orbit = { az: 0, el: 0, dist: 4.15 };
+function applyView() {
+  if (S.view === 'close') {
+    const v = VIEW.close;
+    cam.position.set(v.pos[0], v.pos[1], v.pos[2]);
+    camTarget.set(v.tgt[0], v.tgt[1], v.tgt[2]);
+    cam.lookAt(camTarget);
+    orbit = { az: 0, el: 0, dist: 1.9, zoom: true };
+    return;
+  }
+  const v = VIEW[S.view];
+  const dx = v.pos[0] - v.tgt[0], dz = v.pos[2] - v.tgt[2];
+  orbit.dist = Math.sqrt(dx * dx + dz * dz + (v.pos[1] - v.tgt[1]) ** 2);
+  orbit.az = Math.atan2(dx, dz);
+  orbit.el = Math.asin((v.pos[1] - v.tgt[1]) / orbit.dist);
+  orbit.zoom = false;
+  camTarget.set(v.tgt[0], v.tgt[1], v.tgt[2]);
+  updateCam();
+}
+function updateCam() {
+  const d = orbit.dist;
+  const x = Math.sin(orbit.az) * Math.cos(orbit.el) * d;
+  const y = Math.sin(orbit.el) * d;
+  const z = Math.cos(orbit.az) * Math.cos(orbit.el) * d;
+  cam.position.set(camTarget.x + x, camTarget.y + y, camTarget.z + z);
+  cam.lookAt(camTarget);
+}
+
+/* 拖动旋转 */
+let drag = null;
+canvas.addEventListener('pointerdown', e => { drag = { x: e.clientX, y: e.clientY }; canvas.setPointerCapture(e.pointerId); });
+canvas.addEventListener('pointermove', e => {
+  if (!drag) return;
+  const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+  drag.x = e.clientX; drag.y = e.clientY;
+  orbit.az -= dx * 0.008;
+  orbit.el = Math.max(-0.55, Math.min(0.9, orbit.el + dy * 0.006));
+  updateCam();
+});
+canvas.addEventListener('pointerup', e => { drag = null; try { canvas.releasePointerCapture(e.pointerId); } catch (x) {} });
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  orbit.dist = Math.max(0.9, Math.min(9, orbit.dist * (1 + Math.sign(e.deltaY) * 0.09)));
+  updateCam();
+}, { passive: false });
+
+/* ---------------- 动画演示 ---------------- */
+let animT = 0, atkTimer = 0;
+function tickAnim(dt) {
+  animT += dt;
+  for (const a of actors) {
+    if (S.anim === 'walk') {
+      a.moving = true;
+      a.atkAnim = 0;
+    } else if (S.anim === 'atk') {
+      a.moving = false;
+      /* 每 1.15 秒砍一刀：0.55 秒动作 + 0.6 秒停顿，看得清蓄力与收势 */
+      atkTimer -= dt;
+      if (a.atkAnim <= 0 && atkTimer <= 0) a.atkAnim = 1;
+      if (a.atkAnim <= 0) atkTimer = 0.55;
+      a.atkSpeed = 1.85;
+    } else {
+      a.moving = false;
+      a.atkAnim = 0;
+    }
+    CharForge.update(a, dt);
+  }
+  if (S.anim !== 'atk') atkTimer = 0;
+}
+
+/* ---------------- 剪影 ---------------- */
+const silhMat = new THREE.MeshBasicMaterial({ color: 0x000000 });
+const SILH_WHITE = new THREE.MeshBasicMaterial({ color: 0xffffff });
+function applySilh() {
+  if (S.silh) {
+    scene.overrideMaterial = silhMat;
+    scene.background = new THREE.Color(0xf2efe6);
+    scene.fog = null;
+    ground.visible = false;
+    gridHelper.visible = false;
+    hemi.intensity = 0; key.intensity = 0; rim.intensity = 0; fill.intensity = 0;
+  } else {
+    scene.overrideMaterial = null;
+    scene.background = new THREE.Color(0x0a0c11);
+    scene.fog = new THREE.Fog(0x0a0c11, 9, 22);
+    ground.visible = true;
+    gridHelper.visible = true;
+    hemi.intensity = 0.62; key.intensity = 2.0; rim.intensity = 0.85; fill.intensity = 0.32;
+  }
+}
+
+/* ---------------- 左侧槽位列表 ---------------- */
+function buildSlots() {
+  const box = $('#slots');
+  box.innerHTML = '';
+  box.appendChild(el('div', 'st', '装 备 槽 · 14'));
+  for (const s of SLOT_ORDER) {
+    const b = el('button', 'slotbtn');
+    b.dataset.slot = s;
+    b.dataset.kind = SLOT_KIND[s];
+    b.innerHTML = '<span class="fc">' + SLOT_GLYPH[s] + '</span><span class="nm">' + SLOT_NAME[s] + '</span><span class="tg"></span>';
+    b.onclick = () => { S.sel = s; refreshSlots(); refreshDetail(); };
+    box.appendChild(b);
+  }
+  refreshSlots();
+}
+function refreshSlots() {
+  for (const b of document.querySelectorAll('.slotbtn')) {
+    const s = b.dataset.slot;
+    const c = S.eq[s];
+    b.classList.toggle('on', s === S.sel);
+    b.classList.toggle('eq', !!c.on);
+    b.classList.toggle('off', !c.on);
+  }
+}
+
+/* ---------------- 右侧详情 ---------------- */
+function refreshDetail() {
+  const s = S.sel;
+  const c = S.eq[s];
+  const base = (s === 'ring1' || s === 'ring2') ? 'ring' : s;
+  const isW = SLOT_KIND[s] === 'weapon';
+  const def = DOLL_PARTS[base] ? DOLL_PARTS[base][c.fam] : null;
+  const rig = isW ? (DOLL_WEAPON_RIG[itemOf(s, c, S.cls).shape] || DOLL_WEAPON_RIG.sword) : null;
+  const lod = dollLod(c.tier);
+  const parts = def ? dollPartsOf(base, c.fam, lod) : null;
+
+  const d = $('#detail');
+  d.innerHTML = '';
+  const h = el('h3', null, SLOT_NAME[s] + ' <em>' + (isW ? '武器骨架' : SLOT_KIND[s] === 'fx' ? '光效族' : '模组族') + '</em>');
+  d.appendChild(h);
+
+  let axis = '';
+  if (isW) axis = rig.fam[c.fam].tag + ' · 长度 ' + rig.len.toFixed(2) + ' 米（锁定）';
+  else if (def) axis = def.name + ' —— ' + def.axis;
+  else axis = '这一格没有零件表';
+  d.appendChild(el('div', 'axis', axis));
+
+  /* 装/卸 */
+  const sw = el('div', 'seg');
+  const bOn = el('button', c.on ? 'on' : '', '装备');
+  bOn.onclick = () => { c.on = true; applyAll(); };
+  const bOff = el('button', c.on ? '' : 'on', '卸下');
+  bOff.onclick = () => { c.on = false; applyAll(); };
+  sw.appendChild(bOn); sw.appendChild(bOff);
+  d.appendChild(sw);
+
+  /* 族 */
+  if (!isW) {
+    d.appendChild(el('div', 'rowlab', '造型族 · 三轴差异'));
+    const seg = el('div', 'seg t3');
+    for (const f of ['A', 'B', 'C']) {
+      const fd = DOLL_PARTS[base] && DOLL_PARTS[base][f];
+      const b = el('button', c.fam === f ? 'on' : '',
+        (f === 'A' ? '均衡' : f === 'B' ? '重防' : '轻灵') + '<span>' + (fd ? fd.name : '—') + '</span>');
+      b.onclick = () => { c.fam = f; applyAll(); };
+      seg.appendChild(b);
+    }
+    d.appendChild(seg);
+  } else {
+    d.appendChild(el('div', 'rowlab', '形制族 · 只改宽厚，不改长度'));
+    const seg = el('div', 'seg t3');
+    for (const f of ['A', 'B', 'C']) {
+      const fd = rig.fam[f];
+      const b = el('button', c.fam === f ? 'on' : '', fd.tag + '<span>w×' + fd.w.toFixed(2) + ' t×' + fd.t.toFixed(2) + '</span>');
+      b.onclick = () => { c.fam = f; applyAll(); };
+      seg.appendChild(b);
+    }
+    d.appendChild(seg);
+  }
+
+  /* 阶 */
+  d.appendChild(el('div', 'rowlab', '基底阶 · LOD ' + ['简', '中', '繁'][lod] + '（' + c.tier + ' 档）'));
+  const seg8 = el('div', 'seg t8');
+  for (let i = 0; i < 8; i++) {
+    const b = el('button', c.tier === i ? 'on' : '', String(i + 1) + '');
+    b.title = TIER_NAME[i];
+    b.onclick = () => { c.tier = i; applyAll(); };
+    seg8.appendChild(b);
+  }
+  d.appendChild(seg8);
+
+  /* 品质 */
+  d.appendChild(el('div', 'rowlab', '品质 · 只加件加光，不染主色'));
+  const segR = el('div', 'seg t3');
+  for (const r of RARITY) {
+    const b = el('button', c.rarity === r.id ? 'on' : '', r.name);
+    b.onclick = () => { c.rarity = r.id; applyAll(); };
+    segR.appendChild(b);
+  }
+  d.appendChild(segR);
+
+  /* 模组键与预算 */
+  d.appendChild(el('div', 'rowlab', '模组键 · 装配结果'));
+  const keyTxt = isW
+    ? ('weapon|' + c.fam + '|' + rig.fam[c.fam].tag)
+    : (base + '|' + c.fam + '|LOD' + lod);
+  const pieceN = isW ? (rig.fam[c.fam].trim || []).length + 1 : (parts ? parts.length : 0);
+  const st = Doll.stats();
+  d.appendChild(el('div', null,
+    '<div id="kits">' +
+    '<div><span class="k">键</span><b class="hl">' + keyTxt + '</b></div>' +
+    '<div><span class="k">件数</span><b>' + pieceN + '</b> 件' + (isW ? '（含形制件）' : '（含 LOD 增量）') + '</div>' +
+    '<div><span class="k">挂点</span><b>' + (def ? uniqAnchors(parts, def) : 'weaponHand') + '</b></div>' +
+    '<div><span class="k">缓存</span><b>' + st.cache + '</b> 套 · 命中 ' + st.hits + ' / 未中 ' + st.misses + '</div>' +
+    '</div>'));
+
+  /* 零件清单 */
+  if (parts && parts.length) {
+    const pl = el('div', 'plist');
+    pl.innerHTML = parts.map(p => '<span><i>' + p.g + '</i> ' + p.i + '</span>').join('');
+    d.appendChild(pl);
+  }
+
+  refreshSlots();
+}
+
+function uniqAnchors(parts, def) {
+  const set = [];
+  for (const p of parts) {
+    const a = p.a || def.anchor;
+    if (set.indexOf(a) < 0) set.push(a);
+  }
+  return set.join(' + ');
+}
+
+/* ---------------- 性能 ---------------- */
+let fpsAcc = 0, fpsN = 0, fpsShown = 0;
+function refreshStats() {
+  const info = renderer.info;
+  $('#pDraw').textContent = info.render.calls;
+  $('#pTri').textContent = (info.render.triangles / 1000).toFixed(1) + 'k';
+  $('#pGeo').textContent = info.memory.geometries;
+  $('#pMat').textContent = Doll.stats().mats;
+}
+
+/* ---------------- 底栏 ---------------- */
+function bindBar() {
+  $('#bCls').onclick = () => {
+    const order = ['warrior', 'mage', 'taoist'];
+    const label = { warrior: '战士', mage: '法师', taoist: '道士' };
+    S.cls = order[(order.indexOf(S.cls) + 1) % 3];
+    $('#bCls').textContent = label[S.cls];
+    rebuild();
+  };
+  for (const b of document.querySelectorAll('[data-view]')) {
+    b.onclick = () => {
+      S.view = b.dataset.view;
+      for (const x of document.querySelectorAll('[data-view]')) x.classList.toggle('on', x === b);
+      applyView();
+    };
+  }
+  for (const b of document.querySelectorAll('[data-anim]')) {
+    b.onclick = () => {
+      S.anim = b.dataset.anim;
+      for (const x of document.querySelectorAll('[data-anim]')) x.classList.toggle('on', x === b);
+    };
+  }
+  $('#bSilh').onclick = (e) => {
+    S.silh = !S.silh;
+    e.currentTarget.classList.toggle('on', S.silh);
+    applySilh();
+  };
+  $('#bCmp').onclick = (e) => {
+    S.cmp = !S.cmp;
+    e.currentTarget.classList.toggle('on', S.cmp);
+    $('#tags').classList.toggle('hide', !S.cmp);
+    if (S.cmp) buildTags();
+    rebuild();
+    applyView();
+  };
+  $('#bIou').onclick = () => runIou();
+  $('#bRand').onclick = () => {
+    for (const s of SLOT_ORDER) {
+      const c = S.eq[s];
+      c.on = Math.random() > 0.18;
+      c.fam = ['A', 'B', 'C'][Math.floor(Math.random() * 3)];
+      c.tier = Math.floor(Math.random() * 8);
+      c.rarity = RARITY[Math.floor(Math.random() * RARITY.length)].id;
+    }
+    S.eq.weapon.on = true;
+    applyAll();
+    refreshDetail();
+  };
+  $('#bDump').onclick = dump;
+  $('#bCopy').onclick = () => {
+    const t = $('#exportTxt');
+    t.select(); document.execCommand('copy');
+    $('#bCopy').textContent = '已复制';
+    setTimeout(() => { $('#bCopy').textContent = '复制'; }, 1200);
+  };
+  $('#bClose').onclick = () => $('#export').classList.add('hide');
+  window.addEventListener('keydown', e => {
+    if (e.code === 'Space') { e.preventDefault(); $('#bSilh').click(); }
+    if (e.key === '1' || e.key === '2' || e.key === '3' || e.key === '4') {
+      S.view = ['front', 'side', 'back', 'close'][+e.key - 1];
+      for (const x of document.querySelectorAll('[data-view]')) x.classList.toggle('on', x.dataset.view === S.view);
+      applyView();
+    }
+  });
+}
+
+function buildTags() {
+  const box = $('#tags');
+  box.innerHTML = '';
+  for (const t of [['A', '均衡'], ['B', '重防'], ['C', '轻灵']]) {
+    box.appendChild(el('div', null,
+      '<b>' + t[0] + '</b>' + SLOT_NAME[S.sel] + ' <s>' + t[1] + '</s>'));
+  }
+}
+
+/* ---------------- IoU（真实像素） ----------------
+ * 渲染到离屏 RT，读像素算并集/交集。和 node 侧的近似投影互相印证：
+ * 近似模型会高估 IoU（把椭圆当实体），真实剪影是准的。 */
+const RTW = 200, RTH = 300;
+let rt = null, rtBuf = null;
+function gpuSilhouette(actor, famCfg) {
+  if (!rt) {
+    rt = new THREE.WebGLRenderTarget(RTW, RTH, { format: THREE.RGBAFormat });
+    rtBuf = new Uint8Array(RTW * RTH * 4);
+  }
+  const oldBg = scene.background, oldFog = scene.fog;
+  const oldMat = scene.overrideMaterial;
+  const vis = actors.map(a => a.group.visible);
+  for (const a of actors) a.group.visible = (a === actor);
+
+  /* 只留「当前格」的零件。整身剪影里头盔三族的差异只占头顶几十像素，
+   * 直接算 IoU 会得到 0.98 的假高分 —— 判据问的是「同一槽位的三族像不像」。 */
+  const wantSlot = S.sel === 'ring2' ? 'ring2' : S.sel;
+  const toggles = [];
+  actor.group.traverse(o => {
+    if (!o.isMesh) return;
+    let p = o.parent, mine = false;
+    while (p) {
+      if (p.userData && p.userData.slot) { mine = (p.userData.slot === wantSlot); break; }
+      if (p === actor.group) break;
+      p = p.parent;
+    }
+    toggles.push([o, o.visible]);
+    o.visible = mine;
+  });
+
+  /* **必须挪到同一位置再渲染**：对比模式下三个角色并排在 x=±1.05，
+   * 直接各渲一次得到的三张图天然不重叠，IoU 恒为 0（这个坑实打实踩了一次）。
+   * 剪影比对的前提是「同一具身体、只换零件」。 */
+  const px = actor.group.position.x, pz = actor.group.position.z;
+  actor.group.position.x = 0; actor.group.position.z = 0;
+
+  scene.background = new THREE.Color(0x000000);
+  scene.fog = null;
+  scene.overrideMaterial = SILH_WHITE;
+  ground.visible = false; gridHelper.visible = false;
+
+  renderer.setRenderTarget(rt);
+  renderer.setClearColor(0x000000, 1);
+  renderer.clear();
+  renderer.render(scene, cam);
+  renderer.readRenderTargetPixels(rt, 0, 0, RTW, RTH, rtBuf);
+  renderer.setRenderTarget(null);
+
+  for (const t of toggles) t[0].visible = t[1];
+  actor.group.position.x = px; actor.group.position.z = pz;
+
+  scene.background = oldBg; scene.fog = oldFog;
+  scene.overrideMaterial = oldMat;
+  ground.visible = !S.silh; gridHelper.visible = !S.silh;
+  actors.forEach((a, i) => { a.group.visible = vis[i]; });
+
+  const bits = new Uint8Array(RTW * RTH);
+  let nz = 0;
+  for (let i = 0; i < RTW * RTH; i++) {
+    const v = rtBuf[i * 4] + rtBuf[i * 4 + 1] + rtBuf[i * 4 + 2];
+    if (v > 40) { bits[i] = 1; nz++; }
+  }
+  if (window.__doll) (window.__doll._silh || (window.__doll._silh = [])).push(nz);
+  return bits;
+}
+
+function runIou() {
+  /* 临时切到对比模式，三族各渲一次 */
+  const wasCmp = S.cmp;
+  if (!wasCmp) { $('#bCmp').click(); }
+  const order = ['A', 'B', 'C'];
+  const map = [actors[0], actors[1], actors[2]];
+  const bits = {};
+  for (let i = 0; i < 3; i++) bits[order[i]] = gpuSilhouette(map[i]);
+  const iou = (x, y) => {
+    let a = 0, u = 0;
+    for (let i = 0; i < x.length; i++) {
+      const p = x[i], q = y[i];
+      if (p && q) a++;
+      if (p || q) u++;
+    }
+    return u ? a / u : 1;
+  };
+  const r = { AB: iou(bits.A, bits.B), AC: iou(bits.A, bits.C), BC: iou(bits.B, bits.C) };
+  const worst = Math.max(r.AB, r.AC, r.BC);
+  window.__doll._iou = Object.assign({ slot: S.sel }, r);
+  showHint(SLOT_NAME[S.sel] + ' 真实剪影 IoU — A/B ' + r.AB.toFixed(3)
+    + ' · A/C ' + r.AC.toFixed(3) + ' · B/C ' + r.BC.toFixed(3)
+    + (worst < 0.85 ? '  ✓ 可辨' : '  ✗ 太像，要拉开'), 5200);
+  if (!wasCmp) { /* 留在对比模式，用户能直接看 */ }
+  return r;
+}
+
+/* ---------------- 提示 ---------------- */
+let hintTimer = 0;
+function showHint(txt, ms) {
+  const h = $('#hint');
+  h.textContent = txt;
+  h.classList.remove('fade');
+  clearTimeout(hintTimer);
+  hintTimer = setTimeout(() => h.classList.add('fade'), ms || 2600);
+}
+
+/* ---------------- 导出 ---------------- */
+function dump() {
+  const lines = [];
+  lines.push('/* 工作台当前装配 —— ' + new Date().toLocaleString('zh-CN') + ' */');
+  lines.push('/* 角色：' + S.cls + '　用途：贴回 docs/status/equip-doll.md 的评审记录 */');
+  lines.push('{');
+  for (const s of SLOT_ORDER) {
+    const c = S.eq[s];
+    if (!c.on) continue;
+    const base = (s === 'ring1' || s === 'ring2') ? 'ring' : s;
+    const isW = SLOT_KIND[s] === 'weapon';
+    const lod = dollLod(c.tier);
+    let tag = '';
+    if (isW) {
+      const shape = itemOf(s, c, S.cls).shape;
+      const rig = DOLL_WEAPON_RIG[shape];
+      tag = rig.fam[c.fam].tag + ' w×' + rig.fam[c.fam].w + ' t×' + rig.fam[c.fam].t;
+    } else {
+      const def = DOLL_PARTS[base] && DOLL_PARTS[base][c.fam];
+      tag = def ? def.name : '—';
+    }
+    lines.push('  ' + JSON.stringify(s).padEnd(13) + ': { fam: "' + c.fam + '", tier: ' + c.tier
+      + ', lod: ' + lod + ', rarity: "' + c.rarity + '",   // ' + TIER_NAME[c.tier] + ' · ' + tag + ' }');
+  }
+  lines.push('}');
+  lines.push('');
+  lines.push('/* 预算 */');
+  const st = Doll.stats();
+  const info = renderer.info;
+  lines.push('// draw calls   ' + info.render.calls);
+  lines.push('// triangles    ' + info.render.triangles);
+  lines.push('// geometries   ' + info.memory.geometries);
+  lines.push('// 模组缓存      ' + st.cache + ' 套（命中 ' + st.hits + ' / 未中 ' + st.misses + '）');
+  lines.push('// 材质池        ' + st.mats);
+  const iouLines = [];
+  for (const s of ['helm', 'chest', 'shoulders', 'cloak', 'gloves', 'boots', 'belt', 'amulet', 'relic']) {
+    const r = dollFamIou(s, 0);
+    iouLines.push('//   ' + s.padEnd(10) + ' AB ' + r.AB.toFixed(3) + '  AC ' + r.AC.toFixed(3) + '  BC ' + r.BC.toFixed(3));
+  }
+  lines.push('// 近似剪影 IoU（node 口径）：');
+  lines.push(iouLines.join('\n'));
+  $('#exportTxt').value = lines.join('\n');
+  $('#export').classList.remove('hide');
+}
+
+/* ---------------- 尺寸 / 循环 ---------------- */
+function resize() {
+  const w = innerWidth, h = innerHeight;
+  renderer.setSize(w, h, false);
+  cam.aspect = w / h;
+  cam.updateProjectionMatrix();
+}
+window.addEventListener('resize', resize);
+
+let last = performance.now();
+function loop() {
+  const now = performance.now();
+  const dt = Math.min(0.05, (now - last) / 1000);
+  last = now;
+
+  tickAnim(dt);
+  renderer.render(scene, cam);
+
+  fpsAcc += dt; fpsN++;
+  if (fpsAcc >= 0.5) {
+    fpsShown = Math.round(fpsN / fpsAcc);
+    $('#pFps').textContent = fpsShown;
+    fpsAcc = 0; fpsN = 0;
+    refreshStats();
+  }
+  requestAnimationFrame(loop);
+}
+
+/* ---------------- 调试接口 ----------------
+ * 探针（dev/probe-doll.js）靠这个驱动：改格、换族、数 mesh、量显存。
+ * 只读优先，写入口都是台子自己的函数，不额外开新路径。 */
+window.__doll = {
+  S, SLOT_ORDER, SLOT_KIND, RARITY, TIER_NAME, DOLL_PARTS,
+  build: rebuild, apply: applyAll, equip, iou: runIou, itemOf,
+  renderer, scene, cam, Doll,
+  get actors() { return actors; },
+  get main() { return A; },
+  _iou: null
+};
+
+/* ---------------- 启动 ---------------- */
+try {
+  buildSlots();
+  bindBar();
+  resize();
+  applyView();
+  rebuild();
+  refreshDetail();
+  applySilh();
+  loop();
+  setTimeout(() => showHint('14 格全可装 · 点左侧选槽，右侧改族/阶/品质', 4200), 600);
+} catch (e) {
+  document.body.innerHTML = '<pre style="color:#e0483c;padding:24px;font-size:12px;white-space:pre-wrap">'
+    + '启动失败：' + (e && e.stack ? e.stack : e) + '</pre>';
+}
+
+})();
+</script>
+</body>
+</html>
