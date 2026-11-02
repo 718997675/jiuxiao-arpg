@@ -124,6 +124,11 @@ const SPAWN_SAFE = 20;
 const RESPAWN_TICK = 6;
 const RESPAWN_FLOOR = 0.6;
 const RESPAWN_MIN_DIST = 25;
+/* [B16.4] 正面格挡的默认值 —— 就是刑天 M18.7 手写死的那三个数，
+ * 抽出来变成数据（`e.guardFront`）之后，岩石系的「岩甲朝向」才能用同一套结算，
+ * 只改三个数：arc 120°（比盾窄）/ mul 0.2（比盾硬）/ turn 1.2 秒（转身慢，绕背窗口真的存在）。
+ * `turn` 的口径是「转掉 95% 偏差要几秒」，不是半衰期 —— 写数据的人不用换算。 */
+const FRONT_GUARD_DEFAULT = { arc: 150, mul: 0.4, turn: 0.48 };
 /* 一次最多补几只。
  * 计划书原稿写的是「1~2 只」，但它自己给的验收线是「清空后等 30 秒，
  * 怪数回到 spawnCount × 0.6」—— 41 只的图要在 5 个 tick 内补回 25 只，
@@ -6537,6 +6542,33 @@ const Game = {
     }
   },
 
+  /* [B16.4] 正面格挡的唯一读口。
+   * `e.guardFront` 是数据（章节首领：岩甲 / 盾 / 背甲都能用同一套）；
+   * `e.wbBlockFront` 是世界 Boss 的旧布尔位（M18.7 刑天 P2 在写它），
+   * 两者都认，**新代码一律写 `guardFront`**。
+   *
+   * 默认值 `{ arc: 150, mul: 0.4, turn: 0.48 }` 就是刑天当年手写死的那三个数，
+   * 所以世界 Boss 的战斗手感一个字节都没变（turn 0.48 换来的是
+   * 「转 95% 用时 0.48 秒」，等价于原来 `pow(0.002, dt)` 的半衰 0.111 秒）。 */
+  frontGuardOf(e) {
+    if (!e) return null;
+    if (e.guardFront) return e.guardFront;
+    if (e.wbBlockFront) return FRONT_GUARD_DEFAULT;
+    return null;
+  },
+
+  /* 挂 / 摘正面格挡。三种入参：
+   *   setGuardFront(e, null)          → 摘掉
+   *   setGuardFront(e, { arc: 0 })    → 摘掉（用数值表达"取消"，配表时更好写）
+   *   setGuardFront(e, { turn: 1.2 }) → 只改转身，arc / mul 从默认值补
+   * `arc` 不传就是"没要求"，不能当成 0 —— 否则只调一个数会把整块格挡关掉。 */
+  setGuardFront(e, spec) {
+    if (!e) return null;
+    if (!spec || (spec.arc !== undefined && !(spec.arc > 0))) { e.guardFront = null; return null; }
+    e.guardFront = Object.assign({}, FRONT_GUARD_DEFAULT, spec);
+    return e.guardFront;
+  },
+
   damageEnemy(e, dmg, crit, opts = {}) {
     if (e.dead) return;
     /* [P09] 血条归属：打谁显示谁。
@@ -6566,7 +6598,7 @@ const Game = {
     if (armor > 0 && this.state.cls === 'warrior'
       && typeof this.bladeStance === 'function' && this.bladeStance() === 2) final *= 1.2;
 
-    /* [M18.7] 刑天 P2「盾」：正面格挡。
+    /* [M18.7 → B16.4] 刑天 P2「盾」：正面格挡。
      *
      * 判的是**玩家站在它正面的哪个角度**，不是「这一击从哪来」——
      * 本作的伤害大多是范围 / 追踪，没有单一来向，只有站位是玩家能控制的。
@@ -6582,18 +6614,26 @@ const Game = {
      * 和八部天龙的去重直接冲突。这里的答案只有站位。
      * `silent`（持续伤害）不挡：毒 / 火不认盾牌，而且 DoT 每跳都弹「格挡」
      * 会把屏幕糊满。 */
-    if (e.wbBlockFront && !opts.silent && this.playerGroup && e.actor && e.actor.group) {
+    /* [B16.4] 三个数改成可配（`e.guardFront = { arc, mul, turn }`）：
+     *   arc  正面**总**张角（度）。刑天 150（窗口 ±75°）；石甲巨魔 120。
+     *   mul  折减到几成。刑天 0.4（挡得痛但还能打；全免的话 19 万血拖成十分钟）。
+     *   turn 转完一个身位要几秒 —— **这个数决定绕背窗口到底成不成立**。
+     *        刑天 0.48（贴身绕半圈约半秒，得连着走）；石甲巨魔 1.2（能从容绕到背后）。
+     * 读不到 `guardFront` 就退到默认值，所以老的 `wbBlockFront` 一个数都没变。 */
+    const fg = this.frontGuardOf(e);
+    if (fg && !opts.silent && this.playerGroup && e.actor && e.actor.group) {
       const pl = this.playerGroup.position;
       let da = Math.atan2(pl.x - e.pos.x, pl.z - e.pos.z) - e.actor.group.rotation.y;
       while (da > Math.PI) da -= Math.PI * 2;
       while (da < -Math.PI) da += Math.PI * 2;
-      if (Math.abs(da) <= Math.PI * 75 / 180) {
-        final *= 0.4;
+      /* arc 是**总**张角，所以半角 = arc/2（度）→ 弧度 = π·arc/360 */
+      if (Math.abs(da) <= Math.PI * fg.arc / 360) {
+        final *= fg.mul;
         /* 提示节流 0.4 秒：连击时每一下都弹字，字会叠成一坨 */
         const now = Date.now();
         if (!e._blockAt || now - e._blockAt > 400) {
           e._blockAt = now;
-          FX.text(new THREE.Vector3(e.pos.x, 4.4, e.pos.z), '格挡 · 绕后', 'info', { life: 0.6 });
+          FX.text(new THREE.Vector3(e.pos.x, 4.4, e.pos.z), fg.text || '格挡 · 绕后', 'info', { life: 0.6 });
         }
       }
     }
@@ -8313,8 +8353,13 @@ const Game = {
     }
 
     // 面向
+    /* [B16.4] 转身速度是**机制**，不是手感：`guardFront.turn` 写「转掉 95%
+     * 偏差要几秒」，这里把它换成每帧的比例。石甲巨魔给 1.2 秒 ——
+     * 于是「贴身绕到背后打」是一段能走完的路，而不是转个身就没了。
+     * 没有 guardFront 时 turn = 0.48，等价于原来 `pow(0.002, dt)` 的半衰 0.111 秒。 */
+    const turnSec = (e.guardFront && e.guardFront.turn) || FRONT_GUARD_DEFAULT.turn;
     const ang = Math.atan2(pp.x - e.pos.x, pp.z - e.pos.z);
-    a.group.rotation.y = this.lerpAngle(a.group.rotation.y, ang, 1 - Math.pow(0.002, dt));
+    a.group.rotation.y = this.lerpAngle(a.group.rotation.y, ang, 1 - Math.pow(0.05, dt / turnSec));
     if (this.boss === e) UI.updateBoss(e);
   },
 
