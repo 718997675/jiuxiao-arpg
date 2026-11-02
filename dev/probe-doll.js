@@ -129,7 +129,9 @@ const SHOT_DIR = path.resolve(__dirname, '_shots');
    * （主材质 + 品质光）算，28 是宽线；超过说明合并失效（一零件一 mesh）。 */
   ok(budget.dCalls <= 34, '装备增量 draw call 过高，合并失效', budget.dCalls);
   ok(budget.dMesh <= 34, '装备增量 mesh 数过高，没合并', budget.dMesh);
-  ok(budget.dVert <= 6500, '装备顶点增量超过 6500（实测基线 5754，留 13% 余量）', budget.dVert);
+  /* 成对槽位镜像后（护肩/护手/靴/戒各两份）实测 6765，14 格全装第 6 阶最繁。
+   * 上限 7600 是「再加两件装饰件就会报警」的位置，别按整数往下砍。 */
+  ok(budget.dVert <= 7600, '装备顶点增量超过 7600（实测基线 6765）', budget.dVert);
   ok(budget.mats < 40, '材质实例过多，共享失效', budget.mats);
 
   /* ---------------- 三、换装 50 轮不涨显存 ---------------- */

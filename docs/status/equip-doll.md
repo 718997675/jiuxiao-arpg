@@ -3,10 +3,12 @@
 - 分支：`feat/skill-refactor`（与技能重构并行；只共用 `ui.js` 说明页一处）
 - 方案文档：`docs/EQUIP-DOLL-PLAN.md`（15 节）
 - 工作台：`docs/equip-doll-playground.html`（**生成物**，源是 `dev/doll-playground.src.html`）
-- 更新：2026-11-02 · P0 落地（装配器 + 33 族全量零件表 + 工作台 + 契约/探针）
+- 更新：2026-11-02 21:50 · P0 完成 + 工作台定稿 + 武器模具骨架（三层）落地
+- 下一动：**P1 补骨架挂点 → 换 `applyPaperDoll`**（用户 21:45 叫停，先存档）
 
-> 当前：**地基与零件表完成，游戏侧一行未接**。`Doll.mount()` 已经能把一件装备拼成
-> ≤3 个 draw 的 mesh，但 `actors.js:applyPaperDoll` 还在用老的五个手写几何体，
+> 当前：**地基 + 零件表 + 武器骨架 + 工作台全部完成，游戏侧一行未接**。
+> `Doll.mount()` 已经能把一件装备拼成 ≤3 个 draw 的 mesh，工作台里 14 格全装可跑、
+> 三族剪影可量；但 `actors.js:applyPaperDoll` 还在用老的五个手写几何体，
 > 骨架上也还没有那 14 个标准挂点。所以**玩家现在看不到任何变化**。
 
 ## 一句话现状
@@ -24,6 +26,7 @@
 | D0 | 方案 + 现状核查（6 个病灶逐条落到代码行）+ 6 项拍板清单 | ✅ | `docs/EQUIP-DOLL-PLAN.md` | 本次提交 |
 | P0 | 地基：装配器（build / mergeGeos / 缓存 / dispose）+ **33 族全量零件表** + 工作台 + 契约 | ✅ | `src/doll.js`、`src/data/data-doll.js`、`dev/test-doll.js`、`dev/probe-doll.js`、`dev/doll-playground.src.html` + `dev/build-doll-playground.js` | 本次提交 |
 | P1 | 换掉现有 5 槽（helm / shoulders / cloak / gloves / boots），15 族 | 🟡 **数据就位，接线未做** | `data-doll.js` ✅；`actors.js:applyPaperDoll` ⬜、骨架挂点 ⬜ | — |
+| **P0.5** | **武器模具骨架**（9 形状 × 3 形制族 + 5 装饰件，长度锁死只改宽厚） | ✅ | `data-doll.js` 的 `DOLL_WEAPON_RIG` / `DOLL_WEAPON_TRIM`；`doll.js:buildWeapon` | 本次提交 |
 | P2 | 战甲（含下摆）+ 腰带，6 族（最大一块，涉及动画契约） | 🟡 **同上** | `data-doll.js` ✅（含 `skirtG` 挂点值）；`charforge.js` 下摆挂点 ⬜ | — |
 | P3 | 首饰与法器（amulet / ring / relic / fate），12 族（含 6 个光效族） | 🟡 **同上** | `data-doll.js` ✅（含 `relicG`）；「relic 跟人走」⬜ | — |
 | P4 | 品质 accent 规则 + 传世 40 件签名件 + 8 阶材质细化 | ⬜ | `data-doll.js`（`DOLL_SIG`）、`items.js`（图标键） | — |
@@ -41,6 +44,7 @@
 | 标准挂点 | **14** | `helmG` `shoulderL/R` `armL/R` `capeG` `torsoG` `skirtG` `elbowL/R` `kneeL/R` `relicG` `footG` |
 | 武器骨架 | 9 形状 × 3 族 + 5 装饰件 | `saber sword taojian staff glaive axe shield orb charm` |
 | 基底穷举 | **384 件** | `dollKeyOf` 全过，0 失败 |
+| 武器骨架 | 9 形状 × 3 族 | 长度 `len` 是契约（不改），`w`/`t` 只改宽厚 |
 
 比原计划大的地方：原计划 P0 只填 `helm-A` 一族探路，实际**一次性把 33 族写完了**。
 理由是零件表是纯数据、改起来便宜；而 `mergeGeos` 是唯一有技术风险的件，
@@ -59,6 +63,44 @@
 `charforge.js:511` 挨打闪烁遍历的就是 `mats`；漏注册的表现是
 「身体闪、装备不闪」，看起来像模型分层，很难联想到材质表。
 
+**④ 成对挂点必须由装配器镜像，数据只写一份。**
+护肩/护手/靴/戒指在数据里只写 `shoulderL` 一份（写两份会出现「右肩照抄左肩坐标」的重复代码），
+镜像归 `doll.js` 管。第一版漏了这步 → **右肩完全没有几何**，截图里像被砍了一只肩。
+判据不是「代码跑通」，是「左右两侧挂点 children 都 > 0」——探针第一节现在逐格报 mesh 数，
+`shoulders:2 gloves:2 boots:2` 才是对的。
+
+**⑤ 「三族剪影 IoU」必须只渲染该槽位的零件。**
+第一版渲染整个角色来算，头盔三族的差异只占头顶几十像素 → IoU 0.98 的**假高分**，
+所有槽位都「通过」了。正确做法：按 `wrap.userData.slot` 筛，只留当前格。
+修完真实数字落到 0.14~0.75，和 node 近似模型同向。
+
+**⑥ 缓存淘汰时只删 Map 引用 = 泄漏。**
+`renderer.info.memory.geometries` 只认 `geometry.dispose()`，GC 清不掉。
+50 轮换装实测 77 → 869。修法是**引用计数**：`build` +1、调用方 `Doll.release()` −1、
+淘汰时打 `dead` 标记，refs 归零那一刻才真 dispose。同时 `rebuild` 要把**每个** actor
+都 `clearEquip`（只放掉主角色的话，对比模式那两个的引用永远不归零）。
+
+**⑦ 探针测法比实现更容易错。**
+「每轮换新阶新族」→ 每次都是缓存未命中，geometry 当然涨。那是**填充**不是泄漏。
+先预热三套、取基线、再切 50 轮，才是方案 §11 第 5 条的本意。
+
+### 工作台怎么用
+
+`docs/equip-doll-playground.html` 双击即开（711 KB，self-contained）。
+
+| 操作 | 做什么 |
+|---|---|
+| 左侧 14 格 | 选槽位；绿点 = 已装，紫/蓝字 = 光效槽/建模槽 |
+| 右侧族/阶/品质 | 改哪一个，画面立刻变；「件数」跟着 LOD 段涨 |
+| 底栏「剪影」 | 纯黑剪影 + 浅底，看轮廓差异（空格键同效） |
+| 底栏「三族对比」 | 三个纸娃娃并排，只有当前格的族不同 |
+| 底栏「算 IoU」 | GPU 读像素算**真实**剪影 IoU，< 0.85 才算可辨 |
+| 底栏「随机一套」 | 随机 14 格，用来撞出「两族撞脸」的组合 |
+| 底栏「导出」 | 当前装配 + 预算 + IoU 表，可直接贴回台账 |
+
+它引的是 `src/` 下的真实文件，**不是复制品** —— 改 `doll.js` / `data-doll.js`，
+台子自动跟着变（`--check` 会拦住「源改了产物没跟上」）。
+
 ### 验收怎么量的
 
 ```bash
@@ -75,9 +117,12 @@ node dev/build-doll-playground.js --check                      # 生成物没走
 | | mesh | draw | 顶点 |
 |---|---|---|---|
 | 裸身 | 57 | 59 | — |
-| 全装 | 84 | 86 | +5754 |
+| 全装 | 87 | 89 | +6765 |
 
-换装 50 轮 `geometries` 148 → 148，不涨 —— P0 那条「几何缓存命中、显存不涨」成立。
+> 这张表改过两次，原因值得记：第一版 84 mesh / +5754 是**只生成了左肩**时量的
+> （成对挂点没镜像，见下面「④」）。补齐右侧后变成 87 / +6765。**预算按后者算**。
+
+换装 50 轮（同一批 3 套来回切）`geometries` 159 → 159，不涨 —— 「几何缓存命中、显存不涨」成立。
 
 ### 生成物的两条规矩
 
