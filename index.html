@@ -3118,6 +3118,10 @@
 <!-- [V0] 特效原语层（图集 + spr / trail / bolt / shock / decal）。必须在 fx.js 之后：
      它读 FX.scene / FX.cam / FX.q，并在 FX.update / FX.clear 里被回调 -->
 <script src="src/fx-kit.js"></script>
+<!-- [B16] 怪物侧演出原语层（BFX 17 个：形状即判定 + 5 个「活物」）。
+     生成物，源在 docs/boss-vfx-playground.html —— 改 BFX 改那边，别改这里。
+     只依赖 THREE；bind(scene, camera, renderer) 之后才能出东西。 -->
+<script src="src/fx2.js"></script>
 <!-- [V0] 配方解释器：把 data-vfx.js 的 cast/loop/impact 翻译成原语调用。
      必须在 fx-kit.js 之后（它调 FXK.*），且在 game.js 之前（技能要用） -->
 <script src="src/vfx.js"></script>

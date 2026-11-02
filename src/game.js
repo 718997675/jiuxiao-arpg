@@ -314,6 +314,14 @@ const Game = {
     this.scene.add(new THREE.AmbientLight(0xffffff, 0.1));
 
     FX.init(this.scene, this.camera, document.getElementById('fxLayer'));
+    /* [B16] 怪物侧原语层。它自己管一个 Group，只往这里挂 ——
+     * 开场绑一次就够，之后靠每帧 `FX2.update(dt)` 推进。 */
+    try {
+      if (typeof FX2 !== 'undefined') {
+        FX2.bind(this.scene, this.camera, this.renderer);
+        FX2.shake = (amp, dur) => { this.shake = Math.max(this.shake, amp); };
+      }
+    } catch (e) { console.error('[FX2] 绑定失败', e); }
     // 存档地基：先做 V1→V2 迁移，再让 UI 判断有没有档可读
     try {
       if (typeof SaveManager !== 'undefined') {
@@ -1740,6 +1748,10 @@ const Game = {
     this.healMist = null;
     /* [M18.7] 定身（九尾狐 P2 尾缚）跟着换图归零 */
     this.rootT = 0;
+    /* [B16] 不可控位移（拉拽 / 吞咽 / 摆渡）也跟着归零：
+     * 它是"从 A 拖到 B"的一段脚本位移，跨图还留着的话，进新图第一帧
+     * 会把玩家瞬移到上一张图的坐标上。 */
+    this.pull = null;
     /* 技能树分支叠层（stack）：换图 / 重开都归零 */
     this.behStack = {}; this._drainOn = null; this._follows = null;
     this._recharge = null; this._dragonT = 0; this._autoReviveCd = 0; this._pasT = 0;
@@ -2335,6 +2347,36 @@ const Game = {
     }
   },
 
+  /* [B16] 原语层的两个「锚点」。它们的唯一用途是让 `beam` / `entity` 之类
+   * **不传目标时**有个合理默认 —— 不传就朝原点抽的话，所有追踪技都会对着
+   * 地图中心放，看起来像「技能坏了」，其实是少接了这一步。
+   * Boss 取当前血条归属的那只（`this.boss` 是 UI 用的引用，可能为 null）。 */
+  syncFx2Actors() {
+    if (typeof FX2 === 'undefined' || !FX2 || !FX2.actors) return;
+    const pg = this.playerGroup;
+    if (pg) FX2.actors.player.pos.set(pg.position.x, 0, pg.position.z);
+    const b = this.boss;
+    if (b && b.pos) FX2.actors.boss.pos.set(b.pos.x, 0, b.pos.z);
+  },
+
+  /* [B16] 把玩家从当前位置「拖」到 (x,z)，用 dur 秒。
+   * 这是**脚本位移**，不是击退：击退是一下子给速度然后由物理衰减，
+   * 而拖拽是「Boss 决定你去哪、多久到」—— 魂锁拖拽、吞咽、摆渡都用它。
+   *
+   * 为什么统一成一个入口：这四种效果如果各写一套位移，一定会出现
+   * 「其中两种能同时生效 → 位置在打架」。`this.pull` 只有一个槽，
+   * 后到的直接顶掉前一个（新的控制比旧的更该生效）。 */
+  dragPlayer(x, z, dur = 0.6) {
+    const pg = this.playerGroup;
+    if (!pg || this.dead) return null;
+    this.pull = {
+      x0: pg.position.x, z0: pg.position.z,
+      x1: x, z1: z,
+      t: 0, dur: Math.max(0.08, dur)
+    };
+    return this.pull;
+  },
+
   /* ======================================================= */
   animate() {
     requestAnimationFrame(() => this.animate());
@@ -2369,6 +2411,10 @@ const Game = {
        * 两者差一帧就会残留可见偏差（实测 dot≈0.955，约 34°）。放在这里等于用本帧
        * 最终相机姿态对齐，怪物转身与镜头移动都不会再让血条错位。 */
       this.faceHpBars();
+      /* [B16] 把「Boss 在哪、玩家在哪」同步给原语层：beam / entity 的默认目标就是
+       * 这两个点，不同步的话所有追踪类技能会朝原点抽。放在 FX.update 之前，
+       * 让本帧的演出用本帧的位置。 */
+      this.syncFx2Actors();
       FX.update(dt);
       this.drawMinimapThrottled(raw);
       UI.updateSkillbar();
@@ -3051,12 +3097,43 @@ const Game = {
     const pg = this.playerGroup;
     this.updateAim();
 
+    /* [B16] 不可控位移：拉拽 / 吞咽 / 摆渡。
+     * 它和「定身」（`rootT`）不是一回事：定身是玩家**自己动不了**，
+     * 这个是**被别人拖着走**。所以两条不能合并成一个字段：
+     *   - 定身：速度归零，但朝向和攻击保留（原地挣扎）
+     *   - 拖拽：位置由 Boss 决定，期间不接受输入（不然玩家按方向键会跟它拔河）
+     * 也不读移速 / 减速：拖人的速度是 Boss 的属性，不是玩家的。
+     * 唯一的反制是**冲刺**（`dashT`）—— 一冲就挣开，否则「被拖走」等于宣判。 */
+    if (this.pull) {
+      if (this.dashT > 0) {
+        this.pull = null;                      /* 冲刺挣脱 */
+      } else {
+        const P = this.pull;
+        P.t = Math.min(P.dur, P.t + dt);
+        const k = P.dur > 0 ? P.t / P.dur : 1;
+        /* easeInOutQuad：两头慢中段快。匀速拖拽看起来像「贴图在滑」，
+         * 而真人被拽是「一顿一顿地被扯过去」。 */
+        const e = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
+        pg.position.x = P.x0 + (P.x1 - P.x0) * e;
+        pg.position.z = P.z0 + (P.z1 - P.z0) * e;
+        this.collideWorld(pg.position, 0.55, null);
+        const dx = P.x1 - P.x0, dz = P.z1 - P.z0;
+        if (dx || dz) pg.rotation.y = Math.atan2(dx, dz);   /* 背对施法者被拖走 */
+        this.lastMoveDir = { x: dx, z: dz };
+        if (P.t >= P.dur) this.pull = null;
+      }
+    }
+
     // Q/E 转视角
     if (this.keys['q']) this.camYaw += dt * 1.8;
     if (this.keys['e']) this.camYaw -= dt * 1.8;
 
     let ix = 0, iz = 0;
-    if (IS_TOUCH) {
+    /* [B16] 被拖拽时读键也是白读：位置在上一段已经定死了。
+     * 这里不清 `this.keys`，松开拖拽后玩家手里的方向键立刻生效（不该要求重按）。 */
+    if (this.pull) {
+      /* 什么都不读 */
+    } else if (IS_TOUCH) {
       // 摇杆：屏幕空间方向（上为负），与键盘 W/S 同向
       ix = Mobile.mx; iz = Mobile.my;
     } else {
@@ -5841,6 +5918,15 @@ const Game = {
     /* [M18.7] 定身：必须单独一条。它和「迟滞」是两种感受 ——
      * 迟滞是「走得慢」，定身是「完全走不了」，混在一起玩家会以为没生效。 */
     if (this.rootT > 0) out.push({ name: '定身', dur: this.rootT, color: '#e0a0ff', type: 'debuff', icon: '缚', desc: '无法移动（仍可攻击与闪避以外的动作）' });
+    /* [B16] 被拖拽：和「定身」分开列。玩家看到「定身」会去按方向键挣扎，
+     * 而拖拽期间按方向键是没用的 —— 唯一的反制是冲刺，所以 desc 里直说。 */
+    if (this.pull) {
+      const P = this.pull;
+      out.push({
+        name: '被拖拽', dur: Math.max(0, P.dur - P.t), color: '#ff9a6a', type: 'debuff', icon: '拽',
+        desc: '位置不由你决定 —— 按冲刺（空格 / 闪避键）可以挣脱'
+      });
+    }
     if (this.poisonT > 0) out.push({ name: '中毒', dur: this.poisonT, color: '#7fbf5a', type: 'debuff', icon: '毒', desc: '每 0.9 秒受到 ' + Math.round(this.poisonDps || 0) + ' 点毒素伤害' });
     /* [M18.5] 领域压制：站进世界 Boss 的圈里就常驻一条。
      * 它没有倒计时（出去就没了），所以带 noTimer，UI 不显示秒数。 */
@@ -7031,6 +7117,9 @@ const Game = {
     /* [M18.7] 定身必须当场清掉：死亡演出期间 `update` 还在跑，
      * 带着 2.5 秒定身复活的话，玩家会以为「复活了还是动不了」。 */
     this.rootT = 0;
+    /* [B16] 死亡演出期间 update 还在跑，拖拽也得当场停：
+     * 否则尸体会继续被拖向 Boss，复活点算在错误的位置上。 */
+    this.pull = null;
     this.actor.anim = 'die';
     this.actor.group.rotation.z = 0;
     SFX.die();

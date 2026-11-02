@@ -1200,6 +1200,10 @@ const FX = {
      * 单独一个 update 而不是塞进上面几条循环 —— 它的对象形状和生命周期都不一样，
      * 混进来会让这个函数更难读，而且它可能根本不存在（低画质档整层关掉）。 */
     if (typeof FXK !== 'undefined' && FXK && typeof FXK.update === 'function') FXK.update(dt);
+    /* [B16] 怪物侧原语层（src/fx2.js）：同样独立一档。注意它的 dt 单位是**秒**，
+     * 跟这里一致；内部会再夹一次 0.05，所以切后台回来的大 dt 不会把
+     * 「0.16 秒扫完的一刀」一帧闪完。 */
+    if (typeof FX2 !== 'undefined' && FX2 && typeof FX2.update === 'function') FX2.update(dt);
   },
 
   removeProjectile(i) {
@@ -1249,5 +1253,9 @@ const FX = {
      * 不接这一句的话，换图时贴花池会留在旧地图坐标上，闪电 / 拖尾的
      * 半透明面片也会挂在新场景里 —— 表现为「进新图先闪一下旧图的东西」。 */
     if (typeof FXK !== 'undefined' && FXK && typeof FXK.clear === 'function') FXK.clear();
+    /* [B16] 怪物侧原语层跟着清。它自己持有 Group + 一张 mesh 清单，
+     * 不清的话换图后旧图坐标上的柱子 / 落石 / 冲击墙会挂在新场景里，
+     * 表现是「进新图先闪一下旧图的东西」，而且再也删不掉。 */
+    if (typeof FX2 !== 'undefined' && FX2 && typeof FX2.clear === 'function') FX2.clear();
   }
 };
