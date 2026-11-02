@@ -3,7 +3,7 @@
 - 分支：`feat/skill-refactor`（专题台账，同分支；做完后并进分支台账再删这份）
 - 设计文档：`docs/BOSS-KITS.md`（§7 = 45 只本命技；§7.7 = 活物原语）
 - 实验场：`docs/boss-vfx-playground.html`（单文件，内联 three.js，`file://` 直接开）
-- 更新：2026-11-02 22:40
+- 更新：2026-11-02 22:10
 
 > 当前：**51 只全部进特效台；演出层（BFX 17 个原语）已经搬进游戏（`src/fx2.js`），
 > 玩家的「被拖拽」状态位、可破坏目标（图腾 / 卵囊，带读秒）、正面格挡（岩甲 / 盾）都补上了**。
@@ -51,6 +51,7 @@
 | B17 | 两只之间撞招：剑族 3 只、镜族 3 只、石族 2 只各 4 格完全相同；摆渡人 == 黄泉 | ✅ | 只改 `KIT` 表，把「家族语言」从 4 格压到 ≤2 格；§8.5 整章 | 本次提交 |
 | B18 | 指纹工具的 bug：`burst(pos,30,opts)` 只取第一个对象参数 → **数量全丢**，31 发和 1 发判成同一招 | ✅ | `describe` 合并全部对象参数 + 位置裸数字；次数进指纹（`×N` 分档） | 本次提交 |
 | B17.1 | **技能表出得来**：`src/data/data-bosskits.js`（生成物，88 招 / 45×5） | ✅ | 新建 `dev/build-bosskits.js`（`--write` / `--check`）、`src/data/data-bosskits.js`、`dev/test-bosskits.js`；`index.html` 引入；特效台「遗忘」改成 `markForgotten()`；`BOSS-KITS.md` §13 | 本次提交 |
+| B17.2a | **技能表补结算字段**：`mul` 88/88、`hitR` 25、`native`/`dmg`/`answer` 45 —— 第四道闸门 | ✅ | `dev/build-bosskits.js`（`META_FIELDS`/`EMIT_ORDER`/自检）、重新生成 `data-bosskits.js`（2649 行 / 97 KB）、`dev/test-bosskits.js` 第八节；`BOSS-KITS.md` §13.4 | 本次提交 |
 | B19 | §2 五格总表也是手抄的（剑帝还写着旧配招） | ✅ | 加 `EXPORT:KIT` 标记，`boss-kits-export.js --write` 一起生成（45 只） | 本次提交 |
 
 ## 下一步（按顺序，别跳）

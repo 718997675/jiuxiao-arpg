@@ -139,7 +139,38 @@ console.log('七、装进页面：没有重名，也没拖慢首屏');
   }
 }
 
-console.log('八、生成物没走散');
+console.log('八、结算要用的字段真的在表里');
+{
+  /* 这一节是拿真 bug 换的：生成器把 `mul` 收进了 META，模板却只手写了
+   * 七个字段 —— 88 招的伤害倍率全丢，而 `--check` 绿（重新生成也不含它）、
+   * 前面七节也全绿（没人问它存不存在）。整条链上没有一处会红。
+   * 所以「表够不够跑结算」必须单独问一次。 */
+  const arr = Object.values(SK);
+
+  const noMul = arr.filter(s => typeof s.mul !== 'number').map(s => s.id);
+  ok(noMul.length === 0, '每招都有 mul（伤害倍率）', noMul);
+
+  const badMul = arr.filter(s => s.mul < 0 || s.mul > 3).map(s => s.id + '=' + s.mul);
+  ok(badMul.length === 0, 'mul 落在 0~3（超出就是写错了一位数）', badMul);
+
+  /* 全 1 说明「取到了但没取到真值」，和缺失一样跑不起来 */
+  const ones = arr.filter(s => s.mul === 1).length;
+  ok(ones < arr.length, 'mul 不是一律 1（' + ones + '/' + arr.length + ' 招是 1.0）');
+
+  /* 45 个本命技：`native` 指回 NR 的键，`dmg` / `answer` 是说明页要用的描述 */
+  const natives = arr.filter(s => s.group === 'native');
+  ok(natives.length === 45, '本命技 45 条', natives.length);
+  const noNative = natives.filter(s => !s.native).map(s => s.id);
+  ok(noNative.length === 0, '本命技都带 native（指回 NR 的键）', noNative);
+  const noAnswer = natives.filter(s => !s.answer || !s.dmg).map(s => s.id);
+  ok(noAnswer.length === 0, '本命技都有 dmg / answer（说明页按这两句写）', noAnswer);
+
+  /* hitR 是可选字段：25 招有。但不能出现「有值却不是数」 */
+  const badR = arr.filter(s => s.hitR !== undefined && typeof s.hitR !== 'number').map(s => s.id);
+  ok(badR.length === 0, 'hitR 有值时必须是数字', badR);
+}
+
+console.log('九、生成物没走散');
 {
   /* 这一条是 `--check`：跑一次生成器，逐字节比对。它慢（要开浏览器），
    * 但**只有它能回答「文档里的表还是代码里的表吗」**。 */

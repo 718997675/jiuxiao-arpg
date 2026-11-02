@@ -59,6 +59,17 @@ function emit(v, ind) {
   return JSON.stringify(v);
 }
 
+/* 从特效台取的字段。**这一份是唯一来源**：evaluate 里靠参数拿到，
+ * 自检（见「四道闸门」第 4 条）也读它 —— 抄第二份就会走散。 */
+const META_FIELDS = ['name', 'warm', 'tag', 'counter', 'rule', 'desc',
+  'mul', 'hitR', 'kind', 'dmg', 'answer', 'native'];
+
+/* 写进文件的顺序，和 META_FIELDS 是两个问题：
+ * 取的时候按数据本来的样子取，写的时候按「读的人关心什么」排 ——
+ * 数值在前（多疼 / 多快 / 多大），文案在后。 */
+const EMIT_ORDER = ['warm', 'mul', 'hitR', 'tag', 'kind', 'native', 'dmg', 'answer',
+  'rule', 'counter', 'desc'];
+
 (async () => {
   const mode = process.argv[2] || '';
   const b = await puppeteer.launch({
@@ -72,13 +83,15 @@ function emit(v, ind) {
 
   /* 一次取全：技能元信息 + 两段源码 + 配招表。**只取不改**，
    * 生成物里一个数字都不是这里算出来的 —— 算出来的数字迟早和代码对不上。 */
-  const data = await p.evaluate(() => {
+  const data = await p.evaluate((META) => {
     /* `SKILL_INDEX` 是**唯一入口**：三类共用技 + 45 个本命技都在里面
      * （本命技那 45 条是下面 8753 行那段代码把 `NR` 包进 `SKILL_INDEX['nt_'+id]`
      * 生成的）。所以**别再单独遍历 NR** —— 那样每个 `nt_` 会被加两遍，
      * 生成出来是个后写盖前写的重复键。这一条是生成器自己的闸门抓到的。 */
-    const META = ['name', 'warm', 'tag', 'counter', 'rule', 'desc',
-      'mul', 'kind', 'dmg', 'answer', 'native'];
+    /* `mul` 是**结算用的伤害倍率**（0 ~ 2.2），`hitR` 是个别招的额外命中半径
+     * （88 招里 25 招有）。这两个漏了，表就只够当说明书、不够跑结算 ——
+     * 而 `--check` 照样绿（重新生成也不含它们），最难发现的就是这一种。
+     * 字段表在 node 侧的 `META_FIELDS`，传进来而不是抄第二份。 */
     const out = { skills: [], kit: [] };
     for (const k of Object.keys(SKILL_INDEX)) {
       const s = SKILL_INDEX[k];
@@ -101,13 +114,14 @@ function emit(v, ind) {
       else out.kit.push({ id, slots, bad: false });
     }
     return out;
-  });
+  }, META_FIELDS);
   await b.close();
 
   const skills = data.skills;
   const kit = data.kit;
 
-  /* ---- 三道闸门：宁可生成失败，也不要生成一份「看起来对」的表 ---- */
+  /* ---- 三道闸门：宁可生成失败，也不要生成一份「看起来对」的表 ----
+   * （第四道在文件拼完之后：收了的字段必须真的写进文本） */
   const problems = [];
   const seen = new Map();
   for (const s of skills) {
@@ -154,11 +168,11 @@ function emit(v, ind) {
     lines.push('  ' + s.id + ': {');
     lines.push("    id: '" + s.id + "', group: '" + s.group + "',");
     lines.push('    name: ' + emit(s.name) + ',');
-    if (s.warm !== undefined) lines.push('    warm: ' + emit(s.warm) + ',');
-    if (s.tag !== undefined) lines.push('    tag: ' + emit(s.tag) + ',');
-    if (s.rule !== undefined) lines.push('    rule: ' + emit(s.rule) + ',');
-    if (s.counter !== undefined) lines.push('    counter: ' + emit(s.counter) + ',');
-    if (s.desc !== undefined) lines.push('    desc: ' + emit(s.desc) + ',');
+    /* 数值在前、文案在后：读的时候「多疼」比「说得漂亮」重要。
+     * 遍历 `EMIT_ORDER` 而不是逐行手写 —— 手写就会漏（`mul` 就是这么丢的）。 */
+    for (const f of EMIT_ORDER) {
+      if (s[f] !== undefined) lines.push('    ' + f + ': ' + emit(s[f]) + ',');
+    }
     lines.push('    hit: ' + toFn(s.hit) + ',');
     lines.push('    run: ' + toFn(s.run));
     lines.push('  },');
@@ -166,6 +180,22 @@ function emit(v, ind) {
   lines.push('};');
   lines.push('');
   const out = lines.join('\n');
+
+  /* ---- 第四道闸门：收了的字段必须真的写进文本 ---- *
+   * 这一条是拿真 bug 换来的：`mul` 收进了 META 但模板没写，
+   * 88 招的伤害倍率全丢，而 `--check` 依然绿（重新生成也不含它）、
+   * 契约也全绿（没人断言它存在）。整条链上没有一处会红 —— 除了这里。 */
+  const lost = [];
+  for (const f of META_FIELDS) {
+    if (f === 'name') continue;
+    const used = skills.some(s => s[f] !== undefined);
+    if (used && !out.includes('\n    ' + f + ': ')) lost.push(f);
+  }
+  if (lost.length) {
+    console.error('✗ 生成中止：这些字段取到了但没写进文件 → ' + lost.join(', '));
+    console.error('  修：把字段加进 EMIT_ORDER（模板是按它遍历的）');
+    process.exit(1);
+  }
 
   /* ---- 用法 ---- */
   if (mode === '--check') {
