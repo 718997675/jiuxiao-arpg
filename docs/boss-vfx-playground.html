@@ -3124,13 +3124,17 @@ function swingArm(i, amt, dur = .6){
   }});
 }
 function bossLean(amt, dur = .5){
-  const g = BOSS.g;
-  if(!g) return;
+  const g0 = BOSS.g;
+  if(!g0) return;
   addUpdate({ t:0, update(dt){
     this.t += dt;
     const k = Math.min(1, this.t/dur);
     const e = k < .4 ? k/.4 : 1 - (k-.4)/.6;
-    g.rotation.x = amt * (k < .4 ? e : e);
+    /* 创建时抓的 g0 只用来决定"要不要开这一拍"；真正每帧写的是当下的
+     * BOSS.g —— 前倾要持续半秒，首领可能中途被打死，g0 就成了野引用。 */
+    const g = BOSS.g;
+    if(!g){ this.dead = true; return; }
+    g.rotation.x = amt * e;
     if(k >= 1){ g.rotation.x = 0; this.dead = true; }
   }});
 }
@@ -3680,10 +3684,15 @@ SIGN.blooddive = {
     }});
     lightPulse(V3(BOSS.pos.x, 3, BOSS.pos.z), 0xff2a3a, 2.4, warm);
     // 飞起
-    if(BOSS.g) addUpdate({ t:0, update(dt){
+    addUpdate({ t:0, update(dt){
       this.t += dt;
       const k = Math.min(1, this.t/warm);
-      BOSS.g.position.y = Math.sin(k*Math.PI*0.5) * 1.5;
+      /* BOSS.g 必须**逐帧**取：这一招要飞 1.2 秒，首领可能在第 0.4 秒
+       * 就被打死（actor.group 置空）→ 只在创建时判一次，后面这行就是
+       * `null.position`。创建时守卫是假守卫。 */
+      const g = BOSS.g;
+      if(!g){ this.dead = true; return; }
+      g.position.y = Math.sin(k*Math.PI*0.5) * 1.5;
       if(k >= 1) this.dead = true;
     }});
     // 地面阴影划过（矩形带预警）
@@ -7302,7 +7311,11 @@ NR.bladelord = {
   n:'剑气潮', tag:'整面墙，一个洞', warm:1.0, mul:.5,
   kind:'一面推进的墙（洞在动）', dmg:'multi · 每被扫一次加一档', answer:'追着那个洞跑',
   rule:'一整面剑气墙从一侧推到另一侧，**墙上只有一个洞** —— 而洞在动',
-  hit(){ return { shape:'wall', note:'整面墙推进（洞的位置随时间变）' }; },
+  /* 这招是**整场型**：墙按帧推进、洞自己转，没有一个静态形状能代表它。
+     * 原来写 shape:'wall' —— 而 inHit 只认六种，wall 没有分支，
+     * 判定永远是 false，等于这招一次都打不中人。
+     * 按 self + note 描述，真正的判定在 run 里按帧算。 */
+  hit(){ return { shape:'self', note:'整面墙推进（洞的位置随时间变）' }; },
   run(){
     const S = this;
     const say = nSay(), P = BOSS.pos.clone();

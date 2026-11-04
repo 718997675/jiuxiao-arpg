@@ -115,9 +115,16 @@ console.log('六、不许摸 DOM / 不许真实时间');
   /* `document.` 与 `setTimeout` 是特效台那套 UI 的东西。搬进游戏之后
    * 前者会摸一个不存在的元素（直接抛），后者在切图时不会取消。
    * 「遗忘」那一招原本两个都有，已经改成 `markForgotten()` 交回宿主。 */
-  ok(!/document\./.test(src), '生成物里没有 document.（技能不许摸 UI）');
-  ok(!/setTimeout\s*\(/.test(src), '生成物里没有 setTimeout（演出必须按帧走）');
-  ok(!/requestAnimationFrame/.test(src), '生成物里没有 requestAnimationFrame（同上）');
+  /* 要先剥掉注释再查。这张表的注释里**故意**留着几句
+   * 「不能写 document.querySelector + setTimeout」的记录 —— 那是讲清楚
+   * 为什么这招要交回宿主（markForgotten），不是真代码。
+   * 不剥注释的话，写得越清楚越容易红，最后没人愿意写注释。 */
+  const codeOnly = src
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/^\s*\/\/.*$/gm, '');
+  ok(!/document\./.test(codeOnly), '生成物里没有 document.（技能不许摸 UI）');
+  ok(!/setTimeout\s*\(/.test(codeOnly), '生成物里没有 setTimeout（演出必须按帧走）');
+  ok(!/requestAnimationFrame/.test(codeOnly), '生成物里没有 requestAnimationFrame（同上）');
 }
 
 console.log('七、装进页面：没有重名，也没拖慢首屏');

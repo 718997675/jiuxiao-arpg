@@ -50,7 +50,12 @@ function toFn(src) {
 
 /* 值的序列化：字符串用单引号，数字原样，函数走 toFn，其余 JSON */
 function emit(v, ind) {
-  if (typeof v === 'function') return toFn(v.toString());
+  /* `M(...)` 是特效台的材质工厂（`{r,m,e,flat,t,o}` 那套参数）。
+   * 游戏里 `src/actors.js` 已经有一个同名同签名的 `M`，但参数口径是
+   * `{rough,metal,emissive,transparent,opacity}`，且 `flatShading` 恒 true。
+   * 同名会在顶层覆盖 —— actors.js 的整套角色建模会跟着变味。
+   * 所以这里改名 `MK`：boss-cast.js 里定义同名函数，两边互不干扰。 */
+  if (typeof v === 'function') return toFn(v.toString()).replace(/(?<![A-Za-z0-9_$])M\(/g, 'MK(');
   if (typeof v === 'string') return "'" + v.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, '\\n') + "'";
   if (typeof v === 'number') return String(v);
   if (typeof v === 'boolean') return String(v);
@@ -103,6 +108,44 @@ const EMIT_ORDER = ['warm', 'mul', 'hitR', 'tag', 'kind', 'native', 'dmg', 'answ
       if (s.run) o.run = s.run.toString();
       out.skills.push(o);
     }
+    /* ---------------- 45 个本命技的**本体** ----------------
+     * 这段是拿真 bug 换来的：`nt_*` 在特效台里是
+     *     const key='nt_'+id, o = NR[id];
+     *     SKILL_INDEX[key] = { ..., hit(){ return o.hit(); }, run(){ o.run(); } };
+     * `o` 是**闭包变量**。`toString()` 能拿到源码，但拿不到闭包 ——
+     * 生成物里就是 `function(){ return o.hit(); }`，而 `o` 根本不存在。
+     * 后果：45 只守卫的第 5 格（本命）在游戏里**一次都放不出来**，
+     * 报 ReferenceError: o is not defined。而契约测试只看
+     * 「typeof run === 'function'」，照样全绿。
+     *
+     * 所以把 NR 的本体整份导出来（它自己就是数据 + 函数），
+     * 包装层改成显式引用 `BOSS_NATIVE.<id>`，闭包就没有了。 */
+    out.native = {};
+    for (const id of Object.keys(NR)) {
+      const o = NR[id];
+      const n = {};
+      for (const f of ['n', 'tag', 'warm', 'mul', 'rule', 'kind', 'dmg', 'answer', 'note']) {
+        if (o[f] !== undefined) n[f] = o[f];
+      }
+      /* NR 里除了 hit/run 还可能有**辅助方法**。目前只有 4 只（黄泉主宰 /
+       * 无相天魔 / 混沌真身 / 兽群）写了 `mk()` —— 它是「这一招的落点」，
+       * hit() 和 run() 都读它（判定与预警同源）。
+       * 漏掉它的后果是这 4 只一次都放不出来（this.mk is not a function），
+       * 而其余 41 只照常 —— 最容易被「跑了 45 只，大部分是好的」糊过去。 */
+      n.hit = o.hit ? o.hit.toString() : null;
+      n.run = o.run ? o.run.toString() : null;
+      const EXTRA = ['mk', 'place', 'aim', 'tick'];
+      for (const f of EXTRA) if (typeof o[f] === 'function') n[f] = o[f].toString();
+      /* 闸门：NR 上出现白名单之外的函数 → 生成中止。
+       * 不写这一条，下一个写辅助方法的人会踩一模一样的坑。 */
+      for (const f of Object.keys(o)) {
+        if (typeof o[f] !== 'function') continue;
+        if (f === 'hit' || f === 'run') continue;
+        if (EXTRA.indexOf(f) >= 0) continue;
+        out.badMethod = (out.badMethod || []).concat(id + '.' + f);
+      }
+      out.native[id] = n;
+    }
     for (const id of Object.keys(KIT)) {
       const slots = (KIT[id] || []).slice(0, 5);
       /* 世界 Boss 的配招里全是 `group==='wb'` 的招 —— 它们不进这张表
@@ -132,6 +175,10 @@ const EMIT_ORDER = ['warm', 'mul', 'hitR', 'tag', 'kind', 'native', 'dmg', 'answ
     if (!s.name) problems.push('没有名字：' + s.id);
   }
   for (const k of kit) if (k.bad) problems.push('配招表引用了不存在的技能：' + k.id + ' → ' + k.slots.join('/'));
+  if (data.badMethod && data.badMethod.length) {
+    problems.push('NR 上有没被导出的方法（加进 EXTRA 白名单，否则运行时是 is not a function）：' +
+      data.badMethod.join('、'));
+  }
   if (problems.length) {
     console.error('✗ 生成中止：');
     for (const x of problems) console.error('  · ' + x);
@@ -162,6 +209,27 @@ const EMIT_ORDER = ['warm', 'mul', 'hitR', 'tag', 'kind', 'native', 'dmg', 'answ
   for (const k of kit) lines.push('  ' + k.id + ": [" + k.slots.map(s => "'" + s + "'").join(', ') + '],');
   lines.push('};');
   lines.push('');
+  /* --- 45 个本命技的本体（`nt_*` 只是包装层） --- */
+  const native = data.native || {};
+  lines.push('/* 45 个本命技的本体。`BOSS_SKILLS` 里那 45 条 `nt_*` 只是包装：');
+  lines.push(' * 它们的 run/hit 显式转到这里（原来写的是闭包变量 `o`，搬出来之后');
+  lines.push(' * `o` 不存在 —— 45 只的第 5 格会全部 ReferenceError）。 */');
+  lines.push('const BOSS_NATIVE = {');
+  for (const id of Object.keys(native)) {
+    const n = native[id];
+    lines.push('  ' + id + ': {');
+    for (const f of ['n', 'tag', 'warm', 'mul', 'rule', 'kind', 'dmg', 'answer', 'note']) {
+      if (n[f] !== undefined) lines.push('    ' + f + ': ' + emit(n[f]) + ',');
+    }
+    for (const f of ['mk', 'place', 'aim', 'tick']) {
+      if (n[f] !== undefined) lines.push('    ' + f + ': ' + toFn(n[f]) + ',');
+    }
+    lines.push('    hit: ' + toFn(n.hit) + ',');
+    lines.push('    run: ' + toFn(n.run));
+    lines.push('  },');
+  }
+  lines.push('};');
+  lines.push('');
   lines.push('/* 88 个技能。`group`：mech 机制 / shared 套路 / sign 签名 */');
   lines.push('const BOSS_SKILLS = {');
   for (const s of skills) {
@@ -173,8 +241,20 @@ const EMIT_ORDER = ['warm', 'mul', 'hitR', 'tag', 'kind', 'native', 'dmg', 'answ
     for (const f of EMIT_ORDER) {
       if (s[f] !== undefined) lines.push('    ' + f + ': ' + emit(s[f]) + ',');
     }
-    lines.push('    hit: ' + toFn(s.hit) + ',');
-    lines.push('    run: ' + toFn(s.run));
+    /* `nt_*` 的包装层写的是 `o.hit()` / `o.run()`（特效台里的闭包）。
+     * 闭包搬不过来，这里换成对 BOSS_NATIVE 的显式引用。 */
+    const nat = s.id.indexOf('nt_') === 0 ? s.id.slice(3) : null;
+    let hitSrc = toFn(s.hit), runSrc = toFn(s.run);
+    if (nat) {
+      hitSrc = hitSrc.replace(/\bo\.hit\(\)/g, 'BOSS_NATIVE.' + nat + '.hit()');
+      runSrc = runSrc.replace(/\bo\.run\(\)/g, 'BOSS_NATIVE.' + nat + '.run()');
+      if (hitSrc.indexOf('BOSS_NATIVE.') < 0 || runSrc.indexOf('BOSS_NATIVE.') < 0) {
+        console.error('✗ 生成中止：' + s.id + ' 的包装层没认出来（不是 o.hit()/o.run() 的形状？）');
+        process.exit(1);
+      }
+    }
+    lines.push('    hit: ' + hitSrc + ',');
+    lines.push('    run: ' + runSrc);
     lines.push('  },');
   }
   lines.push('};');

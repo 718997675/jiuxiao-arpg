@@ -1470,6 +1470,11 @@ const FX2 = (function () {
     return h.shape;
   }
 
+  /* ---------------- 归属钩子 ----------------
+   * 由 boss-cast.js 装：每帧推进某个 updater 之前，把「当前施法的怪」
+   * 切回它自己的主人。fx2 单独使用时它是 null，行为不变。 */
+  let stepHook = null;
+
   /* ---------------- 生命周期 ---------------- */
   function bind(sc, cam, rd) {
     if (sc && root.parent !== sc) sc.add(root);
@@ -1488,7 +1493,12 @@ const FX2 = (function () {
     for (const k in POOLS) POOLS[k].update(dt);
     for (let i = 0; i < updaters.length; i++) {
       const u = updaters[i];
-      if (!u.dead) u.update(dt);
+      if (u.dead) continue;
+      /* 归属切换：技能体（data-bosskits 的 run）读的是全局 BOSS，
+       * 而这个全局指向「当前正在放招的那只」。多个 updater 交替执行时
+       * 不在这里切回去，前一只的回调会把伤害算到后一只头上。 */
+      if (u.__own && stepHook) stepHook(u.__own);
+      u.update(dt);
     }
     pruneUpdates();
     if (camera && _billList.length) {
@@ -1546,12 +1556,32 @@ const FX2 = (function () {
   return Object.assign(BFX, {
     bind, update, clear, stats,
     actors: ACT,
+    /* 技能体里会直接 `scene.add(mesh)`（岩甲的 5 块石板、镜我的碎面都是这么加的），
+     * 走这个跟踪器才可能被 clear() 收掉。**别把 Game.scene 直接交出去** ——
+     * 那样换图之后这些 mesh 会留在场上，挂在新图坐标上。 */
+    scene,
     tex: TEX,
+    /* 技能体是「特效台的执行代码」，它直接调演出层的**内部件**：
+     * `V3` 87 次 / `addUpdate` 57 / `P` 53 / `flatMesh` 27 / `disposeMesh` 27 ……
+     * 这些不是公开 API，但那 88 招就是按这些名字写的。摊成一个 tools 子对象
+     * 交出去，比在 BFX 上挂二十个新方法干净（也不会和原语撞名）。
+     * **缺一个就是运行时 ReferenceError**，而特效台里永远发现不了（那边全都有）。 */
+    tools: {
+      /* 注意：这里**没有** `P`。fx2 里没有那个函数（473 / 1510 行都是局部变量名），
+       * 写进导出就是 ReferenceError，而且它会在 IIFE 里炸掉整个 FILE ——
+       * FX2 直接变成 undefined，后面所有依赖它的脚本一起挂。
+       * 88 招用的 P(parent, geo, mat, pos, scl, rot) 是 boss-cast.js 里的实体工具。 */
+      addUpdate, delay, seq, shake, V3, col, pool,
+      flatMesh, billMesh, vplane, disposeMesh, lightPulse,
+      TEX, TEX_BAND, normShape
+    },
     get shake() { return _shake; },
     set shake(f) { _shake = f; },
     get zoneOn() { return ZONE_ON; },
     set zoneOn(v) { ZONE_ON = !!v; },
     get time() { return TIME.t; },
+    get stepHook() { return stepHook; },
+    set stepHook(f) { stepHook = (typeof f === 'function') ? f : null; },
     delay, seq,
   });
 })();

@@ -3125,6 +3125,17 @@
      生成物，源在 docs/boss-vfx-playground.html —— 改 BFX 改那边，别改这里。
      只依赖 THREE；bind(scene, camera, renderer) 之后才能出东西。 -->
 <script src="src/fx2.js"></script>
+<!-- [B21] 首领招式运行时：45 只守卫的五格配招在这里真的打出来。
+     88 个 run()/hit() 在 data-bosskits.js（生成物），它们引用的脚手架
+     （BOSS / R / aimAngle / settle …）由本文件提供 —— 少一个就是运行时
+     ReferenceError。**也是生成物**，源在 docs/boss-vfx-playground.html。
+     必须在 fx2.js 之后（顶层直接取 FX2.tools），在 game.js 之前（updateBossAI 要调它）。 -->
+<script src="src/boss-cast.js"></script>
+<!-- [B20] 玩家侧技能演出层（37 只技能的整套画法）。**生成物**，
+     源在 docs/vfx-playground.html —— 改特效去那边改，别改 src/sfx.js。
+     只依赖 THREE；bind(scene, camera, renderer) 之后才能出东西。
+     必须在 game.js 之前（playSkillVfx 要调它），在 fx.js 之后（沿用它的定时器口径）。 -->
+<script src="src/sfx.js"></script>
 <!-- [V0] 配方解释器：把 data-vfx.js 的 cast/loop/impact 翻译成原语调用。
      必须在 fx-kit.js 之后（它调 FXK.*），且在 game.js 之前（技能要用） -->
 <script src="src/vfx.js"></script>

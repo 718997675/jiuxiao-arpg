@@ -203,6 +203,11 @@ const CAM_VIEWS = {
 /* 震屏强度倍率：设置面板「镜头震动」*/
 const SHAKE_MUL = { off: 0, weak: 0.35, std: 1, strong: 1.8 };
 
+/* [B20] 技能演出层的朝向兜底：`lastMoveDir` 在刚进图、还没移动过时是 null，
+ * 而 sfx 的技能实现全都假定 `c.dir` 有 .x/.z。给一个共享常量而不是每次 new，
+ * 是因为这个兜底会在每一发技能上被读一次。 */
+const SFX_FWD = new THREE.Vector3(0, 0, 1);
+
 const Game = {
   /* three */
   renderer: null, scene: null, camera: null, clock: null, sun: null, hemi: null,
@@ -327,6 +332,18 @@ const Game = {
         FX2.shake = (amp, dur) => { this.shake = Math.max(this.shake, amp); };
       }
     } catch (e) { console.error('[FX2] 绑定失败', e); }
+    /* [B21] 首领招式运行时。它读 Game 的三个东西：playerGroup（判定要用
+     * 玩家的真实位置）、damagePlayer（88 招唯一的结算口）、shake。
+     * bind 必须晚于 fx2 —— boss-cast.js 顶层就取了 FX2.tools。 */
+    try {
+      if (typeof BossCast !== 'undefined') BossCast.bind(this);
+    } catch (e) { console.error('[BossCast] 绑定失败', e); }
+    /* [B20] 玩家侧技能演出（37 只技能的整套画法）。跟 FX2 同一个套路：
+     * 开场绑一次，之后每帧 update + sync，换图 clear。
+     * 少了 `bind` 不会报错，只会「什么都不出来」—— 所以这一步不能省。 */
+    try {
+      if (typeof SKFX !== 'undefined') SKFX.bind(this.scene, this.camera, this.renderer);
+    } catch (e) { console.error('[SKFX] 绑定失败', e); }
     // 存档地基：先做 V1→V2 迁移，再让 UI 判断有没有档可读
     try {
       if (typeof SaveManager !== 'undefined') {
@@ -2533,6 +2550,17 @@ const Game = {
     if (b && b.pos) FX2.actors.boss.pos.set(b.pos.x, 0, b.pos.z);
   },
 
+  /* [B20] 技能演出层每帧的锚点同步。
+   * 它跟 FX2 不一样：技能是**玩家侧**的，需要玩家位置 + 朝向 + 敌人列表
+   * （吸怪 / 连锁要就近找目标，`ACT.player.pos` 不喂就是原点）。
+   * 敌人只传引用、不复制 —— 每帧复制 40 只的坐标纯属浪费。 */
+  syncSfxActors() {
+    if (typeof SKFX === 'undefined' || !SKFX || typeof SKFX.sync !== 'function') return;
+    const pg = this.playerGroup;
+    if (!pg) return;
+    SKFX.sync(pg.position, pg.rotation.y || 0, this.enemies, pg, null);
+  },
+
   /* [B16] 把玩家从当前位置「拖」到 (x,z)，用 dur 秒。
    * 这是**脚本位移**，不是击退：击退是一下子给速度然后由物理衰减，
    * 而拖拽是「Boss 决定你去哪、多久到」—— 魂锁拖拽、吞咽、摆渡都用它。
@@ -2589,6 +2617,11 @@ const Game = {
        * 这两个点，不同步的话所有追踪类技能会朝原点抽。放在 FX.update 之前，
        * 让本帧的演出用本帧的位置。 */
       this.syncFx2Actors();
+      /* [B20] 技能演出层同样要在 FX.update 之前拿到本帧的位置与敌人列表 */
+      this.syncSfxActors();
+      /* [B21] 首领招式的「施法占用」逐帧递减（run() 里的 delay 是异步的，
+       * 它自己不会告诉任何人「这一招放完了没有」）。 */
+      if (typeof BossCast !== 'undefined') BossCast.update(dt);
       FX.update(dt);
       this.drawMinimapThrottled(raw);
       UI.updateSkillbar();
@@ -3868,16 +3901,40 @@ const Game = {
    * （太极的绿、解毒的青），配方默认按元素材质取色，那会把这个位的身份色冲掉。
    * 传了就用传的 —— 优先级与 `FX.ring(pos, r, color)` 的老口径一致。 */
   playSkillVfx(id, opts) {
-    if (typeof VFX === 'undefined' || !VFX || typeof VFX.playFor !== 'function') return 0;
     const o = opts || {};
     const sk = (typeof SKILLS !== 'undefined') ? SKILLS[id] : null;
     const pos = o.pos || this.playerGroup.position;
     const r = Number(o.radius);
+    const radius = (isFinite(r) && r > 0) ? r : ((sk && sk.radius) || 3);
+
+    /* [B20] 手搓实现优先。
+     * 37 只技能在 `src/sfx.js` 里有整套画法（来自 `docs/vfx-playground.html`），
+     * **有就不播配方** —— 否则同一发会被两套各画一遍，看起来是重影，
+     * 代价是双倍 draw call。
+     *
+     * 分段调用只认「起手」那一拍：sfx 的 v2 是**整只技能一次播完**（里面
+     * 自带 delay / seq 时序），命中段再补一次就是双播。`segments:['impact']`
+     * 那种调用在这里直接返回，不做事。 */
+    if (typeof SKFX !== 'undefined' && SKFX && typeof SKFX.has === 'function' && SKFX.has(id)) {
+      const segs = o.segments;
+      if (!segs || segs.indexOf('cast') >= 0) {
+        const aim = o.aim || pos;
+        SKFX.play(id, {
+          x: pos.x, z: pos.z,
+          aim: aim,
+          dir: o.dir || this.lastMoveDir || SFX_FWD,
+          tx: aim.x, tz: aim.z
+        });
+      }
+      return 1;
+    }
+
+    if (typeof VFX === 'undefined' || !VFX || typeof VFX.playFor !== 'function') return 0;
     const ctx = {
       pos: pos,
       aim: o.aim || pos,
       dir: o.dir || this.lastMoveDir || null,
-      radius: (isFinite(r) && r > 0) ? r : ((sk && sk.radius) || 3),
+      radius: radius,
       delay: o.delay || 0
     };
     if (o.color !== undefined) ctx.color = o.color;
@@ -8227,6 +8284,11 @@ const Game = {
    * 中途复位会把阶段状态和血量对不上（WBFight 没有复位入口）。
    * 世界 Boss 本来就在独立战场里，跑不到 32 米外。 */
   resetBoss(e) {
+    /* [B21] 脱战复位要把「正在放的那一招」也断掉：占用不清零的话，
+     * 玩家再走进祭坛，首领会在 _castUntil 到期前一直不出招
+     * （表现像卡住了）。已经在飞的演出不用管 —— 它会自己走完。 */
+    e._castUntil = 0;
+    e._cast = null;
     const an = e.anchor || { x: e.pos.x, z: e.pos.z };
     e.pos.x = an.x; e.pos.z = an.z;
     e.hp = e.maxHp;
@@ -8364,8 +8426,13 @@ const Game = {
       if (d > skillR) {
         e.patternCd = 1.2;
       } else {
-        e.patternCd = RND(4.5, 7.5) * (1 - e.phase * 0.12);
-        this.bossPattern(e, pp);
+        /* [B21] 先出招、再按结果定 CD。
+         * 反过来的话（先设满 CD 再出招），BossCast 一旦因为「上一招还没
+         * 演完」而拒绝，这一整轮 4.5~7.5 秒就白等了 —— 实测 25 秒只出得来
+         * 2 招，玩家看到的是一只站着发呆的首领，而《技能试验场》里它是
+         * 每 5 秒一招。没出招就 0.8 秒后重试，跟上面距离闸同一个思路。 */
+        const casted = this.bossPattern(e, pp);
+        e.patternCd = casted ? (RND(4.5, 7.5) * (1 - e.phase * 0.12)) : 0.8;
       }
     }
 
@@ -8400,6 +8467,18 @@ const Game = {
   },
 
   bossPattern(e, pp) {
+    /* [B21] 45 只守卫走**技能试验场里调好的**那 88 招（data-bosskits +
+     * boss-cast）。下面这 11 个 case 从 v1.0 就在，用的是 FX.telegraph /
+     * FX.burst 那套老特效 —— 它们和试验场里演的完全是两套东西，
+     * 玩家在试验场看到的「藤蔓追着脚下长」，游戏里打出来是一个红圈。
+     *
+     * 所以这里先交给 BossCast：45 只都有五格配招，能出招就 return。
+     * 保留老的 switch 只作兜底 —— 「配招表读不到 / 那一招炸了」时
+     * 首领不至于站着不动（哑火比难看更糟）。世界 Boss 不走这里
+     * （上面 e.wb 分支已经转给 WBFight），小怪也不走（没有 patterns）。 */
+    /* 返回值 = 「这一轮真的放出去一招了没有」。
+     * updateBossAI 靠它决定要不要把 CD 设满（见那边的注释）。 */
+    if (typeof BossCast !== 'undefined' && BossCast.tryCast(e, pp)) return true;
     const pat = PICK(e.cfg.patterns || ['slam']);
     const st = e.dmg;
     const self = e;
@@ -8565,6 +8644,8 @@ const Game = {
         break;
       }
     }
+    /* 老兜底走完了：确实放了一招（不是 BossCast 那一套，但也不是哑火） */
+    return true;
   },
 
   /* ---------------- 召唤物 ---------------- */

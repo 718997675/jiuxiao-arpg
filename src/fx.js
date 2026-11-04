@@ -1204,6 +1204,10 @@ const FX = {
      * 跟这里一致；内部会再夹一次 0.05，所以切后台回来的大 dt 不会把
      * 「0.16 秒扫完的一刀」一帧闪完。 */
     if (typeof FX2 !== 'undefined' && FX2 && typeof FX2.update === 'function') FX2.update(dt);
+    /* [B20] 玩家侧技能演出层（src/sfx.js）：37 只技能的整套画法。
+     * dt 同样是**秒**；它内部有自己的更新队列（delay / seq / 粒子池），
+     * 不推进的话技能只出第一帧、粒子停在原地。 */
+    if (typeof SKFX !== 'undefined' && SKFX && typeof SKFX.update === 'function') SKFX.update(dt);
   },
 
   removeProjectile(i) {
@@ -1257,5 +1261,16 @@ const FX = {
      * 不清的话换图后旧图坐标上的柱子 / 落石 / 冲击墙会挂在新场景里，
      * 表现是「进新图先闪一下旧图的东西」，而且再也删不掉。 */
     if (typeof FX2 !== 'undefined' && FX2 && typeof FX2.clear === 'function') FX2.clear();
+    /* [B21] 首领招式的运行时也要清。它自己有一份「谁在放哪一招」的账
+     * （e._cast / e._castUntil）和一批 delay 回调 —— 不清的话，换图之后
+     * 上一张图没放完的那一招会继续在新图坐标上炸，而那时候玩家已经不在
+     * 原地了（表现为「凭空挨一下，血条自己掉」）。 */
+    if (typeof BossCast !== 'undefined' && BossCast && typeof BossCast.clear === 'function') BossCast.clear();
+    /* [B20] 技能演出层跟着清。它挂着自己的 Group、一张 mesh 清单和一个
+     * 更新队列（含 delay / seq 的定时推进），不清的话换图后：
+     *   旧图的斧头 / 符阵 / 灵兽留在新地图坐标上，而且 updater 还在跑。
+     * 这一层比 FX2 更容易漏 —— 它的 updater 是"自己会动"的，
+     * 留在场上看起来像活的怪。 */
+    if (typeof SKFX !== 'undefined' && SKFX && typeof SKFX.clear === 'function') SKFX.clear();
   }
 };
