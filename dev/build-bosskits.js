@@ -72,7 +72,7 @@ const META_FIELDS = ['name', 'warm', 'tag', 'counter', 'rule', 'desc',
 /* 写进文件的顺序，和 META_FIELDS 是两个问题：
  * 取的时候按数据本来的样子取，写的时候按「读的人关心什么」排 ——
  * 数值在前（多疼 / 多快 / 多大），文案在后。 */
-const EMIT_ORDER = ['warm', 'mul', 'hitR', 'tag', 'kind', 'native', 'dmg', 'answer',
+const EMIT_ORDER = ['warm', 'mul', 'hitR', 'tag', 'kind', 'native', 'vert', 'dmg', 'answer',
   'rule', 'counter', 'desc'];
 
 (async () => {
@@ -162,6 +162,21 @@ const EMIT_ORDER = ['warm', 'mul', 'hitR', 'tag', 'kind', 'native', 'dmg', 'answ
 
   const skills = data.skills;
   const kit = data.kit;
+  const native = data.native || {};
+
+  /* ---- `vert`：这一招自己有没有竖向原语 ----
+   * 为什么要进表：`BossCast._lift` 会给"纯贴地"的招补一层竖向体积，
+   * 而已经长过柱子 / 石 / 墙的 25 招再补就是叠两层，还会盖掉它们本来的意思。
+   * 判据是**源码里真的出现了**那些原语，不是在表里另写一个布尔 ——
+   * 另写一份就一定会有"表说没有、代码里其实有"的那天。
+   * `nt_*` 的 run 只是个包装（转 BOSS_NATIVE.xxx.run()），要连本体一起扫。 */
+  const VERT_RE = /BFX\.(?:spikes|column|boulder|wall|blade|entity|beam)\s*\(/;
+  for (const s of skills) {
+    const nat = s.id.indexOf('nt_') === 0 ? s.id.slice(3) : null;
+    const own = String(s.run || '');
+    const body = (nat && native[nat]) ? String(native[nat].run || '') : '';
+    s.vert = VERT_RE.test(own) || VERT_RE.test(body);
+  }
 
   /* ---- 三道闸门：宁可生成失败，也不要生成一份「看起来对」的表 ----
    * （第四道在文件拼完之后：收了的字段必须真的写进文本） */
@@ -210,7 +225,6 @@ const EMIT_ORDER = ['warm', 'mul', 'hitR', 'tag', 'kind', 'native', 'dmg', 'answ
   lines.push('};');
   lines.push('');
   /* --- 45 个本命技的本体（`nt_*` 只是包装层） --- */
-  const native = data.native || {};
   lines.push('/* 45 个本命技的本体。`BOSS_SKILLS` 里那 45 条 `nt_*` 只是包装：');
   lines.push(' * 它们的 run/hit 显式转到这里（原来写的是闭包变量 `o`，搬出来之后');
   lines.push(' * `o` 不存在 —— 45 只的第 5 格会全部 ReferenceError）。 */');

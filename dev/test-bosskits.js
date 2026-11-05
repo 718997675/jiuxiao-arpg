@@ -175,6 +175,14 @@ console.log('八、结算要用的字段真的在表里');
   /* hitR 是可选字段：25 招有。但不能出现「有值却不是数」 */
   const badR = arr.filter(s => s.hitR !== undefined && typeof s.hitR !== 'number').map(s => s.id);
   ok(badR.length === 0, 'hitR 有值时必须是数字', badR);
+
+  /* `vert`：这一招自己有没有竖向原语。BossCast._lift 靠它决定要不要补一层，
+   * 所以它必须是**布尔**，而且两边都得有 —— 全 true 就是"全都自带"（判据错了），
+   * 全 false 就是"一根竖的都没有"（那 46° 俯角下又全长一样）。 */
+  const noVert = arr.filter(s => typeof s.vert !== 'boolean').map(s => s.id);
+  ok(noVert.length === 0, '每招都有 vert（布尔）', noVert);
+  const vT = arr.filter(s => s.vert === true).length;
+  ok(vT > 0 && vT < arr.length, 'vert 不是一边倒（自带 ' + vT + ' / 全靠兜底 ' + (arr.length - vT) + '）');
 }
 
 console.log('九、生成物没走散');

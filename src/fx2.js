@@ -1,5 +1,5 @@
 /* ============================================================
- * FX2 —— 怪物侧演出原语层（BFX 17 个）
+ * FX2 —— 怪物侧演出原语层（BFX 18 个）
  *
  *   ⚠️ **本文件是生成物**，别直接改：改完下次一生成就没了。
  *   源 = `docs/boss-vfx-playground.html`（那边有 51 只 Boss 可以真放一遍看效果）
@@ -1513,6 +1513,111 @@ const FX2 = (function () {
     /* 之前这里是个**什么都不做**的 `kill()`（注释写着"由自身生命周期结束"）。
      * 调用方（剑气潮）真去 kill 的时候，墙还在往前推。假的接口比没有更坏。 */
     return { kill(){ cleanup(); u.dead = true; }, get pos(){ return { x: x0 + nx * d, z: z0 + nz * d }; } };
+  };
+
+  /* ---------- 6.10 竖向体积：判定形状 → 从地里长出来的东西 ----------
+   *
+   * 解决的问题：游戏镜头是 **46° 俯角 + 12 米高**，纯贴地的东西在这个角度
+   * 只剩一圈线。2026-11-05 静态统计了 88 招：**63 招一根竖的东西都没有**
+   * （只用 zone / shock / burst / spr / decal），于是"每只都不一样"
+   * 在画面上退化成"每只都是一圈不同颜色的圈"。
+   *
+   * **这层不发明新语义**（不然又变成"全是一个模子"）：
+   *   - 形状从 `hit` 读，和判定**同一个对象** —— 圆长成一圈柱、
+   *     矩形长成两侧柱列、扇形长成前沿柱林、散射是每个落点一根；
+   *   - 高度跟尺寸挂钩，不是常数；
+   *   - 颜色由调用方给（一般是这只 Boss 的主色）。
+   * 所以两个不同形状的招拿到的竖向件天然不同，同形状的两招才需要各自的
+   * `BFX.spikes/column/boulder` 去拉开差距 —— 那 25 招已经有自己的，
+   * 生成器会给它们打 `vert:true`，这一层就跳过它们。
+   *
+   * o = { color, glow, body, h, dur, thin }
+   */
+  BFX.lift = function(hit, o = {}){
+    if(!hit) return;
+    const shape = normShape(hit);
+    const glow = o.glow != null ? o.glow : (o.color != null ? o.color : 0xff8a4c);
+    /* 实体色**从主色压暗**取，不用写死的近黑：写死的话 45 只长得一模一样，
+     * 压暗主色则是"这只的石柱"，颜色仍然是它的。 */
+    const body = o.body != null ? o.body
+               : new THREE.Color(glow).multiplyScalar(0.30).getHex();
+    const dur  = o.dur  != null ? o.dur  : 1.5;
+    const thin = o.thin != null ? o.thin : 1;      /* >1 更稀，<1 更密 */
+    /* 高度跟尺寸走，但封顶 —— 10 米外一根 6 米的柱子会顶到画面上缘 */
+    const H = (sz)=>{
+      const base = o.h != null ? o.h : (0.95 + (sz || 3) * 0.17);
+      return Math.min(3.6, Math.max(0.85, base));
+    };
+    const put = (px, pz, sz)=> BFX.spikes({
+      x:px, z:pz, n:1, r:.34, h:H(sz), color:body, glow, dur,
+      tilt:.24, thick:1.15
+    });
+    const x0 = hit.x || 0, z0 = hit.z || 0;
+
+    if(shape === 'circle'){
+      const r = hit.r || 2;
+      const n = Math.max(6, Math.round(11 * thin));
+      for(let i=0;i<n;i++){
+        const a = i/n*6.283 + Math.random()*0.12;
+        put(x0 + Math.cos(a)*r*0.86, z0 + Math.sin(a)*r*0.86, r);
+      }
+    }
+    else if(shape === 'ring'){
+      const r = hit.r || 3, r0 = hit.r0 != null ? hit.r0 : r*0.55;
+      const n = Math.max(5, Math.round(9 * thin));
+      for(let i=0;i<n;i++){
+        const a = i/n*6.283;
+        put(x0 + Math.cos(a)*r*0.93, z0 + Math.sin(a)*r*0.93, r);
+      }
+      /* 内圈错开半格：两圈柱子读作"环"，一圈只读作"圆" */
+      for(let i=0;i<n;i++){
+        const a = (i + .5)/n*6.283;
+        put(x0 + Math.cos(a)*r0*0.75, z0 + Math.sin(a)*r0*0.75, r*0.7);
+      }
+    }
+    else if(shape === 'rect'){
+      const len = hit.len || 8, wd = hit.w || 2, ang = hit.angle || 0;
+      /* 沿长轴两侧各一列 —— 中轴一律不放：中间那根会挡住"这是条通道"的读法 */
+      const step = Math.max(1.7, len/6) * thin;
+      const px = Math.cos(ang), pz = -Math.sin(ang);      /* 垂直于朝向 */
+      let t = 0.6;
+      for(; t < len; t += step){
+        const cx = x0 + Math.sin(ang)*t, cz = z0 + Math.cos(ang)*t;
+        put(cx + px*wd*0.46, cz + pz*wd*0.46, wd*1.6);
+        put(cx - px*wd*0.46, cz - pz*wd*0.46, wd*1.6);
+      }
+    }
+    else if(shape === 'sector'){
+      const r = hit.r || 4, ang = hit.angle || 0;
+      const span = hit.span != null ? hit.span : Math.PI*0.6;
+      const n = Math.max(4, Math.round(8 * thin));
+      for(let i=0;i<n;i++){
+        const a = ang - span/2 + span*(i/(n-1));
+        put(x0 + Math.sin(a)*r*0.88, z0 + Math.cos(a)*r*0.88, r);
+      }
+      /* 两条边各补一根，扇形的"角"才立得住 */
+      put(x0 + Math.sin(ang - span/2)*r*0.45, z0 + Math.cos(ang - span/2)*r*0.45, r*0.7);
+      put(x0 + Math.sin(ang + span/2)*r*0.45, z0 + Math.cos(ang + span/2)*r*0.45, r*0.7);
+    }
+    else if(shape === 'scatter'){
+      (hit.pts || []).forEach(p=>{
+        put(p.x, p.z, (p.r || 1.4)*1.5);
+        put(p.x + (Math.random()-.5)*(p.r||1.4), p.z + (Math.random()-.5)*(p.r||1.4), (p.r||1.4)*1.1);
+      });
+    }
+    else if(shape === 'self'){
+      /* 自身增益没有落点，但**不等于不用立起来**：本命技里不少是 self
+       * （藤蔓缠身 / 战吼 / 附身），一根竖向都没有的话，最贵的那一格
+       * 反而最像"脚下亮了一下"。围自己立一圈矮柱，读作"它正在起势"。 */
+      const bx = hit.x != null ? hit.x : ACT.boss.pos.x;
+      const bz = hit.z != null ? hit.z : ACT.boss.pos.z;
+      const r = hit.r || 2.0;
+      const n = Math.max(5, Math.round(7 * thin));
+      for(let i=0;i<n;i++){
+        const a = i/n*6.283;
+        put(bx + Math.cos(a)*r*0.9, bz + Math.sin(a)*r*0.9, r*0.8);
+      }
+    }
   };
 
   /* ---------- 形状归一 ---------- */

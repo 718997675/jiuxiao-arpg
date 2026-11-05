@@ -22,7 +22,9 @@ const ok = (c, m, d) => {
 };
 
 const PRIMS = ['spr', 'burst', 'shock', 'zone', 'column', 'spikes', 'boulder', 'blade',
-  'wave', 'decal', 'ribbon', 'arcSlash', 'trail', 'entity', 'pool', 'beam', 'wall'];
+  'wave', 'decal', 'ribbon', 'arcSlash', 'trail', 'entity', 'pool', 'beam', 'wall',
+  /* B23：竖向体积。判定形状 → 从地里长出来的柱子（46° 俯角下唯一读得出的高度） */
+  'lift'];
 
 console.log('\n【1】生成物与特效台同步');
 try {
@@ -37,7 +39,7 @@ const fx2 = rd('src/fx2.js');
  * 不剥的话那条纪律永远红（第一次就是这么红的）。 */
 const code = fx2.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
 
-console.log('\n【2】17 个原语一个不少');
+console.log('\n【2】18 个原语一个不少');
 const found = [...fx2.matchAll(/BFX\.([a-zA-Z]+)\s*=/g)].map(m => m[1]);
 const miss = PRIMS.filter(k => found.indexOf(k) < 0);
 ok(miss.length === 0, 'BFX 原语齐（' + found.length + ' 个）', miss);

@@ -583,7 +583,33 @@ const BossCast = {
       e._cast = null;
       return false;
     }
+    /* ---------------- 竖向体积兜底 ----------------
+     * 2026-11-05 静态统计：88 招里 **63 招一根竖的东西都没有**，
+     * 只用 zone / shock / burst / spr / decal —— 46° 俯角下它们全长一样，
+     * 都是"一圈不同颜色的圈"。这一层在**命中那一拍**按 hit() 的形状
+     * 长出柱子（圆 → 环柱、矩形 → 两侧柱列、扇形 → 前沿柱林、散射 → 每点一根）。
+     *
+     * 两条例外：
+     *   1. 标了 vert 的 25 招自己已经有 column / spikes / boulder / … —— 再长一层是叠，
+     *      而且会盖掉它们各自的意思（生成器按源码算这个位，见 build-bosskits）。
+     *   2. self 形状没有落点，lift 里本来就不处理。 */
+    this._lift(e, sk, id);
     return true;
+  },
+
+  /* 竖向体积：单独一个方法，出了事只丢这一层，不影响已经放出去的招 */
+  _lift(e, sk, id) {
+    if (!(typeof BFX !== 'undefined' && BFX && typeof BFX.lift === 'function')) return;
+    if (sk.vert || typeof sk.hit !== 'function') return;
+    const warm = sk.warm != null ? sk.warm : .7;
+    const glow = (e.cfg && e.cfg.glow) || 0xff8a4c;
+    delay(warm, () => {
+      try {
+        BFX.lift(sk.hit(), { glow, dur: 1.5 });
+      } catch (err) {
+        console.warn('[BossCast] ' + id + ' 的竖向层没长出来', err);
+      }
+    });
   },
 
   /* 调试用：这一轮会放哪一招（面板 / 探针读） */

@@ -2771,6 +2771,7 @@ const BOSS_SKILLS = {
     warm: 0.55,
     mul: 0.5,
     tag: '持续区',
+    vert: false,
     counter: '三片云同时落下，只有中间那条缝能站',
     hit: function(){ return { shape:'circle', x:DUMMY.pos.x, z:DUMMY.pos.z, r:R(3.0) }; },
     run: function(){
@@ -2805,6 +2806,7 @@ const BOSS_SKILLS = {
     warm: 0.5,
     mul: 0.45,
     tag: '持续吸血',
+    vert: false,
     counter: '链子连着你每秒回血，拉开 7 码或绕到它背后才断',
     hit: function(){ return { shape:'circle', x:DUMMY.pos.x, z:DUMMY.pos.z, r:2.0 }; },
     run: function(){
@@ -2843,6 +2845,7 @@ const BOSS_SKILLS = {
     warm: 0.8,
     mul: 1.2,
     tag: '可破坏',
+    vert: true,
     counter: '图腾给周围回血、5 秒后炸开，优先打掉它（判定圈就是爆炸范围）',
     hit: function(){ return { shape:'circle', x:DUMMY.pos.x, z:DUMMY.pos.z, r:R(6) }; },
     run: function(){
@@ -2893,6 +2896,7 @@ const BOSS_SKILLS = {
     warm: 0.7,
     mul: 1,
     tag: '绕背',
+    vert: false,
     counter: '正面 120° 伤害 −80%，转身要 1.2 秒 —— 贴身绕到背后打',
     hit: function(){ return { shape:'sector', x:BOSS.pos.x, z:BOSS.pos.z, r:R(6.8), angle:aimAngle(), span:Math.PI*0.66 }; },
     run: function(){
@@ -2947,6 +2951,7 @@ const BOSS_SKILLS = {
     warm: 1.1,
     mul: 1.2,
     tag: '视线',
+    vert: false,
     counter: '扇形视线扫过，被照到定身 2 秒 —— 绕到它身后或离开扇面',
     hit: function(){ return { shape:'sector', x:BOSS.pos.x, z:BOSS.pos.z, r:R(9), angle:aimAngle(), span:Math.PI*0.5 }; },
     run: function(){
@@ -2994,6 +2999,7 @@ const BOSS_SKILLS = {
     warm: 0.7,
     mul: 0.6,
     tag: '位移',
+    vert: true,
     counter: '锁链把你往 Boss 拖，同时脚下落腐蚀圈 —— 反向跑 + 别站在圈里',
     hit: function(){ return { shape:'circle', x:BOSS.pos.x, z:BOSS.pos.z, r:R(4.2) }; },
     run: function(){
@@ -3032,6 +3038,7 @@ const BOSS_SKILLS = {
     warm: 0.9,
     mul: 1.1,
     tag: '分割场地',
+    vert: true,
     counter: '两道火墙横穿场地并停留 4 秒，只能从缺口绕 —— 别被夹在中间',
     hit: function(){ return { shape:'rect', x:BOSS.pos.x, z:BOSS.pos.z, len:20, w:R(1.8), angle:aimAngle() }; },
     run: function(){
@@ -3078,6 +3085,7 @@ const BOSS_SKILLS = {
     warm: 0.8,
     mul: 0.8,
     tag: '控场',
+    vert: false,
     counter: '被冻住要立刻连点（模拟），2.5 秒内挣脱；解慢了下一次就是处决',
     hit: function(){ return { shape:'circle', x:DUMMY.pos.x, z:DUMMY.pos.z, r:R(3.4) }; },
     run: function(){
@@ -3129,6 +3137,7 @@ const BOSS_SKILLS = {
     warm: 0.7,
     mul: 0,
     tag: '限时目标',
+    vert: false,
     counter: '三个卵囊 6 秒后孵出小蛛，优先转火打掉（各有独立小圈）',
     hit: function(){ return { shape:'circle', x:DUMMY.pos.x, z:DUMMY.pos.z, r:R(2.4) }; },
     run: function(){
@@ -3181,6 +3190,7 @@ const BOSS_SKILLS = {
     warm: 0.9,
     mul: 1.3,
     tag: '强制位移',
+    vert: true,
     counter: '被传送到场地边缘，原位置留一个爆炸圈 —— 传送后立刻再走一步',
     hit: function(){ return { shape:'circle', x:DUMMY.pos.x, z:DUMMY.pos.z, r:R(3.2) }; },
     run: function(){
@@ -3218,6 +3228,7 @@ const BOSS_SKILLS = {
     warm: 0.9,
     mul: 1.4,
     tag: '领地',
+    vert: true,
     counter: '十二把剑围成剑域，圈内每 0.8 秒吃剑气 —— 要么出去，要么贴边躲剑锋',
     hit: function(){ return { shape:'ring', x:BOSS.pos.x, z:BOSS.pos.z, r:R(7.5), r0:0.4 }; },
     run: function(){
@@ -3254,6 +3265,7 @@ const BOSS_SKILLS = {
     warm: 0.9,
     mul: 0.7,
     tag: '辨真',
+    vert: true,
     counter: '三个分身放同样的小弹幕，真身胸口有核 —— 打分身只会浪费时间',
     hit: function(){ return { shape:'circle', x:BOSS.pos.x, z:BOSS.pos.z, r:R(4.0) }; },
     run: function(){
@@ -3346,6 +3358,7 @@ const BOSS_SKILLS = {
     warm: 0.9,
     mul: 1,
     tag: '读招/克制',
+    vert: false,
     counter: '它的招牌招有后摇，收招后 2.5~4 秒是破绽（伤害 ×1.5）；属性上有一个 −60 的洞，换对元素再打 ×1.6',
     hit: function(){
     /* 判定 = 那招本身的范围（拿它自己的 stagger.skill 当招牌招） */
@@ -3409,6 +3422,7 @@ const BOSS_SKILLS = {
     warm: 1,
     mul: 1,
     tag: '限时清场',
+    vert: true,
     counter: '六个裂口同时开，爬出来的东西会一直变多 —— 拖不是策略',
     hit: function(){
     const n = N(6), rr = R(8.2), pts = [];
@@ -3455,6 +3469,7 @@ const BOSS_SKILLS = {
     warm: 1.2,
     mul: 1.4,
     tag: '连续落点',
+    vert: true,
     counter: '七个落点铺满场地，中间有缝 —— 别跑，走缝',
     hit: function(){
     const n = N(7), pts = [];
@@ -3489,6 +3504,7 @@ const BOSS_SKILLS = {
     warm: 0.9,
     mul: 1.1,
     tag: '可破坏',
+    vert: false,
     counter: '场边那面鼓会一直叫兽群来 —— 先砸鼓（判定圈在鼓上，不在 Boss 上）',
     hit: function(){
     const a = Math.random()*6.283, rr = R(7.5);
@@ -3548,6 +3564,7 @@ const BOSS_SKILLS = {
     warm: 1.1,
     mul: 1.2,
     tag: '安全区收缩',
+    vert: false,
     counter: '水每 20 秒涨一圈，安全区一直在缩 —— 泡在水里持续掉血，逼你往前打',
     hit: function(){
     const rOuter = R(13);
@@ -3626,6 +3643,7 @@ const BOSS_SKILLS = {
     warm: 0.7,
     mul: 1,
     tag: '推离',
+    vert: false,
     counter: '风一直把人往外推，越站越远 —— 逆着风走位，别只顾躲招',
     hit: function(){
     /* 风的判定是「被推到边缘之外」：外圈刮伤 */
@@ -3687,6 +3705,7 @@ const BOSS_SKILLS = {
     warm: 0.85,
     mul: 1.5,
     hitR: 4.6,
+    vert: false,
     hit: ()=>({ shape:'circle', x:DUMMY.pos.x, z:DUMMY.pos.z, r:R(4.6) }),
     run: function(){
     const tgt = V3(DUMMY.pos.x, 0, DUMMY.pos.z);
@@ -3714,6 +3733,7 @@ const BOSS_SKILLS = {
     warm: 0.7,
     mul: 1.1,
     hitR: 2.6,
+    vert: true,
     hit: ()=>({ shape:'circle', x:DUMMY.pos.x, z:DUMMY.pos.z, r:R(2.6) }),
     run: function(){
     const n = 3;
@@ -3740,6 +3760,7 @@ const BOSS_SKILLS = {
     warm: 0.35,
     mul: 0.8,
     hitR: 0.3,
+    vert: false,
     hit: ()=>({ shape:'circle', x:BOSS.pos.x, z:BOSS.pos.z, r:1.5 }),
     run: function(){
     const n = N(12);
@@ -3785,6 +3806,7 @@ const BOSS_SKILLS = {
     warm: 0.55,
     mul: 1.3,
     hitR: 1.3,
+    vert: false,
     hit: function(){
     const a = aimAngle();
     return { shape:'rect', x:BOSS.pos.x, z:BOSS.pos.z, len:aimDist()+3.2, w:R(1.3), angle:a };
@@ -3827,6 +3849,7 @@ const BOSS_SKILLS = {
     warm: 0.7,
     mul: 0,
     hitR: 1.6,
+    vert: true,
     hit: ()=>({ shape:'circle', x:BOSS.pos.x, z:BOSS.pos.z, r:5 }),
     run: function(){
     const n = N(2) + 1;
@@ -3861,6 +3884,7 @@ const BOSS_SKILLS = {
     warm: 0.9,
     mul: 1.2,
     hitR: 2.2,
+    vert: true,
     hit: ()=>({ shape:'circle', x:DUMMY.pos.x, z:DUMMY.pos.z, r:R(2.2) }),
     run: function(){
     for(let i=0;i<5;i++){
@@ -3882,6 +3906,7 @@ const BOSS_SKILLS = {
     warm: 0.9,
     mul: 1.6,
     hitR: 8.5,
+    vert: false,
     hit: ()=>({ shape:'circle', x:BOSS.pos.x, z:BOSS.pos.z, r:R(8.5) }),
     run: function(){
     const c = V3(BOSS.pos.x, 0, BOSS.pos.z);
@@ -3927,6 +3952,7 @@ const BOSS_SKILLS = {
     warm: 0.5,
     mul: 0.4,
     hitR: 9.2,
+    vert: false,
     hit: ()=>({ shape:'circle', x:BOSS.pos.x, z:BOSS.pos.z, r:R(9.2) }),
     run: function(){
     const c = V3(BOSS.pos.x, 0, BOSS.pos.z);
@@ -3989,6 +4015,7 @@ const BOSS_SKILLS = {
     warm: 0.8,
     mul: 1.1,
     hitR: 7,
+    vert: true,
     hit: ()=>({ shape:'circle', x:BOSS.pos.x, z:BOSS.pos.z, r:R(7) }),
     run: function(){
     const c = V3(BOSS.pos.x, 0, BOSS.pos.z);
@@ -4035,6 +4062,7 @@ const BOSS_SKILLS = {
     warm: 0.8,
     mul: 0.9,
     hitR: 2.2,
+    vert: true,
     hit: function(){
     const a = aimAngle();
     return { shape:'rect', x:BOSS.pos.x, z:BOSS.pos.z, len:15, w:R(4.4), angle:a };
@@ -4069,6 +4097,7 @@ const BOSS_SKILLS = {
     warm: 0.7,
     mul: 0.6,
     hitR: 14,
+    vert: true,
     hit: ()=>({ shape:'circle', x:DUMMY.pos.x, z:DUMMY.pos.z, r:2.2 }),
     run: function(){
     const warm = WM(.7);
@@ -4096,6 +4125,7 @@ const BOSS_SKILLS = {
     warm: 1.1,
     mul: 1.4,
     hitR: 3.4,
+    vert: true,
     hit: ()=>({ shape:'circle', x:DUMMY.pos.x, z:DUMMY.pos.z, r:R(3.4) }),
     run: function(){
     for(let i=0;i<4;i++){
@@ -4122,6 +4152,7 @@ const BOSS_SKILLS = {
     warm: 0.8,
     mul: 0.9,
     hitR: 2.4,
+    vert: true,
     hit: ()=>({ shape:'circle', x:DUMMY.pos.x, z:DUMMY.pos.z, r:R(2.4) }),
     run: function(){
     for(let i=0;i<10;i++){
@@ -4144,6 +4175,7 @@ const BOSS_SKILLS = {
     mul: 1.7,
     hitR: 8,
     kind: 'sector',
+    vert: true,
     hit: function(){ return { shape:'sector', x:BOSS.pos.x, z:BOSS.pos.z, r:R(8), angle:aimAngle(), span:Math.PI*0.62 }; },
     run: function(){
     const a = aimAngle(), span = Math.PI*0.62, r = R(8), warm = WM(1.1);
@@ -4176,6 +4208,7 @@ const BOSS_SKILLS = {
     mul: 1.8,
     hitR: 2.2,
     kind: 'rect',
+    vert: false,
     hit: function(){ const a = aimAngle(); return { shape:'rect', x:BOSS.pos.x, z:BOSS.pos.z, len:aimDist()+2.5, w:R(2.2), angle:a }; },
     run: function(){
     const a = aimAngle(), hit = this.hit(), warm = WM(1.2);
@@ -4245,6 +4278,7 @@ const BOSS_SKILLS = {
     mul: 1.5,
     hitR: 7.5,
     kind: 'sector',
+    vert: false,
     hit: function(){ return { shape:'sector', x:BOSS.pos.x, z:BOSS.pos.z, r:R(7.5), angle:aimAngle(), span:Math.PI*0.9 }; },
     run: function(){
     const a = aimAngle(), r = R(7.5), hit = this.hit(), warm = WM(.9);
@@ -4280,6 +4314,7 @@ const BOSS_SKILLS = {
     mul: 1.6,
     hitR: 6.5,
     kind: 'circle',
+    vert: true,
     hit: function(){ return { shape:'circle', x:DUMMY.pos.x, z:DUMMY.pos.z, r:R(6.5) }; },
     run: function(){
     const c = V3(DUMMY.pos.x, 0, DUMMY.pos.z);
@@ -4316,6 +4351,7 @@ const BOSS_SKILLS = {
     mul: 1.4,
     hitR: 1.8,
     kind: 'rect',
+    vert: true,
     hit: function(){ const a = aimAngle(); return { shape:'rect', x:BOSS.pos.x, z:BOSS.pos.z, len:aimDist()+3, w:R(3.6), angle:a }; },
     run: function(){
     const a = aimAngle(), hit = this.hit(), warm = WM(1.0);
@@ -4361,6 +4397,7 @@ const BOSS_SKILLS = {
     mul: 1.3,
     hitR: 9,
     kind: 'ring',
+    vert: true,
     hit: function(){ return { shape:'circle', x:DUMMY.pos.x, z:DUMMY.pos.z, r:R(9) }; },
     run: function(){
     const warm = WM(1.0);
@@ -4407,6 +4444,7 @@ const BOSS_SKILLS = {
     mul: 1.9,
     hitR: 7.5,
     kind: 'sector',
+    vert: false,
     hit: function(){ return { shape:'sector', x:BOSS.pos.x, z:BOSS.pos.z, r:R(7.5), angle:aimAngle(), span:Math.PI*0.7 }; },
     run: function(){
     const a = aimAngle(), r = R(7.5), hit = this.hit(), warm = WM(1.0);
@@ -4462,6 +4500,7 @@ const BOSS_SKILLS = {
     mul: 1.5,
     hitR: 8,
     kind: 'ring',
+    vert: true,
     hit: function(){ return { shape:'circle', x:BOSS.pos.x, z:BOSS.pos.z, r:R(8) }; },
     run: function(){
     const c = V3(BOSS.pos.x, 0, BOSS.pos.z);
@@ -4504,6 +4543,7 @@ const BOSS_SKILLS = {
     mul: 1.3,
     hitR: 5,
     kind: 'circle',
+    vert: true,
     hit: function(){ return { shape:'circle', x:DUMMY.pos.x, z:DUMMY.pos.z, r:R(5) }; },
     run: function(){
     const c = V3(DUMMY.pos.x, 0, DUMMY.pos.z);
@@ -4560,6 +4600,7 @@ const BOSS_SKILLS = {
     mul: 1.7,
     hitR: 8,
     kind: 'rect',
+    vert: true,
     hit: function(){ const a = aimAngle(); return { shape:'rect', x:BOSS.pos.x, z:BOSS.pos.z, len:16, w:R(8.2), angle:a }; },
     run: function(){
     const a = aimAngle(), hit = this.hit(), warm = WM(1.1);
@@ -4599,6 +4640,7 @@ const BOSS_SKILLS = {
     mul: 2,
     hitR: 6,
     kind: 'ring',
+    vert: true,
     hit: function(){ return { shape:'circle', x:DUMMY.pos.x, z:DUMMY.pos.z, r:R(6) }; },
     run: function(){
     const c = V3(DUMMY.pos.x, 0, DUMMY.pos.z);
@@ -4647,6 +4689,7 @@ const BOSS_SKILLS = {
     mul: 2.2,
     hitR: 9.5,
     kind: 'ring',
+    vert: true,
     hit: function(){ return { shape:'ring', x:DUMMY.pos.x, z:DUMMY.pos.z, r:R(9.5), r0:R(2.2) }; },
     run: function(){
     const c = V3(DUMMY.pos.x, 0, DUMMY.pos.z);
@@ -4727,6 +4770,7 @@ const BOSS_SKILLS = {
     tag: '本命 · 藤蔓一路追着你爬',
     kind: '藤蔓（会生长的带子）',
     native: 'treeking',
+    vert: false,
     dmg: 'ramp · 绑得越久越疼',
     answer: '一直跑，不能停',
     counter: '藤蔓从它脚下长出来，**一直朝你爬**。绑住的时间越长越疼 —— 停一下就输',
@@ -4741,6 +4785,7 @@ const BOSS_SKILLS = {
     tag: '本命 · 三只绕着你飞',
     kind: '飞行的实体 ×3（会绕圈）',
     native: 'batking',
+    vert: true,
     dmg: 'thresh · 撞满 5 层引爆',
     answer: '被撞了先退开，等层数掉',
     counter: '三只蝙蝠绕着你飞，撞一下叠一层**回声** —— 叠到 5 层一起炸。挨一下不要紧，接着挨才要命',
@@ -4755,6 +4800,7 @@ const BOSS_SKILLS = {
     tag: '本命 · 左右包夹',
     kind: '两路实体（从两翼切进来）',
     native: 'chief',
+    vert: true,
     dmg: 'crush · 越靠正中夹得越狠',
     answer: '往一侧冲出去',
     counter: '两路狼从**左右两翼**包过来 —— 站在正中间是被夹死的那个位置',
@@ -4769,6 +4815,7 @@ const BOSS_SKILLS = {
     tag: '本命 · 石头挡冲撞',
     kind: '落下的巨石（变成掩体）',
     native: 'golemking',
+    vert: true,
     dmg: 'burst · 冲撞撞上就是满伤',
     answer: '躲到石头后面',
     counter: '三块巨石砸下来留在场上，**它们是掩体** —— 它冲过来时，站在石头后面',
@@ -4783,6 +4830,7 @@ const BOSS_SKILLS = {
     tag: '本命 · 壳留在原地',
     kind: '假目标（一个和本体一样的壳）',
     native: 'snakequeen',
+    vert: false,
     dmg: 'true · 背面吃满、正面减半',
     answer: '转身',
     counter: '蛇皮留在原地继续喷毒，**本体在你背后** —— 背对它，伤害翻倍',
@@ -4797,6 +4845,7 @@ const BOSS_SKILLS = {
     tag: '本命 · 三面幡连着它',
     kind: '三面可拆的经幡 + 三条光带',
     native: 'boneabbot',
+    vert: true,
     dmg: 'true · 不拆就穿盾',
     answer: '先去拆幡',
     counter: '三面经幡同时念，四条光带连到它身上 —— **不拆掉就穿盾**，躲是躲不掉的',
@@ -4811,6 +4860,7 @@ const BOSS_SKILLS = {
     tag: '本命 · 影子踩着你的脚',
     kind: '跟着你的影子（attach）',
     native: 'ghostlord',
+    vert: false,
     dmg: 'exec · 重叠越久，按已损血结算',
     answer: '踩到光里甩掉它',
     counter: '影子贴在你脚下跟着走 —— 躲不开。**走到光斑上**才会被钉住',
@@ -4825,6 +4875,7 @@ const BOSS_SKILLS = {
     tag: '本命 · 三道墙，缺口错开',
     kind: '推进的墙 ×3（带缺口）',
     native: 'firegeneral',
+    vert: true,
     dmg: 'multi · 每撞一道再加一档',
     answer: '走 Z 字穿三道缺口',
     counter: '三道火墙从远到近依次推来，**缺口一个比一个偏** —— 走 Z 字',
@@ -4839,6 +4890,7 @@ const BOSS_SKILLS = {
     tag: '本命 · 沿脚印炸回来',
     kind: '一串结冰的脚印（trail）',
     native: 'icequeen',
+    vert: true,
     dmg: 'multi · 串上踩了几个就挨几段',
     answer: '拐弯',
     counter: '冰晶结在**你走过的路上**，0.9 秒后沿这串一路炸回来 —— 直线跑必中，拐弯就断',
@@ -4853,6 +4905,7 @@ const BOSS_SKILLS = {
     tag: '本命 · 六条丝在转',
     kind: '旋转的丝（beam ×6）',
     native: 'spidermother',
+    vert: true,
     dmg: 'dot · 蹭到就中毒，一直掉',
     answer: '站住，卡在两根丝中间',
     counter: '六条丝从中心射出去，**慢慢转** —— 这里停住才是对的：跟着丝跑一定蹭上',
@@ -4867,6 +4920,7 @@ const BOSS_SKILLS = {
     tag: '本命 · 裂缝会分叉',
     kind: '分叉的裂缝（trail，留在场上）',
     native: 'magmalord',
+    vert: false,
     dmg: 'ramp · 站在裂缝上持续加深',
     answer: '离裂缝远一点',
     counter: '裂缝从它脚下长出来，**会分叉、一直在延长** —— 站上去就一直加伤',
@@ -4881,6 +4935,7 @@ const BOSS_SKILLS = {
     tag: '本命 · 看不远，还被风推',
     kind: '视野压制 + 持续推力（无落点）',
     native: 'ashwarden',
+    vert: false,
     dmg: 'dot · 每 0.6 秒一点，不致命但一直掉',
     answer: '逆着风走',
     counter: '全场起灰，**视野只剩 10 米**，风一直把你往一侧推 —— 得逆着风走',
@@ -4895,6 +4950,7 @@ const BOSS_SKILLS = {
     tag: '本命 · 躲在小的里面',
     kind: '假目标 ×4（其中一个是它）',
     native: 'flamewraith',
+    vert: false,
     dmg: 'reflect · 打错目标反噬',
     answer: '只打变红的那只',
     counter: '它钻进四只里的一只 —— **那只才是本体**，打别的是反噬',
@@ -4909,6 +4965,7 @@ const BOSS_SKILLS = {
     tag: '本命 · 两圈反向转',
     kind: '两圈环绕的火球（orbit）',
     native: 'flameemperor',
+    vert: false,
     dmg: 'burst · 每次擦到一下',
     answer: '跟着转，卡在两道之间',
     counter: '两圈天火**反向**旋转，第二圈错开半格 —— 跟着转才卡得住缝',
@@ -4923,6 +4980,7 @@ const BOSS_SKILLS = {
     tag: '本命 · 绳索一直在拽',
     kind: '锁链（beam，跟着你）',
     native: 'ferryman',
+    vert: true,
     dmg: 'drain · 拖到身边就吸你的血',
     answer: '一直往外走',
     counter: '一条引魂索连着你，**一直在往它那边拽** —— 一停下来就被拖过去',
@@ -4937,6 +4995,7 @@ const BOSS_SKILLS = {
     tag: '本命 · 十六柄从外面飞进来',
     kind: '飞行的剑 ×16（实体，带轨迹）',
     native: 'swordlord',
+    vert: true,
     dmg: 'burst · 撞上一柄算一柄',
     answer: '往缝里钻，别往外跑',
     counter: '十六柄剑从场地边缘**飞进来** —— 往外跑正好撞上，要往缝里钻',
@@ -4951,6 +5010,7 @@ const BOSS_SKILLS = {
     tag: '本命 · 骨线连着，绕柱断',
     kind: '骨线（trail，跟到你脚下）',
     native: 'marrowlord',
+    vert: false,
     dmg: 'pct · 每 0.5 秒抽当前生命 4%',
     answer: '绕到石柱后面',
     counter: '一条骨线连着你，**每半秒抽一次当前生命** —— 绕到石柱后面，线才会断',
@@ -4965,6 +5025,7 @@ const BOSS_SKILLS = {
     tag: '本命 · 被贴上就灰技能',
     kind: '贴身的暗环（attach）',
     native: 'riverwraith',
+    vert: true,
     dmg: 'disable · 随机一格技能灰 4 秒',
     answer: '别让它贴身',
     counter: '被它贴上，**随机一个技能灰掉 4 秒** —— 这一招不疼，但会让你少一格',
@@ -4979,6 +5040,7 @@ const BOSS_SKILLS = {
     tag: '本命 · 一圈蟒身往里收',
     kind: '盘成一圈的蟒身（trail 闭环）',
     native: 'abysswyrm',
+    vert: false,
     dmg: 'crush · 越靠外越疼',
     answer: '往里站',
     counter: '蟒身沿场边盘成一圈，**慢慢收紧** —— 可站的地方越来越小，越靠外越疼',
@@ -4993,6 +5055,7 @@ const BOSS_SKILLS = {
     tag: '本命 · 站进圈里才活',
     kind: '反向判定圈（只在圈内安全）',
     native: 'yellowspring',
+    vert: false,
     dmg: 'exec · 圈外按已损血处决',
     answer: '主动走进去',
     counter: '地上写一道判词，**站在圈里的是活人** —— 别的招都教你躲，这一招教你走进去',
@@ -5007,6 +5070,7 @@ const BOSS_SKILLS = {
     tag: '本命 · 三种形态轮换',
     kind: '形态轮换（环 / 扇 / 散）',
     native: 'chaos',
+    vert: false,
     dmg: 'burst · 按当前形态结算',
     answer: '先认形态，再决定方向',
     counter: '每 3 秒换一个形态（环 / 扇 / 散）—— **认错了就躲错方向**',
@@ -5021,6 +5085,7 @@ const BOSS_SKILLS = {
     tag: '本命 · 缺口每 0.9 秒换位',
     kind: '一圈剑（缺口在转）',
     native: 'swordguardian',
+    vert: false,
     dmg: 'burst · 撞到剑刃',
     answer: '跟着缺口转',
     counter: '一圈剑插在四周，只有一处缺口 —— **缺口每 0.9 秒换一个位置**',
@@ -5035,6 +5100,7 @@ const BOSS_SKILLS = {
     tag: '本命 · 整面墙，一个洞',
     kind: '一面推进的墙（洞在动）',
     native: 'bladelord',
+    vert: true,
     dmg: 'multi · 每被扫一次加一档',
     answer: '追着那个洞跑',
     counter: '一整面剑气墙从一侧推到另一侧，**墙上只有一个洞** —— 而洞在动',
@@ -5049,6 +5115,7 @@ const BOSS_SKILLS = {
     tag: '本命 · 一条线，三秒',
     kind: '一条极细的线（beam 蓄力）',
     native: 'swordemperor',
+    vert: false,
     dmg: 'true · 穿盾满伤',
     answer: '看见线就离开它一米',
     counter: '蓄力三秒，地上只有**一条头发丝粗的红线** —— 找不到它，就躲不掉',
@@ -5063,6 +5130,7 @@ const BOSS_SKILLS = {
     tag: '本命 · 云一块块塌',
     kind: '会消失的地块（pool 逐个塌）',
     native: 'cloudwarden',
+    vert: false,
     dmg: 'fall · 站上去直接掉下去',
     answer: '记住哪几块还在',
     counter: '九块云**一块块塌掉，塌过的永远不能站** —— 可站的面只会越来越小',
@@ -5077,6 +5145,7 @@ const BOSS_SKILLS = {
     tag: '本命 · 扇形光柱绕场转',
     kind: '旋转的扇面光柱',
     native: 'heavenguard',
+    vert: false,
     dmg: 'burn · 扫到持续烧',
     answer: '跟在它背面走',
     counter: '一道扇面光柱绕场旋转，**扫到就一直烧** —— 跟在它背面走',
@@ -5091,6 +5160,7 @@ const BOSS_SKILLS = {
     tag: '本命 · 砸下来变柱子',
     kind: '落下的玉玺（留成石柱）',
     native: 'jadeemperor',
+    vert: false,
     dmg: 'burst · 砸中 + 撞柱破防',
     answer: '把柱子留在它冲锋的路上',
     counter: '玉玺砸下来会**留在场上变成柱子** —— 让它撞上去，它就破防三秒',
@@ -5105,6 +5175,7 @@ const BOSS_SKILLS = {
     tag: '本命 · 看轨迹，不是看地面',
     kind: '划天的陨星（实体，带轨迹）',
     native: 'starlord',
+    vert: true,
     dmg: 'burst · 落点满伤 + 冲击波',
     answer: '读天上的轨迹',
     counter: '陨星拖着一条**看得见的轨迹**划过天，轨迹的终点才是落点 —— 抬头读它，别低头找圈',
@@ -5119,6 +5190,7 @@ const BOSS_SKILLS = {
     tag: '本命 · 它会学你走',
     kind: '模仿你的分身（split）',
     native: 'mirrordemon',
+    vert: false,
     dmg: 'reflect · 站它旁边就被反噬',
     answer: '故意乱走，让它学歪',
     counter: '它复制出一个"你"，**模仿你 0.6 秒前的走位** —— 你走直线，它就压在你身上',
@@ -5133,6 +5205,7 @@ const BOSS_SKILLS = {
     tag: '本命 · 半边场地不能用',
     kind: '半场镜面（pool 覆盖）',
     native: 'mirrorlord',
+    vert: false,
     dmg: 'reflect · 你在上面出多少伤就吃多少',
     answer: '换到没镜子的那半边',
     counter: '场地**整整半边**变成镜面，站上去出招=打自己 —— 换半边',
@@ -5147,6 +5220,7 @@ const BOSS_SKILLS = {
     tag: '本命 · 雷柱之间拉电',
     kind: '雷柱 + 柱间的链（beam）',
     native: 'nineheaven',
+    vert: true,
     dmg: 'true · 链上穿盾',
     answer: '站到链的端点外面',
     counter: '五根雷柱落定后，**相邻两根之间拉出一道电链** —— 站在链的两端外面，柱间空地不能站',
@@ -5161,6 +5235,7 @@ const BOSS_SKILLS = {
     tag: '本命 · 压在你正在去的方向',
     kind: '预判落点（按你的速度外推）',
     native: 'chaosavatar',
+    vert: true,
     dmg: 'exec · 按已损失血加伤',
     answer: '突然变向',
     counter: '落点压在你**正在去的方向**上 —— 直线跑必中，得突然变向',
@@ -5175,6 +5250,7 @@ const BOSS_SKILLS = {
     tag: '本命 · 四拍，第四拍最重',
     kind: '节奏（四拍，落点跟着鼓点变）',
     native: 'bafo_deva',
+    vert: true,
     dmg: 'multi · 四拍递增，第四拍翻倍',
     answer: '数拍子，第四拍才走',
     counter: '雷鼓四拍：**前三拍轻，第四拍翻倍** —— 数着拍子，只在第四拍走位',
@@ -5189,6 +5265,7 @@ const BOSS_SKILLS = {
     tag: '本命 · 从中心漫出来',
     kind: '不断扩张的毒面（pool）',
     native: 'bafo_naga',
+    vert: false,
     dmg: 'dot · 叠层，站得越久越疼',
     answer: '退到还没被淹的那一圈',
     counter: '毒从中心**一直往外漫**，站在里面每秒叠一层 —— 退到还没被淹的那一圈',
@@ -5203,6 +5280,7 @@ const BOSS_SKILLS = {
     tag: '本命 · 它自己撞过来',
     kind: 'Boss 本体冲撞（带冲锋线）',
     native: 'bafo_yaksa',
+    vert: false,
     dmg: 'crush · 正对撞上满伤，擦边减半',
     answer: '垂直于冲锋线侧闪',
     counter: '它顿一下，然后**整只撞过来** —— 撞在线上是满伤，垂直侧闪就只擦到',
@@ -5217,6 +5295,7 @@ const BOSS_SKILLS = {
     tag: '本命 · 三圈波同时扩',
     kind: '扩散的环 ×3（wave）',
     native: 'bafo_gandharva',
+    vert: false,
     dmg: 'burst · 被任一圈扫到',
     answer: '卡在两道波之间',
     counter: '三圈音波**同时往外扩**，中间有两条缝 —— 缝会变宽变窄，卡住时机',
@@ -5231,6 +5310,7 @@ const BOSS_SKILLS = {
     tag: '本命 · 每次只有一个头睁眼',
     kind: '三个方向的扇面（轮流睁眼）',
     native: 'bafo_asura',
+    vert: false,
     dmg: 'multi · 睁眼的那一面满伤',
     answer: '换到闭眼那一面',
     counter: '三个头轮流睁眼，**只有睁眼那一面会打** —— 换到闭着眼的那一面',
@@ -5245,6 +5325,7 @@ const BOSS_SKILLS = {
     tag: '本命 · 贴上去才活',
     kind: '环状冲击（中心留空）',
     native: 'bafo_garuda',
+    vert: false,
     dmg: 'true · 圈内全免，圈外穿盾',
     answer: '贴身站住',
     counter: '金翅一振，**外圈整片炸开，中心是空的** —— 跑得越远越死，贴上去才活',
@@ -5259,6 +5340,7 @@ const BOSS_SKILLS = {
     tag: '本命 · 一群鹿四散跑',
     kind: '四散的鹿群（实体 ×10）',
     native: 'bafo_kimnara',
+    vert: true,
     dmg: 'burst · 撞到一只算一只',
     answer: '别站在它们要跑的方向上',
     counter: '鹿群从中间**四散跑开** —— 它们跑的方向是随机的，但起步前会先低头',
@@ -5273,6 +5355,7 @@ const BOSS_SKILLS = {
     tag: '本命 · 两排牙合拢',
     kind: '两排合拢的牙（wall 对咬）',
     native: 'bafo_mahoraga',
+    vert: true,
     dmg: 'pct · 咬住按当前生命 % 掉',
     answer: '挤进那条缝',
     counter: '上下两排毒牙从两侧**合拢**，中间只剩一条缝 —— 缝在横移，而且越来越窄',
@@ -5287,6 +5370,7 @@ const BOSS_SKILLS = {
     tag: '本命 · 骨手一波波爬进来',
     kind: '爬行的骨手（实体 ×N，一波波）',
     native: 'dgb_tomb',
+    vert: true,
     dmg: 'dot · 被抓住持续掉',
     answer: '往中间收',
     counter: '骨手从**场边一波波往里爬**，一波比一波深 —— 得往中间退',
@@ -5301,6 +5385,7 @@ const BOSS_SKILLS = {
     tag: '本命 · 只有影子没有圈',
     kind: '头顶落石（只在地上有影）',
     native: 'dgb_well',
+    vert: true,
     dmg: 'burst · 砸中即满伤',
     answer: '看影子有多大',
     counter: '头顶落石**只在地上投一个影子**，影子越大越近 —— 没有红圈可躲',
@@ -5315,6 +5400,7 @@ const BOSS_SKILLS = {
     tag: '本命 · 一圈狼，只有一个缺口',
     kind: '一整圈实体（有缺口）',
     native: 'dgb_den',
+    vert: true,
     dmg: 'burst · 撞到几只算几只',
     answer: '从缺口冲出去',
     counter: '狼群围成一整圈同时冲进来，**只有一个方向是空的** —— 冲出去，不是往里躲',
@@ -5329,6 +5415,7 @@ const BOSS_SKILLS = {
     tag: '本命 · 台子一块块沉下去',
     kind: '上涨的水面（pool）+ 三块高台',
     native: 'dgb_gaol',
+    vert: false,
     dmg: 'dot · 泡在水里持续掉',
     answer: '站高台，淹了就换',
     counter: '水从地面升起，**只有高台还在水面以上** —— 而高台会被淹，得换',
@@ -5343,6 +5430,7 @@ const BOSS_SKILLS = {
     tag: '本命 · 龙卷绕着场转',
     kind: '绕场移动的龙卷（实体危险物）',
     native: 'dgb_fall',
+    vert: false,
     dmg: 'crush · 卷进去持续疼',
     answer: '预判它下一秒在哪',
     counter: '龙卷绕着场转，**转速还是变的** —— 躲的是它下一秒的位置，不是现在这一格',
