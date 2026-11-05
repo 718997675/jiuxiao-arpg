@@ -3,25 +3,24 @@
 - 分支：`feat/skill-refactor`（专题台账，同分支；做完后并进分支台账再删这份）
 - 设计文档：`docs/BOSS-KITS.md`（§7 = 45 只本命技；§7.7 = 活物原语）
 - 实验场：`docs/boss-vfx-playground.html`（单文件，内联 three.js，`file://` 直接开）
-- 更新：2026-11-02 22:10
+- 更新：2026-11-05 · **B21 施法运行时接进游戏 + B22 地面暗底（可读性）**
 
-> 当前：**51 只全部进特效台；演出层（BFX 17 个原语）已经搬进游戏（`src/fx2.js`），
-> 玩家的「被拖拽」状态位、可破坏目标（图腾 / 卵囊，带读秒）、正面格挡（岩甲 / 盾）都补上了**。
-> 还差的是「谁在什么时候放招」—— 施法运行时一行没写，
-> 所以玩家在游戏里仍然见不到这 45 只的技能。
-> 回归：特效台 `probe-playground` 102 项、新层 `probe-fx2` 23 项、`probe-drag` 11 项、
-> `probe-destructible` 28 项、`probe-frontguard` 16 项，契约 `test-fx2` 24 项 / `test-destructible` 29 项 /
-> `test-frontguard` 23 项 —— 全绿；
-> 重名 / 效果重复两轮清零（§8）。
+> 当前：**88 招真的在游戏里打出来了**。`src/boss-cast.js`（B21）+ `data-bosskits.js`
+> （B17.1）接进 `game.js` 的 `bossPattern`：四拍轮转、每第 5 轮压轴出本命；
+> `settle` 接 `Game.damagePlayer`、`moveDummy` 接 `Game.dragPlayer`。
+> 同时玩家侧 37 只技能的整套画法进了 `src/sfx.js`（B20）。
+> 真机探针 15/15（五格逐格点放全部 `got === id`），88 招全量试放 **88 有产出 / 0 空招 / 0 报错**。
+> 2026-11-05 补 B22：预警形状加**地面暗底** —— 加法清边在亮地形（幽篁林草地）上
+> 只剩一条若隐若现的线，这就是「游戏里都是彩色圆环」的直接原因。
 
 ## 一句话现状
 
-旧的病是「换 Boss 只是换颜色」：13 种共享技撑 39 个技能位。现在三步走完了前两步 ——
+旧的病是「换 Boss 只是换颜色」：13 种共享技撑 39 个技能位。三步都走完了 ——
 **机制各自不同**（§7.2 判据：这一招逼玩家做的动作，和别的 44 只都不一样）、
-**演出各自是"活物"**（留在场上、自己会动，不是画一下就没）。
-第三步（进游戏）走到一半：演出层 + 拖拽状态位 + 可破坏目标（带读秒）都在了；
-但**施法运行时一行没写** —— 谁在什么时候放哪一招、命中谁、扣多少，
-这套还全在特效台的假人身上。领域乘区那一件也还在等。
+**演出各自是"活物"**（留在场上、自己会动，不是画一下就没）、
+**进游戏了**（B21 `src/boss-cast.js`：四拍轮转 + 每第 5 轮压轴，
+真机 15/15、88 招全量试放 0 空招 0 报错）。
+现在的问题从「打不出来」变成「看不看得清」—— B22 已经开了头（地面暗底）。
 
 ## 节点表
 
@@ -53,6 +52,9 @@
 | B17.1 | **技能表出得来**：`src/data/data-bosskits.js`（生成物，88 招 / 45×5） | ✅ | 新建 `dev/build-bosskits.js`（`--write` / `--check`）、`src/data/data-bosskits.js`、`dev/test-bosskits.js`；`index.html` 引入；特效台「遗忘」改成 `markForgotten()`；`BOSS-KITS.md` §13 | 本次提交 |
 | B17.2a | **技能表补结算字段**：`mul` 88/88、`hitR` 25、`native`/`dmg`/`answer` 45 —— 第四道闸门 | ✅ | `dev/build-bosskits.js`（`META_FIELDS`/`EMIT_ORDER`/自检）、重新生成 `data-bosskits.js`（2649 行 / 97 KB）、`dev/test-bosskits.js` 第八节；`BOSS-KITS.md` §13.4 | 本次提交 |
 | B19 | §2 五格总表也是手抄的（剑帝还写着旧配招） | ✅ | 加 `EXPORT:KIT` 标记，`boss-kits-export.js --write` 一起生成（45 只） | 本次提交 |
+| B20 | **玩家侧技能演出层**：37 只技能的整套画法进游戏 | ✅ | 新建 `src/sfx.js`（生成物）、`dev/build-skillvfx.js`、`dev/probe-sfx.js`；`game.js` 的 `playSkillVfx` 改成「sfx 优先、配方兜底」；源 = `docs/vfx-playground.html` | `74d8025` |
+| B21 | **施法运行时**：88 招真的在游戏里打出来 | ✅ | 新建 `src/boss-cast.js`（生成物）、`dev/build-bosscast.js`、`dev/test-bosscast.js`、`dev/probe-bosscast.js`；`game.js` 的 `bossPattern` 先问 BossCast、老 switch 兜底；CD 按出招结果设定；`fx.js` reset 里 `BossCast.clear()` | `74d8025` |
+| B22 | 预警形状加**地面暗底**（亮地形上只剩一条线的真因） | ✅ | 特效台 `groundShade()` + `BFX.zone` 六个形状分支；重新生成 `src/fx2.js` | 本次提交 |
 
 ## 下一步（按顺序，别跳）
 
@@ -72,28 +74,41 @@
   写**另外两个字段** `fieldSlow` / `fieldAspd`（世界 Boss 每帧归位 `domSlow`，
   共用一个字段迟早互相抹掉）；视野**借** `WorldBoss._applySight`、不抄一份夜色算法。
 
-**接着要做的 —— 只剩一件**：**施法运行时**（最大的一块）。表已经有了
-（B17.1：`BOSS_KIT` 45 只 / `BOSS_SKILLS` 88 招，全是生成物），差的是**垫片 + 调度**：
-一层把「这一招什么时候放、命中谁、扣多少」接起来的代码。落点 `src/boss-cast.js`：
-   `pickSkill(boss, dist)` → `castBossSkill(boss, id)` → 前摇 telegraph →
-   结算（复用 `inHit` 的四种形状）→ `settle`。
-   **判定与预警必须读同一组数字**，否则「圈画在这里、打到那里」。
-   **垫片清单**（少一个 = 运行时 ReferenceError，特效台里发现不了）：
-   `BOSS`/`DUMMY`、`N`/`R`/`WM`/`ph`、`aimAngle`/`aimDist`、`inHit`/`settle`、
-   `floatText`/`nSay`/`hurtVignette`/`flashScreen`/`hitstop`、
-   `moveDummy`/`markOnPlayer`/`bossGlide`/`bossLean`/`bossReset`/`bossLabelY`/
-   `swingArm`/`speedSmear`/`label3d`/`labels`/`markForgotten`、
-   `G`/`M`/`dot`/`limb`（几何与材质工厂，建议并进 `fx2.js` 的切片表）。
-   `BFX`/`TEX`/`addUpdate`/`delay`/`seq`/`P`/`shake` 已经在 `fx2.js` 里。
+**B21 施法运行时已完成**（`src/boss-cast.js`，生成物，源还是特效台）：
+
+- 选招：`_pick(e)` —— 四拍（机制 / 套路A / 套路B / 签名）固定轮转，
+  每第 5 轮出第 5 格（本命）。**两个计数器不能合成一个**：`_castN` 判压轴、
+  `_round` 判四拍里第几拍；合成一个会把四拍整体推移一位（测试抓出来的）。
+- 三道闸 `canCast`：没死 / 上一招没演完（`_castUntil`）/ 玩家在交战半径内。
+- **CD 必须按出招结果设定**：先设满 4.5~7.5 秒再出招，一旦 `tryCast` 拒绝
+  （上一招没演完）整轮就白等 —— 实测 25 秒只出 2 招。现在是
+  `e.patternCd = casted ? RND(4.5,7.5)*(1-phase*0.12) : 0.8`。
+- 归属：`FX2.stepHook` 每帧把 `CUR` 切回 updater 自己的主人，
+  否则两只怪同时放招时，前一只的 `delay` 回调会把伤害算到后一只头上。
+- 生成物的三个坑（都已修，别再踩）：① `toString()` 拿不到闭包，
+  `nt_*` 包装层里的 `o.hit()` 生成后 `o` 不存在 → 45 只第 5 格全废，
+  而契约测试只看 `typeof run === 'function'` 照样全绿；② `P` 不在 fx2 里，
+  写进导出就是 ReferenceError，会在 IIFE 里炸掉整个文件；③ 创建时守卫是**假守卫**
+  （`if(BOSS.g)` 判一次、1.2 秒后才用，首领中途死了就是 `null.position`）。
+
+**接着要做的 —— 演出可读性（B22 起）**：
+
+1. ✅ 地面暗底已加（`groundShade`）。判据：幽篁林草地的 `slam` 从「一条橙线」
+   变成「暗盘 + 亮边」，见 `/tmp/look` 前后对比。
+2. ⬜ **环形形状的暗底偏薄**：`ring` 的暗底是环带本身，内圈不暗 →
+   玩家仍会以为环里安全。要么给 ring 也补内圈（语义上是"环内安全"，那就别补），
+   要么把 `SHADE_A` 按形状分档。
+3. ⬜ **竖向体积**：现在绝大多数招在 46° 俯角下只剩地面形状。
+   `column` / `spikes` / `boulder` / `wall` 都已有，缺的是它们出现在招里。
+   逐只审（45 只 × 5 格）比全局调参有效。
 
 ## 卡点 / 已知短板
 
 - **共享招只有 31 个，45 只摊下来必然有 2 格重合**（92 对）—— 这是池子决定的，
   不是漏查。判据已落到「最多 2 格」，别再往上加共享格。
-- **特效台里那 45 只还没有任何一只进游戏**。搬完的是「怎么画」（`fx2.js`）
-  与「踩上去会发生什么」（可破坏目标 / 正面格挡 / 领域乘区），
-  **没搬「什么时候画」**—— 施法运行时一行没写。别看到 `src/fx2.js`
-  就以为 Boss 战能打了。
+- ~~特效台里那 45 只还没有任何一只进游戏~~ —— **B21 已接**。
+  现在的短板换成了**读不读得出来**：暗底解决了"看不见范围"，
+  没解决"两招看起来像同一招"（那要靠竖向体积，见上）。
 - **机制位的文案是共享的**：`counter` 写在机制技上，换一只怪不会换措辞。
   实测把「魂锁拖拽」放到剑魂身上时，面板会说「脚下落腐蚀圈」—— 配表时要连带读文案，
   搭不上就换机制位，别只看形状。

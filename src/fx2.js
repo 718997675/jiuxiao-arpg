@@ -654,6 +654,32 @@ const FX2 = (function () {
     }
   });
 
+  /* ---------- 地面暗底（预警形状的"衬"） ----------
+   * 清边是**加法混合**：暗底图上很亮，亮地形上（幽篁林的草地、霜原的雪、
+   * 天阙的石台）几乎等于没画 —— 玩家只看到一圈若隐若现的线，
+   * 读不出"这块地会挨打"。这是「游戏里只剩彩色圆环」的直接原因。
+   *
+   * 反过来做：在形状底下压一层**不发光的中性暗**。量出来的效果是
+   * 「亮的是轮廓、暗的是范围」，任何底色上都成立 —— 因为它在做减法，
+   * 加法会随底色一起饱和，减法不会。
+   *
+   * 三条约束：
+   *   1. 用 NormalBlending（默认），加法叠不出"更暗"；
+   *   2. renderOrder 压在亮边（4）之下，走 3；
+   *   3. 只给**有落点**的形状加 —— self（自身增益）加上去会被读成技能范围。 */
+  const SHADE_COL = 0x0a0e12;
+  const SHADE_A = 0.42;
+  function groundShade(geo, y){
+    const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
+      color:SHADE_COL, transparent:true, opacity:0,
+      depthWrite:false, fog:false, side:THREE.DoubleSide
+    }));
+    m.rotation.x = -Math.PI/2;
+    m.position.y = y - 0.004;   /* 低于亮边，避免同面闪烁 */
+    m.renderOrder = 3;
+    return m;
+  }
+
   BFX.zone = function(o){
     if(!ZONE_ON) return { grp:null, dead:true, done:true, kill(){} };
     /* WB 口径归一：line→rect、fan/cone→sector。新技能写 WB 名，
@@ -666,8 +692,18 @@ const FX2 = (function () {
     const grp = new THREE.Group();
     scene.add(grp);
     const meshes = [];
+    const shades = [];
+    /* 暗底统一走这里：形状与判定同源（同一个 geo 尺寸），
+       只是换了材质 —— 不许为暗底另写一套半径。 */
+    const shade = (geo, px, pz)=>{
+      const m = groundShade(geo, y);
+      m.position.x = px; m.position.z = pz;
+      grp.add(m); shades.push(m);
+      return m;
+    };
 
     if(shape === 'circle'){
+      shade(new THREE.CircleGeometry(o.r, 56), x, z);
       const m = flatMesh(TEX.tele, c, THREE.AdditiveBlending, .85);
       m.position.set(x, y, z); m.scale.setScalar(o.r*2); meshes.push(m); grp.add(m);
       // 内填：从中心涨到 r，读作"还有多久"
@@ -677,6 +713,7 @@ const FX2 = (function () {
     }
     else if(shape === 'ring'){
       const inner0 = o.r0 != null ? o.r0 : o.r*0.55;
+      shade(new THREE.RingGeometry(inner0, o.r, 64, 1), x, z);
       const geo = new THREE.RingGeometry(inner0, o.r, 80, 1);
       const mat = new THREE.MeshBasicMaterial({ color:c, transparent:true, opacity:.16,
         blending:THREE.AdditiveBlending, side:THREE.DoubleSide, depthWrite:false, fog:false });
@@ -694,6 +731,9 @@ const FX2 = (function () {
     }
     else if(shape === 'rect'){
       const len = o.len, wd = o.w;
+      const sh = shade(new THREE.PlaneGeometry(wd, len),
+        x + Math.sin(o.angle||0)*len/2, z + Math.cos(o.angle||0)*len/2);
+      sh.rotation.z = -(o.angle || 0);   /* 和亮面同一个朝向，否则暗底是横的 */
       const m = flatMesh(TEX_BAND, c, THREE.AdditiveBlending, .8);
       m.rotation.x = -Math.PI/2; m.rotation.z = -(o.angle || 0);
       m.position.set(x + Math.sin(o.angle||0)*len/2, y, z + Math.cos(o.angle||0)*len/2);
@@ -712,6 +752,7 @@ const FX2 = (function () {
          几何 +X = 世界 +X、几何 +Y = 世界 −Z。而本页的角度口径是
          atan2(dx, dz)（0 = 世界 +Z），所以要减 90° 才是同一个朝向。 */
       const start = (o.angle || 0) - Math.PI/2 - span/2;
+      shade(new THREE.RingGeometry(0.06, o.r, 48, 1, start, span), x, z);
       const geo = new THREE.RingGeometry(0.06, o.r, 56, 1, start, span);
       const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color:c, transparent:true,
         opacity:.18, blending:THREE.AdditiveBlending, side:THREE.DoubleSide, depthWrite:false, fog:false }));
@@ -730,6 +771,8 @@ const FX2 = (function () {
          画一个包住所有落点的大圈，玩家会以为圈中心安全。 */
       const pts = o.pts || [];
       pts.forEach((p, i)=>{
+        const sh = shade(new THREE.CircleGeometry(p.r, 32), p.x, p.z);
+        sh.userData.born = i * 0.035;      /* 暗底也跟着先后落，否则一次全黑 */
         const m = flatMesh(TEX.tele, c, THREE.AdditiveBlending, .82);
         m.position.set(p.x, y, p.z); m.scale.setScalar(p.r*2);
         m.userData.born = i * 0.035;   /* 先后落，读得出"一串" */
@@ -758,6 +801,14 @@ const FX2 = (function () {
       const k = Math.min(1, this.t/dur);
       // 呼吸：读作"正在蓄力"，不是静态贴图
       const pulse = 0.72 + 0.28*Math.sin(this.t*13);
+      /* 暗底不跟着 pulse 抖 —— 抖动的是"亮"，面积该是稳的。
+         只在头 18% 淡入、尾 14% 淡出，免得圈一出来地面就"啪"地黑一块。 */
+      const sk = Math.min(1, k/0.18) * (k > .86 ? Math.max(0, (1-k)/0.14) : 1);
+      shades.forEach(m=>{
+        const born = m.userData.born || 0;
+        const bk = Math.min(1, Math.max(0, (this.t - born)/Math.max(.12, dur*.6)));
+        m.material.opacity = SHADE_A * sk * bk;
+      });
       base.forEach(b=>{
         /* scatter 的每颗弹是先后落下来的，按 born 偏移逐个亮起 */
         if(b.m.userData.born){
@@ -783,6 +834,7 @@ const FX2 = (function () {
       });
       if(k >= 1 || handle.done){
         meshes.forEach(m=>{ grp.remove(m); m.geometry.dispose(); m.material.dispose(); });
+        shades.forEach(m=>{ grp.remove(m); m.geometry.dispose(); m.material.dispose(); });
         scene.remove(grp);
         this.dead = true;
       }
