@@ -2,6 +2,8 @@
 
 - 分支：`feat/skill-refactor`（专题台账，同分支；做完后并进分支台账再删这份）
 - 设计文档：`docs/BOSS-KITS.md`（§7 = 45 只本命技；§7.7 = 活物原语）
+- **后续待办（2026-11-07 起）**：B25 之后剩下的、以及人物侧欠账与两次合 main，
+  统一排在 `docs/status/vfx-merge.md`（U7~U10 / U11 / U12）；本台账只记 B 线进度。
 - 实验场：`docs/boss-vfx-playground.html`（单文件，内联 three.js，`file://` 直接开）
 - 更新：2026-11-07 · **B25 变形层补满 45 只（180 条）+ 三条新应对轴**
 
