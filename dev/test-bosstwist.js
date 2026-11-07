@@ -146,6 +146,65 @@ console.log('四、这一层不许把游戏搞挂');
   ok(topConst.length === 0, '没有任何顶层 const/let（会和 boss-cast.js 的 BFX/V3 撞成白屏）', topConst.slice(0, 3));
 }
 
+console.log('六、B25：45 只全覆盖 + 跨只不撞脸');
+{
+  /* 补全之后，`BOSS_TWIST` 必须和 `BOSS_KIT` 一一对应。
+   * 少一只不是「还没轮到」就算了 —— 台账上写着 45 只，测试得能拦住漏项。 */
+  const kitBosses = Object.keys(KIT);
+  const missing = kitBosses.filter(b => !TW[b]);
+  ok(missing.length === 0, '45 只首领全部写进了 BOSS_TWIST', missing);
+  ok(kitBosses.length === 45, 'BOSS_KIT 还是 45 只', kitBosses.length);
+
+  /* 每只四格**全写完**，而且覆盖至少 3 种不同的 op。
+   * 只写两格的话，另外两拍会退回共享招原名 —— 玩家看到的就是「半只新的」。 */
+  const short = [], thin = [];
+  for (const b of bosses) {
+    const kit = (KIT[b] || []).slice(0, 4);
+    const got = Object.keys(TW[b].s || {});
+    if (got.length !== 4 || kit.some(id => got.indexOf(id) < 0)) short.push(b + ':' + got.length);
+    const ops = new Set();
+    for (const id of got) for (const row of TW[b].s[id].ops || []) ops.add(row[0]);
+    if (ops.size < 3) thin.push(b + ':' + ops.size);
+  }
+  ok(short.length === 0, '每只的四格全写完（不是只写两格）', short);
+  ok(thin.length === 0, '每只四拍覆盖 ≥3 种不同的应对动作', thin);
+
+  /* 同一个共享招会在很多只身上出现（ringshot 17 次）。
+   * 如果它们拿到的变形指纹全都一样，那就是「换了名字没换招」——
+   * B24 之前的病。判据：出现 ≥4 次的招，至少要有 3 种不同的变形。 */
+  const bySkill = {};
+  for (const b of bosses) for (const id of Object.keys(TW[b].s || {})) {
+    const fp = (TW[b].s[id].ops || []).map(r => r[0] + '(' + JSON.stringify(r[1] || {}) + ')').join('+');
+    (bySkill[id] = bySkill[id] || []).push(fp);
+  }
+  const cloned = [];
+  for (const id of Object.keys(bySkill)) {
+    const arr = bySkill[id];
+    if (arr.length >= 4 && new Set(arr).size < 3) cloned.push(id + ':' + arr.length + '次/' + new Set(arr).size + '种');
+  }
+  ok(cloned.length === 0, '高频共享招跨只不是同一个变形（≥4 次要 ≥3 种）', cloned);
+
+  /* 八部众的第 1 格全是 staggerbreak，同一段共享代码。
+   * 这一格八只必须八种不同的 op，否则「八部」就是一张脸。 */
+  const bafo = bosses.filter(b => /^bafo_/.test(b));
+  const sbOps = bafo.map(b => {
+    const s = TW[b].s && TW[b].s.staggerbreak;
+    return s && s.ops && s.ops[0] ? s.ops[0][0] : null;
+  });
+  ok(bafo.length === 8, '八部众是 8 只', bafo.length);
+  ok(sbOps.every(Boolean) && new Set(sbOps).size === 8,
+    '八部的 staggerbreak 八只各一种变形（不许换皮）', sbOps);
+
+  /* 新增的三个 op 都得在数据里真的被用过 —— 不然就是写了个空壳 */
+  const used = new Set();
+  for (const b of bosses) for (const id of Object.keys(TW[b].s || {}))
+    for (const row of TW[b].s[id].ops || []) used.add(row[0]);
+  for (const op of ['totem', 'shroud', 'push']) {
+    ok(used.has(op), 'B25 新增的 ' + op + ' 真的被招用上了');
+  }
+  ok(new Set(OPS).size >= 10, '变形层至少 10 种应对动作', Object.keys(OPS || {}));
+}
+
 console.log('五、真的接上了');
 {
   ok(/BossTwist\.apply\s*\(/.test(castSrc), 'boss-cast.js 的 tryCast 会调 BossTwist.apply');

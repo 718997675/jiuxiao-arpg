@@ -50,6 +50,14 @@ var BossTwist = (function () {
     return !!(c && c.e && !c.e.dead && c.e._castTok === c.tk);
   }
 
+  /* 留在场上的**独立物件**（图腾 / 卵囊）用的守卫，和 alive 不是一回事：
+   * 它的到期结算不该被「首领又放了一招」取消（token 会变），
+   * 但**换图之后绝不能在新图上炸一次**。所以只比放招那一刻的地图 id。 */
+  function sameMap(c) {
+    const g = G();
+    return !!(g && g.state && c && g.state.mapId === c.map && !g.dead);
+  }
+
   /* 伤害落点：只有一个口 —— 和画出来的圈用同一个半径 */
   function hurt(c, mul, x, z, r) {
     const g = G();
@@ -195,6 +203,95 @@ var BossTwist = (function () {
         if (!e || e.dead) return;
         try { g.setGuardFront(e, null); } catch (err) { /* 换图了 */ }
       });
+    },
+
+    /* ---------------- B25 新增三条应对轴 ----------------
+     * B24 只有 7 种 op，45 只摊下来必然是「同一套排列组合」。补全 37 只之前
+     * 先看游戏里**已有但没被任何招用过**的能力 —— 这三条都不是新语法，
+     * 是把现成接口接进变形层： */
+
+    /* ① 转火打掉：场上立一根可破坏目标，读秒到就炸一圈；打掉就没事。
+     * 这是唯一一个**不靠走位**的答案 —— 玩家要换攻击目标。
+     * `spawnDestructible` 有完整实现 + 28 项探针，但此前游戏里一次都没调用过：
+     * totem / eggs / wardrum 的 counter 写着「优先打掉」，场上却根本没有目标。
+     * 到期的回调不能用 `alive(c)`：那时 token 早被下一招换掉了，
+     * 也不能用 setTimeout（换图取消不了）。只比放招那刻的 mapId。 */
+    totem(c) {
+      const g = G();
+      if (!g || typeof g.spawnDestructible !== 'function') return;
+      const p = c.p, pt = at(c, p.at || 'hit');
+      const r = p.r || 3.2;
+      const self = c;
+      /* 预警圈的句柄要交给 `onDeath`：目标被打掉之后圈还亮着就是在说谎
+       * （玩家会继续躲一个已经不存在的威胁）。zone 的 dur 按 ttl 走，
+       * 所以只有「提前打掉」这一条路径需要主动收。 */
+      let ring = null;
+      const ent = g.spawnDestructible({
+        x: pt.x, z: pt.z,
+        kind: p.kind === 'sac' ? 'sac' : 'totem',
+        name: p.name || ((c.tw.n || '阵眼') + '·' + (p.kind === 'sac' ? '卵囊' : '图腾')),
+        hp: p.hp || 120,
+        ttl: p.ttl || 5,
+        radius: 0.72,
+        glow: c.tw.c,
+        color: p.color || 0x4a4038,
+        onExpire: (e, pos) => {
+          if (!sameMap(self)) return;
+          const x = pos.x, z = pos.z;
+          if (BFX && BFX.shock) BFX.shock(V3(x, 0, z), r, { color: self.tw.c, dur: .5, a0: .9 });
+          hurt(self, p.mul || 0.8, x, z, r);
+        },
+        onDeath: () => {
+          /* 打掉了就是奖励：没有惩罚，预警圈也一起收掉 */
+          if (ring && typeof ring.kill === 'function') ring.kill();
+        }
+      });
+      /* 上限兜底会返回 null，这时不能假装有一根留在场上 */
+      if (!ent) return;
+      if (BFX && BFX.zone) ring = BFX.zone({
+        shape: 'circle', x: pt.x, z: pt.z, r: r,
+        dur: p.ttl || 5, color: c.tw.c
+      });
+    },
+
+    /* ② 看不见：`illusion` 压暗小地图 60% / `daynight` 把视野压到 9 米。
+     * 两份预设早就写好了，一次没被用过。它逼的不是走位，是**记住位置 / 贴近打**。
+     * 视野是单槽位（`Domains._sight` 借 WorldBoss 的），真撞上让世界 Boss ——
+     * 章节图与世界 Boss 不同图，实际撞不上。 */
+    shroud(c) {
+      if (typeof Domains === 'undefined' || !Domains.add) return;
+      const p = c.p, pt = at(c, p.at || 'player');
+      const preset = p.preset === 'daynight' ? 'daynight' : 'illusion';
+      Domains.add({
+        preset: preset,
+        x: pt.x, z: pt.z,
+        r: p.r || 7, ttl: p.ttl || 5,
+        owner: c.e,
+        color: p.color || hexc(c.tw.c),
+        name: (c.tw.n || '') + '·' + (preset === 'daynight' ? '闭眼' : '幻域')
+      });
+      /* 边界得画出来：完全看不见的时候，至少知道「从哪一步开始看不见」 */
+      if (BFX && BFX.zone) BFX.zone({
+        shape: 'circle', x: pt.x, z: pt.z, r: p.r || 7,
+        dur: p.ttl || 5, color: c.tw.c
+      });
+    },
+
+    /* ③ 逆风推离：和 `pull`（往首领身上拽）方向相反。
+     * windpress / flood / firewall 的 counter 都写着「逆着走位 / 别被夹住」，
+     * 但此前只能靠文案说。现在真的把人往外推一段，玩家得走回来。 */
+    push(c) {
+      const g = G();
+      if (!g || typeof g.dragPlayer !== 'function') return;
+      const e = c.e, p = playerPos(), d = c.p;
+      let dx = p.x - e.pos.x, dz = p.z - e.pos.z;
+      const len = Math.hypot(dx, dz) || 1;
+      const dist = d.dist || 4;
+      g.dragPlayer(p.x + dx / len * dist, p.z + dz / len * dist, d.dur || 0.6);
+      if (BFX && BFX.shock) {
+        BFX.shock(V3(e.pos.x, 0, e.pos.z), dist * 1.4,
+          { color: c.tw.c, dur: .55, a0: .75 });
+      }
     }
   };
 
@@ -231,7 +328,9 @@ var BossTwist = (function () {
 
       const ph = (e.phase || 0) + 1;
       const warm = (sk.warm != null ? sk.warm : 0.7) * (ph >= 2 ? 0.85 : 1);
-      const c = { e: e, sk: sk, at: hit, tw: tw, tk: e._castTok, p: null };
+      const gg = G();
+      const c = { e: e, sk: sk, at: hit, tw: tw, tk: e._castTok, p: null,
+        map: (gg && gg.state && gg.state.mapId) || '' };
 
       delay(warm, () => {
         if (!alive(c)) return;

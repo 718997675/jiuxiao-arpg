@@ -3478,7 +3478,13 @@ const Game = {
       }
       return;
     }
-    const lim = MAPS[mid].size * 0.47;
+    /* `MAPS[mid]` 必须有兜底：mapId 来自存档 / 换图中途，可能是还没配好的图、
+     * 或者老档里已经删掉的 id。查不到就整帧抛「reading 'size'」——
+     * 那条异常在 animate 兜底里只留一句，玩家看到的是画面忽然卡住。
+     * 没边界配置时宁可**不钳制**（比崩一帧强），下一帧 mapId 正常了会自己回来。 */
+    const spec = MAPS[mid];
+    if (!spec || !(spec.size > 0)) return;
+    const lim = spec.size * 0.47;
     const dd = Math.hypot(pos.x, pos.z);
     if (dd > lim) { pos.x *= lim / dd; pos.z *= lim / dd; }
   },
