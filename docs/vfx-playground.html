@@ -1103,6 +1103,11 @@ class Pool {
     });
     this.pts = new THREE.Points(g, m);
     this.pts.frustumCulled = false;
+    /* 粒子 Points 是**常驻池**，不是一次性特效：生成物里 clear() 会把
+     * 「非 shared 的 mesh」逐个从 ROOT 摘掉并 dispose 材质。以前没打这个标记，
+     * 换图 / 重开调一次 clear() 之后，粒子虽然在池里还活着（stats 数得到），
+     * 但 Points 已经不在场景树上 —— 表现为「此后所有技能只剩环和柱，粒子全没了」。 */
+    this.pts.userData.shared = true;
     scene.add(this.pts);
     this.p = [];  // 粒子对象池
     for(let i=0;i<max;i++) this.p.push({ live:false, x:0,y:0,z:0, vx:0,vy:0,vz:0, t:0, life:1,
@@ -1194,13 +1199,20 @@ function delay(sec, fn){ return seq([[sec, fn]]); }
 
 // 一次性贴地平面（环 / 冲击 / 贴花）
 const _plane = new THREE.PlaneGeometry(1, 1);
-function flatMesh(tex, color = 0xffffff, blending = THREE.AdditiveBlending, opacity = 1){
+function flatMesh(tex, color = 0xffffff, blending = THREE.AdditiveBlending, opacity = 1, shared = false){
   const m = new THREE.Mesh(_plane, new THREE.MeshBasicMaterial({
     map: tex, color, transparent: true, opacity, depthWrite: false,
-    blending, side: THREE.DoubleSide, fog: false
+    blending, side: THREE.DoubleSide, fog: false,
+    /* 贴地网格和地面 / 广场共面，不给深度偏移会被按深度吃掉一大半：
+     * 表现是「起手环时有时无、只在某些角度看得到」，白天亮地面上尤其明显。
+     * 抬 y 只能治标（镜头一压又穿回去），polygonOffset 才是正解。 */
+    polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4
   }));
   m.rotation.x = -Math.PI/2;
   m.renderOrder = 4;
+  /* 必须在 add **之前**打：生成物里 ROOT.add 会按这个标记决定要不要记进
+   * _live（一次性清单）。打晚了池子已经被记进去，下一次 clear() 照样摘掉。 */
+  m.userData.shared = shared;
   scene.add(m);
   return m;
 }
@@ -1456,7 +1468,10 @@ FX.burst = function(pos, o = {}){
 // ---- 贴花（16 个 quad 固定池） ----
 const DECAL = { list:[], i:0, max:18 };
 for(let i=0;i<DECAL.max;i++){
-  const m = flatMesh(TEX.scorch, 0xffffff, THREE.NormalBlending, 0);
+  /* 同 Pool：贴花是预分配的常驻 mesh，clear() 只该把它们藏起来 + 归零寿命，
+   * 不该从场景摘掉。摘掉之后 FX.decal 设的 visible=true 是对着一个
+   * 「不在场景树里」的 mesh 喊，永远画不出来。 */
+  const m = flatMesh(TEX.scorch, 0xffffff, THREE.NormalBlending, 0, true);
   m.visible = false; m.renderOrder = 2;
   DECAL.list.push({ m, life:0, max:1 });
 }
@@ -3632,7 +3647,11 @@ whirl: {
       });
     });
     FX.vortex(new THREE.Vector3(c.x,0,c.z), { life: 1.1, r: 1.9, h: 2.6, color: C(E().glow) });
-    FX.shock(new THREE.Vector3(c.x,0,c.z), 1.5, { color: C(E().glow), dur: 0.34 });
+    /* 地面气流圈按技能真实半径（4.2 码）铺开。原来只有 1.5 码，比三把斧头
+     * 转出来的 1.85 码还小 —— 玩家看到的是「人在转、斧头在飞，脚下没东西」，
+     * 尺子上整段峰值在 2400~2560 之间反复横跳，正好卡在 2500 下界上。
+     * 扩到 3.4 码并给一点余量，剪影仍是「水平旋转 + 脚下气流」。 */
+    FX.shock(new THREE.Vector3(c.x,0,c.z), 3.4, { color: C(E().glow), dur: 0.5 });
 
     /* 吸怪（Lv9 台阶）：持续 1.7 秒的抽气场，不是一个瞬间。
        旧实现是命中时每只怪撒 7 颗向心火星 —— 300ms 就没了，而怪是"啪"地
@@ -3776,7 +3795,12 @@ bloodrage: {
       ring.position.set(c.x, 0.05, c.z);
       addUpdate({ t:0, update(dt){
         this.t += dt; const k = Math.min(1, this.t/0.55);
-        ring.scale.setScalar(0.4 + k*1.9);
+        /* 原来从 scale 0.4 起步，头 60ms 只有一小团（读数 382），
+         * 「血怒开了」这件事要等血雾慢慢升上来才知道。改成起手就有一圈，
+         * 后续仍然是向外扩散的心跳，方向不变。
+         * 2.2 而不是 1.1：1.1 那版整段峰值只有 907（下界 900），贴着地板过线，
+         * 判据会变成噪声敏感；心跳本来就该是一圈能看清的红环。 */
+        ring.scale.setScalar((i ? 1.7 : 2.2) + k*1.4);
         ring.material.opacity = (1-k) * (i ? .55 : .9);
         if(k>=1){ scene.remove(ring); this.dead = true; }
       }});
@@ -3804,6 +3828,26 @@ stance: {
       { n:'摧城', r:1.25, inner:0.95, span:1.05, tilt:0.3, hud:0xff9a5a, note:'短粗' }
     ];
     const f = forms[stanceIdx % 3]; stanceIdx++;
+    /* ---------------- 剑神降世 · 开窗 ----------------
+     * 生成器 ALIAS 把实验室 `stance` 映成游戏 `avatar`。P2b 之后这一位是
+     * 状态机：**常态换刀式走 game.js 的 bladeFormVfx() → 配方层**，根本不
+     * 经过 SKFX；只有 Lv10 终结技的「剑神降世开窗」调
+     * `playSkillVfx(id, { radius:3.4, segments:['cast'] })`，才是这一条
+     * SKFX 唯一被播到的时刻。
+     *
+     * 可实验室里它还是「换刀式小弧」，于是大招开窗收到的是一道 2.6 码刀气，
+     * 尺子上 0.6 秒只量到 1338 像素。双演出层抢播放口之后没人回头对过口径，
+     * 这一条补的就是 game.js 那句注释承诺的「金环 + 上升光柱」。
+     * 下面三道刀气弧保留，它说的是「这一发跟着当前刀式走」。 */
+    const win = new THREE.Vector3(c.x, 0, c.z);
+    const ring = flatMesh(TEX.shock, 0xffd166, THREE.AdditiveBlending, 0.9);
+    ring.position.set(win.x, 0.09, win.z); ring.scale.setScalar(4.2);
+    addUpdate({ t:0, update(dt){ this.t += dt;
+      const k = Math.min(1, this.t/0.6);
+      ring.scale.setScalar(4.2 + k*2.2);
+      ring.material.opacity = 0.9 * (1-k);
+      if(k>=1){ scene.remove(ring); this.dead = true; } }});
+    FX.geyser(win, { h: 5.2, w: 1.0, opacity: .55, life: .9, tex:'beam', color: 0xffe9a8 });
     swingArm(); lunge(0.7);
     FX.arc(new THREE.Vector3(c.x,0,c.z), {
       r: f.r, inner: f.inner, span: f.span, tilt: f.tilt, y: 1.0,
@@ -4168,7 +4212,13 @@ avatar: {
       }
     }});
 
-    FX.shock(new THREE.Vector3(c.x,0,c.z), 3.0, { color: col, dur: 0.6 });
+    /* 元素法相是 radius 8 的开窗大招，起手冲击原本只有 3 码，和「贴身佛光」
+     * 这个主体剪影的规格差一档。扩到 5.5 码，佛光本体不动。
+     *
+     * ⚠ 生成器 ALIAS 的坑（U1 踩过一次）：实验室 `avatar` → 游戏 `elementavatar`，
+     * 游戏 `avatar`（剑神降世）对应的是实验室 `stance`。按游戏技能 id 直接来
+     * 这里改，会改到另一只技能上，而且读数「几乎没动」很难看出是改错了对象。 */
+    FX.shock(new THREE.Vector3(c.x,0,c.z), 5.5, { color: col, dur: 0.6 });
     flashAt(new THREE.Vector3(c.x,1.2,c.z), 3.0, '255,240,200', 0.32);
     shake(0.16, 0.4);
     addBuff('avatar', 8);
@@ -4192,6 +4242,10 @@ talisman: {
         side: THREE.DoubleSide, depthWrite: false, fog: false }));
     scene.add(paper);
     const from = new THREE.Vector3(c.x, 1.1, c.z), to = new THREE.Vector3(c.tx, 1.0, c.tz);
+    /* 出手回执：符纸竖片只有 0.56×1.12，飞行前 0.3 秒画面里就这一小片
+     * 加一条 0.3 宽的飘带，白天亮地面上量到 1021 像素。补一圈朱砂色地面
+     * 起手环，负责「我按下去了」；飞行体 / 命中朱砂字的剪影一点不动。 */
+    FX.shock(from, 1.8, { color: 0xffd27a, dur: 0.34 });
     const rib = new Ribbon({ width: 0.3, color: 0xffd27a, life: 0.4, segs: 12 });
     let t = 0; const dur = Math.max(0.15, from.distanceTo(to) / 9);
     addUpdate({ update(dt){
@@ -4318,6 +4372,20 @@ heal: {
   cls:'tao', slot:'④', name:'回春', sil:'由下而上', cd:7,
   note:'金色光尘<b>从脚下升到头顶</b>，低血时额外一圈心跳。方向向上 + 金色 + 心跳环，和血怒（向上 + 血色）靠颜色区分。',
   v2(c){
+    /* 起手回执：下面三圈上浮环靠 sin(kπ) 淡入，60ms 时只有 7% 亮度，
+     * 玩家按下治疗键的头一瞬什么也看不到。补一圈立即亮、快速淡出的地面环，
+     * 仍然是「由下而上」的金色，不改这一位的剪影语义。
+     *
+     * 用 TEX.shock 而不是 TEX.ring：后者是三条细描边（256 图上 9/6.6/4.2 px），
+     * 在白天亮地面上只量到 +28 像素，等于没加。前者是填充渐变环，面积才够
+     * 当「按下去了」的回执。 */
+    const base = flatMesh(TEX.shock, 0xffe9a8, THREE.AdditiveBlending, 0.9);
+    base.position.set(c.x, 0.09, c.z); base.scale.setScalar(3.2);
+    addUpdate({ t:0, update(dt){ this.t += dt;
+      const k = Math.min(1, this.t/0.55);
+      base.scale.setScalar(3.2 + k*1.4);
+      base.material.opacity = 0.9 * (1-k);
+      if(k>=1){ scene.remove(base); this.dead = true; } }});
     // 持续的上升光尘（不是一次性爆开）
     let ht = 0;
     addUpdate({ update(dt){
@@ -4965,6 +5033,10 @@ blizzard: {
   v2(c){
     const pos = new THREE.Vector3(c.tx, 0, c.tz);
     FX.decal(pos, 'frost', 6.0, 6, 0x9ae8ff);
+    /* 起手先圈定暴雪范围。冰晶原本从 7.5 米高空往下砸，头半秒画面里
+     * 只有一张淡贴花 —— 玩家按下去了却收不到回执，看起来像空招。
+     * 这一环负责「我按下去了」，冰晶负责「雪在下」，分工不同。 */
+    FX.shock(pos, 4.4, { color: 0x9ae8ff, dur: 0.5 });
     let t = 0;
     addUpdate({ update(dt){
       t += dt;
@@ -4972,7 +5044,7 @@ blizzard: {
         for(let i=0;i<Math.round(3*Q());i++){
           const a = Math.random()*7, r = Math.random()*3.6;
           const px = pos.x + Math.cos(a)*r, pz = pos.z + Math.sin(a)*r;
-          FX.spr(px, 7.5 + Math.random()*1.5, pz, {
+          FX.spr(px, 5.0 + Math.random()*1.2, pz, {
             tex:'shard', life:.75, s0:.26, s1:.14, a0:.85,
             vy: -9, grav: 6, rot: 1.2, r:.82, g:.96, b:1 });
         }
@@ -5174,6 +5246,10 @@ talismanarrow: {
   v2(c){
     const from = new THREE.Vector3(c.x, 1.1, c.z);
     const to = new THREE.Vector3(c.tx, 1.1, c.tz);
+    /* 符箭 0.2 秒就飞完，60ms 那一帧之后读数断崖式掉到 100 —— 命中爆点
+     * 全是小火星，亮地面上根本收不到。两端各补一圈：出手环 + 命中环，
+     * 中间那张「竖长纸片」的剪影保持不变。 */
+    FX.shock(from, 1.5, { color: 0xffe0a0, dur: 0.3 });
     const arrow = billMesh(TEX.paper, C(0xffe0a0), .95);
     arrow.userData.noBB = true;
     arrow.scale.set(0.55, 1.5, 1);
@@ -5192,6 +5268,7 @@ talismanarrow: {
       if(k >= 1){
         scene.remove(arrow);
         FX.burst(to, { n: 16, speed: 5, life: .5, size: .26, tex:'spark', up:.6, grav:1.4 });
+        FX.shock(to, 2.0, { color: 0xffe0a0, dur: 0.36 });
         hitArea(to, 1.6, 30, { color:'#ffe6b0' });
         this.dead = true;
       }
@@ -5251,6 +5328,10 @@ whitetiger: {
       FX.spr(from.x + (Math.random()-.5)*0.9, 0.1, from.z + (Math.random()-.5)*0.9, {
         tex:'smoke', life:.5, s0:.3, s1:.9, a0:.20, vy:.5, grav:-.4, r:.9, g:.95, b:1 });
     }
+    /* 白虎要 0.42 秒才扑到位，兽身还靠 beastFade 慢慢淡入 —— 头一瞬只有
+     * 半透明的白烟，读数 460。补一圈蹬地冲击，把「起跳」这个瞬间钉住，
+     * 不改「低伏猫科 + 落点三道爪痕」的主体剪影。 */
+    FX.shock(from, 2.2, { color: 0xfff0d0, dur: 0.4 });
 
     let t = 0;
     const dur = 0.42;
@@ -5370,18 +5451,22 @@ antidote: {
   note:'绿色光点<b>从四周向身体收拢</b>后消失，表示"毒被抽走"。方向向内，这是它和回春（向上）的分界。',
   v2(c){
     const pos = new THREE.Vector3(c.x, 0, c.z);
-    const ring = flatMesh(TEX.ring, C(0x7fbf5a), THREE.AdditiveBlending, 0);
-    ring.position.set(pos.x, 0.05, pos.z); ring.scale.setScalar(4.2);
+    /* 这一整套只活 0.5 秒，慢热就等于没放：原来环的初始 opacity 是 0、
+     * 贴地 0.05 米还会被地面深度吃掉一半，白天亮地面上量到 123 像素。
+     * 改成起手就亮 + 抬高一点 + 放大一圈，方向仍然是「由外向内收」。 */
+    const ring = flatMesh(TEX.ring, C(0x7fbf5a), THREE.AdditiveBlending, 0.85);
+    ring.position.set(pos.x, 0.09, pos.z); ring.scale.setScalar(5.0);
+    FX.shock(pos, 3.0, { color: 0x7fbf5a, dur: 0.42 });
     addUpdate({ t:0, update(dt){ this.t += dt;
       const k = Math.min(1, this.t/0.5);
-      ring.scale.setScalar(4.2 * (1-k) + 0.6);
-      ring.material.opacity = .7 * (1-k);
+      ring.scale.setScalar(5.0 * (1-k) + 0.6);
+      ring.material.opacity = .9 * (1-k);
       if(k>=1){ scene.remove(ring); this.dead = true; } }});
     for(let i=0;i<40*Q();i++){
       const a = Math.random()*7, r = 2.6 + Math.random()*1.4;
       const sx = pos.x + Math.cos(a)*r, sz = pos.z + Math.sin(a)*r;
       FX.spr(sx, 0.2 + Math.random()*1.2, sz, {
-        tex:'spark', life:.7, s0:.24, s1:0, a0:.9,
+        tex:'spark', life:.7, s0:.34, s1:0, a0:1,
         vx: (pos.x - sx)*3.4, vy: .8, vz: (pos.z - sz)*3.4, grav:-.6,
         r:.6, g:1, b:.55 });
     }

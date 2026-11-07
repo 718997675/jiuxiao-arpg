@@ -482,10 +482,18 @@ const AFTER = `  };
   }
 
   function clear() {
+    /* _live 只该装「一次性」mesh。常驻池（粒子 Points / 18 个贴花 quad）
+     * 在实验室源里打了 userData.shared，ROOT.add 的包装会跳过它们。
+     * 少了这个标记，clear() 会把池子整个从 ROOT 摘掉并 dispose 材质 ——
+     * 之后 FX.spr / FX.decal 还在往池里写，stats() 也数得到粒子，
+     * 但场景树里已经没有承载它们的 mesh，玩家一个像素都收不到。 */
     for (let i = 0; i < _live.length; i++) {
       const m = _live[i];
       if (m.parent) _rootRemove(m);
-      if (m.geometry && !m.userData.shared && m.geometry.dispose) m.geometry.dispose();
+      /* _plane 是所有 flatMesh / billMesh 共用的几何，不能按「一次性」销毁：
+       * dispose 掉之后下一发还要用它，等于把整个贴地层的地基拆了。
+       * 材质是每次 new 的，照常释放。 */
+      if (m.geometry && !m.userData.shared && m.geometry !== _plane && m.geometry.dispose) m.geometry.dispose();
       if (m.material) {
         if (Array.isArray(m.material)) m.material.forEach(x => x && x.dispose && x.dispose());
         else if (m.material.dispose) m.material.dispose();

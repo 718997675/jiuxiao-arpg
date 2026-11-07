@@ -10,7 +10,7 @@
   `docs/status/boss-kits.md`（B 线 B1~B25）。本文件只管「还差什么、按什么顺序合」。
 - 更新：2026-11-07
 
-> 当前：两条线的特效代码都已在 feat/skill-refactor 跑通，但 origin/main 一个特效文件都没有；统一计划已建立，按 U1 → U12 依次收口，人物先合、BOSS 后合。
+> 当前：**U1 已收口**（`--live` 113/0、默认 39/0，零空招零欠账）；两条线的特效代码都已在 feat/skill-refactor 跑通，但 origin/main 一个特效文件都没有。按 U2 → U12 依次收口，人物先合、BOSS 后合。
 
 ## 一句话现状
 
@@ -24,7 +24,7 @@
 
 | 线 | 完成度 | 已完成 | 未完成 |
 |---|---|---|---|
-| 人物技能特效 | **约 80%** | V0 地基（14 格图集 + 12 原语，全带 `FX.q` 降级）、配方 DSL v2（15 剪影 × 形/色/时 + `ELEM_PROFILE` 6 套）、P4 三职业 ⑤ 签名、P5 台阶 45/45、P5b ①~④ 位 30 个 case 接线、B20 玩家侧 37 只 `src/sfx.js`、V2/V3/V3b 可见度、双演出层适配（`abd20ad`）；15 位 × 4 档 ≤6 draw call、五连放 +3.6%；契约 dsl 343 / kit 58 / p5 974 / p5b 116 / p4 60 | U1~U6（见下表） |
+| 人物技能特效 | **约 80%** | V0 地基（14 格图集 + 12 原语，全带 `FX.q` 降级）、配方 DSL v2（15 剪影 × 形/色/时 + `ELEM_PROFILE` 6 套）、P4 三职业 ⑤ 签名、P5 台阶 45/45、P5b ①~④ 位 30 个 case 接线、B20 玩家侧 37 只 `src/sfx.js`、V2/V3/V3b 可见度、双演出层适配（`abd20ad`）；15 位 × 4 档 ≤6 draw call、五连放 +3.5%；U1 双演出层口径 + 空招/偏淡收口；契约 dsl 343 / kit 58 / p5 974 / p5b 116 / p4 60 | U2~U6（U1 已 ✅） |
 | BOSS 技能特效 | **约 85%** | B1~B25 全 ✅（B2 已推翻不计）：45 只 × 5 格 = 88 招、18 个原语进 `src/fx2.js`、`src/boss-cast.js` 接进 `bossPattern`（四拍 + 每第 5 轮压轴）、B22 地面暗底、B23 竖向兜底（43 招有高度）、B24/B25 变形层 180 条 / 10 种应对轴；真机 15/15、88 招 0 空招 0 报错 | U7~U10（见下表） |
 | 合入 | **0%** | 无 | U11 / U12 |
 
@@ -40,7 +40,7 @@
 
 | 编号 | 节点（前缀 = 归属） | 状态 | 落点 / 产物 | 验收 |
 |---|---|---|---|---|
-| U1 | 人物 · **SKFX 真实链路收口**：空招 `blizzard` / `antidote`；偏淡 7 只 heal 270 · bloodrage 303 · avatar 1330 · talisman 1034 · talismanarrow 1060 · whitetiger 1357 · whirl 2400；给 SKFX 定自己的面积下界；定「配方层 / SKFX 谁为准」 | ⬜ | `docs/vfx-playground.html`（源）→ `node dev/build-skillvfx.js --write` → `src/sfx.js`；`dev/vfx-skill-vis.js --live` | `--live` 零空招、零异常；下界写进台账 |
+| U1 | 人物 · **SKFX 真实链路收口**：空招 `blizzard` / `antidote`；偏淡 7 只 heal 270 · bloodrage 303 · avatar 1330 · talisman 1034 · talismanarrow 1060 · whitetiger 1357 · whirl 2400；给 SKFX 定自己的面积下界；定「配方层 / SKFX 谁为准」 | ✅ | `docs/vfx-playground.html`（源）→ `node dev/build-skillvfx.js --write` → `src/sfx.js`；`dev/vfx-skill-vis.js --live` | `--live` **113/0**（零空招 / 零异常 / 每只 ≥ 同一把下界）；默认配方层 39/0；口径与下界结论写进下节 |
 | U2 | 人物 · **V1 HUD 增益条整块没动**：`#buffbar` 仍有 6 处、`buffrow` 0 处、`data-buff-icons.js` 无、`renderBuffs` 仍 `innerHTML` 全量重建（每 100ms 闪一次）。要搬到血条下、16 枚符号图标、增量 diff、叠层结构化 `×N`、`#trialHud` 避让、200ms 淡出 | ⬜ | `index.html` / `src/ui.js` / `src/mobile.js` / 新建 `src/data/data-buff-icons.js` | PLAN §13 第 7~11 条 + `node dev/mobile-layout.js` |
 | U3 | 人物 · **V5 组合特效进游戏**：`comboApply` 只在试验台（`docs/vfx-playground.html` 2 处，`src/` 0 处）。技能内组合 4 组（freeze / burn / exec / gather）+ 职业核心连携 3 条（刃势巨刀 / 法相手掌光点 / 符毒绿符钉）全还只是演示 | ⬜ | `src/vfx.js` 或新解释器分支 + `src/game.js` 的 `playSkillVfx` | 真机探针逐条看到组合成立，零报错 |
 | U4 | 人物 · **元素反应 10 组专属视觉**：机制 P3a 已 10/10 落地（走 `damageEnemy` 一个口），但 §9.2 的蒸汽 / 等离子 / 绿火 / 晶体爬弧 / 霜面腐蚀 / 链式绿弧 / 金火等视觉语言没落进游戏 | ⬜ | `src/game.js` 的 `applyElemReaction` + `src/fx-kit.js` 现有原语 | 每组一条灰度截图，互不重样；复用 0.5s / 2s ICD |
@@ -53,22 +53,100 @@
 | U11 | 合入 · **人物技能特效合进游戏**：补完 U1~U6 → 固定动作 → 合 main → 推上线 | ⬜ | `./dev/branch.sh --sync` → `node dev/smoke.js` + `node dev/mobile-layout.js` → `./dev/publish-preview.sh feat/skill-refactor` 看预览站 → 合 main → `./push.sh` | 正式站能开局、`ERRORS none`、存档隔离生效 |
 | U12 | 合入 · **BOSS 技能特效合进游戏**：补完 U7~U10 → 同上固定动作 → 合 main；**必须基于「已含 U11 的 main」重新对一遍**，不能拿老 main 当基准 | ⬜ | 同 U11 | 88 招正式站真机全量试放 0 空招 0 报错 |
 
-## 下一步（从 U1 开始，别跳）
+## 双演出层口径（U1 定 · 长期有效）
 
-1. `U1` 先定双演出层口径：**`Game.playSkillVfx` 现在是 SKFX 优先、有就不播配方**，
-   配方层只在没手搓实现时兜底。要定的是「以后改技能特效，改 `docs/vfx-playground.html`
-   还是改 `data-vfx.js`」——不定这条，U1 的空招 / 偏淡改完会和 U6 的逐条配方打架。
+> 这条不定下来，U1 改完的空招 / 偏淡会和 U6 的「逐条配方打磨」打架：
+> 两边都以为自己是那只技能的正主。2026-11-07 U1 收口时按代码事实定死如下。
+
+**谁为准：`SKFX` 为准，配方层不是并列的第二套演出。**
+
+`Game.playSkillVfx(id, opts)`（`src/game.js:3909`）的判断顺序是
+`SKFX.has(id)` → 有就整只播 `SKFX.play` 并**立刻 return**，压根不碰 `VFX.playFor`。
+37 只技能在 `src/sfx.js` 里全有手搓实现，所以**正常游戏里配方层一次都不会为它们播**。
+同时播两套只会得到重影 + 双倍 draw call。配方层的真实职责只剩三个：
+
+1. **回落路径**：以后新增技能、还没写手搓实现时兜底；
+2. **数据层**：15 位剪影 / 45 档台阶 patch / 元素染色仍由 `data-vfx.js` + `vfx.js` 定义，
+   `VFX.playFor` 是这些数据的解释器（U5 武器附魔、U6 逐条配方仍改这里）；
+3. **尺子**：`dev/vfx-skill-vis.js` 默认模式绕过 SKFX 直接量配方层，保住 V2/V3 的历史读数。
+
+**以后改哪（按「改的是什么」分，不按「哪层好看」分）：**
+
+| 要改的东西 | 唯一源 | 流程 |
+|---|---|---|
+| 某只技能的**演出本身**（形状 / 时序 / 起手回执 / 面积） | `docs/vfx-playground.html` 里那只的 `v2(c)` | 改 → 实验室看 → `node dev/build-skillvfx.js --write` → `--check` |
+| **台阶 patch / 元素染色 / 功能位剪影 / 回落兜底** | `src/data/data-vfx.js`、`src/vfx.js`、`src/fx-kit.js` | 常规改 + `vfx-skill-vis` 默认模式复量 |
+| `src/sfx.js` | **不许手改**，它是生成物 | 一律走上一行 |
+
+**别名映射坑（U1 实际踩过一次）**：实验室里的技能名不全是游戏 id，
+`dev/build-skillvfx.js` 的 `ALIAS` 有 5 条：
+`swords→swordarray`、`stance→avatar`、`avatar→elementavatar`、`missile→fireball`、`rain→swordrain`。
+按游戏 id 去实验室里找同名条目会**改到另一只技能**，而且「读数几乎没动」很难让人想到是改错对象。
+改之前先查 `ALIAS`；`src/sfx.js` 里的键才是游戏 id。
+
+**分段调用**：`segments` 只对配方层有意义。SKFX 的 `v2` 是整只一次播完（自带 delay / seq），
+所以 `segments:['cast']` 播、`segments:['impact' | 'loop']` 直接返回不做事，避免命中段双播。
+已知局限：`leap` 这类「起手在一处、命中在另一处」的技能，落地那一段不会再单独画在落点——
+U6 逐条配方复核时一并确认，别当成新回归。
+
+**尺子**：`dev/vfx-skill-vis.js` 默认（配方层，60/250ms 两帧）与 `--live`（真实链路，多一帧 600ms
+补 SKFX 的迟起 seq）分开量，但**共用同一把绝对下界** `900 / 1500 / 2500`。
+U1 逐只比对过 37 组 `SKFX / 配方` 读数：0.166 ~ 6.514、中位 1.003、15 只 <0.6 且 14 只 >1.5，
+不存在可套的「手搓层更收敛、打折 60%」这回事；同一块视口、同一机位，看得见就是看得见。
+多采一帧是补演出层起步时差，不是给面积放水。
+
+## U1 收口记录（2026-11-07）
+
+**判据结论：不给 SKFX 单设下界。** 中途试过 `SFX_MIN_* = MIN_* × 60%`，逐只比对 37 组
+「SKFX / 配方」读数后推翻：0.166 ~ 6.514、中位 1.003、15 只 <0.6 且 14 只 >1.5，
+根本没有一个可套的同档比例；两层渲染的是同一块 1000×660 视口、同一机位，
+按层打折等于把尺子绑在被量对象上。`--live` 从「只观察推进」升级为**判据**，
+与配方层共用 `900 / 1500 / 2500`，零空招 / 零异常 / 每只 ≥ 下界。
+
+**改了什么（全部走生成器，没手改 `src/sfx.js`）**
+
+| 类 | 内容 |
+|---|---|
+| 两个地基 bug | `clear()` 把常驻池（粒子 `Points` / 18 个贴花 quad）当一次性 mesh 摘掉并 dispose 材质 → 池子还在写、场景树里已没有承载，玩家一个像素都收不到；`_plane` 是所有贴地网格共用的几何，按「一次性」dispose 等于拆掉整个贴地层。分别用 `userData.shared`（必须在 `ROOT.add` **之前**打）和 `!== _plane` 修掉 |
+| 贴地可见度 | `flatMesh` 加 `polygonOffset(-4,-4)`。贴地环与地面共面，抬 y 只能治标，镜头一压又穿回去 |
+| 空招 2 只 | `blizzard` 补起手范围环 + 冰晶下落高度 7.5→5.0；`antidote` 起手环从 opacity 0 改成 0.85、贴地 0.05→0.09、半径 4.2→5.0，再补一圈 `shock` |
+| 偏淡 7 只 | `heal`（用 `TEX.shock` 而非三条细描边的 `TEX.ring`，后者只 +28 像素）、`bloodrage`、`avatar`→实际是 `elementavatar`、`talisman`、`talismanarrow`、`whitetiger`、`whirl` 各补与自身剪影语义一致的起手回执 / 范围环 |
+| 尺子 | `--live` 加面积判据、`--dbg` 播放明细、离下界最近 6 只观察清单；`grab()` 先 `gl.finish()`，并在计量前用首只技能暖机一遍。单做任一个都还会偶发 `iceshard` 1401~1460 假红，两个一起才稳定 1604~1607 |
+
+**验证（提交前最后一次复跑）**
+
+| 项 | 结果 |
+|---|---|
+| `vfx-skill-vis --live` | **113 / 0** · 零空招零异常 · 37 只全 ≥ 下界 |
+| `vfx-skill-vis` 默认（配方层） | **39 / 0** · 连跑三次稳定（`iceshard` 1599~1607） |
+| `vfx-vis` / `vfx-bench` | 14 / 0 · 186 / 0（15 位 × 4 档 ≤6 draw call，五连放 +3.5%） |
+| 真机 / 布局 | `probe-sfx` 12/0 · `smoke` ERRORS none · `mobile-layout` 全绿 |
+| 契约 / 生成物 | dsl 343 · kit 58 · p4 60 · p5 974 · p5b 116 · `build-skillvfx --check` 一致 · 三个改动 JS `node --check` 全过 |
+
+**交给 U6 的清单**（过了下界只说明「收得到」，好不好看归逐条打磨）：
+`--live` 离下界最近 6 只 = whitetiger 1.09× · iceshard 1.23× · chain 1.25× ·
+bloodrage 1.29× · thrust 1.38× · heal 1.62×。配方层 `iceshard` 也只有 7% 余量，
+仍是最贴地板的一只，别把「暖机后稳定过线」误读成「它够显眼」。
+
+## 下一步（U1 已收口，从 U2 开始，别跳）
+
+1. `U2` 人物 · V1 HUD 增益条整块没动：先按 `SKILL-VFX-PLAN.md` §13 第 7~11 条把
+   `#buffbar` 搬到血条下（16 枚符号图标 / 增量 diff / 叠层 `×N` / `#trialHud` 避让 /
+   200ms 淡出），落点 `index.html`、`src/ui.js`、`src/mobile.js` + 新建
+   `src/data/data-buff-icons.js`；改完跑 `node dev/mobile-layout.js`。
 2. 改 `src/sfx.js` **一律走生成器**：改 `docs/vfx-playground.html` →
    `node dev/build-skillvfx.js --write` → `node dev/build-skillvfx.js --check`。
    别手改生成物（`abd20ad` 修的 `hitArea` stub 就是这么来的）。
-3. U1 收口后立刻 `git status` + 写本表状态 + commit，再进 U2。台账四段别攒着写。
+3. 每个 U 收口后立刻 `git status` + 写本表状态 + commit，再进下一个。台账别攒着写。
 4. U11 / U12 之前先 `./dev/status.sh` 确认三条线各自到哪了。
 
 ## 卡点（等拍板 / 硬前置）
 
-- **等用户拍板 4 件**：① 双演出层谁为准（U1）；② SKFX 的面积下界定多少（U1，
-  本轮明确没替 B20 线定标准）；③ 世界 Boss 是另开一层还是维持现状（U8）；
-  ④ `quake` 补前摇后倍率 ×1.6 → ×2.0 还是接受 Boss 变简单（`BOSS-VFX-PLAN.md §6-⑤`，U7）。
+- **等用户拍板 2 件**：① 世界 Boss 是另开一层还是维持现状（U8）；
+  ② `quake` 补前摇后倍率 ×1.6 → ×2.0 还是接受 Boss 变简单（`BOSS-VFX-PLAN.md §6-⑤`，U7）。
+- **U1 已结清 2 件**（2026-11-07，代码事实 + 实测，不再等拍板）：双演出层以
+  `SKFX` 为准（口径见上节）；SKFX **不另设**面积下界，`--live` 与配方层共用
+  `900 / 1500 / 2500`，113/0 全绿。
 - **合 main 的硬前置**：`act-expansion` 优先级更高、先合；`skill` 必须基于「已含 act 的 main」
   重新对一遍；**两条功能线绝不互相 merge**；切分支前工作区必须干净（`branch.sh` 会拦）。
 - **预览站 ≠ 特效台**：`publish-preview.sh` 发的是 `main:preview/<slug>/` 分支副本，
@@ -77,7 +155,9 @@
 - **生成物清单**：`src/sfx.js`（人物演出）、`src/fx2.js`（BOSS 原语）、
   `src/boss-cast.js`（BOSS 施法）、`src/data/data-bosskits.js`（88 招表）——
   四个都是生成物，源文件在 `docs/*.html` 或 `dev/build-*.js`，改完必须 `--write` + `--check`。
-- **判据会过期**：`vfx-skill-vis` 已因 B20 双演出层返工过一次（17/21 假红）。
-  合 main 前若再动演出层，先确认尺子量的是谁，再谈数字涨跌。
+- **判据会过期**：`vfx-skill-vis` 已因 B20 双演出层返工过一次（17/21 假红）；
+  U1 又因 SwiftShader 冷启动读到半帧返工一次（`iceshard` 1401~1897 来回跳，
+  靠「暖机 + `gl.finish()`」压到 1604~1607 稳定）。合 main 前若再动演出层，
+  先确认尺子量的是谁、读的是不是完整一帧，再谈数字涨跌。
 - `probe-skill-p5b` 串跑五个浏览器偶发 11/2、单跑连三次 13/0，属时序抖动，
   合 main 前单跑确认即可，别为此改判据。
