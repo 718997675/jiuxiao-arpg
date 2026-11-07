@@ -583,6 +583,15 @@ const BossCast = {
       e._cast = null;
       return false;
     }
+    /* ---------------- 这一只自己的变形（B24） ----------------
+     * 共享池只有 31 招、要撑 180 个格位，所以「树王的砸地」和「石王的砸地」
+     * 本来是同一段代码。变形层（src/data/data-bosstwist.js + src/boss-twist.js）
+     * 不改共享招本身，改的是**这一只放它的时候多发生什么**。
+     * 没写数据的首领这里什么都不做 —— 变形层是可选层，删掉游戏照样跑。
+     * 顺序放在 _lift 之前：变形层要按**原始** hit 取落点。 */
+    if (typeof BossTwist !== 'undefined' && BossTwist && typeof BossTwist.apply === 'function') {
+      try { BossTwist.apply(e, sk, id); } catch (err) { console.warn('[BossCast] 变形层失败 ' + id, err); }
+    }
     /* ---------------- 竖向体积兜底 ----------------
      * 2026-11-05 静态统计：88 招里 **63 招一根竖的东西都没有**，
      * 只用 zone / shock / burst / spr / decal —— 46° 俯角下它们全长一样，

@@ -1603,6 +1603,9 @@ const UI = {
     if (!boss) {
       bar.style.display = 'none';
       this._bossShown = null;
+      /* [B24] 血条收了，播报也得跟着收 —— 否则脱战之后屏幕上还挂着
+       * 一句「裂根震」，看起来像上一场没打完。 */
+      this.castBanner(null);
       /* [M18.10] 顶部世界 Boss 倒计时条要让位给首领血条，否则两只名字叠在
        * 屏幕正中上方。用 body 上的类而不是直接改 #wbTop 的 top：
        * 那条的显示/隐藏由 renderWorldBoss 管，两边都写 style 必然互相覆盖。 */
@@ -1635,6 +1638,35 @@ const UI = {
       `<i class="${ph >= 1 ? 'on' : ''}"></i><i class="${ph >= 2 ? 'on' : ''}"></i>`;
     this.renderBossPeers(boss);
     this._syncBossBarBottom();
+  },
+
+  /* [B24] 出招播报 —— 首领放招时报「这一只自己的叫法 + 它逼你做什么」。
+   *
+   * 为什么要做这一条：45 只的五格配招、88 招的机制（kind / dmg / answer）
+   * 全都只活在前一版的**数据**里，玩家在游戏里一个字的提示都看不到 ——
+   * 打起来只看到地上冒几个圈，读不出「这一招是藤蔓、要一直跑」。
+   *
+   * 信息分两层：
+   *   普通四拍 → 招式名（有变形层就用这一只自己的叫法）+ 一句应对（a）
+   *   本命（1/5 次）→ 更大的字 + answer，因为它 5 轮才出一次、每只都不一样
+   *
+   * `info.a` 可以为空：没写应对的招只报名，不硬凑一句话。 */
+  castBanner(info) {
+    const el = document.getElementById('castbar');
+    if (!el) return;
+    clearTimeout(this._castT);
+    if (!info || !info.n) { el.classList.remove('on'); return; }
+    const name = document.getElementById('castName');
+    const hint = document.getElementById('castHint');
+    if (name) name.textContent = info.n;
+    if (hint) hint.textContent = info.a || '';
+    el.classList.toggle('native', !!info.native);
+    /* 连放两招时要把淡入重放一遍：只加同一个类不会重播过渡，
+     * 必须清掉 → 强制回流 → 再加回来（和 #bossbar.swap 是同一个坑）。 */
+    el.classList.remove('on');
+    void el.offsetWidth;
+    el.classList.add('on');
+    this._castT = setTimeout(() => el.classList.remove('on'), info.native ? 3200 : 2400);
   },
 
   /* [M18.10 × P09] 把 #bossbar 的实测底边写进 CSS 变量 `--bossbar-bottom`。

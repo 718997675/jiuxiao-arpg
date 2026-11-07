@@ -99,10 +99,24 @@ const head = (t) => console.log('\n— ' + t + ' —');
     const b = Game.enemies.find(e => e.boss && !e.dead);
     if (!b) return;
     Game.playerGroup.position.set(b.pos.x + 7, 0, b.pos.z + 7);
+    /* **真血量字段是 `Game.state.hp`**（damagePlayer 读它），不是
+     * `state.stats.hp`、更不是 `Game.hp`。补错这两个的后果：B24 变形层
+     * 加了领域 DoT / 追炸 / 尖刺之后伤害是真的，玩家在模拟 24 秒被打死、
+     * `Game.dead=true`，AI 停摆，后面一招不出 —— 看着像「出招卡住」，
+     * 其实是探针把人补死了。 */
+    Game.state.hp = 999999;
     Game.state.stats.hp = 999999;
-    Game.hp = 999999;
+    Game.invuln = 0;
     /* 统计口：BossCast.tryCast 返回 true = 真的放出去了 */
     window.__cast = [];
+    /* 模拟时间累计器。**别拿墙钟当时间基准**：无头 SwiftShader 只有 ~8fps，
+     * dt 被夹到 0.05，30 秒墙钟只跑出 12 秒模拟时间；B24 变形层加了
+     * Domains 每帧 tick / 播报 / 拖拽之后帧率还会再掉一点。死等 32 秒墙钟
+     * 就会从「6 招」掉到「4 招」，纯假红 —— 实测这 4 招落在模拟
+     * 3.02 / 4.27 / 7.84 / 8.96 秒，间隔 4.8 秒，CD 节奏一点没坏。 */
+    window.__sim = 0;
+    const ou = BossCast.update.bind(BossCast);
+    BossCast.update = function (dt) { window.__sim += dt; return ou(dt); };
     const o = BossCast.tryCast.bind(BossCast);
     BossCast.tryCast = function (e, pp) {
       const before = this;
@@ -112,20 +126,26 @@ const head = (t) => console.log('\n— ' + t + ' —');
     };
   });
 
-  /* 跑 32 秒。Boss 的 patternCd 是 4.5~7.5 秒，五格轮转要 5 轮；
-   * 一轮里可能有多段 delay，所以不停往前推进。 */
+  /* 轮询到「模拟时间跑够 32 秒」为止，墙钟只做兜底上限（90 秒）。
+   * Boss 的 patternCd 是 4.5~7.5 **模拟**秒，五格轮转要 5 轮；
+   * 一轮里可能有多段 delay，所以不停往前推进。
+   * 用墙钟计时是这里最早的一个假红源：帧率一变，招数跟着变。 */
   const t0 = Date.now();
-  while (Date.now() - t0 < 32000) {
+  let sim = 0;
+  while (Date.now() - t0 < 90000 && sim < 32) {
     await wait(250);
     /* 每帧把血补满，只观察招式；同时别让玩家被击退跑出 18 米 */
     /* 每帧把玩家钉在首领旁边（不靠「跑远了再拉回」）：这是一次**表演验收**，
-     * 要的是「25 秒里它把五格都放一遍」，不是「玩家能不能站住」。
+     * 要的是「32 模拟秒里它把配招走一遍」，不是「玩家能不能站住」。
      * 只在超出距离时才拉回的话，前几秒会一直卡在闸外，统计到的全是 0。 */
-    await page.evaluate(() => {
-      Game.state.stats.hp = 999999; Game.hp = 999999;
+    sim = await page.evaluate(() => {
+      /* 同上：补 `state.hp`，不是 stats.hp / Game.hp。同时把倒地标志
+       * 一并清掉 —— 一旦 dead=true，AI 不会自己站起来。 */
+      Game.state.hp = 999999; Game.state.stats.hp = 999999;
+      Game.invuln = 0; Game.dead = false;
       const b = Game.enemies.find(e => e.boss && !e.dead);
-      if (!b) return;
-      Game.playerGroup.position.set(b.pos.x + 6, 0, b.pos.z + 6);
+      if (b) Game.playerGroup.position.set(b.pos.x + 6, 0, b.pos.z + 6);
+      return window.__sim || 0;
     });
   }
 
@@ -158,8 +178,8 @@ const head = (t) => console.log('\n— ' + t + ' —');
   });
 
   head('二、真的出招了');
-  ok(res.total >= 6, '32 秒内放出 ≥6 招（三首领同场，每只约 3 招）',
-    { total: res.total, 各首领: res.byBoss });
+  ok(res.total >= 6, '32 模拟秒内放出 ≥6 招（首领各约 3 招）',
+    { total: res.total, 模拟秒: Math.round(sim * 10) / 10, 墙钟秒: Math.round((Date.now() - t0) / 1000), 各首领: res.byBoss });
   ok(Object.keys(res.all).length >= 4, '至少用了 4 个不同的招式', res.all);
 
   head('三、五格都用到了');

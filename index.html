@@ -189,6 +189,27 @@
     to{opacity:1;transform:translateX(-50%) translateY(0)}
   }
 
+  /* ---------- 出招播报（B24） ----------
+   * 首领放招时，报「这一只自己的叫法 + 它逼你做什么」。
+   *
+   * 位置：**屏幕下方居中、动作条之上**。
+   * 试过血条正下方（`--bossbar-bottom + 6px`），实测被 #toasts 盖掉 ——
+   * 那个位置正是吐司队列的起点（`--bossbar-bottom + 42px`），
+   * 而 #toasts 在 DOM 里排在 #castbar 后面，谁在上层由顺序决定，
+   * 结果播报「明明写了却没出现」。下半屏那块是空的（左下是战斗日志，
+   * 靠右是动作条），挪下来之后就再没有重叠。 */
+  #castbar{position:absolute;left:50%;bottom:92px;transform:translateX(-50%);
+    width:min(560px,52vw);text-align:center;pointer-events:none;z-index:14;
+    opacity:0;transition:opacity .3s ease}
+  #castbar.on{opacity:1}
+  #castbar .cn{font-family:"STKaiti","KaiTi",serif;font-size:21px;letter-spacing:5px;color:#ffcf9a;
+    text-shadow:0 0 20px rgba(230,90,40,.85),0 2px 5px #000}
+  #castbar .ca{font-size:12px;letter-spacing:2px;color:#e8b98a;margin-top:2px;opacity:.92}
+  /* 本命（第 5 格）不是同一类东西：只出现 1/5 的次数，得压过普通招一头 */
+  #castbar.native .cn{font-size:25px;letter-spacing:8px;color:#ffe6c0;
+    text-shadow:0 0 28px rgba(255,120,40,1),0 2px 6px #000}
+  #castbar.native .ca{color:#ffd28a;font-size:13px}
+
   /* ---------- 大图（P03） ----------
    * 独立一层，不占 #miniWrap —— 小地图要一直报「我在哪个区」，
    * 被大图顶掉的话玩家反而丢了方位感。
@@ -2103,6 +2124,11 @@
 
   /* ---- HUD 缩放 ---- */
   body.touch #actionbar{display:none}
+  /* 手机上动作条是隐藏的，92px 会压到地上的虚拟摇杆/技能键上：
+   * 往上抬到摇杆区之上，仍然居中。 */
+  body.touch #castbar{bottom:172px;width:86vw}
+  body.touch #castbar .cn{font-size:18px;letter-spacing:3px}
+  body.touch #castbar.native .cn{font-size:22px;letter-spacing:5px}
   body.touch #interact{display:none!important}
   body.touch #charplate{left:10px;top:8px;gap:7px;transform:scale(.8);transform-origin:top left}
   body.touch #topright{right:10px;top:8px;gap:5px}
@@ -2618,6 +2644,9 @@
     <div class="peers" id="bossPeers"></div>
   </div>
 
+  <!-- 出招播报（B24）：首领取自己的招名 + 一句应对。由 UI.castBanner 驱动。 -->
+  <div id="castbar"><div class="cn" id="castName"></div><div class="ca" id="castHint"></div></div>
+
   <!-- 大图（P03）：点右上角小地图打开。滚轮 / 双指缩放，拖动平移，Esc 关闭。 -->
   <div id="mapBig">
     <div class="mb-box">
@@ -3097,6 +3126,10 @@
 <!-- B17.1 首领技能表（45 只 × 5 格 / 88 招的判定与演出）—— **生成物**，
      源是 docs/boss-vfx-playground.html，改完跑 node dev/build-bosskits.js --write -->
 <script src="src/data/data-bosskits.js"></script>
+<!-- [B24] 每只首领自己的四拍（8 只主线已写，其余沿用共享招）。
+     是**手写内容表**，不是生成物 —— 共享池那 31 招不动，这里只写
+     「这一只放它的时候多发生什么」。boss-twist.js 读它。 -->
+<script src="src/data/data-bosstwist.js"></script>
 <script src="src/data/data-fauna.js"></script>
 <script src="src/data/data-elites.js"></script>
 <script src="src/data/data-world.js"></script>
@@ -3131,6 +3164,11 @@
      ReferenceError。**也是生成物**，源在 docs/boss-vfx-playground.html。
      必须在 fx2.js 之后（顶层直接取 FX2.tools），在 game.js 之前（updateBossAI 要调它）。 -->
 <script src="src/boss-cast.js"></script>
+<!-- [B24] 变形层 + 出招播报：共享池只有 31 招、要撑 180 个格位，
+     不写这一层「树王的砸地」和「石王的砸地」就是同一段代码。
+     必须在 boss-cast.js 之后（它由 tryCast 调用）、game.js 之前。
+     Domains 在更后面加载，但这层只在**放招那一刻**用它 —— 那时早就有了。 -->
+<script src="src/boss-twist.js"></script>
 <!-- [B20] 玩家侧技能演出层（37 只技能的整套画法）。**生成物**，
      源在 docs/vfx-playground.html —— 改特效去那边改，别改 src/sfx.js。
      只依赖 THREE；bind(scene, camera, renderer) 之后才能出东西。
