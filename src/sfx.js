@@ -2882,8 +2882,15 @@ function damageNumber(pos, value, color, crit) {
 }
 /* 命中判定：**不做伤害**。实验室里这两个会扣木人桩的血并打飞字，
  * 游戏里由 game.js 的 rollDamage / damageEnemy 负责。
- * 留成返回 0 的空实现，是为了让切过来的代码原样跑（它只是想在命中点补几颗粒子）。 */
-function hitArea(pos, radius, dmg, o) { return 0; }
+ *
+ * hitArea 必须返回**空数组**，不能返回 0：实验室的 hitArea 返回命中列表，
+ * 技能里有 const hits = hitArea(...); hits.forEach(e => e.knock = ...) 这样的写法。
+ * 返回 0 时这一行在**延迟 seq 里**（quake 约 0.35 秒后）抛 TypeError，
+ * 而它跑在 FX.update → SKFX.update 的 updater 队列里，不在 SKFX.play
+ * 的 try/catch 范围内 —— 会把整帧打断。probe-sfx 只数「有没有粒子上场」，
+ * 推 3 帧就停，所以 12/12 全绿也没抓到。
+ * 空数组让切过来的代码原样跑：没有敌人可 knock，但也不炸。 */
+function hitArea(pos, radius, dmg, o) { return []; }
 function hitEnemy(e, dmg, o) { return 0; }
 function killEnemy(e) {}
 

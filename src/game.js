@@ -3925,10 +3925,20 @@ const Game = {
       const segs = o.segments;
       if (!segs || segs.indexOf('cast') >= 0) {
         const aim = o.aim || pos;
+        /* **dir 口径转换**：游戏这边是方向向量（`THREE.Vector3` 或 `{x,z}`），
+         * 而实验室 SKFX 的 `c.dir` 是 **yaw 角度**（源里写的是
+         * `Math.atan2(aim.x - P.pos.x, aim.z - P.pos.z)`，17 处 `Math.sin(c.dir)`
+         * / `Math.cos(c.dir)` / `rotation.y = c.dir` 全按角度用）。
+         * 直接把向量塞进去 → `Math.sin(Vector3)` = NaN，火线 / 扇形 / 分身全部
+         * 画到 NaN 上：`thrust` 整只技能一个差异像素都没有，而 probe-sfx 只数
+         * 「有没有粒子上场」，NaN 粒子照样算数，所以 12/12 全绿也抓不到。
+         * 口径按 sin→x / cos→z 对齐，与 `SFX_FWD = (0,0,1)` 的 yaw=0 一致。 */
+        const d = o.dir || this.lastMoveDir || SFX_FWD;
+        const yaw = Math.atan2(d.x || 0, d.z || 0);
         SKFX.play(id, {
           x: pos.x, z: pos.z,
           aim: aim,
-          dir: o.dir || this.lastMoveDir || SFX_FWD,
+          dir: yaw,
           tx: aim.x, tz: aim.z
         });
       }

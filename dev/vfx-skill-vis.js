@@ -1,38 +1,43 @@
 #!/usr/bin/env node
 /* ============================================================
- * 逐技能配方可见度 · 真机（37 只技能，白天亮地面上量「这一发放出来看得见吗」）
+ * 逐技能可见度 · 真机（37 只技能，白天亮地面上量「这一发放出来看得见吗」）
  *
- *   NODE_PATH=<node_modules> node dev/vfx-skill-vis.js
+ *   NODE_PATH=<node_modules> node dev/vfx-skill-vis.js                 # 默认：配方层
+ *   NODE_PATH=<node_modules> node dev/vfx-skill-vis.js --live          # 真实链路（观察）
  *   NODE_PATH=<node_modules> node dev/vfx-skill-vis.js fireball talisman
  *
+ * ---------------- 两种模式（B20 之后必须分开量） ----------------
+ * `74d8025` 给玩家侧加了 `src/sfx.js`：`playSkillVfx` 现在是 **SKFX 手搓实现
+ * 优先、有就不播配方**（37 只全有），只有没手搓实现的技能才回落到 data-vfx。
+ * 于是「量这只技能」变成两个不同的问题：
+ *
+ *   默认（配方层）  绕过 SKFX，直接 `VFX.playFor`，只推进 FX，判据用三档下界。
+ *                   保住回落路径 + 15 位剪影这把尺子 —— V2/V3 修的全在配方层，
+ *                   不能因为新演出层抢了前排就把它扔了。它也是本脚本的**判据**。
+ *   --live（观察）  走 `Game.playSkillVfx`，FX 与 SKFX 同时推进，回答玩家眼睛
+ *                   真正收到什么。SKFX 是另一条线的生成物、画法面积与配方不同
+ *                   且仍在活跃改动，所以**不套配方的面积下界**，只卡两条硬底线：
+ *                   不抛错、不能一个像素都没有。偏淡的只报观察项。
+ *
+ * 第一次撞上这件事时，探针只推 `FX.update`，SKFX 的粒子永远停在第 0 帧：
+ * 10 只技能量出 `diff = 0`，看着像大规模回归，其实是**尺子过期**。
+ * 这和前面两次坑是同一类（V2 落点量到角色身上、V3 主循环没停）：
+ * 先确认量的是谁，再谈数字涨跌。
+ *
  * ---------------- 和 vfx-vis 的分工 ----------------
- * `vfx-vis` 量的是**原语**（spr / decal / shock…），一条最小配方只放一条指令，
- * 判「这个原语本身画不画得出来」。它保证的是地基。
- *
- * 这个脚本量的是**配方**：`VFX.playFor(id, ctx)` 走真实解析路径（功能位兜底 +
- * 台阶 patch + 元素染色），把整条 cast / loop / impact 一起放出去。它回答的是
- * 另一个问题 —— 「地基都在，为什么这只技能放出来还是没感觉」。
- *
- * 两个都要有，因为修法不同：
- *   原语看不见 → 改 `ELEM_PROFILE` / 贴图（一次改，所有配方受益）
- *   配方看不见 → 改这一条配方的**指令组合**（这个位该用几道、什么形）
+ * `vfx-vis` 量**原语**（一条最小配方只放一条指令），保证地基；
+ * 这个脚本量**整只技能**，回答「地基都在，为什么放出来还是没感觉」。
+ * 修法不同：原语看不见 → 改 `ELEM_PROFILE` / 贴图；整只看不见 → 改指令组合。
  *
  * ---------------- 量法 ----------------
- * 与 `vfx-vis` 同一套：清场 → 取底帧 → 播 → 两帧取样 → 比差异像素，
- * **整段在一次 `page.evaluate` 里跑完**（同步块内 rAF 插不进来，
- * 两帧之间除了特效没有任何东西在动）。
- *
- * 取两个时刻的理由也照抄：`flash` / `arc` 60ms 最亮，`ring` 是从零扩出去的、
- * 60ms 才 13% 半径。取两者较大的那个，谁都不冤。
+ * 清场 → 取底帧 → 播 → 多帧取样 → 比差异像素，**整段在一次 `page.evaluate`
+ * 同步块里跑完**（rAF 插不进来，两帧之间除了特效没有任何东西在动）。
+ * 取 60 / 250 / 600ms 三个时刻的最大值：`flash` / `arc` 在 60ms 最亮，
+ * `ring` 是从零扩出去的、60ms 才 13% 半径，SKFX 的自带 seq 更晚。
  *
  * ---------------- 判据 ----------------
- * 只判「看得见」，不判美丑。下界按**半径**分档，因为一只 3 米单体技能和一只
- * 8 米领域本来就不该一样大：
- *
- *   半径 ≤ 3.5 米：1500 像素      半径 > 3.5 米：2500 像素
- *
- * 这两个数不是拍的 —— 是这一轮实测里「读得出形状」的最低档（fireball 类单体
- * 投射物 ≈ 1800，AoE ≈ 3000+），往下留了约 20% 余量。
+ * 只判「看得见」，不判美丑。下界分三档（见下方常量）：自身增益画在自己身上，
+ * 判据是「你知不知道它生效了」，拿它跟火球比面积只会逼出全屏白闪。
  *
  * 机位 / 地图固定：桃源村（白天）· 俯视三分之四。
  * 落点分两种，跟着技能自己的施法方式走：**自身增益落在脚下**（含角色遮挡，
@@ -65,7 +70,11 @@ const BUFF_TYPES = { buff: 1, heal: 1, shield: 1 };
 const minOf = it => (it.self && BUFF_TYPES[it.type] ? MIN_BUFF : (it.radius > 3.5 ? MIN_BIG : MIN_SMALL));
 
 (async () => {
-  const only = process.argv.slice(2);
+  const argv = process.argv.slice(2);
+  /* 默认量配方层；`--live` 切到真实链路。`--recipe` 留作显式别名。 */
+  const live = argv.indexOf('--live') >= 0;
+  const recipeOnly = !live;
+  const only = argv.filter(a => a.indexOf('--') !== 0);
   const b = await puppeteer.launch({
     executablePath: EXE, headless: 'new',
     args: ['--no-sandbox', '--enable-unsafe-swiftshader', '--use-gl=angle', '--use-angle=swiftshader']
@@ -116,10 +125,11 @@ const minOf = it => (it.self && BUFF_TYPES[it.type] ? MIN_BUFF : (it.radius > 3.
   });
   const list = ids.filter(o => !only.length || only.indexOf(o.id) >= 0);
 
-  console.log('一、量 ' + list.length + ' 只技能（白天亮地面；增益落在脚下，指向性落在身前 3 码）');
+  console.log('一、量 ' + list.length + ' 只技能 · ' + (recipeOnly ? '配方层（默认，绕过 SKFX）' : '真实链路 --live（FX + SKFX 同推进）') +
+    ' · 白天亮地面；增益落在脚下，指向性落在身前 3 码');
   const rows = [];
   for (const it of list) {
-    const r = await p.evaluate((it) => {
+    const r = await p.evaluate((it, recipeOnly) => {
       const gl = document.getElementById('gl');
       const c2 = document.createElement('canvas');
       c2.width = gl.width; c2.height = gl.height;
@@ -140,10 +150,42 @@ const minOf = it => (it.self && BUFF_TYPES[it.type] ? MIN_BUFF : (it.radius > 3.
         return { diff: diff, maxD: maxD };
       };
 
-      FX.clear(); VFX.reset();
+      /* **两条演出层都要清、都要推**。SKFX 的 mesh 挂在自己的 Group 下，
+       * `FX.clear()` 碰不到它；不清的话上一只技能的残留会算进这一只的底帧。
+       * SKFX 也没有 rAF 自理（主循环被我们停了），不推 `update` 就永远停在
+       * 第 0 帧 —— 第一次跑出来 10 只 `diff = 0` 就是这个原因。 */
+      const hasSfx = typeof SKFX !== 'undefined' && SKFX && typeof SKFX.update === 'function';
+      const wipe = () => {
+        FX.clear(); VFX.reset();
+        if (hasSfx) SKFX.clear();
+      };
+      const step = (t) => {
+        /* `--recipe` 沿用旧量法（FX.update 单步），这样配方层的数字和 V2/V3
+         * 的历史读数可比。配方层不播 SKFX，拆步没有意义。 */
+        if (recipeOnly) { FX.update(t); return; }
+        /* **不要再单独调 SKFX.update**：`FX.update` 内部已经调了（fx.js:1210），
+         * 再推一次是双倍时间轴。
+         *
+         * 但 SKFX 的 update 把 dt 夹到 0.05（`Math.min(0.05, raw)`）—— 一次喂
+         * 0.35 只走 0.05，三步加起来才 0.15 秒，带 delay / seq 的招根本还没开场，
+         * 量出来就是 `diff = 0`。所以把 **FX.update 本身**拆成 ≤0.04 的小步：
+         * 两家拿到的累计时间相同，SFX 也不会被夹。 */
+        let left = t;
+        while (left > 0.0001) {
+          const d = Math.min(0.04, left);
+          /* 玩家侧演出每帧靠 sync 拿锚点；主循环停了，只能我们喂 */
+          if (hasSfx && typeof SKFX.sync === 'function') {
+            SKFX.sync(Game.playerGroup.position, 0, Game.enemies, Game.playerGroup, null);
+          }
+          FX.update(d);
+          left -= d;
+        }
+      };
+      wipe();
+
       /* **随机数上种子**。粒子的散布 / 大小 / 寿命全走 Math.random，
        * 不固定的话同一份代码两次量能差 25%（实测 heal 1615 vs 1283）——
-       * 调参就变成在噪声里找方向。种子按技能 id 派生，所以「同一条配方」
+       * 调参就变成在噪声里找方向。种子按配方键派生，所以「同一条配方」
        * 每次跑出来的数完全一致，跨版本比较才有意义。 */
       const rnd0 = Math.random;
       let seed = 0;
@@ -172,21 +214,39 @@ const minOf = it => (it.self && BUFF_TYPES[it.type] ? MIN_BUFF : (it.radius > 3.
       const aim = it.self
         ? new THREE.Vector3(pp.x, 0, base)
         : new THREE.Vector3(pp.x, 0, base + Math.max(2, it.radius));
-      /* 走真实入口：功能位兜底 / 台阶 patch / 元素染色都在里面 */
-      Game.playSkillVfx(it.id, {
+      const ctx = {
         pos: new THREE.Vector3(pp.x, 0, base),
         aim: aim,
         dir: new THREE.Vector3(0, 0, 1),
         radius: it.radius
-      });
-      FX.update(0.06);
-      const r1 = count(A, grab());
-      FX.update(0.19);
-      const r2 = count(A, grab());
+      };
+      /* 默认走真实入口（功能位兜底 / 台阶 patch / 元素染色 / SKFX 优先都在里面）；
+       * `--recipe` 显式绕过 SKFX，量配方层自己的可见度。 */
+      if (recipeOnly) VFX.playFor(it.id, ctx);
+      else Game.playSkillVfx(it.id, ctx);
+
+      /* 单只技能的 updater 抛错不能让整轮崩 —— 记下来，作为一条独立判据。
+       * （第一次跑全量就是被 quake 的 `hits.forEach` 打断的。） */
+      let r1 = { diff: 0, maxD: 0 }, r2 = r1, r3 = r1, err = null;
+      try {
+        step(0.06); r1 = count(A, grab());
+        step(0.19); r2 = count(A, grab());
+        /* 第三帧只给 `--live`：SKFX 的 seq 常常 0.3 秒后才开场。
+         * 配方层的三档下界是在**两时刻**量法上定的，多采一帧会让读数普涨、
+         * 悄悄把判据撑松 —— 所以这边沿用 60 / 250ms，数字与 V2/V3 可比。 */
+        if (!recipeOnly) { step(0.35); r3 = count(A, grab()); }
+      } catch (e) { err = String((e && e.message) || e); }
       Math.random = rnd0;
-      FX.clear(); VFX.reset();
-      return r1.diff >= r2.diff ? { ...r1, d60: r1.diff, d250: r2.diff } : { ...r2, d60: r1.diff, d250: r2.diff };
-    }, it);
+      wipe();
+      const best = [r1, r2, r3].reduce((a, b) => (b.diff > a.diff ? b : a));
+      return {
+        diff: best.diff,
+        maxD: Math.max(r1.maxD, r2.maxD, r3.maxD),
+        d60: r1.diff, d250: r2.diff, d600: r3.diff,
+        err: err,
+        layer: recipeOnly ? '配方' : ((hasSfx && typeof SKFX.has === 'function' && SKFX.has(it.id)) ? 'SKFX' : '配方兜底')
+      };
+    }, it, recipeOnly);
     rows.push({ ...it, ...r });
   }
 
@@ -195,18 +255,41 @@ const minOf = it => (it.self && BUFF_TYPES[it.type] ? MIN_BUFF : (it.radius > 3.
   rows.sort((a, b) => (a.diff / minOf(a)) - (b.diff / minOf(b)));
 
   const pad = (s, n) => (String(s) + ' '.repeat(n)).slice(0, n);
-  console.log('  ' + pad('技能', 16) + pad('半径', 6) + pad('差异像素', 10) + pad('60ms', 8) + pad('250ms', 8) + pad('峰值Δ', 8) + '下界');
+  console.log('  ' + pad('技能', 16) + pad('半径', 6) + pad('差异像素', 10) + pad('60ms', 8) +
+    pad('250ms', 8) + pad('600ms', 8) + pad('峰值Δ', 8) + pad('下界', 7) + pad('演出层', 12) + '');
   for (const r of rows) {
     console.log('  ' + pad(r.id, 16) + pad(r.radius.toFixed(1), 6) + pad(r.diff, 10) +
-      pad(r.d60, 8) + pad(r.d250, 8) + pad(r.maxD, 8) + minOf(r) +
-      (r.diff < minOf(r) ? '   ← 欠' : ''));
+      pad(r.d60, 8) + pad(r.d250, 8) + pad(recipeOnly ? '-' : r.d600, 8) + pad(r.maxD, 8) +
+      pad(live ? '-' : minOf(r), 7) + pad(r.layer, 12) +
+      (r.err ? '  抛错: ' + r.err :
+        (r.diff < minOf(r) ? (live ? '  · 偏淡' : '  ← 欠') : '')));
   }
 
-  console.log('二、判据（每只技能 vs 自己那档下界）');
+  console.log('二、判据（' + (live
+    ? '真实链路：只卡推进不抛错；面积归 B20 演出层，本脚本只报观察'
+    : '每只技能 vs 自己那档下界') + '）');
   for (const r of rows) {
-    ok(r.diff >= minOf(r),
-      r.id + ' 看得见（≥ ' + minOf(r) + ' 像素）',
-      { diff: r.diff, min: minOf(r), radius: r.radius, type: r.type });
+    if (live) {
+      ok(!r.err, r.id + ' 推进不抛错', { err: r.err, diff: r.diff });
+    } else {
+      ok(r.diff >= minOf(r),
+        r.id + ' 看得见（≥ ' + minOf(r) + ' 像素）',
+        { diff: r.diff, min: minOf(r), radius: r.radius, type: r.type });
+    }
+  }
+  const thrown = rows.filter(r => r.err);
+  ok(thrown.length === 0, '推进零异常（updater 队列里没有半路抛错）',
+    thrown.map(r => r.id + ': ' + r.err));
+  if (live) {
+    const empty = rows.filter(r => r.diff === 0);
+    const thin = rows.filter(r => r.diff > 0 && r.diff < minOf(r));
+    /* 这两类不判失败：SKFX 是 B20 那条线的生成物，面积基准和配方不同，
+     * 也在活跃改动。但**必须打出来** —— 它们是玩家眼睛真正收到的东西，
+     * 静默跳过等于没量。 */
+    console.log('  · 观察 · 空招（0 差异像素，交 B20 演出层确认）：' +
+      (empty.length ? empty.map(r => r.id).join('、') : '无'));
+    console.log('  · 观察 · 偏淡（低于配方层同档下界，共 ' + thin.length + ' 只）：' +
+      (thin.length ? '\n    ' + thin.map(r => r.id + ' ' + r.diff).join(' · ') : '无'));
   }
 
   console.log('三、控制台');
