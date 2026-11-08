@@ -10,7 +10,7 @@
   `docs/status/boss-kits.md`（B 线 B1~B25）。本文件只管「还差什么、按什么顺序合」。
 - 更新：2026-11-07；进度更新：2026-11-09（U2 收口）
 
-> 当前：**U1 / U2 已收口**（U1 `--live` 113/0、默认 39/0；U2 `probe-buffrow` 29/0 + `probe-buff-icons` 11/0）；**U3 开工 🔄**（只读调查 + 路标已落地，代码未动）。两条线的特效代码都已在 feat/skill-refactor 跑通，但 origin/main 一个特效文件都没有。仍按人物先合、BOSS 后合的顺序走。
+> 当前：**U1 / U2 已收口**（U1 `--live` 113/0、默认 39/0；U2 `probe-buffrow` 29/0 + `probe-buff-icons` 11/0）；**U3 开工 🔄**（U3-1 路标 + U3-2 组合层 `src/combo-fx.js` / 静态契约 64/0 已落地，U3-3 接线未做）。两条线的特效代码都已在 feat/skill-refactor 跑通，但 origin/main 一个特效文件都没有。仍按人物先合、BOSS 后合的顺序走。
 
 ## 一句话现状
 
