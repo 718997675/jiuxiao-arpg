@@ -34,7 +34,9 @@
   .btn:disabled{opacity:.35;cursor:not-allowed}
 
   /* ---------- 左上角角色板 ---------- */
-  #charplate{position:absolute;left:18px;top:16px;display:flex;gap:10px;align-items:flex-start;pointer-events:auto}
+  /* [V1] flex-wrap 是为了让 #buffrow 换行到血条下面（flex-basis:100%）。
+     不新开悬浮层，进菜单 / 开面板时它跟着 #charplate 一起淡出。 */
+  #charplate{position:absolute;left:18px;top:16px;display:flex;flex-wrap:wrap;column-gap:10px;row-gap:4px;align-items:flex-start;pointer-events:auto}
   #portrait{width:66px;height:66px;border:1px solid var(--gold-d);background:radial-gradient(circle at 50% 35%,#3a3226,#12100c);
     display:flex;align-items:center;justify-content:center;position:relative;box-shadow:0 0 0 1px #000,0 4px 18px rgba(0,0,0,.7)}
   #portrait .glyph{font-family:"STKaiti","KaiTi",serif;font-size:34px;color:#e8c878;text-shadow:0 0 12px rgba(216,178,90,.6)}
@@ -283,18 +285,37 @@
   .potion .k{position:absolute;top:1px;left:2px;font-size:9px;color:#8a8070}
   .potion.blue .g{color:#6aa8e8}
 
-  /* ---------- 增益 / 减益栏 ---------- */
-  #buffbar{position:absolute;left:50%;bottom:88px;transform:translateX(-50%);display:none;gap:6px;align-items:center;
-    justify-content:center;flex-wrap:wrap;max-width:min(680px,86vw);pointer-events:none;z-index:2}
-  .buff{display:flex;align-items:center;gap:5px;padding:3px 8px 3px 5px;background:rgba(10,10,14,.84);
-    border:1px solid var(--c,#d8b25a);box-shadow:0 0 10px rgba(216,178,90,.18);font-size:11px;letter-spacing:1px;
-    color:#e8dcc0;text-shadow:0 1px 2px #000;animation:buffIn .18s ease-out}
-  .buff .bi{display:flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:2px;
-    background:var(--c,#d8b25a);color:#10100c;font-size:11px;font-weight:700}
-  .buff .bt{margin-left:2px;color:var(--c,#d8b25a);font-variant-numeric:tabular-nums}
-  .buff.debuff{border-style:dashed;background:rgba(28,8,8,.86)}
+  /* ---------- 增益 / 减益行（V1：符号图标 + 血条正下方 + 增量渲染） ----------
+     #buffrow 是 #charplate 的第二行：margin-left = 头像 66 + 列间距 10，
+     宽度与 .bars 的 238px 对齐，不新开悬浮层。 */
+  #buffrow{flex-basis:100%;margin-left:76px;max-width:238px;
+    display:flex;flex-wrap:wrap;align-content:flex-start;gap:4px;pointer-events:auto}
+  .buff{position:relative;display:flex;align-items:center;gap:4px;height:24px;padding:2px 6px 3px 4px;
+    box-sizing:border-box;overflow:hidden;background:rgba(10,10,14,.88);
+    border:1px solid var(--c,#d8b25a);font-size:11px;letter-spacing:.5px;
+    color:#e8dcc0;text-shadow:0 1px 2px #000;opacity:1;transform:none;
+    transition:opacity .2s ease,transform .2s ease}
+  .buff .bi{display:flex;align-items:center;justify-content:center;flex:0 0 16px;width:16px;height:16px;
+    color:var(--c,#d8b25a);font-size:11px;font-weight:700}
+  .buff .bi svg{display:block;width:16px;height:16px}
+  .buff .bn{white-space:nowrap}
+  .buff .bt{margin-left:1px;color:var(--c,#d8b25a);font-size:10px;font-variant-numeric:tabular-nums}
+  .buff .bx{font-size:10px;font-weight:700;line-height:14px;color:#10100c;background:var(--c,#d8b25a);
+    border-radius:2px;padding:0 3px}
+  .buff.full{box-shadow:inset 0 0 0 1px #f0d080,0 0 8px rgba(240,208,128,.35)}
+  .buff.debuff{border-style:dashed;background:rgba(28,8,8,.9);border-top-left-radius:0}
+  /* 色盲兜底：debuff 除了红色还带左上缺角，不只靠颜色区分 */
+  .buff.debuff::before{content:'';position:absolute;left:-1px;top:-1px;
+    border-top:7px solid #0a0a0e;border-right:7px solid transparent}
+  .buff .bprog{position:absolute;left:0;bottom:0;height:2px;width:100%;background:var(--c,#d8b25a);
+    opacity:.72;transition:width 1s linear}
+  .buff.notimer .bprog{display:none}
+  .buff.in{animation:buffIn .18s ease-out}
+  .buff.out{opacity:0;transform:scale(.86);pointer-events:none}
+  .buff.more{min-width:34px;justify-content:center;border-style:dashed;color:#f0d080;cursor:pointer}
   @keyframes buffIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
-  body.touch #buffbar{max-width:76vw;font-size:10px}
+  body.touch #buffrow{max-width:min(238px,64vw);gap:3px}
+  body.touch .buff{height:22px;font-size:10px}
 
   /* ---------- 提示 / 日志 / 交互 ---------- */
   #interact{position:absolute;left:50%;bottom:92px;transform:translateX(-50%);font-size:13px;letter-spacing:2px;
@@ -1809,10 +1830,10 @@
     background:radial-gradient(ellipse at 50% 44%,rgba(20,26,40,.5) 0%,rgba(11,14,21,.78) 52%,rgba(5,6,10,.94) 100%);
     display:flex;flex-direction:column;align-items:center;justify-content:center;pointer-events:auto}
   /* 标题界面隐藏 HUD */
-  body.in-menu #charplate,body.in-menu #topright,body.in-menu #actionbar,body.in-menu #buffbar,
+  body.in-menu #charplate,body.in-menu #topright,body.in-menu #actionbar,
   body.in-menu #log,body.in-menu #bossbar,body.in-menu #mtouch,
   body.in-menu #openBtns,body.in-menu #toasts{opacity:0;pointer-events:none}
-  #charplate,#topright,#actionbar,#buffbar,#log,#bossbar{transition:opacity .45s ease}
+  #charplate,#topright,#actionbar,#log,#bossbar{transition:opacity .45s ease}
   #start::before{content:'';position:absolute;inset:0;
     background:repeating-linear-gradient(0deg,transparent 0 3px,rgba(255,255,255,.012) 3px 4px);pointer-events:none}
   #start h1{font-family:"STKaiti","KaiTi","STSong",serif;font-size:clamp(42px,7vw,86px);font-weight:400;
@@ -2161,7 +2182,7 @@
 
   /* 面板/对话打开时收起虚拟按键，避免误触 */
   body.touch.ui-open #mtouch,body.touch.ui-open #openBtns{opacity:0;pointer-events:none}
-  body.touch.ui-open #charplate,body.touch.ui-open #topright,body.touch.ui-open #buffbar,
+  body.touch.ui-open #charplate,body.touch.ui-open #topright,
   body.touch.ui-open #log,body.touch.ui-open #toasts{opacity:.18}
 
   /* ---- 触屏面板 ---- */
@@ -2414,7 +2435,9 @@
    * ============================================================ */
 
   /* ---------- 左上角战况 ---------- */
-  #trialHud{position:absolute;left:18px;top:96px;width:238px;display:none;pointer-events:auto;
+  /* [V1] buff 行常驻在 #charplate 内，正好压在旧 top:96px 的位置上。
+     --buff-h 由 UI.renderBuffs 只在行数变化时写一次，不是每帧。 */
+  #trialHud{position:absolute;left:18px;top:calc(96px + var(--buff-h, 0px));width:238px;display:none;pointer-events:auto;
     background:linear-gradient(180deg,rgba(24,18,34,.94),rgba(9,7,12,.94));
     border:1px solid rgba(168,138,216,.42);border-left:2px solid #a88ad8;
     padding:7px 10px 8px;box-shadow:0 6px 24px rgba(0,0,0,.7)}
@@ -2565,7 +2588,7 @@
   #trialEnd .te-hint{font-size:11px;color:#7a6a6a;margin-top:10px;letter-spacing:1px;text-align:center;line-height:1.7}
 
   /* ---------- 移动端 ---------- */
-  body.touch #trialHud{left:10px;top:78px;width:196px;padding:6px 8px}
+  body.touch #trialHud{left:10px;top:calc(78px + var(--buff-h, 0px));width:196px;padding:6px 8px}
   body.touch #trialHud .th-wave{font-size:18px}
   body.touch #trialHud .th-line{font-size:10px}
   body.touch #dgHud{left:10px;top:78px;width:196px;padding:6px 8px}
@@ -2617,6 +2640,8 @@
       <div class="bar mp"><i id="mpFill"></i><span id="mpText">50 / 50</span></div>
       <div class="bar xp"><i id="xpFill"></i></div>
     </div>
+    <!-- [V1] 增益行：血条正下方。DOM 由 UI.renderBuffs 增量维护，禁止 innerHTML 重建 -->
+    <div id="buffrow"></div>
   </div>
 
   <!-- 世界 Boss 顶部倒计时（M18.10）：抬头就能看见「还有多久 / 在哪」。
@@ -2657,7 +2682,6 @@
     </div>
   </div>
 
-  <div id="buffbar"></div>
   <div id="actionbar"></div>
   <div id="interact"></div>
   <div id="toasts"></div>
@@ -3105,6 +3129,8 @@
 <script src="src/data/data-core.js"></script>
 <script src="src/data/data-elem.js"></script>
 <script src="src/data/data-icons.js"></script>
+<!-- [V1] 增益符号图标（17 枚 path + key/名字映射），UI.renderBuffs 用它拼 <svg> -->
+<script src="src/data/data-buff-icons.js"></script>
 <script src="src/data/data-items.js"></script>
 <script src="src/core/stash.js"></script>
 <script src="src/data/data-relics.js"></script>

@@ -91,6 +91,9 @@ const BUFF_ICON_OF = {
   /* 被动（passive / trial） */
   'passive:w_undying': 'invuln',
   'trial:bloodlust': 'atk_up',
+  /* 装备 / 天赋特性触发（[U2] 稳定 key，不再按名字找） */
+  'sto:bloodrush': 'atk_up',
+  'sto:berserk': 'aspd_up',
   /* 状态条 */
   'st:revive': 'invuln',
   'st:slow': 'slow',
@@ -99,7 +102,13 @@ const BUFF_ICON_OF = {
   'st:poison': 'poison',
   'st:shield': 'shield',
   'st:domain': 'vuln',
-  'st:zone': 'vuln'
+  'st:zone': 'vuln',
+  /* 预留：灼烧 / 破甲 / 禁疗现在是**敌人身上**的 debuff（shredT / antiHealT /
+   * 灼烧 dot），玩家增益条暂时用不到；这三枚图标不能因此成为死图标 ——
+   * `probe-buff-icons.js` 会断言 17 枚全部有查表入口。 */
+  'st:burn': 'burn',
+  'st:shred': 'shred',
+  'st:noheal': 'noheal'
 };
 
 /* 名字 → 图标 key（没有 key 的状态条 / 老 buff 走这条） */
@@ -112,7 +121,8 @@ const BUFF_ICON_BY_NAME = {
   '还魂': 'invuln', '护盾': 'shield', '中毒': 'poison', '迟滞': 'slow',
   '被拖拽': 'slow', '战意咆哮': 'atk_up', '盾墙': 'dr_up', '反击': 'thorns',
   '剑神降世': 'atk_up', '元素法相': 'invuln', '太极玄阵': 'dr_up',
-  '解毒': 'regen', '逆命·反噬': 'vuln'
+  '解毒': 'regen', '逆命·反噬': 'vuln',
+  '灼烧': 'burn', '破甲': 'shred', '禁疗': 'noheal'
 };
 
 /* 图标查表：key → 名字 → 都没有返回 null（由 UI 退回汉字首字） */

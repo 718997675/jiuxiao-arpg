@@ -791,10 +791,13 @@ const WorldBoss = {
   dim() { return this._dim || 0; },
 
   /* buff 条那一条。没站在圈里返回 null。
-   * `noTimer` —— 它没有「剩余秒数」，出去就没了。 */
+   * `noTimer` —— 它没有「剩余秒数」，出去就没了。
+   * [U2] `key` / `ord` 和 `Game.statusBuffs()` 里写死的常数一致：
+   * 领域名字是动态的（毒沼 / 昼夜 / …），拿名字当 diff key 等于换一次圈就闪一下。 */
   domainBuff() {
     if (!this._inDomain || !this._inName) return null;
     return {
+      key: 'st:domain', ord: -103,
       name: this._inName, dur: 0, noTimer: true, type: 'debuff',
       color: this._inColor || '#e0895a', icon: this._inIcon || '域',
       desc: this._inDesc || ''

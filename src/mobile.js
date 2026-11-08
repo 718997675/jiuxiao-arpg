@@ -414,15 +414,9 @@ const Mobile = {
       el.style.fontSize = 13 * u + 'px';
     });
 
-    /* 增益 / 减益栏：宫格上方，跟着 HUD 一起缩放 */
-    const bb = document.getElementById('buffbar');
-    if (bb) {
-      bb.style.left = '50%';
-      bb.style.top = Math.max(ins.t + 4, gTop - 26 * u) + 'px';
-      bb.style.bottom = 'auto';
-      bb.style.transform = 'translateX(-50%)';
-      bb.style.maxWidth = Math.min(W - 20, 360 * u) + 'px';
-    }
+    /* [V1] 增益行已经搬进 #charplate（血条下方），跟着角色板一起 scale，
+     * 这里不再给它定位 —— 旧版把它抬到技能宫格上方，既挡键位又和试炼面板打架。
+     * #trialHud 的避让由 UI.renderBuffs 写的 --buff-h 负责（只在行数变化时写）。 */
   },
 
   /* ---------------- 摇杆 ---------------- */

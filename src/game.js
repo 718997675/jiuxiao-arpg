@@ -6147,15 +6147,26 @@ const Game = {
   },
 
   addBuff(name, stats, color, opts = {}) {
+    const cur = opts.refresh && opts.key ? this.buffs.find(b => b.key === opts.key) : null;
     const dur = stats.dur || 8;
+    /* [U2] ord = 创建序，是**排序的唯一动态依据**。刷新沿用旧值，绝不重新分配 ——
+     * 否则刷新一次的 buff 会突然跳到队尾。按剩余 dur 排序的老口径已废弃：
+     * dur 每帧都变，组内顺序必然每帧重排，格子就会来回跳（PLAN §6.6 自相矛盾那条）。 */
+    const ord = cur && cur.ord != null
+      ? cur.ord
+      : (this._buffOrd = (this._buffOrd || 0) + 1);
     const entry = {
-      name, stats, dur, color,
+      name, stats, dur, color, ord,
       key: opts.key || null,
       type: opts.type || 'buff',
       icon: opts.icon || (name ? name.slice(0, 1) : '益'),
       desc: opts.desc || ''
     };
-    const cur = opts.refresh && opts.key ? this.buffs.find(b => b.key === opts.key) : null;
+    /* [V1] 叠层改成结构化字段，不再把「×3」写进 name（那样每次叠层都换一个
+     * 名字，图标、排序、节点身份全跟着抖）。条件展开而不是写死 0：
+     * 同 key 的 buff 被别的路径刷新时，Object.assign(cur, entry) 不该抹掉层数。 */
+    if (opts.stacks != null) entry.stacks = opts.stacks;
+    if (opts.maxStacks != null) entry.maxStacks = opts.maxStacks;
     if (cur) Object.assign(cur, entry);
     else this.buffs.push(entry);
     this.recalc();
@@ -6163,40 +6174,46 @@ const Game = {
     if (typeof UI !== 'undefined') UI.renderBuffs();
   },
 
-  /* 玩家身上的减益 / 护盾，统一给 buffbar 渲染 */
+  /* 玩家身上的减益 / 护盾，统一给 #buffrow 渲染 */
   statusBuffs() {
     const out = [];
+    /* [U2] 系统状态条：每条都有**固定**的 st:* key 和**写死**的 ord。
+     * key 不能拿 name 兜底 —— 这里的「定身」(debuff) 和 skill-beh 的
+     * `beh:定身` (buff) 是同名不同物，按名字做 diff key 会把两条揉成一条。
+     * ord 必须是常数，不能用自增计数：少一条状态时后面几条序号会整体前移，
+     * 那还是每帧重排，只是换了张皮。负数 = 同组内稳定排在动态 buff 之前。 */
+    const st = (key, ord, o) => out.push(Object.assign({ key: 'st:' + key, ord }, o));
     /* [S4] 还魂激活中 */
-    if (this.reviveT > 0) out.push({ name: '还魂', dur: this.reviveT, color: '#ffd166', type: 'buff', icon: '魂', desc: '受到致命伤时以 35% 生命存活' });
-    if (this.playerSlowT > 0) out.push({ name: '迟滞', dur: this.playerSlowT, color: '#6ab8ff', type: 'debuff', icon: '缓', desc: '移动速度降低 ' + Math.round((this.playerSlow || 0) * 100) + '%' });
+    if (this.reviveT > 0) st('revive', -108, { name: '还魂', dur: this.reviveT, color: '#ffd166', type: 'buff', icon: '魂', desc: '受到致命伤时以 35% 生命存活' });
+    if (this.playerSlowT > 0) st('slow', -107, { name: '迟滞', dur: this.playerSlowT, color: '#6ab8ff', type: 'debuff', icon: '缓', desc: '移动速度降低 ' + Math.round((this.playerSlow || 0) * 100) + '%' });
     /* [M18.7] 定身：必须单独一条。它和「迟滞」是两种感受 ——
      * 迟滞是「走得慢」，定身是「完全走不了」，混在一起玩家会以为没生效。 */
-    if (this.rootT > 0) out.push({ name: '定身', dur: this.rootT, color: '#e0a0ff', type: 'debuff', icon: '缚', desc: '无法移动（仍可攻击与闪避以外的动作）' });
+    if (this.rootT > 0) st('root', -106, { name: '定身', dur: this.rootT, color: '#e0a0ff', type: 'debuff', icon: '缚', desc: '无法移动（仍可攻击与闪避以外的动作）' });
     /* [B16] 被拖拽：和「定身」分开列。玩家看到「定身」会去按方向键挣扎，
      * 而拖拽期间按方向键是没用的 —— 唯一的反制是冲刺，所以 desc 里直说。 */
     if (this.pull) {
       const P = this.pull;
-      out.push({
+      st('pull', -105, {
         name: '被拖拽', dur: Math.max(0, P.dur - P.t), color: '#ff9a6a', type: 'debuff', icon: '拽',
         desc: '位置不由你决定 —— 按冲刺（空格 / 闪避键）可以挣脱'
       });
     }
-    if (this.poisonT > 0) out.push({ name: '中毒', dur: this.poisonT, color: '#7fbf5a', type: 'debuff', icon: '毒', desc: '每 0.9 秒受到 ' + Math.round(this.poisonDps || 0) + ' 点毒素伤害' });
+    if (this.poisonT > 0) st('poison', -104, { name: '中毒', dur: this.poisonT, color: '#7fbf5a', type: 'debuff', icon: '毒', desc: '每 0.9 秒受到 ' + Math.round(this.poisonDps || 0) + ' 点毒素伤害' });
     /* [M18.5] 领域压制：站进世界 Boss 的圈里就常驻一条。
      * 它没有倒计时（出去就没了），所以带 noTimer，UI 不显示秒数。 */
     if (typeof WorldBoss !== 'undefined' && WorldBoss.domainBuff) {
       const db = WorldBoss.domainBuff();
-      if (db) out.push(db);
+      if (db) st('domain', -103, db);
     }
     /* [B16.6] 章节 Boss 的领域同理，走同一个形状。两套系统互斥（不同图），
      * 真同时出现也只是 buff 条上多一条 —— 各有各的名字与颜色。 */
     if (typeof Domains !== 'undefined' && Domains.buff) {
       const fb = Domains.buff();
-      if (fb) out.push(fb);
+      if (fb) st('zone', -102, fb);
     }
     /* 护盾条目标题不写死「玄冰」：圣霜护盾（P3a 圣系反应）走同一个字段，
      * 写死名字会让玩家以为吃到的是法师的冰盾 */
-    if (this.shield > 0 && this.shieldT > 0) out.push({ name: '护盾', dur: this.shieldT, color: '#9ae0ff', type: 'buff', icon: '盾', desc: '吸收 ' + Math.round(this.shield) + ' 点伤害' });
+    if (this.shield > 0 && this.shieldT > 0) st('shield', -101, { name: '护盾', dur: this.shieldT, color: '#9ae0ff', type: 'buff', icon: '盾', desc: '吸收 ' + Math.round(this.shield) + ' 点伤害' });
     return out;
   },
 
@@ -9652,11 +9669,14 @@ const Game = {
     // 击杀回复
     if (sto.killHeal) this.healPlayer(sto.killHeal, true);
     if (sto.mpOnKill) this.state.mp = Math.min(sto.mpMax, this.state.mp + sto.mpOnKill);
-    /* [S2] 血怒：击杀后攻速/移速提升 4 秒，重复触发只刷新时间不叠加 */
+    /* [S2] 血怒：击杀后攻速/移速提升 4 秒，重复触发只刷新时间不叠加。
+     * [U2] 身份改成 key，不再按名字找 —— 名字会被叠层 / 本地化改掉。
+     * 老存档里可能还挂着一条没有 key 的血怒，顺手规范化，别让新旧两条并排显示。 */
     if (sto.flags.bloodRush) {
-      const cur = this.buffs.find(b => b.name === '血怒');
-      if (cur) { cur.dur = 4; }
-      else this.addBuff('血怒', { aspd: 25, moveSpd: 20, dur: 4 }, '#ff6b4a');
+      const K = 'sto:bloodrush';
+      const cur = this.buffs.find(b => b.key === K || (!b.key && b.name === '血怒'));
+      if (cur) { cur.dur = 4; cur.key = K; }
+      else this.addBuff('血怒', { aspd: 25, moveSpd: 20, dur: 4 }, '#ff6b4a', { key: K });
     }
     /* [S3] 狂战系大节点·狂怒：血怒期间每次击杀刷新其持续时间 */
     if (sto.specials && sto.specials.frenzyRefresh) {
@@ -9670,9 +9690,11 @@ const Game = {
     if (sto.specials) {
       if (sto.specials.soulharvest) this.healPlayer(sto.hpMax * 0.03, true);
       if (sto.specials.berserk) {
-        const cur = this.buffs.find(b => b.name === '狂战');
-        if (cur) cur.dur = 3;
-        else this.addBuff('狂战', { aspd: 25, dur: 3 }, '#ff9a4a');
+        /* [U2] 同血怒：稳定 key + 老档名字兜底 */
+        const K = 'sto:berserk';
+        const cur = this.buffs.find(b => b.key === K || (!b.key && b.name === '狂战'));
+        if (cur) { cur.dur = 3; cur.key = K; }
+        else this.addBuff('狂战', { aspd: 25, dur: 3 }, '#ff9a4a', { key: K });
       }
     }
     /* [S1] 溢出伤害转护盾：把超过致死的那部分按比例变成护盾，上限 30% 生命 */

@@ -495,8 +495,11 @@ const SKILL_BEH = {
     const key = 'beh:stack:' + c.id;
     const cur = c.G.buffs.find(x => x.key === key);
     const stats = { dmgAll: v * n, dur: 8 };
-    if (cur) { Object.assign(cur, { stats, dur: 8 }); c.G.recalc(); }
-    else c.G.addBuff('战意 ×' + n, stats, 0xffd166, { key });
+    /* [V1] 层数走 stacks/maxStacks，名字恒为「战意」—— 同 key 只占一个格子，
+     * 由 UI 在图标右下角写 ×N，满层加静态金边（不闪）。 */
+    const layer = { stacks: n, maxStacks: max };
+    if (cur) { Object.assign(cur, { stats, dur: 8, name: '战意' }, layer); c.G.recalc(); }
+    else c.G.addBuff('战意', stats, 0xffd166, Object.assign({ key }, layer));
     if (n >= max) {
       c.GFX.text(new THREE.Vector3(c.G.playerGroup.position.x, 2.9, c.G.playerGroup.position.z),
         '满层 ' + max, 'info', { life: 0.9 });

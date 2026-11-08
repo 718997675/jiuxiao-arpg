@@ -1574,28 +1574,202 @@ const UI = {
     }
   },
 
-  /* 技能栏上方：增益 / 减益 / 护盾，按剩余时间倒序，减益置后 */
+  /* ============================================================
+   * [V1] 增益行：血条正下方、符号图标、增量 diff
+   * ------------------------------------------------------------
+   * 旧版三宗罪（SKILL-VFX-PLAN §6.5）：
+   *   ① 每 100ms `el.innerHTML = ...` 整行重建 —— 节点身份全丢；
+   *   ② 签名里带 `Math.ceil(dur*10)`，而 game.js 每帧调 renderBuffs，
+   *      所以每 0.1 秒就变一次签名 → 整行重播一次入场动画（就是"闪烁"）；
+   *   ③ 到期瞬间从 DOM 摘掉，没有淡出。
+   *
+   * 现在的三条硬规则：
+   *   · 节点按 key 存在 Map 里，只增 / 删 / 改，**全程零 innerHTML**；
+   *   · 签名只含静态字段（key/type/color/图标/名字/叠层/常驻），不含时长。
+   *     时长走独立通道：`Math.floor(dur)` 变化时才写文字与进度条宽度（1 次/秒），
+   *     CSS `transition: width 1s linear` 负责中间的连续感；
+   *   · 顺序写 `style.order`（只改一个数字）。不 appendChild 移动节点 ——
+   *     移动已连接的节点在 Chrome 里会重播 CSS animation，等于又闪一次。
+   * ============================================================ */
+  _buffMap: null,
+  _buffSig: '',
+  _buffExpand: false,
+  BUFF_MAX: 8,
+
+  _buffKey(b) { return b.key || (b.type || 'buff') + ':' + (b.name || '?'); },
+
+  /* 建一个格子。骨架只用一次 DOM API，之后所有更新都改 textContent / style。 */
+  _buffMake(key) {
+    const el = document.createElement('div');
+    el.className = 'buff';
+    el.dataset.k = key;
+    const parts = {};
+    for (const c of ['bi', 'bn', 'bx', 'bt', 'bprog']) {
+      const n = document.createElement(c === 'bprog' ? 'i' : 'span');
+      n.className = c;
+      el.appendChild(n);
+      parts[c] = n;
+    }
+    /* 入场动画只播一次：animationend 后摘掉 .in，刷新时长不会再重放 */
+    el.classList.add('in');
+    el.addEventListener('animationend', () => el.classList.remove('in'), { once: true });
+    return { el, parts, sig: '', sec: -1, max: 0, timer: 0, ik: null };
+  },
+
+  /* [M11] 符号图标：用 createElementNS 拼 <svg><path/></svg>，不碰 innerHTML。
+   * 查不到映射就退回原来的汉字首字，绝不让格子空掉。 */
+  _buffIcon(ent, iconKey, b) {
+    if (ent.ik === iconKey) return;
+    ent.ik = iconKey;
+    const box = ent.parts.bi;
+    box.textContent = '';
+    const path = iconKey && typeof BUFF_ICON_PATHS !== 'undefined' ? BUFF_ICON_PATHS[iconKey] : null;
+    if (!path) { box.textContent = b.icon || (b.name ? b.name.slice(0, 1) : '·'); return; }
+    const NS = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(NS, 'svg');
+    svg.setAttribute('class', 'm11-ico');
+    svg.setAttribute('viewBox', '0 0 32 32');
+    svg.setAttribute('width', '16'); svg.setAttribute('height', '16');
+    svg.setAttribute('fill', 'currentColor');
+    svg.setAttribute('fill-rule', (typeof BUFF_ICON_EVENODD !== 'undefined' && BUFF_ICON_EVENODD[iconKey]) ? 'evenodd' : 'nonzero');
+    svg.setAttribute('aria-hidden', 'true');
+    const p = document.createElementNS(NS, 'path');
+    p.setAttribute('d', path);
+    svg.appendChild(p);
+    box.appendChild(svg);
+  },
+
+  /* --buff-h 只在行数变化时写一次（不是每帧），#trialHud 靠它让位。
+   * getBoundingClientRect 已经含 body.touch 下 #charplate 的 scale(.8)。 */
+  _buffSyncHeight(row) {
+    const h = row.getBoundingClientRect().height;
+    document.body.style.setProperty('--buff-h', h > 0 ? Math.ceil(h) + 4 + 'px' : '0px');
+  },
+
   renderBuffs() {
-    const el = document.getElementById('buffbar');
-    if (!el || !Game.state) return;
+    const row = document.getElementById('buffrow');
+    if (!row || !Game.state) return;
+    const map = this._buffMap || (this._buffMap = new Map());
+    /* 事件委托：格子会被增删，绑在容器上才不会丢 */
+    if (!row._v1) {
+      row._v1 = 1;
+      row.addEventListener('click', ev => {
+        const m = ev.target && ev.target.closest ? ev.target.closest('.buff.more') : null;
+        if (!m || !row.contains(m)) return;
+        this._buffExpand = !this._buffExpand;
+        this._buffSig = '';
+        this.renderBuffs();
+      });
+    }
+
     const list = [];
-    for (const b of Game.buffs) list.push({ name: b.name, dur: b.dur, color: b.color, type: b.type || 'buff', icon: b.icon, desc: b.desc });
+    for (const b of Game.buffs) list.push(b);
     if (Game.statusBuffs) list.push(...Game.statusBuffs());
-    list.sort((a, b) => (a.type === 'debuff' ? 1 : 0) - (b.type === 'debuff' ? 1 : 0) || b.dur - a.dur);
-    const sig = list.map(b => `${b.name}|${b.type}|${Math.ceil((Number(b.dur) || 0) * 10)}|${b.color}`).join(';');
-    if (sig === this._buffSig) return;
-    this._buffSig = sig;
-    if (!list.length) { el.style.display = 'none'; el.innerHTML = ''; return; }
-    el.style.display = 'flex';
-    el.innerHTML = list.map(b => {
-      const c = typeof b.color === 'number' ? '#' + b.color.toString(16).padStart(6, '0') : (b.color || '#d8b25a');
-      const icon = b.icon || (b.name ? b.name.slice(0, 1) : '·');
-      const desc = b.desc ? ` title="${b.desc}"` : '';
-      /* [M18.5] 领域压制没有「剩余秒数」—— 它是「站在圈里就一直有」。
-       * 硬写 0.0s 会让人以为快结束了，所以显示「常驻」。 */
-      const tail = b.noTimer ? '常驻' : Math.max(0, Number(b.dur) || 0).toFixed(1) + 's';
-      return `<div class="buff ${b.type || 'buff'}" style="--c:${c}"${desc}><span class="bi">${icon}</span><span class="bn">${b.name}</span><span class="bt">${tail}</span></div>`;
-    }).join('');
+    /* [U2] 排序的动态依据只有 ord（创建序）。**绝不按剩余 dur 排**：
+     * dur 每帧递减 → 组内顺序每帧都在换 → style.order 每帧重写 = 格子来回跳，
+     * 正好是「不闪烁」验收的反面（PLAN §6.6 那句「按剩余时间升序」已作废）。
+     * 分组用固定优先级，末位拿 key 兜底；statusBuffs 的负数 ord 稳定排在前。 */
+    const ordOf = b => (b.ord == null ? 0 : Number(b.ord) || 0);
+    list.sort((a, b) =>
+      (a.type === 'debuff' ? 1 : 0) - (b.type === 'debuff' ? 1 : 0)
+      || ordOf(a) - ordOf(b)
+      || String(this._buffKey(a)).localeCompare(String(this._buffKey(b))));
+
+    const shown = list.slice(0, this._buffExpand ? 16 : this.BUFF_MAX);
+    const extra = list.length - shown.length;
+    const moreOn = extra > 0 || (this._buffExpand && list.length > this.BUFF_MAX);
+    const col = b => typeof b.color === 'number'
+      ? '#' + b.color.toString(16).padStart(6, '0') : (b.color || '#d8b25a');
+    const itemSig = b => {
+      const k = this._buffKey(b);
+      const ik = (typeof buffIconKey === 'function') ? (buffIconKey(k, b.name) || '') : '';
+      return [k, b.type || 'buff', ordOf(b), col(b), ik, b.name || '', b.desc || '',
+        Number(b.stacks) || 0, Number(b.maxStacks) || 0, !!b.noTimer, b.icon || ''].join('|');
+    };
+    /* 签名不含 dur —— 这一条是"不闪烁"的命门 */
+    const sig = shown.map(itemSig).join(';') + '#' + (moreOn ? extra : -1) + '#' + (this._buffExpand ? 1 : 0);
+
+    if (sig !== this._buffSig) {
+      this._buffSig = sig;
+      const want = new Set();
+      for (let i = 0; i < shown.length; i++) {
+        const b = shown[i], k = this._buffKey(b), s = itemSig(b);
+        want.add(k);
+        let ent = map.get(k);
+        if (!ent) { ent = this._buffMake(k); map.set(k, ent); row.appendChild(ent.el); }
+        if (ent.timer) { clearTimeout(ent.timer); ent.timer = 0; }
+        ent.el.classList.remove('out');
+        ent.el.style.order = i;
+        if (ent.sig !== s) {
+          ent.sig = s;
+          ent.ik = null;          /* 名字兜底汉字也跟着静态字段一起重算 */
+          const e = ent.el;
+          e.style.setProperty('--c', col(b));
+          e.classList.toggle('debuff', b.type === 'debuff');
+          e.classList.toggle('notimer', !!b.noTimer);
+          e.title = b.desc || '';
+          ent.parts.bn.textContent = b.name || '';
+          const st = Number(b.stacks) || 0, mx = Number(b.maxStacks) || 0;
+          ent.parts.bx.textContent = st > 0 && mx > 0 ? '×' + st : '';
+          ent.parts.bx.style.display = st > 0 && mx > 0 ? '' : 'none';
+          e.classList.toggle('full', st > 0 && mx > 0 && st >= mx);
+          this._buffIcon(ent, (typeof buffIconKey === 'function') ? (buffIconKey(k, b.name) || '') : '', b);
+          /* 静态字段变了就把时长通道重置，保证新一发的秒数立刻写上 */
+          ent.sec = -1;
+        }
+      }
+      /* 折叠格：点一下展开成最多两行（16 个），再点收起 */
+      if (moreOn) {
+        const k = '__more';
+        want.add(k);
+        let ent = map.get(k);
+        if (!ent) { ent = this._buffMake(k); map.set(k, ent); row.appendChild(ent.el); }
+        if (ent.timer) { clearTimeout(ent.timer); ent.timer = 0; }
+        ent.el.classList.remove('out');
+        ent.el.classList.add('more');
+        ent.el.style.order = shown.length;
+        const s = 'more|' + extra + '|' + (this._buffExpand ? 1 : 0);
+        if (ent.sig !== s) {
+          ent.sig = s;
+          ent.parts.bn.textContent = this._buffExpand ? '收起' : '+' + extra;
+          ent.parts.bi.textContent = '';
+          ent.parts.bx.style.display = 'none';
+          ent.parts.bt.textContent = '';
+          ent.el.title = this._buffExpand ? '收起增益' : '展开其余 ' + extra + ' 个增益';
+          ent.el.style.setProperty('--c', '#f0d080');
+        }
+      }
+      /* 消失：先 .out 收缩淡出 200ms，再摘节点。期间同 key 回来会被上面复活。 */
+      for (const [k, ent] of map) {
+        if (want.has(k) || ent.timer) continue;
+        ent.el.classList.add('out');
+        ent.timer = setTimeout(() => {
+          if (ent.el.parentNode) ent.el.remove();
+          map.delete(k);
+          ent.timer = 0;
+          this._buffSyncHeight(row);
+        }, 200);
+      }
+      this._buffSyncHeight(row);
+    }
+
+    /* ---------------- 时长通道（每帧都走，但只在整秒变化时写 DOM） ---------------- */
+    const byKey = new Map();
+    for (const b of shown) byKey.set(this._buffKey(b), b);
+    for (const [k, ent] of map) {
+      if (k === '__more' || ent.timer) continue;
+      const b = byKey.get(k);
+      if (!b) continue;
+      ent.max = Math.max(ent.max || 0, Number(b.dur) || 0);
+      const sec = Math.floor(Math.max(0, Number(b.dur) || 0));
+      if (ent.sec === sec) continue;
+      ent.sec = sec;
+      /* [M18.5] 领域压制没有倒计时，写 0.0s 会让人以为快结束了 */
+      ent.parts.bt.textContent = b.noTimer ? '常驻' : sec + 's';
+      if (!b.noTimer && ent.max > 0) {
+        ent.parts.bprog.style.width = Math.max(0, Math.min(100, (Number(b.dur) || 0) / ent.max * 100)).toFixed(1) + '%';
+      }
+    }
   },
 
   updateBoss(boss) {

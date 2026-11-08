@@ -273,6 +273,8 @@ const Domains = {
     const z = this._seenZone;
     if (!z) return null;
     return {
+      /* [U2] 固定身份 / 固定序：z.name 随圈变化，不能当 diff key */
+      key: 'st:zone', ord: -102,
       name: z.name,
       dur: z.ttl > 0 ? z.ttl : 0,
       noTimer: !(z.ttl > 0),
