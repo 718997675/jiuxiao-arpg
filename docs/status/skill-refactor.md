@@ -2621,3 +2621,89 @@ node --check：game / ui / worldboss / domain / data-buff-icons / 两个探针
 7. **浏览器探针别并行跑**。墙钟 ≠ 模拟时间，并行时 `probe-domain` 的「Boss 一死圈就散」
    曾假红；已改成按 `Domains.list.length` 轮询。真机探针一律串行。
 8. macOS 自带 BSD grep 的 BRE **不支持 `\|` 交替** —— 一律用 `Grep` 工具（ripgrep）。
+
+---
+
+## U3 · V5 组合特效进游戏（2026-11-09 开工 · 未完成）
+
+> 当前：只读调查做完、U3-1 路标落地，**代码一行未动**。`docs/status/vfx-merge.md` 的 U3 已标 🔄。
+
+### 先说清楚：不是把试验台的 `comboApply` 拷进游戏
+
+调查结论（2026-11-09，逐行核对过）：
+
+- `docs/vfx-playground.html:6922` 的 `comboApply(key,c)` 只实现**职业连携 3 条**，靠模块级
+  `bladeStack`(5 层) / `avatarUntil`(8s) / `poisonUntil`(5.5s) + `delay()` 排期；唯一调用点是
+  `playSkill` 的 v2 分支（6952）。4 组技能内组合是**另一个对象** `COMBOS`（7031~7135），
+  靠 4 个按钮 / URL 参数手动触发（7466 / 7582），并没有「读状态位自动触发」。
+- 两者都落在试验台 §11 演示外壳里，被 `dev/build-skillvfx.js:62-68` **明确排除**；
+  生成器只从 `SKILL_BLOCKS` 抽 `v2(c){...}` 函数体 —— 这就是 `src/` 0 处的根因。
+- 游戏侧 `Game.playSkillVfx`（`game.js:3909`）判断顺序是 `SKFX.has(id)` → 播 `SKFX.play` →
+  **立刻 `return 1`**，配方层 `VFX.playFor` 正常游戏一次都不播。组合若挂在配方层里根本不会触发。
+- 游戏里**已有等价状态**，但数值口径与试验台不同：刃势是 **4 位掩码**（`bladeEdge()` /
+  `bladeAddEdge`，`game.js:3823-3854`）、法相是 **10 秒** `elemAura.t`（`game.js:4136`）、
+  毒是**目标身上** `e.venomT/e.poisonT`（不是全局窗）。照抄 = 双重记账 + 和断岳斩/换相打架。
+
+### 接线口径（三条硬规矩）
+
+1. **挂点只认两处**：3 条连携挂 `castSkill` 尾部（`game.js:6127` 之后、`_tag/_elem` 清零之前，
+   能拿到 `id/pp/aim/dir`）；4 组技能内组合挂 `damageEnemy` 命中口（`game.js:6946`
+   `tryElemReaction` 之后 —— 此时 `e.hp>0` 已确认，`elem = opts.elem || 'phys'` 已算出）。
+   **绝不挂 `VFX.playFor`**，`SKFX.play` 内部也一行不改。
+2. **新建独立 `src/combo-fx.js`**（非生成物），`index.html` 在 `fx-kit.js`/`vfx.js` 之后按序插
+   `<script>`。`src/sfx.js` / `dev/build-skillvfx.js` / 试验台一律不动 —— 组合层是
+   「技能之间互相给对方上视觉」，不属于任何单只技能，也不是试验台的演出配方。
+3. **只读状态、只画**。不改 `pos` / `dmg` / 敌人状态字段（PLAN §14 硬规则）；延时二段走
+   `VFX._later`（自带 `Game.mapGen` 换图作废），不许裸 `setTimeout`；低画质降级交给 `FXK`
+   原语内部读 `FX.q`，组合层不抄第二份倍率。
+
+### 7 条规则：判据读游戏真实状态
+
+| 组 | 触发条件（游戏字段，不是试验台变量） | 挂点 | 视觉 |
+|---|---|---|---|
+| **技能内 · freeze** 冻结→碎裂 | `e.slow >= 1 && e.slowT > 0` 且 `elem === 'phys'` 且 `!opts.silent` | `damageEnemy` | `shard` 爆散 + `frost` 贴花 + 小 `shock` |
+| **技能内 · burn** 中毒→焚毒 | 目标带毒（`e.venomT>0 \|\| e.poisonT>0 \|\| e.dotElem==='poison'`）且 `elem === 'fire'` | `damageEnemy` | 绿 / 橙双色 `ember` 上卷 + `acid` 贴花 |
+| **技能内 · exec** 破甲→处决 | `e.shredT>0 && e.shred>0` 且 `e.hp <= e.hpMax*0.3` | `damageEnemy` | 红色裂口光（`crack` 贴花 + 目标身上一次 `soft` 闪） |
+| **技能内 · gather** 聚怪→范围技 | 2 秒内先施放带 `beh.gather` 的技能、再由**另一发**命中 | 两处都挂 | 向心吸入粒子 → `VFX._later` 0.55s 后 `shock` + 外扩 |
+| **连携 · 刃势巨刀** | `Game.bladeEdge() >= Game.bladeEdgeMax()`（4 位掩码）且这一发是 ⑤（`skillArchSlotOf('warrior',id)===5`） | `castSkill` | 4 道刀纹合成一道**立起来**的巨刀（竖直 `trail`）+ 落地 `shock` + `crack` |
+| **连携 · 法相手掌光点** | `Game.elemAuraOn()`（10s 窗）且法师 ①②③（`skillArchSlotOf('mage',id)` 为 1~3） | `castSkill` | 从**背后** y=1.7 抛物线 `trail` 飞向 `aim` + 落点 `spr` 爆 10 颗 |
+| **连携 · 符毒绿符钉** | 道士 ①（`talisman` 系）命中**带毒**目标（`e.venomT>0 \|\| e.poisonT>0`） | `damageEnemy` | 绿烟 `smoke` + 按毒层数 1~5 枚绿色 `rune` 悬浮符钉 + `acid` 贴花 |
+
+统一 ICD：**每种组合全局 0.5s / 同目标 2s 内不重播**（PLAN §9.2 口径），否则满屏特效。
+`ComboFX.stats()` 要暴露每条规则的触发次数与「画了什么」，给探针逐条判，不靠肉眼。
+
+### 节点表
+
+| 编号 | 节点 | 状态 | 产物 | 验收 |
+|---|---|---|---|---|
+| U3-1 | 只读调查 + 路标 | 🔄 | `vfx-merge.md` U3 标 🔄 + 本章 | 7 条规则的判据逐条对上游戏字段，无「照抄试验台」的口径 |
+| U3-2 | 组合层数据 + 视觉 | ⬜ | 新建 `src/combo-fx.js`（7 条规则表 / ICD / `FXK` 视觉 / `stats()`）+ `index.html` 插脚本 | `node --check`；`dev/test-combo.js` 静态契约逐条判规则表与挂点 |
+| U3-3 | 游戏接线 | ⬜ | `src/game.js` 两处挂点 + 换图 `reset()`；静态查 `ComboFX` 无重名 | 不改 `sfx.js` / 生成器；四个 `--check` 全绿；`smoke` ERRORS none |
+| U3-4 | 真机探针 | ⬜ | `dev/probe-combo.js` | 7 条逐条看到触发 + 视觉调用、ICD 生效、`silent` 不重复播、零 console error |
+| U3-5 | 回归 + 台账收口 | ⬜ | 三份台账 + 当日日志 + commit + push | 全套回归读数写进台账；U3 标 ✅，下一步 U4 |
+
+### 下一步
+
+按 U3-2 → U3-5 顺序做，**每做完一个节点写台账 + commit + push**，别攒着写。
+动手前先 `git status` 确认工作区干净（U2 收口后已推干净）。
+
+### 卡点 / 坑（明天别再踩一遍）
+
+1. **双演出层**：`SKFX.has` 命中即 `return 1`，组合挂 `VFX.playFor` 一次都不会触发；
+   带 `segments:['impact']` 的分段调用也在 `playSkillVfx` 里直接 return，别把判定藏在分段之后。
+2. **别照抄试验台状态**：5 层→4 位掩码、8s→10s、全局毒窗→目标 `venomT/poisonT`；
+   `bladeAddEdge` 满层已有 `FX.text('刃势满 · 断岳斩')`、台阶 Lv5 已有第二道立起刀气
+   （`data-vfx.js:267`），巨刀**只补「刀纹合成 + 虚影」那一层**，不要再造一次落地冲击双播。
+3. **`damageEnemy` 有多个 early return**（`e.dead` / `e.hp<=0` 走 `onEnemyDeath`），
+   命中口要放在 6946 之后；`opts.silent` 的 dot 每跳都会进这个函数，必须过滤，
+   否则「焚毒」会变成每 0.9 秒一次的常驻烟花。
+4. **生成物**：`src/sfx.js` / `fx2.js` / `data-bosskits.js` / `boss-cast.js` 四份都不手改；
+   组合层是新文件，别去扩 `build-skillvfx.js` 的 `CUTS`。
+5. **全局 `const` 重名 = 整页白屏**。新对象名先全局查重；`index.html` 按序 `<script src>`，
+   要放在 `fx-kit.js`（`FXK`）与 `vfx.js`（`VFX._later`）之后、`game.js` 之前。
+6. **按功能位判，别硬编码技能 id**：一格可躺多只 `inherit` 技能，用 `skillArchSlotOf(cls,id)`；
+   试验台的 `missile→fireball` / `swords→swordarray` 等 5 条 ALIAS 只服务生成器。
+7. **延时演出挂 `Game.mapGen`**：`VFX._later` 已经带了，别自己 `setTimeout`；
+   `FXK` 原语内部读 `FX.q` 降级，组合层不要再写一份 `if (FX.q < 1)`。
+8. **验收不能只跑契约**：U1 有过「契约全绿但 NaN 粒子照样算数」的前车之鉴，
+   U3 必须真机逐条看到 7 条成立 + 零报错。
