@@ -2555,12 +2555,13 @@ chain 1.25× · bloodrage 1.29× · thrust 1.38× · heal 1.62×。过线是「�
 
 ---
 
-## U2 · 增益条整块改造（2026-11-08 开工 · 未完成）
+## U2 · 增益条整块改造（2026-11-08 开工 · 2026-11-09 收口 ✅）
 
-> 当前：**U2 只走完第 1 步（图标数据层已落地并提交 `5afbd3f`）**，
-> `index.html` / `src/ui.js` / `src/game.js` / `src/skill-beh.js` / `src/mobile.js`
-> **一行都还没改**。台账 `docs/status/vfx-merge.md` 的 U2 已从 ⬜ 改成 🔄。
-> 这一节是**给下一个接手的人（含换账号）的路标**，不是完成记录。
+> **U2-1~U2-7 全部 ✅，PLAN §13 第 7~11 条逐条判完**。这一节已从「接手路标」改成完成记录，
+> 下面保留当时的判断与全部坑，别再照着旧版「下一步」动手。
+> 台账 `docs/status/vfx-merge.md` 的 U2 已 ✅，下一步是 **U3**。
+> 提交口径如实记一笔：U2-2~U2-7 跨会话一次性补齐、同一批文件被多个节点交叉改过，
+> 没法干净逐节点拆提交，最终按「功能代码 / 验收与台账」两个 commit 收口。
 
 ### 先说清楚：U2 不是「挪个位置」，是重写渲染方式
 
@@ -2575,37 +2576,48 @@ chain 1.25× · bloodrage 1.29× · thrust 1.38× · heal 1.62×。过线是「�
 
 ### 节点表
 
-| 编号 | 节点 | 状态 | 产物 | 验收 |
+| 编号 | 节点 | 状态 | 产物 | 验收结论（2026-11-09 实测） |
 |---|---|---|---|---|
-| U2-1 | 符号图标数据层 | ✅ | `src/data/data-buff-icons.js`（17 枚 32×32 纯 path + `BUFF_ICON_OF` / `BUFF_ICON_BY_NAME` + `buffIconKey` / `buffIconSvg`） | `node --check` 过；M11 规范（`viewBox 0 0 32 32`、纯 path、`fill=currentColor`） |
-| U2-2 | 接入脚本 + 出图验证 | ⬜ | `index.html` 插 `<script>`（`data-icons.js` 之后） | 图标形状可读 —— 不可读 = 增益图标等于没做 |
-| U2-3 | `#buffbar` → `#buffrow` 搬家 | ⬜ | `index.html`（删 287~297 CSS / 2660 DOM / 1812·1815·2164 三处引用；`#charplate` 加 `flex-wrap:wrap`；`#trialHud` 改 `calc(96px + var(--buff-h,0px))`） | `#buffrow` 在血条正下方、宽度与血条对齐（`.bars` 238px） |
-| U2-4 | `renderBuffs()` 改增量 diff | ⬜ | `src/ui.js` | `Map<key,el>`，禁 `innerHTML`；签名去时长；时长整秒才写 + 1px 进度条 `transition:width 1s linear`；入场只播一次；刷新只 border 高亮；到期先 `.out` 200ms 再移除 |
-| U2-5 | buff 数据结构化 | ⬜ | `src/game.js`（`addBuff` 加 `stacks`/`maxStacks`/`ord`；`statusBuffs()` 每条补 `st:*` 稳定 key；`血怒`/`狂战` 补 key）+ `src/skill-beh.js`（叠层去掉 `×N` 后缀） | 同名 buff 叠 3 层 → 1 个图标 + `×3` 角标 |
-| U2-6 | 移动端收尾 | ⬜ | `src/mobile.js`（删旧 `#buffbar` 宫格定位）+ `dev/probe-domain.js` / `dev/worldboss-live.js` 改指 `#buffrow` | `node dev/mobile-layout.js` 全绿；探针不再静默失真 |
-| U2-7 | 验收 + 收口 | ⬜ | 新探针 + 台账 + commit | PLAN §13 第 7~12 条逐条有结论；`smoke` ERRORS none |
+| U2-1 | 符号图标数据层 | ✅ | `src/data/data-buff-icons.js`（17 枚 32×32 纯 path + `BUFF_ICON_OF` / `BUFF_ICON_BY_NAME` + `buffIconKey` / `buffIconSvg`），提交 `5afbd3f` | `node --check` 过；M11 规范（`viewBox 0 0 32 32`、纯 path、`fill=currentColor`）；`probe-buff-icons` 判 17 枚全有查表入口（补 `st:burn` / `st:shred` / `st:noheal` 预留 + 灼烧 / 破甲 / 禁疗名字） |
+| U2-2 | 接入脚本 + 出图验证 | ✅ | `index.html` 在 `data-icons.js` 之后插 `<script>`；新建 `dev/probe-buff-icons.js` | **11/0**，出图 `dev/_shots/buff-icons-sheet.png`：48px 大图 + 真实 16px 小图两档，人眼逐枚可辨（箭头 / 盾环 / 心十字 / 光罩 / 刺环 / 沙漏 / 雪花 / 泪滴 / 火焰 / 裂盾 / 三斜线 / 裂心…），无空白 / 实心块 / 糊团；Path2D 覆盖率 6%~90%、16px 仍 ≥20 可见像素、8 枚 evenodd 真挖出洞 |
+| U2-3 | `#buffbar` → `#buffrow` 搬家 | ✅ | `index.html`（删旧 CSS / DOM / 三处引用；`#charplate` 加 `flex-wrap:wrap`；`#trialHud` 改 `calc(96px + var(--buff-h,0px))`） | `probe-buffrow`【7】：旧节点不存在、在 `#charplate` 内换行、左边缘与 `.bars` 对齐 ≤2px、`top ≥ bars.bottom` |
+| U2-4 | `renderBuffs()` 改增量 diff | ✅ | `src/ui.js`（`Map<key,el>` / `_buffMake` / `_buffIcon` / `_buffSyncHeight`）+ `index.html` 的 `.buff` 样式 | 【8】8 格节点身份不变、`#buffrow` 子树 `innerHTML` 写入 0；【9】60 帧 `animationstart` 增量 0、签名不含 `dur`、时长整秒才写；【11】先 `.out`、200ms 后才摘节点；最多 8 格 + `+N` 展开 16 格 |
+| U2-5 | buff 数据结构化 + 稳定身份 | ✅ | `src/game.js`（`stacks` / `maxStacks` / `ord`；`statusBuffs()` 每条固定 `st:*` key 与**写死** ord；血怒 / 狂战改 `sto:*` key）、`src/skill-beh.js`（叠层固定名「战意」）、`src/worldboss.js` / `src/domain.js`（领域自带 `st:domain` / `st:zone`）、`src/ui.js`（排序改 ord）、`src/data/data-buff-icons.js`（新 key 映射） | 【10】同 key 叠 3 层 = 1 格 + `×3`、名字恒为「战意」；【12】9 条：key/ord 倒计时不变、两个同名「定身」各占一格、refresh 沿用原 ord、甲刷新到 20s / 乙降到 1s / 再推 60 帧两格顺序不动；源码静态断言血怒 / 狂战 / 领域 key 都在 |
+| U2-6 | 移动端收尾 | ✅ | `src/mobile.js`（删旧 `#buffbar` 宫格定位）+ `dev/probe-domain.js` / `dev/worldboss-live.js` 改指 `#buffrow` | `node dev/mobile-layout.js` 6 视口全绿（重叠无 / 出屏无）；`probe-domain` **16/0**（「Boss 一死圈就散」改成按 `Domains.list` 轮询，不再等 400ms 墙钟）；`worldboss-live` 全部通过 |
+| U2-7 | 验收 + 收口 | ✅ | `dev/probe-buffrow.js`（29 项）/ `dev/probe-buff-icons.js`（11 项）/ 三份台账 + commit | PLAN §13 第 7~11 条逐条写了探针判据；`smoke` 三职业 `ERRORS none`；全套回归见下节 |
 
-### 下一步（明天第一件事）
-
-按 U2-2 → U2-7 顺序做，**每做完一个节点就写台账 + commit，别攒着写**。
-动手前先确认 puppeteer 依赖还在（本机装在 `/tmp/wb-node`，**重启会丢**）：
+### 收口回归（2026-11-09，全绿）
 
 ```
-ls /tmp/wb-node/node_modules/puppeteer-core || npm i --prefix /tmp/wb-node puppeteer-core@23
-NODE_PATH=/tmp/wb-node/node_modules node dev/smoke.js
+probe-buffrow 29/0 · probe-buff-icons 11/0 · mobile-layout 6 视口 · smoke ERRORS none
+probe-domain 16/0 · probe-sfx 12/0 · worldboss-live 全部通过 · vfx-skill-vis --live 113/0
+四个生成物 --check 全过 · 九套 node/vm 契约全绿（343/58/60/974/116/58/32/36/20）
+node --check：game / ui / worldboss / domain / data-buff-icons / 两个探针
 ```
 
-### 卡点 / 坑（明天别再踩一遍）
+`vfx-skill-vis --live` 中途曾在 `whitetiger` / `chain` / `iceshard` 这些贴下界的技能上读数抖动（SwiftShader 软渲染临界），
+用干净 worktree 基线对照确认**基线同样会红**、最终当前分支稳定在 U1 台账的 113/0 —— 不是 U2 回归，判据未改。
 
-1. **diff 的 key 不能用 name**。`game.js:6174` 的「定身」（statusBuffs，debuff）和
-   `skill-beh.js:296/703` 的「定身」（`beh:定身`，buff）是**两个同名不同物**；
-   而 `statusBuffs()` 现在**一条 key 都没有** → 增量 diff 根本做不了，必须先补稳定 key。
-2. **排序键不能用剩余时间**。PLAN §6.6 写「组内按剩余时间升序」和「快没了的靠后，不跳动」
-   自相矛盾 —— 按剩余时间排必然每帧重排、必然跳动。解法：用**稳定的 `ord`**（创建序，
-   `addBuff` 时分配、刷新时保留），分组用固定优先级。
-3. **`--buff-h` 只在行高变化时写一次**。每帧写 style = 每帧重排 = 又闪。
-4. **`body.touch #charplate{transform:scale(.72)}`**（`index.html:2391`）与 `mobile.js` 旧
-   `#buffbar` 宫格逻辑要一起清，否则新位置会被旧逻辑拽走。
-5. **`data-buff-icons.js` 的 `BUFF_ICON_OF` 已预留 `st:*` 命名空间**，与 `game.js`
-   `statusBuffs()` 现状对不上 —— 两侧必须同步落地。
-6. macOS 自带 BSD grep 的 BRE **不支持 `\|` 交替** —— 一律用 `Grep` 工具（ripgrep）。
+### 卡点 / 坑（都已在代码里堵住，接手前先看一遍）
+
+1. **diff 的 key 不能用 name**。`statusBuffs()` 的「定身」（debuff）和 `skill-beh.js` 的
+   「定身」（`beh:定身`，buff）是**两个同名不同物**。
+   ✅ 已落地：`statusBuffs()` 每条固定 `st:*` key，`WorldBoss.domainBuff()` / `Domains.buff()`
+   自带 `st:domain` / `st:zone`；`probe-buffrow`【12】直接把两条同名摆在一起验。
+2. **排序键不能用剩余时间**。PLAN §6.6 原稿「组内按剩余时间升序」和「快没了的靠后，不跳动」
+   自相矛盾 —— 按剩余时间排必然每帧重排、必然跳动。
+   ✅ 已落地：`addBuff` 分配 `ord`（刷新沿用），`statusBuffs()` 用**写死的负常数**（不能用自增计数：
+   少一条状态后面几条会整体前移，还是重排）；PLAN §6.6 同步更正。
+3. **`--buff-h` 只在行高变化时写一次**。每帧写 style = 每帧重排 = 又闪。✅ `_buffSyncHeight` 只在签名变化时调。
+4. **`body.touch #charplate{transform:scale(.72)}`** 与 `mobile.js` 旧 `#buffbar` 宫格逻辑要一起清，
+   否则新位置会被旧逻辑拽走。✅ 旧定位块已删，`mobile-layout` 6 视口复核。
+5. **`BUFF_ICON_OF` 的 `st:*` 命名空间必须与 `statusBuffs()` 同步**。✅ 已对齐，并补 `st:burn` /
+   `st:shred` / `st:noheal` 三枚预留 —— 原本这 3 枚画了但查不到，等于死图标；
+   `probe-buff-icons.js` 现在断言 17 枚全有入口。
+6. **出图判据本身也会假红**：evenodd 的「洞」不能拿 `nonzero` 重画整条 d 当反例 —— 内圈
+   子路径方向相反时 `nonzero` 同样会挖空（6/8 枚差值为 0）。正确基准是**只画第一条 `M` 子路径**
+   （未挖洞的外轮廓）。另外双箭头 / 沙漏 / 泪滴天生是窄符号，`bbox ≥20×20` 会误杀，
+   改判「两维 ≥12 且面积 ≥240」。
+7. **浏览器探针别并行跑**。墙钟 ≠ 模拟时间，并行时 `probe-domain` 的「Boss 一死圈就散」
+   曾假红；已改成按 `Domains.list.length` 轮询。真机探针一律串行。
+8. macOS 自带 BSD grep 的 BRE **不支持 `\|` 交替** —— 一律用 `Grep` 工具（ripgrep）。

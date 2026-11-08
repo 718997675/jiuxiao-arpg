@@ -8,9 +8,9 @@
   但**不再往那两份里加待办、也不再按它们的 V0~V6 / P0~P2 编号排期**。
 - 进度事实看这两份：`docs/status/skill-refactor.md`（人物主线）、
   `docs/status/boss-kits.md`（B 线 B1~B25）。本文件只管「还差什么、按什么顺序合」。
-- 更新：2026-11-07
+- 更新：2026-11-07；进度更新：2026-11-09（U2 收口）
 
-> 当前：**U1 已收口**（`--live` 113/0、默认 39/0，零空招零欠账）；两条线的特效代码都已在 feat/skill-refactor 跑通，但 origin/main 一个特效文件都没有。按 U2 → U12 依次收口，人物先合、BOSS 后合。
+> 当前：**U1 / U2 已收口**（U1 `--live` 113/0、默认 39/0；U2 `probe-buffrow` 29/0 + `probe-buff-icons` 11/0）；两条线的特效代码都已在 feat/skill-refactor 跑通，但 origin/main 一个特效文件都没有。下一步 **U3**，仍按人物先合、BOSS 后合的顺序走。
 
 ## 一句话现状
 
@@ -24,14 +24,15 @@
 
 | 线 | 完成度 | 已完成 | 未完成 |
 |---|---|---|---|
-| 人物技能特效 | **约 80%** | V0 地基（14 格图集 + 12 原语，全带 `FX.q` 降级）、配方 DSL v2（15 剪影 × 形/色/时 + `ELEM_PROFILE` 6 套）、P4 三职业 ⑤ 签名、P5 台阶 45/45、P5b ①~④ 位 30 个 case 接线、B20 玩家侧 37 只 `src/sfx.js`、V2/V3/V3b 可见度、双演出层适配（`abd20ad`）；15 位 × 4 档 ≤6 draw call、五连放 +3.5%；U1 双演出层口径 + 空招/偏淡收口；契约 dsl 343 / kit 58 / p5 974 / p5b 116 / p4 60 | U2~U6（U1 已 ✅） |
+| 人物技能特效 | **约 80%** | V0 地基（14 格图集 + 12 原语，全带 `FX.q` 降级）、配方 DSL v2（15 剪影 × 形/色/时 + `ELEM_PROFILE` 6 套）、P4 三职业 ⑤ 签名、P5 台阶 45/45、P5b ①~④ 位 30 个 case 接线、B20 玩家侧 37 只 `src/sfx.js`、V2/V3/V3b 可见度、双演出层适配（`abd20ad`）；15 位 × 4 档 ≤6 draw call、五连放 +3.5%；U1 双演出层口径 + 空招/偏淡收口；契约 dsl 343 / kit 58 / p5 974 / p5b 116 / p4 60 | U3~U6（U1 / U2 已 ✅） |
 | BOSS 技能特效 | **约 85%** | B1~B25 全 ✅（B2 已推翻不计）：45 只 × 5 格 = 88 招、18 个原语进 `src/fx2.js`、`src/boss-cast.js` 接进 `bossPattern`（四拍 + 每第 5 轮压轴）、B22 地面暗底、B23 竖向兜底（43 招有高度）、B24/B25 变形层 180 条 / 10 种应对轴；真机 15/15、88 招 0 空招 0 报错 | U7~U10（见下表） |
 | 合入 | **0%** | 无 | U11 / U12 |
 
 > 口径：两份 PLAN 是 10-27 / 10-28 的旧方案，都还写着「待拍板 · 未动一行代码」，
 > 实际工作走的是台账里的 V0/P4/P5/P5b/V2/V3 和 B1~B25，那条路已经把 PLAN 的主体做掉了。
-> `SKILL-VFX-PLAN.md §13` 的 14 条验收清单至今**一条没勾**（全 `[ ]`），
-> 有实测数据但没有逐条判据结论 —— 这是「全绿 ≠ 做完」的同一个坑（见 `skill-refactor.md` 2026-11-02 章）。
+> `SKILL-VFX-PLAN.md §13` 的 14 条验收清单**已勾 6 条**（U2 的第 7~11 条，每条都写了探针判据），
+> 另加两条 U2 专属判据（图标出图 / 稳定 key）作为清单后的引用块，不占 14 条编号。
+> 其余 8 条仍等 U6 逐条给人眼 / 性能结论 —— 「全绿 ≠ 做完」的口径不变（见 `skill-refactor.md` 2026-11-02 章）。
 
 ## 统一节点表
 
@@ -41,7 +42,7 @@
 | 编号 | 节点（前缀 = 归属） | 状态 | 落点 / 产物 | 验收 |
 |---|---|---|---|---|
 | U1 | 人物 · **SKFX 真实链路收口**：空招 `blizzard` / `antidote`；偏淡 7 只 heal 270 · bloodrage 303 · avatar 1330 · talisman 1034 · talismanarrow 1060 · whitetiger 1357 · whirl 2400；给 SKFX 定自己的面积下界；定「配方层 / SKFX 谁为准」 | ✅ | `docs/vfx-playground.html`（源）→ `node dev/build-skillvfx.js --write` → `src/sfx.js`；`dev/vfx-skill-vis.js --live` | `--live` **113/0**（零空招 / 零异常 / 每只 ≥ 同一把下界）；默认配方层 39/0；口径与下界结论写进下节 |
-| U2 | 人物 · **V1 HUD 增益条整块没动**：`#buffbar` 仍有 6 处、`buffrow` 0 处、`data-buff-icons.js` 无、`renderBuffs` 仍 `innerHTML` 全量重建（每 100ms 闪一次）。要搬到血条下、16 枚符号图标、增量 diff、叠层结构化 `×N`、`#trialHud` 避让、200ms 淡出 | 🔄 | `index.html` / `src/ui.js` / `src/mobile.js` / 新建 `src/data/data-buff-icons.js` | PLAN §13 第 7~11 条 + `node dev/mobile-layout.js` |
+| U2 | 人物 · **V1 HUD 增益条整块改造已收口**：`#buffbar` 全清、`#buffrow` 落在血条正下方、17 枚符号图标出图可读、`renderBuffs` 改 `Map<key,el>` 增量 diff（零 `innerHTML`）、叠层结构化 `×N`、稳定 `st:*` key + `ord` 排序、`#trialHud` 靠 `--buff-h` 避让、到期 200ms 淡出 | ✅ | `index.html` / `src/ui.js` / `src/game.js` / `src/skill-beh.js` / `src/mobile.js` / `src/worldboss.js` / `src/domain.js` / `src/data/data-buff-icons.js` / `dev/probe-buffrow.js` / `dev/probe-buff-icons.js` | `probe-buffrow` **29/0**、`probe-buff-icons` **11/0**、PLAN §13 第 7~11 条逐条有判据、`mobile-layout` 6 视口全绿、`smoke` ERRORS none；U1 尺子回归 `--live` **113/0** |
 | U3 | 人物 · **V5 组合特效进游戏**：`comboApply` 只在试验台（`docs/vfx-playground.html` 2 处，`src/` 0 处）。技能内组合 4 组（freeze / burn / exec / gather）+ 职业核心连携 3 条（刃势巨刀 / 法相手掌光点 / 符毒绿符钉）全还只是演示 | ⬜ | `src/vfx.js` 或新解释器分支 + `src/game.js` 的 `playSkillVfx` | 真机探针逐条看到组合成立，零报错 |
 | U4 | 人物 · **元素反应 10 组专属视觉**：机制 P3a 已 10/10 落地（走 `damageEnemy` 一个口），但 §9.2 的蒸汽 / 等离子 / 绿火 / 晶体爬弧 / 霜面腐蚀 / 链式绿弧 / 金火等视觉语言没落进游戏 | ⬜ | `src/game.js` 的 `applyElemReaction` + `src/fx-kit.js` 现有原语 | 每组一条灰度截图，互不重样；复用 0.5s / 2s ICD |
 | U5 | 人物 · **V4 近战武器附魔**：`enchant` 原语在 `fx-kit.js` / `vfx.js` / `data-vfx.js` 全是 0 处；Lv10「常驻光效」目前只有刀身发烫脉冲，不是真附魔 | ⬜ | `src/fx-kit.js` + `data-vfx.js` 的 Lv10 patch | 6 元素近战各一套剑身外观，≤6 draw call |
@@ -52,6 +53,16 @@
 | U10 | BOSS · **逐只精修 + 兜底层局限**：同形状两招拿到的柱子排布相同（变形层只改应对动作）、环形暗底偏薄（内圈不暗，语义是「环内安全」，要补先改判定）、共享池只有 31 招导致 45 只必有 2 格重合（92 对）、移动中判定表达不了（只有 6 种静态形状）、实体暗场是「亮团」需低模、活物没厚度（trail 是贴地 ribbon） | ⬜ | `docs/boss-vfx-playground.html` → `node dev/build-fx2.js --write`；`src/boss-cast.js` | `dev/dup-audit.js` + 逐只截图 |
 | U11 | 合入 · **人物技能特效合进游戏**：补完 U1~U6 → 固定动作 → 合 main → 推上线 | ⬜ | `./dev/branch.sh --sync` → `node dev/smoke.js` + `node dev/mobile-layout.js` → `./dev/publish-preview.sh feat/skill-refactor` 看预览站 → 合 main → `./push.sh` | 正式站能开局、`ERRORS none`、存档隔离生效 |
 | U12 | 合入 · **BOSS 技能特效合进游戏**：补完 U7~U10 → 同上固定动作 → 合 main；**必须基于「已含 U11 的 main」重新对一遍**，不能拿老 main 当基准 | ⬜ | 同 U11 | 88 招正式站真机全量试放 0 空招 0 报错 |
+
+## U2 收口注记（2026-11-09）
+
+- 验收落在 `dev/probe-buffrow.js`（29/0）与 `dev/probe-buff-icons.js`（11/0，出图 `dev/_shots/buff-icons-sheet.png`）；
+  PLAN §13 第 7~11 条逐条写了判据，另两条 U2 专属判据（图标出图 / 稳定 key）放在清单后的引用块，不占 14 条编号。
+- 「`#buffbar` 已从代码与 DOM 中移除」指的是**项目根 `index.html` / `src/` 主链路**。
+  `preview/skill-refactor/` 是历史分支的静态预览快照（已入库、不跑游戏），里面仍带旧 `#buffbar` ——
+  别拿它当回归证据，也别顺手改它。
+- 排序口径已从「剩余时间」改成 `ord`（PLAN §6.6 同步更正），`statusBuffs()` 每条固定 `st:*` key；
+  血怒 / 狂战改 `sto:*` key，两套领域自带 `st:domain` / `st:zone`。详见 `skill-refactor.md` U2 章。
 
 ## 双演出层口径（U1 定 · 长期有效）
 
@@ -128,12 +139,14 @@ U1 逐只比对过 37 组 `SKFX / 配方` 读数：0.166 ~ 6.514、中位 1.003�
 bloodrage 1.29× · thrust 1.38× · heal 1.62×。配方层 `iceshard` 也只有 7% 余量，
 仍是最贴地板的一只，别把「暖机后稳定过线」误读成「它够显眼」。
 
-## 下一步（U1 已收口，从 U2 开始，别跳）
+## 下一步（U1 / U2 已收口，从 U3 开始，别跳）
 
-1. `U2` 人物 · V1 HUD 增益条整块没动：先按 `SKILL-VFX-PLAN.md` §13 第 7~11 条把
-   `#buffbar` 搬到血条下（16 枚符号图标 / 增量 diff / 叠层 `×N` / `#trialHud` 避让 /
-   200ms 淡出），落点 `index.html`、`src/ui.js`、`src/mobile.js` + 新建
-   `src/data/data-buff-icons.js`；改完跑 `node dev/mobile-layout.js`。
+1. `U3` 人物 · **V5 组合特效进游戏**：`comboApply` 只在试验台（`docs/vfx-playground.html` 2 处，
+   `src/` 0 处）。技能内组合 4 组（freeze / burn / exec / gather）+ 职业核心连携 3 条
+   （刃势巨刀 / 法相手掌光点 / 符毒绿符钉）目前全只是演示。落点 `src/vfx.js` 或新解释器分支 +
+   `src/game.js` 的 `playSkillVfx`；验收 = 真机探针逐条看到组合成立、零报错。
+   U2 已收口（17 枚符号图标 / 增量 diff / 叠层 `×N` / 稳定 `ord` / `#trialHud` 避让 / 200ms 淡出），
+   别回头重做。
 2. 改 `src/sfx.js` **一律走生成器**：改 `docs/vfx-playground.html` →
    `node dev/build-skillvfx.js --write` → `node dev/build-skillvfx.js --check`。
    别手改生成物（`abd20ad` 修的 `hitArea` stub 就是这么来的）。

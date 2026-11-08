@@ -579,7 +579,7 @@ const ok = (cond, msg, extra) => {
     out.poisonDrop = +(hp0 - Game.state.hp).toFixed(2);
     out.poisonExpect = +(Game.state.stats.hpMax * 0.006).toFixed(2);
     out.buff = Game.statusBuffs().find(b => b.noTimer) || null;
-    out.buffDom = (document.getElementById('buffbar').textContent || '').replace(/\s+/g, '');
+    out.buffDom = (document.getElementById('buffrow').textContent || '').replace(/\s+/g, '');
 
     /* ---- ③ 水天领域：移速 −20% ---- */
     s = enter('kunpeng', 6);

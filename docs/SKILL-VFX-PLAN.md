@@ -327,7 +327,8 @@ addBuff(name, stats, color, { key:'beh:stack:whirl', stacks:3, maxStacks:5, icon
 ### 6.6 上限与排序
 
 - 最多显示 **8 个**，超出折叠为 `+N`（点一下展开成两行，只在需要时）。
-- 排序：**增益 → 减益 → debuff 置后**（沿用现有口径 `ui.js:1302`），组内按剩余时间升序（快没了的靠后，不跳动）。
+- 排序：**增益 → 减益 → debuff 置后**（沿用现有口径 `ui.js:1302`），组内按 **`ord`（创建序，`addBuff` 分配、刷新沿用）** 升序，同序拿稳定 key 兜底。
+  > **[U2 更正]** 原稿这一句写的「组内按剩余时间升序（快没了的靠后，不跳动）」自相矛盾：`dur` 每帧递减，按它排必然每帧重排、必然跳动。已改成 `ord`；`Game.statusBuffs()` 的系统状态条带**固定负数 ord**（不能用自增计数，少一条状态后面几条就会整体前移），稳定排在动态 buff 之前。判据见 `dev/probe-buffrow.js` 【12】。
 - 色盲兜底：debuff 用**虚线边框 + 左上缺角**，不只靠红色。
 
 ---
@@ -529,15 +530,20 @@ addBuff(name, stats, color, { key:'beh:stack:whirl', stacks:3, maxStacks:5, icon
 - [ ] 雷电：`bolt` 有**分叉**，命中点有 40~80ms 局部闪白 + 焦痕
 - [ ] 领域：太极 / 火墙 / 毒雾 / 雷云 四者剪影**互不相同**（圆 / 线 / 团 / 云）
 - [ ] 火的粒子**上升**、冰的粒子**直线硬停**、毒的粒子**下沉翻滚** —— 三者运动方向可辨
-- [ ] `#buffbar` 已从代码与 DOM 中移除；`#buffrow` 在血条正下方，宽度与血条对齐
-- [ ] 连续施放 8 个不同 buff：DOM 节点数**不增长**（复用），无 `innerHTML` 重建
-- [ ] buff 全程**无闪烁**：录屏逐帧检查，无 opacity/scale 跳变（入场动画只播一次）
-- [ ] 同名 buff 叠 3 层：显示 1 个图标 + `×3`，**不出现 3 个独立条目**
-- [ ] buff 到期：200ms 淡出后移除，不是瞬间消失
-- [ ] 无尽试炼中 `#trialHud` 不被 buff 行遮挡
+- [x] `#buffbar` 已从代码与 DOM 中移除；`#buffrow` 在血条正下方，宽度与血条对齐 —— `dev/probe-buffrow.js`【7】：`old=false`、在 `#charplate` 内 `flex-wrap:wrap`、左边缘与 `.bars` 对齐 ≤2px、`top ≥ bars.bottom`
+- [x] 连续施放 8 个不同 buff：DOM 节点数**不增长**（复用），无 `innerHTML` 重建 —— `probe-buffrow`【8】：8 格 `data-mark` 节点身份不变、`#buffrow` 子树 `innerHTML` 写入 0 次
+- [x] buff 全程**无闪烁**：录屏逐帧检查，无 opacity/scale 跳变（入场动画只播一次） —— `probe-buffrow`【9】：60 帧推进 `animationstart` 增量 0；签名不含 `dur`，时长只在整秒变化时写文字/宽度
+- [x] 同名 buff 叠 3 层：显示 1 个图标 + `×3`，**不出现 3 个独立条目** —— `probe-buffrow`【10】：1 格、`×3`、名字恒为「战意」、3/5 层不加金边
+- [x] buff 到期：200ms 淡出后移除，不是瞬间消失 —— `probe-buffrow`【11】：先 `.out`、100ms 时节点还在、200ms 后清零
+- [x] 无尽试炼中 `#trialHud` 不被 buff 行遮挡 —— `probe-buffrow`【11】：`trialHud.top ≥ buffrow.bottom`、`--buff-h` 非 0；`dev/mobile-layout.js` 6 视口全绿
 - [ ] 5 技能连放：draw call ≤ 基线 +25%，移动端 ≥ 30fps
 - [ ] 低画质档：贴花消失、拖尾关闭、无 pageerror
 - [ ] `node dev/smoke.js` + `node dev/mobile-layout.js` 全绿
+
+> **U2 追加判据（不占上面 14 条的编号，归 `dev/probe-*.js` 自动判）**：
+> · **17 枚符号图标形状可读** —— `dev/probe-buff-icons.js` 11/0，出图 `dev/_shots/buff-icons-sheet.png`：48px 与真实 16px 两档逐枚可辨，无空白 / 实心块 / 糊团；Path2D 覆盖率 6%~90%、缩到 16px 仍 ≥20 可见像素、8 枚 evenodd 镂空真的挖出洞、17 枚全有查表入口。
+> · **稳定 key + 稳定排序** —— `dev/probe-buffrow.js`【12】9 条：`statusBuffs()` 每条唯一 `st:*` key + 固定 ord、倒计时递减不变、两套领域各有固定身份、两个同名「定身」各占一格、refresh 沿用原 ord、甲刷新到 20s / 乙降到 1s / 再推 60 帧两格顺序不动。
+> U2 顺带跑绿 `smoke` / `mobile-layout`，但上面第 14 条留到 U6 统一给结论，不在这里提前勾。
 
 ---
 

@@ -119,10 +119,11 @@ const ok = (c, m, d) => {
     await w(400);
     const list = Game.statusBuffs().map(o => o.name);
     if (typeof UI !== 'undefined' && UI.renderBuffs) UI.renderBuffs();
-    const el = document.getElementById('buffbar');
-    const html = el ? el.innerHTML : '';
+    /* [V1] 增益行搬进 #charplate 了，且改成增量渲染（空行不再靠 display:none） */
+    const el = document.getElementById('buffrow');
+    const html = el ? el.textContent : '';
     h.kill();
-    return { list, hasDom: /毒沼/.test(html), shown: el ? el.style.display : null };
+    return { list, hasDom: /毒沼/.test(html), shown: el ? el.children.length : null };
   });
   ok(bar.list.indexOf('毒沼') >= 0, 'statusBuffs 里有「毒沼」', bar.list);
   ok(bar.hasDom, 'buff 条 DOM 上真的渲染了', bar);
@@ -166,7 +167,10 @@ const ok = (c, m, d) => {
     await w(200);
     const before = Domains.list.length;
     fake.dead = true;
-    await w(400);
+    /* 墙钟 ≠ 模拟时间：无头软渲染 dt 被夹到 0.05，并行开几个浏览器时
+     * 400ms 真实时间可能还不到一帧，曾随机红成「圈没散」。按清单轮询，
+     * 等的是「帧真的推进到了」，不是「表走了 400ms」。 */
+    for (let i = 0; i < 80 && Domains.list.length > 0; i++) await w(50);
     return { before, after: Domains.list.length };
   });
   ok(owner.before === 1 && owner.after === 0, 'Boss 一死圈就散', owner);
