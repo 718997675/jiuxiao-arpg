@@ -2745,3 +2745,106 @@ G.damageEnemy(e, dmg, crit,
    「反应判定必须排在法相挂状态之前」。在两者之间插一大段注释就把它顶过 600 字符 → 契约红。
    **挂点块要写短**（注释两行、代码压紧），别在 `damageEnemy` 里铺长篇大论。
    这不是契约太严，是提醒「这两句的先后是有讲究的，别乱插东西进去」。
+
+---
+
+## U4 · 元素反应 10 组专属视觉（2026-11-09 开工 · 未完成）
+
+> 当前：**U4-1 只读调查 + 路标 ✅**；生产代码一行未改。
+> `docs/status/vfx-merge.md` 的 U4 已标 🔄。
+> 这一节是给下一个接手的人的路标。
+
+### 先说清楚：U4 不是「没做视觉」，是**10 组长得一模一样**
+
+调查结论（2026-11-09，逐个 case 核对过 `game.js` 的 `applyElemReaction`）：
+
+- 10 组反应**全都已经有视觉代码**，机制 P3a 也真的 10/10 落地（走 `damageEnemy` 一个口）。
+- 但这些视觉**全部是旧 `FX.*` 写法**：`FX.flashCircle` / `FX.ring` / `FX.burst` / `FX.beam` /
+  `FX.area` —— 也就是**一圈方块粒子 + 一个圆环 + 一根 1px 线**。
+- §9.2 的原话是「每组给一套**专属视觉语言**，不要都用『一圈粒子』」。
+  现在 10 组里至少 6 组的观感是同一个模子刻出来的（`ring` + `burst` + `beam`），
+  只有配色不同 —— 配色不是视觉语言。
+
+**所以 U4 的实际内容是：把 10 组的视觉从旧 `FX.*` 换成 `FXK` 五原语，各给各的形状。**
+
+### FXK 手上有五个原语（`src/fx-kit.js`，`src/fx-kit.js` 一行都不改）
+
+| 原语 | 签名要点 | 适合什么 |
+|---|---|---|
+| `spr(pos, o)` | `n/tex/color/size/life/speed/spread/y/up/grav/dir/ring/phase/additive/opacity/drag/grow` | 粒子簇。`grav` 负 = 上飘（火焰），`ring` = 等分到圆上 + 切向初速（环绕），`dir` = 锥形喷口 |
+| `trail(points, o)` | `color/width/life/additive/taper` | 带状拖尾（刀光 / 光柱 / 电弧拖尾）。**带宽只有 1 个 mesh**，比 N 条 bolt 便宜 |
+| `bolt(a, b, o)` | `depth/segs/jitter/life/branch` | 折线闪电 + 分叉。**最贵的一个原语**（每个 bolt 一个 mesh） |
+| `shock(pos, r, o)` | `color` | 地面环 + 竖直气浪薄片（低画质跳过薄片） |
+| `decal(pos, o)` | `tex/color/size/life/opacity/y` | 地面贴花。池上限 16（低画质 6）。**贴图格 14 张**：soft/spark/ember/smoke/shard/ring/slash/rune/dust/star/scorch/frost/acid/crack |
+
+### 10 套视觉语言（§9.2 → 具体配方）
+
+| # | key | 名称 | §9.2 要求的语言 | 配方（全部只用上面五个原语） |
+|---|---|---|---|---|
+| 1 | `steam` | 蒸汽爆裂 | 白色汽浪：环形扩张 + 大量 smoke **向内**翻卷 | `shock(白, r)` + 4 组 `spr(tex smoke, dir 朝圆心)` 从四周收进来 + `decal(frost, 白)` |
+| 2 | `plasma` | 等离子 | 紫白电弧球：球形闪电，表面跳弧 | 6 条 `bolt` 从球面随机点 → 中心 + `spr(star, 紫)` 一团 + `shock(紫白)` |
+| 3 | `burnpoison` | 焚毒 | 绿火：绿焰包橙芯，缓慢上卷 | `spr(ember, 绿, grav 负)` + `spr(ember, 橙, grav 负 更慢)` 两层 + `decal(acid)` |
+| 4 | `frozele` | 感电冻结 | 晶体内裂纹发光：六边形壳 + 爬电弧 | `shock(冷蓝)` 六边感 + 3 条 `bolt` 沿目标爬 + `spr(shard, 冷蓝)` |
+| 5 | `frostrot` | 腐霜 | 霜面腐蚀：白霜上晕开绿斑 | `decal(frost, 白)` + `decal(acid, 绿)` 两张叠 + `spr(dust, 绿)` 少量 |
+| 6 | `corrochain` | 腐蚀链 | 链式绿电弧：电弧之间带绿色拖尾 | 每段链：`bolt(绿)` + `trail(绿)` 拖尾（**替掉现在的 `FX.beam` 1px 线**） |
+| 7 | `purify` | 净化烈焰 | 金火：外金内橙，向上柱状 | `spr(ember, 金, up 高)` 柱 + `spr(ember, 橙)` 内芯 + `shock(金)` 底 |
+| 8 | `holyfrost` | 圣霜 | 金光 + 元素本体叠层 | `decal(frost, 冷白)` + 金色 `spr(star)` 朝玩家收（护盾给玩家） |
+| 9 | `judgment` | 天罚 | 金光 + 元素本体叠层（**唯一从天上下来**） | `trail` 竖直光柱（9 → 0.6）+ `bolt` + `shock(金)` |
+| 10 | `cleansmist` | 解毒雾 | 金光 + 元素本体叠层 | `spr(smoke, 绿金)` 上飘 + `decal(acid, 绿)`（雾跟随玩家，5 秒） |
+
+### 接线口径（四条硬规矩）
+
+1. **新建独立 `src/elem-fx.js`**（非生成物），`index.html` 在 `src/combo-fx.js` 之后插脚本。
+   理由与 U3 的 `combo-fx.js` 同源：`applyElemReaction` 里已经混着数值逻辑和旧视觉，
+   再塞 10 套 FXK 配方，那个 switch 会涨到 300 行、没人敢动。
+2. **挂点只有一处**：`applyElemReaction` 开头（数值 switch 之前）调 `ElemFX.play(r.key, e, pos, ctx)`。
+   **数值逻辑一行都不改。**
+3. **不另设 ICD —— 复用现有的**。视觉画在 `applyElemReaction` 里 = 只在反应**真触发**时画，
+   而 `tryElemReaction` 已经记了 `_reactCd`（全局 0.5s）与 `e._reactAt`（同目标 2s）。
+   再设一套就是两套冷却打架。
+4. **旧 `FX.*` 视觉是「换掉」，不是「叠上去」**。理由：§9.2 的核心诉求就是别都长成一个样。
+   两套叠着只会更乱。**唯一保留的是 `FX.text(反应名)`** —— 那是信息，不是视觉语言。
+
+### 与组合层（ComboFX）的关系
+
+两层**完全独立**，互不调用、不共享 ICD：
+
+| | ComboFX | ElemFX |
+|---|---|---|
+| 管什么 | 技能**之间**（冻结→碎裂 / 刃势巨刀…） | 元素**之间**（火+冰 → 蒸汽…） |
+| 判据 | 敌人身上的状态位 + 技能身份 | 反应表 `ELEM_REACTIONS` 的 key |
+| ICD | 自己一套（0.5s / 2s） | **借反应机制的**（0.5s / 2s） |
+
+同一发火打中毒目标可以同时触发 `ComboFX.burn` 与 `ElemFX.burnpoison` —— 那是两回事，不打架。
+
+### 节点表
+
+| 编号 | 节点 | 状态 | 产物 | 验收 |
+|---|---|---|---|---|
+| U4-1 | 只读调查 + 路标 | ✅ | `vfx-merge.md` U4 标 🔄 + 本章（提交待写） | 10 组逐个核对过现有视觉；10 套配方全部只用 FXK 现有五原语；接线口径四条写死 |
+| U4-2 | 视觉层 + 静态契约 | ⬜ | 新建 `src/elem-fx.js`（10 套配方 + `stats()` / `setClock`）+ `index.html` 插脚本 + `dev/test-elemfx.js` | 静态契约全绿：10 条配方各画了什么 / 只用白名单原语 / 不改数值 / ICD 复用 / 降级不抛错 / 加载顺序 |
+| U4-3 | 游戏接线 | ⬜ | `src/game.js` 的 `applyElemReaction` 一处挂点；旧 `FX.*` 视觉换成 FXK 版 | 不改数值逻辑；`smoke` ERRORS none；技能契约十份全绿 |
+| U4-4 | 真机探针 | ⬜ | `dev/probe-elemfx.js` | 10 组逐条看到触发 + 真机 FXK 被调过 + **10 组的形状互不重样**（不是只换颜色）+ 坐标全部有限 + 零 console error |
+| U4-5 | 回归 + 台账收口 | ⬜ | 三份台账 + 当日日志 + commit + push | 全套回归读数写进台账；U4 标 ✅，下一步 U5 |
+
+### 下一步
+
+按 U4-2 → U4-5 顺序做，**每做完一个节点写台账 + commit + push**，别攒着写。
+
+### 卡点 / 坑（明天别再踩一遍）
+
+1. **`bolt` 是最贵的原语**（每个 bolt 一个 mesh）。10 组配方里 `plasma` 想上 6 条、
+   `frozele` 想上 3 条 —— 但 §11 的预算是「单技能 draw call ≤ 6」。
+   宁可 3 条 bolt + 1 条 trail，也别 6 条 bolt。
+2. **`trail` 比 N 条 `bolt` 便宜**（带宽只有 1 个 mesh）。「链式电弧」这种
+   本来就该用 trail 而不是逐段 bolt。
+3. **`FXK.decal` 的池上限 16（低画质 6）**，且是「最久没用的那个」循环复用 ——
+   一次 AoE 打 8 只怪、每只怪贴 2 张 = 16 张，**刚好占满整个池**。
+   再多就会开始互相顶掉（不是叠加，是替换）。
+4. **低画质降级在 FXK 原语内部**（读 `FX.q`）。视觉层**不要自己写 `if (FX.q < 1)`**，
+   否则两个地方各降一次，降出双重缩放。
+5. **`FX.area`（地面持续雾）在 FXK 里没有对应原语**。`cleansmist` 的 5 秒回血雾
+   用 `decal` + `spr` 近似，别去 `FXK` 里找 `area`。
+6. **别在 `applyElemReaction` 里铺长注释**：`dev/test-skill-p3.js` 有
+   `tryElemReaction(...)[\s\S]{0,600}法相命中附加` 的距离上限断言（U3 踩过一次）。
+   挂点块写短，配方细节放 `src/elem-fx.js` 里。
