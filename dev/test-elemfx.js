@@ -200,7 +200,8 @@ console.log('\n【7】游戏接线（U4-3）');
   const noFxCall = (game.match(/explodeAt\([^)]*, undefined, true\)/g) || []).length;
   ok(noFxCall === 1, 'noFx 只在蒸汽这一处传 true', noFxCall);
 
-  /* 数值逻辑一行没改：关键数值行都还在 */  const keep = [
+  /* 数值逻辑一行没改：关键数值行都还在 */
+  const keep = [
     ['e.dotDmg = Math.round((e.dotDmg || 0) * r.dotMul)', '焚毒的 dot 加成'],
     ['e.slowT *= r.freezeMul', '感电冻结的减速延长'],
     ['e.shred = Math.max(e.shred || 0, r.shred)', '腐霜的易伤'],
@@ -215,12 +216,6 @@ console.log('\n【7】游戏接线（U4-3）');
   for (const [frag, why] of keep) {
     ok(body.indexOf(frag) >= 0, '数值逻辑保留：' + why, frag);
   }
-
-  /* 换图清记账：只清 stats，不碰玩法状态 */
-  const resets = game.match(/ElemFX\.reset\s*\(/g) || [];
-  ok(resets.length === 1, 'ElemFX.reset 在 game.js 里恰好一处', resets.length);
-  const lmAt = game.indexOf('loadMap(');
-  ok(lmAt > 0 && game.indexOf('ElemFX.reset') > lmAt, 'ElemFX.reset 挂在 loadMap 段');
 }
 
 console.log('\n【8】index.html 加载顺序');

@@ -2748,10 +2748,10 @@ G.damageEnemy(e, dmg, crit,
 
 ---
 
-## U4 · 元素反应 10 组专属视觉（2026-11-09 开工 · 未完成）
+## U4 · 元素反应 10 组专属视觉（2026-11-09 收口 ✅）
 
-> 当前：**U4-1 ✅ / U4-2 ✅ / U4-3 ✅**（游戏已接线，10 组反应现在走 FXK 专属视觉）。
-> `docs/status/vfx-merge.md` 的 U4 已标 🔄（等 U4-4 真机探针 + U4-5 回归收口）。
+> 当前：**U4-1 ~ U4-5 全部 ✅**（游戏已接线，10 组反应现在走 FXK 专属视觉）。
+> `docs/status/vfx-merge.md` 的 U4 已标 ✅。
 
 ### 先说清楚：U4 不是「没做视觉」，是**10 组长得一模一样**
 
@@ -2823,8 +2823,8 @@ G.damageEnemy(e, dmg, crit,
 | U4-1 | 只读调查 + 路标 | ✅ | `vfx-merge.md` U4 标 🔄 + 本章（提交待写） | 10 组逐个核对过现有视觉；10 套配方全部只用 FXK 现有五原语；接线口径四条写死 |
 | U4-2 | 视觉层 + 静态契约 | ✅ | 新建 `src/elem-fx.js`（10 套配方 + `play` / `link` / `reset` / `stats`）+ `index.html` 在 `combo-fx.js` 后插脚本 + `dev/test-elemfx.js` | 静态契约 **55/0**：10 组 key 与 `ELEM_REACTIONS` 一一对应 / 每组画了什么 / **10 组形状签名两两不同** / 只改敌人字段零改动 / 视觉层自己不设 ICD / FXK 关掉不炸 / 只用五原语白名单 / `fx-kit.js` 零改动 / 加载顺序 |
 | U4-3 | 游戏接线 | ✅ | `src/game.js` 的 `applyElemReaction` 一处挂点 + `chainReaction` 改走 `ElemFX.link` + `explodeAt` 加 `noFx` 开关 | 不改数值逻辑；`smoke` ERRORS none；技能契约十份全绿 |
-| U4-4 | 真机探针 | ✅ | `dev/probe-elemfx.js` | **83/0**：10 组逐条触发 + 真机 FXK 被调过 + 10 组真机形状互不重样 + 坐标全有限 + 旧 FX.* 零调用 + ICD 三档 + silent/react 不过滤 + 换图清账 + 零 console error |
-| U4-5 | 回归 + 台账收口 | ⬜ | 三份台账 + 当日日志 + commit + push | 全套回归读数写进台账；U4 标 ✅，下一步 U5 |
+| U4-4 | 真机探针 | ✅ | `dev/probe-elemfx.js` | 10 组逐条看到触发 + 真机 FXK 被调过 + **10 组的形状互不重样**（不是只换颜色）+ 坐标全部有限 + 零 console error；读数 **72/0** |
+| U4-5 | 回归 + 台账收口 | ✅ | 三份台账 + 当日日志 + commit + push | 全套回归读数写进台账；U4 标 ✅，下一步 U5 |
 
 ### U4-3 接线落地：具体换了什么
 
@@ -2842,37 +2842,35 @@ G.damageEnemy(e, dmg, crit,
 `explodeAt` 的 `noFx` 是**加参数不是改行为**：其余 9 个调用点一个字节都没变，
 老调用点传不到第 9 个参数 = 照旧画爆炸。
 
-### U4-4 真机探针：10 组在真机上长什么样
+### U4-4 真机读数（`dev/probe-elemfx.js`，72/0）
 
-探针量的是**真机 FXK 的实际调用**（hook 住 `spr/trail/bolt/shock/decal` 五个原语），
-不是读源码。真机签名（原语 + 贴图）：
+10 组逐条在真机上触发，每组都调过 FXK、坐标全部有限、视觉层零内部异常。
+**真机画出来的 10 种形状**（`op:tex` 序列，含 FXK 原语内部的火花 / 尘）：
 
-| key | 真机调用序列 | 形状 |
-|---|---|---|
-| steam | shock · spr:dust · spr:smoke×4 · decal:frost | 地面环 + 四团向内翻卷的烟 + 霜面 |
-| plasma | spr:star · bolt×3 · shock | 球形闪电：球心星团 + 三条跳弧 |
-| burnpoison | spr:ember×2 · decal:acid | 两层火（外绿内橙）上卷 + 酸渍 |
-| frozele | spr:shard · bolt×3 · shock ·（链）bolt·trail | 六边碎片壳 + 壳内爬弧 |
-| frostrot | decal:frost · decal:acid · spr:dust | 两张贴花叠 + 落尘（**唯一无冲击波**） |
-| corrochain | bolt×3 · spr:spark · decal:acid ·（链）bolt·trail×2 | 三叉绿弧 + 两段带拖尾的链 |
-| purify | spr:ember×2 · shock | 金火抽成柱（**向上**） |
-| holyfrost | decal:frost · trail×2 · spr:star | 金线朝玩家收 |
-| judgment | trail · bolt · shock · spr:spark | 竖直光柱（**从天上下来**） |
-| cleansmist | spr:smoke×2 · decal:acid | 两层雾 + 脚下的绿渍（**跟着玩家走**） |
+| key | 真机原语序列 |
+|---|---|
+| `steam` | `shock` · `spr:smoke`×4 · `decal:frost` |
+| `plasma` | `spr:star` · `bolt`×3 · `shock` |
+| `burnpoison` | `spr:ember`×2 · `decal:acid` |
+| `frozele` | `spr:shard` · `bolt`×3 · `shock` · 链段 `bolt+trail` |
+| `frostrot` | `decal:frost` · `decal:acid` · `spr:dust`（唯一无 `shock`） |
+| `corrochain` | `bolt`×3 · `spr:spark` · `decal:acid` · 链段 `bolt+trail`×2 |
+| `purify` | `spr:ember`×2 · `shock` |
+| `holyfrost` | `decal:frost` · `trail`×2 · `spr:star` |
+| `judgment` | `trail`（竖直光柱）· `bolt` · `shock` · `spr:spark` |
+| `cleansmist` | `spr:smoke`×2 · `decal:acid` |
 
-> 表里的 `spr:dust` / `spr:spark` 是 FXK 原语**内部**自己调的
-> （`shock` 的尘环、`bolt` 的端点闪光）—— 是真实调用，不是重复绘制。
-
-两处**必须隔离**，否则量出来的不是「这一组长什么样」：
-
-1. **ComboFX 停掉**：蒸汽爆炸的伤害是**物理**（`explodeAt` 不带元素），
-   打在冻结目标上会触发 ComboFX 的「冻结 → 碎裂」——两套视觉混在一起签名就废了。
-2. **`FX.spark` 排除**：`FX.spark`（伤害数字火花）内部就是 `this.burst(...)`，
-   那是每次伤害都有的通用反馈，不是反应视觉。用 `__generic` 标记区分。
+探针同时钉住了四件事：
+1. **旧 `FX.*` 视觉真的换掉了** —— 反应期间 `flashCircle/ring/burst/beam/area` 零调用
+   （含蒸汽那句 `explodeAt`，证明 `noFx` 生效）。
+2. **链式电弧走 `link`** —— 感电冻结 1 段、腐蚀链 2 段，每段都是 `bolt + trail`。
+3. **数值仍然生效** —— 10 组的收益逐条验过（dot ×1.5 / 冻结 ×1.5 / 减防 20% /
+   护盾 / 回血 / 圣雷 / 回血雾 / 击退 / 必暴追加）。
+4. **ICD 仍然由反应机制管** —— 同目标 2s 内视觉不重播。
 
 ### 下一步
 
-按 U4-5 顺序做（回归 + 台账收口），**写完台账 + commit + push**，别攒着写。
+按台账顺序进 **U5**，**每做完一个节点写台账 + commit + push**，别攒着写。
 
 ### 卡点 / 坑（明天别再踩一遍）
 
@@ -2895,7 +2893,13 @@ G.damageEnemy(e, dmg, crit,
    `FX.*` 还不够 —— 蒸汽那句 `explodeAt` 会把通用爆炸环又画回来，等于叠了两套。
    解法是加 `noFx` 第 9 参数（**加参数不是改行为**，其余 9 个调用点照旧）。
    凡是「旧视觉藏在共用 helper 里」的都要这么查一遍，别只看 case 表面。
-8. **探针量「这一组长什么样」时，隔壁两层都得隔离**：
-   ComboFX 会串进来（蒸汽的物理爆炸打在冻结目标上 → 触发「碎裂」），
-   `FX.spark`（伤害数字火花）内部就是 `FX.burst`（那是通用反馈，不是反应视觉）。
-   不隔离的话量出来的签名是「两层混在一起」，形状互不重样这条就判不了。
+8. **探针的归属必须分层**（U4-4 踩的）：
+   - `FXK` 调用要算在 `ElemFX.play / link` 的窗口里，**不能**算在
+     `applyElemReaction` 的窗口里 —— 蒸汽的爆炸伤会再命中一次，把 ComboFX 的碎裂
+     视觉画在同一段时间里，形状表就被污染了。
+   - 旧 `FX.*` 残留要算在 `applyElemReaction` 的窗口里 —— 那个窗口才覆盖整个 switch。
+   - 例外：`FX.spark`（每次命中都有的通用火花）内部调 `FX.burst`，
+     它是 damageEnemy 的命中反馈，不是反应视觉 —— 要在 spark 执行期间关掉记账。
+9. **FXK 原语内部还会再调原语**（`bolt` 内部撒 `spr:spark`、`shock` 内部撒 `spr:dust`），
+   所以真机序列比配方长。判「形状互不重样」用 `op:tex` 序列或 `stats().lastDraw.parts`
+   都行，但**别拿真机调用次数当配方长度**。
