@@ -441,6 +441,7 @@ const FXK = {
   decals: [],    // 贴花（固定池）
   decalAt: 0,    // 池游标
   decalPool: 0,  // 池当前大小（按需扩到 16 / 低画质 6）
+  ench: null,    // [U5] 常驻武器附魔层（最多一组，挂在武器骨骼上）
   mats: _fxkMat,
   cellTex: fxCellTexture,
   enabled: true,
@@ -868,6 +869,294 @@ const FXK = {
   },
 
   /* ============================================================
+   * [U5 / V4] enchant —— 常驻武器附魔
+   *
+   * PLAN §4 原语表：「剑身绑 trail + 每 0.2s 一颗 spr，随武器骨骼走」，
+   * §7.4「Lv10 加常驻光效，enchant 常开」。这里是**唯一**在游戏里
+   * 真正存在的附魔实现；`src/sfx.js` 里那个同名 `FX.enchant` 是实验室
+   * 生成物里的单色 quad，只在剑神降世开窗调一次，别混为一谈。
+   *
+   * 与其余五个原语不同，它是**常驻**的：不进 parts / trails / decals 这些
+   * 一次性池，自己管一组 mesh + 一个固定容量粒子池，挂在武器骨骼上。
+   * 生命周期由 `Game.updateEnchant(dt)` 每帧同步（数据层的 Lv10 patch
+   * 只作声明，配方层在正常游戏里根本不播 —— 见 skill-refactor.md U5 章）。
+   *
+   * ---------------- 四条纪律 ----------------
+   * 1. **不复用 `fxMat` 缓存材质**：`spr` 每帧会写 `p.mat.opacity`，
+   *    常驻池跟它共用一份就会被别的粒子簇改闪。这里每条常驻层自己
+   *    持有一份材质，且只在「元素 / 挂点变化」时 new，不在 update 里 new。
+   * 2. **不滚共享贴图的 UV**：`fxCellTexture(cell)` 是全局缓存的 Texture，
+   *    改它的 `offset` 会连带把配方粒子的同一格贴图也滚了。要滚动的
+   *    blade / accent 用 `.clone()` 出一份独立的（共享 image，不重传图）。
+   * 3. **粒子池固定容量**：一次 Points 就是一次 draw call，容量写死，
+   *    死了的粒子移到相机外回收，绝不 new 第二个 Points。
+   * 4. **≤6 draw call**：blade + halo + accent + 粒子池 = 4；
+   *    副元素再叠一层 accent = 5；低画质（FX.q < 1）只留 blade + halo = 2
+   *    （PLAN 原话「只留发光」）。`clear()` 要连常驻层一起摘掉。
+   *
+   * cfg: { elem, sub, subAmt, mount, offset?, rot? }；传 null / false / 无 mount = 关闭。
+   * 元素键与 `ENCHANT_PROFILE`（data-vfx.js）一致；未知元素宁可不亮也不抛错。
+   * ============================================================ */
+  enchant(cfg) {
+    const want = (cfg && cfg.mount) ? cfg : null;
+    if (!want) { this._dropEnchant(); return null; }
+    const TABLE = (typeof ENCHANT_PROFILE !== 'undefined') ? ENCHANT_PROFILE : null;
+    /* 未知元素退回白刃：宁可给一把看得见的普通刀，也别让「Lv10 到了却
+     * 什么都没亮」变成最难查的那种 bug（注入表以后加新元素也走这条路） */
+    const p = TABLE ? (TABLE[want.elem] || TABLE.phys) : null;
+    if (!p) { this._dropEnchant(); return null; }
+    const sub = (want.sub && TABLE[want.sub]) ? TABLE[want.sub] : null;
+    const sig = want.elem + '|' + (sub ? want.sub : '') + '|' + Math.round((want.subAmt || 0) * 100);
+    const cur = this.ench;
+    /* 状态没变就只标「还在」，不重建 —— 每帧都调 enchant 是设计内的用法 */
+    if (cur && cur.sig === sig && cur.mount === want.mount) return cur;
+    this._dropEnchant();
+    return this._buildEnchant(p, sub, want, sig);
+  },
+
+  /* accent 是 6 套外观里「几何种类」那一项：不是同一块 quad 换个颜色。
+   * arc 用 Line + BufferGeometry 折线，halo 用 RingGeometry 竖环，
+   * 其余用不同长宽 / 位置的 PlaneGeometry —— 真机探针量 geometry 签名
+   * 能逐只区分（U4 的教训：只换色会被判「长得一模一样」）。 */
+  _enchAccent(p, small) {
+    const tex = fxCellTexture(p.accentTex).clone();
+    tex.needsUpdate = true;
+    const s = small ? 0.62 : 1;
+    let geo, obj, mat, isLine = false;
+    if (p.accent === 'arc') {
+      geo = new THREE.BufferGeometry();
+      const arr = new Float32Array(9 * 3);
+      for (let i = 0; i < 9; i++) {
+        arr[i * 3] = (i % 2 ? 1 : -1) * 0.05 * (0.5 + Math.random());
+        arr[i * 3 + 1] = -0.5 + i * 0.125;
+        arr[i * 3 + 2] = 0;
+      }
+      geo.setAttribute('position', new THREE.BufferAttribute(arr, 3));
+      mat = new THREE.LineBasicMaterial({
+        color: p.accentColor, transparent: true, opacity: small ? 0.5 : 0.92,
+        blending: THREE.AdditiveBlending, depthWrite: false
+      });
+      obj = new THREE.Line(geo, mat);
+      isLine = true;
+    } else {
+      let w = 0.16, h = 1.0, x = 0, y = 0;
+      switch (p.accent) {
+        case 'edge': w = 0.05; h = 1.02; x = 0.10; break;
+        case 'flow': w = 0.12; h = 1.12; break;
+        case 'frost': w = 0.40; h = 1.18; break;
+        case 'drip': w = 0.16; h = 0.72; y = -0.26; break;
+        case 'halo': break;
+        default: break;
+      }
+      geo = (p.accent === 'halo')
+        ? new THREE.RingGeometry(0.10 * s, 0.17 * s, 20)
+        : new THREE.PlaneGeometry(w * s, h * s);
+      mat = new THREE.MeshBasicMaterial({
+        map: tex, color: p.accentColor, transparent: true,
+        opacity: small ? 0.42 : 0.82, depthWrite: false,
+        side: THREE.DoubleSide,
+        blending: THREE.AdditiveBlending, fog: false
+      });
+      obj = new THREE.Mesh(geo, mat);
+      if (p.accent === 'halo') y = 0.62;
+      obj.position.set(x * s, y * s, 0.045);
+    }
+    return { obj: obj, geo: geo, mat: mat, tex: tex, isLine: isLine, small: !!small, p: p };
+  },
+
+  _buildEnchant(p, sub, cfg, sig) {
+    const mount = cfg.mount;
+    const group = new THREE.Group();
+    const off = cfg.offset || { x: 0, y: 0.45, z: 0.045 };
+    group.position.set(off.x, off.y, off.z);
+    group.rotation.z = cfg.rot === undefined ? -0.06 : cfg.rot;
+    mount.add(group);
+
+    /* blade：剑身本体。贴图用 clone，UV 才能按元素方向滚动而不污染全局图集 */
+    const bladeTex = fxCellTexture(p.bladeTex).clone();
+    bladeTex.needsUpdate = true;
+    const bladeGeo = new THREE.PlaneGeometry(0.24, 1.10);
+    const bladeMat = new THREE.MeshBasicMaterial({
+      map: bladeTex, color: p.color, transparent: true, opacity: p.bladeOp,
+      blending: THREE.AdditiveBlending, depthWrite: false,
+      side: THREE.DoubleSide, fog: false
+    });
+    const blade = new THREE.Mesh(bladeGeo, bladeMat);
+    blade.position.z = 0.02;
+    group.add(blade);
+
+    /* halo：更大一片柔光，负责「亮起来」的读法；低画质只留它和 blade */
+    const haloTex = fxCellTexture('soft').clone();
+    haloTex.needsUpdate = true;
+    const haloGeo = new THREE.PlaneGeometry(0.48, 1.36);
+    const haloMat = new THREE.MeshBasicMaterial({
+      map: haloTex, color: p.glow, transparent: true, opacity: 0.30,
+      blending: THREE.AdditiveBlending, depthWrite: false,
+      side: THREE.DoubleSide, fog: false
+    });
+    const halo = new THREE.Mesh(haloGeo, haloMat);
+    halo.position.z = -0.012;
+    group.add(halo);
+
+    const accent = this._enchAccent(p, false);
+    group.add(accent.obj);
+    /* 副元素：同一张表的 30% 强度一层（PLAN §8 双元素混搭）。
+     * 只叠 accent，不叠 blade —— 剑身颜色得由主元素说了算。 */
+    const accentSub = sub ? this._enchAccent(sub, true) : null;
+    if (accentSub) {
+      accentSub.obj.position.z = 0.06;
+      accentSub.obj.scale.setScalar(0.62);
+      group.add(accentSub.obj);
+    }
+
+    /* 粒子池：固定容量，一个 Points 一次 draw call。
+     * 自己的材质（不进 fxMat 缓存），自己的贴图引用（不滚 UV，用原图即可）。 */
+    const pk = p.particle;
+    const n = Math.max(6, Math.min(28, pk.n || 16));
+    const arr = new Float32Array(n * 3);
+    const vel = new Float32Array(n * 3);
+    const life = new Float32Array(n);
+    const max = new Float32Array(n);
+    for (let i = 0; i < n; i++) { arr[i * 3 + 1] = -999; life[i] = 0; }
+    const ptsGeo = new THREE.BufferGeometry();
+    ptsGeo.setAttribute('position', new THREE.BufferAttribute(arr, 3));
+    const ptsMat = new THREE.PointsMaterial({
+      map: fxCellTexture(pk.tex), color: p.color, size: pk.size || 0.12,
+      sizeAttenuation: true, transparent: true, opacity: 0.9,
+      depthWrite: false,
+      blending: pk.additive ? THREE.AdditiveBlending : THREE.NormalBlending
+    });
+    const points = new THREE.Points(ptsGeo, ptsMat);
+    group.add(points);
+
+    const e = {
+      sig: sig, mount: mount, group: group, p: p, sub: sub,
+      blade: blade, halo: halo, accent: accent, accentSub: accentSub,
+      points: points, bladeTex: bladeTex,
+      geos: [bladeGeo, haloGeo, ptsGeo],
+      mats: [bladeMat, haloMat, ptsMat],
+      texs: [bladeTex, haloTex],
+      arr: arr, vel: vel, life: life, max: max, n: n,
+      t: 0, emit: 0, jump: 0, alive: 0
+    };
+    this.ench = e;
+    this._enchQuality(e);
+    return e;
+  },
+
+  /* 画质档变化时不要重建，只切可见性 —— 重建会把粒子池清空、闪一下 */
+  _enchQuality(e) {
+    const low = this.q < 1;
+    const on = this.enabled && !low;
+    if (e.accent) e.accent.obj.visible = on;
+    if (e.accentSub) e.accentSub.obj.visible = on;
+    if (e.points) e.points.visible = on;
+  },
+
+  _enchArcJump(e) {
+    const g = e.accent.geo;
+    const at = g.attributes && g.attributes.position;
+    if (!at) return;
+    const a = at.array;
+    for (let i = 0; i < 9; i++) {
+      a[i * 3] = (i % 2 ? 1 : -1) * 0.05 * (0.5 + Math.random());
+    }
+    at.needsUpdate = true;
+    if (e.accentSub && e.accentSub.isLine) {
+      const b = e.accentSub.geo.attributes.position;
+      for (let i = 0; i < 9; i++) b.array[i * 3] = -a[i * 3] * 0.6;
+      b.needsUpdate = true;
+    }
+  },
+
+  _enchUpdate(dt) {
+    const e = this.ench;
+    if (!e) return;
+    this._enchQuality(e);
+    if (!this.enabled) { e.group.visible = false; return; }
+    e.group.visible = true;
+    const p = e.p, pk = p.particle;
+    e.t += dt;
+
+    /* 剑身贴图滚动：火向上 / 毒向下 / 冰几乎不动 / 圣缓慢上行 */
+    if (p.scroll) e.bladeTex.offset.y -= p.scroll * dt * 0.35;
+    /* 呼吸：pulse = 0 的元素不脉动（物理白刃要「稳」） */
+    const pulse = p.pulse > 0 ? (0.78 + 0.22 * Math.sin(e.t * Math.PI * 2 / p.pulse)) : 1;
+    e.halo.material.opacity = 0.30 * pulse;
+    if (p.accent === 'flow') e.accent.obj.position.y = Math.sin(e.t * 3.2) * 0.10;
+    if (p.accent === 'arc' && p.arcJump) {
+      e.jump += dt;
+      if (e.jump >= p.arcJump) { e.jump = 0; this._enchArcJump(e); }
+    }
+
+    /* 每 0.2s 一颗（PLAN 原话），从固定池里找空位；不在 update 里 new 任何对象 */
+    const arr = e.arr, vel = e.vel, life = e.life, max = e.max, n = e.n;
+    e.emit += dt;
+    while (e.emit >= 0.2) {
+      e.emit -= 0.2;
+      for (let i = 0; i < n; i++) {
+        if (life[i] > 0) continue;
+        const k = i * 3;
+        arr[k] = (Math.random() - 0.5) * 0.18;
+        arr[k + 1] = (Math.random() - 0.5) * 0.9;
+        arr[k + 2] = 0.03;
+        vel[k] = (Math.random() - 0.5) * pk.spread * 2;
+        vel[k + 1] = pk.up + (Math.random() - 0.5) * pk.speed;
+        vel[k + 2] = (Math.random() - 0.5) * pk.spread * 2;
+        life[i] = max[i] = pk.life * (0.7 + Math.random() * 0.6);
+        break;
+      }
+    }
+    const damp = Math.max(0, 1 - pk.drag * dt);
+    const g = pk.grav * dt;
+    let alive = 0;
+    for (let i = 0; i < n; i++) {
+      if (life[i] <= 0) continue;
+      life[i] -= dt;
+      const k = i * 3;
+      vel[k + 1] -= g;
+      vel[k] *= damp; vel[k + 1] *= damp; vel[k + 2] *= damp;
+      arr[k] += vel[k] * dt; arr[k + 1] += vel[k + 1] * dt; arr[k + 2] += vel[k + 2] * dt;
+      if (life[i] <= 0) { arr[k] = 0; arr[k + 1] = -999; arr[k + 2] = 0; }
+      else alive++;
+    }
+    e.alive = alive;
+    e.points.geometry.attributes.position.needsUpdate = true;
+  },
+
+  _dropEnchant() {
+    const e = this.ench;
+    if (!e) return;
+    /* 只摘自己的 group，不碰 mount 上别的 mesh；几何 / 材质 / clone 的贴图
+     * 都是这一组专属的，可以 dispose；`fxCellTexture` 的原图绝不 dispose。 */
+    if (e.mount && e.group.parent === e.mount) e.mount.remove(e.group);
+    const accs = e.accentSub ? [e.accent, e.accentSub] : [e.accent];
+    for (const a of accs) {
+      if (!a) continue;
+      if (a.geo && a.geo.dispose) a.geo.dispose();
+      if (a.mat && a.mat.dispose) a.mat.dispose();
+      if (a.tex && a.tex.dispose) a.tex.dispose();
+    }
+    for (const g of e.geos) if (g && g.dispose) g.dispose();
+    for (const m of e.mats) if (m && m.dispose) m.dispose();
+    for (const t of e.texs) if (t && t.dispose) t.dispose();
+    this.ench = null;
+  },
+
+  /* 探针用：常驻层现在有几件可见物（= 这一层的 draw call 上界） */
+  enchantStats() {
+    const e = this.ench;
+    if (!e) return { on: false, draws: 0 };
+    let draws = 0;
+    for (const c of e.group.children) if (c.visible) draws++;
+    return {
+      on: true, elem: e.p && e.p.name, sig: e.sig, draws: draws,
+      alive: e.alive, n: e.n, accent: e.p && e.p.accent,
+      sub: !!(e.accentSub), low: this.q < 1
+    };
+  },
+
+  /* ============================================================
    * 逐帧推进：由 FX.update 调用一次（不要自己开 timer）
    * ============================================================ */
   update(dt) {
@@ -958,10 +1247,15 @@ const FXK = {
       const k = d.life / d.max;
       d.mesh.material.opacity = d.op0 * (k > 0.6 ? 1 : k / 0.6);
     }
+
+    /* [U5] 常驻附魔层跟着同一条时间轴走（FX.update 已经调过 FXK.update，
+     * 不另开 timer；换图时由 clear() 摘掉） */
+    this._enchUpdate(dt);
   },
 
   /* 换图 / 重开：把活着的都拆掉。材质缓存留着（下一张图还要用同一批） */
   clear() {
+    this._dropEnchant();
     const scene = this.scene;
     for (const p of this.parts) {
       if (scene) scene.remove(p.obj);
@@ -998,6 +1292,7 @@ const FXK = {
       mats: _fxkMat.size,
       decalMats: _fxkDecalMat.size,
       tex: Object.keys(_fxkTex).length,
+      enchant: this.enchantStats(),
       q: this.q
     };
   }

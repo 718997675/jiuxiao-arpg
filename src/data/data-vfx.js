@@ -75,6 +75,76 @@ const ELEM_PROFILE = {
   }
 };
 
+/* ============================================================
+ * [U5 / V4] 近战武器附魔 —— 6 套剑身外观（纯数据，不碰 THREE）
+ *
+ * PLAN §8「近战版（武器附魔）」那一行逐条落地：
+ *   火 橙红流光 + 火星｜冰 结霜 + 冰裂｜雷 电弧 + 分叉
+ *   毒 滴落 + 绿雾｜圣 金光 + 光环｜物理 白刃 + 火星
+ *
+ * **为什么单独一张表、不复用 ELEM_PROFILE**：那边管的是「一发技能打出去」的
+ * 粒子簇（16 米机位、地面落点、0.6 秒寿命）；附魔是贴在 1.2 米剑身上、跟着
+ * 手骨骼走、常驻不掉的东西。尺寸 / 寿命 / 混合方式全不是一回事，硬复用会
+ * 把剑身糊成一团光斑（0.9 米的粒子比整把刀还宽）。
+ *
+ * 每张表至少三个维度不同，**不许只换颜色**（U4 的 10 组反应就因为只换色
+ * 被判「长得一模一样」返工过一次）：
+ *   1. bladeTex  —— 剑身贴图格（14 格图集里的不同形状）
+ *   2. accent    —— 附加几何的种类（edge / flow / frost / arc / drip / halo），
+ *                   FXK 会按它造不同 Geometry，不是同一块 quad 换个色
+ *   3. particle  —— 贴图 + 运动方向（上升 / 硬停 / 折跳 / 下沉 / 停留 / 火星）
+ * 另加 `scroll`（剑身 UV 滚动方向 / 速度）与 `pulse`（呼吸周期），让 6 套
+ * 在**动起来**时也读得出差别。
+ *
+ * 键必须与 ELEM_PROFILE 完全一致（`phys/fire/ice/lightning/poison/sigil`）——
+ * 元素来源是 `Game.skillInjectPack(id)` 的注入键，不另建「元素 → 特效」分支表
+ * （PLAN §8 的硬规矩）。注入包的副元素由 FXK 拿同一张表派生 30% 强度的一层。
+ * ============================================================ */
+const ENCHANT_PROFILE = {
+  phys: {
+    name: '白刃', color: 0xffffff, glow: 0xffd8a0,
+    bladeTex: 'slash', bladeOp: 0.66, scroll: 0, pulse: 0,
+    accent: 'edge', accentTex: 'slash', accentColor: 0xfff4e0,
+    particle: { tex: 'spark', n: 16, size: 0.11, life: 0.34,
+      up: 0.3, grav: 6, drag: 2.2, spread: 0.10, speed: 0.32, additive: true }
+  },
+  fire: {
+    name: '流火', color: 0xff7a30, glow: 0xffd08a,
+    bladeTex: 'ember', bladeOp: 0.82, scroll: 1.15, pulse: 0.20,
+    accent: 'flow', accentTex: 'ember', accentColor: 0xfff0c0,
+    particle: { tex: 'ember', n: 22, size: 0.14, life: 0.62,
+      up: 1.4, grav: -1.6, drag: 0.8, spread: 0.13, speed: 0.42, additive: true }
+  },
+  ice: {
+    name: '霜刃', color: 0x8ad8ff, glow: 0xe8fbff,
+    bladeTex: 'frost', bladeOp: 0.78, scroll: -0.12, pulse: 0.52,
+    accent: 'frost', accentTex: 'shard', accentColor: 0xe8fbff,
+    particle: { tex: 'shard', n: 14, size: 0.12, life: 0.48,
+      up: 0.15, grav: 9, drag: 4.6, spread: 0.16, speed: 0.28, additive: false }
+  },
+  lightning: {
+    name: '惊雷', color: 0x9ad8ff, glow: 0xffe066,
+    bladeTex: 'crack', bladeOp: 0.85, scroll: 0, pulse: 0.09, arcJump: 0.26,
+    accent: 'arc', accentTex: 'spark', accentColor: 0xffffff,
+    particle: { tex: 'spark', n: 20, size: 0.10, life: 0.20,
+      up: 0.05, grav: 2, drag: 0.6, spread: 0.20, speed: 0.55, additive: true }
+  },
+  poison: {
+    name: '蚀毒', color: 0x9adf60, glow: 0xd8ffb0,
+    bladeTex: 'acid', bladeOp: 0.74, scroll: -0.62, pulse: 0.34,
+    accent: 'drip', accentTex: 'smoke', accentColor: 0x7fbf5a,
+    particle: { tex: 'smoke', n: 18, size: 0.15, life: 0.78,
+      up: -0.5, grav: -1.0, drag: 1.0, spread: 0.11, speed: 0.22, additive: false }
+  },
+  sigil: {
+    name: '圣辉', color: 0xfff2b0, glow: 0xfffbe0,
+    bladeTex: 'rune', bladeOp: 0.80, scroll: 0.24, pulse: 0.46,
+    accent: 'halo', accentTex: 'star', accentColor: 0xfffbe0,
+    particle: { tex: 'star', n: 16, size: 0.13, life: 0.70,
+      up: 0.8, grav: 0.4, drag: 1.4, spread: 0.09, speed: 0.26, additive: true }
+  }
+};
+
 /* ---------------- 解释器认得的指令 ----------------
  * 每个 `t` 对应 `src/vfx.js` 里的一个处理函数。**这里列全**是刻意的：
  * 契约测试会拿这张表去校验每一条配方 —— 打错一个字（`shcok`）在游戏里
@@ -96,8 +166,14 @@ const VFX_OPS = {
 };
 
 /* 配方里允许出现的顶层键。tier patch 也只许写这些 —— 写别的键等于写了个
- * 永远不会生效的东西，契约会拦。 */
-const VFX_KEYS = ['sil', 'elem', 'color', 'tex', 'decal', 'cast', 'loop', 'impact', 'tiers'];
+ * 永远不会生效的东西，契约会拦。
+ *
+ * [U5] `enchant` 是唯一一个**不是给解释器播的键**：它是「这个位到 Lv10 有
+ * 常驻武器附魔」的数据声明，由 `Game.updateEnchant()` 每帧读 `vfxRecipe()` 同步。
+ * 原因见 `docs/status/skill-refactor.md` U5 章 —— U1 定了 SKFX 为准，37 只技能
+ * 配方层在正常游戏里一次都不会播，指望 `VFX.playFor` 去触发附魔等于永远不亮。
+ * `vfxCost()` 只累加 cast / loop / impact，所以它不影响绘制预算表。 */
+const VFX_KEYS = ['sil', 'elem', 'color', 'tex', 'decal', 'cast', 'loop', 'impact', 'enchant', 'tiers'];
 
 /* ---------------- 指令上的 `at`：相对施法瞬间的延迟（秒） ----------------
  * 这不是第 12 个原语，是**任何**指令都能带的一个修饰键（P5 加的）。
@@ -143,6 +219,7 @@ const SKILL_VFX = {
       /* 终极「可常驻」：loop 换成「一道闭合刀轨 + 单圈螺旋」（同价换形，不是加量），
        * 焦痕留 8 秒 —— 「常驻」读的是地上那圈痕迹一直在，不是再炸一次。 */
       10: {
+        enchant: true,
         cast: [{ t: 'arc', n: 3, tilt: 0.35 }],
         loop: [
           { t: 'trail', r: 0.62, n: 16, h: 1.0, dur: 0.7 },
@@ -182,6 +259,7 @@ const SKILL_VFX = {
       /* 终极「地裂二次崩塌」：0.3 秒后的第二圈塌陷环（`at`）——
        * 「二次」是**时间轴**上的事，不是再加一条 shock（那要 3 次绘制，会到 7）。 */
       10: {
+        enchant: true,
         cast: [{ t: 'decal', tex: 'crack', r: 1.1 }],
         impact: [
           { t: 'shock', r: 0.9, dust: 2 },
@@ -214,6 +292,7 @@ const SKILL_VFX = {
       },
       /* 终极「剑阵内自动反击」：命中段补一道贴地横斩（剑自己出手） */
       10: {
+        enchant: true,
         impact: [
           { t: 'ring', r: 0.95, dur: 0.4 },
           { t: 'arc', n: 1, tilt: 0.15 }
@@ -250,6 +329,7 @@ const SKILL_VFX = {
       9: { impact: [{ t: 'ring', r: 0.75, at: 0.2, dur: 0.6 }] },
       /* 终极「增益期间免疫控制」：身上多一道护体血轨（绕身一圈，有高度） */
       10: {
+        enchant: true,
         impact: [
           { t: 'ring', r: 0.75, at: 0.2, dur: 0.6 },
           { t: 'trail', r: 0.5, n: 14, h: 1.5, dur: 0.9 }
@@ -282,6 +362,7 @@ const SKILL_VFX = {
       /* 终极「剑神降世」：起手开窗（金环 + 光柱），刀气变双道 + 2 秒长环。
        * 起手段换掉基础那一圈单环 —— 同一个动作不画两个同心圆。 */
       10: {
+        enchant: true,
         cast: [
           { t: 'ring', r: 0.7, dur: 0.5, color: 0xffd166 },
           { t: 'geyser', r: 0.25, n: 14, dir: 'up', dur: 0.7, shock: false, color: 0xffd166 }
@@ -329,6 +410,7 @@ const SKILL_VFX = {
       /* 终极「飞弹自动索敌」：命中后 0.12 秒补一圈追索环 + 火海 8 秒。
        * loop 收回单条轨（预算让给命中段的第 4 条指令）。 */
       10: {
+        enchant: true,
         loop: [{ t: 'trail', r: 0.55, n: 12, h: 0.9, dur: 0.9 }],
         impact: [
           { t: 'flash', r: 0.9 },
@@ -372,6 +454,7 @@ const SKILL_VFX = {
       },
       /* 终极「火海持续 8 秒」：焦痕 8 秒 + 尘柱比冲击环晚 0.08 秒（蘑菇更明显） */
       10: {
+        enchant: true,
         impact: [
           { t: 'ring', r: 1.15, dur: 0.55 },
           { t: 'geyser', r: 0.55, n: 28, dir: 'down', shock: false, at: 0.08 },
@@ -398,6 +481,7 @@ const SKILL_VFX = {
       /* 终极「收尾爆燃」：0.55 秒后整条墙一起炸开（`spr` 各向四散）。
        * 起手收窄一排、持续段收回一排 —— 两次绘制的额度全让给这一下爆燃。 */
       10: {
+        enchant: true,
         cast: [{ t: 'cone', n: 18, r: 0.3, h: 1.6, line: 2 }],
         loop: [{ t: 'cone', n: 10, r: 0.28, h: 1.4, line: 1, dur: 1 }],
         impact: [
@@ -433,7 +517,7 @@ const SKILL_VFX = {
       },
       /* 终极「破碎 / 爆发时对周围敌人造成伤害并定身」：破盾多留一块 5 秒霜痕
        * （地上的证据）+ 冰锥从 18 颗加到 22 颗 */
-      10: { impact: [{ t: 'spr', n: 22, tex: 'shard', r: 0.5, dir: 'out' }, { t: 'decal', r: 0.45, dur: 5 }] }
+      10: { enchant: true, impact: [{ t: 'spr', n: 22, tex: 'shard', r: 0.5, dir: 'out' }, { t: 'decal', r: 0.45, dur: 5 }] }
     }
   },
   /* ⑤ 元素法相：**窗口** —— 开窗是立起的法阵 + 上升光柱；换相是脚下换色一圈 */
@@ -457,7 +541,7 @@ const SKILL_VFX = {
       9: { impact: [{ t: 'flash', r: 1.2 }, { t: 'ring', r: 0.85, dur: 0.7 }] },
       /* 终极「法相期间免疫控制」：新星延后 0.12 秒 —— 先收窗、再爆，
        * 「窗口关了才炸」这一拍就是免控的读法。 */
-      10: { impact: [{ t: 'flash', r: 1.3 }, { t: 'ring', r: 1.0, at: 0.12, dur: 1.0 }] }
+      10: { enchant: true, impact: [{ t: 'flash', r: 1.3 }, { t: 'ring', r: 1.0, at: 0.12, dur: 1.0 }] }
     }
   },
 
@@ -509,6 +593,7 @@ const SKILL_VFX = {
       },
       /* 终极「雷符自动追踪」：朱砂字晚 0.1 秒才炸（追上去再爆），阵环留着 */
       10: {
+        enchant: true,
         cast: [{ t: 'spr', n: 18, tex: 'rune', r: 0.26, size: 0.95 }],
         impact: [
           { t: 'bolt', r: 0.0 },
@@ -537,7 +622,7 @@ const SKILL_VFX = {
       /* 进化 Ⅱ「雾内敌人减速」：补回最后一下的地面冲击波（原来写在基础段里） */
       9: { impact: [{ t: 'shock', r: 0.5 }, { t: 'decal', r: 0.7 }] },
       /* 终极「雾内敌人死亡爆毒」：冲击晚 0.12 秒（毒先爆、再震地）+ 剑痕 0.85 / 6 秒 */
-      10: { impact: [{ t: 'shock', r: 0.55, at: 0.12 }, { t: 'decal', r: 0.85, dur: 6 }] }
+      10: { enchant: true, impact: [{ t: 'shock', r: 0.55, at: 0.12 }, { t: 'decal', r: 0.85, dur: 6 }] }
     }
   },
   /* ③ 太极玄阵：**圆形领域** —— 地面纹 + 边界 + 脉冲（field 原语已有，这里补边缘） */
@@ -558,6 +643,7 @@ const SKILL_VFX = {
       9: { impact: [{ t: 'ring', r: 0.75, at: 0.2, dur: 1.4 }] },
       /* 终极「定住周围敌人 2 秒」：脉冲之后从阵心升起一束定身光柱 */
       10: {
+        enchant: true,
         impact: [
           { t: 'ring', r: 0.75, at: 0.2, dur: 1.4 },
           { t: 'geyser', r: 0.3, n: 12, dir: 'up', dur: 0.8, shock: false }
@@ -592,6 +678,7 @@ const SKILL_VFX = {
        * **星芒那一簇撤了**：起手已经有光柱，「升起」这件事不用再说第二遍，
        * 而预算只有 6 次绘制（加光柱后这一档刚好顶格），撤掉的这次让给光柱。 */
       10: {
+        enchant: true,
         impact: [
           { t: 'ring', r: 0.6, at: 0.15, dur: 0.9 },
           { t: 'ring', r: 0.45, at: 0.45, dur: 0.8 }
@@ -621,6 +708,7 @@ const SKILL_VFX = {
       /* 终极「一次召出三种灵兽（四象同场）」：阵撑到 0.9 米、护体环 1.6 秒，
        * 符文迸发晚 0.12 秒 —— 三只不是同一帧出来的。 */
       10: {
+        enchant: true,
         cast: [
           { t: 'ring', r: 0.9, dur: 0.6 },
           { t: 'geyser', r: 0.25, n: 18, dir: 'up', dur: 0.8, shock: false }

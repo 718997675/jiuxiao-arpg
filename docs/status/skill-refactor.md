@@ -2914,7 +2914,7 @@ G.damageEnemy(e, dmg, crit,
 
 ---
 
-## U5 · V4 近战武器附魔（2026-11-09 开工路标 · 未完成）
+## U5 · V4 近战武器附魔（2026-11-09 开工路标 · 已收口 ✅，收口记录见下章）
 
 统一计划 `docs/status/vfx-merge.md` 的 U5：PLAN §7.4「Lv10 加常驻光效、enchant 常开」
 + §8「6 元素近战版各自一套剑身外观」，验收「6 元素各一套，≤6 draw call」。
@@ -2973,3 +2973,89 @@ G.damageEnemy(e, dmg, crit,
    差异像素 > 0、draw call ≤6、坐标全有限、关闭后零残留、低画质降级。
 6. 全量回归：`test-vfx-dsl` / `test-vfx-kit` / `vfx-bench` / `vfx-skill-vis`（默认 + `--live`）
    / `smoke` / `mobile-layout` / 技能契约 / 四个 `--check`；台账 U5 改 ✅ + commit。
+
+> 以上 6 步已于 2026-11-09 全部完成，记录见下一章。路标保留不删，是因为
+> 「配方层不播 → 必须每帧同步」这条口径后面 U6 逐条打磨时还会再用到。
+
+---
+
+## U5 收口记录 · V4 近战武器附魔（2026-11-09 · ✅）
+
+**结论**：6 元素近战各一套剑身外观（不是换色），常驻层 draw call 增量
+`4`（带副元素 `5`、低画质 `2`），预算 ≤6 达标；静态契约 `235/0`、真机探针 `60/0`。
+统一计划 `docs/status/vfx-merge.md` 的 U5 已改 ✅，下一步是 U6。
+
+### 三条设计决策的落地结果
+
+1. **配方层确实一次都没播 `enchant`**。`src/vfx.js` 的解释器没有 `enchant` case，
+   这是**故意的**：Lv10 patch 里的 `enchant: true` 只是「这个位到 10 级有附魔」的
+   数据声明。真正上场的是 `Game.updateEnchant()` 每帧读玩家状态 → 调 `FXK.enchant(cfg)`。
+   如果当初按「配方里加一条原语」写，会得到「契约全绿、游戏里一个像素都没有」。
+2. **元素走注入包**：`skillInjectPack(id)` 的主 / 副（70-30）→ `SKILLS[id].elem` → `phys`
+   三级回落，没有第四张「元素→特效」表。6 套键与 `ELEM_PROFILE` 完全一致。
+3. **三个维度都不同**，静态契约逐维两两比对：`bladeTex`（剑身贴图格）、
+   `accent`（edge / flow / frost / arc / drip / halo 六种**几何种类**）、
+   `particle` 的 `up / grav / drag` 运动组合。真机探针量 `geometry` 签名 + 差异像素，
+   避免 U4 那次「只换色被判长得一模一样」。
+
+### 与开工路标的一处偏差（写清楚，别让 U6 按旧口径改）
+
+路标写「材质走 `fxMat` / `fxDecalMat` 缓存」，**实现没有照做**：常驻层要按元素
+独立滚 UV、独立脉动、独立改 opacity，共用缓存会互相污染；而且它只有一组，
+生命周期跟挂点走，不需要池化。改成 `FXK.enchant` 自己 `new` 材质 + `fxCellTexture().clone()`
+贴图，`_dropEnchant()` 只 dispose **这一组专属**的几何 / 材质 / clone 贴图，
+`fxCellTexture` 的原图绝不 dispose。`update()` 里不 new 任何对象（粒子用固定容量池）。
+
+### 改了什么
+
+| 文件 | 内容 |
+|---|---|
+| `src/data/data-vfx.js` | 新增 `ENCHANT_PROFILE` 6 套；`VFX_KEYS` 放开 `enchant`；15 个 `tiers[10]` 各插一行 `enchant: true`（`vfxCost` 只算 cast/loop/impact，预算表不受影响） |
+| `src/fx-kit.js` | `ench` 状态 + `enchant()` / `_enchAccent()` / `_buildEnchant()` / `_enchQuality()` / `_enchArcJump()` / `_enchUpdate()` / `_dropEnchant()` / `enchantStats()`；`update()` 末尾推、`clear()` 开头摘、`stats()` 加 `enchant` 项 |
+| `src/game.js` | `enchantState()`（有效等级 ≥10 + `vfxRecipe().enchant` + 注入包，按技能条 ①→⑤ 取**第一个**满足的位，保证常驻外观稳定）+ `updateEnchant()`（挂真实武器 `a.mounts.weapon` → `a.weapon` → `a.parts.weaponHand`）；挂进 `updateSkillForm(dt)` |
+| `dev/test-enchant.js`（新） | node + vm 静态契约：数据表 / Lv10 声明 / 源码纪律 / 接线口径 / 三维度签名 / 不硬编码元素分支表 |
+| `dev/probe-enchant.js`（新） | puppeteer 真机：差异像素、draw call、geometry 签名、低画质、副元素、关闭 / clear 零残留、真实挂点、注入包同步、Lv9 不亮 Lv10 亮 |
+| `dev/probe-skill-p5b.js` | 见下节「探针假红」，只加 `WAIT.iceshard = 1700` 与注释，判据一个字没改 |
+
+### 验证（提交前最后一次复跑）
+
+| 类 | 结果 |
+|---|---|
+| U5 专属 | `test-enchant` **235/0** · `probe-enchant` **60/0**（6 套差异像素 969~1098；draw call +4 / 副元素 +5 / 低画质 +2；关闭与 clear 零残留） |
+| 配方 / 原语契约 | `test-vfx-dsl` 358/0 · `test-vfx-kit` 58/0 · `test-skill-p5b` 116/0 |
+| 可见度 / 预算 | `vfx-vis` 14/0 · `vfx-skill-vis` 默认 **39/0**（单跑两次）· `--live` **113/0** · `vfx-bench` 186/0（五连放 742 → 768，+26 / +3.5%） |
+| 真机探针 | `probe-vfx-kit` 43/0 · `probe-vfx-field` 19/0 · `probe-sfx` 12/0 · `probe-bosscast` 15/0 · `probe-combo` 33/0 · `probe-elemfx` 94/0 · `probe-buffrow` 29/0 · `probe-buff-icons` 11/0 · `probe-skill-p5b` **13/0**（连跑 4 次） |
+| 整体 / 生成物 | `smoke` **ERRORS none** · `mobile-layout` **✅ 全部通过** · 四个 `--check` 全一致（sfx 37 只 / fx2 1745 行 / bosskits 88 招 45 只 / bosscast 630 行）· 改动 JS `node --check` 全过 |
+
+### 顺带结掉的一桩老账：`probe-skill-p5b` 的 `11/2`
+
+台账原来写「串跑偶发 11/2、单跑连三次 13/0，属时序抖动，别为此改判据」。
+这次单跑连三次**都**是 11/2，于是查到底，结论是**观察窗口不足，不是随机抖动**：
+
+- 失败的永远是 `iceshard`，它的 `playSkillVfx` 只写在 `FX.projectile` 的 `onHit` 里
+  （`src/game.js:5337`），起手不播，必须等飞弹命中。
+- 单放同一只：100ms 内命中 7~8 发；29 只连放序列里到它已是第 15 发，
+  SwiftShader 实测只有 **6~8 fps**（1200ms 内 `FX.update` 仅 8 次 / 累计 dt 0.386），
+  「下一帧」可能晚到 1.5s，450ms 窗口自然一声不响。
+- **HEAD 版本跑同一序列反而 8/5**，证明不是 U5 引入的回归。
+- 试过每发前 `FX.clear()`：它是「换图级」重操作（连带清 FXK / FX2 / BossCast / SKFX），
+  连跑三次 13/0、8/5、10/3，更不稳，已回退。
+- 最终修法：`WAIT` 表补 `iceshard: 1700`（与 `starfall: 1700` 同性质，
+  命中在 setTimeout / telegraph / 飞弹 onHit 的都留够），**判据一个字没改**。
+  连跑 4 次稳定 `13/0`。
+
+另外记一次**串跑假红**：连着启五个浏览器时 `vfx-skill-vis` 默认跳出 `27/12`，
+单独复跑两次都是 `39/0`。与 U1 那次 SwiftShader 冷启动半帧是同一类，
+收口读数一律以**单跑**为准；批量串跑只用来粗筛，失败项必须单跑复核。
+
+### 交给 U6 的清单
+
+- Lv10 的 `enchant` 是**声明**，不是播放指令；U6 逐条配方打磨别去 `src/vfx.js` 里
+  给它补 case，也别把常驻层的亮度算进 `VFX.playFor` 的面积下界。
+- 常驻层与 SKFX 是**并存的两种东西**：技能演出走 SKFX（一次性），武器附魔走
+  FXK（常驻）。`vfx-skill-vis` 默认量配方层、`--live` 量 SKFX，两者都**不量附魔**；
+  附魔有自己那支 `probe-enchant`。
+- 低画质「只留发光 2 draw call」目前是结构判据（隐藏 accent / 粒子池），
+  U6 要补人眼结论；`SKILL-VFX-PLAN.md §13` 剩余 8 条也还等人眼 / 录屏。
+- 6 套外观过了「两两不同 + 有像素」的机器判据，**好不好看没判**；
+  逐套截图对比归 U6。

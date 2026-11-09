@@ -8,9 +8,9 @@
   但**不再往那两份里加待办、也不再按它们的 V0~V6 / P0~P2 编号排期**。
 - 进度事实看这两份：`docs/status/skill-refactor.md`（人物主线）、
   `docs/status/boss-kits.md`（B 线 B1~B25）。本文件只管「还差什么、按什么顺序合」。
-- 更新：2026-11-07；进度更新：2026-11-09（U2 / U3 / U4 收口）
+- 更新：2026-11-07；进度更新：2026-11-09（U2 / U3 / U4 / U5 收口）
 
-> 当前：**U1 / U2 / U3 / U4 已收口**（U1 `--live` 113/0、默认 39/0；U2 `probe-buffrow` 29/0 + `probe-buff-icons` 11/0；U3 `test-combo` 76/0 + `probe-combo` 33/0；U4 `test-elemfx` 74/0 + `probe-elemfx` 94/0）；**U5 近战武器附魔 🔄 进行中**（2026-11-09 开工路标见 `skill-refactor.md` 的 U5 章）。两条线的特效代码都已在 feat/skill-refactor 跑通，但 origin/main 一个特效文件都没有。仍按人物先合、BOSS 后合的顺序走。
+> 当前：**U1 / U2 / U3 / U4 / U5 已收口**（U1 `--live` 113/0、默认 39/0；U2 `probe-buffrow` 29/0 + `probe-buff-icons` 11/0；U3 `test-combo` 76/0 + `probe-combo` 33/0；U4 `test-elemfx` 74/0 + `probe-elemfx` 94/0；U5 `test-enchant` 235/0 + `probe-enchant` 60/0）。**下一步 U6 人物 · V6 打磨 + 验收清单勾完**。两条线的特效代码都已在 feat/skill-refactor 跑通，但 origin/main 一个特效文件都没有。仍按人物先合、BOSS 后合的顺序走。
 
 ## 一句话现状
 
@@ -24,7 +24,7 @@
 
 | 线 | 完成度 | 已完成 | 未完成 |
 |---|---|---|---|
-| 人物技能特效 | **约 85%** | V0 地基（14 格图集 + 12 原语，全带 `FX.q` 降级）、配方 DSL v2（15 剪影 × 形/色/时 + `ELEM_PROFILE` 6 套）、P4 三职业 ⑤ 签名、P5 台阶 45/45、P5b ①~④ 位 30 个 case 接线、B20 玩家侧 37 只 `src/sfx.js`、V2/V3/V3b 可见度、双演出层适配（`abd20ad`）；15 位 × 4 档 ≤6 draw call、五连放 +3.5%；U1 双演出层口径 + 空招/偏淡收口；U3 组合特效 7 条进游戏；U4 元素反应 10 组专属视觉；契约 dsl 343 / kit 58 / p5 974 / p5b 116 / p4 60 / combo 76 / elemfx 74 | U5~U6（U1~U4 已 ✅） |
+| 人物技能特效 | **约 88%** | V0 地基（14 格图集 + 12 原语，全带 `FX.q` 降级）、配方 DSL v2（15 剪影 × 形/色/时 + `ELEM_PROFILE` 6 套）、P4 三职业 ⑤ 签名、P5 台阶 45/45、P5b ①~④ 位 30 个 case 接线、B20 玩家侧 37 只 `src/sfx.js`、V2/V3/V3b 可见度、双演出层适配（`abd20ad`）；15 位 × 4 档 ≤6 draw call、五连放 +3.5%；U1 双演出层口径 + 空招/偏淡收口；U2 HUD 增益条；U3 组合特效 7 条进游戏；U4 元素反应 10 组专属视觉；**U5 近战武器附魔 6 套常驻外观**（`ENCHANT_PROFILE` + `FXK.enchant` + `Game.updateEnchant`）；契约 dsl 358 / kit 58 / p5 989 / p5b 116 / p4 60 / combo 76 / elemfx 74 / enchant 235 | **U6**（U1~U5 已 ✅） |
 | BOSS 技能特效 | **约 85%** | B1~B25 全 ✅（B2 已推翻不计）：45 只 × 5 格 = 88 招、18 个原语进 `src/fx2.js`、`src/boss-cast.js` 接进 `bossPattern`（四拍 + 每第 5 轮压轴）、B22 地面暗底、B23 竖向兜底（43 招有高度）、B24/B25 变形层 180 条 / 10 种应对轴；真机 15/15、88 招 0 空招 0 报错 | U7~U10（见下表） |
 | 合入 | **0%** | 无 | U11 / U12 |
 
@@ -45,7 +45,7 @@
 | U2 | 人物 · **V1 HUD 增益条整块改造已收口**：`#buffbar` 全清、`#buffrow` 落在血条正下方、17 枚符号图标出图可读、`renderBuffs` 改 `Map<key,el>` 增量 diff（零 `innerHTML`）、叠层结构化 `×N`、稳定 `st:*` key + `ord` 排序、`#trialHud` 靠 `--buff-h` 避让、到期 200ms 淡出 | ✅ | `index.html` / `src/ui.js` / `src/game.js` / `src/skill-beh.js` / `src/mobile.js` / `src/worldboss.js` / `src/domain.js` / `src/data/data-buff-icons.js` / `dev/probe-buffrow.js` / `dev/probe-buff-icons.js` | `probe-buffrow` **29/0**、`probe-buff-icons` **11/0**、PLAN §13 第 7~11 条逐条有判据、`mobile-layout` 6 视口全绿、`smoke` ERRORS none；U1 尺子回归 `--live` **113/0** |
 | U3 | 人物 · **V5 组合特效进游戏**：`comboApply` 只在试验台（`docs/vfx-playground.html` 2 处，`src/` 0 处）。技能内组合 4 组（freeze / burn / exec / gather）+ 职业核心连携 3 条（刃势巨刀 / 法相手掌光点 / 符毒绿符钉）全还只是演示。**接线口径已改**：挂 `castSkill` 尾部 + `damageEnemy` 命中口（不挂 `VFX.playFor`，SKFX 命中即 return），新建独立 `src/combo-fx.js`，判据读游戏真实状态 | ✅ | `src/combo-fx.js`（新，非生成物）+ `index.html` 插脚本 + `src/game.js` 三处挂点 + `src/skill-beh.js` 的 `strike` 带 `skill:id` + `dev/probe-combo.js` | 真机探针逐条看到 7 条组合成立、零报错；`smoke` / `mobile-layout` / 四个 `--check` 全绿 |
 | U4 | 人物 · **元素反应 10 组专属视觉**：机制 P3a 已 10/10 落地（走 `damageEnemy` 一个口），但 §9.2 的蒸汽 / 等离子 / 绿火 / 晶体爬弧 / 霜面腐蚀 / 链式绿弧 / 金火等视觉语言没落进游戏 | ✅ | `src/elem-fx.js`（新，非生成物）+ `index.html` 插脚本 + `src/game.js` 的 `applyElemReaction` 一处挂点（旧 `FX.*` 全换掉、`chainReaction` 走 `ElemFX.link`、`explodeAt` 加 `noFx`）+ `dev/test-elemfx.js` + `dev/probe-elemfx.js` | 静态契约 **74/0**、真机探针 **94/0**：10 组逐条触发 + **10 组原语序列两两不同**（不是只换颜色）+ 坐标全有限 + 反应期间旧 `FX.*` 零调用；`smoke` / `mobile-layout` / 技能契约十份 / 四个 `--check` 全绿 |
-| U5 | 人物 · **V4 近战武器附魔**：`enchant` 原语在 `fx-kit.js` / `vfx.js` / `data-vfx.js` 全是 0 处；Lv10「常驻光效」目前只有刀身发烫脉冲，不是真附魔 | 🔄 | `src/fx-kit.js` 常驻层 + `data-vfx.js` 的 Lv10 patch（仅作声明）+ `src/game.js` 每帧同步 | 6 元素近战各一套剑身外观（不只是换色），≤6 draw call |
+| U5 | 人物 · **V4 近战武器附魔**：`enchant` 原语在 `fx-kit.js` / `vfx.js` / `data-vfx.js` 全是 0 处；Lv10「常驻光效」原本只有刀身发烫脉冲，不是真附魔 | ✅ | `src/data/data-vfx.js`（`ENCHANT_PROFILE` 6 套 + 15 个 Lv10 `enchant: true` 声明）+ `src/fx-kit.js`（`FXK.enchant` 常驻层）+ `src/game.js`（`enchantState` / `updateEnchant` 每帧同步）+ `dev/test-enchant.js` + `dev/probe-enchant.js` | **6 元素各一套，三维度两两不同**（贴图格 / accent 几何 / 粒子运动）；真机 draw call +4（副元素 +5、低画质 +2）≤6；`test-enchant` **235/0**、`probe-enchant` **60/0**；`smoke` ERRORS none、`mobile-layout` 全绿 |
 | U6 | 人物 · **V6 打磨 + 把验收清单勾完**：音效三段对齐（台账 0 处提及）、低画质降级逐项核验、录屏对比；`SKILL-VFX-PLAN.md §13` 14 条逐条给判据，含「同职业 5 招灰度后认出 ≥4」的人眼结论；逐条配方「该几颗 / 什么色」未逐个调（V3b 只重配了三条 ④ 位） | ⬜ | `audio/` / `dev/vfx-shot.js` / `docs/SKILL-VFX-PLAN.md §13` | 14 条全部有结论；`smoke` + `mobile-layout` 全绿 |
 | U7 | BOSS · **老兜底 11 个手写 case 一行没动**：`src/game.js:8579+` 的 `quake` / `frostnova` / `curse` 仍**当帧结算零前摇**（公平性），`fireline` 仍是 6 个圆串、`charge` 预警刷在自己脚下、主视觉全贴地圆。`BOSS-VFX-PLAN.md` 的 P0 四条（补 0.7~1.1s 前摇 + 形状匹配预警）没做 | ⬜ | `src/game.js` 的 `bossPattern` 老 switch 兜底段 | 静态扫描前摇覆盖率；>1.0× 伤害的招全部 ≥0.7s 且形状匹配 |
 | U8 | BOSS · **世界 Boss 6 只不在 `BOSS_KIT`**，走 `WorldBoss` 另一套调度（`game.js:8425` 注释自承），B24/B25 变形层不覆盖。要给它们「自己的四拍」得**另开一层**，别塞进 `BOSS_TWIST` | ⬜ | 新数据层 + `src/world-boss.js` 接线 | 6 只全量试放零空招；真机探针 |
@@ -139,18 +139,47 @@ U1 逐只比对过 37 组 `SKFX / 配方` 读数：0.166 ~ 6.514、中位 1.003�
 bloodrage 1.29× · thrust 1.38× · heal 1.62×。配方层 `iceshard` 也只有 7% 余量，
 仍是最贴地板的一只，别把「暖机后稳定过线」误读成「它够显眼」。
 
-## 下一步（U1~U4 已收口，U5 进行中，别跳）
+## U5 收口记录（2026-11-09）
 
-1. `U5` 人物 · **V4 近战武器附魔**（🔄）：6 元素各一套剑身外观，≤6 draw call。
-   开工路标与三条设计决策见 `skill-refactor.md` 的 U5 章 —— 最关键一条是
-   **配方层在正常游戏里不播**（U1 口径 SKFX 为准），所以 Lv10 patch 只作数据声明，
-   常驻层必须由 `game.js` 每帧按「有效等级 + 注入包」同步，别指望 `VFX.playFor` 触发。
-   U3 / U4 已收口（7 条组合 / 10 组元素反应视觉进游戏），别回头重做。
-2. 改 `src/sfx.js` **一律走生成器**：改 `docs/vfx-playground.html` →
+**口径**：U1 定了 SKFX 为准、37 只技能在正常游戏里**一次配方层都不播**。
+所以 U5 最关键的一条是「不能把附魔写成配方原语」——`data-vfx.js` 的 Lv10
+`enchant: true` 只是声明，真正上场的是 `Game.updateEnchant()` 每帧按
+「有效等级 + 注入包 + 真实武器挂点」同步 `FXK.enchant` 常驻层。
+漏掉这条会写成「契约全绿但游戏里一个像素都没有」。
+
+**落地**：`ENCHANT_PROFILE` 6 套（键与 `ELEM_PROFILE` 一致，元素走
+`skillInjectPack` 主/副，不另建分支表）；三维度两两不同（剑身贴图格 /
+accent 几何种类 / 粒子运动方向），不是换色；自建材质 + clone 贴图，
+`_dropEnchant` 只 dispose 自己这一组，`update` 不 new 对象；低画质只留发光。
+
+**验证**：`test-enchant` 235/0、`probe-enchant` 60/0（6 套差异像素 969~1098、
+draw call +4 / 副元素 +5 / 低画质 +2、关闭与 clear 零残留）；
+`vfx-skill-vis` 默认 39/0 + `--live` 113/0、`vfx-bench` 186/0、
+`probe-skill-p5b` 13/0（连跑 4 次）、`smoke` ERRORS none、
+`mobile-layout` 全绿、四个 `--check` 一致。详见 `skill-refactor.md` U5 收口章。
+
+**顺带结掉一桩老账**：`probe-skill-p5b` 的 `11/2` 不是随机抖动，是
+`iceshard` 的命中段写在飞弹 `onHit` 里、而 29 连放序列跑到中段时
+SwiftShader 只有 6~8 fps（1200ms 内 `FX.update` 仅 8 次），450ms 观察窗不够；
+HEAD 版本跑同一序列反而 8/5，证明非 U5 回归。给 `WAIT` 表补
+`iceshard: 1700`（与 `starfall` 同性质），**判据一个字没改**，连跑 4 次 13/0。
+试过每发前 `FX.clear()`，属换图级重操作、更不稳，已回退。
+
+## 下一步（U1~U5 已收口，U6 待办，别跳）
+
+1. `U6` 人物 · **V6 打磨 + 把验收清单勾完**：音效三段对齐、低画质降级逐项核验、
+   录屏对比；`SKILL-VFX-PLAN.md §13` 14 条逐条给判据（已勾 6 条，还剩 8 条），
+   含「同职业 5 招灰度后认出 ≥4」的人眼结论；逐条配方「该几颗 / 什么色」未逐个调
+   （V3b 只重配了三条 ④ 位）。U5 的 6 套附魔外观过了「两两不同 + 有像素」的机器判据，
+   **好不好看没判**，逐套截图对比归这里。
+2. U6 的两条口径别踩：① Lv10 的 `enchant` 是**数据声明**不是播放指令，
+   别去 `src/vfx.js` 补 case；② 常驻附魔走 FXK、技能演出走 SKFX，
+   `vfx-skill-vis`（默认 / `--live`）都不量附魔，附魔有自己那支 `probe-enchant`。
+3. 改 `src/sfx.js` **一律走生成器**：改 `docs/vfx-playground.html` →
    `node dev/build-skillvfx.js --write` → `node dev/build-skillvfx.js --check`。
    别手改生成物（`abd20ad` 修的 `hitArea` stub 就是这么来的）。
-3. 每个 U 收口后立刻 `git status` + 写本表状态 + commit，再进下一个。台账别攒着写。
-4. U11 / U12 之前先 `./dev/status.sh` 确认三条线各自到哪了。
+4. 每个 U 收口后立刻 `git status` + 写本表状态 + commit，再进下一个。台账别攒着写。
+5. U11 / U12 之前先 `./dev/status.sh` 确认三条线各自到哪了。
 
 ## 卡点（等拍板 / 硬前置）
 
@@ -171,5 +200,8 @@ bloodrage 1.29× · thrust 1.38× · heal 1.62×。配方层 `iceshard` 也只�
   U1 又因 SwiftShader 冷启动读到半帧返工一次（`iceshard` 1401~1897 来回跳，
   靠「暖机 + `gl.finish()`」压到 1604~1607 稳定）。合 main 前若再动演出层，
   先确认尺子量的是谁、读的是不是完整一帧，再谈数字涨跌。
-- `probe-skill-p5b` 串跑五个浏览器偶发 11/2、单跑连三次 13/0，属时序抖动，
-  合 main 前单跑确认即可，别为此改判据。
+- `probe-skill-p5b` 的 11/2 **已结清**（2026-11-09）：不是时序抖动，是
+  `iceshard` 飞弹 `onHit` 在低帧率序列里晚于 450ms 窗口；`WAIT.iceshard = 1700`
+  后连跑 4 次 13/0，判据未改。另记一条**通用口径**：连着启五个浏览器时
+  `vfx-skill-vis` 默认会跳 27/12 这类冷启动假红，单跑两次均 39/0 ——
+  批量串跑只用来粗筛，任何失败项必须单跑复核后才算数。

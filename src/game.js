@@ -4077,10 +4077,67 @@ const Game = {
     if (f.out >= 0.3) this._dropFormAura();
   },
 
+  /* ============================================================
+   * [U5 / V4] 常驻武器附魔 —— 数据声明 → 玩家状态 → FXK 常驻层
+   *
+   * 为什么这里必须每帧同步、而**不是**在配方里写一条 `enchant` 指令：
+   * U1 定了双演出层以 SKFX 为准，37 只技能在 `Game.playSkillVfx` 里
+   * 命中 SKFX 后立刻 return，配方层在正常游戏中一次都不会播。
+   * 把附魔挂在 `VFX.playFor` 上会写成「契约全绿但游戏里一个像素都没有」。
+   * 所以 `data-vfx.js` 的 Lv10 patch 只是「这个位到 10 级有附魔」的声明，
+   * 真正上场的是这里按**有效等级 + 注入包**算出来的常驻状态。
+   *
+   * 三条口径：
+   *   1. 等级看 `skillLevel(id)`（含装备 / 词缀 / 传世的 +N），不看投入点数；
+   *   2. 元素走 `skillInjectPack(id)` 的主 / 副（70-30），没注入退回
+   *      `SKILLS[id].elem`，再没有就 `phys` —— 不另建元素→特效分支表；
+   *   3. 按技能条 ①→⑤ 取**第一个**满足的位。常驻外观必须稳定，
+   *      跟着「上一次施法」换色会变成每放一招闪一下。
+   *
+   * `FXK.enchant` 内部比对 sig，状态没变时只标「还在」、不重建 mesh；
+   * 换图 / 换武器导致 mount 变化时它自己会重建，不用这里管。
+   * ============================================================ */
+  enchantState() {
+    const s = this.state;
+    if (!s || typeof this.skillBar !== 'function' || typeof vfxRecipe !== 'function') return null;
+    const bar = this.skillBar();
+    for (let i = 0; i < bar.length; i++) {
+      const id = bar[i];
+      if (!id || !this.skillUnlocked(id)) continue;
+      const lv = this.skillLevel(id);
+      if (lv < 10) continue;                       // Lv10 终极台阶才常开
+      const rec = vfxRecipe(id, lv);
+      if (!rec || !rec.enchant) continue;          // 数据层的声明
+      const pack = (typeof this.skillInjectPack === 'function') ? this.skillInjectPack(id) : null;
+      const elem = (pack && pack.key) || (SKILLS[id] && SKILLS[id].elem) || 'phys';
+      return {
+        elem: elem, sub: (pack && pack.sub) || null,
+        subAmt: (pack && pack.subAmt) || 0, src: id, lv: lv, slot: i + 1
+      };
+    }
+    return null;
+  },
+
+  updateEnchant() {
+    if (typeof FXK === 'undefined' || !FXK || typeof FXK.enchant !== 'function') return;
+    const st = this.enchantState();
+    if (!st) { FXK.enchant(null); return; }
+    const a = this.actor;
+    /* 优先挂装备武器的 holder（跟着真实武器轮廓），其次初始建模的武器，
+     * 最后才退到手骨骼 —— 盒子人没有武器 mesh 时也不能整只技能没特效。 */
+    const mount = a
+      ? ((a.mounts && a.mounts.weapon) || a.weapon ||
+         (a.parts && a.parts.weaponHand) || null)
+      : null;
+    if (!mount) { FXK.enchant(null); return; }
+    FXK.enchant({ elem: st.elem, sub: st.sub, subAmt: st.subAmt, mount: mount });
+  },
+
   /* 每帧的 ⑤ 号位表现总闸（在 tickBeh 之后调用，位置与 updateAuras 同源） */
   updateSkillForm(dt) {
     this.updateFormAura(dt);
     this.bladeEdgeVfx(dt);
+    this.updateEnchant();
   },
 
   /* 召唤阵：道士 ⑤ 与三只召唤技能共用。
