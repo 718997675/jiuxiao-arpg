@@ -3209,6 +3209,13 @@
      必须在 fx-kit.js（FXK.*）与 vfx.js（VFX._later 带换图作废）之后、game.js 之前：
      castSkill 尾部调 onCast、damageEnemy 命中口调 onHit。 -->
 <script src="src/combo-fx.js"></script>
+<!-- [U4 / V6] 元素反应专属视觉层：10 组反应各一套视觉语言（蒸汽 / 等离子 / 焚毒 /
+     感电冻结 / 腐霜 / 腐蚀链 / 净化烈焰 / 圣霜 / 天罚 / 解毒雾）。
+     **独立源码，不是生成物**。数值逻辑在 game.js 的 applyElemReaction，
+     视觉搬到这里 —— 两边分开，改数值不碰画面、改画面不碰数值。
+     只用 fx-kit.js 的现有五原语（spr / trail / bolt / shock / decal），不新增原语。
+     必须在 fx-kit.js（FXK.*）之后、game.js 之前：applyElemReaction 调 play。 -->
+<script src="src/elem-fx.js"></script>
 <script src="src/world.js"></script>
 <script src="src/ui-mtree.js"></script>
 <script src="src/ui.js"></script>
