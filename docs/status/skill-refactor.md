@@ -2823,7 +2823,7 @@ G.damageEnemy(e, dmg, crit,
 | U4-1 | 只读调查 + 路标 | ✅ | `vfx-merge.md` U4 标 🔄 + 本章（提交待写） | 10 组逐个核对过现有视觉；10 套配方全部只用 FXK 现有五原语；接线口径四条写死 |
 | U4-2 | 视觉层 + 静态契约 | ✅ | 新建 `src/elem-fx.js`（10 套配方 + `play` / `link` / `reset` / `stats`）+ `index.html` 在 `combo-fx.js` 后插脚本 + `dev/test-elemfx.js` | 静态契约 **55/0**：10 组 key 与 `ELEM_REACTIONS` 一一对应 / 每组画了什么 / **10 组形状签名两两不同** / 只改敌人字段零改动 / 视觉层自己不设 ICD / FXK 关掉不炸 / 只用五原语白名单 / `fx-kit.js` 零改动 / 加载顺序 |
 | U4-3 | 游戏接线 | ✅ | `src/game.js` 的 `applyElemReaction` 一处挂点 + `chainReaction` 改走 `ElemFX.link` + `explodeAt` 加 `noFx` 开关 | 不改数值逻辑；`smoke` ERRORS none；技能契约十份全绿 |
-| U4-4 | 真机探针 | ✅ | `dev/probe-elemfx.js` | 10 组逐条看到触发 + 真机 FXK 被调过 + **10 组的形状互不重样**（不是只换颜色）+ 坐标全部有限 + 零 console error；读数 **72/0** |
+| U4-4 | 真机探针 | ✅ | `dev/probe-elemfx.js` | 10 组逐条看到触发 + 真机 FXK 被调过 + **10 组的形状互不重样**（不是只换颜色）+ 坐标全部有限 + 零 console error；读数 **94/0** |
 | U4-5 | 回归 + 台账收口 | ✅ | 三份台账 + 当日日志 + commit + push | 全套回归读数写进台账；U4 标 ✅，下一步 U5 |
 
 ### U4-3 接线落地：具体换了什么
@@ -2842,7 +2842,7 @@ G.damageEnemy(e, dmg, crit,
 `explodeAt` 的 `noFx` 是**加参数不是改行为**：其余 9 个调用点一个字节都没变，
 老调用点传不到第 9 个参数 = 照旧画爆炸。
 
-### U4-4 真机读数（`dev/probe-elemfx.js`，72/0）
+### U4-4 真机读数（`dev/probe-elemfx.js`，94/0）
 
 10 组逐条在真机上触发，每组都调过 FXK、坐标全部有限、视觉层零内部异常。
 **真机画出来的 10 种形状**（`op:tex` 序列，含 FXK 原语内部的火花 / 尘）：
@@ -2860,13 +2860,21 @@ G.damageEnemy(e, dmg, crit,
 | `judgment` | `trail`（竖直光柱）· `bolt` · `shock` · `spr:spark` |
 | `cleansmist` | `spr:smoke`×2 · `decal:acid` |
 
-探针同时钉住了四件事：
-1. **旧 `FX.*` 视觉真的换掉了** —— 反应期间 `flashCircle/ring/burst/beam/area` 零调用
-   （含蒸汽那句 `explodeAt`，证明 `noFx` 生效）。
-2. **链式电弧走 `link`** —— 感电冻结 1 段、腐蚀链 2 段，每段都是 `bolt + trail`。
-3. **数值仍然生效** —— 10 组的收益逐条验过（dot ×1.5 / 冻结 ×1.5 / 减防 20% /
+探针量八件事（`probe-elemfx.js` 的 8 节），其中五条是硬结论：
+1. **10 组只触发自己那一组** —— `counts` 里只有该组的 key，`draws` 也是 1。
+2. **每组画的是它自己的那套** —— 逐组断言 `lastDraw.parts` 里含配方签名
+   （`decal:frost` / `bolt:surface×3` / `spr:ember:column` / `trail:column` …）。
+3. **旧 `FX.*` 视觉真的换掉了** —— 反应期间 `flashCircle/ring/burst/beam/area` 零调用
+   （含蒸汽那句 `explodeAt`，证明 `noFx` 生效）；`FX.spark` 的通用火花已排除。
+4. **链式电弧走 `link`** —— 感电冻结 1 段、腐蚀链 2 段，每段都是 `bolt + trail`。
+5. **数值仍然生效** —— 10 组的收益逐条验过（dot ×1.5 / 冻结 ×1.5 / 减防 20% /
    护盾 / 回血 / 圣雷 / 回血雾 / 击退 / 必暴追加）。
-4. **ICD 仍然由反应机制管** —— 同目标 2s 内视觉不重播。
+
+> **ElemFX 故意不挂 `loadMap` 的 reset**。它只有计数器，没有「开窗 / 到期」这类跨帧状态
+> （ICD 借的是反应机制的 `_reactCd` / `e._reactAt`，挂在敌人身上）。
+> ComboFX 才需要在 `loadMap` 清窗口，否则「上一张图的聚怪窗」会带进村里。
+> 探针据此判的是「换图后照样能触发」，**不是**「换图清账」——
+> 后者会让一次正常的换图把诊断计数抹掉，反而看不出问题。
 
 ### 下一步
 

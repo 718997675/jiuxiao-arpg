@@ -1,29 +1,37 @@
 #!/usr/bin/env node
 /* ============================================================
- * [U4-4] 元素反应专属视觉真机验收 —— 10 组逐条触发 + 形状互不重样
+ * [U4-4] 元素反应真机验收 —— 10 组逐条触发 + 形状互不重样
  *
  *   NODE_PATH=/tmp/wb-node/node_modules node dev/probe-elemfx.js
  *
- * 契约（dev/test-elemfx.js）判的是「配方表对不对、接线在不在」；
- * 这一份判的是**接进游戏之后真的画了、而且 10 组不是同一个模子**。
- * U1 的教训：契约全绿 ≠ 视觉成立，NaN 粒子照样「画了」。
+ * 契约（dev/test-elemfx.js）判的是「配方表对不对」；这一份判的是
+ * **接进游戏之后还成不成立**。U1 有过「契约全绿但 NaN 粒子照样算数」的前车之鉴，
+ * 所以这里量的是**真机 FXK 的实际调用**，不是读源码。
  *
- * 量七件事：
- *   1  10 组逐条在真机上触发，每组都调过 FXK，坐标全部有限
- *   2  10 组的**原语序列**两两不同（配色不算形状）
- *   3  旧 FX.* 视觉真的换掉了 —— 反应期间 flashCircle/ring/burst/beam/area 零调用
- *   4  链式电弧走 ElemFX.link（感电冻结 1 段 / 腐蚀链 2 段）
- *   5  数值逻辑一行没改 —— 10 组的收益逐条仍然生效
- *   6  ICD 仍然由反应机制管（同目标 2s 内视觉不重播）
- *   7  零 console.error / pageerror
+ * 量八件事：
+ *   1  10 组逐条真的触发（counts / draws 都有，且只有该组）
+ *   2  真机 FXK 被调过（hook 住 spr/trail/bolt/shock/decal 五个原语）
+ *   3  **10 组的形状互不重样**（真机调用序列两两不同，不是只换颜色）
+ *   4  坐标全部有限（NaN 的粒子照样「画了」，但屏幕上什么都没有）
+ *   5  旧 FX.* 视觉一个都没被调（换掉，不是叠上去）
+ *   6  ICD（全局 0.5s / 同目标 2s）+ silent / react 不过滤
+ *   7  换图后照样能触发（视觉层没有跨图窗口，和 ComboFX 的聚怪窗口不同）
+ *   8  **数值逻辑一行没改** —— 10 组的收益逐条仍然生效
  *
  * 三个坑：
- *   · **FXK 调用的归属**：ComboFX 与 ElemFX 都用 FXK，同一发伤害可能两层一起画
- *     （火打带毒目标 = ComboFX.burn + ElemFX.burnpoison）。所以这里包一层
- *     `Game.applyElemReaction`，只有它执行期间记的 FXK 调用才归元素反应。
- *   · **旧 FX.* 的归属同理**：damageEnemy 本身只调 FX.text，所以反应期间
- *     出现 flashCircle/ring/burst/beam/area 就一定是没换干净的残留。
- *   · 每个 case 都换一只新怪 —— `e._reactAt` 挂在目标身上，复用同一只会被 2s ICD 挡住。
+ *   · 触发条件是「目标身上的元素状态」+「这一发的元素」，
+ *     状态位分别是：冰 = slowT/slow、雷电 = stun、毒 = poisonT、圣 = sigilT。
+ *     只设该组需要的那一个，多设一个会让 elemStatusList 撞出另一组反应。
+ *   · 目标的 `stunChance / slowChance / freezeChance / burnChance` 来自装备词缀，
+ *     会偷偷给目标挂状态（burnChance 挂 poisonT 会改变判定结果）→ 探针里清零。
+ *   · FXK.shock / bolt / trail 内部会自己调 FXK.spr（尘环 / 端点闪光），
+ *     所以真机签名里会多出 spr:dust / spr:spark —— 这是真实调用，不是重复绘制。
+ *
+ * 两处必须隔离，否则量出来的不是「这一组反应长什么样」：
+ *   · **ComboFX 停掉**：蒸汽爆炸的伤害是物理的，打在冻结目标上会触发
+ *     ComboFX 的「冻结 → 碎裂」——两套视觉混在一起，签名就废了。
+ *   · **`FX.spark` 排除**：`FX.spark`（伤害数字火花）内部就是 `this.burst(...)`，
+ *     那是每次伤害都有的通用反馈，不是反应视觉。
  * ============================================================ */
 'use strict';
 const puppeteer = require('puppeteer-core');
@@ -37,163 +45,131 @@ const ok = (c, m, d) => {
   fail++; console.log('  ✗', m, d === undefined ? '' : JSON.stringify(d));
 };
 
-const TOOLS = `
-  window.__fx = [];        /* 反应期间的真机 FXK 调用（带 key） */
-  window.__old = [];       /* 反应期间的旧 FX.* 视觉调用（应该是空的） */
-  window.__in = null;      /* 当前正在结算哪一组反应（applyElemReaction 的窗口） */
-  window.__draw = null;    /* 当前正在画哪一组（ElemFX.play / link 的窗口） */
+/* 10 组反应各自的触发条件：命中元素 + 目标身上要有的那一个状态位 */
+const CASES = [
+  { key: 'steam', name: '蒸汽爆裂', elem: 'fire', status: { slowT: 5, slow: 1 }, foes: 1, part: 'decal:frost' },
+  { key: 'plasma', name: '等离子', elem: 'fire', status: { stun: 5 }, foes: 1, part: 'bolt:surface×3' },
+  { key: 'burnpoison', name: '焚毒', elem: 'fire', status: { poisonT: 5 }, foes: 1, part: 'spr:ember:outer' },
+  { key: 'frozele', name: '感电冻结', elem: 'ice', status: { stun: 5 }, foes: 2, part: 'spr:shard:hex-shell' },
+  { key: 'frostrot', name: '腐霜', elem: 'ice', status: { poisonT: 5 }, foes: 1, part: 'decal:acid' },
+  { key: 'corrochain', name: '腐蚀链', elem: 'lightning', status: { poisonT: 5 }, foes: 3, part: 'bolt:trident×3' },
+  { key: 'purify', name: '净化烈焰', elem: 'fire', status: { sigilT: 5 }, foes: 1, part: 'spr:ember:column' },
+  { key: 'holyfrost', name: '圣霜', elem: 'ice', status: { sigilT: 5 }, foes: 1, part: 'trail:gold×2' },
+  { key: 'judgment', name: '天罚', elem: 'lightning', status: { sigilT: 5 }, foes: 1, part: 'trail:column' },
+  { key: 'cleansmist', name: '解毒雾', elem: 'poison', status: { sigilT: 5 }, foes: 1, part: 'spr:smoke:gold' }
+];
 
-  /* 旧 FX.* 视觉：换掉之后这五个在反应期间一次都不该出现。
-   * 例外只有一个 —— FX.spark（每次命中都有的通用火花）内部调 FX.burst，
-   * 那是 damageEnemy 的命中反馈，不是反应视觉。所以 spark 执行期间不记账。 */
-  window.__spark = 0;
-  const origSpark = FX.spark;
-  FX.spark = function () {
-    window.__spark++;
-    try { return origSpark.apply(this, arguments); }
-    finally { window.__spark--; }
-  };
-  ['flashCircle', 'ring', 'burst', 'beam', 'area'].forEach(function (op) {
+/* 探针在页面里装的通用工具：起怪、录 FXK 调用、录旧 FX 调用、清账 */
+const TOOLS = `
+  window.__fx = [];
+  window.__old = [];
+  ['spr','decal','shock','trail','bolt'].forEach(function (op) {
+    const orig = FXK[op];
+    FXK[op] = function (a, b) {
+      const rec = { op: op };
+      if (op === 'trail') {
+        rec.n = Array.isArray(a) ? a.length : 0;
+        rec.pts = (a || []).map(function (v) { return [v.x, v.y, v.z]; });
+      } else if (op === 'bolt') {
+        rec.a = a ? [a.x, a.y, a.z] : null;
+        rec.b = b ? [b.x, b.y, b.z] : null;
+      } else {
+        rec.x = a && a.x; rec.y = a && a.y; rec.z = a && a.z;
+        rec.tex = (b && b.tex) || '';
+      }
+      window.__fx.push(rec);
+      return orig.apply(this, arguments);
+    };
+  });
+  /* 旧 FX.*：反应期间**一个都不许被调**（换掉，不是叠上去）。
+   * 例外：FX.spark（伤害数字火花）内部就是 this.burst(...)
+   * —— 那不是反应视觉，是每次伤害都有的通用反馈，所以用 __generic 标记区分开。 */
+  window.__generic = 0;
+  ['spark','blood'].forEach(function (op) {
     const orig = FX[op];
     if (typeof orig !== 'function') return;
     FX[op] = function () {
-      if (window.__in && !window.__spark) window.__old.push({ key: window.__in, op: op });
+      window.__generic++;
+      try { return orig.apply(this, arguments); } finally { window.__generic--; }
+    };
+  });
+  ['flashCircle','ring','burst','beam','area'].forEach(function (op) {
+    const orig = FX[op];
+    if (typeof orig !== 'function') return;
+    FX[op] = function () {
+      if (!window.__generic) window.__old.push(op);
       return orig.apply(this, arguments);
     };
   });
-
-  /* 真机 FXK：记下原语、贴图格、坐标。
-   * 归属只看 __draw（ElemFX.play / link 内部），不看 __in ——
-   * 蒸汽的爆炸伤会再命中一次，把 ComboFX 的碎裂视觉也画在同一段时间里，
-   * 那段不属于元素反应的「形状」。 */
-  ['spr', 'decal', 'shock', 'trail', 'bolt'].forEach(function (op) {
-    const orig = FXK[op];
-    FXK[op] = function (a, b) {
-      if (window.__draw) {
-        const rec = { key: window.__draw, op: op };
-        if (op === 'trail') {
-          rec.n = Array.isArray(a) ? a.length : 0;
-          rec.pts = (a || []).map(function (v) { return [v.x, v.y, v.z]; });
-        } else if (op === 'bolt') {
-          rec.pts = [[a && a.x, a && a.y, a && a.z], [b && b.x, b && b.y, b && b.z]];
-        } else {
-          rec.x = a && a.x; rec.y = a && a.y; rec.z = a && a.z;
-          rec.tex = (b && b.tex) || '';
-        }
-        window.__fx.push(rec);
-      }
-      return orig.apply(this, arguments);
-    };
-  });
-
-  /* 归属①：旧 FX.* 视觉 —— 只有 applyElemReaction 执行期间的才算反应残留 */
-  const origApply = Game.applyElemReaction.bind(Game);
-  Game.applyElemReaction = function (r, e, f) {
-    const prev = window.__in;
-    window.__in = r && r.key;
-    try { return origApply(r, e, f); }
-    finally { window.__in = prev; }
+  /* 组合层（ComboFX）在这一份里**停掉**。
+   * 理由：蒸汽爆炸的伤害是**物理**（explodeAt 不带元素），打在冻结目标上
+   * 会触发 ComboFX 的「冻结 → 碎裂」，两套视觉混在一起就量不准「这一组长什么样」。
+   * 组合层自己有一份探针（dev/probe-combo.js），那份不关它。 */
+  window.__comboOff = function () {
+    if (window.__comboSave) return;
+    window.__comboSave = { hit: ComboFX.onHit, cast: ComboFX.onCast };
+    ComboFX.onHit = function () { };
+    ComboFX.onCast = function () { };
   };
-
-  /* 归属②：FXK 调用 —— 只算 ElemFX.play / link 自己画的（含链段） */
-  const origPlay = ElemFX.play;
-  ElemFX.play = function (key) {
-    const prev = window.__draw;
-    window.__draw = key;
-    try { return origPlay.apply(this, arguments); }
-    finally { window.__draw = prev; }
+  window.__comboOn = function () {
+    if (!window.__comboSave) return;
+    ComboFX.onHit = window.__comboSave.hit;
+    ComboFX.onCast = window.__comboSave.cast;
+    window.__comboSave = null;
   };
-  const origLink = ElemFX.link;
-  ElemFX.link = function (a, b, color, key) {
-    const prev = window.__draw;
-    window.__draw = key;
-    try { return origLink.apply(this, arguments); }
-    finally { window.__draw = prev; }
-  };
-
   window.__reset = function () {
     ElemFX.reset();
     window.__fx.length = 0;
     window.__old.length = 0;
-    window.__in = null;
-    window.__draw = null;
-    Game.shield = 0; Game.healMist = null;
-    Game.time = (Game.time || 0) + 5000;   /* 跨过 0.5s 全局 / 2s 同目标两道 ICD */
+    Game.time += 5;            /* 跨过全局 0.5s / 同目标 2s 两道 ICD */
   };
-
-  /* n 只木桩：第 1 只是主目标，其余排在 +2 米上（给连锁反应当靶子） */
+  window.__kit = function (cls) {
+    Game.startNew(cls, '毒');
+    Game.state.level = 30;
+    Game.state.mp = 999999; Game.state.hp = Game.state.hpMax;
+    Game.cooldowns = {}; Game.invuln = 999; Game.mobCap = 200;
+    try { Game.recalc(); } catch (e) { }
+    /* 装备词缀的命中附加会偷偷改目标状态（burnChance 挂 poisonT 会改判定结果）→ 清零 */
+    try {
+      const st = Game.state.stats;
+      st.stunChance = 0; st.slowChance = 0; st.freezeChance = 0; st.burnChance = 0;
+      if (st.flags) { st.flags.frost = false; st.flags.thunder = false; st.flags.explode = false; }
+    } catch (e) { }
+  };
   window.__foes = function (n, patch) {
     Game.mapGen = (Game.mapGen || 0) + 1;
     Game.enemies.length = 0;
     const pp = Game.playerGroup.position;
+    const type = Object.keys(MONSTERS)[0];
     const out = [];
-    for (let i = 0; i < (n || 1); i++) {
-      const foe = Game.spawnEnemy(Object.keys(MONSTERS)[0], pp.x + i * 2, pp.z + 3);
-      foe.hp = foe.maxHp = foe.baseHp = 1e9;
-      if (patch) Object.assign(foe, patch);
+    for (let i = 0; i < n; i++) {
+      const foe = Game.spawnEnemy(type, pp.x, pp.z + 3 + i * 1.5);
+      foe.hp = foe.maxHp = 1e9; foe.baseHp = 1e9;
+      foe.boss = false; foe.family = '';
+      if (i === 0 && patch) Object.assign(foe, patch);
       out.push(foe);
     }
-    Game.invuln = 999;
+    Game.aimPoint = new THREE.Vector3(out[0].pos.x, 0, out[0].pos.z);
+    Game.aimDir = new THREE.Vector3(0, 0, 1);
+    Game.lastMoveDir = { x: 0, z: 1 };
     Game.running = true;
     return out;
   };
-
   window.__finite = function (recs) {
     for (const r of recs) {
-      const nums = r.pts ? r.pts.reduce(function (a, v) { return a.concat(v); }, [])
-        : [r.x, r.y, r.z];
+      const nums = [];
+      if (r.op === 'trail') {
+        for (const pt of (r.pts || [])) nums.push(pt[0], pt[1], pt[2]);
+      } else if (r.op === 'bolt') {
+        nums.push.apply(nums, (r.a || []).concat(r.b || []));
+      } else {
+        nums.push(r.x, r.y, r.z);
+      }
       for (const v of nums) if (!Number.isFinite(v)) return false;
     }
     return true;
   };
-
-  /* 一组反应的完整读数 */
-  window.__one = function (key, patch, elem, n) {
-    window.__reset();
-    const foes = window.__foes(n || 1, patch);
-    const foe = foes[0];
-    /* 血量压到 50%：净化烈焰 / 解毒雾的收益是回血，满血时看不出结算
-     * （hpMax 在 state.stats 上，不在 state 上） */
-    Game.state.hp = Math.round(Game.state.stats.hpMax * 0.5);
-    const before = {
-      hp: foe.hp, x: foe.pos.x, z: foe.pos.z, slowT: foe.slowT || 0,
-      dotDmg: foe.dotDmg || 0, shield: Game.shield || 0,
-      php: Game.state.hp, chainHp: foes.slice(1).map(function (o) { return o.hp; })
-    };
-    Game.damageEnemy(foe, 1000, false, { elem: elem });
-    const s = ElemFX.stats();
-    const mine = window.__fx.filter(function (r) { return r.key === key; });
-    return {
-      counts: s.counts, draws: s.draws, links: s.links, errors: s.errors.slice(),
-      parts: (s.lastDraw[key] || {}).parts || null,
-      fx: mine, n: mine.length, finite: window.__finite(mine),
-      ops: mine.map(function (r) { return r.op + ':' + (r.tex || ''); }).join(','),
-      old: window.__old.filter(function (r) { return r.key === key; }).map(function (r) { return r.op; }),
-      before: before,
-      after: {
-        hp: foe.hp, x: foe.pos.x, z: foe.pos.z, slowT: foe.slowT || 0,
-        dotDmg: foe.dotDmg || 0, shred: foe.shred || 0, shredT: foe.shredT || 0,
-        shield: Game.shield || 0, mist: !!Game.healMist,
-        php: Game.state.hp, chainHp: foes.slice(1).map(function (o) { return o.hp; })
-      }
-    };
-  };
 `;
-
-/* 10 组的触发条件（命中元素 + 目标身上要有的状态）
- * 状态字段的口径见 src/data/data-elem.js 的 ELEM_STATUS。 */
-const CASES = [
-  { key: 'steam', elem: 'fire', patch: { slow: 1, slowT: 3 }, why: '火打冻结目标' },
-  { key: 'plasma', elem: 'fire', patch: { stun: 2 }, why: '火打感电目标' },
-  { key: 'burnpoison', elem: 'fire', patch: { poisonT: 3, dotT: 3, dotElem: 'poison', dotDmg: 100 }, why: '火打带毒目标' },
-  { key: 'frozele', elem: 'ice', patch: { slow: 1, slowT: 4, stun: 2 }, why: '冰打感电目标', foes: 2 },
-  { key: 'frostrot', elem: 'ice', patch: { poisonT: 3 }, why: '冰打带毒目标' },
-  { key: 'corrochain', elem: 'lightning', patch: { poisonT: 3 }, why: '雷打带毒目标', foes: 3 },
-  { key: 'purify', elem: 'fire', patch: { sigilT: 3 }, why: '火打带圣印目标' },
-  { key: 'holyfrost', elem: 'ice', patch: { sigilT: 3 }, why: '冰打带圣印目标' },
-  { key: 'judgment', elem: 'lightning', patch: { sigilT: 3 }, why: '雷打带圣印目标' },
-  { key: 'cleansmist', elem: 'poison', patch: { sigilT: 3 }, why: '毒打带圣印目标' }
-];
 
 (async () => {
   const b = await puppeteer.launch({
@@ -215,110 +191,196 @@ const CASES = [
   await wait(1600);
   await p.evaluate(TOOLS);
 
-  /* ---------------- 1~2：10 组逐条触发 + 形状互不重样 ---------------- */
-  console.log('\n【1】10 组逐条在真机上触发 · FXK 真的被调过 · 坐标全部有限');
-  const res = await p.evaluate(list => {
+  /* ---------------- 1~5：10 组逐条触发 ---------------- */
+  console.log('\n【1】10 组逐条真的触发 + 真机 FXK 被调过 + 坐标有限');
+  const res = await p.evaluate((cases) => {
     const out = {};
-    for (const c of list) out[c.key] = window.__one(c.key, c.patch, c.elem, c.foes);
+    window.__comboOff();
+    for (const c of cases) {
+      window.__kit('mage');
+      window.__reset();
+      const foes = window.__foes(c.foes, c.status);
+      let err = null;
+      try {
+        Game.damageEnemy(foes[0], 100, false, { elem: c.elem });
+      } catch (e) { err = String((e && e.message) || e); }
+      const s = ElemFX.stats();
+      out[c.key] = {
+        err: err,
+        counts: s.counts, draws: s.draws, links: s.links,
+        last: s.lastDraw[c.key] || null,
+        fx: window.__fx.slice(),
+        old: window.__old.slice(),
+        finite: window.__finite(window.__fx),
+        errors: s.errors.slice()
+      };
+    }
     return out;
   }, CASES);
 
+  const sigs = {};
   for (const c of CASES) {
     const r = res[c.key];
-    ok(r.counts[c.key] === 1 && r.draws[c.key] === 1,
-      c.key + '：' + c.why + ' → 触发并真的画了', { counts: r.counts, draws: r.draws });
-  }
-  for (const c of CASES) {
-    const r = res[c.key];
-    ok(r.n >= 2, c.key + '：真机 FXK 至少被调 2 次', r.n);
-    ok(r.finite, c.key + '：坐标全部有限（没有 NaN 粒子）');
-    ok(r.errors.length === 0, c.key + '：视觉层零内部异常', r.errors);
+    const keys = Object.keys(r.counts || {});
+    ok(!r.err && keys.length === 1 && keys[0] === c.key && r.counts[c.key] === 1,
+      c.name + '（' + c.key + '）：只触发了这一组反应', { err: r.err, counts: r.counts });
+    ok(r.draws && r.draws[c.key] === 1, c.name + '：视觉真的画了一次', r.draws);
+    ok(r.last && r.last.parts.indexOf(c.part) >= 0,
+      c.name + '：画的是它自己的那套（含 ' + c.part + '）', (r.last || {}).parts);
+    ok(r.fx.length >= 3, c.name + '：真机 FXK 真的被调过（' + r.fx.length + ' 次）', r.fx.length);
+    ok(r.finite === true, c.name + '：坐标全部有限', r.fx);
+    ok(r.errors.length === 0, c.name + '：视觉层零内部异常', r.errors);
+    ok(r.old.length === 0, c.name + '：旧 FX.* 一次都没被调（换掉，不是叠上去）', r.old);
+    /* 真机调用序列 = 这一组在屏幕上真实画出来的东西（shape，不含配色） */
+    sigs[c.key] = r.fx.map(f => f.op + (f.tex ? ':' + f.tex : '')).join('|');
   }
 
-  console.log('\n【2】10 组的**形状**互不重样（真机原语序列，配色不算形状）');
+  console.log('\n【2】10 组的**形状**互不重样（真机调用序列，不是只换颜色）');
   {
     const seen = {};
     const dup = [];
     for (const c of CASES) {
-      const r = res[c.key];
-      if (!r.ops) { dup.push(c.key + ' == (空)'); continue; }
-      if (seen[r.ops]) dup.push(c.key + ' == ' + seen[r.ops]);
-      seen[r.ops] = c.key;
+      if (seen[sigs[c.key]]) dup.push(c.key + ' == ' + seen[sigs[c.key]]);
+      seen[sigs[c.key]] = c.key;
     }
-    ok(dup.length === 0, '10 组的原语序列两两不同', dup);
-    ok(new Set(CASES.map(c => res[c.key].ops)).size === 10, '确实是 10 种不同的画法',
-      CASES.map(c => c.key + ' → ' + res[c.key].ops));
-    /* 形状签名（ElemFX 自己记的配方清单）也要两两不同 */
-    const sig = CASES.map(c => (res[c.key].parts || []).join('|'));
-    ok(new Set(sig).size === 10, '配方签名（parts）也两两不同',
-      CASES.map((c, i) => c.key + ' → ' + sig[i]));
-    console.log('  —— 真机画出来的 10 种形状 ——');
-    for (const c of CASES) console.log('    ' + c.key.padEnd(11) + res[c.key].ops);
+    ok(dup.length === 0, '10 组的真机原语序列两两不同', dup);
+    ok(new Set(Object.values(sigs)).size === 10, '10 组序列去重后还剩 10 个',
+      Object.values(sigs));
+    for (const c of CASES) {
+      console.log('    ·', c.key.padEnd(11), sigs[c.key]);
+    }
   }
 
-  console.log('\n【3】旧 FX.* 视觉真的换掉了（反应期间零调用）');
-  for (const c of CASES) {
-    const r = res[c.key];
-    ok(r.old.length === 0, c.key + '：反应期间没有 flashCircle/ring/burst/beam/area', r.old);
-  }
-  ok(res.steam.old.indexOf('flashCircle') < 0 && res.steam.old.indexOf('ring') < 0,
-    'steam：通用爆炸环没被叠上来（explodeAt 的 noFx 生效）', res.steam.old);
+  console.log('\n【3】链式电弧（感电冻结 / 腐蚀链）');  ok(res.frozele.links && res.frozele.links.frozele === 1,
+    '感电冻结：链段记在 frozele 名下', res.frozele.links);
+  ok(res.corrochain.links && res.corrochain.links.corrochain === 2,
+    '腐蚀链：两段链都记在 corrochain 名下', res.corrochain.links);
+  ok(sigs.corrochain.indexOf('trail') >= 0,
+    '腐蚀链的链段带拖尾（不是一根 1px 线）', sigs.corrochain);
 
-  console.log('\n【4】链式电弧走 ElemFX.link（bolt + trail，不是 1px 线）');
-  ok(res.frozele.links.frozele === 1, '感电冻结：连锁 1 段，每段都走了 link', res.frozele.links);
-  ok(res.corrochain.links.corrochain === 2, '腐蚀链：连锁 2 段，每段都走了 link', res.corrochain.links);
-  ok(res.frozele.fx.filter(r => r.op === 'trail').length >= 1,
-    '链段真的画了拖尾（trail 不是 bolt 串）', res.frozele.fx.map(r => r.op));
-
-  /* ---------------- 5：数值逻辑一行没改 ---------------- */
-  console.log('\n【5】数值仍然生效（视觉换了，结算一个字节没动）');
-  {
-    const moved = (r) => Math.hypot(r.after.x - r.before.x, r.after.z - r.before.z);
-    ok(res.steam.after.hp < 1e9, 'steam：汽浪的 35% 爆炸伤害真的结算了',
-      { hp: res.steam.after.hp });
-    ok(moved(res.steam) > 0.05, 'steam：击退真的把目标推开了', moved(res.steam));
-    ok(res.plasma.before.hp - res.plasma.after.hp > 1000,
-      'plasma：除了原伤害，还多结算了一发必暴雷伤',
-      { lost: res.plasma.before.hp - res.plasma.after.hp });
-    ok(res.burnpoison.after.dotDmg === 150,
-      'burnpoison：本轮 dot ×1.5 真的乘上了', { before: 100, after: res.burnpoison.after.dotDmg });
-    ok(Math.abs(res.frozele.after.slowT - 6) < 0.001,
-      'frozele：冻结时长 ×1.5 真的乘上了', { before: 4, after: res.frozele.after.slowT });
-    ok(res.frostrot.after.shred === 20 && res.frostrot.after.shredT > 0,
-      'frostrot：减防 20% 真的挂上了', res.frostrot.after);
-    ok(res.corrochain.after.chainHp.length === 2 && res.corrochain.after.chainHp.every(h => h < 1e9),
-      'corrochain：两只连锁目标都真的掉血了', res.corrochain.after.chainHp);
-    ok(res.purify.after.php > res.purify.before.php,
-      'purify：回复 3% 生命真的结算了', { before: res.purify.before.php, after: res.purify.after.php });
-    ok(res.holyfrost.after.shield > 0, 'holyfrost：护盾真的挂上了', res.holyfrost.after.shield);
-    ok(res.judgment.after.hp < 1e9, 'judgment：圣雷伤害真的结算了', res.judgment.after.hp);
-    ok(res.cleansmist.after.mist === true, 'cleansmist：回血雾计时器真的挂上了');
-  }
-
-  /* ---------------- 6：ICD 仍然由反应机制管 ---------------- */
-  console.log('\n【6】ICD 仍然由反应机制管（视觉不另设冷却）');
+  console.log('\n【4】ICD · silent / react 不过滤');
+  await p.evaluate(() => window.__comboOn());
   const icd = await p.evaluate(() => {
+    window.__kit('mage');
     window.__reset();
-    const foes = window.__foes(1, { slow: 1, slowT: 3 });
-    const foe = foes[0];
-    Game.damageEnemy(foe, 1000, false, { elem: 'fire' });
-    const a = (ElemFX.stats().counts.steam || 0);
-    const fx1 = window.__fx.length;
-    /* 同目标、没过 2s → 反应机制自己挡住，视觉也不该重播 */
-    Game.damageEnemy(foe, 1000, false, { elem: 'fire' });
-    const b = (ElemFX.stats().counts.steam || 0);
-    /* 推过 2s → 放行 */
-    Game.time = (Game.time || 0) + 2500;
-    Game.damageEnemy(foe, 1000, false, { elem: 'fire' });
-    const c = (ElemFX.stats().counts.steam || 0);
-    return { a, b, c, fx1, fx2: window.__fx.length };
+    const foe = window.__foes(1, { slowT: 5, slow: 1 })[0];
+    Game.damageEnemy(foe, 100, false, { elem: 'fire' });
+    const a = ElemFX.stats().counts.steam || 0;
+    /* 同目标、没过 2s → 必须挡住 */
+    Game.damageEnemy(foe, 100, false, { elem: 'fire' });
+    const b = ElemFX.stats().counts.steam || 0;
+    /* 时钟推过 2s → 放行 */
+    Game.time += 3;
+    Game.damageEnemy(foe, 100, false, { elem: 'fire' });
+    const c = ElemFX.stats().counts.steam || 0;
+    /* 换目标：没过全局 0.5s → 挡住 */
+    Game.time += 0.1;
+    const foe2 = window.__foes(1, { slowT: 5, slow: 1 })[0];
+    Game.damageEnemy(foe2, 100, false, { elem: 'fire' });
+    const d = ElemFX.stats().counts.steam || 0;
+    /* 过了全局 0.5s → 放行 */
+    Game.time += 0.6;
+    Game.damageEnemy(foe2, 100, false, { elem: 'fire' });
+    const e = ElemFX.stats().counts.steam || 0;
+    return { a, b, c, d, e };
   });
-  ok(icd.a === 1, '第一条命中触发一次', icd);
-  ok(icd.b === 1, '同目标 2s 内视觉不重播（借的是反应机制的 ICD）', icd);
+  ok(icd.a === 1, '第一条命中触发', icd);
+  ok(icd.b === 1, '同目标 2s 内不重播', icd);
   ok(icd.c === 2, '过了同目标 2s 可以再播', icd);
+  ok(icd.d === 2, '换目标也过不了全局 0.5s', icd);
+  ok(icd.e === 3, '过了全局 0.5s 换目标可以播', icd);
 
-  /* ---------------- 7：零 console error ---------------- */
-  console.log('\n【7】错误');
+  const quiet = await p.evaluate(() => {
+    window.__kit('mage');
+    window.__reset();
+    const foe = window.__foes(1, { slowT: 5, slow: 1 })[0];
+    Game.damageEnemy(foe, 100, false, { elem: 'fire', silent: true });
+    const s1 = ElemFX.stats().counts.steam || 0;
+    Game.time += 3;
+    Game.damageEnemy(foe, 100, false, { elem: 'fire', react: true });
+    const s2 = ElemFX.stats().counts.steam || 0;
+    return { s1, s2 };
+  });
+  ok(quiet.s1 === 0 && quiet.s2 === 0, 'silent（dot 跳伤）与 react（反应追加）都不触发', quiet);
+
+  console.log('\n【5】换图 · 视觉层没有跨图窗口（和 ComboFX 不一样）');
+  /* ElemFX **故意不挂** loadMap 的 reset：它只有计数器，没有「开窗 / 到期」这类
+   * 跨帧状态（ICD 借的是反应机制的 `_reactCd` / `e._reactAt`，挂在敌人身上）。
+   * ComboFX 才需要在 loadMap 清窗口，否则「上一张图的聚怪窗」会带进村里。
+   * 所以这里判的不是「换图清账」，而是「换图后照样能触发」= 没留跨图状态。 */
+  const reset = await p.evaluate(() => {
+    window.__kit('mage');
+    window.__reset();
+    const foe = window.__foes(1, { slowT: 5, slow: 1 })[0];
+    Game.damageEnemy(foe, 100, false, { elem: 'fire' });
+    const before = ElemFX.stats().counts.steam || 0;
+    Game.loadMap('village');
+    window.__reset();
+    const foe2 = window.__foes(1, { slowT: 5, slow: 1 })[0];
+    Game.damageEnemy(foe2, 100, false, { elem: 'fire' });
+    const after = ElemFX.stats().counts.steam || 0;
+    return { before, after };
+  });
+  ok(reset.before === 1 && reset.after === 1,
+    '换图后照样能触发（视觉层没留跨图状态）', reset);
+
+  /* ---------------- 6：数值逻辑一行没改 ---------------- */
+  console.log('\n【6】数值逻辑一行没改（视觉换了，结算照旧）');
+  const nums = await p.evaluate((cases) => {
+    const out = {};
+    window.__comboOff();
+    for (const c of cases) {
+      window.__kit('mage');
+      window.__reset();
+      Game.shield = 0; Game.healMist = null;
+      /* 血量压到 50%：净化的回血要看得见（hpMax 在 state.stats 上） */
+      Game.state.hp = Math.round(Game.state.stats.hpMax * 0.5);
+      /* 只有这两组需要额外的「已有状态」才看得见收益：
+       * 焚毒要求本轮 dot 已经在跳（dotT>0 才乘 dotMul）、
+       * 感电冻结要求本来就在减速（slowT>0 才乘 freezeMul）。 */
+      let patch = c.status;
+      if (c.key === 'burnpoison') patch = Object.assign({}, c.status, { dotT: 5, dotElem: 'poison', dotDmg: 100 });
+      if (c.key === 'frozele') patch = Object.assign({}, c.status, { slow: 1, slowT: 4 });
+      const foes = window.__foes(c.foes, patch);
+      const foe = foes[0];
+      const snap = () => ({
+        hp: foe.hp, x: foe.pos.x, z: foe.pos.z, slowT: foe.slowT || 0,
+        dotDmg: foe.dotDmg || 0, shred: foe.shred || 0, shredT: foe.shredT || 0,
+        shield: Game.shield || 0, mist: !!Game.healMist, php: Game.state.hp,
+        chainHp: foes.slice(1).map(function (o) { return o.hp; })
+      });
+      const b = snap();
+      Game.damageEnemy(foe, 1000, false, { elem: c.elem });
+      out[c.key] = { b: b, a: snap() };
+    }
+    return out;
+  }, CASES);
+  {
+    const moved = (r) => Math.hypot(r.a.x - r.b.x, r.a.z - r.b.z);
+    ok(nums.steam.a.hp < 1e9, 'steam：汽浪的 35% 爆炸伤害真的结算了', nums.steam.a.hp);
+    ok(moved(nums.steam) > 0.05, 'steam：击退真的把目标推开了', moved(nums.steam));
+    ok(nums.plasma.b.hp - nums.plasma.a.hp > 1000,
+      'plasma：除了原伤害，还多结算了一发必暴雷伤',
+      { lost: nums.plasma.b.hp - nums.plasma.a.hp });
+    ok(nums.burnpoison.a.dotDmg === 150,
+      'burnpoison：本轮 dot ×1.5 真的乘上了',
+      { before: 100, after: nums.burnpoison.a.dotDmg });
+    ok(Math.abs(nums.frozele.a.slowT - 6) < 0.001,
+      'frozele：冻结时长 ×1.5 真的乘上了',
+      { before: 4, after: nums.frozele.a.slowT });
+    ok(nums.frostrot.a.shred === 20 && nums.frostrot.a.shredT > 0,
+      'frostrot：减防 20% 真的挂上了', nums.frostrot.a);
+    ok(nums.corrochain.a.chainHp.length === 2 && nums.corrochain.a.chainHp.every(h => h < 1e9),
+      'corrochain：两只连锁目标都真的掉血了', nums.corrochain.a.chainHp);
+    ok(nums.purify.a.php > nums.purify.b.php,
+      'purify：回复 3% 生命真的结算了',
+      { before: nums.purify.b.php, after: nums.purify.a.php });
+    ok(nums.holyfrost.a.shield > 0, 'holyfrost：护盾真的挂上了', nums.holyfrost.a.shield);
+    ok(nums.judgment.a.hp < 1e9, 'judgment：圣雷伤害真的结算了', nums.judgment.a.hp);
+    ok(nums.cleansmist.a.mist === true, 'cleansmist：回血雾计时器真的挂上了');
+  }
+
+  console.log('\n【错误】');
   ok(errs.length === 0, '全程无 console.error / pageerror', errs.slice(0, 3));
 
   await b.close();
