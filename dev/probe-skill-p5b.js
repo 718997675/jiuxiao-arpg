@@ -55,7 +55,14 @@ const ok = (c, m, d) => {
    * `__wipe()` 是**每一发之前**必须做的隔离：上一发留下的 `setInterval`
    * （雷云 / 毒雾 / 剑雨 / 符雨）和还在飞的弹道，会在下一发的窗口里继续
    * 调 `playSkillVfx` —— 不隔离的话「这一发播了几次」全是别人的账。
-   * 换图编号 +1 会让所有 `if (this.mapGen !== gen) return` 的循环自己退场。 */
+   * 换图编号 +1 会让所有 `if (this.mapGen !== gen) return` 的循环自己退场。
+   *
+   * 2026-11-09：`iceshard` 的命中段写在飞弹 `onHit` 里，而 29 连放到中段后
+   * SwiftShader 实测只有 6~8 fps（1200ms 内 `FX.update` 仅 8 次），飞弹要等
+   * 「下一帧」才推进 —— 450ms 窗口里就成了「按下去一声不响」。
+   * 单放同一只 100ms 内命中 7 发，HEAD 版本跑同一序列反而 8/5，
+   * 所以这是**观察窗口不足**，不是技能接线回归，也不改「有没有调到」的判据。
+   * 见下面 `WAIT` 表：命中在 setTimeout / telegraph / 飞弹 onHit 的技能都要留够。 */
   await p.evaluate(() => {
     window.__mkEnv = () => {
       Game.state.mp = 999999;
@@ -96,8 +103,11 @@ const ok = (c, m, d) => {
     'talisman', 'talismanarrow', 'mastersigil', 'summon', 'whitetiger', 'azuredragon',
     'heal', 'poison', 'swordrain'
   ];
-  /* 命中在 setTimeout / telegraph 里的几只，窗口要留够 —— 420ms 只够看起手 */
-  const WAIT = { skysfall: 1600, meteor: 1500, starfall: 1700, judgement: 1200, leap: 650, thrust: 650 };
+  /* 命中在 setTimeout / telegraph / 飞弹 onHit 里的几只，窗口要留够 —— 450ms 只够看起手。
+   * iceshard 是 2026-11-09 补的：它的 `playSkillVfx` 只在 `FX.projectile` 的
+   * `onHit` 里调，低帧率环境（SwiftShader 实测 6~8 fps）下这一帧可能晚到 1.5s。 */
+  const WAIT = { skysfall: 1600, meteor: 1500, starfall: 1700, judgement: 1200,
+    leap: 650, thrust: 650, iceshard: 1700 };
   {
     const rows = await p.evaluate(async (ids, waits) => {
       const wait = ms => new Promise(r => setTimeout(r, ms));
