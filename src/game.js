@@ -6519,8 +6519,9 @@ const Game = {
     e.pos.z += dz / d * power * 0.5;
   },
 
-  /* 连锁：从 from 出发，找最近的、还没被点过的目标，各打一发 dmg（带电弧） */
-  chainReaction(from, count, dmg, color, elem) {
+  /* 连锁：从 from 出发，找最近的、还没被点过的目标，各打一发 dmg（带电弧）
+   * `rkey` = 反应 key（腐蚀链 / 感电冻结），电弧视觉交给 ElemFX.link 画。 */
+  chainReaction(from, count, dmg, color, elem, rkey) {
     const used = [from];
     let src = from;
     let n = 0;
@@ -6532,7 +6533,10 @@ const Game = {
         if (d < bd) { bd = d; best = o; }
       }
       if (!best) break;
-      FX.beam(new THREE.Vector3(src.pos.x, 1.1, src.pos.z), new THREE.Vector3(best.pos.x, 1.1, best.pos.z), color, 0.18, 0.7);
+      if (typeof ElemFX !== 'undefined' && ElemFX && ElemFX.link) {
+        ElemFX.link(new THREE.Vector3(src.pos.x, 1.1, src.pos.z),
+          new THREE.Vector3(best.pos.x, 1.1, best.pos.z), color, rkey);
+      }
       this.damageEnemy(best, dmg, false, { elem: elem, react: true, tag: 'aoe' });
       used.push(best);
       src = best;
@@ -6548,28 +6552,22 @@ const Game = {
     const c1 = r.color, c2 = r.color2 || r.color;
     const label = new THREE.Vector3(e.pos.x, e.boss ? 4.2 : 2.4, e.pos.z);
     FX.text(label, r.name, 'info', { life: 0.9, color: '#' + ('000000' + c1.toString(16)).slice(-6) });
+    /* [U4] 元素反应专属视觉：10 组各一套语言。数值逻辑一行不动。 */
+    if (typeof ElemFX !== 'undefined' && ElemFX && ElemFX.play) {
+      try {
+        ElemFX.play(r.key, e, { pos: pos, color: c1, color2: c2,
+          radius: r.radius, playerPos: this.playerGroup.position });
+      } catch (err) { /* 视觉层出错不影响反应结算 */ }
+    }
     switch (r.key) {
       case 'steam': {
-        /* 白汽浪：一圈扩张环 + 向内翻卷的烟（负重力 = 上升） */
-        FX.flashCircle(pos, r.radius, c1, 0.35);
-        FX.ring(pos, r.radius, c2, 0.55, 0.25);
-        for (let i = 0; i < 3; i++) {
-          FX.burst(new THREE.Vector3(e.pos.x + RND(-1.2, 1.2), RND(0.2, 1.6), e.pos.z + RND(-1.2, 1.2)),
-            c1, 8, { speed: 3.2, size: 0.16, life: 0.9, gravity: -3, additive: true });
-        }
-        this.explodeAt(pos, r.radius, final * r.dmg / 100, c1, false, true, 'aoe');
+        /* 白汽浪：向外扩的地面环 + 向内翻卷的烟（视觉在 src/elem-fx.js） */
+        this.explodeAt(pos, r.radius, final * r.dmg / 100, c1, false, true, 'aoe', undefined, true);
         this.knockEnemy(e, r.knock);
         break;
       }
       case 'plasma': {
-        /* 紫白电弧球：几个随机点向目标收束的折线 */
-        FX.flashCircle(pos, r.radius, c1, 0.3);
-        for (let i = 0; i < 4; i++) {
-          const a = Math.random() * 6.283, rr = r.radius * (0.6 + Math.random() * 0.5);
-          FX.beam(new THREE.Vector3(e.pos.x + Math.cos(a) * rr, RND(0.4, 2.4), e.pos.z + Math.sin(a) * rr),
-            new THREE.Vector3(e.pos.x, 1.2, e.pos.z), c2, 0.16);
-        }
-        FX.burst(new THREE.Vector3(e.pos.x, 1.2, e.pos.z), c1, 18, { speed: 8, size: 0.1, life: 0.5, additive: true });
+        /* 紫白电弧球：球面跳弧往中心收（视觉在 src/elem-fx.js） */
         /* 「必定暴击」：命中已经结算过了，没法回头改那一发的暴击 ——
          * 所以补一发**按暴击倍率算好**的雷伤，读数上就是一次暴击。 */
         const st = this.state.stats;
@@ -6578,10 +6576,7 @@ const Game = {
         break;
       }
       case 'burnpoison': {
-        /* 绿火：绿色外焰 + 橙色芯，缓慢上卷 */
-        FX.ring(pos, 1.8, c1, 0.5, 0.22);
-        FX.burst(new THREE.Vector3(e.pos.x, 0.8, e.pos.z), c1, 14, { speed: 2.6, size: 0.14, life: 0.9, gravity: -3, additive: true });
-        FX.burst(new THREE.Vector3(e.pos.x, 0.8, e.pos.z), c2, 8, { speed: 2.2, size: 0.12, life: 0.7, gravity: -3, additive: true });
+        /* 绿火包橙芯，缓慢上卷（视觉在 src/elem-fx.js） */
         /* 只在**这一轮 dot** 里加一次，且跳完自动失效 —— 否则反复触发会滚雪球 */
         if ((e.dotT || 0) > 0 && !e._reactDot) {
           e._reactDot = true;
@@ -6590,38 +6585,26 @@ const Game = {
         break;
       }
       case 'frozele': {
-        FX.ring(pos, 2.0, c1, 0.5, 0.22);
-        FX.flashCircle(pos, 1.6, c2, 0.25);
-        for (let i = 0; i < 3; i++) {
-          const a = Math.random() * 6.283;
-          FX.beam(new THREE.Vector3(e.pos.x + Math.cos(a) * 1.6, RND(0.6, 2), e.pos.z + Math.sin(a) * 1.6),
-            new THREE.Vector3(e.pos.x, 1.1, e.pos.z), c1, 0.15);
-        }
+        /* 晶体裂纹发光（视觉在 src/elem-fx.js） */
         if ((e.slowT || 0) > 0) e.slowT *= r.freezeMul;   // 冻结 / 减速时长延长
-        this.chainReaction(e, r.chain, final * r.dmg / 100, c2, 'lightning');
+        this.chainReaction(e, r.chain, final * r.dmg / 100, c2, 'lightning', 'frozele');
         break;
       }
       case 'frostrot': {
-        /* 霜面腐蚀：白霜底 + 绿斑 */
-        FX.area(pos, 1.8, c1, 2.2, { opacity: 0.16 });
-        FX.burst(new THREE.Vector3(e.pos.x, 0.9, e.pos.z), c2, 10, { speed: 3, size: 0.12, life: 0.8, gravity: 6 });
+        /* 霜面腐蚀：白霜底 + 绿斑（视觉在 src/elem-fx.js） */
         e.shred = Math.max(e.shred || 0, r.shred);
         e.shredT = Math.max(e.shredT || 0, r.dur);
         break;
       }
       case 'corrochain': {
-        /* 链式绿电弧 */
-        FX.flashCircle(pos, 1.8, c1, 0.25);
-        this.chainReaction(e, r.chain, final * r.dmg / 100, c1, 'poison');
+        /* 链式绿电弧（视觉在 src/elem-fx.js） */
+        this.chainReaction(e, r.chain, final * r.dmg / 100, c1, 'poison', 'corrochain');
         break;
       }
 
       /* ---- 圣系 4 组：收益落在玩家身上，不在敌人身上 ---- */
       case 'purify': {
-        /* 圣火：金白外焰 + 橙芯，整体向上卷（和前几组「往下砸」的观感区分） */
-        FX.ring(pos, 2.0, c1, 0.5, 0.22);
-        FX.burst(new THREE.Vector3(e.pos.x, 0.9, e.pos.z), c1, 14, { speed: 3.0, size: 0.13, life: 0.9, gravity: -3, additive: true });
-        FX.burst(new THREE.Vector3(e.pos.x, 0.7, e.pos.z), c2, 9, { speed: 2.4, size: 0.12, life: 0.7, gravity: -3, additive: true });
+        /* 圣火：金火向上抽成柱（视觉在 src/elem-fx.js） */
         /* 「对亡灵 +30%」直接乘在**这一发**上，不开窗口 buff：
          * 窗口 buff 面板上看不见，玩家打亡灵时也感觉不到，等于这组反应没做。
          * 亡灵判定读 `family`（data-monsters.js 里骷髅 / 僵尸 / 怨魂都是 undead）。 */
@@ -6633,14 +6616,8 @@ const Game = {
         break;
       }
       case 'holyfrost': {
-        FX.ring(pos, 1.9, c1, 0.5, 0.22);
-        FX.flashCircle(pos, 1.5, c2, 0.25);
+        /* 金光朝玩家收（视觉在 src/elem-fx.js） */
         const pg = this.playerGroup.position;
-        for (let i = 0; i < 3; i++) {
-          const a = Math.random() * 6.283;
-          FX.beam(new THREE.Vector3(e.pos.x + Math.cos(a) * 1.5, RND(0.5, 2), e.pos.z + Math.sin(a) * 1.5),
-            new THREE.Vector3(pg.x, 1.1, pg.z), c1, 0.14);
-        }
         /* 护盾量 = 最大生命 × shield% × 护盾强度 × (1 + 25%)。
          * 取 max 不叠加 —— 否则冰环连着砸能把护盾刷成第二条血条。 */
         const stS = this.state.stats;
@@ -6653,18 +6630,14 @@ const Game = {
         break;
       }
       case 'judgment': {
-        /* 圣雷：天上一道光柱直落（全场唯一「从天上下来」的元素反应） */
-        FX.beam(new THREE.Vector3(e.pos.x, 9, e.pos.z), new THREE.Vector3(e.pos.x, 0.6, e.pos.z), c1, 0.28, 1.1);
-        FX.flashCircle(pos, 2.2, c1, 0.3);
-        FX.burst(new THREE.Vector3(e.pos.x, 0.8, e.pos.z), c2, 16, { speed: 5, size: 0.1, life: 0.5, additive: true });
+        /* 圣雷：唯一「从天上下来」的一组（视觉在 src/elem-fx.js） */
         const kb = e.boss ? 1 + r.vsBoss / 100 : 1;
         this.damageEnemy(e, final * r.dmg / 100 * kb, false, { elem: 'sigil', react: true, tag: 'aoe' });
         if (e.boss) FX.text(new THREE.Vector3(e.pos.x, 4.6, e.pos.z), '天罚 +' + r.vsBoss + '%', 'info', { life: 0.8 });
         break;
       }
       case 'cleansmist': {
-        FX.area(pos, r.mist.r, c1, r.mist.dur, { opacity: 0.14 });
-        FX.burst(new THREE.Vector3(e.pos.x, 0.5, e.pos.z), c2, 12, { speed: 2, size: 0.14, life: 1.0, gravity: -1.5, additive: true });
+        /* 回血雾跟着玩家走（视觉在 src/elem-fx.js） */
         /* 回血雾不新建实体，挂一个计时器在玩家身上：这里的「友方」是玩家和灵兽，
          * 敌人踩进来不该回血，所以判定中心跟人走、不钉在这只怪脚下。
          * 结算在 updateBuffs（每帧都跑，和护盾计时同一处）。 */
@@ -7057,11 +7030,15 @@ const Game = {
   },
 
   /* [S1] 爆炸一律算范围伤害（tag='aoe'），不管是谁触发的爆炸 */
-  explodeAt(pos, radius, baseDmg, color, big, silent, tag = 'aoe', elem) {
+  /* `noFx` = 只结算伤害、不画通用爆炸视觉。
+   * 元素反应（蒸汽爆裂）要的是自己那套 FXK 视觉，不能再叠一圈通用爆炸环。 */
+  explodeAt(pos, radius, baseDmg, color, big, silent, tag = 'aoe', elem, noFx) {
     if (!silent) { SFX.explode(); this.shake = Math.max(this.shake, big ? 0.5 : 0.25); this.hitstop = 50; }
-    FX.flashCircle(pos, radius, color, 0.35);
-    FX.ring(pos, radius * 1.2, color, 0.45, 0.2);
-    FX.burst(new THREE.Vector3(pos.x, 0.6, pos.z), color, big ? 30 : 16, { speed: 9, size: 0.14, life: 0.6, gravity: 2, additive: true });
+    if (!noFx) {
+      FX.flashCircle(pos, radius, color, 0.35);
+      FX.ring(pos, radius * 1.2, color, 0.45, 0.2);
+      FX.burst(new THREE.Vector3(pos.x, 0.6, pos.z), color, big ? 30 : 16, { speed: 9, size: 0.14, life: 0.6, gravity: 2, additive: true });
+    }
     for (const e of this.enemies) {
       if (e.dead) continue;
       if (DIST2D(e.pos, pos) < radius + e.radius) {

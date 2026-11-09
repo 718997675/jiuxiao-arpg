@@ -2750,9 +2750,8 @@ G.damageEnemy(e, dmg, crit,
 
 ## U4 · 元素反应 10 组专属视觉（2026-11-09 开工 · 未完成）
 
-> 当前：**U4-1 只读调查 + 路标 ✅**；生产代码一行未改。
-> `docs/status/vfx-merge.md` 的 U4 已标 🔄。
-> 这一节是给下一个接手的人的路标。
+> 当前：**U4-1 ✅ / U4-2 ✅ / U4-3 ✅**（游戏已接线，10 组反应现在走 FXK 专属视觉）。
+> `docs/status/vfx-merge.md` 的 U4 已标 🔄（等 U4-4 真机探针 + U4-5 回归收口）。
 
 ### 先说清楚：U4 不是「没做视觉」，是**10 组长得一模一样**
 
@@ -2823,13 +2822,29 @@ G.damageEnemy(e, dmg, crit,
 |---|---|---|---|---|
 | U4-1 | 只读调查 + 路标 | ✅ | `vfx-merge.md` U4 标 🔄 + 本章（提交待写） | 10 组逐个核对过现有视觉；10 套配方全部只用 FXK 现有五原语；接线口径四条写死 |
 | U4-2 | 视觉层 + 静态契约 | ✅ | 新建 `src/elem-fx.js`（10 套配方 + `play` / `link` / `reset` / `stats`）+ `index.html` 在 `combo-fx.js` 后插脚本 + `dev/test-elemfx.js` | 静态契约 **55/0**：10 组 key 与 `ELEM_REACTIONS` 一一对应 / 每组画了什么 / **10 组形状签名两两不同** / 只改敌人字段零改动 / 视觉层自己不设 ICD / FXK 关掉不炸 / 只用五原语白名单 / `fx-kit.js` 零改动 / 加载顺序 |
-| U4-3 | 游戏接线 | ⬜ | `src/game.js` 的 `applyElemReaction` 一处挂点；旧 `FX.*` 视觉换成 FXK 版 | 不改数值逻辑；`smoke` ERRORS none；技能契约十份全绿 |
+| U4-3 | 游戏接线 | ✅ | `src/game.js` 的 `applyElemReaction` 一处挂点 + `chainReaction` 改走 `ElemFX.link` + `explodeAt` 加 `noFx` 开关 | 不改数值逻辑；`smoke` ERRORS none；技能契约十份全绿 |
 | U4-4 | 真机探针 | ⬜ | `dev/probe-elemfx.js` | 10 组逐条看到触发 + 真机 FXK 被调过 + **10 组的形状互不重样**（不是只换颜色）+ 坐标全部有限 + 零 console error |
 | U4-5 | 回归 + 台账收口 | ⬜ | 三份台账 + 当日日志 + commit + push | 全套回归读数写进台账；U4 标 ✅，下一步 U5 |
 
+### U4-3 接线落地：具体换了什么
+
+| 位置 | 原来 | 现在 |
+|---|---|---|
+| `applyElemReaction` 开头 | 无 | `ElemFX.play(r.key, e, {pos,color,color2,radius,playerPos})` —— **挂点唯一** |
+| 10 个 case 里 | `FX.flashCircle / ring / burst / beam / area` | 全删。反应视觉**只**来自 `src/elem-fx.js` |
+| `FX.text(反应名)` | 保留 | 保留（那是信息，不是视觉语言）；三处信息浮字也保留 |
+| `chainReaction` | `FX.beam`（1px 线） | `ElemFX.link(起点, 终点, color, rkey)` = 一条 bolt + 一条 trail |
+| `explodeAt` | 无条件画通用爆炸环 | 加 `noFx` 第 9 参数；**只有蒸汽**传 `true`（它的爆炸环已由 ElemFX 的 shock 承担） |
+
+数值逻辑一行未改 —— 契约里逐条钉住了 10 个关键数值行（dot 加成 / 减速延长 / 易伤 /
+护盾 / 解毒雾计时器 / 必定暴击 / 亡灵加伤 / Boss 加伤 / 击退 / 回血）。
+
+`explodeAt` 的 `noFx` 是**加参数不是改行为**：其余 9 个调用点一个字节都没变，
+老调用点传不到第 9 个参数 = 照旧画爆炸。
+
 ### 下一步
 
-按 U4-2 → U4-5 顺序做，**每做完一个节点写台账 + commit + push**，别攒着写。
+按 U4-4 → U4-5 顺序做，**每做完一个节点写台账 + commit + push**，别攒着写。
 
 ### 卡点 / 坑（明天别再踩一遍）
 
@@ -2848,3 +2863,7 @@ G.damageEnemy(e, dmg, crit,
 6. **别在 `applyElemReaction` 里铺长注释**：`dev/test-skill-p3.js` 有
    `tryElemReaction(...)[\s\S]{0,600}法相命中附加` 的距离上限断言（U3 踩过一次）。
    挂点块写短，配方细节放 `src/elem-fx.js` 里。
+7. **`explodeAt` 是个「伤害 + 通用爆炸视觉」的共用函数**。删掉反应 case 里的
+   `FX.*` 还不够 —— 蒸汽那句 `explodeAt` 会把通用爆炸环又画回来，等于叠了两套。
+   解法是加 `noFx` 第 9 参数（**加参数不是改行为**，其余 9 个调用点照旧）。
+   凡是「旧视觉藏在共用 helper 里」的都要这么查一遍，别只看 case 表面。

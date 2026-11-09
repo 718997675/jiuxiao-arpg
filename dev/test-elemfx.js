@@ -162,12 +162,63 @@ console.log('\n【6】源码纪律：只用白名单原语 / 不碰 fx-kit');
 
   const kit = fs.readFileSync(path.join(root, 'src', 'fx-kit.js'), 'utf8');
   ok(!/ElemFX/.test(kit), 'fx-kit.js 一行都没动（不新增原语）');
-
-  const game = fs.readFileSync(path.join(root, 'src', 'game.js'), 'utf8');
-  ok(!/ElemFX/.test(game), 'U4-2 阶段 game.js 还没接线（数值逻辑一行未改）');
 }
 
-console.log('\n【7】index.html 加载顺序');
+console.log('\n【7】游戏接线（U4-3）');
+{
+  const game = fs.readFileSync(path.join(root, 'src', 'game.js'), 'utf8');
+
+  /* 挂点恰好一处，且在 applyElemReaction 里、数值 switch 之前 */
+  const plays = game.match(/ElemFX\.play\s*\(/g) || [];
+  ok(plays.length === 1, 'ElemFX.play 在 game.js 里恰好一处（挂点唯一）', plays.length);
+  const fnAt = game.indexOf('applyElemReaction(r, e, final) {');
+  const bodyAt = game.indexOf('frontGuardOf(e) {');
+  ok(fnAt > 0 && bodyAt > fnAt, '能定位 applyElemReaction 的函数体');
+  const body = game.slice(fnAt, bodyAt);
+  const pAt = body.indexOf('ElemFX.play');
+  const swAt = body.indexOf('switch (r.key)');
+  ok(pAt > 0 && swAt > 0 && pAt < swAt, '挂点在数值 switch 之前', { pAt, swAt });
+
+  /* 旧 FX.* 视觉换掉了（只留 FX.text —— 那是信息，不是视觉语言） */
+  const usedFx = [];
+  const fre = /\bFX\.([a-zA-Z]+)\s*\(/g;
+  let m2;
+  while ((m2 = fre.exec(body))) usedFx.push(m2[1]);
+  const old = usedFx.filter(x => ['flashCircle', 'ring', 'burst', 'beam', 'area'].indexOf(x) >= 0);
+  ok(old.length === 0, 'applyElemReaction 里不再有旧 FX.* 视觉（换掉，不是叠上去）', old);
+  ok(usedFx.every(x => x === 'text'), '只保留 FX.text（信息浮字）', usedFx);
+
+  /* 链式电弧改走 ElemFX.link，不再是 1px 的 FX.beam */
+  const chAt = game.indexOf('chainReaction(from, count');
+  ok(chAt > 0, '能定位 chainReaction');
+  const chBody = game.slice(chAt, game.indexOf('applyElemReaction(r, e, final) {'));
+  ok(/ElemFX\.link\s*\(/.test(chBody), 'chainReaction 改用 ElemFX.link 画链段');
+  ok(!/FX\.beam\s*\(/.test(chBody), 'chainReaction 里不再有 FX.beam');
+
+  /* explodeAt：只给「蒸汽」这一处开了 noFx，其他调用点一个字节都没变 */
+  ok(/if \(!noFx\) \{/.test(game), 'explodeAt 支持只结算不画通用爆炸');
+  const noFxCall = (game.match(/explodeAt\([^)]*, undefined, true\)/g) || []).length;
+  ok(noFxCall === 1, 'noFx 只在蒸汽这一处传 true', noFxCall);
+
+  /* 数值逻辑一行没改：关键数值行都还在 */
+  const keep = [
+    ['e.dotDmg = Math.round((e.dotDmg || 0) * r.dotMul)', '焚毒的 dot 加成'],
+    ['e.slowT *= r.freezeMul', '感电冻结的减速延长'],
+    ['e.shred = Math.max(e.shred || 0, r.shred)', '腐霜的易伤'],
+    ['this.shield = add', '圣霜的护盾'],
+    ['this.healMist = { t: r.mist.dur, tick: 0, dps: r.mist.dps, r: r.mist.r }', '解毒雾的计时器'],
+    ['final * r.dmg / 100 * (st.critDmg || 150) / 100', '等离子的必定暴击'],
+    ['final * kp', '净化的亡灵加伤'],
+    ['final * r.dmg / 100 * kb', '天罚的 Boss 加伤'],
+    ['this.knockEnemy(e, r.knock)', '蒸汽的击退'],
+    ['this.healPlayer(this.state.stats.hpMax * r.heal / 100)', '净化的回血']
+  ];
+  for (const [frag, why] of keep) {
+    ok(body.indexOf(frag) >= 0, '数值逻辑保留：' + why, frag);
+  }
+}
+
+console.log('\n【8】index.html 加载顺序');
 {
   const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
   const at = s => html.indexOf('src="' + s + '"');
