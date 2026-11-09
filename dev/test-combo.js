@@ -220,6 +220,11 @@ console.log('\n【8】游戏接线（静态：挂点存在、位置对、生成�
   ok(count(/damageEnemy\(e, dmg, crit, \{ tag: 'proj', skill: id \}\)/g) === 2,
     '两处符箓投射物都带了 skill:id', count(/skill: id/g));
 
+  /* 行为层 strike 才是技能伤害的**主路径**（它带元素、不带 tag）。
+   * 不把技能 id 带过去，「聚怪 → 塌陷」就永远判不出「另一发命中」。 */
+  const beh = fs.readFileSync(path.join(root, 'src', 'skill-beh.js'), 'utf8');
+  ok(/skill: ctx\.id/.test(beh), '行为层 strike 把技能 id 带进了 damageEnemy');
+
   /* 生成物一个字都不许动（组合层不是它们的产物） */
   const gen = ['src/sfx.js', 'src/fx2.js', 'src/boss-cast.js', 'src/data/data-bosskits.js'];
   const dirty = gen.filter(f => fs.readFileSync(path.join(root, f), 'utf8').indexOf('ComboFX') >= 0);

@@ -6972,21 +6972,15 @@ const Game = {
      * [P3d] 双元素时按「主 → 副」顺序试，先撞上的那一组算数。 */
     this.tryElemReaction(e, elem, final, opts, inj ? [inj.key, inj.sub].filter(Boolean) : null);
 
-    /* [U3] 组合特效层（4 组技能内组合 + 符毒绿符钉）。
-     * 挂在元素反应之后：此时 elem 已算完、e.hp>0 已确认（死亡判定在上面 return 了）。
-     * 只读状态、只画 —— 不碰 e.pos / dmg / 敌人字段（PLAN §14）。
-     * silent 的 dot 每跳都会进这里，过滤交给组合层自己（它认 opts.silent / opts.react）。
-     * id 取自 opts.skill（异步投射物只能靠调用点显式传）或 this._castSkill（同步结算窗口）。 */
+    /* [U3] 组合特效层：4 组技能内组合 + 符毒绿符钉。挂元素反应之后 ——
+     * elem 已算完、e.hp>0 已确认。只读状态、只画，不碰任何数值。 */
     if (typeof ComboFX !== 'undefined' && ComboFX && ComboFX.onHit) {
       try {
         ComboFX.onHit(e, {
-          id: opts.skill || this._castSkill || '',
-          tag: opts.tag || this._tag || '',
-          elem: elem,
-          silent: !!opts.silent,
-          react: !!opts.react
+          id: opts.skill || this._castSkill || '', tag: opts.tag || this._tag || '',
+          elem: elem, silent: !!opts.silent, react: !!opts.react
         });
-      } catch (err) { /* 组合层出错只吞掉，不影响伤害结算 */ }
+      } catch (err) { /* 组合层出错不影响伤害结算 */ }
     }
 
     /* [P2b·法师⑤] 法相命中附加（台阶 Lv5）：窗口内的**每一次命中**都带上主元素效果。

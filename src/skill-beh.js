@@ -1083,8 +1083,16 @@ function makeBehCtx(G, id, o) {
     strike(e, mul, opts) {
       if (!e || e.dead) return;
       const { dmg, crit } = G.rollDamage(ctx.base * mul);
+      /* [U3] skill:id —— 行为层的 strike 是技能伤害的**主路径**（它带元素、不带 tag）。
+       * 不把技能 id 带过去，组合层就认不出「这一发是哪只技能」：
+       *   · 「聚怪 → 塌陷」要拿它跟开窗的那一发比，认不出就永远判不出「另一发」；
+       *   · 「符毒绿符钉」只能靠元素去猜，别的圣系技能会一起误触发。
+       * damageEnemy 不认识这个键，它只是给组合层判身份的凭据。 */
       G.damageEnemy(e, dmg, opts && opts.forceCrit ? true : crit,
-        Object.assign({ elem: (o.sk.elem && o.sk.elem !== 'none') ? o.sk.elem : undefined }, opts || {}));
+        Object.assign({
+          elem: (o.sk.elem && o.sk.elem !== 'none') ? o.sk.elem : undefined,
+          skill: ctx.id
+        }, opts || {}));
     },
     /* 延迟执行：换图 / 死亡就作废，避免「下一张图被上一张图的余震打死」 */
     later(ms, fn) {

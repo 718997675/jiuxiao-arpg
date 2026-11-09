@@ -2626,8 +2626,9 @@ node --check：game / ui / worldboss / domain / data-buff-icons / 两个探针
 
 ## U3 · V5 组合特效进游戏（2026-11-09 开工 · 未完成）
 
-> 当前：**U3-1 / U3-2 / U3-3 已 ✅**（组合层 `src/combo-fx.js` 落地、静态契约 75/0、
-> 游戏三处挂点接好）；**下一步 U3-4 真机探针**。`docs/status/vfx-merge.md` 的 U3 仍标 🔄（整节点未完成）。
+> 当前：**U3 全部收口（U3-1 ~ U3-5 ✅）**。组合特效层 `src/combo-fx.js` 已接进游戏：
+> `castSkill` 尾部 / `damageEnemy` 命中口 / `loadMap` 清场三处挂点，7 条规则改读游戏真实状态。
+> **下一步 U4（元素反应 10 组专属视觉）**。`docs/status/vfx-merge.md` 的 U3 已标 ✅。
 
 ### 先说清楚：不是把试验台的 `comboApply` 拷进游戏
 
@@ -2681,14 +2682,40 @@ node --check：game / ui / worldboss / domain / data-buff-icons / 两个探针
 | U3-1 | 只读调查 + 路标 | ✅ | `vfx-merge.md` U3 标 🔄 + 本章（提交 `76767a0`） | 7 条规则的判据逐条对上游戏字段，无「照抄试验台」的口径 |
 | U3-2 | 组合层数据 + 视觉 | ✅ | 新建 `src/combo-fx.js`（7 条规则表 / ICD / 7 套 `FXK` 视觉 / `stats()` / `setClock`）+ `index.html` 在 `vfx.js` 后插脚本 + `dev/test-combo.js` | `node --check` 全过；**静态契约 64/0**：接口 / 7 条判据正反例 / 4 条即时组合真的画了 / 敌人字段零改动 / silent·react·双 ICD / 聚怪窗口 / 二段走 `VFX._later` / 关 `FXK` 不抛错 / 加载顺序 |
 | U3-3 | 游戏接线 | ✅ | `src/game.js` 三处挂点（`castSkill` 尾部 `ComboFX.onCast` / `damageEnemy` 命中口 `ComboFX.onHit` / `loadMap` 清场 `ComboFX.reset`）+ 两处符箓投射物补 `skill:id`；`dev/test-combo.js` 加【8】接线静态契约 | 静态契约 **75/0**（原 64 + 新 11）；四个 `--check` 全绿；`smoke` **ERRORS none**（cast 13/13/12，fail 全空）；`ComboFX` 全局无重名；生成物零污染 |
-| U3-4 | 真机探针 | ⬜ | `dev/probe-combo.js` | 7 条逐条看到触发 + 视觉调用、ICD 生效、`silent` 不重复播、零 console error |
-| U3-5 | 回归 + 台账收口 | ⬜ | 三份台账 + 当日日志 + commit + push | 全套回归读数写进台账；U3 标 ✅，下一步 U4 |
+| U3-4 | 真机探针 | ✅ | `dev/probe-combo.js` | **33/0**：7 条规则逐条触发 + 真机 FXK 被调过 + 坐标全部有限；ICD 三档（同目标 2s / 全局 0.5s）；silent/react 不触发；换图清窗；零 console error |
+| U3-5 | 回归 + 台账收口 | ✅ | 三份台账 + 当日日志 + commit | 静态契约 **76/0**；技能契约十份全绿（P3 106/0、P5 974/0、P2b 924/0、P1c 363/0…）；`smoke` ERRORS none；`mobile-layout` 全绿；四个 `--check` 全绿 |
 
 ### 下一步
 
-按 U3-3 → U3-5 顺序做，**每做完一个节点写台账 + commit + push**，别攒着写。
-U3-3 四处接线：`castSkill` 开头算 `comboEdgeFull`、尾部 `ComboFX.onCast`、
-`damageEnemy` 命中口 `ComboFX.onHit`、换图清场段 `ComboFX.reset()`。
+U3 已全部收口。**下一步 U4：元素反应 10 组专属视觉**（`docs/status/vfx-merge.md` U4 行）——
+机制 P3a 已 10/10 落地（走 `damageEnemy` 一个口），但 §9.2 的蒸汽 / 等离子 / 绿火 /
+晶体爬弧 / 霜面腐蚀 / 链式绿弧 / 金火等视觉语言还没落进游戏。
+动手前先读 `docs/status/vfx-merge.md` 的 U4 行 + `docs/SKILL-VFX-PLAN.md §9.2`。
+
+### U3 收口时才发现的一件要紧事：**技能伤害的主路径不是 case，是行为层**
+
+`case 'xxx'` 里那些 `this.damageEnemy(...)` 只是一部分。**真正打伤害的多数是
+`skill-beh.js` 的 `c.strike()`**（行为层的「命中 / 每秒跳伤 / 持续区域」都走它），
+而它原来只带 `elem`（取 `sk.elem`）、**不带 tag、更不带技能 id**：
+
+```js
+G.damageEnemy(e, dmg, crit,
+  Object.assign({ elem: (o.sk.elem && o.sk.elem !== 'none') ? o.sk.elem : undefined }, opts || {}));
+```
+
+后果是组合层认不出「这一发是哪只技能」：
+- 「聚怪 → 塌陷」要拿命中方跟开窗方比 id，认不出就**永远判不出「另一发命中」**；
+- 「符毒绿符钉」只能靠 `elem === 'sigil'` 去猜，别的圣系技能会一起误触发。
+
+修法一行：`Object.assign({ elem: ..., skill: ctx.id }, opts || {})`。
+`ctx.id` 就在手边（`makeBehCtx(G, id, o)` 的第一个参数）。
+另有两处符箓投射物（`talisman` / `talismanarrow`）的 `onHit` 补 `skill: id` ——
+投射物命中时施法窗口早关了，`this._castSkill` 已被清零。
+
+> 记这一条是因为它**不会被任何静态检查发现**：契约全绿、探针也绿，
+> 唯独「聚怪」这一条规则永远不成立 —— 除非有人真的去放一次聚怪技能。
+> 这是 U1 之后第二次吃到「口径对不上」的亏，教训一致：
+> **接线要落在「真正打伤害的那一个口」上，不是落在看起来像的那个口上。**
 
 ### 卡点 / 坑（明天别再踩一遍）
 
@@ -2713,3 +2740,8 @@ U3-3 四处接线：`castSkill` 开头算 `comboEdgeFull`、尾部 `ComboFX.onCa
    `FXK` 原语内部读 `FX.q` 降级，组合层不要再写一份 `if (FX.q < 1)`。
 8. **验收不能只跑契约**：U1 有过「契约全绿但 NaN 粒子照样算数」的前车之鉴，
    U3 必须真机逐条看到 7 条成立 + 零报错。
+9. **在 `damageEnemy` 里插代码会踩到 P3 契约的「距离上限」**：
+   `dev/test-skill-p3.js` 用 `tryElemReaction(...)[\s\S]{0,600}法相命中附加` 断言
+   「反应判定必须排在法相挂状态之前」。在两者之间插一大段注释就把它顶过 600 字符 → 契约红。
+   **挂点块要写短**（注释两行、代码压紧），别在 `damageEnemy` 里铺长篇大论。
+   这不是契约太严，是提醒「这两句的先后是有讲究的，别乱插东西进去」。
