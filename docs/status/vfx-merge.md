@@ -10,7 +10,7 @@
   `docs/status/boss-kits.md`（B 线 B1~B25）。本文件只管「还差什么、按什么顺序合」。
 - 更新：2026-11-07；进度更新：2026-11-09（U2 / U3 / U4 收口）
 
-> 当前：**U1 / U2 / U3 / U4 已收口**（U1 `--live` 113/0、默认 39/0；U2 `probe-buffrow` 29/0 + `probe-buff-icons` 11/0；U3 `test-combo` 76/0 + `probe-combo` 33/0；U4 `test-elemfx` 74/0 + `probe-elemfx` 94/0）；**下一步 U5 近战武器附魔**。两条线的特效代码都已在 feat/skill-refactor 跑通，但 origin/main 一个特效文件都没有。仍按人物先合、BOSS 后合的顺序走。
+> 当前：**U1 / U2 / U3 / U4 已收口**（U1 `--live` 113/0、默认 39/0；U2 `probe-buffrow` 29/0 + `probe-buff-icons` 11/0；U3 `test-combo` 76/0 + `probe-combo` 33/0；U4 `test-elemfx` 74/0 + `probe-elemfx` 94/0）；**U5 近战武器附魔 🔄 进行中**（2026-11-09 开工路标见 `skill-refactor.md` 的 U5 章）。两条线的特效代码都已在 feat/skill-refactor 跑通，但 origin/main 一个特效文件都没有。仍按人物先合、BOSS 后合的顺序走。
 
 ## 一句话现状
 
@@ -45,7 +45,7 @@
 | U2 | 人物 · **V1 HUD 增益条整块改造已收口**：`#buffbar` 全清、`#buffrow` 落在血条正下方、17 枚符号图标出图可读、`renderBuffs` 改 `Map<key,el>` 增量 diff（零 `innerHTML`）、叠层结构化 `×N`、稳定 `st:*` key + `ord` 排序、`#trialHud` 靠 `--buff-h` 避让、到期 200ms 淡出 | ✅ | `index.html` / `src/ui.js` / `src/game.js` / `src/skill-beh.js` / `src/mobile.js` / `src/worldboss.js` / `src/domain.js` / `src/data/data-buff-icons.js` / `dev/probe-buffrow.js` / `dev/probe-buff-icons.js` | `probe-buffrow` **29/0**、`probe-buff-icons` **11/0**、PLAN §13 第 7~11 条逐条有判据、`mobile-layout` 6 视口全绿、`smoke` ERRORS none；U1 尺子回归 `--live` **113/0** |
 | U3 | 人物 · **V5 组合特效进游戏**：`comboApply` 只在试验台（`docs/vfx-playground.html` 2 处，`src/` 0 处）。技能内组合 4 组（freeze / burn / exec / gather）+ 职业核心连携 3 条（刃势巨刀 / 法相手掌光点 / 符毒绿符钉）全还只是演示。**接线口径已改**：挂 `castSkill` 尾部 + `damageEnemy` 命中口（不挂 `VFX.playFor`，SKFX 命中即 return），新建独立 `src/combo-fx.js`，判据读游戏真实状态 | ✅ | `src/combo-fx.js`（新，非生成物）+ `index.html` 插脚本 + `src/game.js` 三处挂点 + `src/skill-beh.js` 的 `strike` 带 `skill:id` + `dev/probe-combo.js` | 真机探针逐条看到 7 条组合成立、零报错；`smoke` / `mobile-layout` / 四个 `--check` 全绿 |
 | U4 | 人物 · **元素反应 10 组专属视觉**：机制 P3a 已 10/10 落地（走 `damageEnemy` 一个口），但 §9.2 的蒸汽 / 等离子 / 绿火 / 晶体爬弧 / 霜面腐蚀 / 链式绿弧 / 金火等视觉语言没落进游戏 | ✅ | `src/elem-fx.js`（新，非生成物）+ `index.html` 插脚本 + `src/game.js` 的 `applyElemReaction` 一处挂点（旧 `FX.*` 全换掉、`chainReaction` 走 `ElemFX.link`、`explodeAt` 加 `noFx`）+ `dev/test-elemfx.js` + `dev/probe-elemfx.js` | 静态契约 **74/0**、真机探针 **94/0**：10 组逐条触发 + **10 组原语序列两两不同**（不是只换颜色）+ 坐标全有限 + 反应期间旧 `FX.*` 零调用；`smoke` / `mobile-layout` / 技能契约十份 / 四个 `--check` 全绿 |
-| U5 | 人物 · **V4 近战武器附魔**：`enchant` 原语在 `fx-kit.js` / `vfx.js` / `data-vfx.js` 全是 0 处；Lv10「常驻光效」目前只有刀身发烫脉冲，不是真附魔 | ⬜ | `src/fx-kit.js` + `data-vfx.js` 的 Lv10 patch | 6 元素近战各一套剑身外观，≤6 draw call |
+| U5 | 人物 · **V4 近战武器附魔**：`enchant` 原语在 `fx-kit.js` / `vfx.js` / `data-vfx.js` 全是 0 处；Lv10「常驻光效」目前只有刀身发烫脉冲，不是真附魔 | 🔄 | `src/fx-kit.js` 常驻层 + `data-vfx.js` 的 Lv10 patch（仅作声明）+ `src/game.js` 每帧同步 | 6 元素近战各一套剑身外观（不只是换色），≤6 draw call |
 | U6 | 人物 · **V6 打磨 + 把验收清单勾完**：音效三段对齐（台账 0 处提及）、低画质降级逐项核验、录屏对比；`SKILL-VFX-PLAN.md §13` 14 条逐条给判据，含「同职业 5 招灰度后认出 ≥4」的人眼结论；逐条配方「该几颗 / 什么色」未逐个调（V3b 只重配了三条 ④ 位） | ⬜ | `audio/` / `dev/vfx-shot.js` / `docs/SKILL-VFX-PLAN.md §13` | 14 条全部有结论；`smoke` + `mobile-layout` 全绿 |
 | U7 | BOSS · **老兜底 11 个手写 case 一行没动**：`src/game.js:8579+` 的 `quake` / `frostnova` / `curse` 仍**当帧结算零前摇**（公平性），`fireline` 仍是 6 个圆串、`charge` 预警刷在自己脚下、主视觉全贴地圆。`BOSS-VFX-PLAN.md` 的 P0 四条（补 0.7~1.1s 前摇 + 形状匹配预警）没做 | ⬜ | `src/game.js` 的 `bossPattern` 老 switch 兜底段 | 静态扫描前摇覆盖率；>1.0× 伤害的招全部 ≥0.7s 且形状匹配 |
 | U8 | BOSS · **世界 Boss 6 只不在 `BOSS_KIT`**，走 `WorldBoss` 另一套调度（`game.js:8425` 注释自承），B24/B25 变形层不覆盖。要给它们「自己的四拍」得**另开一层**，别塞进 `BOSS_TWIST` | ⬜ | 新数据层 + `src/world-boss.js` 接线 | 6 只全量试放零空招；真机探针 |
@@ -139,14 +139,13 @@ U1 逐只比对过 37 组 `SKFX / 配方` 读数：0.166 ~ 6.514、中位 1.003�
 bloodrage 1.29× · thrust 1.38× · heal 1.62×。配方层 `iceshard` 也只有 7% 余量，
 仍是最贴地板的一只，别把「暖机后稳定过线」误读成「它够显眼」。
 
-## 下一步（U1 / U2 已收口，从 U3 开始，别跳）
+## 下一步（U1~U4 已收口，U5 进行中，别跳）
 
-1. `U3` 人物 · **V5 组合特效进游戏**：`comboApply` 只在试验台（`docs/vfx-playground.html` 2 处，
-   `src/` 0 处）。技能内组合 4 组（freeze / burn / exec / gather）+ 职业核心连携 3 条
-   （刃势巨刀 / 法相手掌光点 / 符毒绿符钉）目前全只是演示。落点 `src/vfx.js` 或新解释器分支 +
-   `src/game.js` 的 `playSkillVfx`；验收 = 真机探针逐条看到组合成立、零报错。
-   U2 已收口（17 枚符号图标 / 增量 diff / 叠层 `×N` / 稳定 `ord` / `#trialHud` 避让 / 200ms 淡出），
-   别回头重做。
+1. `U5` 人物 · **V4 近战武器附魔**（🔄）：6 元素各一套剑身外观，≤6 draw call。
+   开工路标与三条设计决策见 `skill-refactor.md` 的 U5 章 —— 最关键一条是
+   **配方层在正常游戏里不播**（U1 口径 SKFX 为准），所以 Lv10 patch 只作数据声明，
+   常驻层必须由 `game.js` 每帧按「有效等级 + 注入包」同步，别指望 `VFX.playFor` 触发。
+   U3 / U4 已收口（7 条组合 / 10 组元素反应视觉进游戏），别回头重做。
 2. 改 `src/sfx.js` **一律走生成器**：改 `docs/vfx-playground.html` →
    `node dev/build-skillvfx.js --write` → `node dev/build-skillvfx.js --check`。
    别手改生成物（`abd20ad` 修的 `hitArea` stub 就是这么来的）。

@@ -2911,3 +2911,65 @@ G.damageEnemy(e, dmg, crit,
 9. **FXK 原语内部还会再调原语**（`bolt` 内部撒 `spr:spark`、`shock` 内部撒 `spr:dust`），
    所以真机序列比配方长。判「形状互不重样」用 `op:tex` 序列或 `stats().lastDraw.parts`
    都行，但**别拿真机调用次数当配方长度**。
+
+---
+
+## U5 · V4 近战武器附魔（2026-11-09 开工路标 · 未完成）
+
+统一计划 `docs/status/vfx-merge.md` 的 U5：PLAN §7.4「Lv10 加常驻光效、enchant 常开」
++ §8「6 元素近战版各自一套剑身外观」，验收「6 元素各一套，≤6 draw call」。
+
+### 开工时的代码事实（逐条核过，别按 PLAN 的勾选读）
+
+- `enchant` 在 `src/fx-kit.js` / `src/vfx.js` / `src/data/data-vfx.js` **全是 0 处**。
+- `src/sfx.js:2343` 那个 `FX.enchant(on, color)` 是**实验室 FX 自己的原语**（生成物，
+  源在 `docs/vfx-playground.html`）：一块 `PlaneGeometry(0.22,1.2)` 单色 `TEX.slash`，
+  挂 `ACT.playerBody.userData.armPivot`，只在 `avatar`（剑神降世开窗）里调一次。
+  它**不是常驻**、没有 off 生命周期、没有 6 元素差异、也不在游戏 FXK 命名空间里 ——
+  不能拿它当 U5 已完成，更不要去改生成物。
+- `src/game.js:3997 bladeEdgeVfx(dt)` 是「刃势满层」的脚下反馈：0.6 秒一次
+  `FX.ring` + 5 颗 `FXK.spr`，**量的是地面，不是剑身**。台账说的「刀身发烫脉冲」指它。
+- 挂点：`CharForge.build(cls)` 给 `a.parts.weaponHand`（`src/charforge.js:292`），
+  `a.weapon` 挂在它下面（:335）；装备武器走 `src/skel.js:391` 的 `a.mounts.weapon`。
+  `Game.setupPlayer()` 把 actor 存 `this.actor`、group 存 `this.playerGroup`。
+- `FX.update(dt)`（`src/fx.js:1202`）已经调 `FXK.update(dt)`，所以常驻层的动画
+  推进挂在 `FXK.update` 里就行，不用另开 timer / 不用动主循环结构。
+
+### 本节点的三条设计决策（先把坑钉死再写代码）
+
+1. **不靠 `VFX.playFor` 触发附魔**。U1 定的双演出层口径是 `SKFX` 为准，
+   37 只技能在游戏里**一次配方层都不会播**。所以「Lv10 patch 里写 `enchant`」
+   只能当**数据声明**，解释器不会为它播任何东西；真正上场的是 `game.js` 每帧
+   按玩家状态同步的**常驻层**（`updateSkillForm(dt)` 里加一个 `updateEnchant(dt)`）。
+   漏掉这一条，patch 会写成「契约全绿但游戏里一个像素都没有」。
+2. **元素来源走注入包，不另建分支表**。PLAN §8 的「V4 不要手工维护元素→特效表」
+   在 U5 仍然有效：`skillInjectPack(id)` 给主 / 副元素（70-30），无注入时退回
+   `SKILLS[id].elem` 或 `phys`。6 套外观的键与 `ELEM_PROFILE` 完全一致
+   （`phys / fire / ice / lightning / poison / sigil`）。
+3. **6 套不只是换色**（U4 的教训）：每套至少三个维度不同 ——
+   剑身贴图格、accent 的几何种类、粒子运动方向（上升 / 硬停 / 折跳 / 下沉 / 停留 / 火星）。
+    PLAN §8 的近战版逐条对应：火=橙红流光+火星、冰=结霜+冰裂、雷=电弧+分叉、
+    毒=滴落+绿雾、圣=金光+光环、物理=白刃+火星。
+
+### 落地形状
+
+| 层 | 改什么 |
+|---|---|
+| `src/data/data-vfx.js` | 新增 `ENCHANT_PROFILE` 6 套（色 / 剑身贴图 / accent 类型 / 粒子参数）；`VFX_KEYS` 放开 `enchant`；15 个位的 `tiers[10]` 各写一行 `enchant: true`（`vfxCost` 只算 cast/loop/impact，不影响预算表） |
+| `src/fx-kit.js` | 新增 `FXK.enchant(cfg)` 常驻层：一组 mesh 挂在武器骨骼上（blade / halo / accent）+ 一个固定容量粒子池；`FXK.update` 里推 UV 滚动 / 脉动 / 发射回收；`clear()` 一并摘掉；`stats()` 加一项 |
+| `src/game.js` | `enchantState()`（按 `skillLevel ≥ 10` + `vfxRecipe(...).enchant` + 注入包算状态）与 `updateEnchant(dt)`，挂进 `updateSkillForm(dt)`；`FXK.enchant` 内部做状态比对，只在元素 / 挂点变化时重建，不每帧 new |
+
+**预算**：blade + halo + accent + 粒子池 = 4 次绘制，副元素叠一层 accent = 5，
+上限 6 留一格余量；`FX.q < 1` 时 accent / 粒子池隐藏，只留发光 2 次（PLAN「只留发光」）。
+材质走 `fxMat` / `fxDecalMat` 缓存，**粒子死了不许 dispose 材质**（U1 `clear()` 踩过）。
+
+### 下一步（按序做，每步绿了再走）
+
+1. 路标入台账 → commit。
+2. 数据层 `ENCHANT_PROFILE` + 15 个 Lv10 patch + `dev/test-enchant.js` 静态契约。
+3. `FXK.enchant` 常驻层 + 低画质降级 + `clear()` / `stats()`。
+4. `game.js` 接线（有效等级 + 注入包 → 常驻层），静态契约补接线断言。
+5. `dev/probe-enchant.js` 真机探针：6 套逐元素上场、视觉签名两两不同、
+   差异像素 > 0、draw call ≤6、坐标全有限、关闭后零残留、低画质降级。
+6. 全量回归：`test-vfx-dsl` / `test-vfx-kit` / `vfx-bench` / `vfx-skill-vis`（默认 + `--live`）
+   / `smoke` / `mobile-layout` / 技能契约 / 四个 `--check`；台账 U5 改 ✅ + commit。
