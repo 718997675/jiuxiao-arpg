@@ -1768,6 +1768,9 @@ const Game = {
      * 结算还挂在 `Domains.list` 里 —— 不清的话回城之后人还站在毒圈上，
      * 而且新图里根本找不到是谁放的。 */
     if (typeof Domains !== 'undefined') Domains.clear();
+    /* [U3] 组合特效层：聚怪窗口与 ICD 一起作废 —— 把「上一张图的聚怪」
+     * 带进村里，下一张图随便打一下就会莫名塌一次。 */
+    if (typeof ComboFX !== 'undefined' && ComboFX && ComboFX.reset) ComboFX.reset();
 
     this.buffs = []; this.shield = 0; this.shieldT = 0; this.regen = 0; this.poisonT = 0; this.playerSlow = 0; this.playerSlowT = 0; this.reviveT = 0;
     /* [P3a] 解毒雾（圣系反应的玩家侧计时器），换图 / 重开都要清 */
@@ -4338,6 +4341,11 @@ const Game = {
      * 一定会走到收尾清零 —— 补刀（resetOnKill）只认「这发技能同步打死的」，
      * 毒 / 火的延迟跳伤发生时标记已经清掉，不会误触发。 */
     const bBeh = (typeof this.branchBeh === 'function') ? this.branchBeh(id) : null;
+    /* [U3] 刃势满层标记必须在 switch **之前**算：断岳斩一进 case 'avatar'
+     * 就 bladeState().mask = 0（4832），等 castSkill 尾部再读 bladeEdge() 已经是 0。
+     * 组合层只读这个快照，自己不碰兵形状态。 */
+    const comboEdgeFull = (s.cls === 'warrior' && id === 'avatar' &&
+      this.bladeFinisherOn() && this.bladeEdge() >= this.bladeEdgeMax());
     this._castSkill = id;
     /* [P2c] 光效随等级变亮：把**有效等级**折成亮度倍率交给 FX（1 ~ 1.22）。
      * 写在这里是因为上面每一道闸门都可能 return —— 资源不足 / 冷却中 / 没解锁
@@ -5701,7 +5709,9 @@ const Game = {
                * 全额的话，「追 2 次」等于 +140% 伤害，比 Lv5 / Lv9 加起来还猛。 */
               const seekMul = (proj && proj.seekUsed) ? talSeekPct : 1;
               const { dmg, crit } = this.rollDamage(st.atk * 1.7 * spow * seekMul);
-              this.damageEnemy(e, dmg, crit, { tag: 'proj' });
+              /* [U3] skill:id —— 符箓是投射物，命中时施法窗口早关了，
+               * this._castSkill 已被清零，组合层认不出「这是符」就画不出绿符钉。 */
+              this.damageEnemy(e, dmg, crit, { tag: 'proj', skill: id });
               // 符纸炸开 → 天雷落地
               /* [P5b] 命中段走符箓位配方：折线雷（`bolt`，带分叉）+ 朱砂字。
                * 原来这里是一条直 `beam` + 一块地面圆片 + 一簇方块 —— 三样加起来
@@ -5841,7 +5851,7 @@ const Game = {
             homing: target ? target.pos : null, homeTurn: 7,
             onHit: (e, proj) => {
               const { dmg, crit } = this.rollDamage(st.atk * 1.0 * spow);
-              this.damageEnemy(e, dmg, crit, { tag: 'proj' });
+              this.damageEnemy(e, dmg, crit, { tag: 'proj', skill: id });
               /* [P5b] 命中段走万剑位配方（剑痕 / 冲击）。符是三张各飞各的，
                * 落点不同、落地时间也不同，所以不会在同一帧叠成一摞 ——
                * 这正是它可以直接整段播、而「连锁闪电」必须收着播的原因。 */
@@ -6125,6 +6135,23 @@ const Game = {
      * 放在 switch 之后、标记清零之前：这一发已经结算完，记的是「用过了」，
      * 与「打没打中」无关 —— ① 是左键、一秒能点十次，按命中数记账等于白送。 */
     if (typeof this.bladeAddEdge === 'function') this.bladeAddEdge(id);
+    /* [U3] 组合特效层（2 条施法连携 + 聚怪开窗）。
+     * 放在 bladeAddEdge 之后、标记清零之前 —— 刃势满的判据在 switch **之前**
+     * 就已经算成 comboEdgeFull（断岳斩一进 case 'avatar' 就把 mask 清零了，
+     * 到这里再读 bladeEdge() 已经是 0）。
+     * 组合层只读状态、只画，不改任何数值；它出错也不能让这发技能哑掉。 */
+    if (typeof ComboFX !== 'undefined' && ComboFX && ComboFX.onCast) {
+      try {
+        ComboFX.onCast(id, {
+          cls: s.cls,
+          slot: (typeof skillArchSlotOf === 'function') ? skillArchSlotOf(s.cls, id) : 0,
+          auraOn: (typeof this.elemAuraOn === 'function') ? this.elemAuraOn() : false,
+          edgeFull: comboEdgeFull,
+          gather: !!(bBeh && bBeh.gather),
+          pos: pp, aim: aim, dir: dir
+        });
+      } catch (err) { /* 组合层出错只吞掉，不影响这发技能 */ }
+    }
     this._tag = null;      // [S1] 技能结算完毕，标记归零，避免污染普攻
     this._castSkill = null;   // [P2] 击杀来源标记同步清零（见施法入口的注释）
     this._elem = null;        // [P3b] 注入只在这一次施法的窗口内有效（见 curInject）
@@ -6944,6 +6971,23 @@ const Game = {
      * 先看原伤害再看附加：命中元素优先，避免「注入元素抢了本命元素的反应」。
      * [P3d] 双元素时按「主 → 副」顺序试，先撞上的那一组算数。 */
     this.tryElemReaction(e, elem, final, opts, inj ? [inj.key, inj.sub].filter(Boolean) : null);
+
+    /* [U3] 组合特效层（4 组技能内组合 + 符毒绿符钉）。
+     * 挂在元素反应之后：此时 elem 已算完、e.hp>0 已确认（死亡判定在上面 return 了）。
+     * 只读状态、只画 —— 不碰 e.pos / dmg / 敌人字段（PLAN §14）。
+     * silent 的 dot 每跳都会进这里，过滤交给组合层自己（它认 opts.silent / opts.react）。
+     * id 取自 opts.skill（异步投射物只能靠调用点显式传）或 this._castSkill（同步结算窗口）。 */
+    if (typeof ComboFX !== 'undefined' && ComboFX && ComboFX.onHit) {
+      try {
+        ComboFX.onHit(e, {
+          id: opts.skill || this._castSkill || '',
+          tag: opts.tag || this._tag || '',
+          elem: elem,
+          silent: !!opts.silent,
+          react: !!opts.react
+        });
+      } catch (err) { /* 组合层出错只吞掉，不影响伤害结算 */ }
+    }
 
     /* [P2b·法师⑤] 法相命中附加（台阶 Lv5）：窗口内的**每一次命中**都带上主元素效果。
      *

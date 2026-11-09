@@ -179,5 +179,64 @@ console.log('\n【7】index.html 加载顺序');
     '没有重复引入');
 }
 
+console.log('\n【8】游戏接线（静态：挂点存在、位置对、生成物没被碰）');
+{
+  const game = fs.readFileSync(path.join(root, 'src', 'game.js'), 'utf8');
+  const lines = game.split('\n');
+  const lineOf = (needle, from) => {
+    for (let i = from || 0; i < lines.length; i++) if (lines[i].indexOf(needle) >= 0) return i;
+    return -1;
+  };
+  const count = (re) => (game.match(re) || []).length;
+
+  /* 挂点：三个口各一个，多了少了都不行 */
+  ok(count(/ComboFX\.onCast\(/g) === 1, 'onCast 挂点恰好一处', count(/ComboFX\.onCast\(/g));
+  ok(count(/ComboFX\.onHit\(/g) === 1, 'onHit 挂点恰好一处', count(/ComboFX\.onHit\(/g));
+  ok(count(/ComboFX\.reset\(/g) === 1, 'reset 挂点恰好一处', count(/ComboFX\.reset\(/g));
+
+  /* 位置：onCast 在 castSkill 内（且在 _tag 清零之前）、onHit 在 damageEnemy 内、
+   * reset 在 loadMap 内 —— 挂错函数 = 规则永远不成立或每帧触发。 */
+  const iCast = lineOf('castSkill(id) {');
+  const iHit = lineOf('damageEnemy(e, dmg, crit, opts = {}) {');
+  const iMap = lineOf('loadMap(mapId) {');
+  const iOnCast = lineOf('ComboFX.onCast(id,');
+  const iOnHit = lineOf('ComboFX.onHit(e, {');
+  const iReset = lineOf('ComboFX.reset()');
+  const iTagClear = lineOf('this._tag = null;      // [S1] 技能结算完毕');
+  ok(iCast >= 0 && iOnCast > iCast && iOnCast < iTagClear,
+    'onCast 在 castSkill 内、且在 _tag 清零之前', { iCast, iOnCast, iTagClear });
+  ok(iHit >= 0 && iOnHit > iHit, 'onHit 在 damageEnemy 内', { iHit, iOnHit });
+  ok(iMap >= 0 && iReset > iMap, 'reset 在 loadMap 内', { iMap, iReset });
+
+  /* 刃势满层判据必须在 switch **之前**算好：断岳斩一进 case 'avatar'
+   * 就把 mask 清零，尾部再读 bladeEdge() 已经是 0。 */
+  const iEdge = lineOf('const comboEdgeFull =');
+  const iAvatarCase = lineOf("case 'avatar': {");
+  ok(iEdge > 0 && iAvatarCase > 0 && iEdge < iAvatarCase,
+    'comboEdgeFull 在 switch 之前算（case avatar 之后就读不到刃势了）', { iEdge, iAvatarCase });
+  ok(lineOf('edgeFull: comboEdgeFull') > 0, 'comboEdgeFull 传给了组合层');
+
+  /* 符箓是投射物：命中时施法窗口早关了，只能靠调用点显式传 skill */
+  ok(count(/damageEnemy\(e, dmg, crit, \{ tag: 'proj', skill: id \}\)/g) === 2,
+    '两处符箓投射物都带了 skill:id', count(/skill: id/g));
+
+  /* 生成物一个字都不许动（组合层不是它们的产物） */
+  const gen = ['src/sfx.js', 'src/fx2.js', 'src/boss-cast.js', 'src/data/data-bosskits.js'];
+  const dirty = gen.filter(f => fs.readFileSync(path.join(root, f), 'utf8').indexOf('ComboFX') >= 0);
+  ok(dirty.length === 0, '生成物未被组合层污染', dirty);
+
+  /* 全局重名 = 整页白屏：ComboFX 只能在 combo-fx.js 里定义一次 */
+  let defs = 0;
+  for (const f of fs.readdirSync(path.join(root, 'src'))) {
+    const p = path.join(root, 'src', f);
+    if (!fs.statSync(p).isFile() || !f.endsWith('.js')) continue;
+    const txt = fs.readFileSync(p, 'utf8');
+    if (/const\s+ComboFX\s*=/.test(txt) || /var\s+ComboFX\s*=|let\s+ComboFX\s*=/.test(txt)) {
+      if (/const\s+ComboFX\s*=/.test(txt)) defs++;
+    }
+  }
+  ok(defs === 1, 'ComboFX 全局只定义一次', defs);
+}
+
 console.log('\n' + (fail ? '❌ ' + fail + ' 项失败' : '✅ 全部通过') + '（' + pass + ' 项）');
 process.exit(fail ? 1 : 0);

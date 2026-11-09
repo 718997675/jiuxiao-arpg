@@ -2626,8 +2626,8 @@ node --check：game / ui / worldboss / domain / data-buff-icons / 两个探针
 
 ## U3 · V5 组合特效进游戏（2026-11-09 开工 · 未完成）
 
-> 当前：**U3-1 / U3-2 已 ✅**（组合层 `src/combo-fx.js` 落地、静态契约 64/0）；
-> 下一步 U3-3 接游戏。`docs/status/vfx-merge.md` 的 U3 仍标 🔄（整节点未完成）。
+> 当前：**U3-1 / U3-2 / U3-3 已 ✅**（组合层 `src/combo-fx.js` 落地、静态契约 75/0、
+> 游戏三处挂点接好）；**下一步 U3-4 真机探针**。`docs/status/vfx-merge.md` 的 U3 仍标 🔄（整节点未完成）。
 
 ### 先说清楚：不是把试验台的 `comboApply` 拷进游戏
 
@@ -2680,7 +2680,7 @@ node --check：game / ui / worldboss / domain / data-buff-icons / 两个探针
 |---|---|---|---|---|
 | U3-1 | 只读调查 + 路标 | ✅ | `vfx-merge.md` U3 标 🔄 + 本章（提交 `76767a0`） | 7 条规则的判据逐条对上游戏字段，无「照抄试验台」的口径 |
 | U3-2 | 组合层数据 + 视觉 | ✅ | 新建 `src/combo-fx.js`（7 条规则表 / ICD / 7 套 `FXK` 视觉 / `stats()` / `setClock`）+ `index.html` 在 `vfx.js` 后插脚本 + `dev/test-combo.js` | `node --check` 全过；**静态契约 64/0**：接口 / 7 条判据正反例 / 4 条即时组合真的画了 / 敌人字段零改动 / silent·react·双 ICD / 聚怪窗口 / 二段走 `VFX._later` / 关 `FXK` 不抛错 / 加载顺序 |
-| U3-3 | 游戏接线 | ⬜ | `src/game.js` 两处挂点 + 换图 `reset()`；静态查 `ComboFX` 无重名 | 不改 `sfx.js` / 生成器；四个 `--check` 全绿；`smoke` ERRORS none |
+| U3-3 | 游戏接线 | ✅ | `src/game.js` 三处挂点（`castSkill` 尾部 `ComboFX.onCast` / `damageEnemy` 命中口 `ComboFX.onHit` / `loadMap` 清场 `ComboFX.reset`）+ 两处符箓投射物补 `skill:id`；`dev/test-combo.js` 加【8】接线静态契约 | 静态契约 **75/0**（原 64 + 新 11）；四个 `--check` 全绿；`smoke` **ERRORS none**（cast 13/13/12，fail 全空）；`ComboFX` 全局无重名；生成物零污染 |
 | U3-4 | 真机探针 | ⬜ | `dev/probe-combo.js` | 7 条逐条看到触发 + 视觉调用、ICD 生效、`silent` 不重复播、零 console error |
 | U3-5 | 回归 + 台账收口 | ⬜ | 三份台账 + 当日日志 + commit + push | 全套回归读数写进台账；U3 标 ✅，下一步 U4 |
 
