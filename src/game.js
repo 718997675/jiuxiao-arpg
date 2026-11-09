@@ -1771,6 +1771,9 @@ const Game = {
     /* [U3] 组合特效层：聚怪窗口与 ICD 一起作废 —— 把「上一张图的聚怪」
      * 带进村里，下一张图随便打一下就会莫名塌一次。 */
     if (typeof ComboFX !== 'undefined' && ComboFX && ComboFX.reset) ComboFX.reset();
+    /* [U4] 元素反应视觉层：只清记账（触发次数 / 画了什么），不碰任何玩法状态。
+     * 换图后上一张图的反应记录不该继续往下加。 */
+    if (typeof ElemFX !== 'undefined' && ElemFX && ElemFX.reset) ElemFX.reset();
 
     this.buffs = []; this.shield = 0; this.shieldT = 0; this.regen = 0; this.poisonT = 0; this.playerSlow = 0; this.playerSlowT = 0; this.reviveT = 0;
     /* [P3a] 解毒雾（圣系反应的玩家侧计时器），换图 / 重开都要清 */
