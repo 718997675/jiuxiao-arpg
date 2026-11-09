@@ -2750,8 +2750,8 @@ G.damageEnemy(e, dmg, crit,
 
 ## U4 · 元素反应 10 组专属视觉（2026-11-09 开工 · 未完成）
 
-> 当前：**U4-1 ✅ / U4-2 ✅ / U4-3 ✅**（游戏已接线，10 组反应现在走 FXK 专属视觉）。
-> `docs/status/vfx-merge.md` 的 U4 已标 🔄（等 U4-4 真机探针 + U4-5 回归收口）。
+> 当前：**U4-1 ✅ / U4-2 ✅ / U4-3 ✅ / U4-4 ✅**（10 组真机逐条验过，形状互不重样）。
+> 只剩 U4-5 回归 + 台账收口。
 
 ### 先说清楚：U4 不是「没做视觉」，是**10 组长得一模一样**
 
@@ -2823,7 +2823,7 @@ G.damageEnemy(e, dmg, crit,
 | U4-1 | 只读调查 + 路标 | ✅ | `vfx-merge.md` U4 标 🔄 + 本章（提交待写） | 10 组逐个核对过现有视觉；10 套配方全部只用 FXK 现有五原语；接线口径四条写死 |
 | U4-2 | 视觉层 + 静态契约 | ✅ | 新建 `src/elem-fx.js`（10 套配方 + `play` / `link` / `reset` / `stats`）+ `index.html` 在 `combo-fx.js` 后插脚本 + `dev/test-elemfx.js` | 静态契约 **55/0**：10 组 key 与 `ELEM_REACTIONS` 一一对应 / 每组画了什么 / **10 组形状签名两两不同** / 只改敌人字段零改动 / 视觉层自己不设 ICD / FXK 关掉不炸 / 只用五原语白名单 / `fx-kit.js` 零改动 / 加载顺序 |
 | U4-3 | 游戏接线 | ✅ | `src/game.js` 的 `applyElemReaction` 一处挂点 + `chainReaction` 改走 `ElemFX.link` + `explodeAt` 加 `noFx` 开关 | 不改数值逻辑；`smoke` ERRORS none；技能契约十份全绿 |
-| U4-4 | 真机探针 | ⬜ | `dev/probe-elemfx.js` | 10 组逐条看到触发 + 真机 FXK 被调过 + **10 组的形状互不重样**（不是只换颜色）+ 坐标全部有限 + 零 console error |
+| U4-4 | 真机探针 | ✅ | `dev/probe-elemfx.js` | **69/0**：10 组逐条从真实伤害管线触发 + 真机 FXK 被调过 + **10 组形状互不重样**（parts 与真机调用序列两把尺子）+ 所有数值入参有限 + ICD 复用 + silent/react 不过滤 + 零 console error |
 | U4-5 | 回归 + 台账收口 | ⬜ | 三份台账 + 当日日志 + commit + push | 全套回归读数写进台账；U4 标 ✅，下一步 U5 |
 
 ### U4-3 接线落地：具体换了什么
@@ -2841,6 +2841,27 @@ G.damageEnemy(e, dmg, crit,
 
 `explodeAt` 的 `noFx` 是**加参数不是改行为**：其余 9 个调用点一个字节都没变，
 老调用点传不到第 9 个参数 = 照旧画爆炸。
+
+### U4-4 真机探针：怎么把「这一层」单独量出来
+
+`dev/probe-elemfx.js`，**69/0**。10 组都走真实伤害管线
+（`damageEnemy → tryElemReaction → applyElemReaction`），并包一层
+`Game.applyElemReaction` 记下游戏**真正算出来**的 key，不靠探针自己猜。
+目标状态位与命中元素的对照：
+
+| key | 目标身上挂什么 | 这一发带什么元素 |
+|---|---|---|
+| steam / plasma / burnpoison | `slow+slowT`（冰）/ `stun`（雷）/ `poisonT`（毒） | `fire` |
+| frozele / frostrot / corrochain | `stun`（雷）/ `poisonT`（毒）/ `poisonT`（毒） | `ice` / `ice` / `lightning` |
+| purify / holyfrost / judgment / cleansmist | `sigilT`（圣印，且**只挂这一个**） | `fire` / `ice` / `lightning` / `poison` |
+
+`elemStatusList` 按 火→冰→雷→毒→圣 顺序取第一个能反应的 ——
+多挂一个状态就会撞到别的组。另外概率命中附加（眩晕 / 减速 / 冻结 / 点燃）
+会在反应判定前往目标身上挂状态，所以探针起档时把 `st.stunChance` 等全清零。
+
+形状用**两把尺子**量：`ElemFX.stats().lastDraw[key].parts` 签名 + 真机 FXK
+**顶层调用序列**，10 组两两不同。坐标不是只数调用次数 —— 把每次 FXK 调用的
+全部数值入参（坐标 / 尺寸 / life / 颜色）都抓出来验 `Number.isFinite`。
 
 ### 下一步
 
@@ -2867,3 +2888,14 @@ G.damageEnemy(e, dmg, crit,
    `FX.*` 还不够 —— 蒸汽那句 `explodeAt` 会把通用爆炸环又画回来，等于叠了两套。
    解法是加 `noFx` 第 9 参数（**加参数不是改行为**，其余 9 个调用点照旧）。
    凡是「旧视觉藏在共用 helper 里」的都要这么查一遍，别只看 case 表面。
+8. **FXK 调用不全是演出层发的，也分「顶层」和「原语内部」两层噪声**：
+   - 通用命中特效 `FX.spark` / `FX.ring` 也走 `FXK.spr`；`ComboFX` 也调 FXK。
+   - `FXK.bolt` 内部会调 `this.spr` 撒端点火花，`FXK.shock` 内部会调 `this.spr` 扬尘
+     （`fx-kit.js:728` / `:792`）。第一版探针直接把 hook 到的序列拿来比，
+     「一条 bolt + 一条 trail」中间被插了几个 `spr:spark`，链段断言直接红。
+   解法：给 `ElemFX.play/link` 套**归属窗口**（`__inElem`），再给 FXK hook 套
+   **调用深度**（`__fxkDepth`）—— 只录「窗口内 + 顶层」的调用用来比形状；
+   另开一份全量 `__all` 用来验所有数值入参有限。两件事分开量。
+9. **`chainReaction` 要有第二只怪才画链段**。探针只放一只木桩时
+   `ElemFX.link` 一次都不会被调，会误判「链式电弧没做」——
+   反应表里 `frozele.chain=1` / `corrochain.chain=2`，得放够目标。
