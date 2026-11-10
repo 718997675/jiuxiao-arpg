@@ -8,9 +8,9 @@
   但**不再往那两份里加待办、也不再按它们的 V0~V6 / P0~P2 编号排期**。
 - 进度事实看这两份：`docs/status/skill-refactor.md`（人物主线）、
   `docs/status/boss-kits.md`（B 线 B1~B25）。本文件只管「还差什么、按什么顺序合」。
-- 更新：2026-11-07；进度更新：2026-11-09（U2 / U3 / U4 / U5 收口）
+- 更新：2026-11-07；进度更新：2026-11-10（U6 开工：U6-1 低画质三档降级 ✅）
 
-> 当前：**U1 / U2 / U3 / U4 / U5 已收口**（U1 `--live` 113/0、默认 39/0；U2 `probe-buffrow` 29/0 + `probe-buff-icons` 11/0；U3 `test-combo` 76/0 + `probe-combo` 33/0；U4 `test-elemfx` 74/0 + `probe-elemfx` 94/0；U5 `test-enchant` 235/0 + `probe-enchant` 60/0）。**下一步 U6 人物 · V6 打磨 + 验收清单勾完**。两条线的特效代码都已在 feat/skill-refactor 跑通，但 origin/main 一个特效文件都没有。仍按人物先合、BOSS 后合的顺序走。
+> 当前：**U1 / U2 / U3 / U4 / U5 已收口**（U1 `--live` 113/0、默认 39/0；U2 `probe-buffrow` 29/0 + `probe-buff-icons` 11/0；U3 `test-combo` 76/0 + `probe-combo` 33/0；U4 `test-elemfx` 74/0 + `probe-elemfx` 94/0；U5 `test-enchant` 235/0 + `probe-enchant` 60/0）。**U6 已开工**：U6-1 低画质三档降级 ✅（`test-vfx-kit` 80/0 + `probe-vfx-kit` 52/0），下一步 U6-2 音效三段对齐。两条线的特效代码都已在 feat/skill-refactor 跑通，但 origin/main 一个特效文件都没有。仍按人物先合、BOSS 后合的顺序走。
 
 ## 一句话现状
 
@@ -46,7 +46,7 @@
 | U3 | 人物 · **V5 组合特效进游戏**：`comboApply` 只在试验台（`docs/vfx-playground.html` 2 处，`src/` 0 处）。技能内组合 4 组（freeze / burn / exec / gather）+ 职业核心连携 3 条（刃势巨刀 / 法相手掌光点 / 符毒绿符钉）全还只是演示。**接线口径已改**：挂 `castSkill` 尾部 + `damageEnemy` 命中口（不挂 `VFX.playFor`，SKFX 命中即 return），新建独立 `src/combo-fx.js`，判据读游戏真实状态 | ✅ | `src/combo-fx.js`（新，非生成物）+ `index.html` 插脚本 + `src/game.js` 三处挂点 + `src/skill-beh.js` 的 `strike` 带 `skill:id` + `dev/probe-combo.js` | 真机探针逐条看到 7 条组合成立、零报错；`smoke` / `mobile-layout` / 四个 `--check` 全绿 |
 | U4 | 人物 · **元素反应 10 组专属视觉**：机制 P3a 已 10/10 落地（走 `damageEnemy` 一个口），但 §9.2 的蒸汽 / 等离子 / 绿火 / 晶体爬弧 / 霜面腐蚀 / 链式绿弧 / 金火等视觉语言没落进游戏 | ✅ | `src/elem-fx.js`（新，非生成物）+ `index.html` 插脚本 + `src/game.js` 的 `applyElemReaction` 一处挂点（旧 `FX.*` 全换掉、`chainReaction` 走 `ElemFX.link`、`explodeAt` 加 `noFx`）+ `dev/test-elemfx.js` + `dev/probe-elemfx.js` | 静态契约 **74/0**、真机探针 **94/0**：10 组逐条触发 + **10 组原语序列两两不同**（不是只换颜色）+ 坐标全有限 + 反应期间旧 `FX.*` 零调用；`smoke` / `mobile-layout` / 技能契约十份 / 四个 `--check` 全绿 |
 | U5 | 人物 · **V4 近战武器附魔**：`enchant` 原语在 `fx-kit.js` / `vfx.js` / `data-vfx.js` 全是 0 处；Lv10「常驻光效」原本只有刀身发烫脉冲，不是真附魔 | ✅ | `src/data/data-vfx.js`（`ENCHANT_PROFILE` 6 套 + 15 个 Lv10 `enchant: true` 声明）+ `src/fx-kit.js`（`FXK.enchant` 常驻层）+ `src/game.js`（`enchantState` / `updateEnchant` 每帧同步）+ `dev/test-enchant.js` + `dev/probe-enchant.js` | **6 元素各一套，三维度两两不同**（贴图格 / accent 几何 / 粒子运动）；真机 draw call +4（副元素 +5、低画质 +2）≤6；`test-enchant` **235/0**、`probe-enchant` **60/0**；`smoke` ERRORS none、`mobile-layout` 全绿 |
-| U6 | 人物 · **V6 打磨 + 把验收清单勾完**：音效三段对齐（台账 0 处提及）、低画质降级逐项核验、录屏对比；`SKILL-VFX-PLAN.md §13` 14 条逐条给判据，含「同职业 5 招灰度后认出 ≥4」的人眼结论；逐条配方「该几颗 / 什么色」未逐个调（V3b 只重配了三条 ④ 位） | ⬜ | `audio/` / `dev/vfx-shot.js` / `docs/SKILL-VFX-PLAN.md §13` | 14 条全部有结论；`smoke` + `mobile-layout` 全绿 |
+| U6 | 人物 · **V6 打磨 + 把验收清单勾完**：音效三段对齐（台账 0 处提及）、低画质降级逐项核验、录屏对比；`SKILL-VFX-PLAN.md §13` 14 条逐条给判据，含「同职业 5 招灰度后认出 ≥4」的人眼结论；逐条配方「该几颗 / 什么色」未逐个调（V3b 只重配了三条 ④ 位） | 🔄 | `audio/` / `dev/vfx-shot.js` / `docs/SKILL-VFX-PLAN.md §13` | 14 条全部有结论；`smoke` + `mobile-layout` 全绿 |
 | U7 | BOSS · **老兜底 11 个手写 case 一行没动**：`src/game.js:8579+` 的 `quake` / `frostnova` / `curse` 仍**当帧结算零前摇**（公平性），`fireline` 仍是 6 个圆串、`charge` 预警刷在自己脚下、主视觉全贴地圆。`BOSS-VFX-PLAN.md` 的 P0 四条（补 0.7~1.1s 前摇 + 形状匹配预警）没做 | ⬜ | `src/game.js` 的 `bossPattern` 老 switch 兜底段 | 静态扫描前摇覆盖率；>1.0× 伤害的招全部 ≥0.7s 且形状匹配 |
 | U8 | BOSS · **世界 Boss 6 只不在 `BOSS_KIT`**，走 `WorldBoss` 另一套调度（`game.js:8425` 注释自承），B24/B25 变形层不覆盖。要给它们「自己的四拍」得**另开一层**，别塞进 `BOSS_TWIST` | ⬜ | 新数据层 + `src/world-boss.js` 接线 | 6 只全量试放零空招；真机探针 |
 | U9 | BOSS · **P2 整块**：小怪 8 形态（近战普攻 40 只零特效、healer 无治疗光束、bomber 借受击闪白当警戒灯、coward 只有 `+` 飘字）；12 条精英词缀里 7 条零视觉（`frost`/`venom`/`vampiric`/`swift`/`thorns`/`warded`/`split`，代码里只有数值逻辑）；Boss 出场零表现 / 死亡无碎片与掉落光柱 | ⬜ | `src/game.js` AI 段 + 词缀生效点 + `spawnBosses` / `onEnemyDeath` | 常驻微标识（不是每次触发炸一朵花）；40 只同屏不炸屏 |
@@ -139,6 +139,58 @@ U1 逐只比对过 37 组 `SKFX / 配方` 读数：0.166 ~ 6.514、中位 1.003�
 bloodrage 1.29× · thrust 1.38× · heal 1.62×。配方层 `iceshard` 也只有 7% 余量，
 仍是最贴地板的一只，别把「暖机后稳定过线」误读成「它够显眼」。
 
+## U6 子节点表（2026-11-10 开工）
+
+> U6 原本是一大块（音效三段 + 低画质核验 + 录屏 + §13 十四条 + 逐条配方），
+> 一次做完没法定位是谁的问题。拆成 5 个能独立验收的子节点，逐个 commit。
+
+| 编号 | 节点 | 状态 | 落点 / 产物 | 验收 |
+|---|---|---|---|---|
+| U6-1 | **低画质降级逐项核验**：§11 降级表五格（粒子数 / 拖尾 / 贴花 / 假 bloom / bolt 分叉）逐格对齐。此前实现是二档（`q<1` / `q<0.75`），中档 0.7 被误判成低档砍掉拖尾、低档却还留着 6 块贴花，与 §11 全对不上 | ✅ | `src/fx-kit.js`（`FXK_TIER` 三档表 + 五个原语只读档位 + `bolt` 递归层数分档） | `test-vfx-kit` **80/0**、`probe-vfx-kit` **52/0**（三档逐项）；`smoke` ERRORS none、`mobile-layout` 全绿 |
+| U6-2 | **音效三段对齐**：§5 的三段式（起手 / 命中 / 余韵）在音频侧只落了「起手」一层（`SFX.skill`），命中与余韵散在 40+ 处调用点、无统一时序 | 🔄 | `src/fx.js`（`SFX.skill` 三段）+ `src/game.js`（命中 / 余韵挂点） | 三段各自可判；`probe-sfx` 12/0 不回归 |
+| U6-3 | **逐条配方打磨**：37 只技能的「该几颗 / 什么色」逐个复核（V3b 只重配了三条 ④ 位） | ⬜ | `docs/vfx-playground.html` → `node dev/build-skillvfx.js --write` | 逐条有结论；`build-skillvfx --check` 一致 |
+| U6-4 | **§13 十四条验收清单勾完**：已勾 6 条（U2 的第 7~11 条），剩 8 条逐条给人眼 / 性能结论 | ⬜ | `docs/SKILL-VFX-PLAN.md §13` | 14 条全部有结论 |
+| U6-5 | **收口**：三份台账 + 当日日志 + commit + push | ⬜ | 三份台账 | `smoke` + `mobile-layout` + 全套契约全绿 |
+
+## U6-1 收口记录 · 低画质三档降级（2026-11-10 · ✅）
+
+**口径**：`settings.resolve` 只给 `1 / 0.7 / 0.5` 三个 `FX.q` 值 = 高 / 中 / 低三档。
+但原语层各写各的阈值（`q < 1` 砍粒子、`q < 0.75` 砍拖尾、`q < 1 ? 6 : 16` 定贴花池），
+**两套阈值把三档压成了二档**：中档 0.7 被拖尾当成低档砍掉带子，低档 0.5 却还留着
+6 块贴花 —— 和 §11「低档贴花 0、拖尾关」正好反过来。
+现在收成 `FXK_TIER` 一张表，五个原语只读 `FXK.tier`，不各自判阈值。
+
+**§11 降级表逐格对齐结果**：
+
+| 格 | §11 写的 | 之前的实现 | 现在 |
+|---|---|---|---|
+| 粒子数 | 100% / 60% / 35% | `max(0.3, q)` → 100% / 70% / 50% | ✅ 100 / 60 / 35 |
+| 拖尾 | 开 / 开 / 关 | `q < 0.75` → 开 / **关** / 关（中档被误砍） | ✅ 开 / 开 / 关 |
+| 贴花 | 16 / 8 / 0 | `q < 1 ? 6 : 16` → 16 / 6 / **6**（低档仍有 6 块） | ✅ 16 / 8 / 0 |
+| 假 bloom | 3 / 2 / 1 | shock 三件套（环 / 气浪 / 尘环）无档位差 | ✅ 高 3 件 / 中 2 件 / 低 1 件 |
+| bolt 分叉 | 2 层递归 / 1 层 / 无 | **只有 1 层**（分叉自己不再生子分叉） | ✅ 高 2 层 / 中 1 层 / 低 0 |
+
+**两个容易漏的坑**：
+
+1. **切档时旧的贴花不会自己消失** —— 池是常驻的，从高档切到中 / 低后，
+   第 9~16 块会一直亮到自然过期，看上去像降级没生效。
+   `decal()` 现在每次进来先**收起超编的旧贴花**（`d.on = false` + `visible = false`），
+   再按新档位转 `cap` 个槽。池**不拆**（拆了重建更贵），只转槽数。
+2. **bolt 的递归用队列不用递归** —— 递归会顺着一条分叉一路钻到底，
+   出来像「一根须」；队列让每层机会均等，出来像「一朵电弧」。
+   子分叉长度只有父分叉的一半、概率再减半，避免两层就炸成毛刺。
+
+**记进播放账的东西**（都是为了「能逐道判」，不用靠截图猜）：
+`bolt` 现在带 `branches`（分叉条数）+ `maxLayer`（最深递归层数），
+`FXK.stats()` 带 `tier`。§13 第 3 条「雷电 bolt 有分叉」从此有机器判据。
+
+**验证**：`test-vfx-kit` **80/0**（三档粒子 40/24/14、贴花 16/8/0、
+高档 20 道 ≥18 道有分叉且 ≥15 道长出第 2 层、中档 40 道零递归、低档零分叉）·
+`probe-vfx-kit` **52/0**（真机三档逐项）· `smoke` ERRORS none · `mobile-layout` ✅ 全部通过。
+
+**交给 U6-2 起的口径**：`FXK.tier` 是降级的**唯一**入口。
+以后加原语只读这张表，别再写 `q < x`；写第二套阈值就是两套降级打架。
+
 ## U5 收口记录（2026-11-09）
 
 **口径**：U1 定了 SKFX 为准、37 只技能在正常游戏里**一次配方层都不播**。
@@ -165,13 +217,11 @@ HEAD 版本跑同一序列反而 8/5，证明非 U5 回归。给 `WAIT` 表补
 `iceshard: 1700`（与 `starfall` 同性质），**判据一个字没改**，连跑 4 次 13/0。
 试过每发前 `FX.clear()`，属换图级重操作、更不稳，已回退。
 
-## 下一步（U1~U5 已收口，U6 待办，别跳）
+## 下一步（U1~U5 已收口，U6 进行中，别跳）
 
-1. `U6` 人物 · **V6 打磨 + 把验收清单勾完**：音效三段对齐、低画质降级逐项核验、
-   录屏对比；`SKILL-VFX-PLAN.md §13` 14 条逐条给判据（已勾 6 条，还剩 8 条），
-   含「同职业 5 招灰度后认出 ≥4」的人眼结论；逐条配方「该几颗 / 什么色」未逐个调
-   （V3b 只重配了三条 ④ 位）。U5 的 6 套附魔外观过了「两两不同 + 有像素」的机器判据，
-   **好不好看没判**，逐套截图对比归这里。
+1. `U6-2` 人物 · **音效三段对齐**：§5 的三段式在音频侧只落了「起手」一层
+   （`SFX.skill`），命中与余韵散在 40+ 处调用点、没有统一时序。
+   先核实现：哪些技能有命中音、哪些有余韵音、时序对不对得上视觉的三段。
 2. U6 的两条口径别踩：① Lv10 的 `enchant` 是**数据声明**不是播放指令，
    别去 `src/vfx.js` 补 case；② 常驻附魔走 FXK、技能演出走 SKFX，
    `vfx-skill-vis`（默认 / `--live`）都不量附魔，附魔有自己那支 `probe-enchant`。

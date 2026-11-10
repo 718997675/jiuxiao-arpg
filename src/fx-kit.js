@@ -432,6 +432,25 @@ function fxkPlane(w, h) {
   return (_fxkGeo[k] = new THREE.PlaneGeometry(w, h));
 }
 
+/* ---------------- 画质三档（方案 §11 降级表，唯一一份） ----------------
+ * settings.resolve 只会给出 1 / 0.7 / 0.5 三个 fx 值，分别对应高 / 中 / 低。
+ * 之前各原语自己写 `q < 1` 或 `q < 0.75`，两套阈值把三档压成了二档：
+ * 中档 (0.7) 被拖尾当成低档砍掉带子，低档却还留着 6 块贴花 ——
+ * 和 §11「低档贴花 0、拖尾关」对不上。这里收成一张表，原语只读档位。
+ *
+ * part   粒子数倍率      100% / 60% / 35%
+ * decal  贴花池上限      16 / 8 / 0（低档直接不出）
+ * trail  是否画拖尾带子  开 / 开 / 关（低档退化成 3 颗 spr）
+ * sheet  冲击波竖直气浪  开 / 关 / 关（一整屏填充率，中档起省掉）
+ * branch bolt 分叉概率   0.30 / 0.12 / 0（低档无分叉）
+ * branchLayer bolt 分叉递归层数 2 / 1 / 0（§11「高 2 层递归 / 中 1 层 / 低无」）
+ * depth  bolt 折线深度倍率（高 4 层，中低 2 层） */
+const FXK_TIER = {
+  high: { part: 1,    decal: 16, trail: true,  sheet: true,  branch: 0.30, branchLayer: 2, depth: 1 },
+  mid:  { part: 0.6,  decal: 8,  trail: true,  sheet: false, branch: 0.12, branchLayer: 1, depth: 0.5 },
+  low:  { part: 0.35, decal: 0,  trail: false, sheet: false, branch: 0,    branchLayer: 0, depth: 0.5 }
+};
+
 /* ---------------- FXKit 本体 ---------------- */
 const FXK = {
   parts: [],     // 贴图粒子簇（Points）
@@ -440,15 +459,20 @@ const FXK = {
   shocks: [],    // 冲击波
   decals: [],    // 贴花（固定池）
   decalAt: 0,    // 池游标
-  decalPool: 0,  // 池当前大小（按需扩到 16 / 低画质 6）
+  decalPool: 0,  // 池当前大小（按档扩到 16；中档只用前 8 槽，低档不出）
   ench: null,    // [U5] 常驻武器附魔层（最多一组，挂在武器骨骼上）
   mats: _fxkMat,
   cellTex: fxCellTexture,
   enabled: true,
 
   /* 低画质档：直接读 FX.q（由 Game.applyPerfLevel 按帧率下调），
-   * 不自己维护一份 —— 两份倍率迟早会打架。 */
+   * 不自己维护一份 —— 两份倍率迟早会打架。
+   * tier 把 q 归到方案 §11 的高 / 中 / 低三档，所有原语只读这张表。 */
   get q() { return (typeof FX !== 'undefined' && FX && FX.q > 0) ? FX.q : 1; },
+  get tier() {
+    const q = this.q;
+    return q >= 0.9 ? 'high' : (q >= 0.6 ? 'mid' : 'low');
+  },
   get scene() { return (typeof FX !== 'undefined' && FX) ? FX.scene : null; },
 
   /* ============================================================
@@ -465,10 +489,11 @@ const FXK = {
     const scene = this.scene;
     if (!scene) return null;
     const o = opt || {};
-    const q = this.q;
-    /* 点数按画质档削减，但至少 3 颗 —— 少到看不见等于没放 */
-    let n = Math.max(1, Math.round((o.n || 12) * (q < 1 ? Math.max(0.3, q) : 1)));
-    if (o.n && o.n > 0 && q < 1) n = Math.max(3, n);
+    const T = FXK_TIER[this.tier];
+    /* 点数按 §11 三档削减（100% / 60% / 35%），但至少 3 颗 ——
+     * 少到看不见等于没放 */
+    let n = Math.max(1, Math.round((o.n || 12) * T.part));
+    if (o.n && o.n > 0 && T.part < 1) n = Math.max(3, n);
     const size = o.size || 0.5;
     const life = o.life || 0.6;
     const speed = o.speed === undefined ? 3 : o.speed;
@@ -551,9 +576,10 @@ const FXK = {
     const scene = this.scene;
     if (!scene) return null;
     const o = opt || {};
-    const q = this.q;
-    /* 低画质：退化成 3 颗 spr（方案 §4 的降级口径），而不是画一条糊带子 */
-    if (q < 0.75) {
+    const T = FXK_TIER[this.tier];
+    /* 低画质：退化成 3 颗 spr（方案 §4 的降级口径），而不是画一条糊带子。
+     * 中档仍画带子 —— 之前按 `q < 0.75` 判，0.7 的中档被误砍成低档。 */
+    if (!T.trail) {
       const mid = points[Math.floor(points.length / 2)];
       this.spr(mid, {
         n: 3, tex: 'soft', color: o.color === undefined ? 0xffffff : o.color,
@@ -640,8 +666,8 @@ const FXK = {
     const scene = this.scene;
     if (!scene) return null;
     const o = opt || {};
-    const q = this.q;
-    const depth = o.depth === undefined ? 4 : Math.max(1, Math.round(o.depth * (q < 1 ? 0.5 : 1)));
+    const T = FXK_TIER[this.tier];
+    const depth = o.depth === undefined ? 4 : Math.max(1, Math.round(o.depth * T.depth));
     const segs = o.segs === undefined ? 1 : o.segs;
     const jitter = o.jitter === undefined ? 0.22 : o.jitter;
     const life = o.life === undefined ? 0.16 : o.life;
@@ -666,34 +692,68 @@ const FXK = {
       amp *= 0.55;
     }
 
-    /* 分叉：低画质直接不出（方案 §11 的降级表：bolt 分叉是可选项） */
-    const branchP = (q < 1 ? 0.12 : 0.3) * (o.branch === undefined ? 1 : o.branch);
+    /* 分叉：按 §11 三档 —— 高 0.30 / 中 0.12 / 低 0（低档一条都不出）
+     *
+     * **递归层数也分档**：§11 写的是「高 = 2 层递归 / 中 = 1 层 / 低 = 无」。
+     * 「层」指分叉自己还能再长出子分叉 —— 只甩一条出去的叫「1 层」。
+     * 之前不管哪档都只有 1 层，中档因此比高档多画了同等复杂度，
+     * 降级表等于没生效。
+     *
+     * 子分叉从父分叉的中段甩出，长度只有父分叉的一半、概率再减半，
+     * 免得递归两层就炸成一团毛刺。 */
+    const branchP = T.branch * (o.branch === undefined ? 1 : o.branch);
     const groups = [pts];
-    if (branchP > 0 && pts.length > 4) {
-      for (let i = 2; i < pts.length - 2; i++) {
-        if (Math.random() > branchP) continue;
-        const from = pts[i];
-        const len = a.distanceTo(b) * RND(0.18, 0.36);
-        /* 分叉方向：沿主干方向甩出去，再随机偏一点，不能往回折 */
-        const dir = _v1.subVectors(pts[i + 1], pts[i - 1]).normalize().clone();
-        dir.x += RND(-0.8, 0.8); dir.y += RND(-0.5, 0.5); dir.z += RND(-0.8, 0.8);
-        dir.normalize();
-        const to = from.clone().addScaledVector(dir, len);
-        let bp = [from.clone(), to];
-        let ba = len * 0.24;
-        for (let d = 0; d < 3; d++) {
-          const out = [];
-          for (let k = 0; k < bp.length - 1; k++) {
-            out.push(bp[k]);
-            const m = new THREE.Vector3().addVectors(bp[k], bp[k + 1]).multiplyScalar(0.5);
-            m.x += RND(-ba, ba); m.y += RND(-ba, ba) * 0.7; m.z += RND(-ba, ba);
-            out.push(m);
-          }
-          out.push(bp[bp.length - 1]);
-          bp = out;
-          ba *= 0.55;
+    /* 每条折线的递归层数：0 = 只有主干 */
+    const layers = [0];
+    /* 递归上限：高档 2 / 中档 1 / 低档 0 */
+    const maxLayer = T.branchLayer;
+
+    /* 甩一条子折线：from 起点、dir 方向、len 长度，自身再细分 3 层。
+     * 返回这条折线的点列。 */
+    const fork = (from, dir, len) => {
+      const to = from.clone().addScaledVector(dir, len);
+      let bp = [from.clone(), to];
+      let ba = len * 0.24;
+      for (let d = 0; d < 3; d++) {
+        const out = [];
+        for (let k = 0; k < bp.length - 1; k++) {
+          out.push(bp[k]);
+          const m = new THREE.Vector3().addVectors(bp[k], bp[k + 1]).multiplyScalar(0.5);
+          m.x += RND(-ba, ba); m.y += RND(-ba, ba) * 0.7; m.z += RND(-ba, ba);
+          out.push(m);
         }
-        groups.push(bp);
+        out.push(bp[bp.length - 1]);
+        bp = out;
+        ba *= 0.55;
+      }
+      return bp;
+    };
+
+    if (branchP > 0 && pts.length > 4) {
+      /* 逐层长：第 0 层从主干甩，第 1 层从第 0 层的分叉再甩，依此类推。
+       * 用队列而不是递归 —— 递归会顺着一条分叉一路钻到底，
+       * 队列保证每层的机会均等，出来的东西更「像一朵电弧」而不是「一根须」。 */
+      let frontier = [{ pts: pts, layer: 0 }];
+      while (frontier.length) {
+        const next = [];
+        for (const node of frontier) {
+          if (node.layer >= maxLayer) continue;
+          const src = node.pts;
+          for (let i = 2; i < src.length - 2; i++) {
+            if (Math.random() > branchP) continue;
+            const from = src[i];
+            const len = a.distanceTo(b) * RND(0.18, 0.36) * (node.layer === 0 ? 1 : 0.5);
+            /* 分叉方向：沿主干方向甩出去，再随机偏一点，不能往回折 */
+            const dir = _v1.subVectors(src[i + 1], src[i - 1]).normalize().clone();
+            dir.x += RND(-0.8, 0.8); dir.y += RND(-0.5, 0.5); dir.z += RND(-0.8, 0.8);
+            dir.normalize();
+            const bp = fork(from, dir, len);
+            groups.push(bp);
+            layers.push(node.layer + 1);
+            next.push({ pts: bp, layer: node.layer + 1 });
+          }
+        }
+        frontier = next;
       }
     }
 
@@ -724,7 +784,12 @@ const FXK = {
       const old = this.bolts.shift();
       this._dropBolt(old);
     }
-    this.bolts.push({ geo, matO, matC, lo, lc, life, max: life, a: a.clone(), b: b.clone() });
+    /* [U6] 把分叉条数 + 最深层数记进播放账：§13 第 3 条「雷电 bolt 有分叉」
+     * 要能逐道判，而不是靠截图猜。§11 的「高 2 层递归 / 中 1 层 / 低无」
+     * 也只能靠这两个数判。低画质 branches / maxLayer 恒为 0。 */
+    this.bolts.push({ geo, matO, matC, lo, lc, life, max: life,
+      branches: groups.length - 1, maxLayer: layers.reduce((a, b) => (b > a ? b : a), 0),
+      a: a.clone(), b: b.clone() });
     /* 端点闪光：不画这个，闪电看起来「没打中」 */
     this.spr(b, {
       n: Math.round(6 * (o.flash === undefined ? 1 : o.flash)), tex: 'spark',
@@ -759,7 +824,7 @@ const FXK = {
     if (!scene) return null;
     const o = opt || {};
     const color = o.color === undefined ? 0xffffff : o.color;
-    const q = this.q;
+    const T = FXK_TIER[this.tier];
     const rad = Math.max(0.4, r || 1.2);
 
     /* 1) 地面环：用 RingGeometry 缩放，和 FX.ring 同一套几何缓存策略 */
@@ -776,9 +841,11 @@ const FXK = {
     scene.add(ring);
 
     /* 2) 竖直气浪：一张立起来的薄片，往上抽、同时变淡。
-     * 低画质档跳过（它是最「贵」的一件：一张半透明大面片 = 一屏的填充率） */
+     * 中 / 低画质档跳过（它是最「贵」的一件：一张半透明大面片 = 一屏的填充率）。
+     * §11 的「假 bloom 层数 3/2/1」在实现里就是 shock 的 ring + sheet + 尘环
+     * 三件套：高档三件全开、中档省 sheet、低档尘环随粒子倍率压到 35%。 */
     let sheet = null, sheetMat = null;
-    if (q >= 0.75) {
+    if (T.sheet) {
       sheetMat = new THREE.MeshBasicMaterial({
         color: color, map: fxCellTexture('soft'), transparent: true, opacity: 0.5,
         depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending
@@ -817,7 +884,7 @@ const FXK = {
   /* ============================================================
    * decal —— 地面贴花（焦痕 / 霜 / 酸斑 / 裂痕）
    *
-   * **固定池，循环复用**：16 个 quad（低画质 6 个）建一次，之后只改
+   * **固定池，循环复用**：高档 16 个 quad（中档只用前 8 个、低档不出）建一次，之后只改
    * 位置 / 旋转 / 贴图 / 透明度，永不新建几何。这是「世界被打过」的观感来源，
    * 也是最容易写漏的地方 —— 每放一次技能 new 一个 quad，打十分钟就是几千个。
    * ============================================================ */
@@ -826,8 +893,17 @@ const FXK = {
     const scene = this.scene;
     if (!scene) return null;
     const o = opt || {};
-    const q = this.q;
-    const cap = q < 1 ? 6 : 16;
+    const T = FXK_TIER[this.tier];
+    const cap = T.decal;
+    /* 切档时把「超编」的旧贴花收起：池是常驻的，从高档切到中 / 低后
+     * 第 9~16 块会一直亮到自然过期，看上去像降级没生效。
+     * cap === 0（低画质）时全部收起并直接不出 —— §11「低档贴花 0」、
+     * §13 第 13 条「低画质档：贴花消失」。 */
+    for (let i = cap; i < this.decals.length; i++) {
+      const d = this.decals[i];
+      if (d.on) { d.on = false; d.life = 0; d.mesh.visible = false; }
+    }
+    if (!cap) return null;
     /* 池按需长大，但不超过 cap */
     if (this.decalPool < cap) {
       const geo = fxkPlane(1, 1);
@@ -845,9 +921,9 @@ const FXK = {
     /* 游标循环：永远挑「最久没用的那个」，不挑「已经过期的」——
      * 后者会让池没满时反复命中同一个，视觉上叠在一处。
      *
-     * 低画质时**只用前 6 个槽**（而不是把池拆小）：池是建一次就一直存在的，
-     * 拆了重建反而更贵；但只转 6 个槽，同屏的贴花数就真的降下来了，
-     * 填充率才是这一档真正省的东西。 */
+     * 三档 cap 16 / 8 / 0：**只转前 cap 个槽**，不把池拆小 —— 池是建一次
+     * 就一直存在的，拆了重建反而更贵；但只转 cap 个槽，同屏贴花数就真的
+     * 降下来了，填充率才是这一档真正省的东西。低档 cap=0 上面已直接返回。 */
     const usable = Math.min(this.decals.length, cap);
     const slot = this.decals[this.decalAt % usable];
     this.decalAt++;
@@ -1293,7 +1369,8 @@ const FXK = {
       decalMats: _fxkDecalMat.size,
       tex: Object.keys(_fxkTex).length,
       enchant: this.enchantStats(),
-      q: this.q
+      q: this.q,
+      tier: this.tier
     };
   }
 };

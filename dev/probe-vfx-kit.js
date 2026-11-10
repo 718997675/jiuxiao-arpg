@@ -116,31 +116,63 @@ const ok = (c, m, d) => {
   await p.screenshot({ path: '/tmp/vfx-kit.png' });
   ok(shot === true, '截图已出：/tmp/vfx-kit.png');
 
-  console.log('四、降级：FX.q 降下来之后逐项变简');
-  const lowQ = await p.evaluate(async () => {
+  /* [U6] 三档逐项核验：方案 §11 降级表 + §13 第 13 条「低画质：贴花消失、
+   * 拖尾关闭」。之前实现是二档（q<1 / q<0.75），低档还留 6 块贴花，
+   * 中档 0.7 反被砍掉拖尾 —— 现在统一由 FXK_TIER 一张表决定。 */
+  console.log('四、降级：三档逐项核验（§11 / §13 第 13 条）');
+  const tiers = await p.evaluate(async () => {
     const pp = Game.playerGroup.position;
-    FX.clear();
-    const old = FX.q;
-    FX.q = 0.5;
     const V = (x, y, z) => new THREE.Vector3(pp.x + x, y, pp.z + z);
-    FXK.spr(V(0, 1, 2), { n: 40, tex: 'ember', life: 1 });
-    const nLow = FXK.parts[0].n;
-    FXK.trail([V(0, 1, 0), V(1, 1, 0), V(2, 1, 0)], { life: 1 });
-    const trailLow = FXK.trails.length;
-    FXK.shock(V(0, 0, 2), 2, {});
-    const sheetLow = !!FXK.shocks[0].sheet;
-    for (let i = 0; i < 20; i++) FXK.decal(V(i, 0, 0), { life: 5 });
-    const poolLow = FXK.decals.length;
-    const onLow = FXK.stats().decalOn;
-    FX.clear();
+    const old = FX.q;
+    const probe = (q) => {
+      FX.clear();
+      FX.q = q;
+      FXK.spr(V(0, 1, 2), { n: 40, tex: 'ember', life: 1 });
+      const n = FXK.parts[0].n;
+      FXK.trail([V(0, 1, 0), V(1, 1, 0), V(2, 1, 0)], { life: 1 });
+      const trails = FXK.trails.length;
+      FXK.shock(V(0, 0, 2), 2, {});
+      const sheet = !!FXK.shocks[0].sheet;
+      /* 连放 20 道闪电，逐道数分叉（FXK.bolt 把条数记在 branches 上，
+       * 最深递归层数记在 maxLayer 上） */
+      let forked = 0, deep = 0, maxL = 0;
+      for (let i = 0; i < 20; i++) {
+        const bl = FXK.bolt(V(0, 4, 0), V(0, 0, 2), { life: 0.2 });
+        if (bl && bl.branches > 0) forked++;
+        if (bl && bl.maxLayer >= 2) deep++;
+        if (bl && bl.maxLayer > maxL) maxL = bl.maxLayer;
+      }
+      for (let i = 0; i < 20; i++) FXK.decal(V(i, 0, 0), { life: 5 });
+      const pool = FXK.decals.length;
+      const on = FXK.stats().decalOn;
+      const tier = FXK.tier;
+      FX.clear();
+      return { q, tier, n, trails, sheet, forked, deep, maxL, pool, on };
+    };
+    const high = probe(1), mid = probe(0.7), low = probe(0.5);
     FX.q = old;
-    return { nLow, trailLow, sheetLow, poolLow, onLow };
+    return { high, mid, low };
   });
-  ok(lowQ.nLow === 20, 'FX.q=0.5：40 颗砍到 20 颗', lowQ.nLow);
-  ok(lowQ.trailLow === 0, 'FX.q=0.5：拖尾退化成 spr，不建带子', lowQ.trailLow);
-  ok(lowQ.sheetLow === false, 'FX.q=0.5：冲击波不画竖直气浪', lowQ.sheetLow);
-  /* 池不拆（拆了重建更贵），但低画质只转前 6 个槽 —— 同屏贴花数真的降下来 */
-  ok(lowQ.onLow <= 6, 'FX.q=0.5：贴花同时最多 6 块（池不拆，只转前 6 个槽）', { pool: lowQ.poolLow, on: lowQ.onLow });
+  const tm = t => ({ tier: t.tier, n: t.n, trails: t.trails, sheet: t.sheet, forked: t.forked, deep: t.deep, maxL: t.maxL, pool: t.pool, on: t.on });
+  ok(tiers.high.tier === 'high' && tiers.mid.tier === 'mid' && tiers.low.tier === 'low',
+    'FX.q = 1 / 0.7 / 0.5 归到高 / 中 / 低三档', [tm(tiers.high), tm(tiers.mid), tm(tiers.low)]);
+  ok(tiers.high.n === 40 && tiers.mid.n === 24 && tiers.low.n === 14,
+    '粒子倍率 100% / 60% / 35%（§11）', [tiers.high.n, tiers.mid.n, tiers.low.n]);
+  ok(tiers.high.trails === 1 && tiers.mid.trails === 1,
+    '高 / 中档仍画拖尾带子（0.7 不再被误判成低档）', [tiers.high.trails, tiers.mid.trails]);
+  ok(tiers.low.trails === 0, '低档拖尾关闭（退化成 3 颗 spr，不建带子）', tiers.low.trails);
+  ok(tiers.high.sheet === true && tiers.mid.sheet === false && tiers.low.sheet === false,
+    '冲击波竖直气浪只在高档画', [tiers.high.sheet, tiers.mid.sheet, tiers.low.sheet]);
+  ok(tiers.high.forked >= 18, '高档 20 道闪电 ≥18 道有分叉（§13 第 3 条）', tiers.high.forked);
+  ok(tiers.low.forked === 0, '低档 20 道闪电零分叉（§11「无」）', tiers.low.forked);
+  /* [U6] §11 的「高 = 2 层递归 / 中 = 1 层 / 低 = 无」逐档核验 */
+  ok(tiers.high.deep >= 12, '高档 ≥12/20 道闪电长出第 2 层子分叉（§11「2 层递归」）', tiers.high.deep);
+  ok(tiers.mid.maxL <= 1 && tiers.mid.deep === 0,
+    '中档只长 1 层，不递归出子分叉（§11「1 层」）', { deep: tiers.mid.deep, maxL: tiers.mid.maxL });
+  ok(tiers.low.maxL === 0, '低档分叉层数为 0（§11「无」）', tiers.low.maxL);
+  ok(tiers.high.on === 16, '高档贴花池 16 块全可亮', { pool: tiers.high.pool, on: tiers.high.on });
+  ok(tiers.mid.on === 8, '中档只转前 8 个槽（池不拆，只转 cap 个）', { pool: tiers.mid.pool, on: tiers.mid.on });
+  ok(tiers.low.on === 0, '低档贴花消失（§13 第 13 条）', { pool: tiers.low.pool, on: tiers.low.on });
 
   console.log('五、清场：换图不留残影');
   const cleared = await p.evaluate(() => {

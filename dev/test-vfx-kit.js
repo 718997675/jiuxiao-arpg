@@ -14,7 +14,8 @@
  *   3. spr / trail / bolt / shock / decal 五个原语都有真实几何（不是空壳）
  *   4. bolt 真的有分叉，且总量有闸门（闪电是最容易一屏的原语）
  *   5. decal 是**固定池循环复用**：铺 40 次也只有 16 个 mesh
- *   6. 低画质（FX.q < 1）逐项降级：粒子减半、拖尾退化、气浪不画、贴花池缩到 6
+ *   6. 三档降级（§11）：粒子 100/60/35%、拖尾低档退化、气浪高档才有、
+ *      贴花池 16/8/0（低档不出）、bolt 分叉低档为 0
  *   7. 四条纪律：不挂 PointLight / 不在 update 里 new 对象 / 只读坐标不改判定
  * ============================================================ */
 'use strict';
@@ -173,9 +174,16 @@ console.log('二、spr：几何 / 缓存 / 降级');
   ok(FXK.parts.length === 0, '生命走完自动清空', FXK.parts.length);
   ok(!mat1.disposed, '粒子死了也不 dispose 共享材质（否则下一次要重建）');
 
-  const low = boot(0.5);
+  /* [U6] 三档：方案 §11 的 100% / 60% / 35%，不是旧版的「q 直接当倍率」 */
+  const hi = boot(1), mid = boot(0.7), low = boot(0.5);
+  hi.FXK.spr(pos, { n: 40, tex: 'ember', life: 1 });
+  mid.FXK.spr(pos, { n: 40, tex: 'ember', life: 1 });
   low.FXK.spr(pos, { n: 40, tex: 'ember', life: 1 });
-  ok(low.FXK.parts[0].n === 20, '低画质：40 颗砍到 20 颗', low.FXK.parts[0].n);
+  ok(hi.FXK.tier === 'high' && mid.FXK.tier === 'mid' && low.FXK.tier === 'low',
+    'FX.q = 1 / 0.7 / 0.5 → 高 / 中 / 低', [hi.FXK.tier, mid.FXK.tier, low.FXK.tier]);
+  ok(hi.FXK.parts[0].n === 40 && mid.FXK.parts[0].n === 24 && low.FXK.parts[0].n === 14,
+    '三档粒子 40 / 24 / 14（100% / 60% / 35%）', [hi.FXK.parts[0].n, mid.FXK.parts[0].n, low.FXK.parts[0].n]);
+  ok(low.FXK.stats().tier === 'low', 'stats 里带 tier，探针能直接读档位');
   const tiny = boot(0.2);
   tiny.FXK.spr(pos, { n: 2, tex: 'ember', life: 1 });
   ok(tiny.FXK.parts[0].n === 3, '低画质也至少留 3 颗（少到看不见等于没放）', tiny.FXK.parts[0].n);
@@ -230,6 +238,33 @@ console.log('四、bolt：折线 / 分叉 / 闸门');
   const from2 = new low.THREE.Vector3(0, 1, 0), to2 = new low.THREE.Vector3(0, 1, 12);
   const b2 = low.FXK.bolt(from2, to2, { depth: 4, branch: 0 });
   ok(b2.geo.attributes.position.count === 8, '低画质：depth 砍半（4→2）→ 5 点 4 段 8 顶点', b2.geo.attributes.position.count);
+  /* [U6] 分叉条数进了播放账，§13 第 3 条可以逐道判，不用靠截图猜 */
+  const b3 = low.FXK.bolt(from2, to2, { depth: 4, branch: 1 });
+  ok(b3.branches === 0, '低画质：branch 拉满也零分叉（§11「无」）', b3.branches);
+  ok(b3.geo.attributes.position.count === 8, '低画质：零分叉时几何只有主干 8 顶点');
+  const fork = boot(1);
+  const f0 = new fork.THREE.Vector3(0, 1, 0), f1 = new fork.THREE.Vector3(0, 1, 12);
+  let forked = 0, deep = 0;
+  for (let i = 0; i < 20; i++) {
+    const bl = fork.FXK.bolt(f0, f1, { depth: 4 });
+    if (bl.branches > 0) forked++;
+    if (bl.maxLayer >= 2) deep++;
+  }
+  ok(forked >= 18, '高档 20 道闪电 ≥18 道有分叉（§13 第 3 条）', forked);
+  /* [U6] §11 的「高 = 2 层递归」：分叉自己还能再长出子分叉。
+   * 只甩一条出去的是 1 层 —— 之前不分档，等于降级表没生效。 */
+  ok(deep >= 15, '高档 ≥15/20 道闪电长出第 2 层子分叉（§11「2 层递归」）', deep);
+  /* 中档：只有 1 层（子分叉是高档才有的复杂度） */
+  const mid = boot(0.7);
+  const m0 = new mid.THREE.Vector3(0, 1, 0), m1 = new mid.THREE.Vector3(0, 1, 12);
+  let midDeep = 0, midMax = 0;
+  for (let i = 0; i < 40; i++) {
+    const bl = mid.FXK.bolt(m0, m1, { depth: 4 });
+    if (bl.maxLayer >= 2) midDeep++;
+    if (bl.maxLayer > midMax) midMax = bl.maxLayer;
+  }
+  ok(midDeep === 0 && midMax <= 1, '中档只长 1 层，不递归出子分叉（§11「1 层」）',
+    { midDeep, midMax });
 }
 
 console.log('五、shock：三件套 + 低画质去气浪');
@@ -270,9 +305,21 @@ console.log('六、decal：固定池循环复用（这条最容易写漏）');
   ok(FXK.stats().decalOn === 0, '贴花到期全部收起（但 mesh 还留着复用）', FXK.stats().decalOn);
   ok(FXK.decals.length === 16, '收起不等于销毁', FXK.decals.length);
 
-  const low = boot(0.5);
-  low.FXK.decal({ x: 0, y: 0, z: 0 }, {});
-  ok(low.FXK.decals.length === 6, '低画质：池缩到 6', low.FXK.decals.length);
+  /* [U6] §11 三档：中 8 槽、低 0（低档连池都不建，直接不出） */
+  const mid = boot(0.7), low = boot(0.5);
+  for (let i = 0; i < 20; i++) mid.FXK.decal({ x: i, y: 0, z: 0 }, {});
+  ok(mid.FXK.decals.length === 8 && mid.FXK.stats().decalOn === 8,
+    '中画质：池 8 槽、同屏最多 8 块', mid.FXK.stats());
+  ok(low.FXK.decal({ x: 0, y: 0, z: 0 }, {}) === null, '低画质：decal 直接返回 null');
+  ok(low.FXK.decals.length === 0 && low.FXK.stats().decalOn === 0,
+    '低画质：贴花消失（§13 第 13 条）', low.FXK.stats());
+  /* 从高档切到中 / 低：常驻池不拆，但超编的旧贴花必须当场收起 */
+  const sw = boot(1);
+  for (let i = 0; i < 20; i++) sw.FXK.decal({ x: i, y: 0, z: 0 }, { life: 5 });
+  sw.ctx.FX.q = 0.5;
+  sw.FXK.decal({ x: 0, y: 0, z: 0 }, { life: 5 });
+  ok(sw.FXK.decals.length === 16 && sw.FXK.stats().decalOn === 0,
+    '高→低切档：池不拆，16 块旧贴花全部当场收起', sw.FXK.stats());
 }
 
 console.log('七、clear：换图不留残影');
@@ -306,6 +353,24 @@ console.log('八、纪律（源码级）');
   ok(!/new THREE\.(Vector3|Color)/.test(upd), 'update 里不 new Vector3 / Color');
   ok(!/new THREE\.(PointsMaterial|MeshBasicMaterial|LineBasicMaterial)/.test(upd), 'update 里不 new 材质');
   ok(/FX\.q|this\.q/.test(code), '降级读 FX.q（不自己维护第二份倍率）');
+  /* [U6] 三档表只有一份，五个原语都读它 —— 之前各写 `q<1` / `q<0.75`
+   * 把三档压成二档，低画质还剩 6 块贴花（方案 §11 写的是 0）。 */
+  const tierTbl = code.match(/const FXK_TIER = \{([\s\S]*?)\n\};/);
+  ok(!!tierTbl, '降级表 FXK_TIER 在源码里只有一份');
+  ok(tierTbl && /high:\s*\{ part: 1,\s*decal: 16/.test(tierTbl[1]), '高档 = 100% 粒子 / 16 贴花');
+  ok(tierTbl && /mid:\s*\{ part: 0\.6,\s*decal: 8/.test(tierTbl[1]), '中档 = 60% 粒子 / 8 贴花');
+  ok(tierTbl && /low:\s*\{ part: 0\.35,\s*decal: 0/.test(tierTbl[1]), '低档 = 35% 粒子 / 0 贴花');
+  ok(!/q < 0\.75/.test(code), 'trail 不再用 q<0.75 把中档误判成低档');
+  ok(!/q < 1 \? 6 : 16/.test(code), 'decal 不再用二档 6 / 16 池');
+  ok((code.match(/FXK_TIER\[this\.tier\]/g) || []).length >= 5,
+    '五个原语都读同一张表', (code.match(/FXK_TIER\[this\.tier\]/g) || []).length);
+  ok(/branches: groups\.length - 1/.test(code),
+    'bolt 把分叉条数记进播放账（§13 第 3 条可逐道判）');
+  ok(/maxLayer: layers\.reduce/.test(code),
+    'bolt 把最深递归层数记进播放账（§11「2 层递归」可逐道判）');
+  ok(tierTbl && /high:\s*\{[^}]*branchLayer: 2/.test(tierTbl[1]), '高档分叉递归 2 层（§11）');
+  ok(tierTbl && /mid:\s*\{[^}]*branchLayer: 1/.test(tierTbl[1]), '中档分叉递归 1 层（§11）');
+  ok(tierTbl && /low:\s*\{[^}]*branchLayer: 0/.test(tierTbl[1]), '低档分叉递归 0 层（§11「无」）');
   /* 特效层只读坐标：不许改 pos / 伤害 */
   ok(!/\.pos\.(x|y|z)\s*[-+*/]?=/.test(code), '不写回 pos（特效层只读坐标）');
   ok(!/dmg\s*\*?=/.test(code), '不碰伤害数值');
