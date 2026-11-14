@@ -8478,7 +8478,7 @@ const Game = {
     e.patternCd = RND(2.5, 4.5);
     e.atkCd = 0;
     e.windup = 0; e.pendingMelee = false;
-    e.charging = 0; e.chargeHit = false;
+    e.charging = 0; e.chargeHit = false; e.chargeWind = 0;
     e.slow = 0; e.slowT = 0; e.stun = 0; e.freeze = 0;
     e.fearT = 0; e.tauntT = 0; e.tauntPt = null;
     e.poisonT = 0; e.poisonTick = 0; e.poisonDmg = 0;
@@ -8542,15 +8542,23 @@ const Game = {
       }
     } else if (e.charging > 0) {
       e.charging -= dt;
-      const dir = e.chargeDir;
-      e.pos.x += dir.x * 22 * dt; e.pos.z += dir.z * 22 * dt;
-      a.moving = true;
-      if (DIST2D(e.pos, pp) < e.radius + 1.6 && !e.chargeHit) {
-        e.chargeHit = true;
-        this.damagePlayer(e.dmg * 1.3, e);
-        this.shake = 0.5;
+      /* [U7] 前摇段：站定不动。以前 `charging` 一置上就开始以 22/s 前冲，
+       * 预警矩形带刚铺开人已经到脸上了 —— 那 0.7s 就是白给的。
+       * `chargeWind` 归零之前不位移、也不判命中。 */
+      if (e.chargeWind > 0) {
+        e.chargeWind -= dt;
+        a.moving = false;
+      } else {
+        const dir = e.chargeDir;
+        e.pos.x += dir.x * 22 * dt; e.pos.z += dir.z * 22 * dt;
+        a.moving = true;
+        if (DIST2D(e.pos, pp) < e.radius + 1.6 && !e.chargeHit) {
+          e.chargeHit = true;
+          this.damagePlayer(e.dmg * 1.3, e);
+          this.shake = 0.5;
+        }
+        FX.burst(new THREE.Vector3(e.pos.x, 0.6, e.pos.z), 0xaa8866, 4, { speed: 3, size: 0.14, life: 0.4, gravity: 4 });
       }
-      FX.burst(new THREE.Vector3(e.pos.x, 0.6, e.pos.z), 0xaa8866, 4, { speed: 3, size: 0.14, life: 0.4, gravity: 4 });
     } else if (d > e.reach * 0.8) {
       /* [M12] 拴绳：玩家不在首领所在的区域时，首领走回自己的锚点。
        * 不这么做的话它会一直朝玩家直线走，撞在祭坛的墙上磨 —— 区域化之后
@@ -8662,6 +8670,9 @@ const Game = {
     const pat = PICK(e.cfg.patterns || ['slam']);
     const st = e.dmg;
     const self = e;
+    /* [U7] 兜底特效层可缺省：实验室 / 精简页不加载 fx-kit.js，
+     * 缺了就是「没有竖波和贴花」，不能连带把预警和伤害一起弄没。 */
+    const fxk = (typeof FXK !== 'undefined' && FXK) ? FXK : null;
     SFX.boss();
     this.shake = Math.max(this.shake, 0.3);
     switch (pat) {
@@ -8703,11 +8714,22 @@ const Game = {
         break;
       }
       case 'charge': {
-        e.charging = 0.55; e.chargeHit = false;
+        /* [U7] 公平性：以前 `e.charging = 0.55` **当帧**就开始前冲，预警圈
+         * 刷在自己脚下 —— 玩家看到圈的时候人已经被撞了。
+         * 现在先站定 0.7s，铺一条矩形带（半宽 = 判定半径 `e.radius + 1.6`，
+         * 正好是冲过去扫过的那条带子），带上三个箭头指向冲锋方向。
+         * 倍率（`e.dmg * 1.3`，在 updateBossAI 的 charging 分支里）与判定都没动。 */
+        const WIND = 0.7;
         const dir = new THREE.Vector3(pp.x - e.pos.x, 0, pp.z - e.pos.z).normalize();
         e.chargeDir = { x: dir.x, z: dir.z };
+        e.chargeHit = false;
+        e.chargeWind = WIND;
+        e.charging = WIND + 0.55;
         e.lorder = 0;
-        FX.ring(e.pos, 2.4, 0xffaa44, 0.35);
+        FX.zone({
+          shape: 'rect', pos: e.pos, dir: { x: dir.x, z: dir.z },
+          len: 16, halfW: (e.radius || 1) + 1.6, dur: WIND, color: 0xffaa44,
+        });
         UI.log(e.cfg.name + ' 蓄力冲撞！', 'bad');
         break;
       }
@@ -8741,11 +8763,26 @@ const Game = {
         break;
       }
       case 'quake': {
-        FX.ring(e.pos, 9, 0xffaa66, 0.9, 0.4);
-        FX.flashCircle(e.pos, 8, 0xffbb77, 0.5);
-        this.shake = 0.8;
-        SFX.explode();
-        if (DIST2D(new THREE.Vector3(this.playerGroup.position.x, 0, this.playerGroup.position.z), e.pos) < 8.5) this.damagePlayer(st * 1.6, self);
+        /* [U7] 公平性：原来圈和伤害**同一帧**到，玩家没有反应窗口。
+         * 现在 0.9s 前摇：同心环由外向内收（`sweep:'in'`），收到判定半径
+         * 8.5 时才结算。落点用**开招那一刻**的坐标快照 —— 画在哪就炸在哪，
+         * 圈不会跟着 Boss 走（跟着走就变成「站哪都挨」）。
+         * 倍率 ×1.6 没动：补了前摇要不要抬到 ×2.0 见台账卡点（等拍板）。 */
+        const c = new THREE.Vector3(e.pos.x, 0, e.pos.z);
+        FX.zone({
+          shape: 'circle', pos: c, radius: 8.5, dur: 0.9, sweep: 'in', color: 0xffaa66,
+          cb: () => {
+            if (this.dead) return;
+            FX.ring(c, 9, 0xffaa66, 0.9, 0.4);
+            FX.flashCircle(c, 8, 0xffbb77, 0.5);
+            /* §4.1「炸时加 shock 竖波 + 地裂纹」：竖波给高度，裂纹给余味 */
+            if (fxk && fxk.shock) fxk.shock(c, 8, { color: 0xffbb77 });
+            if (fxk && fxk.decal) fxk.decal(c, { tex: 'crack', color: 0x241a12, size: 7, life: 6 });
+            this.shake = 0.8;
+            SFX.explode();
+            if (DIST2D(new THREE.Vector3(this.playerGroup.position.x, 0, this.playerGroup.position.z), c) < 8.5) this.damagePlayer(st * 1.6, self);
+          },
+        });
         break;
       }
       case 'poisonnova': {
@@ -8770,35 +8807,71 @@ const Game = {
         break;
       }
       case 'frostnova': {
+        /* [U7] 公平性：0.8s 前摇，空心环由内向外扩到判定半径 7。
+         * 环是**波前**不是「中间安全」：环走过的范围会被填满（fill 随进度
+         * 亮起），所以整个圆盘都是危险区 —— 和 `DIST2D < 7` 一致。 */
         const c = new THREE.Vector3(e.pos.x, 0, e.pos.z);
-        FX.flashCircle(c, 7, 0x8ad8ff, 0.5);
-        FX.ring(c, 7, 0x8ad8ff, 0.7);
-        SFX.ice();
-        if (DIST2D(new THREE.Vector3(this.playerGroup.position.x, 0, this.playerGroup.position.z), c) < 7) {
-          this.damagePlayer(st * 1.1, self);
-          this.applyPlayerSlow(0.5, 2.5);
-        }
+        FX.zone({
+          shape: 'ring', pos: c, radius: 7, dur: 0.8, sweep: 'out', color: 0x8ad8ff,
+          cb: () => {
+            if (this.dead) return;
+            FX.flashCircle(c, 7, 0x8ad8ff, 0.5);
+            FX.ring(c, 7, 0x8ad8ff, 0.7);
+            SFX.ice();
+            if (fxk && fxk.decal) fxk.decal(c, { tex: 'frost', color: 0x9fd8ff, size: 7, life: 5 });
+            if (DIST2D(new THREE.Vector3(this.playerGroup.position.x, 0, this.playerGroup.position.z), c) < 7) {
+              this.damagePlayer(st * 1.1, self);
+              this.applyPlayerSlow(0.5, 2.5);
+            }
+          },
+        });
         break;
       }
       case 'fireline': {
+        /* [U7] 形状：以前是 6 个圆一个个冒出来、0 前摇，读不出「这是一条线」。
+         * 现在先铺一条矩形带（0.7s，指向玩家），带子亮完再沿它一路炸过去 ——
+         * 看见带子就知道「这条走廊不能站」。倍率 ×0.9 没动。 */
+        const o = new THREE.Vector3(e.pos.x, 0, e.pos.z);
         const dir = new THREE.Vector3(pp.x - e.pos.x, 0, pp.z - e.pos.z).normalize();
-        for (let i = 0; i < 6; i++) {
-          const t = new THREE.Vector3(e.pos.x + dir.x * i * 3, 0, e.pos.z + dir.z * i * 3);
-          setTimeout(() => {
-            FX.flashCircle(t, 2.2, 0xff5522, 0.35);
-            FX.burst(new THREE.Vector3(t.x, 0.6, t.z), 0xff7722, 10, { speed: 5, size: 0.16, life: 0.5, gravity: -2, additive: true });
-            if (DIST2D(new THREE.Vector3(this.playerGroup.position.x, 0, this.playerGroup.position.z), t) < 2.2) this.damagePlayer(st * 0.9, self);
-          }, i * 110);
-        }
+        FX.zone({
+          shape: 'rect', pos: o, dir: { x: dir.x, z: dir.z },
+          len: 6 * 3, halfW: 2.2, dur: 0.7, color: 0xff5522,
+          cb: () => {
+            if (this.dead) return;
+            for (let i = 0; i < 6; i++) {
+              const t = new THREE.Vector3(o.x + dir.x * i * 3, 0, o.z + dir.z * i * 3);
+              setTimeout(() => {
+                if (this.dead) return;
+                FX.flashCircle(t, 2.2, 0xff5522, 0.35);
+                FX.burst(new THREE.Vector3(t.x, 0.6, t.z), 0xff7722, 10, { speed: 5, size: 0.16, life: 0.5, gravity: -2, additive: true });
+                if (DIST2D(new THREE.Vector3(this.playerGroup.position.x, 0, this.playerGroup.position.z), t) < 2.2) this.damagePlayer(st * 0.9, self);
+              }, i * 110);
+            }
+          },
+        });
         break;
       }
       case 'curse': {
+        /* [U7] 形状：判定是「距离 < 14 **无条件**命中」= 锁定、跑不掉，却画了
+         * 一条从 Boss 连到玩家的光束 —— 看着像可以躲的弹道，于是玩家会去躲，
+         * 躲完发现还是掉血，规则就不被相信了。
+         * 现在 0.7s 前摇：准星**挂在玩家脚下**（follow，跟着人走）——
+         * 这是「你被标记了」，不是「快跑」。结算时才连线（那一下是魂丝抽紧）。
+         * 判定与倍率 ×0.6 都没动：中途跑出 14 格也照旧命中，锁定就是锁定。 */
         if (DIST2D(new THREE.Vector3(this.playerGroup.position.x, 0, this.playerGroup.position.z), e.pos) < 14) {
-          this.damagePlayer(st * 0.6, self);
-          const slowed = this.applyPlayerSlow(0.45, 3);
-          FX.beam(new THREE.Vector3(e.pos.x, 2, e.pos.z), new THREE.Vector3(this.playerGroup.position.x, 1.4, this.playerGroup.position.z), 0xaa66ff, 0.4);
-          UI.log(slowed ? '你被邪咒缠绕，身法迟滞！' : '免控生效，邪咒缠不上身！',
-            slowed ? 'bad' : 'good');
+          FX.zone({
+            shape: 'lock', pos: this.playerGroup.position, follow: this.playerGroup,
+            radius: 2.2, dur: 0.7, color: 0xaa66ff,
+            cb: () => {
+              if (this.dead) return;
+              const p = this.playerGroup.position;
+              this.damagePlayer(st * 0.6, self);
+              const slowed = this.applyPlayerSlow(0.45, 3);
+              FX.beam(new THREE.Vector3(e.pos.x, 2, e.pos.z), new THREE.Vector3(p.x, 1.4, p.z), 0xaa66ff, 0.4);
+              UI.log(slowed ? '你被邪咒缠绕，身法迟滞！' : '免控生效，邪咒缠不上身！',
+                slowed ? 'bad' : 'good');
+            },
+          });
         }
         break;
       }

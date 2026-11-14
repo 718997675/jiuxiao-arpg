@@ -8,12 +8,11 @@
   但**不再往那两份里加待办、也不再按它们的 V0~V6 / P0~P2 编号排期**。
 - 进度事实看这两份：`docs/status/skill-refactor.md`（人物主线）、
   `docs/status/boss-kits.md`（B 线 B1~B25）。本文件只管「还差什么、按什么顺序合」。
-- 更新：2026-11-07；进度更新：2026-11-14（U6-1 / U6-2 / U6-3 ✅）
+- 更新：2026-11-07；进度更新：2026-11-15（U7 ✅）
 
-> 当前：**人物线欠账 U1~U6 全部收口 ✅**（U6 = U6-1 三档降级 / U6-2 音效三段 / U6-3 逐只演出构成 / U6-4 §13 清单 / U6-5 收口推送）。
-> §13 十四条全部有结论（13 达标 + 第 12 条的移动端 fps 转 U11 真机前置），
-> `status.sh` 读到 **11/17**。**下一步进 BOSS 线 U7**（老兜底 11 个手写 case 的公平性前摇），
-> 之后 U8 / U9 / U10 → U11 人物先合 main → U12 BOSS 后合 main。
+> 当前：**人物线 U1~U6 全 ✅、BOSS 线 U7 ✅**（U7 = 兜底 11 招补前摇 + `FX.zone` 形状预警）。
+> `status.sh` 读到 **12/17**。**下一步 U8**（世界 Boss 6 只另开一层，等拍板），
+> 之后 U9 / U10 → U11 人物先合 main → U12 BOSS 后合 main。
 > 两条线的特效代码都已在 feat/skill-refactor 跑通，但 origin/main 一个特效文件都没有；
 > 功能分支已推到 origin，合入进度仍是 **0%**。顺序不变：人物先合、BOSS 后合。
 
@@ -53,7 +52,7 @@
 | U4 | 人物 · **元素反应 10 组专属视觉**：机制 P3a 已 10/10 落地（走 `damageEnemy` 一个口），但 §9.2 的蒸汽 / 等离子 / 绿火 / 晶体爬弧 / 霜面腐蚀 / 链式绿弧 / 金火等视觉语言没落进游戏 | ✅ | `src/elem-fx.js`（新，非生成物）+ `index.html` 插脚本 + `src/game.js` 的 `applyElemReaction` 一处挂点（旧 `FX.*` 全换掉、`chainReaction` 走 `ElemFX.link`、`explodeAt` 加 `noFx`）+ `dev/test-elemfx.js` + `dev/probe-elemfx.js` | 静态契约 **74/0**、真机探针 **94/0**：10 组逐条触发 + **10 组原语序列两两不同**（不是只换颜色）+ 坐标全有限 + 反应期间旧 `FX.*` 零调用；`smoke` / `mobile-layout` / 技能契约十份 / 四个 `--check` 全绿 |
 | U5 | 人物 · **V4 近战武器附魔**：`enchant` 原语在 `fx-kit.js` / `vfx.js` / `data-vfx.js` 全是 0 处；Lv10「常驻光效」原本只有刀身发烫脉冲，不是真附魔 | ✅ | `src/data/data-vfx.js`（`ENCHANT_PROFILE` 6 套 + 15 个 Lv10 `enchant: true` 声明）+ `src/fx-kit.js`（`FXK.enchant` 常驻层）+ `src/game.js`（`enchantState` / `updateEnchant` 每帧同步）+ `dev/test-enchant.js` + `dev/probe-enchant.js` | **6 元素各一套，三维度两两不同**（贴图格 / accent 几何 / 粒子运动）；真机 draw call +4（副元素 +5、低画质 +2）≤6；`test-enchant` **235/0**、`probe-enchant` **60/0**；`smoke` ERRORS none、`mobile-layout` 全绿 |
 | U6 | 人物 · **V6 打磨 + 把验收清单勾完**：音效三段对齐（台账 0 处提及）、低画质降级逐项核验、录屏对比；`SKILL-VFX-PLAN.md §13` 14 条逐条给判据，含「同职业 5 招灰度后认出 ≥4」的人眼结论；逐条配方「该几颗 / 什么色」未逐个调（V3b 只重配了三条 ④ 位） | ✅ | `src/sfx-audio.js` / `src/fx-kit.js` / `dev/vfx-shot-live.js` / `dev/test-vfx13.js` / `docs/SKILL-VFX-PLAN.md §13` | U6-1~U6-5 全 ✅；§13 十四条全部有结论（13 达标 + 1 转 U11 真机）；全套 node 契约 38 绿 / 2 已知环境红，`smoke` + `mobile-layout` 全绿 |
-| U7 | BOSS · **老兜底 11 个手写 case 一行没动**：`src/game.js:8579+` 的 `quake` / `frostnova` / `curse` 仍**当帧结算零前摇**（公平性），`fireline` 仍是 6 个圆串、`charge` 预警刷在自己脚下、主视觉全贴地圆。`BOSS-VFX-PLAN.md` 的 P0 四条（补 0.7~1.1s 前摇 + 形状匹配预警）没做 | ⬜ | `src/game.js` 的 `bossPattern` 老 switch 兜底段 | 静态扫描前摇覆盖率；>1.0× 伤害的招全部 ≥0.7s 且形状匹配 |
+| U7 | BOSS · **老兜底 11 个手写 case 补公平性前摇 + 形状匹配预警**：`quake` / `frostnova` / `curse` 原来当帧结算零前摇；`fireline` 是 6 个圆串、`charge` 预警刷在自己脚下、`curse` 画连线像可躲的弹道 | ✅ | `src/fx.js` 新增 `FX.zone({shape})`（circle/ring/rect/lock + `sweep` 收扩 + `follow` 跟随）+ `src/game.js` 四个 P0 case + `charge` 的 `chargeWind` 停顿 + `FX.clear()` 多材质收尾 + `dev/audit-bosspattern.js` / `dev/test-bosspattern.js` / `dev/probe-bosszone.js` | 静态扫描 **A 前摇 7/7、B 形状 13/13**（改前 4/7、8/13）；契约 **28/0**；`FX.zone` 真机 **32/0**（构件数 / 出像素 / rect 朝向 4 组 / sweep 首尾 / lock 跟随 / 回调恰好一次 / 过期零残留） |
 | U8 | BOSS · **世界 Boss 6 只不在 `BOSS_KIT`**，走 `WorldBoss` 另一套调度（`game.js:8425` 注释自承），B24/B25 变形层不覆盖。要给它们「自己的四拍」得**另开一层**，别塞进 `BOSS_TWIST` | ⬜ | 新数据层 + `src/world-boss.js` 接线 | 6 只全量试放零空招；真机探针 |
 | U9 | BOSS · **P2 整块**：小怪 8 形态（近战普攻 40 只零特效、healer 无治疗光束、bomber 借受击闪白当警戒灯、coward 只有 `+` 飘字）；12 条精英词缀里 7 条零视觉（`frost`/`venom`/`vampiric`/`swift`/`thorns`/`warded`/`split`，代码里只有数值逻辑）；Boss 出场零表现 / 死亡无碎片与掉落光柱 | ⬜ | `src/game.js` AI 段 + 词缀生效点 + `spawnBosses` / `onEnemyDeath` | 常驻微标识（不是每次触发炸一朵花）；40 只同屏不炸屏 |
 | U10 | BOSS · **逐只精修 + 兜底层局限**：同形状两招拿到的柱子排布相同（变形层只改应对动作）、环形暗底偏薄（内圈不暗，语义是「环内安全」，要补先改判定）、共享池只有 31 招导致 45 只必有 2 格重合（92 对）、移动中判定表达不了（只有 6 种静态形状）、实体暗场是「亮团」需低模、活物没厚度（trail 是贴地 ribbon） | ⬜ | `docs/boss-vfx-playground.html` → `node dev/build-fx2.js --write`；`src/boss-cast.js` | `dev/dup-audit.js` + 逐只截图 |
@@ -452,34 +451,113 @@ U6-5 只做 `git push origin feat/skill-refactor` 快进推功能分支。
 **`status.sh`**：`vfx-merge` 从 8/17 → 9/17（U6-4）→ **11/17**（U6 父节点 + U6-5）。
 余下 6 个 = U7 / U8 / U9 / U10 / U11 / U12，全是 BOSS 线与合入线。
 
-## 下一步（人物 U1~U6 全 ✅，进 BOSS 线，别跳）
+## U7 收口记录 · BOSS 兜底招式公平性（2026-11-15 · ✅）
 
-1. `U7` BOSS · **老兜底 11 个手写 case 补公平性前摇**：`src/game.js:8579+` 的
-   `quake / frostnova / curse` 仍当帧结算零前摇，`fireline` 还是 6 个圆串、
-   `charge` 预警刷在自己脚下。开工前先量静态前摇覆盖率。
-   **卡点里有一件等用户拍板**（`quake` 补前摇后倍率怎么定），先问过再动数值。
-2. 之后依次 `U8` 世界 Boss 另开一层（也等拍板）、`U9` P2 小怪 / 词缀 / 生命周期、
-   `U10` 逐只精修 + 兜底层局限；再 `U11` 人物合 main、`U12` BOSS 合 main。
-3. 出图口径别退回去：§13 第 1 条只认 `dev/vfx-shot-live.js`（`Game.playSkillVfx`
+**先量后改。** 开工第一步不是动 `game.js`，是写尺子：
+
+```
+node dev/audit-bosspattern.js          # 报表
+node dev/audit-bosspattern.js --check  # 不达标 exit 1
+```
+
+尺子静态扫 `bossPattern(e, pp)` 的 13 个 case，读三件事：倍率（`st * 1.6` /
+`e.dmg * 1.3`）、前摇（`FX.telegraph` 第 3 参 / `FX.zone` 的 `dur` / `setTimeout` 第一段 /
+`e.charging`）、判定形状（`DIST2D(...) < R`、循环点数、有无 `applyPlayerSlow`）。
+判两条线：
+
+- **A 前摇**：>1.0× 伤害 → 前摇 ≥0.7s 且带预警（`BOSS-VFX-PLAN.md §2` 原文）
+- **B 形状**：预警画出来的东西要读得出判定范围（§1.4 硬伤 ②）
+
+| | 改前 | 改后 |
+|---|---|---|
+| A 前摇 | **4/7**（`charge` / `quake` / `frostnova` 零前摇） | **7/7** |
+| B 形状 | **8/13**（`charge` / `quake` / `frostnova` / `fireline` / `curse` 读不出） | **13/13** |
+
+**四个 P0 怎么改的**（全部只加前摇与形状，**倍率一格没动**）：
+
+| case | 改法 | 关键点 |
+|---|---|---|
+| `quake` | 0.9s `FX.zone({shape:'circle', radius:8.5, sweep:'in'})`，同心环由外向内收；结算时补 `FXK.shock` 竖波 + `crack` 地裂纹贴花 | 落点用**开招那一刻**的坐标快照 —— 画在哪就炸在哪，圈不跟着 Boss 走 |
+| `frostnova` | 0.8s `shape:'ring', sweep:'out'`，空心环由内向外扩到判定半径 7；结算补 `frost` 贴花 | 环是**波前**不是「中间安全」：环走过的范围会被填满，整个圆盘都是危险区 |
+| `charge` | 站定 0.7s（新字段 `e.chargeWind`，AI 分支里 `chargeWind > 0` 不位移不判命中），铺 `shape:'rect'` 矩形带，半宽 = 判定半径 `e.radius + 1.6`，三个箭头指方向 | 带子就是「冲过去扫过的面积」，改形状预警**不改判定**；倍率 `e.dmg * 1.3` 在 AI 循环里，没动 |
+| `fireline` | 先铺 0.7s 矩形带（`len: 18, halfW: 2.2`），带子亮完再沿它一路炸 6 下 | 从「6 个圆一个个冒」变成「一条走廊」，看见带子就知道不能站 |
+| `curse` | 0.7s `shape:'lock'` 准星**挂在玩家脚下**（`follow`，跟着人走），四根刻度；结算时才连线 | 判定是「距离 <14 无条件命中」= 锁定，画弹道光束是在骗人。中途跑出 14 格照旧命中 —— 锁定就是锁定 |
+
+**新增 `FX.zone({shape})`**（`src/fx.js`，`BOSS-VFX-PLAN.md §3` 的落地）：
+`circle` 3 件 / `ring` 4 件 / `rect` 6 件 / `lock` 6 件；`sweep:'in'|'out'` 控制进度环
+收还是扩（方向本身就是信息：收 = 往中心砸，扩 = 从中心炸开）；`follow` 让准星贴人。
+`FX.clear()` 同步修好 —— 老代码无条件 `z.mat.dispose()`，而 `zone` 的 `mat` 是 `null`
+（材质都在 `mats` 里），一换图就抛。
+
+**证据**：
+
+- `dev/test-bosspattern.js` **28/0**（13 个 case 全扫到、A 7/7、B 13/13、11 个倍率逐条钉住没被顺手改）
+- `dev/probe-bosszone.js` **32/0**（四种形状构件数、逐形状出像素、rect 朝向 4 组、sweep 首尾、lock 跟随、回调恰好一次、过期零残留、draw call 回基线、零报错）
+- 回归：`test-vfx13` 48/0、`test-skillvfx-shape` 160/0、`test-enchant` 235/0；
+  `test-bosskits` 35/1 是台账记过的 Safari 基线假红（本机跑 `--write` 会污染生成物，没跑）
+
+**三条踩坑**（都记进当日日志）：
+
+1. 尺子用 `indexOf('bossPattern(e, pp)')` 会命中 `this.bossPattern(e, pp)` **调用点**
+   （在定义之前 35 行），量到的是错的地方还一声不响 —— 必须正则认 `) {` 那个定义。
+2. 剥块注释不能压成一个空格：`game.js` 块注释极多，行号会整体偏小 1528 行。
+   要按原注释的换行数补 `\n`。
+3. 真机探针把预警摆在 `pp.z - 6`，那块正好被场景挡住 → 差异 **0 像素**，
+   看起来像「没画」，其实是「看不见」。挪到玩家脚下立刻 24 万像素。
+   **红之前先怀疑尺子**，这条又要记一次。
+
+## 探针浏览器护栏（2026-11-15 · 用户提的硬需求）
+
+用户原话：「每次跑无头浏览器都吃大量内存、风扇响得厉害，而且杀进程杀不掉」。
+
+根因三条，分别对治（新增 `dev/_guard.js` + `dev/kill-browsers.sh`，接在 `dev/_pptr.js` 的 `launch` 里）：
+
+| 症状 | 根因 | 对策 |
+|---|---|---|
+| 吃内存 | Chrome 每个 renderer 一整份 V8+Blink；游戏 WebGL 场景本身也不小 | `--renderer-process-limit=1`、`--js-flags=--max-old-space-size=512`、关后台网络 / 同步 / 扩展 / 组件更新、磁盘缓存 1 字节 |
+| 风扇响 | SwiftShader 是纯 CPU 光栅化，会把性能核吃满 | 启动后 `taskpolicy -b -p <pid>` 降到后台 QoS；**没有**改 GL 后端，读数与截图基线不变 |
+| 杀不掉 | `browser.close()` 在 SwiftShader 下会卡；Ctrl-C **不跑** `process.on('exit')`；zygote / renderer 是子进程树，只杀父进程留一堆孤儿 | 唯一 `--user-data-dir=<tmp>/jxprobe-<pid>-<ts>` 做标记 → `pkill -9 -f <tag>` 只杀自己；SIGINT / SIGTERM / SIGHUP / uncaught / unhandledRejection / exit **六条路**全收尸；默认 10 分钟硬超时 exit 124 |
+
+**只杀自己**这条是红线：`pkill` 一律带 `jxprobe-` 唯一标记，
+绝不 `pkill chrome` / `killall Safari` —— 那会把用户自己正在用的浏览器一起关掉。
+
+`dev/test-guard.js` **17/0**：不启动任何浏览器，用带标记的假进程验完
+「只杀带标记的 / 不误伤无关进程 / release 删目录 / SIGINT 与 SIGTERM 都收尸 /
+超时 exit 124 / 机器零残留」。**先验完再装浏览器** —— 否则等于先装一个杀不掉的东西。
+
+## 下一步（U7 ✅，进 U8 之前有两件事等拍板）
+
+1. `U8` BOSS · **世界 Boss 6 只另开一层**：它们不在 `BOSS_KIT`，走 `WBFight` 另一套调度。
+   **等拍板**（另开一层 / 维持现状）。
+2. `U9` P2 小怪 / 12 条词缀 / 生命周期；`U10` 逐只精修 + 兜底层局限。
+3. **`U11` 人物合 main → 推上线**（用户 2026-11-15 已明确要求「这版做完发线上」）。
+   `U12` BOSS 合 main 必须基于「已含 U11 的 main」。
+4. 出图口径别退回去：§13 第 1 条只认 `dev/vfx-shot-live.js`（`Game.playSkillVfx`
    → SKFX 真实链路）；`dev/vfx-shot.js` 是配方层 / 回落路径尺子，判据不动。
    人眼结论看 `shots/vfx-live/sheet-*.png` 的灰度行，放大净剪影只是形状辅助。
-4. 三条口径别踩：① Lv10 的 `enchant` 是**数据声明**不是播放指令，
+5. 四条口径别踩：① Lv10 的 `enchant` 是**数据声明**不是播放指令，
    别去 `src/vfx.js` 补 case；② 常驻附魔走 FXK、技能演出走 SKFX，
    `vfx-skill-vis`（默认 / `--live`）都不量附魔，附魔有自己那支 `probe-enchant`；
-   ③ 逐只演出构成看 `dev/audit-skillvfx.js`，改实验室后跑 `test-skillvfx-shape`。
-5. 改 `src/sfx.js` **一律走生成器**：改 `docs/vfx-playground.html` →
+   ③ 逐只演出构成看 `dev/audit-skillvfx.js`，改实验室后跑 `test-skillvfx-shape`；
+   ④ **BOSS 侧新预警一律走 `FX.zone({shape})`**，别再手搓 `FX.ring` 当预警 ——
+   `dev/test-bosspattern.js` 的 B 线就是判这个（`ring-fx` 会被判红）。
+6. 改 `src/sfx.js` **一律走生成器**：改 `docs/vfx-playground.html` →
    `node dev/build-skillvfx.js --write` → `node dev/build-skillvfx.js --check`。
    别手改生成物（`abd20ad` 修的 `hitArea` stub 就是这么来的）；
    按游戏 id 去实验室找同名条目前先查 `ALIAS`（`swords→swordarray` 等 5 条）。
-6. 每个 U 收口后立刻 `git status` + 写本表状态 + commit，再进下一个。台账别攒着写。
+7. 每个 U 收口后立刻 `git status` + 写本表状态 + commit，再进下一个。台账别攒着写。
    **合 main 用 `./push.sh`（推 main）；推功能分支用 `git push origin feat/skill-refactor`，别混。**
-7. U11 / U12 之前先 `./dev/status.sh` 确认三条线各自到哪了；
+8. U11 / U12 之前先 `./dev/status.sh` 确认三条线各自到哪了；
    **合 main 前必须补移动端真机 ≥30fps**（见「卡点」）。
 
 ## 卡点（等拍板 / 硬前置）
 
 - **等用户拍板 2 件**：① 世界 Boss 是另开一层还是维持现状（U8）；
   ② `quake` 补前摇后倍率 ×1.6 → ×2.0 还是接受 Boss 变简单（`BOSS-VFX-PLAN.md §6-⑤`，U7）。
+  **U7 已按「不改数值」落地**：前摇补上了、倍率一格没动，这一格仍然空着等拍板。
+- **U7 顺带结清 1 件**：`FX.clear()` 无条件 `z.mat.dispose()` 的老隐患 ——
+  多材质条目（`zone`）`mat` 是 null，一换图就抛。已改成「有 mats 按 mats 清」，
+  `probe-bosszone` 第 5 组盯「过期零残留 + draw call 回基线」。
 - **U1 已结清 2 件**（2026-11-07，代码事实 + 实测，不再等拍板）：双演出层以
   `SKFX` 为准（口径见上节）；SKFX **不另设**面积下界，`--live` 与配方层共用
   `900 / 1500 / 2500`，113/0 全绿。

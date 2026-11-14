@@ -747,6 +747,159 @@ const FX = {
     this.zones.push({ mesh: m, mat, life: dur, max: dur, type: 'tele', cb, radius });
   },
 
+  /* ============================================================
+   * [U7] 形状驱动的地面预警
+   *
+   * 老 `telegraph()` 只会画圆。于是「判定是 6 个点串成的火线」「判定是
+   * 一条冲锋带」「判定是锁定、根本跑不掉」全都被画成同一个圆 —— 玩家读到的
+   * 信息是错的：以为能绕，其实绕不掉；以为要跑，其实站着不动就行。
+   *
+   * 这里按 BOSS-VFX-PLAN §3「判定形状决定预警形状」拆成四种：
+   *
+   *   circle  圆点 / 圆形范围 → 实心圆 + 边沿 + 一道收缩环（由外向内收）
+   *   ring    环形冲击        → 空心环带 + 一道扩张环（由内向外扩）
+   *   rect    直线带 / 冲锋   → 长条 + 两条长边 + 三个箭头（指向去向）
+   *   lock    锁定 / 必中     → 挂在他脚下的准星 + 四根刻度（跟着人走）
+   *
+   * `sweep` 控制那道「进度环」的方向：'in' 由外向内收、'out' 由内向外扩、
+   * 不给就只脉动不扫。方向本身就是信息：收 = 往中心砸，扩 = 从中心炸开。
+   *
+   * 调用与 `telegraph` 同形，到点回调 `cb`：
+   *   FX.zone({ shape:'circle', pos, radius:8.5, dur:0.9, sweep:'in', cb })
+   *   FX.zone({ shape:'rect', pos, dir:{x,z}, len:14, halfW:3, dur:0.7, cb })
+   *   FX.zone({ shape:'lock', pos, follow:group, radius:2.2, dur:0.7, cb })
+   * ============================================================ */
+  zone(o) {
+    o = o || {};
+    const shape = o.shape || 'circle';
+    const pos = o.pos || new THREE.Vector3();
+    const dur = o.dur == null ? 0.8 : o.dur;
+    const color = o.color == null ? 0xff3333 : o.color;
+    const radius = o.radius == null ? 2 : o.radius;
+
+    const grp = new THREE.Group();
+    grp.position.set(pos.x, (pos.y || 0) + 0.06, pos.z);
+    /* 平铺到地面：本地 XY → 世界 XZ。之后所有形状都在本地平面里画，
+     * 只有 rect 需要再绕 z 转一个朝向。 */
+    grp.rotation.x = -Math.PI / 2;
+    this.scene.add(grp);
+
+    const fade = [];
+    const mk = (op) => {
+      const m = new THREE.MeshBasicMaterial({
+        color, transparent: true, opacity: op,
+        side: THREE.DoubleSide, depthWrite: false,
+      });
+      fade.push({ m, op0: op });
+      return m;
+    };
+    let prog = null;
+    let sweep = o.sweep || null;
+
+    if (shape === 'circle') {
+      const disc = new THREE.Mesh(fxCircle(40), mk(0.20));
+      disc.scale.setScalar(radius);
+      grp.add(disc);
+      const rim = new THREE.Mesh(fxRingThin(0.93, 1, 40), mk(0.72));
+      rim.scale.setScalar(radius);
+      grp.add(rim);
+      /* 收缩环：默认由外向内，读作「往中间砸下来」 */
+      prog = new THREE.Mesh(fxRingThin(0.88, 1, 40), mk(0.55));
+      grp.add(prog);
+      if (!sweep) sweep = 'in';
+    } else if (shape === 'ring') {
+      /* 空心环带：内圈留空，一眼看出「中间是安全的」 */
+      const band = new THREE.Mesh(fxRingThin(0.72, 1, 48), mk(0.26));
+      band.scale.setScalar(radius);
+      grp.add(band);
+      const inRim = new THREE.Mesh(fxRingThin(0.70, 0.75, 48), mk(0.7));
+      inRim.scale.setScalar(radius);
+      grp.add(inRim);
+      const outRim = new THREE.Mesh(fxRingThin(0.96, 1, 48), mk(0.8));
+      outRim.scale.setScalar(radius);
+      grp.add(outRim);
+      prog = new THREE.Mesh(fxRingThin(0.94, 1, 48), mk(0.6));
+      grp.add(prog);
+      if (!sweep) sweep = 'out';
+    } else if (shape === 'rect') {
+      const len = o.len == null ? 12 : o.len;
+      const halfW = o.halfW == null ? 2.4 : o.halfW;
+      const dx = o.dir ? o.dir.x : 0, dz = o.dir ? o.dir.z : -1;
+      const dl = Math.hypot(dx, dz) || 1;
+      /* 本地 +Y 经 rotation.x=-90° 后指向世界 -Z，再绕 z 转 a：
+       *   a = atan2(-dx, -dz)  ← 代入 (0,-1) 得 a=0（正对 -Z），可自检 */
+      grp.rotation.z = Math.atan2(-dx / dl, -dz / dl);
+      grp.position.x += dx / dl * len * 0.5;
+      grp.position.z += dz / dl * len * 0.5;
+      const body = new THREE.Mesh(fxPlane(1, 1), mk(0.20));
+      body.scale.set(halfW * 2, len, 1);
+      grp.add(body);
+      for (const sx of [-1, 1]) {
+        const edge = new THREE.Mesh(fxPlane(1, 1), mk(0.75));
+        edge.scale.set(0.16, len, 1);
+        edge.position.x = sx * halfW;
+        grp.add(edge);
+      }
+      /* 三个箭头：不是装饰，是在说「这条带子往哪边走」 */
+      for (let i = 0; i < 3; i++) {
+        const chev = new THREE.Mesh(fxRing(0, 1, 3, Math.PI * 0.9), mk(0.62));
+        chev.scale.setScalar(halfW * 0.62);
+        chev.position.y = (i - 1) * len * 0.26;
+        grp.add(chev);
+      }
+      prog = null;
+    } else if (shape === 'lock') {
+      /* 锁定：准星 + 四根刻度。`follow` 给了就每帧贴过去 ——
+       * 「跑不掉」这件事必须画在脚上，画在 Boss 脚下就又变成「躲开就行」。 */
+      const ring = new THREE.Mesh(fxRingThin(0.82, 1, 32), mk(0.85));
+      ring.scale.setScalar(radius);
+      grp.add(ring);
+      const cross = new THREE.Mesh(fxRingThin(0.2, 1, 4), mk(0.5));
+      cross.scale.setScalar(radius * 0.55);
+      grp.add(cross);
+      for (let i = 0; i < 4; i++) {
+        const tick = new THREE.Mesh(fxPlane(1, 1), mk(0.8));
+        tick.scale.set(0.12, radius * 0.42, 1);
+        /* 先绕原点转到该象限，再沿该方向抬出去 */
+        const a = i * Math.PI / 2;
+        tick.position.set(Math.sin(a) * radius * 1.18, Math.cos(a) * radius * 1.18, 0);
+        tick.rotation.z = -a;
+        grp.add(tick);
+      }
+      prog = null;
+    }
+
+    this.zones.push({
+      /* 一个 zone 有好几份材质（底盘 / 边沿 / 进度环 / 刻度），
+       * 挂到 `mats` 上让收尾那段统一 dispose —— 只清 `mat` 会漏，
+       * 连放技能就是一路涨显存（`field` 那层踩过同一个坑）。 */
+      mesh: grp, mat: null, mats: fade.map(f => f.m), fade,
+      life: dur, max: dur,
+      type: 'zone', shape, radius, prog, sweep,
+      cb: o.cb || null, follow: o.follow || null,
+    });
+    return grp;
+  },
+
+  /* 形状预警每帧推进：脉动 + 进度环 + 跟随 + 到点回调 */
+  _zoneTick(z, k, dt) {
+    /* 前 15% 淡入，避免「啪」一下整块出现；之后脉动 */
+    const fadeIn = Math.min(1, k * 6.5);
+    const pulse = 0.80 + 0.20 * Math.sin(k * 24);
+    for (const f of z.fade) f.m.opacity = f.op0 * pulse * fadeIn;
+    if (z.prog) {
+      const t = z.sweep === 'in' ? 1 - k : k;
+      const s = z.radius * (0.06 + 0.94 * t);
+      z.prog.scale.setScalar(Math.max(0.001, s));
+    }
+    if (z.follow && z.follow.position) {
+      z.mesh.position.x = z.follow.position.x;
+      z.mesh.position.z = z.follow.position.z;
+    }
+    if (z.life <= 0 && z.cb) { z.cb(); z.cb = null; }
+  },
+
+
   /* 持续区域（毒雾/火海） */
   area(pos, radius, color, dur, opts = {}) {
     const geo = fxCircle(32);
@@ -1171,6 +1324,8 @@ const FX = {
       } else if (z.type === 'area') {
         z.mat.opacity = Math.max(0, (z.baseOp || 0.18) * (0.85 + Math.sin(k * 14) * 0.2)) * Math.min(1, z.life * 2);
         z.mesh.scale.setScalar(z.radius * (0.94 + Math.sin(k * 6) * 0.03));
+      } else if (z.type === 'zone') {
+        this._zoneTick(z, k, dt);
       } else if (z.type === 'slash') {
         z.mat.opacity = Math.max(0, (z.op0 || 0.85) * (1 - k));
         z.mesh.rotation.z += dt * 2;
@@ -1274,8 +1429,14 @@ const FX = {
     this.projectiles.length = 0;
     for (const z of this.zones) {
       if (z.mesh.parent) z.mesh.parent.remove(z.mesh);
-      z.mat.dispose();
-      z.mesh.traverse(o => { if (o.material && o.material !== z.mat) o.material.dispose(); });
+      /* [U7] `zone` 这类多材质条目 `mat` 是 null（材质都在 `mats` 里），
+       * 老代码无条件 `z.mat.dispose()` 会当场抛 —— 一换图就崩，且崩在
+       * 换图路径上，看起来像「进新图黑屏」。有 mats 就按 mats 清。 */
+      if (z.mat) z.mat.dispose();
+      if (z.mats) { for (const m of z.mats) m.dispose(); }
+      z.mesh.traverse(o => {
+        if (o.material && o.material !== z.mat && (!z.mats || z.mats.indexOf(o.material) < 0)) o.material.dispose();
+      });
     }
     this.zones.length = 0;
     for (const pa of this.parts) {

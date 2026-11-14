@@ -390,15 +390,62 @@ class SafariBrowser {
 
 /* ---------------- 对外 ---------------- */
 
+/* [U7] 资源上限。用户反馈：无头 Chrome 一跑就吃满内存、风扇狂转、还杀不掉。
+ * 三个来源分别对治：
+ *   内存 —— `--renderer-process-limit=1` 把渲染进程从 N 个压到 1 个
+ *           （每个 renderer 都是一整份 V8 + Blink，省得最实在），
+ *           再给 V8 老生代封顶 512M；
+ *   风扇 —— SwiftShader 是纯 CPU 光栅化，会把性能核吃满。`--js-flags` 限堆 +
+ *           启动后 `taskpolicy -b` 降后台 QoS（见 _guard.demote）；
+ *   杀不掉 —— 唯一 `--user-data-dir` 做标记 + `_guard` 六条退出路径收尸。
+ * 这几条都不改渲染结果（不改 GL 后端、不改视口、不改 DPR），
+ * 老探针的读数与截图基线不受影响。 */
+const CHROME_CAPS = [
+  '--renderer-process-limit=1',
+  '--js-flags=--max-old-space-size=512',
+  '--disable-dev-shm-usage',
+  '--disable-background-networking',
+  '--disable-background-timer-throttling',
+  '--disable-component-update',
+  '--disable-default-apps',
+  '--disable-extensions',
+  '--disable-sync',
+  '--disable-translate',
+  '--mute-audio',
+  '--no-first-run',
+  '--no-default-browser-check',
+  '--disk-cache-size=1',
+  '--media-cache-size=1',
+  '--disable-features=Translate,BackForwardCache,MediaRouter,OptimizationHints',
+];
+
 async function launch(opts) {
+  const guard = require('./_guard');
+  /* 默认 10 分钟硬超时：正常探针 1~3 分钟跑完，卡住的会被强制收尸，
+   * 不会一直占 CPU。`watchdogMs: 0` 可关（长跑回归自己设更长）。 */
+  if (opts && opts.watchdogMs !== 0) guard.watch((opts && opts.watchdogMs) || 600000);
   const exe = realChromium();
   if (exe) {
-    /* 有 Chromium：原样交给 puppeteer，行为与以前一致 */
+    /* 有 Chromium：交给 puppeteer，行为与以前一致，但带上资源上限与唯一 profile */
     const puppeteer = require('puppeteer-core');
-    return puppeteer.launch(Object.assign({}, opts, { executablePath: exe }));
+    const { tag, profile } = guard.newProfile('jxprobe');
+    const o = Object.assign({}, opts);
+    o.executablePath = exe;
+    o.userDataDir = profile;
+    o.args = (o.args || []).concat(CHROME_CAPS, ['--user-data-dir=' + profile]);
+    const b = await puppeteer.launch(o);
+    let pid = null;
+    try { pid = b.process() && b.process().pid; } catch (e) { }
+    guard.register({
+      tag, profile, pid,
+      killer: () => { try { b.process().kill('SIGKILL'); } catch (e) { } },
+    });
+    return b;
   }
-  /* 只有 Safari */
+  /* 只有 Safari —— 没有无头模式，会弹真窗口。
+   * 收尸按 `safaridriver --port <port>` 精确匹配，不动 Safari 本身。 */
   const port = await WD.startDriver();
+  guard.register({ tag: 'safaridriver --port ' + port, profile: null, killer: () => { try { WD.stopDriver(); } catch (e) { } } });
   const sess = await WD.newSession(port, opts);
   const sid = sess.sessionId || (sess.value && sess.value.sessionId);
   if (!sid) throw new Error('safaridriver 建会话失败：没有返回 sessionId');
