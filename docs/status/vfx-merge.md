@@ -8,9 +8,9 @@
   但**不再往那两份里加待办、也不再按它们的 V0~V6 / P0~P2 编号排期**。
 - 进度事实看这两份：`docs/status/skill-refactor.md`（人物主线）、
   `docs/status/boss-kits.md`（B 线 B1~B25）。本文件只管「还差什么、按什么顺序合」。
-- 更新：2026-11-07；进度更新：2026-11-10（U6 开工：U6-1 低画质三档降级 ✅）
+- 更新：2026-11-07；进度更新：2026-11-14（U6-1 ✅ / U6-2 代码收口、探针待跑）
 
-> 当前：**U1 / U2 / U3 / U4 / U5 已收口**（U1 `--live` 113/0、默认 39/0；U2 `probe-buffrow` 29/0 + `probe-buff-icons` 11/0；U3 `test-combo` 76/0 + `probe-combo` 33/0；U4 `test-elemfx` 74/0 + `probe-elemfx` 94/0；U5 `test-enchant` 235/0 + `probe-enchant` 60/0）。**U6 已开工**：U6-1 低画质三档降级 ✅（`test-vfx-kit` 80/0 + `probe-vfx-kit` 52/0），下一步 U6-2 音效三段对齐。两条线的特效代码都已在 feat/skill-refactor 跑通，但 origin/main 一个特效文件都没有。仍按人物先合、BOSS 后合的顺序走。
+> 当前：**U1 / U2 / U3 / U4 / U5 已收口**（U1 `--live` 113/0、默认 39/0；U2 `probe-buffrow` 29/0 + `probe-buff-icons` 11/0；U3 `test-combo` 76/0 + `probe-combo` 33/0；U4 `test-elemfx` 74/0 + `probe-elemfx` 94/0；U5 `test-enchant` 235/0 + `probe-enchant` 60/0）。**U6 进行中**：U6-1 低画质三档降级 ✅（`test-vfx-kit` 80/0 + `probe-vfx-kit` 52/0）；U6-2 音效三段对齐 🔄 代码收口（`test-sfaudio` 47/0），**真机探针待 Safari 开「允许远程自动化」后跑**。两条线的特效代码都已在 feat/skill-refactor 跑通，但 origin/main 一个特效文件都没有。仍按人物先合、BOSS 后合的顺序走。
 
 ## 一句话现状
 
@@ -147,7 +147,7 @@ bloodrage 1.29× · thrust 1.38× · heal 1.62×。配方层 `iceshard` 也只�
 | 编号 | 节点 | 状态 | 落点 / 产物 | 验收 |
 |---|---|---|---|---|
 | U6-1 | **低画质降级逐项核验**：§11 降级表五格（粒子数 / 拖尾 / 贴花 / 假 bloom / bolt 分叉）逐格对齐。此前实现是二档（`q<1` / `q<0.75`），中档 0.7 被误判成低档砍掉拖尾、低档却还留着 6 块贴花，与 §11 全对不上 | ✅ | `src/fx-kit.js`（`FXK_TIER` 三档表 + 五个原语只读档位 + `bolt` 递归层数分档） | `test-vfx-kit` **80/0**、`probe-vfx-kit` **52/0**（三档逐项）；`smoke` ERRORS none、`mobile-layout` 全绿 |
-| U6-2 | **音效三段对齐**：§5 的三段式（起手 / 命中 / 余韵）在音频侧只落了「起手」一层（`SFX.skill`），命中与余韵散在 40+ 处调用点、无统一时序 | 🔄 | `src/fx.js`（`SFX.skill` 三段）+ `src/game.js`（命中 / 余韵挂点） | 三段各自可判；`probe-sfx` 12/0 不回归 |
+| U6-2 | **音效三段对齐**：§5 的三段式（起手 / 命中 / 余韵）在音频侧只落了「起手」一层（`SFX.skill`），命中与余韵散在 40+ 处调用点、无统一时序。**开工前先量**：余韵 0/37、起手音按元素猜、AOE 命中叠声 | 🔄 代码收口 / 探针待跑 | `src/data/data-sfaudio.js`（新，37×三段）+ `src/sfx-audio.js`（新，唯一出口 + 施放令牌）+ `src/fx.js`（余韵三音）+ `src/game.js`（起手 / 命中 / explodeAt / reset）+ `dev/test-sfaudio.js` + `dev/probe-sfx-align.js` | 静态契约 **47/0**；真机「音画同拍 / 无双响 / 余韵 200~600ms」三条 —— **等 Safari 开关打开后跑** |
 | U6-3 | **逐条配方打磨**：37 只技能的「该几颗 / 什么色」逐个复核（V3b 只重配了三条 ④ 位） | ⬜ | `docs/vfx-playground.html` → `node dev/build-skillvfx.js --write` | 逐条有结论；`build-skillvfx --check` 一致 |
 | U6-4 | **§13 十四条验收清单勾完**：已勾 6 条（U2 的第 7~11 条），剩 8 条逐条给人眼 / 性能结论 | ⬜ | `docs/SKILL-VFX-PLAN.md §13` | 14 条全部有结论 |
 | U6-5 | **收口**：三份台账 + 当日日志 + commit + push | ⬜ | 三份台账 | `smoke` + `mobile-layout` + 全套契约全绿 |

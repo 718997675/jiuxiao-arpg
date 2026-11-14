@@ -58,6 +58,38 @@ const SFX = {
   thunder() { this.noise(0.3, 0.34, 2200, 0.5); this.tone(88, 0.26, 'square', 0.14, 38); },
   explode() { if (this._clip('explode')) return; this.noise(0.5, 0.42, 300, 0.5); this.tone(68, 0.55, 'sine', 0.26, 28); },
   heal() { if (this._clip('heal')) return; this.tone(660, 0.2, 'sine', 0.12, 990); this.tone(990, 0.32, 'sine', 0.07, 1320); },
+
+  /* ---------------- 余韵三音（[U6-2] 方案 §5 第三段专用） ----------------
+   *
+   * 方案 §5：「余韵 aftermath 200~600ms —— 残留贴花、上升余烬、烟、边缘光衰减」，
+   * 并明写「**没有余韵 = 特效消失得太干净，世界像没被打过**」。
+   * 以前这三样一个都没有 —— 声音一响完就没了，技能像「啪」一下断掉。
+   *
+   * 三个音对应三种余韵：
+   *   tail   —— 低频衰减尾音：重击的「余」（地震 / 陨石 / 崩击）
+   *   rustle —— 细碎沙沙：元素残留（毒雾 / 火海 / 冰霜的持续感）
+   *   ring   —— 悠长余韵：法术 / 太极 / 召唤的余味
+   *
+   * **音量一律压得比命中音低一档**（0.02~0.06 vs 命中的 0.1~0.4）——
+   * 余韵是背景，命中才是前景。余韵盖过命中 = 层次反了。
+   * **时长都比命中音长**（0.4~0.8 秒），因为余韵是「尾巴」不是「事件」。 */
+  tail() {
+    this.tone(72, 0.72, 'sine', 0.055, 38);
+    this.tone(146, 0.44, 'triangle', 0.028, 84);
+    this.noise(0.34, 0.016, 260, 0.4);
+  },
+  rustle() {
+    /* 两层错开的高频噪声 = 细碎沙沙，不是「嗡」 */
+    this.noise(0.42, 0.028, 3200, 1.1);
+    this.noise(0.3, 0.018, 1700, 0.8);
+    this.tone(520, 0.26, 'sine', 0.018, 380);
+  },
+  ring() {
+    this.tone(392, 0.78, 'sine', 0.036, 392);
+    this.tone(588, 0.62, 'sine', 0.022, 594);
+    this.tone(784, 0.46, 'triangle', 0.014, 790);
+  },
+
   die() { this.tone(200, 0.45, 'sawtooth', 0.12, 48); this.noise(0.45, 0.18, 380, 0.6); },
   coin() { if (this._clip('coin')) return; this.tone(980, 0.08, 'square', 0.09); setTimeout(() => this.tone(1460, 0.1, 'square', 0.07), 60); },
   levelup() { if (this._clip('levelup')) return; [523, 659, 784, 1046].forEach((f, i) => setTimeout(() => this.tone(f, 0.35, 'triangle', 0.14), i * 90)); },
@@ -1060,6 +1092,10 @@ const FX = {
       homing: opts.homing || null, homeTurn: opts.homeTurn || 6,
       hitSet: null,
       tag: opts.tag,           // [S1] 伤害乘区标记，命中时由调用方取回
+      /* [U6-2] 施法者 id：投射物的命中是**异步**的（弹道要飞 0.3~1.5 秒），
+       * 落地时玩家可能已经放了别的招 —— 光靠「最近一次施放」会认错人。
+       * 所以创建时把技能 id 记在这里，命中时由 damageEnemy 取回。 */
+      sfxId: opts.sfxId || null,
       /* [P3b] 元素注入跟着投射物走：飞出去时施法窗口早就关了，
        * 创建那一刻把 `{key, amt}` 复制过来，命中时由 Game.curInject 取回 */
       inj: opts.inj || null

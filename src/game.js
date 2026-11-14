@@ -1741,6 +1741,10 @@ const Game = {
     const s = this.state;
     s.mapId = mapId;
     this.mapGen = (this.mapGen || 0) + 1;
+    /* [U6-2] 换图：清掉技能音效层的「这一发施放」状态。
+     * 否则上一张图留下的待命中上下文会被新图的第一声爆炸误认成技能命中。 */
+    if (typeof SfxAudio !== 'undefined' && SfxAudio) SfxAudio.reset();
+    this._sfxCastId = '';
     this.mobTimer = 0;
     // 清场：必须真正释放 GPU 资源。只 scene.remove 不 dispose 的话，
     // 每换一次图就泄漏一整张地图的几何体+材质，几分钟后显存耗尽、上下文丢失。
@@ -4450,9 +4454,26 @@ const Game = {
     this.attacking = 0.35;
     this.camPunch = 0.16;
     this.combatRecently = 5;
-    /* [S16] 技能起手层：36 个技能各自按元素有一声短起手，
-     * 命中/爆发的音效仍在各技能代码里，两者叠着听才是「有手感」 */
-    SFX.skill(sk);
+    /* [U6-2] 技能音效三段 · **起手段**。
+     *
+     * 以前这里是 `SFX.skill(sk)`：按技能**类型 + 元素猜**一个音（36 个技能
+     * 共用七八种），按下键根本听不出放的是哪一招。现在按**技能 id**查
+     * `data-sfaudio.js` 的三段配置，每只技能有自己的起手音。
+     *
+     * 命中音与余韵音不再在这里发 —— 它们分别挂在
+     * 「伤害真正结算的那一刻」与「命中之后」，见 sfx-audio.js。
+     *
+     * 查不到配置就静默：不兜底成某个通用音 —— 兜底 = 所有技能听起来一样，
+     * 而「加技能忘了配音效」本身是个该暴露的 bug。 */
+    if (typeof SfxAudio !== 'undefined' && SfxAudio) {
+      SfxAudio.cast(id, sk);
+      /* 命中音要按**技能**选音色，而伤害是异步结算的（弹道飞到才打中），
+       * 所以这里记下本次施放的 id，damageEnemy 命中口读它。 */
+      this._sfxCastId = id;
+    }
+    /* [S16] 老路径保留：配置表没覆盖到的技能（秘技 / 新加的）仍走元素猜。
+     * 等所有技能都进了配置表，这条可以删。 */
+    if (!skillAudio || !skillAudio(id)) SFX.skill(sk);
     /* [S1] 技能类型 → 伤害乘区标记。
      * 同步结算的技能直接读 this._tag；投射物 / 地板等异步伤害在 opts 里显式传 tag。 */
     const TAG_OF = {
@@ -4491,7 +4512,9 @@ const Game = {
       /* 战士 */
       case 'whirl': {
         this.actor.atkAnim = 1; this.actor.atkType = 'spin'; this.actor.atkSpeed = 3.2;
-        SFX.swing(); SFX.hit();
+        /* [U6-2] 起手音由 `SfxAudio.cast` 统一发（castSkill 里），
+         * 命中音由 damageEnemy 命中口发。这里不再各发各的 ——
+         * 散着发就是「音画错位」查不出来的根源。 */
         const mult = 1.5 * (st.flags.thunder ? 2.2 : 1);
         const rad = 4.3 * srad;
         /* [P5b] 剪影交给配方（`SKILL_VFX.whirl`：倾斜刀气绕圈 + 脚下螺旋）。
@@ -4543,7 +4566,7 @@ const Game = {
         /* 龙骧 4 件：突进距离 +30%（冲刺时长等比延长） */
         this.dashT = 0.22 * (st.flags.longDash ? 1.3 : 1); this.invuln = 0.3; this.lastMoveDir = { x: dir.x, z: dir.z };
         this.dashSpd = DASH_SPD.thrust;
-        SFX.fire(); SFX.swing();
+        /* [U6-2] 起手音统一由 SfxAudio.cast 发 */
         this.shake = 0.3;
         const start = pp.clone();
         setTimeout(() => {
@@ -4586,7 +4609,6 @@ const Game = {
           /* 起跑扬尘留着：它不是剪影，是「人从这儿窜出去」的痕迹，
            * 配方里没有对应层，删了就少了「位移从哪儿开始」的读法 */
           FX.burst(new THREE.Vector3(start.x, 0.6, start.z), 0xffaa50, 16, { speed: 5, size: 0.1, life: 0.45, additive: true });
-          SFX.explode();
         }, 200);
         break;
       }
@@ -4662,7 +4684,6 @@ const Game = {
           pos: pp, aim: pp, dir: dir, color: bc,
           radius: id === 'taiji' ? 2.6 : 5
         });
-        SFX.cast();
         UI.toast(sk.name);
         /* [S4] 解毒：立即清除自身中毒与减速 */
         if (id === 'antidote') {
@@ -4674,7 +4695,6 @@ const Game = {
       /* [S4] 还魂：持续内受到致命伤以 35% 生命存活 */
       case 'revive': {
         this.actor.atkAnim = 1; this.actor.atkType = 'cast';
-        SFX.cast(); SFX.heal();
         this.reviveT = 25 + sdur;
         /* [P5b] 回春位的剪影（由下而上生长的光点）—— 还魂是同一个位的「守命」变体 */
         this.playSkillVfx(id, { pos: pp, aim: pp, dir: dir, radius: 2.6, color: 0xffd166 });
@@ -4684,7 +4704,6 @@ const Game = {
       /* [S4] 斩杀：单体重伤，低血目标伤害翻倍 */
       case 'execute': {
         this.actor.atkAnim = 1; this.actor.atkType = 'swing'; this.actor.atkSpeed = 2.2;
-        SFX.swing(); SFX.hit();
         const cp = aim.clone();
         const target = this.nearestEnemy(cp, 3.6) || this.nearestEnemy(pp, 3.6);
         this.shake = 0.3; this.hitstop = 80;
@@ -4718,7 +4737,6 @@ const Game = {
         this.dashSpd = DASH_SPD.leap;
         this.invuln = inPlace ? 0.15 : 0.3;
         if (!inPlace) this.lastMoveDir = { x: dir.x, z: dir.z };
-        SFX.fire(); SFX.swing();
         this.shake = 0.3;
         /* [P5b] 跃击是「先起跳、再落地」，两件事隔着 200ms 与最多 10 码 ——
          * 所以必须分段：起手段（地裂预警）留在起跳点，命中段跟着落点走。
@@ -4735,14 +4753,12 @@ const Game = {
           /* [P5b] 落地那一下走裂地位配方的命中段 ——
            * 跃击和裂地是同一个位：都是「纵向塌陷」，只是起手多了 10 码位移 */
           this.playSkillVfx(id, { pos: p2, aim: p2, dir: dir, radius: 4.5 * srad, segments: ['impact'] });
-          SFX.explode();
         }, 200);
         break;
       }
       /* [S4] 剑阵：持续内周身剑鸣，周期伤害 */
       case 'swordarray': {
         this.actor.atkAnim = 1; this.actor.atkType = 'cast';
-        SFX.cast(); SFX.thunder();
         const dur = 8 + sdur;
         const rad = 3.6 * srad;
         let pulses = 0;
@@ -4826,7 +4842,6 @@ const Game = {
       /* [S4] 天崩：三次延迟震击 */
       case 'skysfall': {
         this.actor.atkAnim = 1; this.actor.atkType = 'slam';
-        SFX.explode();
         const cp = aim.clone();
         const gen = this.mapGen;
         for (let i = 0; i < 3; i++) {
@@ -4844,7 +4859,6 @@ const Game = {
                 color: 0xffaa60, segments: ['impact']
               });
             }
-            SFX.explode();
           }, 300 + i * 450);
         }
         FX.telegraph(cp, 6 * srad, 1.4, () => {}, 0xffaa60);
@@ -4853,7 +4867,8 @@ const Game = {
       }
       case 'quake': {
         this.actor.atkAnim = 1; this.actor.atkType = 'slam'; this.actor.atkSpeed = 2.0;
-        SFX.explode(); this.shake = 0.55; this.hitstop = 90;
+        /* [U6-2] 命中音由 damageEnemy 命中口发（见 sfx-audio.js） */
+        this.shake = 0.55; this.hitstop = 90;
         const cp = aim.clone();
         const hits = this.enemies.filter(e => !e.dead && DIST2D(e.pos, cp) < 5.8 * srad + e.radius);
         for (const e of hits) {
@@ -4905,7 +4920,8 @@ const Game = {
             /* 摧城式 → 三段崩击（底子 skysfall）：以自身为心连震三波，
              * 每波落点小幅抖动 —— 三波完全同心会让人以为只炸了一下。 */
             this.actor.atkAnim = 1; this.actor.atkType = 'slam';
-            SFX.explode(); this.shake = 0.7; this.hitstop = 100;
+            /* [U6-2] 起手/命中音统一由三段层发（SfxAudio.cast / impact） */
+            this.shake = 0.7; this.hitstop = 100;
             const gen = this.mapGen;
             const rad = 5 * srad;
             const ctr = pp.clone();
@@ -4915,14 +4931,13 @@ const Game = {
                 if (this.dead || this.mapGen !== gen) return;
                 const t = new THREE.Vector3(ctr.x + RND(-1.8, 1.8), 0, ctr.z + RND(-1.8, 1.8));
                 this.explodeAt(t, rad, st.atk * 2.4 * spow, 0xffaa60, true);
-                SFX.explode();
               }, 140 + i * 260);
             }
             UI.toast('断岳斩 · 摧城三段', 'lv');
           } else {
             /* 斩锋 / 镇岳 → 单体处决（底子 execute）：一刀点杀，残血翻倍 */
             this.actor.atkAnim = 1; this.actor.atkType = 'swing'; this.actor.atkSpeed = 2.2;
-            SFX.swing(); SFX.hit(); this.shake = 0.45; this.hitstop = 110;
+            this.shake = 0.45; this.hitstop = 110;
             const target = this.nearestEnemy(pp, 9) || this.nearestEnemy(this.aimPoint, 9);
             if (target) {
               const lowHp = target.hp < target.maxHp * 0.3;
@@ -4954,7 +4969,6 @@ const Game = {
         } else {
           /* ---------------- 换式 ---------------- */
           this.actor.atkAnim = 1; this.actor.atkType = 'cast'; this.actor.atkSpeed = 1.6;
-          SFX.ui(); SFX.cast();
           this.bladeCycle();
           /* [P4] 换式的刀光按**新刀式**播（不是旧的）：玩家按下去看到的就是
            * 「换成了什么样」，这是这一格唯一能一眼读懂的反馈 */
@@ -5006,7 +5020,6 @@ const Game = {
           ea.elem = (ea.elem + 1) % ELEM_AURA_KINDS.length;
           const k = this.elemAuraKind();
           this.actor.atkAnim = 1; this.actor.atkType = 'cast'; this.actor.atkSpeed = 1.6;
-          SFX.cast();
           /* [P4] 换相：配方重播一次（换色），法身由 updateFormAura 当场改色 ——
            * 换相最怕「只有动作条角标变了」，所以画面上要有两处同时响应。
            * [P5b] 原来这上面还有一行 `FX.ring` + 一簇 18 颗 `FX.burst`，
@@ -5049,7 +5062,7 @@ const Game = {
           }
         }
         this.actor.atkAnim = 1; this.actor.atkType = 'cast'; this.actor.atkSpeed = 1.4;
-        SFX.cast(); this.shake = Math.max(this.shake, 0.3);
+        this.shake = Math.max(this.shake, 0.3);
         /* [P5b] 7 码外环留着 —— 它是「窗口」的边界，配方给的是贴身的阵环；
          * 中间那圈 4.2 与 22 次 `FX.burst`（22 次绘制）删掉：
          * 阵环 + 上升光柱由配方的起手段给，一堆金方块说不出「开窗」。 */
@@ -5068,7 +5081,6 @@ const Game = {
 
       case 'fireball': {
         this.actor.atkAnim = 1; this.actor.atkType = 'cast';
-        SFX.fire();
         const radius = 2.4 * (st.flags.firetrail ? 1.6 : 1) * srad;
         /* [P5b] 起手 + 飞行段（`cast` / `loop`）：手里那簇火星与 Lv9 的环绕火球。
          * 命中段**不在这里播** —— 它在 `onHit` 里（弹道飞到了才炸）。 */
@@ -5083,6 +5095,9 @@ const Game = {
             pos: new THREE.Vector3(pp.x + d2.x * 0.8, 1.4, pp.z + d2.z * 0.8),
             dir: d2, speed: 21, color: 0xff7a30, radius: 0.32, hitRadius: 0.62, team: 'player',
             dmg: st.atk * 1.9 * spow, life: 1.6, elem: 'fire', trail: true, inj: this._elem,
+            /* [U6-2] 施法者 id：弹道飞 0.3~1.5 秒才落地，
+             * 落地时 `_castSkill` 已被清零，光靠它认不出是谁打的。 */
+            sfxId: id,
             /* [P2] 集束（取向）：贯穿弹，不再被第一个敌人挡下 */
             pierce: !!(bBeh && bBeh.pierce),
             onHit: (e, proj) => {
@@ -5105,7 +5120,6 @@ const Game = {
       }
       case 'frostnova': {
         this.actor.atkAnim = 1; this.actor.atkType = 'cast';
-        SFX.ice();
         const cp = aim.clone();
         /* [S4] 双重变体：1 + sextra 片新星，副新星在主轴附近随机偏移 */
         const n = 1 + Math.max(0, sextra);
@@ -5160,7 +5174,6 @@ const Game = {
       }
       case 'chain': {
         this.actor.atkAnim = 1; this.actor.atkType = 'cast';
-        SFX.thunder();
         /* [P5b] 起手：手上一簇电（飞弹位 `cast`）。原来这一位只有几道 beam 飞出去，
          * 玩家按完看不出「是从我手上起的」。 */
         this.playSkillVfx(id, { pos: pp, aim: aim, dir: dir, radius: 3.2, segments: ['cast'] });
@@ -5199,7 +5212,6 @@ const Game = {
       }
       case 'meteor': {
         this.actor.atkAnim = 1; this.actor.atkType = 'cast';
-        SFX.cast();
         const target = aim.clone();
         const mRad = 5.5 * srad;
         /* [P2b] 双陨 / 三连落：1 + sextra 颗（这个位的发数台阶在 Lv5 / Lv7，
@@ -5227,7 +5239,7 @@ const Game = {
             this.playSkillVfx(id, { pos: c, aim: c, dir: dir, radius: mRad, segments: ['impact'] });
             this.explodeAt(c, mRad, st.atk * 4.2 * spow, 0xff5522, true);
             if (mField) this.spawnTierField(c, mRad * 0.75, mField, mFieldDur, 0xff5522);
-            SFX.explode(); this.shake = 0.6;
+            this.shake = 0.6;
           });
           // 落下的陨石视觉
           const rock = new THREE.Mesh(sphGeo(0.8, 6), new THREE.MeshBasicMaterial({ color: 0xff5522 }));
@@ -5245,7 +5257,6 @@ const Game = {
       }
       case 'iceshield': {
         this.actor.atkAnim = 1; this.actor.atkType = 'cast';
-        SFX.ice();
         this.shield = st.hpMax * 0.35 * (1 + (st.shieldBonus || 0) / 100) * spow;   // [S1] 护盾强度，传世可再强化
         /* [P2b] 时长必须带 sdur：变体「永冻」的 mods {dur:6} 就是「持续 +6 秒」，
          * 原来这里写死 10，那一整条变体一个字都没生效（面板还写着 +6 秒）。 */
@@ -5258,7 +5269,6 @@ const Game = {
       }
       case 'starfall': {
         this.actor.atkAnim = 1; this.actor.atkType = 'cast';
-        SFX.cast(); SFX.boss();
         const center = aim.clone();
         let n = 0;
         const gen = this.mapGen;
@@ -5308,7 +5318,6 @@ const Game = {
       /* [S4] 冰锥：三枚扇形冰锥，命中减速 */
       case 'iceshard': {
         this.actor.atkAnim = 1; this.actor.atkType = 'cast';
-        SFX.ice();
         const n = 3 + Math.max(0, sextra);
         /* [P3] 环刺（变体）：改成绕自身八向齐射，不再朝一个扇面 */
         const ringOn = (bBeh && bBeh.ring) ? Math.max(3, Math.round(bBeh.ring)) : 0;
@@ -5323,6 +5332,8 @@ const Game = {
             pos: new THREE.Vector3(pp.x + d2.x * 0.8, 1.4, pp.z + d2.z * 0.8),
             dir: d2, speed: 26, color: 0x9ae0ff, radius: 0.26, hitRadius: 0.5, team: 'player',
             dmg: st.atk * 1.2 * spow, life: 1.2, elem: 'ice', trail: true, tag: 'proj', inj: this._elem,
+            /* [U6-2] 施法者 id（见 fireball 的同名注释） */
+            sfxId: id,
             /* [P2] 冰枪（变体）：贯穿冰枪。变体走旧 variants 不进 branchBeh，
              * 这里一并读一下，等变体接进行为层时这条自动生效 */
             pierce: !!(bBeh && bBeh.pierce),
@@ -5346,7 +5357,6 @@ const Game = {
       /* [S4] 暴雪：区域持续冰伤 + 减速 */
       case 'blizzard': {
         this.actor.atkAnim = 1; this.actor.atkType = 'cast';
-        SFX.ice();
         const core = aim.clone();
         const rad = 6 * srad;
         const dur = 5 + sdur;
@@ -5422,7 +5432,6 @@ const Game = {
       /* [S4] 火墙：沿施法方向的持续火带 */
       case 'firewall': {
         this.actor.atkAnim = 1; this.actor.atkType = 'cast';
-        SFX.fire();
         const dur = 4 + sdur;
         const rad = 3 * srad;
         const segs = [], wfx = [];
@@ -5532,7 +5541,6 @@ const Game = {
       /* [S4] 焚天：以自身为中心的烈焰新星 */
       case 'pyroclasm': {
         this.actor.atkAnim = 1; this.actor.atkType = 'cast';
-        SFX.fire(); SFX.explode();
         const rad = 7 * srad;
         const hits = this.enemies.filter(e => !e.dead && DIST2D(e.pos, pp) < rad + e.radius);
         for (const e of hits) {
@@ -5554,7 +5562,6 @@ const Game = {
       /* [S4] 雷云：区域持续随机落雷 */
       case 'thundercloud': {
         this.actor.atkAnim = 1; this.actor.atkType = 'cast';
-        SFX.thunder();
         const rad = 7 * srad;
         const dur = 6 + sdur;
         /* [P2b] 数量台阶「双段 / 三段」：1 + sextra 朵雷云，围着落点散开。
@@ -5634,7 +5641,6 @@ const Game = {
       /* [S4] 雷罚：单体天罚巨雷，对首领 +30% */
       case 'judgement': {
         this.actor.atkAnim = 1; this.actor.atkType = 'cast';
-        SFX.thunder(); SFX.boss();
         const target = this.nearestEnemy(aim, 16) || this.nearestEnemy(pp, 16);
         /* [P3] 雷柱（变体）：把一发巨雷改成 3 秒的持续雷柱，每 0.4 秒劈一次。
          * 总伤害略高于单发（要站着挨完），换取「怪不敢进这块地」 */
@@ -5721,7 +5727,6 @@ const Game = {
       /* 道士 */
       case 'talisman': {
         this.actor.atkAnim = 1; this.actor.atkType = 'cast';
-        SFX.cast();
         /* [S4] 双符变体：1 + sextra 张，分别追踪不同目标 */
         const tgts = [];
         const primary = this.nearestEnemy(aim, 16) || this.nearestEnemy(pp, 16);
@@ -5760,6 +5765,8 @@ const Game = {
           FX.projectile({
             pos: start, dir: tdir, speed: 17, color: 0xffd24a, radius: 0.3, hitRadius: 0.45,
             team: 'player', style: 'talisman', life: 2.0, trail: true, tag: 'proj', inj: this._elem,
+            /* [U6-2] 施法者 id（见 fireball 的同名注释） */
+            sfxId: id,
             homing: target ? target.pos : null, homeTurn: 9,
             onHit: (e, proj) => {
               /* [P2b] 改追（Lv10）打出去的那一发按 seekPct 结算 —— 白送一次
@@ -5778,7 +5785,6 @@ const Game = {
                 pos: e.pos.clone(), aim: e.pos.clone(), dir: tdir,
                 radius: 1.9, segments: ['impact']
               });
-              SFX.thunder();
               this.shake = Math.max(this.shake, 0.12);
               /* [P2b] Lv5 雷符连锁：从落雷点继续跳，最多 talChain 个。
                * 伤害按 0.85^n 递减 —— 与数量台阶同一个口径，
@@ -5857,7 +5863,6 @@ const Game = {
       /* [S4] 符箭：三张追踪符 */
       case 'talismanarrow': {
         this.actor.atkAnim = 1; this.actor.atkType = 'cast';
-        SFX.cast();
         /* [P5b] 起手：万剑位的 `cast` 段（脚下一圈阵环）。三张符是同一发出去的，
          * 起手只该有一次 —— 每张符各播一遍就是三个同心圆。 */
         this.playSkillVfx(id, { pos: pp, aim: aim, dir: dir, radius: 3.2, segments: ['cast'] });
@@ -5905,6 +5910,8 @@ const Game = {
           FX.projectile({
             pos: start, dir: tdir, speed: 19, color: 0xd8f0a0, radius: 0.24, hitRadius: 0.45,
             team: 'player', style: 'talisman', life: 2.0, trail: true, tag: 'proj', inj: this._elem,
+            /* [U6-2] 施法者 id（见 fireball 的同名注释） */
+            sfxId: id,
             homing: target ? target.pos : null, homeTurn: 7,
             onHit: (e, proj) => {
               const { dmg, crit } = this.rollDamage(st.atk * 1.0 * spow);
@@ -5923,7 +5930,6 @@ const Game = {
       /* [S4] 天师符：区域符阵持续落雷 */
       case 'mastersigil': {
         this.actor.atkAnim = 1; this.actor.atkType = 'cast';
-        SFX.cast();
         const c = aim.clone();
         const rad = 6 * srad;
         /* [P2b] 台阶 Lv7「阵法持续 +3 秒」。这一位躺着太极（增益）与天师符（符阵）
@@ -5964,7 +5970,6 @@ const Game = {
       }
       case 'summon': {
         this.actor.atkAnim = 1; this.actor.atkType = 'cast';
-        SFX.heal();
         this.summonWolf();
         /* [P4] 召唤阵 + 灵兽从阵里升起（登场动作在 updateAllies 的 spawnT） */
         this.summonGate(pp, 0x9affd0);
@@ -5977,7 +5982,6 @@ const Game = {
       /* [S4] 白虎：高攻速近战召唤 */
       case 'whitetiger': {
         this.actor.atkAnim = 1; this.actor.atkType = 'cast';
-        SFX.heal(); SFX.boss();
         /* 参数统一读 BEAST_PRESET（台阶「四象同场」要凭空补召同一只，
          * 数字抄第二遍就多一处漂移的机会） */
         this.summonBeast({ kind: 'tiger' });
@@ -5988,7 +5992,6 @@ const Game = {
       /* [S4] 青龙：范围攻击召唤 */
       case 'azuredragon': {
         this.actor.atkAnim = 1; this.actor.atkType = 'cast';
-        SFX.heal(); SFX.boss();
         /* [P3] 化龙（变体）：不召唤了，自己变成龙 —— 5 秒内每 0.6 秒吐一口
          * 4 码范围伤害（结算在 tickBeh，因为要跟着人走） */
         if (bBeh && bBeh.transform) {
@@ -6017,7 +6020,6 @@ const Game = {
       }
       case 'heal': {
         this.actor.atkAnim = 1; this.actor.atkType = 'cast';
-        SFX.heal();
         const amount = st.hpMax * 0.28 * spow;
         /* [S4] 久春变体：持续回复时长 +sdur 秒 */
         const hotDur = (4000 + sdur * 1000) / 1000;
@@ -6033,7 +6035,6 @@ const Game = {
       }
       case 'poison': {
         this.actor.atkAnim = 1; this.actor.atkType = 'cast';
-        SFX.cast();
         /* 青符 4 件：蚀骨毒雾范围 +30%、持续 +3 秒 */
         const prad = 5 * srad;
         const pdur = 6 + sdur;
@@ -6131,7 +6132,6 @@ const Game = {
       }
       case 'swordrain': {
         this.actor.atkAnim = 1; this.actor.atkType = 'cast';
-        SFX.cast(); SFX.thunder();
         const c = aim.clone();
         let n = 0;
         const gen = this.mapGen;
@@ -6873,6 +6873,22 @@ const Game = {
     }
     e.hp -= final;
     if (e.hp < 0) e.overkill = -e.hp;      // [S1] 记下溢出量，击杀时可能转成护盾
+
+    /* [U6-2] 技能音效三段 · **命中段**。
+     *
+     * 挂在**伤害真正结算**这一刻，不是施法瞬间 —— 这样投射物类
+     * （火球 / 冰锥 / 符）的命中音会等到弹道飞到才响，这才是「打到了」的证据。
+     * 提前响 = 玩家先听到咚、0.9 秒后看到陨石砸下来，感觉「没打中」。
+     *
+     * 三道闸门：
+     *   ① `!opts.silent` —— 持续伤害（DoT）每跳都响命中音 = 噪音
+     *   ② `!opts.react` —— 元素反应的追加伤害不是「玩家这一下」
+     *   ③ `tag !== 'dot'` —— 召唤物的持续攻击同理
+     *
+     * 同一发技能一次命中窗口内只响一声（AOE 打 5 只怪不该叠 5 声爆炸），
+     * 去重在 `SfxAudio.impact` 里做。
+     * **命中音在下面 `FX.text` 那一段发**（伤害数字弹出的同一拍），
+     * 这里不重复发 —— 两处都发就是双响。 */
     /* [P0·毒] **符引爆蚀骨**：道士的「先铺雾、再点符」。
      *
      * 四道闸门，缺一个就会变成「每跳自爆」或「谁都能爆」：
@@ -6930,7 +6946,34 @@ const Game = {
     FX.text(p, Math.round(final).toString(), crit ? 'crit' : 'dmg');
     FX.spark(new THREE.Vector3(e.pos.x, e.boss ? 2 : 1.1, e.pos.z), crit ? 0xffb040 : 0xffe0b0, crit ? 14 : 7);
     if (!opts.silent) {
-      SFX[crit ? 'crit' : 'hit']();
+      /* [U6-2] 技能音效三段 · **命中段**。
+       *
+       * 这里是**伤害真正结算**的那一刻 —— 命中音挂在这儿，不是施法瞬间。
+       * 投射物类（火球 / 冰锥 / 符）的弹道要飞 0.3~1.5 秒、陨石要等 0.9 秒，
+       * 施法瞬间就响 = 玩家先听到「咚」、一秒后才看到东西砸下来，感觉「没打中」。
+       *
+       * 以前这里是 `SFX[crit ? 'crit' : 'hit']()`：所有技能共用两个音，
+       * 加上散在 `game.js` 40+ 处调用点的各自命中音（`SFX.explode()` 等），
+       * 结果是「命中音响几次」全看那只技能当初怎么写的。
+       * 现在统一走 `SfxAudio.impact`：按**技能 id**选音色，
+       * 并在一发技能内去重（AOE 打 5 只怪 = 5 声爆炸 = 噪音）。
+       *
+       * 没配 impact 音的技能（增益 / 治疗）走 fallback，行为与以前完全一样。 */
+      /* [U6-2] 技能 id 的多级兜底（与 ComboFX 的 `opts.skill || this._castSkill` 同思路）：
+       *   ① `opts.sfx`  —— 投射物自己在身上带着施法者 id（**最准**：
+       *      弹道飞 0.3~1.5 秒，这期间玩家可能又放了别的招）
+       *   ② `opts.skill` —— 部分调用点已经带了这个
+       *   ③ `this._sfxCastId` —— 最近一次施放的技能（同步结算的技能用这个）
+       *   ④ `this._castSkill` —— ComboFX 用的那个同步窗口标记
+       * 全空 → 不是技能造成的伤害（装备特效 / 毒爆 / 元素反应），
+       * 走 fallback 发原来的受击音。 */
+      const sfxWho = opts.sfx || opts.skill
+        || (this._proj && this._proj.sfxId)      /* 投射物身上带着施法者 id（最准） */
+        || this._sfxCastId || this._castSkill || '';
+      const handled = (typeof SfxAudio !== 'undefined' && SfxAudio && sfxWho)
+        ? SfxAudio.impact(sfxWho, crit, () => { SFX[crit ? 'crit' : 'hit'](); })
+        : false;
+      if (!handled) SFX[crit ? 'crit' : 'hit']();
       /* [S16] 受击闷哼：同一只怪 0.3 秒内只叫一次，
        * 否则高频攻击（旋风斩、连射）会把它变成电钻 */
       if (typeof AudioSys !== 'undefined' && AudioSys.ctx) {
@@ -7090,7 +7133,30 @@ const Game = {
   /* `noFx` = 只结算伤害、不画通用爆炸视觉。
    * 元素反应（蒸汽爆裂）要的是自己那套 FXK 视觉，不能再叠一圈通用爆炸环。 */
   explodeAt(pos, radius, baseDmg, color, big, silent, tag = 'aoe', elem, noFx) {
-    if (!silent) { SFX.explode(); this.shake = Math.max(this.shake, big ? 0.5 : 0.25); this.hitstop = 50; }
+    /* [U6-2] 爆炸音。
+     *
+     * 以前这里无条件 `SFX.explode()`，而技能命中音又散在各 case 里 ——
+     * 一次爆炸能响两声（爆炸音 + 技能命中音）。
+     * 现在命中音由 `SfxAudio.impact` 统一发（damageEnemy 命中口），
+     * 所以这里**只在没有技能接管时**才发爆炸音：
+     * 毒爆 / 裂魂爆 / 装备特效这些不是「玩家放了一招」，它们没有技能上下文。
+     *
+     * 判据：这次爆炸**打中了没有**。
+     *   · 打中 → 命中音由下面的 damageEnemy 走 SfxAudio（按技能选音色 + AOE 去重），
+     *     这里不能再响一次，否则是双响；
+     *   · 打空 → 没有任何伤害结算，SfxAudio 不会响，这里必须自己响 ——
+     *     否则「石头砸空了」一点声音都没有，玩家以为技能没放出去。
+     *
+     * 所以这里先数一遍命中数，再决定要不要自己发声。 */
+    if (!silent) {
+      let willHit = false;
+      for (const e of this.enemies) {
+        if (e.dead) continue;
+        if (DIST2D(e.pos, pos) < radius + e.radius) { willHit = true; break; }
+      }
+      if (!willHit) SFX.explode();
+      this.shake = Math.max(this.shake, big ? 0.5 : 0.25); this.hitstop = 50;
+    }
     if (!noFx) {
       FX.flashCircle(pos, radius, color, 0.35);
       FX.ring(pos, radius * 1.2, color, 0.45, 0.2);

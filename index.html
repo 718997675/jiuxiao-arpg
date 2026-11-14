@@ -3203,6 +3203,12 @@
 <!-- [V0] 配方解释器：把 data-vfx.js 的 cast/loop/impact 翻译成原语调用。
      必须在 fx-kit.js 之后（它调 FXK.*），且在 game.js 之前（技能要用） -->
 <script src="src/vfx.js"></script>
+<!-- [U6-2] 技能音效三段层（起手 / 命中 / 余韵）。**独立源码，不是生成物**。
+     配置表在 src/data/data-sfaudio.js（纯数据），解释器在 src/sfx-audio.js。
+     必须在 data-sfaudio.js 与 fx.js（SFX 门面）之后、game.js 之前：
+     castSkill 调 cast、damageEnemy 命中口调 impact、命中后自动排 after。 -->
+<script src="src/data/data-sfaudio.js"></script>
+<script src="src/sfx-audio.js"></script>
 <!-- [U3 / V5] 组合特效层：技能之间互相给对方上视觉（4 组技能内组合 + 3 条职业连携）。
      **独立源码，不是生成物** —— 试验台的 comboApply / COMBOS 在被生成器排除的 §11 里，
      状态口径（5 层刃势 / 8s 法相 / 全局毒窗）也与游戏对不上。
