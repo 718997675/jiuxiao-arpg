@@ -8,29 +8,30 @@
   但**不再往那两份里加待办、也不再按它们的 V0~V6 / P0~P2 编号排期**。
 - 进度事实看这两份：`docs/status/skill-refactor.md`（人物主线）、
   `docs/status/boss-kits.md`（B 线 B1~B25）。本文件只管「还差什么、按什么顺序合」。
-- 更新：2026-11-07；进度更新：2026-11-15（U7 ✅）
+- 更新：2026-11-07；进度更新：2026-11-15（U7 ✅ · **U11 已上线**）
 
-> 当前：**人物线 U1~U6 全 ✅、BOSS 线 U7 ✅**（U7 = 兜底 11 招补前摇 + `FX.zone` 形状预警）。
-> `status.sh` 读到 **12/17**。**下一步 U8**（世界 Boss 6 只另开一层，等拍板），
-> 之后 U9 / U10 → U11 人物先合 main → U12 BOSS 后合 main。
-> 两条线的特效代码都已在 feat/skill-refactor 跑通，但 origin/main 一个特效文件都没有；
-> 功能分支已推到 origin，合入进度仍是 **0%**。顺序不变：人物先合、BOSS 后合。
+> 当前：**人物线 U1~U6 全 ✅ 并已上线；BOSS 线 U7 ✅**。
+> `status.sh` 读到 **13/17**。2026-11-15 `ab08f72..b235068` 已推 `main`，
+> 正式站 `https://718997675.github.io/jiuxiao-arpg/` 开局正常、12 技能 0 失败、零报错。
+> 剩下 **U8 / U9 / U10 三块 BOSS 欠账**（世界 Boss 另开一层 / P2 小怪词缀 / 逐只精修），
+> 加 `U12`（下一版合入）。**U12 不再需要「基于已含 U11 的 main 重对」** ——
+> 这次是快进合并，`main` 与 `feat` 同一个 commit，没有分叉。
 
 ## 一句话现状
 
-**代码写完了，没进正式线。** 人物侧地基 / 15 条剪影 / 45 套台阶 / 30 个接线 / 双演出层 /
-可见度与预算全绿；BOSS 侧 B1~B25 全 ✅、88 招 0 空招 0 报错。
-但 `git rev-list --count origin/main..HEAD` = **127**（2026-11-14 复核；2026-11-07 那次盘点是 100），
-`src/fx-kit.js` / `vfx.js` / `sfx.js` / `fx2.js` / `boss-cast.js` 在 origin/main **一个都不存在**。
-所以「合进游戏」不是继续写特效，是**补完欠账 → 按固定动作合 main → 推上线**。
+**已经上线了。** 2026-11-15 `ab08f72..b235068` 推到 `main`（130 个提交，快进合并零冲突），
+正式站 `https://718997675.github.io/jiuxiao-arpg/` 实测：开局正常、12 个技能全放 0 失败、
+`FXK / SKFX / BossCast / FX.zone` 四个模块全在、零 console 报错。
+人物侧地基 / 15 条剪影 / 45 套台阶 / 30 个接线 / 双演出层全绿；BOSS 侧 B1~B25 全 ✅、88 招 0 空招。
+**剩下的是 BOSS 侧三块欠账（U8 / U9 / U10）**，属下一版。
 
-## 完成度盘点（2026-11-07，按代码 + 台账实算，不按 PLAN 勾选）
+## 完成度盘点（2026-11-07 基线，2026-11-15 复核）
 
 | 线 | 完成度 | 已完成 | 未完成 |
 |---|---|---|---|
-| 人物技能特效 | **约 95%** | V0 地基（14 格图集 + 12 原语，全带 `FX.q` 降级）、配方 DSL v2（15 剪影 × 形/色/时 + `ELEM_PROFILE` 6 套）、P4 三职业 ⑤ 签名、P5 台阶 45/45、P5b ①~④ 位 30 个 case 接线、B20 玩家侧 37 只 `src/sfx.js`、V2/V3/V3b 可见度、双演出层适配（`abd20ad`）；15 位 × 4 档 ≤6 draw call、五连放 +3.7%；U1 双演出层口径 + 空招/偏淡收口；U2 HUD 增益条；U3 组合特效 7 条进游戏；U4 元素反应 10 组专属视觉；**U5 近战武器附魔 6 套常驻外观**（`ENCHANT_PROFILE` + `FXK.enchant` + `Game.updateEnchant`）；**U6-1 三档降级 / U6-2 音效三段 / U6-3 逐只演出构成 / U6-4 §13 十四条结论**（含 `leap` 抛物线）；契约 dsl 358 / kit 80 / p5 989 / p5b 116 / p4 60 / combo 76 / elemfx 74 / enchant 235 / sfaudio 61 / shape 160 / vfx13 48 | **U6-5 收口**（U6-1~U6-4 已 ✅）；移动端真机 ≥30fps 转 U11 硬前置 |
-| BOSS 技能特效 | **约 85%** | B1~B25 全 ✅（B2 已推翻不计）：45 只 × 5 格 = 88 招、18 个原语进 `src/fx2.js`、`src/boss-cast.js` 接进 `bossPattern`（四拍 + 每第 5 轮压轴）、B22 地面暗底、B23 竖向兜底（43 招有高度）、B24/B25 变形层 180 条 / 10 种应对轴；真机 15/15、88 招 0 空招 0 报错 | U7~U10（见下表） |
-| 合入 | **0%** | 无 | U11 / U12 |
+| 人物技能特效 | **约 95%** | V0 地基（14 格图集 + 12 原语，全带 `FX.q` 降级）、配方 DSL v2（15 剪影 × 形/色/时 + `ELEM_PROFILE` 6 套）、P4 三职业 ⑤ 签名、P5 台阶 45/45、P5b ①~④ 位 30 个 case 接线、B20 玩家侧 37 只 `src/sfx.js`、V2/V3/V3b 可见度、双演出层适配（`abd20ad`）；15 位 × 4 档 ≤6 draw call、五连放 +3.7%；U1 双演出层口径 + 空招/偏淡收口；U2 HUD 增益条；U3 组合特效 7 条进游戏；U4 元素反应 10 组专属视觉；**U5 近战武器附魔 6 套常驻外观**；**U6 全部收口**（三档降级 / 音效三段 / 逐只演出构成 / §13 十四条结论 / 收口推送）；契约 dsl 358 / kit 80 / p5 989 / p5b 116 / p4 60 / combo 76 / elemfx 74 / enchant 235 / sfaudio 61 / shape 160 / vfx13 48 | 移动端真机 ≥30fps 仍**未量**（唯一没有证据的验收格，如实挂着） |
+| BOSS 技能特效 | **约 88%** | B1~B25 全 ✅（B2 已推翻不计）：45 只 × 5 格 = 88 招、18 个原语进 `src/fx2.js`、`src/boss-cast.js` 接进 `bossPattern`（四拍 + 每第 5 轮压轴）、B22 地面暗底、B23 竖向兜底、B24/B25 变形层 180 条 / 10 种应对轴；真机 15/15、88 招 0 空招 0 报错；**U7 兜底 11 招补前摇 + `FX.zone` 形状预警**（A 7/7、B 13/13） | U8 / U9 / U10（见下表） |
+| 合入 | **人物 100% · BOSS 已存在部分 100%** | U11 已上线；U12 的 B1~B25 + U7 随同一次合并上去 | U12 剩余 = U8 / U9 / U10 |
 
 > 口径：两份 PLAN 是 10-27 / 10-28 的旧方案，都还写着「待拍板 · 未动一行代码」，
 > 实际工作走的是台账里的 V0/P4/P5/P5b/V2/V3 和 B1~B25，那条路已经把 PLAN 的主体做掉了。
@@ -56,8 +57,8 @@
 | U8 | BOSS · **世界 Boss 6 只不在 `BOSS_KIT`**，走 `WorldBoss` 另一套调度（`game.js:8425` 注释自承），B24/B25 变形层不覆盖。要给它们「自己的四拍」得**另开一层**，别塞进 `BOSS_TWIST` | ⬜ | 新数据层 + `src/world-boss.js` 接线 | 6 只全量试放零空招；真机探针 |
 | U9 | BOSS · **P2 整块**：小怪 8 形态（近战普攻 40 只零特效、healer 无治疗光束、bomber 借受击闪白当警戒灯、coward 只有 `+` 飘字）；12 条精英词缀里 7 条零视觉（`frost`/`venom`/`vampiric`/`swift`/`thorns`/`warded`/`split`，代码里只有数值逻辑）；Boss 出场零表现 / 死亡无碎片与掉落光柱 | ⬜ | `src/game.js` AI 段 + 词缀生效点 + `spawnBosses` / `onEnemyDeath` | 常驻微标识（不是每次触发炸一朵花）；40 只同屏不炸屏 |
 | U10 | BOSS · **逐只精修 + 兜底层局限**：同形状两招拿到的柱子排布相同（变形层只改应对动作）、环形暗底偏薄（内圈不暗，语义是「环内安全」，要补先改判定）、共享池只有 31 招导致 45 只必有 2 格重合（92 对）、移动中判定表达不了（只有 6 种静态形状）、实体暗场是「亮团」需低模、活物没厚度（trail 是贴地 ribbon） | ⬜ | `docs/boss-vfx-playground.html` → `node dev/build-fx2.js --write`；`src/boss-cast.js` | `dev/dup-audit.js` + 逐只截图 |
-| U11 | 合入 · **人物技能特效合进游戏**：补完 U1~U6 → 固定动作 → 合 main → 推上线 | ⬜ | `./dev/branch.sh --sync` → `node dev/smoke.js` + `node dev/mobile-layout.js` → `./dev/publish-preview.sh feat/skill-refactor` 看预览站 → 合 main → `./push.sh` | 正式站能开局、`ERRORS none`、存档隔离生效 |
-| U12 | 合入 · **BOSS 技能特效合进游戏**：补完 U7~U10 → 同上固定动作 → 合 main；**必须基于「已含 U11 的 main」重新对一遍**，不能拿老 main 当基准 | ⬜ | 同 U11 | 88 招正式站真机全量试放 0 空招 0 报错 |
+| U11 | 合入 · **人物技能特效合进游戏**：补完 U1~U6 → 固定动作 → 合 main → 推上线 | ✅ | `git merge --ff-only feat/skill-refactor`（130 提交，零冲突）→ `./push.sh`（`ab08f72..b235068`） | 正式站 `https://718997675.github.io/jiuxiao-arpg/` 开局正常、12 个技能全放 **0 失败**、`ERRORS none`、`FXK/SKFX/BossCast/FX.zone` 四个模块全在；`smoke` ERRORS none、`mobile-layout` 6 视口全通过 |
+| U12 | 合入 · **BOSS 技能特效合进游戏**：补完 U7~U10 → 同上固定动作 → 合 main；**必须基于「已含 U11 的 main」重新对一遍**，不能拿老 main 当基准 | ⬜ | 同 U11 | **已存在部分（B1~B25 的 88 招 + U7）随 U11 同一次快进合并上线了**，`main` 与 `feat` 同 commit（`b235068`），不存在「基于老 main 对一遍」的问题；剩下的是 **U8 / U9 / U10 三块欠账**，属下一版 |
 
 ## U2 收口注记（2026-11-09）
 
@@ -525,13 +526,47 @@ node dev/audit-bosspattern.js --check  # 不达标 exit 1
 「只杀带标记的 / 不误伤无关进程 / release 删目录 / SIGINT 与 SIGTERM 都收尸 /
 超时 exit 124 / 机器零残留」。**先验完再装浏览器** —— 否则等于先装一个杀不掉的东西。
 
-## 下一步（U7 ✅，进 U8 之前有两件事等拍板）
+## U11 收口记录 · 人物 + BOSS 已上线（2026-11-15 · ✅）
+
+用户口径：「做完这版 发布更新到线上一版」。
+
+固定动作按台账走，只是顺序合并成一次（`main` 完全落后、零冲突，可以快进）：
+
+```bash
+git fetch origin
+git checkout main && git merge --ff-only feat/skill-refactor   # ab08f72 → b235068，130 提交
+./push.sh                                                      # 语法检查 → 推 main
+```
+
+**发布前验收（全绿）**：
+
+| 项 | 结果 |
+|---|---|
+| `node dev/smoke.js` | `ERRORS none`，三职业各 12 技能全放 0 失败 |
+| `node dev/mobile-layout.js` | 6 视口全部通过（含 320×568 竖屏） |
+| `src/**/*.js` 语法 | `push.sh` 全量 `node --check` 通过 |
+
+**发布后线上实测**（`https://718997675.github.io/jiuxiao-arpg/`）：
+
+| 项 | 结果 |
+|---|---|
+| `index.html` 引用 | `fx-kit / sfx / fx2 / boss-cast / vfx / elem-fx / combo-fx` **7 个全在**（发之前一个都没有） |
+| 模块加载 | `FXK` / `SKFX` / `BossCast` / `FX.zone` 四个全 true |
+| 开局 + 放技能 | `running true`、12 技能 **0 失败**、`hp 382`、draw call 254 |
+| `FX.zone` 三种形状 | circle / rect / lock 各建一条，`FX.zones` 里 **3 条都在** |
+| console | **零报错** |
+
+**如实挂着的一格**：移动端真机 ≥30fps 仍未量。本机只有 SwiftShader 软件渲染，
+`dev/vfx-bench.js` 头注释写明「帧时只报数不判红」，所以这一格**没有证据**，
+不为绿灯改判据。真机拿到手之后补这一条，别当成已验收。
+
+## 下一步（U11 已上线，剩 BOSS 三块欠账）
 
 1. `U8` BOSS · **世界 Boss 6 只另开一层**：它们不在 `BOSS_KIT`，走 `WBFight` 另一套调度。
    **等拍板**（另开一层 / 维持现状）。
 2. `U9` P2 小怪 / 12 条词缀 / 生命周期；`U10` 逐只精修 + 兜底层局限。
-3. **`U11` 人物合 main → 推上线**（用户 2026-11-15 已明确要求「这版做完发线上」）。
-   `U12` BOSS 合 main 必须基于「已含 U11 的 main」。
+3. `U12` 下一版合入：因为这次是**快进合并**（`main` 与 `feat` 同一个 commit `b235068`），
+   不再需要「基于已含 U11 的 main 重对一遍」—— 没有分叉。做完 U8~U10 直接照 U11 的动作推。
 4. 出图口径别退回去：§13 第 1 条只认 `dev/vfx-shot-live.js`（`Game.playSkillVfx`
    → SKFX 真实链路）；`dev/vfx-shot.js` 是配方层 / 回落路径尺子，判据不动。
    人眼结论看 `shots/vfx-live/sheet-*.png` 的灰度行，放大净剪影只是形状辅助。
