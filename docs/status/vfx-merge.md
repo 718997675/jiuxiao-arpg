@@ -10,7 +10,12 @@
   `docs/status/boss-kits.md`（B 线 B1~B25）。本文件只管「还差什么、按什么顺序合」。
 - 更新：2026-11-07；进度更新：2026-11-14（U6-1 / U6-2 / U6-3 ✅）
 
-> 当前：**U1 / U2 / U3 / U4 / U5 已收口**（U1 `--live` 113/0、默认 39/0；U2 `probe-buffrow` 29/0 + `probe-buff-icons` 11/0；U3 `test-combo` 76/0 + `probe-combo` 33/0；U4 `test-elemfx` 74/0 + `probe-elemfx` 94/0；U5 `test-enchant` 235/0 + `probe-enchant` 60/0）。**U6 进行中**：U6-1 低画质三档降级 ✅、U6-2 音效三段对齐 ✅、U6-3 逐条配方打磨 ✅（37 只审计 13/0 + 契约 160/0）、**U6-4 §13 十四条清单 ✅**（`test-vfx13` 48/0 + `vfx-shot-live` 76/0，真实链路出图尺子；`leap` 补抛物线，`quake/leap` 剪影 25 → 122）。**下一步 U6-5 收口（台账 / 日志 / commit / push / 全套回归）**。两条线的特效代码都已在 feat/skill-refactor 跑通，但 origin/main 一个特效文件都没有。仍按人物先合、BOSS 后合的顺序走。
+> 当前：**人物线欠账 U1~U6 全部收口 ✅**（U6 = U6-1 三档降级 / U6-2 音效三段 / U6-3 逐只演出构成 / U6-4 §13 清单 / U6-5 收口推送）。
+> §13 十四条全部有结论（13 达标 + 第 12 条的移动端 fps 转 U11 真机前置），
+> `status.sh` 读到 **11/17**。**下一步进 BOSS 线 U7**（老兜底 11 个手写 case 的公平性前摇），
+> 之后 U8 / U9 / U10 → U11 人物先合 main → U12 BOSS 后合 main。
+> 两条线的特效代码都已在 feat/skill-refactor 跑通，但 origin/main 一个特效文件都没有；
+> 功能分支已推到 origin，合入进度仍是 **0%**。顺序不变：人物先合、BOSS 后合。
 
 ## 一句话现状
 
@@ -47,7 +52,7 @@
 | U3 | 人物 · **V5 组合特效进游戏**：`comboApply` 只在试验台（`docs/vfx-playground.html` 2 处，`src/` 0 处）。技能内组合 4 组（freeze / burn / exec / gather）+ 职业核心连携 3 条（刃势巨刀 / 法相手掌光点 / 符毒绿符钉）全还只是演示。**接线口径已改**：挂 `castSkill` 尾部 + `damageEnemy` 命中口（不挂 `VFX.playFor`，SKFX 命中即 return），新建独立 `src/combo-fx.js`，判据读游戏真实状态 | ✅ | `src/combo-fx.js`（新，非生成物）+ `index.html` 插脚本 + `src/game.js` 三处挂点 + `src/skill-beh.js` 的 `strike` 带 `skill:id` + `dev/probe-combo.js` | 真机探针逐条看到 7 条组合成立、零报错；`smoke` / `mobile-layout` / 四个 `--check` 全绿 |
 | U4 | 人物 · **元素反应 10 组专属视觉**：机制 P3a 已 10/10 落地（走 `damageEnemy` 一个口），但 §9.2 的蒸汽 / 等离子 / 绿火 / 晶体爬弧 / 霜面腐蚀 / 链式绿弧 / 金火等视觉语言没落进游戏 | ✅ | `src/elem-fx.js`（新，非生成物）+ `index.html` 插脚本 + `src/game.js` 的 `applyElemReaction` 一处挂点（旧 `FX.*` 全换掉、`chainReaction` 走 `ElemFX.link`、`explodeAt` 加 `noFx`）+ `dev/test-elemfx.js` + `dev/probe-elemfx.js` | 静态契约 **74/0**、真机探针 **94/0**：10 组逐条触发 + **10 组原语序列两两不同**（不是只换颜色）+ 坐标全有限 + 反应期间旧 `FX.*` 零调用；`smoke` / `mobile-layout` / 技能契约十份 / 四个 `--check` 全绿 |
 | U5 | 人物 · **V4 近战武器附魔**：`enchant` 原语在 `fx-kit.js` / `vfx.js` / `data-vfx.js` 全是 0 处；Lv10「常驻光效」原本只有刀身发烫脉冲，不是真附魔 | ✅ | `src/data/data-vfx.js`（`ENCHANT_PROFILE` 6 套 + 15 个 Lv10 `enchant: true` 声明）+ `src/fx-kit.js`（`FXK.enchant` 常驻层）+ `src/game.js`（`enchantState` / `updateEnchant` 每帧同步）+ `dev/test-enchant.js` + `dev/probe-enchant.js` | **6 元素各一套，三维度两两不同**（贴图格 / accent 几何 / 粒子运动）；真机 draw call +4（副元素 +5、低画质 +2）≤6；`test-enchant` **235/0**、`probe-enchant` **60/0**；`smoke` ERRORS none、`mobile-layout` 全绿 |
-| U6 | 人物 · **V6 打磨 + 把验收清单勾完**：音效三段对齐（台账 0 处提及）、低画质降级逐项核验、录屏对比；`SKILL-VFX-PLAN.md §13` 14 条逐条给判据，含「同职业 5 招灰度后认出 ≥4」的人眼结论；逐条配方「该几颗 / 什么色」未逐个调（V3b 只重配了三条 ④ 位） | 🔄 | `audio/` / `dev/vfx-shot.js` / `docs/SKILL-VFX-PLAN.md §13` | 14 条全部有结论；`smoke` + `mobile-layout` 全绿 |
+| U6 | 人物 · **V6 打磨 + 把验收清单勾完**：音效三段对齐（台账 0 处提及）、低画质降级逐项核验、录屏对比；`SKILL-VFX-PLAN.md §13` 14 条逐条给判据，含「同职业 5 招灰度后认出 ≥4」的人眼结论；逐条配方「该几颗 / 什么色」未逐个调（V3b 只重配了三条 ④ 位） | ✅ | `src/sfx-audio.js` / `src/fx-kit.js` / `dev/vfx-shot-live.js` / `dev/test-vfx13.js` / `docs/SKILL-VFX-PLAN.md §13` | U6-1~U6-5 全 ✅；§13 十四条全部有结论（13 达标 + 1 转 U11 真机）；全套 node 契约 38 绿 / 2 已知环境红，`smoke` + `mobile-layout` 全绿 |
 | U7 | BOSS · **老兜底 11 个手写 case 一行没动**：`src/game.js:8579+` 的 `quake` / `frostnova` / `curse` 仍**当帧结算零前摇**（公平性），`fireline` 仍是 6 个圆串、`charge` 预警刷在自己脚下、主视觉全贴地圆。`BOSS-VFX-PLAN.md` 的 P0 四条（补 0.7~1.1s 前摇 + 形状匹配预警）没做 | ⬜ | `src/game.js` 的 `bossPattern` 老 switch 兜底段 | 静态扫描前摇覆盖率；>1.0× 伤害的招全部 ≥0.7s 且形状匹配 |
 | U8 | BOSS · **世界 Boss 6 只不在 `BOSS_KIT`**，走 `WorldBoss` 另一套调度（`game.js:8425` 注释自承），B24/B25 变形层不覆盖。要给它们「自己的四拍」得**另开一层**，别塞进 `BOSS_TWIST` | ⬜ | 新数据层 + `src/world-boss.js` 接线 | 6 只全量试放零空招；真机探针 |
 | U9 | BOSS · **P2 整块**：小怪 8 形态（近战普攻 40 只零特效、healer 无治疗光束、bomber 借受击闪白当警戒灯、coward 只有 `+` 飘字）；12 条精英词缀里 7 条零视觉（`frost`/`venom`/`vampiric`/`swift`/`thorns`/`warded`/`split`，代码里只有数值逻辑）；Boss 出场零表现 / 死亡无碎片与掉落光柱 | ⬜ | `src/game.js` AI 段 + 词缀生效点 + `spawnBosses` / `onEnemyDeath` | 常驻微标识（不是每次触发炸一朵花）；40 只同屏不炸屏 |
@@ -151,7 +156,7 @@ bloodrage 1.29× · thrust 1.38× · heal 1.62×。配方层 `iceshard` 也只�
 | U6-2 | **音效三段对齐**：§5 的三段式（起手 / 命中 / 余韵）在音频侧只落了「起手」一层（`SFX.skill`），命中与余韵散在 40+ 处调用点、无统一时序。**开工前先量**：余韵 0/37、起手音按元素猜、AOE 命中叠声 | ✅ | `src/data/data-sfaudio.js`（新，37×三段）+ `src/sfx-audio.js`（新，唯一出口 + 施放令牌 + 余韵兜底 + `oldestPending`）+ `src/fx.js`（余韵三音）+ `src/game.js`（起手 / 命中 / explodeAt / reset）+ `dev/test-sfaudio.js` + `dev/probe-sfx-align.js` | 静态契约 **61/0**；Safari 真机 `probe-sfx-align` **10/0**（音画同拍 / 无双响 / 37 只都有余韵 / 余韵 200~600ms / 零控制台报错）；全套 node 契约无回归、`smoke` ERRORS none、`mobile-layout` 全绿 |
 | U6-3 | **逐条配方打磨**：37 只技能的「该几颗 / 什么色」逐个复核（V3b 只重配了三条 ④ 位） | ✅ | `dev/skillvfx-shape.js`（解析底座）+ `dev/audit-skillvfx.js`（审计表）+ `dev/test-skillvfx-shape.js`（契约）+ `docs/vfx-playground.html` 的 `chain` 三段 → `src/sfx.js` | 37 只逐条有结论（`audit-skillvfx` **13/0**）、契约 **160/0**、`build-skillvfx --check` 一致；`--live` **113/0**、`chain` 面积余量 1.25× → 2.79× |
 | U6-4 | **§13 十四条验收清单勾完**：已勾 6 条（U2 的第 7~11 条），剩 8 条逐条给人眼 / 性能结论 | ✅ | `dev/vfx-shot-live.js`（真实链路出图尺子）+ `dev/test-vfx13.js`（静态契约）+ `docs/vfx-playground.html` 的 `leap` 抛物线 → `src/sfx.js` + `docs/SKILL-VFX-PLAN.md §13` | **14 条全部有结论**（13 条达标、第 12 条的移动端 fps 转 U11 真机前置）；`test-vfx13` **48/0**、`vfx-shot-live` **76/0**；真实链路 3 职业各 5 招灰度 **5/5 认得出**；`quake/leap` 剪影距离 **25 → 122** |
-| U6-5 | **收口**：三份台账 + 当日日志 + commit + push | ⬜ | 三份台账 | `smoke` + `mobile-layout` + 全套契约全绿 |
+| U6-5 | **收口**：三份台账 + 当日日志 + commit + push | ✅ | 三份台账 + `dev/_pptr.js`（补 `page.keyboard`） | 全套 40 份 node 契约 38 绿（另 2 支为已知环境红，见收口记录）；`smoke` ERRORS none、`mobile-layout` 6 视口全绿；`status.sh` 11/17；功能分支已推 |
 
 ## U6-1 收口记录 · 低画质三档降级（2026-11-10 · ✅）
 
@@ -418,24 +423,57 @@ WebDriver，而门面的 `$()` 没有 `screenshot()`。新建 `dev/vfx-shot-live
 个位数帧、Safari WebDriver 不能模拟 DPR / isMobile / hasTouch，量不出意义；
 `vfx-bench.js` 头注释早就写明「帧时只报数不判红」。合 main 前必须拿真机补这一格。
 
-## 下一步（U1~U5 已收口，U6-1~U6-4 ✅，U6-5 待办，别跳）
+## U6-5 收口记录 · 人物侧全量回归 + 推送（2026-11-14 · ✅）
 
-1. `U6-5` 人物 · **收口**：把 U6 父节点改 ✅、三份台账对齐、写当日日志、
-   跑全套契约与真机回归（含 `test-vfx13` / `vfx-shot-live`）、commit + push。
-   这是人物侧最后一个节点，之后才进 U7~U10 的 BOSS 欠账。
-2. 出图口径别退回去：§13 第 1 条只认 `dev/vfx-shot-live.js`（`Game.playSkillVfx`
+**全套 40 份 node 静态契约**：38 绿 / 2 红，两支红都是环境口径，不是回归：
+
+| 红 | 真因 | 处理 |
+|---|---|---|
+| `test-bosskits` 35/1「生成物与特效台不一致」 | 台账早就记过：只有 Safari 的机器上 `build-bosskits.js` 靠 `toString()` + 键顺序切源码，与 Chrome 基线差 3898 行 | **别跑 `--write`**；本轮没动任何 BOSS 侧文件，`data-bosskits.js` 最后一次改动仍是 B23（`4d48bf3`）。要在有 Chromium 的机器上验 |
+| `test-save-browser` 首跑直接崩 `page.keyboardundefined` | ① 头注释写明「前提：本地起静态服务 `127.0.0.1:8123`」，没起服务 → `Game` undefined；② 门面没有 `page.keyboard`（WebDriver 无此接口） | 起服务 + 给 `_pptr` 补第六个语义（页面内合成 `KeyboardEvent`，如实标注 `isTrusted=false`）后能跑完：71/9 |
+
+`test-save-browser` 剩的 9 条全在手机横 / 竖屏段落（「走触屏布局」判的是
+`document.body.classList.contains('touch')`），是 Safari WebDriver **不能模拟
+isMobile / hasTouch / DPR** 的硬限制；U6 没碰任何存档 / 布局代码，
+权威的 `dev/mobile-layout.js` 6 视口仍 ✅ 全部通过。
+**不为这 9 条改判据、也不改产品 CSS 去凑 Safari 桌面窗口的读数**。
+
+**U6-4 收口那轮已跑过、本轮复核无回归的真机读数**：
+`vfx-shot-live` 76/0 · `vfx-skill-vis --live` 113/0 · 默认 39/0 · `vfx-vis` 14/0 ·
+`vfx-bench` 186/0（5 连放 +3.7%）· `probe-vfx-kit` 52/0 · `probe-vfx-field` 19/0 ·
+`probe-enchant` 60/0 · `smoke` ERRORS none · `mobile-layout` ✅ 全部通过 ·
+`build-skillvfx --check` 一致。
+
+**推送口径**：`./push.sh` 是 **U11 合 main** 的固定动作（推 main、同步 dist），
+U6-5 只做 `git push origin feat/skill-refactor` 快进推功能分支。
+`origin/main` 依然一个特效文件都没有 —— **合入进度仍是 0%**，别把「推了分支」
+写成「合进游戏」。
+
+**`status.sh`**：`vfx-merge` 从 8/17 → 9/17（U6-4）→ **11/17**（U6 父节点 + U6-5）。
+余下 6 个 = U7 / U8 / U9 / U10 / U11 / U12，全是 BOSS 线与合入线。
+
+## 下一步（人物 U1~U6 全 ✅，进 BOSS 线，别跳）
+
+1. `U7` BOSS · **老兜底 11 个手写 case 补公平性前摇**：`src/game.js:8579+` 的
+   `quake / frostnova / curse` 仍当帧结算零前摇，`fireline` 还是 6 个圆串、
+   `charge` 预警刷在自己脚下。开工前先量静态前摇覆盖率。
+   **卡点里有一件等用户拍板**（`quake` 补前摇后倍率怎么定），先问过再动数值。
+2. 之后依次 `U8` 世界 Boss 另开一层（也等拍板）、`U9` P2 小怪 / 词缀 / 生命周期、
+   `U10` 逐只精修 + 兜底层局限；再 `U11` 人物合 main、`U12` BOSS 合 main。
+3. 出图口径别退回去：§13 第 1 条只认 `dev/vfx-shot-live.js`（`Game.playSkillVfx`
    → SKFX 真实链路）；`dev/vfx-shot.js` 是配方层 / 回落路径尺子，判据不动。
    人眼结论看 `shots/vfx-live/sheet-*.png` 的灰度行，放大净剪影只是形状辅助。
-3. 三条口径别踩：① Lv10 的 `enchant` 是**数据声明**不是播放指令，
+4. 三条口径别踩：① Lv10 的 `enchant` 是**数据声明**不是播放指令，
    别去 `src/vfx.js` 补 case；② 常驻附魔走 FXK、技能演出走 SKFX，
    `vfx-skill-vis`（默认 / `--live`）都不量附魔，附魔有自己那支 `probe-enchant`；
    ③ 逐只演出构成看 `dev/audit-skillvfx.js`，改实验室后跑 `test-skillvfx-shape`。
-4. 改 `src/sfx.js` **一律走生成器**：改 `docs/vfx-playground.html` →
+5. 改 `src/sfx.js` **一律走生成器**：改 `docs/vfx-playground.html` →
    `node dev/build-skillvfx.js --write` → `node dev/build-skillvfx.js --check`。
    别手改生成物（`abd20ad` 修的 `hitArea` stub 就是这么来的）；
    按游戏 id 去实验室找同名条目前先查 `ALIAS`（`swords→swordarray` 等 5 条）。
-5. 每个 U 收口后立刻 `git status` + 写本表状态 + commit，再进下一个。台账别攒着写。
-6. U11 / U12 之前先 `./dev/status.sh` 确认三条线各自到哪了；
+6. 每个 U 收口后立刻 `git status` + 写本表状态 + commit，再进下一个。台账别攒着写。
+   **合 main 用 `./push.sh`（推 main）；推功能分支用 `git push origin feat/skill-refactor`，别混。**
+7. U11 / U12 之前先 `./dev/status.sh` 确认三条线各自到哪了；
    **合 main 前必须补移动端真机 ≥30fps**（见「卡点」）。
 
 ## 卡点（等拍板 / 硬前置）
@@ -467,13 +505,19 @@ WebDriver，而门面的 `$()` 没有 `screenshot()`。新建 `dev/vfx-shot-live
   没动过 BOSS 侧的 `docs/boss-vfx-playground.html` / `fx2` / `boss-cast`，
   `data-bosskits.js` 最后一次改动是 B23（`4d48bf3`）。
   （人物侧 `docs/vfx-playground.html` 在 U6-3 / U6-4 都改过，那是另一个文件，别混。）
-- **Safari 门面已补齐 5 个语义，别再当 bug 查**（2026-11-14）：
+- **Safari 门面已补齐 6 个语义，别再当 bug 查**（2026-11-14）：
   `_cmd()` 解包 `{value:...}`、`evaluate` 支持字符串表达式、`page.close()`、
   进程退出收 driver + 会话配对重试（U6-2）；**多语句字符串块回退 IIFE**（U6-3，
-  修好 `probe-enchant` 的 `TOOLS`）。剩下的是硬限制：无控制台日志接口（靠
-  `__errbuf`，页面加载期收不到）、无无头模式、无 CDP、不能模拟 DPR /
-  isMobile / hasTouch。**串跑多个 Safari 会话会偶发假红**（`probe-sfx-align`
-  串跑 9/1、单跑 10/0），任何失败项必须单跑复核才算数。
+  修好 `probe-enchant` 的 `TOOLS`）；**`page.keyboard` 页面内合成 KeyboardEvent**
+  （U6-5，让 `test-save-browser` 能跑完而不是第四节 TypeError）。
+  剩下的是硬限制：无控制台日志接口（靠 `__errbuf`，页面加载期收不到）、
+  无无头模式、无 CDP、不能模拟 DPR / isMobile / hasTouch，
+  合成按键 `isTrusted=false`（IME / 系统快捷键场景仍须 Chromium）。
+  **`test-save-browser` 因此在本机 71/9，9 条全在触屏布局段** ——
+  不是产品回归，`mobile-layout.js` 6 视口全绿；别改判据也别改 CSS 去凑。
+  另外它**要求先起静态服务** `127.0.0.1:8123`（头注释写明），不起就 `Game undefined`。
+  **串跑多个 Safari 会话会偶发假红**（`probe-sfx-align` 串跑 9/1、单跑 10/0），
+  任何失败项必须单跑复核才算数。
   `vfx-vis` 的 ring 曾经在 Safari 下 0 像素，已由 `FX.ring` y `0.08→0.16` 修好
   （见 U6-3 收口记录），**不是**门面的锅，别回退那处改动。
 - **判据会过期**：`vfx-skill-vis` 已因 B20 双演出层返工过一次（17/21 假红）；

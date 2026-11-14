@@ -21,6 +21,13 @@
  *     3. **CDP**：没有。`createCDPSession` 用不了（只有个别诊断脚本用）。
  *     4. **视口**：只能设窗口尺寸。这里做两轮校正，把 innerWidth/Height 逼近目标值。
  *     5. **设备像素比**：不能模拟。`deviceScaleFactor` 会被忽略（截图分辨率按真实屏）。
+ *     6. **键盘**：`page.keyboard` 用页面内合成 KeyboardEvent 补齐（U6-5），
+ *        `isTrusted=false`，IME / 系统快捷键场景仍须在 Chromium 上跑。
+ *
+ * ---------------- 已补齐的语义（别再当 bug 查）----------------
+ *   `_cmd()` 解包 `{value:...}`、`evaluate` 支持字符串单表达式与多语句块、
+ *   `page.close()`、退出收 driver + 会话配对重试（U6-2 / U6-3）、
+ *   `page.keyboard`（U6-5）。
  * ============================================================ */
 'use strict';
 
@@ -76,6 +83,37 @@ class SafariPage {
     this._handlers = {};      /* ev -> [cb] */
     this._flushed = 0;        /* __errbuf 已消费到第几条 */
     this._alive = true;
+    /* 第六个语义（U6-5）：page.keyboard。
+     * WebDriver 没有 puppeteer 的 keyboard 对象，探针里 `page.keyboard.press('p')`
+     * 会直接 TypeError（test-save-browser 跑到第四节才炸，前三节全绿很误导）。
+     * 项目的输入监听一律挂在 window 的 keydown / keyup 上、只读 e.key / e.code，
+     * 所以按 click() 用 el.click() 的同一思路合成 KeyboardEvent 即可。
+     * **边界**：这是页面内模拟输入，不是浏览器级真实按键 —— e.isTrusted=false，
+     * IME / 输入法组合键 / 依赖系统快捷键的场景仍必须在有 Chromium 的机器上跑。 */
+    this.keyboard = {
+      down: k => this._key('keydown', k),
+      up: k => this._key('keyup', k),
+      press: async k => { await this._key('keydown', k); await this._key('keyup', k); },
+      type: async s => {
+        for (const ch of String(s)) {
+          await this._key('keydown', ch);
+          await this._key('keyup', ch);
+        }
+      }
+    };
+  }
+
+  async _key(type, key) {
+    const k = String(key);
+    return this.evaluate((t, kk) => {
+      const code = /^[a-z]$/i.test(kk) ? 'Key' + kk.toUpperCase()
+        : (/^[0-9]$/.test(kk) ? 'Digit' + kk
+          : (kk === ' ' ? 'Space' : kk));
+      window.dispatchEvent(new KeyboardEvent(t, {
+        key: kk, code: code, bubbles: true, cancelable: true
+      }));
+      return true;
+    }, type, k);
   }
 
   /* ---- 事件 ---- */

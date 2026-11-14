@@ -3269,5 +3269,27 @@ PLAN 字面「40~80ms 全屏闪白」与实现的短 shock / flash 口径不同�
 `probe-vfx-kit` 52/0 · `probe-vfx-field` 19/0 · `probe-enchant` 60/0 ·
 `smoke` ERRORS none · `mobile-layout` ✅ 全部通过。
 
-**下一步**：U6-5 收口（U6 父节点改 ✅、三份台账对齐、当日日志、全套回归、commit + push）。
-U6-1~U6-4 不再回头；U11 合 main 前补移动端真机 ≥30fps。
+### U6-5 收口 ✅（2026-11-14）· 人物线欠账全清
+
+**全套 40 份 node 静态契约：38 绿 / 2 红，两支红都是环境口径**：
+`test-bosskits` 35/1 是台账记过的 Safari 基线假红（`build-bosskits` 靠
+`toString()` + 键顺序，别跑 `--write`）；`test-save-browser` 首跑崩在
+`page.keyboard` 缺失 + 没起静态服务，补齐门面第六个语义（页面内合成
+`KeyboardEvent`，`isTrusted=false`）并起 `127.0.0.1:8123` 后能跑完 71/9，
+剩 9 条全在手机横 / 竖屏的「走触屏布局」段 —— Safari WebDriver 不能模拟
+isMobile / hasTouch / DPR，属硬限制；U6 没碰存档 / 布局代码，
+`mobile-layout.js` 6 视口仍 ✅ 全部通过。不为这 9 条改判据或改产品 CSS。
+
+U6-4 收口那轮的真机读数本轮复核无回归：`vfx-shot-live` 76/0 ·
+`vfx-skill-vis --live` 113/0 · 默认 39/0 · `vfx-vis` 14/0 ·
+`vfx-bench` 186/0 · `probe-vfx-kit` 52/0 · `probe-vfx-field` 19/0 ·
+`probe-enchant` 60/0 · `smoke` ERRORS none · `mobile-layout` 全绿。
+
+**推送口径**：`./push.sh` 是 U11 合 main 的动作（推 main），
+U6-5 只快进推 `feat/skill-refactor`。`origin/main` 依然一个特效文件都没有，
+**合入进度仍是 0%**。`dev/status.sh` 的 `vfx-merge` 从 9/17 → **11/17**，
+余下 6 个全是 BOSS 线与合入线。
+
+**下一步**：人物侧 U1~U6 全 ✅，进 BOSS 线 `U7`（老兜底 11 个手写 case 的
+公平性前摇，先量静态覆盖率；`quake` 倍率那件仍等用户拍板）。
+U11 合 main 前补移动端真机 ≥30fps。U1~U6 不再回头。
