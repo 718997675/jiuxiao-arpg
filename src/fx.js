@@ -709,7 +709,14 @@ const FX = {
     const mat = new THREE.MeshBasicMaterial({ color: this.lit(color), transparent: true, opacity: op0, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 });
     const m = new THREE.Mesh(geo, mat);
     m.rotation.x = -Math.PI / 2;
-    m.position.set(pos.x, pos.y + 0.08, pos.z);
+    /* [U6-3] 细贴地环在 Safari / WebGL 下会被地面深度整个吃掉：
+     * polygonOffset(-4,-4) 在 Chrome / SwiftShader 够用，Safari 下这一条
+     * 环**一个像素都画不出来**（`dev/vfx-vis.js` 的 ring 判据 diff=0，
+     * 其余 12 个原语全绿）。真机对照：直接调 FX.ring 给 y=0.08 有 7522 像素，
+     * 走配方层给 y=0.00 是 0；把同一发 mesh 抬 0.08 立刻回到 7525 像素。
+     * 所以这里从 +0.08 提到 +0.16，给共面留一点余量，polygonOffset 保留双保险。
+     * 不改半径、不改判据 —— 环画多大仍是这一发真的能打到多大（P2c 口径）。 */
+    m.position.set(pos.x, pos.y + 0.16, pos.z);
     m.scale.setScalar(radius * 0.25);
     this.scene.add(m);
     this.zones.push({ mesh: m, mat, life: dur, max: dur, type: 'ring', radius, t: 0, op0 });

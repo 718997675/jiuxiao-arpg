@@ -185,9 +185,27 @@ class SafariPage {
      * 好几支生成器（build-bosskits 的 waitForFunction）就是这么写的，
      * 早期这里明确拒绝字符串 → waitForFunction 永远拿到 false → 白等 30 秒。 */
     if (typeof fn === 'string') {
-      const out = await this._cmd('POST', '/execute/sync', {
-        script: 'return (' + fn + ');', args: []
-      });
+      /* 第五个语义（U6-3 补）：字符串既可能是**单表达式**
+       * （build-bosskits 的 waitForFunction('typeof NR === ...')），
+       * 也可能是**多语句块**（probe-enchant 的 TOOLS：const + 若干
+       * window.__xxx = function）。后者塞进 `return (...)` 会被 Safari
+       * 判成 "Unexpected keyword 'const'" —— 声明不能出现在表达式里。
+       *
+       * 不靠猜字符串内容区分：先按原样求值，只有真的撞上**语法类**错误
+       * 才回退成 IIFE。业务异常（Can't find variable / 自己抛的错）照常抛出，
+       * 不会被静默吞掉；单表达式路径一个字节都没变。 */
+      let out;
+      try {
+        out = await this._cmd('POST', '/execute/sync', {
+          script: 'return (' + fn + ');', args: []
+        });
+      } catch (e) {
+        const msg = String((e && e.message) || e);
+        if (!/Unexpected|SyntaxError|syntax|expected expression/i.test(msg)) throw e;
+        out = await this._cmd('POST', '/execute/sync', {
+          script: 'return (function(){\n' + fn + '\n})();', args: []
+        });
+      }
       return out === undefined ? null : out;
     }
     if (typeof fn !== 'function') {
