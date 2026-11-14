@@ -525,20 +525,31 @@ addBuff(name, stats, color, { key:'beh:stack:whirl', stacks:3, maxStacks:5, icon
 
 ## 13. 验收清单（可测）
 
-- [ ] 同职业 5 个技能的高光截图，**灰度后仍能认出 ≥4 个**（`dev/vfx-shot.js` 出图）
-- [ ] 旋风斩：录制 1 秒，逐帧能看到**至少 2 道刀气在绕圈旋转**（不是只有一个外扩环）
-- [ ] 雷电：`bolt` 有**分叉**，命中点有 40~80ms 局部闪白 + 焦痕
-- [ ] 领域：太极 / 火墙 / 毒雾 / 雷云 四者剪影**互不相同**（圆 / 线 / 团 / 云）
-- [ ] 火的粒子**上升**、冰的粒子**直线硬停**、毒的粒子**下沉翻滚** —— 三者运动方向可辨
+- [x] 同职业 5 个技能的高光截图，**灰度后仍能认出 ≥4 个** —— 改用 `dev/vfx-shot-live.js` **76/0**：出图走 `Game.playSkillVfx`（SKFX 真实链路）。`dev/vfx-shot.js` 拍的是配方层回落路径，**不能拿来勾这条**（该文件头已挂告警，判据保持历史口径不动）。`shots/vfx-live/sheet-{warrior,mage,taoist}.png` 三张五连拼版，第 2 行「灰度原帧」人眼判：warrior **5/5**、mage **5/5**、taoist **5/5**（要求 ≥4）；第 3 行灰度净剪影放大只作形状辅助。放大净剪影 40×26 描述子最近一对：warrior 51 / mage 41 / taoist 61，全部 ≥30。**U6-4 实质修复**：原先 `leap` 与 `quake` 撞脸（距离仅 25），根因是「抛物线」只写了 `P.pos` 位移、真实链路被 `SKFX.sync` 每帧覆盖，一个像素都没画；补起跳回执环 + 14 颗随飞行逐颗点亮的弧线光点后，距离 **25 → 122**，600ms 高光帧里弧与落点同时可读。
+- [x] 旋风斩：录制 1 秒，逐帧能看到**至少 2 道刀气在绕圈旋转** —— `vfx-shot-live.js` 的 11 帧采样（每 0.1s）：**10/11 帧**有 ≥2 道 `spinBlades` 子组，主旋转层累计正向转角 **9.69 rad ≈ 1.54 圈**（不是静止风扇，也不是只有一个外扩环）。实现见实验室 `FX.spinBlades`：n:3 起转 + 0.34s 补 n:2 残影 + vortex + shock。
+- [x] 雷电：`bolt` 有**分叉**，命中点有局部闪白 + 焦痕 —— `dev/probe-vfx-kit.js` **52/0**（高档 20 道中 ≥18 道有分叉、≥15 道长出第 2 层；中档零递归；低档零分叉，靠 `FXK.stats().branches / maxLayer` 机器判）；真实链路 `chain` / `thundercloud` / `judgement` 的 `FX.bolt` 带 `branch:2~4`，`thundercloud` 落点有 `FX.decal('crack')` 焦痕 + 云心闪白 + `FX.shock`，`chain` 每跳 `flashAt`；`dev/test-vfx13.js` **48/0** 钉住。**口径差异（如实记）**：PLAN 字面「40~80ms 全屏闪白」是提案，实现用短 shock / 云心 flash / spark burst 完成同一处命中回执，时长口径不同，不按字面硬套也不假装一致。
+- [x] 领域：四者剪影**互不相同** —— 实现里四个持续领域是 `firewall / blizzard / thundercloud / swordarray`（PLAN 字面的「太极」是 `cast:'self'` 自身增益、「毒雾」是 DoT，都不属领域；两组都拍进 `sheet-fields.png`，不假装名字一一对应）。人眼：火墙 = 竖火栅「线」、暴雪 = 平椭圆环「盘」、雷云 = 云团 + 竖雷「云」、剑阵 = 交叉剑影，四者明显不同；放大净剪影两两最小距离 **150**；`probe-vfx-field` **19/0** + `test-vfx13`【3】四者构件组合签名两两不同。
+- [x] 火的粒子**上升**、冰的粒子**直线硬停**、毒的粒子**下沉翻滚** —— `src/data/data-vfx.js` 的 `ELEM_PROFILE`：`fire up 1.8 / grav -2.4`、`ice grav 10 / drag 4.2`、`poison up -0.8 / grav -1.2`，三元组两两不同，且 `src/vfx.js` 的 `spr` 确实从这张表取 `up / grav / drag`（数据表不是摆设）；`test-vfx13`【1】逐条判。属数据层 / 回落路径口径，真实链路逐只粒子演出构成另见 `dev/audit-skillvfx.js`（13/0）。
 - [x] `#buffbar` 已从代码与 DOM 中移除；`#buffrow` 在血条正下方，宽度与血条对齐 —— `dev/probe-buffrow.js`【7】：`old=false`、在 `#charplate` 内 `flex-wrap:wrap`、左边缘与 `.bars` 对齐 ≤2px、`top ≥ bars.bottom`
 - [x] 连续施放 8 个不同 buff：DOM 节点数**不增长**（复用），无 `innerHTML` 重建 —— `probe-buffrow`【8】：8 格 `data-mark` 节点身份不变、`#buffrow` 子树 `innerHTML` 写入 0 次
 - [x] buff 全程**无闪烁**：录屏逐帧检查，无 opacity/scale 跳变（入场动画只播一次） —— `probe-buffrow`【9】：60 帧推进 `animationstart` 增量 0；签名不含 `dur`，时长只在整秒变化时写文字/宽度
 - [x] 同名 buff 叠 3 层：显示 1 个图标 + `×3`，**不出现 3 个独立条目** —— `probe-buffrow`【10】：1 格、`×3`、名字恒为「战意」、3/5 层不加金边
 - [x] buff 到期：200ms 淡出后移除，不是瞬间消失 —— `probe-buffrow`【11】：先 `.out`、100ms 时节点还在、200ms 后清零
 - [x] 无尽试炼中 `#trialHud` 不被 buff 行遮挡 —— `probe-buffrow`【11】：`trialHud.top ≥ buffrow.bottom`、`--buff-h` 非 0；`dev/mobile-layout.js` 6 视口全绿
-- [ ] 5 技能连放：draw call ≤ 基线 +25%，移动端 ≥ 30fps
-- [ ] 低画质档：贴花消失、拖尾关闭、无 pageerror
-- [ ] `node dev/smoke.js` + `node dev/mobile-layout.js` 全绿
+- [x] 5 技能连放：draw call ≤ 基线 +25% —— `dev/vfx-bench.js` **186/0**：15 位 × 4 档单发 ≤6 draw call，5 连放 `calls 26 / base 709 / +3.7%`（阈值 +25%，余量充足）。
+  - [ ] **同一条的「移动端 ≥30fps」仍需真机，本机不假勾**：`vfx-bench.js` 头注释已写明软件渲染（SwiftShader）空场景只有个位数帧、帧时只报数不判红；Safari WebDriver 也不能模拟 DPR / isMobile / hasTouch。转为 **U11 合 main 前的硬前置**（见 `docs/status/vfx-merge.md` 「卡点」）。
+- [x] 低画质档：贴花消失、拖尾关闭、无 pageerror —— `probe-vfx-kit` **52/0** 真机三档逐项；`FXK_TIER.low = { decal: 0, trail: false, branch: 0, part: 0.35 }`（`test-vfx13`【4】，且原语层不再各写一套 `q < 0.75` 阈值）；`smoke` ERRORS none、Safari 门面 `__errbuf` 零 pageerror。
+- [x] `node dev/smoke.js` + `node dev/mobile-layout.js` 全绿 —— U6-4 收口复跑：`smoke` **ERRORS none**、`mobile-layout` **✅ 全部通过**（6 视口）。
+
+> **U6-4 收口结论（2026-11-14）**：14 条里 **13 条完整达标**，第 12 条的 draw call 一半达标、
+> 「移动端 ≥30fps」一半明确转 U11 真机前置 —— 结论齐全，但不谎称 14 条全绿。
+> 逐条机器证据汇总：`test-vfx13` 48/0 · `vfx-shot-live` 76/0 · `vfx-skill-vis --live` 113/0 ·
+> 默认配方层 39/0 · `vfx-vis` 14/0 · `vfx-bench` 186/0 · `probe-vfx-kit` 52/0 ·
+> `probe-vfx-field` 19/0 · `probe-enchant` 60/0 · `test-skillvfx-shape` 160/0 ·
+> `audit-skillvfx` 13/0 · `smoke` ERRORS none · `mobile-layout` 全绿。
+> **两条口径**（别混）：① 出图以 SKFX 真实链路为准，`vfx-shot.js` 只保留为配方层 / 回落路径尺子；
+> ② 本清单的「人眼」结论指真看了灰度拼版，机器描述子只是旁证；
+> 20×14 那版尺子曾把 whirl / warcry 判成距离 0（实际明显不同），已换成放大净剪影 40×26。
 
 > **U2 追加判据（不占上面 14 条的编号，归 `dev/probe-*.js` 自动判）**：
 > · **17 枚符号图标形状可读** —— `dev/probe-buff-icons.js` 11/0，出图 `dev/_shots/buff-icons-sheet.png`：48px 与真实 16px 两档逐枚可辨，无空白 / 实心块 / 糊团；Path2D 覆盖率 6%~90%、缩到 16px 仍 ≥20 可见像素、8 枚 evenodd 镂空真的挖出洞、17 枚全有查表入口。

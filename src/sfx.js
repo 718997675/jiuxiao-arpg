@@ -3875,6 +3875,51 @@ function lunge(dist) {}
     const from = ACT.player.pos.clone();
     const to = new THREE.Vector3(c.tx, 0, c.tz);
     const dur = 0.42;
+    /* [U6-4] 补出「抛物线」这条签名轨迹。
+     * 原来只写 `ACT.player.pos.lerpVectors(...)` 让人物沿弧线移动 —— 但游戏里 ACT.player.pos 每帧
+     * 由 `SKFX.sync` 从 Game.playerGroup 覆盖，实验室看到的位移在真实链路里
+     * 一个像素都没有。于是 leap 只剩落地那一根尘柱 + 地环，和 quake 的
+     * 「尘柱 + 塌坑」几乎同一张剪影（§13 第 1 条战士 5 招里唯一分不出的一对，
+     * `vfx-shot-live` 放大净剪影距离仅 25）。
+     * 现在按它自己 `sil:'抛物线落点'` 的语义补：起跳点回执环 + 随飞行逐颗点亮的
+     * 弧线光点，落地后仍留 0.35 秒余韵，600ms 高光帧里弧与落点同时可读。
+     * 不用 billMesh（那个数组只增不减、每帧还遍历），一律 flatMesh 短寿命 mesh，
+     * 换图时跟着 updater 一起退场。 */
+    const ARC_N = 14;
+    const arc = [];
+    const glow = C(E().glow);
+    for(let i=0;i<ARC_N;i++){
+      const k = i/(ARC_N-1);
+      const m = flatMesh(TEX.soft, glow, THREE.AdditiveBlending, 0);
+      m.position.set(from.x + (to.x-from.x)*k,
+        Math.sin(k*Math.PI)*2.6 + 0.35,
+        from.z + (to.z-from.z)*k);
+      m.scale.setScalar(0.34 + 0.20*Math.sin(k*Math.PI));
+      arc.push(m);
+    }
+    const takeoff = flatMesh(TEX.ring, glow, THREE.AdditiveBlending, 0.7);
+    takeoff.position.set(from.x, 0.05, from.z);
+    takeoff.scale.setScalar(1.5);
+    const ARC_LIFE = 0.85;
+    addUpdate({ t:0, update(dt){
+      this.t += dt;
+      const k = Math.min(1, this.t/dur);
+      /* 前 0.5 秒保持满亮，之后再淡 0.35 秒 —— 让 250ms 的飞行帧与
+       * 600ms 的落地帧都拍得到弧线，而不是只在飞行那一瞬闪一下。 */
+      const fade = this.t < 0.5 ? 1 : Math.max(0, 1 - (this.t-0.5)/0.35);
+      for(let i=0;i<ARC_N;i++){
+        const kk = i/(ARC_N-1);
+        const rise = Math.min(1, Math.max(0, (k - kk + 0.12)*6));
+        arc[i].material.opacity = 0.9 * fade * rise;
+      }
+      takeoff.material.opacity = 0.7 * fade;
+      takeoff.scale.setScalar(1.5 + k*0.9);
+      if(this.t >= ARC_LIFE){
+        arc.forEach(m=>ROOT.remove(m));
+        ROOT.remove(takeoff);
+        this.dead = true;
+      }
+    }});
     // 起跳尘
     FX.burst(from, { n: 14, speed: 2.5, life: .5, size: .5, tex:'smoke', up:.3, grav:1.2 });
     addUpdate({ t:0, update(dt){

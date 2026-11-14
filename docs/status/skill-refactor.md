@@ -3217,3 +3217,57 @@ Safari 侧的硬限制（都写进 `_pptr.js` 注释了）：没有控制台日�
 bloodrage 1.26×（结构不薄，只是面积小），人眼 / 录屏结论归 U6-4。
 
 **下一步**：U6-4 §13 十四条清单勾完 → U6-5 收口。U6-1~U6-3 不再回头。
+
+### U6-4 §13 十四条验收清单 ✅（2026-11-14）
+
+**先换尺子再勾清单**。`dev/vfx-shot.js` 拍 `VFX.playFor`（配方层），而 U1 已定
+SKFX 为准、37 只技能正常游戏里一次配方层都不播；且本机没 Chromium，
+`_pptr` 落 Safari WebDriver，门面的 `$()` 没有 `screenshot()`，老尺子在这台机器
+根本跑不起来。新建 `dev/vfx-shot-live.js`：`Game.playSkillVfx(id, ctx)` →
+页面内 `drawImage(gl)` → 2D canvas `toDataURL` 出 PNG，灰度 / 去背景净剪影 /
+五连拼版全在页面里做（项目无 node 图像库、无 PIL），Safari 与 Chromium 同口径。
+老尺子不删、判据不动，只挂「量的是配方层」告警。量法沿用 `vfx-skill-vis --live`：
+停主循环、清两层、`FX.update` 拆 ≤0.04 小步 + 每步 `SKFX.sync`、`gl.finish()`
+读完整帧、60/250/600ms 取差异像素最大的一帧当高光截图。
+
+**尺子返工两轮，都是尺子的锅**：① 20×14 二值描述子把 `whirl / warcry` 判成距离 0
+（人眼一个横条一个圆弧），改成从放大净剪影取 40×26，三职业最近一对 51/41/61；
+② 静态契约首跑 45/3 —— 实验室里剑阵叫 `swords`（`ALIAS` 5 条，从生成器读，别手抄）、
+`q < 0.75` 与 `VFX.playFor` 两条只出现在**注释**里（判「源码里没有」要先剥注释）。
+修完 `dev/test-vfx13.js` **48/0**。
+
+**唯一实质演出改动：`leap` 补抛物线**。战士 5 连灰度拼版里 `quake / leap`
+是同一张「钟形尘柱 + 地环」（放大净剪影距离 25，mage 41 / taoist 61）。
+根因不是画得不够：`leap` 的 `sil:'抛物线落点'` 只写了 `P.pos.lerpVectors(...)`，
+游戏里 `P.pos` 每帧被 `SKFX.sync` 从 `Game.playerGroup` 覆盖，
+60 / 250ms 差异像素只有 59 / 28 —— 按键当帧一个像素都没有。
+按它自己的语义补起跳回执环 + 14 颗随飞行逐颗点亮的弧线光点（落地后留 0.35s
+余韵，600ms 高光帧里弧与落点同时可读）。走 `docs/vfx-playground.html` →
+`build-skillvfx --write` → `--check`，`src/sfx.js` 由生成器更新，**没有手改**。
+`quake/leap` **25 → 122**、三职业灰度 **5/5 / 5/5 / 5/5** 认得出（要求 ≥4）。
+
+**14 条结论**（逐条证据写进 `docs/SKILL-VFX-PLAN.md §13`）：13 条达标；
+第 12 条拆两半 —— draw call **+3.7% ≤ +25%** 已勾（`vfx-bench` 186/0），
+「移动端 ≥30fps」本机量不出意义（SwiftShader 软件渲染、Safari 不能模拟
+DPR / isMobile），**如实转 U11 真机前置**，不硬勾、不为了绿灯改判据。
+其余：旋风斩 10/11 帧 ≥2 道刀气、累计 9.69 rad ≈1.54 圈；
+雷电 `branch:2~4` + 裂纹贴花 + 云心闪白（`probe-vfx-kit` 52/0；
+PLAN 字面「40~80ms 全屏闪白」与实现的短 shock / flash 口径不同，如实记）；
+四个真实领域剪影最小两两距离 150（`probe-vfx-field` 19/0）；
+`ELEM_PROFILE` 火升 / 冰停 / 毒沉三元组两两不同且 `vfx.js` 真读；
+低画质 `decal 0 / trail false / branch 0`；`smoke` ERRORS none、`mobile-layout` 全绿。
+
+**6 套附魔与 bloodrage 的交接结论**：`sheet-enchant.png` 近景 6 套人眼可两两分辨
+（白直刃 / 橙流火 / 青霜枝 / 白绿电弧 / 绿蚀痕 / 金光栅），剑身贴图被角色遮挡，
+几何三维度以 `probe-enchant` **60/0** 为准；`bloodrage` 本轮 `--live` 1.59×
+（U6-3 记 1.26×，属浏览器进程状态浮动），构件 4 类结构不薄，
+**不为它单独放大半径硬撑**。
+
+**验证**：`test-vfx13` 48/0 · `vfx-shot-live` **76/0** · `vfx-skill-vis --live` 113/0 ·
+默认 39/0 · `vfx-vis` 14/0 · `vfx-bench` 186/0 · `test-skillvfx-shape` 160/0 ·
+`audit-skillvfx` 13/0 · `build-skillvfx --check` 一致 ·
+`probe-vfx-kit` 52/0 · `probe-vfx-field` 19/0 · `probe-enchant` 60/0 ·
+`smoke` ERRORS none · `mobile-layout` ✅ 全部通过。
+
+**下一步**：U6-5 收口（U6 父节点改 ✅、三份台账对齐、当日日志、全套回归、commit + push）。
+U6-1~U6-4 不再回头；U11 合 main 前补移动端真机 ≥30fps。
