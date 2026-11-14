@@ -46,6 +46,17 @@ const SFX_AUDIO_KEYS = [
  *   暴击是「更重的一下」，用同一个音就听不出区别。省略不是 bug ——
  *   有些技能的暴击与普通命中本来就该一个音（打击感来自数字与画面）。
  *
+ * `afterGuard` —— 余韵兜底的**保护窗口**（可省略，默认 = `after.ms`）。
+ *   给「命中来得很晚」的技能用：陨石前摇 0.9 秒才结算伤害，
+ *   兜底若在 560ms 就补尾巴，声音会跑到命中**前面**。
+ *   配了之后兜底延后到命中之后；正常路径（impact → after）仍优先，靠令牌互斥。
+ *
+ * `impactAt` —— **领域类自报落地**的毫秒数（可省略）。
+ *   火墙 / 暴雪 / 雷云 / 剑阵的每跳伤害是 silent DoT，`damageEnemy` 不发音，
+ *   但它们视觉上有「预警圈收束 / 光柱砸下」的落地瞬间 —— 那才是命中段。
+ *   配了它，三段层在施法后这个时刻自己发一次 impact（并接上余韵）。
+ *   **不要**反过来让 DoT 每跳都响：那会变成电钻。
+ *
  * 键为 null = 这段故意不响（比如增益类技能没有「命中」）。
  * **不写 null 兜底成某个键** —— 那就是「每只技能听起来都差不多」。 */
 const SKILL_AUDIO = {
@@ -60,22 +71,27 @@ const SKILL_AUDIO = {
   execute:  { cast: 'swing',   impact: 'hit',     impactCrit: 'crit', after: { key: 'tail',   ms: 280 } },
   avatar:   { cast: 'cast',    impact: 'explode', after: { key: 'tail',   ms: 460 } },
   riposte:  { cast: 'cast',    impact: 'hit',     after: { key: 'rustle', ms: 240 } },
-  swordarray:{cast: 'cast',    cast2: 'thunder', impact: 'swing', after: { key: 'ring', ms: 320 } },
+  swordarray:{cast: 'cast',    cast2: 'thunder', impact: 'swing', impactAt: 260, after: { key: 'ring', ms: 320 } },
   skysfall: { cast: 'cast',    impact: 'explode', after: { key: 'tail',   ms: 520 } },
 
   /* ---------------- 法师 ---------------- */
   fireball: { cast: 'fire',    impact: 'explode', after: { key: 'rustle', ms: 300 } },
   frostnova:{ cast: 'ice',     impact: 'hit',     impactCrit: 'crit', after: { key: 'rustle', ms: 340 } },
-  chain:    { cast: 'thunder', impact: 'thunder', after: { key: 'rustle', ms: 220 } },
-  meteor:   { cast: 'cast',    impact: 'explode', after: { key: 'tail',   ms: 560 } },
+  /* 连锁闪电的起手不该和命中同为 thunder —— 同帧两声一样的雷，
+   * 玩家听不出「起手 → 命中」两段（真机实测 gap=0 被判成双响）。
+   * 起手改法术蓄势，命中留霹雳。 */
+  chain:    { cast: 'cast',    impact: 'thunder', after: { key: 'rustle', ms: 220 } },
+  meteor:   { cast: 'cast',    impact: 'explode', after: { key: 'tail',   ms: 560 }, afterGuard: 1000 },
   iceshard: { cast: 'ice',     impact: 'hit',     impactCrit: 'crit', after: { key: 'rustle', ms: 200 } },
-  firewall: { cast: 'fire',    impact: 'explode', after: { key: 'rustle', ms: 420 } },
-  iceshield:{ cast: 'ice',     impact: 'hit',     after: { key: 'ring',   ms: 300 } },
-  blizzard: { cast: 'ice',     impact: 'explode', after: { key: 'rustle', ms: 460 } },
-  starfall: { cast: 'cast',    cast2: 'boss',    impact: 'explode', after: { key: 'tail', ms: 520 } },
-  thundercloud:{cast:'thunder',impact: 'explode', after: { key: 'rustle', ms: 440 } },
-  pyroclasm:{ cast: 'fire',    cast2: 'explode', impact: 'explode', after: { key: 'tail', ms: 500 } },
-  elementavatar:{cast:'cast',  impact: 'explode', after: { key: 'ring',   ms: 380 } },
+  firewall: { cast: 'fire',    impact: 'explode', impactAt: 300, after: { key: 'rustle', ms: 420 } },
+  iceshield:{ cast: 'ice',     impact: null,      after: { key: 'ring',   ms: 300 } },
+  blizzard: { cast: 'ice',     impact: 'explode', impactAt: 320, after: { key: 'rustle', ms: 460 } },
+  starfall: { cast: 'cast',    cast2: 'boss',    impact: 'explode', after: { key: 'tail', ms: 520 }, afterGuard: 1600 },
+  thundercloud:{cast:'thunder',impact: 'explode', impactAt: 300, after: { key: 'rustle', ms: 440 } },
+  /* pyroclasm 是「施法即命中」的即时 AOE：原来那声 explode 是命中音，
+   * 现在由 impact 段接管，不能再留一份当起手和弦（同帧两个 explode = 双响）。 */
+  pyroclasm:{ cast: 'fire',    impact: 'explode', after: { key: 'tail', ms: 500 } },
+  elementavatar:{cast:'cast',  impact: null,      after: { key: 'ring',   ms: 380 } },
   judgement:{ cast: 'thunder', cast2: 'boss',    impact: 'explode', after: { key: 'tail', ms: 560 } },
 
   /* ---------------- 道士 ---------------- */
@@ -116,7 +132,14 @@ function skillAudioOk(id) {
     if (!af.key || SFX_AUDIO_KEYS.indexOf(af.key) < 0) return false;
     /* §5：余韵 200~600ms */
     if (!(af.ms >= 200 && af.ms <= 600)) return false;
+    if (a.afterGuard !== undefined && !(a.afterGuard > af.ms && a.afterGuard <= 2500)) return false;
   }
+  /* 起手段（cast / cast2）不能和命中段撞键 —— 同帧两个同音就是双响，
+   * 而且玩家听不出「起手 → 命中」两段。
+   * 踩过两次：pyroclasm 曾 cast2:explode + impact:explode；
+   * chain 曾 cast:thunder + impact:thunder（真机判据 gap=0）。 */
+  if (a.cast && (a.cast === a.impact || a.cast === a.impactCrit)) return false;
+  if (a.cast2 && (a.cast2 === a.impact || a.cast2 === a.impactCrit)) return false;
   /* 有 impact 段的技能必须有 after（命中之后要有余韵）；
    * 没有 impact 段的技能也要有 after（施法之后的收尾）。 */
   if (!af) return false;

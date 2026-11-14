@@ -34,7 +34,7 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
 let pass = 0, fail = 0;
 const ok = (c, m, d) => {
   if (c) { pass++; console.log('  ✓', m); return; }
-  fail++; fail++; console.log('  ✗', m, d === undefined ? '' : JSON.stringify(d));
+  fail++; console.log('  ✗', m, d === undefined ? '' : JSON.stringify(d));
 };
 
 /* 观察窗口：命中在 setTimeout / 飞弹 onHit / DoT tick 里的技能要留够。
@@ -43,7 +43,7 @@ const WAIT = {
   thrust: 750, leap: 750, fireball: 950, frostnova: 750, iceshard: 1700,
   blizzard: 950, firewall: 950, thundercloud: 950, poison: 950, taiji: 950,
   swordrain: 950, skysfall: 1700, meteor: 1600, starfall: 1800,
-  judgement: 1400, chain: 500, quake: 500, whirl: 400, execute: 400,
+  judgement: 1400, swordarray: 900, chain: 500, quake: 500, whirl: 400, execute: 400,
   warcry: 400, bloodrage: 400, shieldwall: 400, riposte: 400, antidote: 400,
   heal: 400, revive: 400, iceshield: 500, elementavatar: 500, avatar: 700,
   talisman: 600, talismanarrow: 700, mastersigil: 600, summon: 600,
@@ -79,6 +79,7 @@ const DAMAGE_TYPES = ['melee', 'aoe', 'proj', 'dash', 'zone', 'nova', 'ultimate'
   const self = await p.evaluate(() => {
     window.__log = [];
     window.__T0 = 0;
+    window.__inSeg = 0;
     /* 包音效方法：量的是「什么时候决定要发这个音」，
      * 与真机有没有音频设备无关。
      * **必须包含余韵三键**（tail / rustle / ring）—— 少了它们，
@@ -92,9 +93,23 @@ const DAMAGE_TYPES = ['melee', 'aoe', 'proj', 'dash', 'zone', 'nova', 'ultimate'
       const old = SFX[n];
       window.__saved.push([n, old]);
       SFX[n] = function () {
-        window.__log.push({ k: 'sfx', n, t: Math.round(performance.now() - window.__T0) });
+        window.__log.push({ k: 'sfx', n, t: Math.round(performance.now() - window.__T0),
+          seg: window.__inSeg ? 1 : 0 });
         return old.apply(this, arguments);
       };
+    }
+    /* [U6-2 收口] 三段层是唯一出口 —— 给它发出的每个音打标记。
+     * 探针里那只假怪会自己攻击（SFX.cast()），跨技能的残留定时器也会响，
+     * 以前把它们全算进当前技能，「无双响」判据一次误报 13 只。
+     * 判据只认 seg=1：即 SfxAudio._play 发出的音。 */
+    if (typeof SfxAudio !== 'undefined' && SfxAudio && typeof SfxAudio._play === 'function') {
+      const op = SfxAudio._play;
+      SfxAudio._play = function () {
+        window.__inSeg++;
+        try { return op.apply(this, arguments); }
+        finally { window.__inSeg--; }
+      };
+      window.__segWrapped = true;
     }
     /* 包伤害结算：命中时刻的第一手证据 */
     const od = Game.damageEnemy;
@@ -122,10 +137,12 @@ const DAMAGE_TYPES = ['melee', 'aoe', 'proj', 'dash', 'zone', 'nova', 'ultimate'
       requestAnimationFrame(tick);
     };
     requestAnimationFrame(tick);
-    return { sfxWrapped: window.__saved.length, hasDmg: typeof od === 'function' };
+    return { sfxWrapped: window.__saved.length, hasDmg: typeof od === 'function',
+      segWrapped: !!window.__segWrapped };
   });
   ok(self.sfxWrapped >= 14, '音效方法已包住 ' + self.sfxWrapped + ' 个', self);
   ok(self.hasDmg, '伤害结算口已包住');
+  ok(self.segWrapped, '三段层出口已打标记（判据只认它发的音）');
 
   console.log('\n【2】逐只技能量三段（起手 / 命中 / 余韵）');
   const allIds = await p.evaluate(() => {
@@ -169,9 +186,12 @@ const DAMAGE_TYPES = ['melee', 'aoe', 'proj', 'dash', 'zone', 'nova', 'ultimate'
       const sk = (typeof SKILLS !== 'undefined') ? SKILLS[id] : null;
       out.push({
         id, err, type: (sk && sk.type) || '?',
-        log: log.map(e => e.k + (e.n ? ':' + e.n : '') + '@' + e.t),
+        /* `*` = 三段层（SfxAudio._play）发的音；没星的是怪 AI / 残留定时器 / UI，
+         * 打印出来人眼就能分清，不用回头猜哪一声是噪声。 */
+        log: log.map(e => e.k + (e.n ? ':' + e.n : '') + '@' + e.t
+          + (e.k === 'sfx' && e.seg ? '*' : '')),
         /* 原始事件也带出去 —— 判据按 `k` 查，格式化串只给人看 */
-        ev: log.map(e => ({ k: e.k, n: e.n || '', t: e.t }))
+        ev: log.map(e => ({ k: e.k, n: e.n || '', t: e.t, seg: e.seg || 0 }))
       });
     }
     Game.skillUnlocked = oldUnlock;
@@ -188,84 +208,85 @@ const DAMAGE_TYPES = ['melee', 'aoe', 'proj', 'dash', 'zone', 'nova', 'ultimate'
   console.log('\n【3】判据');
   /* 3.1 每只技能：起手段必须有一声（施法后立刻就有反馈）。
    *     判据按 `k` 查（log 是给人看的格式化串，ev 才是原始事件）。 */
-  const noCast = rows.filter(r => !r.ev.some(e => e.k === 'sfx'));
+  const noCast = rows.filter(r => !r.ev.some(e => e.k === 'sfx' && e.seg === 1));
   ok(noCast.length === 0, '每只技能施放时都至少发一声（起手段不空）',
     noCast.map(r => r.id));
 
-  /* 3.2 结算伤害的技能：命中音必须与伤害结算同拍
+  /* 3.2 三段的分段键从**配置表**反查，不再用「固定音色清单」。
    *
-   *   [U6-2] 架构变了：命中音现在由 `SfxAudio.impact` 在 damageEnemy 里发，
-   *   音色按**技能 id** 选（配置表 data-sfaudio.js），所以「命中音」可能是
-   *   hit / crit / explode / thunder / fire / ice / swing 任意一个 ——
-   *   **不能再按固定音色列表找**（那是老架构的判据）。
-   *
-   *   新判据：**伤害结算那一帧前后必须有音效**，且那一帧之后 200ms 内
-   *   不应该再有第二个「命中类」音效（双响）。
-   *
-   *   「命中类」按配置表反查：配置表里 impact / impactCrit 段用到的键
-   *   + 余韵三键（tail / rustle / ring）。起手音不在其中。 */
-  /* 「命中类」音色清单。
-   * `SFX_AUDIO_KEYS` 是页面里的 const（data-sfaudio.js），node 侧访问不到 ——
-   * 必须从页面里取出来，否则清单是空的，判据会误报「命中帧附近没有任何音效」。 */
-  const HIT_KEYS = await p.evaluate(() => {
-    if (typeof SFX_AUDIO_KEYS === 'undefined') return null;
-    return SFX_AUDIO_KEYS.slice();
+   *   为什么要按技能分：命中音可能是 hit / crit / explode / thunder / swing
+   *   任意一个；而起手音可能也是同一个键（whirl 的 cast 是 swing，
+   *   swordarray 的 impact 也是 swing）。用一张全局清单必然把起手算成命中。 */
+  const SEG = await p.evaluate(() => {
+    const o = {};
+    for (const id in SKILL_AUDIO) {
+      const a = SKILL_AUDIO[id];
+      o[id] = {
+        impact: [a.impact, a.impactCrit].filter(Boolean),
+        after: a.after ? a.after.key : null,
+        impactAt: a.impactAt || 0,
+        afterMs: a.after ? a.after.ms : 0
+      };
+    }
+    return o;
   });
-  ok(HIT_KEYS && HIT_KEYS.length > 0, '命中类音色清单从页面取到了（' + (HIT_KEYS ? HIT_KEYS.length : 0) + ' 个）');
-  const dmgRows = rows.filter(r => DAMAGE_TYPES.indexOf(r.type) >= 0);
+  ok(Object.keys(SEG).length === 37,
+    '从页面取到了 37 只技能的分段键（命中/余韵各归各段）', Object.keys(SEG).length);
+
+  /* 3.2a 音画同拍：**瞬时命中**的技能，命中音要贴着伤害结算（±200ms）。
+   * 领域类（impactAt）不判这条 —— 它们的命中是「落地」那一拍，
+   * 每跳 silent DoT 不是命中帧，拿它当基准会得出「落地音比伤害早 400ms」的假红。 */
   const orderBad = [];
-  const dblBad = [];
-  for (const r of dmgRows) {
+  for (const r of rows) {
+    const cfg = SEG[r.id];
+    if (!cfg || !cfg.impact.length) continue;
+    if (cfg.impactAt) {
+      /* 领域：判「落地音存在」，不判与 DoT 同拍 */
+      const land = r.ev.some(e => e.k === 'sfx' && e.seg === 1 && cfg.impact.indexOf(e.n) >= 0);
+      if (!land) orderBad.push({ id: r.id, why: '领域落地没有自报命中音', log: r.log });
+      continue;
+    }
     const iDmg = r.ev.findIndex(e => e.k === 'dmg');
-    if (iDmg < 0) continue;                 /* 这只没打中（挥空）→ 不判 */
-    /* 命中音要在伤害结算**同一帧或紧邻**（±200ms）。
-     * 早太多 = 声音比画面早（感觉没打中）；晚太多 = 先看到数字后听到响。 */
-    const near = [];
-    for (let i = 0; i < r.ev.length; i++) {
-      const e = r.ev[i];
-      if (e.k !== 'sfx' || HIT_KEYS.indexOf(e.n) < 0) continue;
-      const dt = e.t - r.ev[iDmg].t;
-      if (dt >= -200 && dt <= 200) near.push({ i, dt, n: e.n });
-    }
-    if (!near.length) { orderBad.push({ id: r.id, why: '命中帧附近没有任何音效', log: r.log }); continue; }
-    /* 双响：命中帧附近（±200ms）不该有两个以上命中类音效。
-     * 余韵延迟 ≥200ms，所以窗口取 ±200ms 刚好把余韵排除在外。
-     *
-     * **起手音要排除掉**：起手音本来就紧挨着命中（近战技能同一帧），
-     * 把「起手 + 命中」算成双响是误报。
-     * 判据：只统计**起手之后**的命中类音效 —— 即落在命中帧之后（dt ≥ 0），
-     * 或者落在命中帧之前但**不是**这一发施法的第一声（第一声 = 起手）。
-     * 最省事的口径：把「本次施法的第一声音效」当起手，其余都算命中类。 */
-    const firstSfx = (() => {
-      const i = r.ev.findIndex(e => e.k === 'sfx');
-      return i >= 0 ? r.ev[i] : null;
-    })();
-    const isCast = e => firstSfx && e === firstSfx;
-    const hits = near.filter(x => !isCast(r.ev[x.i]));
-    if (hits.length > 1) {
-      dblBad.push({ id: r.id, n: hits.map(x => x.n + '@' + (x.dt >= 0 ? '+' : '') + x.dt) });
-    }
+    if (iDmg < 0) continue;                 /* 挥空不判 */
+    const near = r.ev.filter(e => e.k === 'sfx' && e.seg === 1
+      && cfg.impact.indexOf(e.n) >= 0
+      && Math.abs(e.t - r.ev[iDmg].t) <= 200);
+    if (!near.length) orderBad.push({ id: r.id, why: '命中帧附近没有该技能的 impact 音', log: r.log });
   }
   ok(orderBad.length === 0, '结算伤害的技能：命中帧附近必有一声（音画同拍）',
     orderBad.map(b => ({ id: b.id, why: b.why, seq: b.log })));
-  ok(dblBad.length === 0, '命中帧附近只有一声（无双响）', dblBad);
 
-  /* 3.3 余韵段：**每只**技能都要有余韵音
-   *
-   *   [U6-2] 余韵键只有三个：tail / rustle / ring（配置表 data-sfaudio.js）。
-   *   所以判据是「命中帧之后出现了这三个键之一」。
-   *   旧的判据（命中后有任何 sfx）会把命中音自己算成余韵 = 假绿。 */
-  const AFTER_KEYS = ['tail', 'rustle', 'ring'];
+  /* 3.2b 无双响：只统计**该技能 impact 段**的发声。
+   * 任意两声间隔 < IMPACT_WINDOW(120ms) = 叠在一起 = 真双响；
+   * 间隔 ≥120ms 是多段技（连震三波 / 剑雨多下），本来就该一下一下。
+   * 起手、余韵、怪 AI、残留定时器全不在统计里。 */
+  const dblBad = [];
+  for (const r of rows) {
+    const cfg = SEG[r.id];
+    if (!cfg || !cfg.impact.length) continue;
+    const ts = r.ev.filter(e => e.k === 'sfx' && e.seg === 1 && cfg.impact.indexOf(e.n) >= 0)
+      .map(e => e.t).sort((a, b) => a - b);
+    for (let i = 1; i < ts.length; i++) {
+      if (ts[i] - ts[i - 1] < 120) dblBad.push({ id: r.id, gap: ts[i] - ts[i - 1], at: ts[i] });
+    }
+  }
+  ok(dblBad.length === 0, '同一发的命中音不叠在一起（间隔 ≥120ms，多段技合法）', dblBad);
+
+  /* 3.3 余韵：每只技能都要有，且落在 §5 的 200~600ms。
+   * 基准是**该技能第一声 impact 音**（命中那一刻）；没有命中段的技能
+   * 用施法瞬间 t=0 —— 它们的余韵本来就是「这次施法的收尾」。
+   * 旧判据拿「第一笔 dmg」当基准：领域落地比 DoT 早 400ms、
+   * 陨石余韵跟的是命中不是第一跳，都会被误判。 */
   const noAfter = [];
   const afterRows = [];
   for (const r of rows) {
-    const iDmg = r.ev.findIndex(e => e.k === 'dmg');
-    const from = iDmg >= 0 ? iDmg : 0;
-    /* 余韵延迟 200~600ms，所以从命中帧之后 150ms 起算（留一点调度余量） */
-    const base = r.ev[from] ? r.ev[from].t : 0;
-    const after = r.ev.filter(e => e.k === 'sfx' && AFTER_KEYS.indexOf(e.n) >= 0
+    const cfg = SEG[r.id];
+    if (!cfg || !cfg.after) { noAfter.push(r.id); continue; }
+    const imp = r.ev.find(e => e.k === 'sfx' && e.seg === 1 && cfg.impact.indexOf(e.n) >= 0);
+    const base = imp ? imp.t : 0;
+    const after = r.ev.filter(e => e.k === 'sfx' && e.seg === 1 && e.n === cfg.after
       && e.t >= base + 150);
-    if (!after.length) { noAfter.push(r.id); }
+    if (!after.length) noAfter.push(r.id);
     else afterRows.push({ id: r.id, n: after[0].n, dt: after[0].t - base });
   }
   ok(noAfter.length === 0, '每只技能都有余韵音（§5 第三段：tail / rustle / ring）', noAfter);

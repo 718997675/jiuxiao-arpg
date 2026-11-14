@@ -52,6 +52,10 @@ const SfxAudio = {
   /* 全局施放序号 */
   _seq: 0,
 
+  /* 最近一次**命中音**的音色与时刻。跨技能的短窗口去重，见 impact()。 */
+  _lastKey: '',
+  _lastAt: -1e9,
+
   /* 统计：给探针 / 契约测试读 */
   stats: { cast: 0, impact: 0, after: 0, dedup: 0, fallback: 0 },
 
@@ -83,9 +87,31 @@ const SfxAudio = {
     this._seq++;
     this._slots[id] = { id: id, seq: this._seq, gen: mapGen(), at: nowMs(), impacted: false, aftered: false };
 
-    /* **没有命中段的技能**（增益 / 治疗 / 召唤）：余韵挂在施法之后。
-     * 它们本来就没有「打中了」这个瞬间，余韵是这次施法的收尾。 */
-    if (!a.impact) this.after(id);
+    /* **所有**施放都挂一个余韵兜底（不只是「没配 impact」的那些）。
+     *
+     * 为什么：「没配 impact」≠「impact 不会发生」。领域（火墙 / 暴雪 / 雷云 /
+     * 剑阵 / 毒雾）的每跳伤害是 `opts.silent` 的，`damageEnemy` 不会调 impact；
+     * 换式（兵形 / 法相）、护盾、增益根本不结算伤害 —— impact 永远不来，
+     * 余韵挂在它上面就**整段消失**。真机实测 37 只里 8 只因此没有余韵。
+     * §5 要的余韵是「这次施法的收尾」，不是「伤害的收尾」，打不打中都该有尾巴。
+     *
+     * 兜底在「本该有余韵」的时刻检查：这一发还没补过就立刻补一声，
+     * 延迟仍是 `after.ms`（200~600ms），不会因为兜底被拖到窗口外。 */
+    this._guardAfter(id, this._seq);
+
+    /* **领域类自报落地**：火墙 / 暴雪 / 雷云 / 剑阵没有「伤害结算」那一拍
+     * （每跳是 silent DoT，damageEnemy 明确不发音），但视觉上有预警圈收束、
+     * 光柱砸下 —— 那才是它们的「命中」。配了 impactAt 就在这里补一声落地音，
+     * 三段才齐。别改 DoT 的静默规则：让每跳都响会变成电钻。 */
+    if (a.impactAt && a.impact) {
+      const seq = this._seq, gen = mapGen();
+      setTimeout(() => {
+        if (mapGen() !== gen) return;
+        const t = this._slots[id];
+        if (!t || t.seq !== seq) return;
+        this.impact(id, false, null);
+      }, a.impactAt);
+    }
     return true;
   },
 
@@ -119,6 +145,18 @@ const SfxAudio = {
 
     /* 暴击时用暴击音（更重的一下），普通命中用配置里的音 */
     const key = (crit && a.impactCrit) ? a.impactCrit : a.impact;
+
+    /* **跨技能**的短窗口：同一音色 120ms 内只响一次。
+     * 令牌是按技能分槽的，各自独立 —— 白虎召唤物 + 自动施放会在 51ms 内
+     * 连出两声 hit（真机实测），两枚令牌谁都吞不掉对方，玩家听到的是噪音。
+     * 同音色叠在一起本来就该合成一声；多段技间隔 ≥120ms 不受影响。 */
+    if (this._lastKey === key && (now - this._lastAt) < IMPACT_WINDOW) {
+      this.stats.dedup++;
+      return true;
+    }
+    this._lastKey = key;
+    this._lastAt = now;
+
     this._play(key);
     this.stats.impact++;
 
@@ -144,8 +182,29 @@ const SfxAudio = {
     const tok = this._slots[id];
     if (tok && tok.aftered) return false;
     if (tok) tok.aftered = true;
-    const key = a.after.key;
-    const ms = a.after.ms;
+    this._emitAfter(a.after.key, a.after.ms);
+    return true;
+  },
+
+  /* 余韵兜底（见 cast 里的长注释）。
+   * `afterGuard` 给「命中来得很晚」的技能用：陨石前摇 0.9 秒，
+   * 兜底若在 560ms 就发，尾巴会跑到命中**前面**。配了之后兜底延后到
+   * 命中之后，而正常路径（impact → after）仍然优先，两者靠令牌互斥。 */
+  _guardAfter(id, seq) {
+    const a = skillAudio(id);
+    if (!a || !a.after) return;
+    const ms = Math.max(a.after.ms, a.afterGuard || 0, (a.impactAt || 0) + 50);
+    const gen = mapGen();
+    setTimeout(() => {
+      if (mapGen() !== gen) return;             /* 换图了 */
+      const t = this._slots[id];
+      if (!t || t.seq !== seq || t.aftered) return;  /* 这一发已由 impact 补过 */
+      t.aftered = true;
+      this._emitAfter(a.after.key, 0);          /* 立刻发：总延迟 = ms，不二次叠加 */
+    }, ms);
+  },
+
+  _emitAfter(key, ms) {
     const gen = mapGen();
     /* setTimeout 而不是每帧轮询：余韵是一次性的延迟音。 */
     setTimeout(() => {
@@ -154,7 +213,6 @@ const SfxAudio = {
       this._play(key);
       this.stats.after++;
     }, ms);
-    return true;
   },
 
   /* 当前有没有一次**技能施放**正在等命中（用于爆炸音归属判断）。
@@ -164,6 +222,33 @@ const SfxAudio = {
     if (!tok) return false;
     if (tok.impacted) return false;
     return (nowMs() - tok.at) < CAST_WINDOW;
+  },
+
+  /* **延迟爆炸的施法者**：取「最早还没命中过的那一发」。
+   *
+   * 陨石前摇 0.9 秒、雷雨连落十几颗，`explodeAt` 是 setTimeout 回调，
+   * 触发时 `this._castSkill` 已清零；而裸 `_sfxCastId`（最近一次施放）
+   * 会被飞行期间**自动施放**的其他技能覆盖 —— 真机实测陨石命中被认成
+   * riposte，配置里的 explode 没响、发的是 riposte 的 hit。
+   *
+   * 取「最早未命中」而不是「最新」：先放的技能先结算，这正是延迟队列的
+   * 顺序；一发命中后 `impacted=true` 自动退出，下一发补上。
+   * 投射物不走这条 —— 它们身上自带 `sfxId`，优先级更高。 */
+  oldestPending() {
+    const now = nowMs();
+    const gen = mapGen();
+    let best = null;
+    for (const id in this._slots) {
+      const t = this._slots[id];
+      if (t.impacted || t.gen !== gen) continue;
+      /* 增益 / 治疗 / 召唤没有命中段，本来就不会有「延迟命中」——
+       * 让它们留在队列里，会把 2 秒前那发的 id 错给当前这发爆炸。 */
+      const a0 = skillAudio(id);
+      if (!a0 || !a0.impact || t.aftered) continue;
+      if ((now - t.at) >= CAST_WINDOW) continue;
+      if (!best || t.seq < best.seq) best = t;
+    }
+    return best ? best.id : '';
   },
 
   /* ---------------- 内部 ---------------- */
@@ -184,6 +269,8 @@ const SfxAudio = {
   reset() {
     this._slots = {};
     this._seq = 0;
+    this._lastKey = '';
+    this._lastAt = -1e9;
   },
 
   /* 给探针读 */

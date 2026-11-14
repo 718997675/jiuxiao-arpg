@@ -133,24 +133,34 @@ const A = sb2.__A;
 const q2 = sb2.__q;
 
 const flush = () => {
-  const list = sb2.__timers.slice();
-  sb2.__timers.length = 0;
-  for (const t of list) { sb2.__now += t.ms; t.fn(); }
+  /* 按 ms 排序，并循环到没有新定时器 —— 真实 setTimeout 是按**到期时间**
+   * 触发，不是按注册顺序。兜底 / impactAt / 余韵三者有时序依赖，
+   * 按注册顺序跑会得出「兜底抢在落地音前面」这种假结论。 */
+  let guard = 0;
+  while (sb2.__timers.length && guard++ < 10) {
+    const list = sb2.__timers.slice().sort((a, b) => a.ms - b.ms);
+    sb2.__timers.length = 0;
+    for (const t of list) { sb2.__now += t.ms; t.fn(); }
+  }
 };
-const reset = () => { played.length = 0; sb2.__timers.length = 0; A.stats.cast = A.stats.impact = A.stats.after = A.stats.dedup = A.stats.fallback = 0; };
+const reset = () => { played.length = 0; sb2.__timers.length = 0; A.reset(); A.stats.cast = A.stats.impact = A.stats.after = A.stats.dedup = A.stats.fallback = 0; };
 
 /* 2.1 起手 → 命中 → 余韵 三段都响，且顺序正确 */
 reset();
 A.cast('fireball');
 ok(played.length === 1 && played[0].k === q2('fireball').cast, '起手：发了一声，音色 = 配置的 cast', played);
+/* [U6-2 补] cast 会挂一个**余韵兜底**定时器 —— 领域 / 换式 / 护盾没有
+ * 「伤害结算」那一拍，impact 永远不来，余韵不能因此整段消失。 */
+ok(sb2.__timers.length === 1, '起手就挂了余韵兜底定时器（8 只无命中技能靠它）');
 A.impact('fireball', false);
 ok(played.length === 2 && played[played.length - 1].k === q2('fireball').impact,
   '命中：发了第二声，音色 = 配置的 impact', played);
-ok(sb2.__timers.length === 1, '命中后排了一个余韵定时器');
-const aftMs = sb2.__timers[0] && sb2.__timers[0].ms;
-ok(aftMs === q2('fireball').after.ms, '余韵延迟 = 配置的 after.ms', aftMs);
+ok(sb2.__timers.length === 2, '命中后又排了一个余韵定时器（兜底 + 正常余韵）');
+const aftTimer = sb2.__timers.filter(t => t.ms === q2('fireball').after.ms);
+ok(aftTimer.length >= 1, '余韵延迟 = 配置的 after.ms', sb2.__timers.map(t => t.ms));
 flush();
-ok(played.length === 3 && played[2].k === q2('fireball').after.key, '余韵：到点发了第三声', played);
+ok(played.length === 3 && played[2].k === q2('fireball').after.key,
+  '余韵：到点发了第三声，兜底没重复响', played);
 
 /* 2.1b 和弦：配了 cast2 的技能，起手要响两声 */
 reset();
@@ -221,6 +231,73 @@ A.reset();
 flush();
 ok(A.stats.after === 0, '换图 reset 之后：未发的余韵不再响', A.stats.after);
 
+/* 2.10 领域类：impactAt 自报落地（每跳伤害是 silent DoT，但三段不能缺命中） */
+reset();
+const zones = SKILL_IDS.filter(id => (q2(id) || {}).impactAt);
+ok(zones.length >= 4, '领域类技能配了 impactAt（落地即命中）', zones);
+const zid = zones[0];
+A.cast(zid);
+flush();
+const zImpact = played.filter(p => p.k === q2(zid).impact).length;
+const zAfter = played.filter(p => p.k === q2(zid).after.key).length;
+ok(zImpact === 1, '领域落地：自报一次 impact（不靠 silent DoT 触发）', { id: zid, zImpact, played });
+ok(zAfter === 1, '领域落地之后接上余韵，且只响一次', { id: zid, zAfter, played });
+
+/* 2.11 无命中技能：兜底补余韵（真机实测曾有 8 只整段没有） */
+reset();
+A.cast('heal');
+flush();
+ok(played.filter(p => p.k === q2('heal').after.key).length === 1,
+  '没有命中段的技能：余韵兜底到点补一声', played);
+
+/* 2.12 兜底与正常余韵互斥（不双尾巴） */
+reset();
+A.cast('fireball');
+A.impact('fireball', false);
+flush();
+ok(played.filter(p => p.k === q2('fireball').after.key).length === 1,
+  '命中过的技能：兜底不再重复发余韵', played);
+
+/* 2.13 afterGuard：慢命中技能的兜底延后到命中之后 */
+reset();
+A.cast('meteor');
+ok(sb2.__timers.some(t => t.ms === q2('meteor').afterGuard),
+  '陨石的余韵兜底延后到 afterGuard（不会跑到命中前面）', sb2.__timers.map(t => t.ms));
+
+/* 2.14 令牌 seq 隔离：同一技能连放两次，旧令牌的兜底被挡住 */
+reset();
+A.cast('whirl');
+A.cast('whirl');
+flush();
+ok(A.stats.after === 1, '同一技能连放两次：旧令牌的兜底不重复发声', A.stats.after);
+
+/* 2.15 cast2 不撞 impact（pyroclasm 曾同帧两个 explode） */
+const clash = SKILL_IDS.filter(id => { const a = q2(id); return a && a.cast2 && a.cast2 === a.impact; });
+ok(clash.length === 0, '起手和弦不与命中音撞键（避免同帧双响）', clash);
+
+/* 2.16 延迟伤害认人：oldestPending 取「最早还没命中」的那一发 */
+reset();
+A.cast('meteor');
+A.cast('riposte');                 /* 陨石飞行期间自动施放了别的招 */
+ok(A.oldestPending() === 'meteor',
+  '延迟爆炸认对人：取最早未命中的那一发（不是最近施放）', A.oldestPending());
+A.impact('meteor', false);
+ok(A.oldestPending() === 'riposte', '一发命中后退出队列，下一发补上', A.oldestPending());
+
+/* 2.17 跨技能同音色短窗口去重（白虎召唤物 + 自动施放 51ms 连出两声 hit） */
+reset();
+A.cast('whitetiger');
+A.cast('riposte');
+A.impact('whitetiger', false);
+sb2.__now += 50;
+A.impact('riposte', false);
+ok(played.filter(p => p.k === 'hit').length === 1,
+  '不同技能 50ms 内同音色：只响一声（不叠噪音）', played);
+sb2.__now += 200;
+A.impact('riposte', false);
+ok(played.filter(p => p.k === 'hit').length === 2,
+  '超过 120ms 窗口后照常响（真·第二次命中不被吞）', played);
+
 /* ---------------- 三、接线纪律（源码级） ---------------- */
 
 console.log('\n三、接线纪律：散落的音必须收干净');
@@ -245,6 +322,8 @@ ok(stray.length === 0, '技能 case 里不再有散落的技能音（起手/命�
 
 /* 命中音必须挂在 damageEnemy 的伤害落地处，且走 SfxAudio */
 ok(/SfxAudio\.impact\(sfxWho/.test(gameSrc), 'damageEnemy 的命中口调 SfxAudio.impact');
+ok(/SfxAudio\.oldestPending\(\)/.test(gameSrc),
+  '延迟伤害用 oldestPending 认施法者（不被飞行期间的自动施放覆盖）');
 ok(/SfxAudio\.cast\(id/.test(gameSrc), 'castSkill 的起手口调 SfxAudio.cast');
 ok(/本次施放的 id/.test(gameSrc) || /_sfxCastId = id/.test(gameSrc), 'castSkill 记下了本次施放的技能 id');
 ok(/this\._proj && this\._proj\.sfxId/.test(gameSrc), '投射物命中：用 _proj.sfxId 兜底认人（异步命中不认错招）');

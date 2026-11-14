@@ -8,9 +8,9 @@
   但**不再往那两份里加待办、也不再按它们的 V0~V6 / P0~P2 编号排期**。
 - 进度事实看这两份：`docs/status/skill-refactor.md`（人物主线）、
   `docs/status/boss-kits.md`（B 线 B1~B25）。本文件只管「还差什么、按什么顺序合」。
-- 更新：2026-11-07；进度更新：2026-11-14（U6-1 ✅ / U6-2 代码收口、探针待跑）
+- 更新：2026-11-07；进度更新：2026-11-14（U6-1 ✅ / U6-2 ✅ 真机收口）
 
-> 当前：**U1 / U2 / U3 / U4 / U5 已收口**（U1 `--live` 113/0、默认 39/0；U2 `probe-buffrow` 29/0 + `probe-buff-icons` 11/0；U3 `test-combo` 76/0 + `probe-combo` 33/0；U4 `test-elemfx` 74/0 + `probe-elemfx` 94/0；U5 `test-enchant` 235/0 + `probe-enchant` 60/0）。**U6 进行中**：U6-1 低画质三档降级 ✅（`test-vfx-kit` 80/0 + `probe-vfx-kit` 52/0）；U6-2 音效三段对齐 🔄 代码收口（`test-sfaudio` 47/0），**真机探针待 Safari 开「允许远程自动化」后跑**。两条线的特效代码都已在 feat/skill-refactor 跑通，但 origin/main 一个特效文件都没有。仍按人物先合、BOSS 后合的顺序走。
+> 当前：**U1 / U2 / U3 / U4 / U5 已收口**（U1 `--live` 113/0、默认 39/0；U2 `probe-buffrow` 29/0 + `probe-buff-icons` 11/0；U3 `test-combo` 76/0 + `probe-combo` 33/0；U4 `test-elemfx` 74/0 + `probe-elemfx` 94/0；U5 `test-enchant` 235/0 + `probe-enchant` 60/0）。**U6 进行中**：U6-1 低画质三档降级 ✅（`test-vfx-kit` 80/0 + `probe-vfx-kit` 52/0）；U6-2 音效三段对齐 ✅（`test-sfaudio` **61/0** + `probe-sfx-align` **10/0**，Safari 真机）。**下一步 U6-3 逐条配方打磨 → U6-4 §13 清单 → U6-5 收口**。两条线的特效代码都已在 feat/skill-refactor 跑通，但 origin/main 一个特效文件都没有。仍按人物先合、BOSS 后合的顺序走。
 
 ## 一句话现状
 
@@ -147,7 +147,7 @@ bloodrage 1.29× · thrust 1.38× · heal 1.62×。配方层 `iceshard` 也只�
 | 编号 | 节点 | 状态 | 落点 / 产物 | 验收 |
 |---|---|---|---|---|
 | U6-1 | **低画质降级逐项核验**：§11 降级表五格（粒子数 / 拖尾 / 贴花 / 假 bloom / bolt 分叉）逐格对齐。此前实现是二档（`q<1` / `q<0.75`），中档 0.7 被误判成低档砍掉拖尾、低档却还留着 6 块贴花，与 §11 全对不上 | ✅ | `src/fx-kit.js`（`FXK_TIER` 三档表 + 五个原语只读档位 + `bolt` 递归层数分档） | `test-vfx-kit` **80/0**、`probe-vfx-kit` **52/0**（三档逐项）；`smoke` ERRORS none、`mobile-layout` 全绿 |
-| U6-2 | **音效三段对齐**：§5 的三段式（起手 / 命中 / 余韵）在音频侧只落了「起手」一层（`SFX.skill`），命中与余韵散在 40+ 处调用点、无统一时序。**开工前先量**：余韵 0/37、起手音按元素猜、AOE 命中叠声 | 🔄 代码收口 / 探针待跑 | `src/data/data-sfaudio.js`（新，37×三段）+ `src/sfx-audio.js`（新，唯一出口 + 施放令牌）+ `src/fx.js`（余韵三音）+ `src/game.js`（起手 / 命中 / explodeAt / reset）+ `dev/test-sfaudio.js` + `dev/probe-sfx-align.js` | 静态契约 **47/0**；真机「音画同拍 / 无双响 / 余韵 200~600ms」三条 —— **等 Safari 开关打开后跑** |
+| U6-2 | **音效三段对齐**：§5 的三段式（起手 / 命中 / 余韵）在音频侧只落了「起手」一层（`SFX.skill`），命中与余韵散在 40+ 处调用点、无统一时序。**开工前先量**：余韵 0/37、起手音按元素猜、AOE 命中叠声 | ✅ | `src/data/data-sfaudio.js`（新，37×三段）+ `src/sfx-audio.js`（新，唯一出口 + 施放令牌 + 余韵兜底 + `oldestPending`）+ `src/fx.js`（余韵三音）+ `src/game.js`（起手 / 命中 / explodeAt / reset）+ `dev/test-sfaudio.js` + `dev/probe-sfx-align.js` | 静态契约 **61/0**；Safari 真机 `probe-sfx-align` **10/0**（音画同拍 / 无双响 / 37 只都有余韵 / 余韵 200~600ms / 零控制台报错）；全套 node 契约无回归、`smoke` ERRORS none、`mobile-layout` 全绿 |
 | U6-3 | **逐条配方打磨**：37 只技能的「该几颗 / 什么色」逐个复核（V3b 只重配了三条 ④ 位） | ⬜ | `docs/vfx-playground.html` → `node dev/build-skillvfx.js --write` | 逐条有结论；`build-skillvfx --check` 一致 |
 | U6-4 | **§13 十四条验收清单勾完**：已勾 6 条（U2 的第 7~11 条），剩 8 条逐条给人眼 / 性能结论 | ⬜ | `docs/SKILL-VFX-PLAN.md §13` | 14 条全部有结论 |
 | U6-5 | **收口**：三份台账 + 当日日志 + commit + push | ⬜ | 三份台账 | `smoke` + `mobile-layout` + 全套契约全绿 |
@@ -191,6 +191,56 @@ bloodrage 1.29× · thrust 1.38× · heal 1.62×。配方层 `iceshard` 也只�
 **交给 U6-2 起的口径**：`FXK.tier` 是降级的**唯一**入口。
 以后加原语只读这张表，别再写 `q < x`；写第二套阈值就是两套降级打架。
 
+## U6-2 收口记录 · 音效三段对齐（2026-11-14 · ✅）
+
+**先量后改**：`dev/probe-sfx-align.js` 逐只施放 37 技能，记「音效调用 / 伤害结算 /
+命中反馈」三条时间线。量出余韵 **0/37**、起手音按 `type+elem` 猜（36 技共用七八种）、
+命中音散在 40+ 处且 AOE 叠声。代码收口后静态契约 47/0，但**真机探针一直没跑** ——
+本机 Chrome 被卸载（常驻占内存），用户指定走 Safari，第一次用要在 Safari 里开
+「允许远程自动化」。
+
+**开关打开后真机一跑，又量出 4 个静态契约照不出的真 bug**：
+
+1. **门面没解包 `{ value: ... }`**（W3C WebDriver 所有响应都包这一层）。
+   `evaluate` 返回 `{value:3}`、`screenshot` 拿到 `[object Object]`、视口校正直接 break、
+   `goto` 每次白等 30 秒、报错收集器静默失效。统一在 `_pptr._cmd()` 解包后：
+   返回 `3`、视口精确 1280×800、截图是真 PNG、goto 1.8 秒。
+2. **8/37 只技能完全没有余韵**。根因不是「没配」，是余韵挂在 `impact()` 上，
+   而领域（火墙 / 暴雪 / 雷云 / 剑阵）的每跳伤害是 `opts.silent` 的 DoT、
+   换式 / 护盾 / 增益根本不结算伤害 —— `impact()` 永远不来。
+   → `cast()` 给**所有**施放挂余韵兜底（`_guardAfter`：到点没补过就自己补，
+   延迟仍是 `after.ms`，不二次叠加），令牌 `seq` 保证不双尾巴。
+   领域另配 `impactAt` 自报「落地」那一拍 —— 视觉上有预警圈收束 / 光柱砸下，
+   那才是它们的命中；**不许**让 DoT 每跳都响（会变电钻）。
+3. **延迟伤害认错施法者**（最隐蔽）。真机日志里陨石 `dmg@890` 跟的是 `sfx:hit`，
+   而配置里它的命中音是 `explode`；诊断脚本抓到 `_sfxCastId === 'riposte'` ——
+   陨石前摇 0.9 秒，飞行期间**自动施放**把「最近一次施放」覆盖了。
+   突刺 / 天罚同理掉进 fallback。→ `SfxAudio.oldestPending()`：
+   取「最早还没结算命中的那一发」，`damageEnemy` 兜底链统一问它
+   （与投射物自带 `sfxId` 同思路，让**伤害源自己带 id**）。
+   增益类（无 impact 段）不进这个队列，否则 2 秒前一发会把 id 错给当前爆炸。
+4. **同帧 / 近帧双响**：`pyroclasm` 的 `cast2` 与 `impact` 都是 `explode`；
+   `chain` 的 `cast` 与 `impact` 都是 `thunder`；白虎召唤物 + 自动施放 51ms 内连出两声 `hit`。
+   → 配置表校验钉住「起手段不撞命中段」；`impact()` 加**跨技能**同音色 120ms 短窗口去重
+   （按技能分槽的令牌相互独立，谁都吞不掉对方）。
+
+**慢命中的尾巴会跑到命中前面**：陨石命中 ~890ms / 星陨 ~1000ms，
+而余韵兜底在 520~560ms → 配 `afterGuard`（1000 / 1600）把兜底延后，
+正常路径（impact → after）仍优先。
+
+**判据口径**（同样用真 bug 换的）：三段层是唯一出口，所以验证也只验出口 ——
+`SfxAudio._play` 发出的音打 `seg=1`，假怪 AI 的攻击音 / 跨技能残留定时器 / UI 音
+一律不算；分段键从**配置表**反查（全局音色清单会把起手算成命中）；
+双响判「同一发 impact 段任意两声间隔 <120ms」，≥120ms 是多段技本来就该一下一下；
+余韵基准取**第一声 impact 音**而不是第一笔 dmg（领域落地比首跳 DoT 早 400ms）。
+
+**读数**：`test-sfaudio` **61/0**、`probe-sfx-align` **10/0**（37 只逐只真机）、
+全套 node 契约无回归、`test-quest` 57 项、`test-s1`、`test-save` 79/0、
+`test-items` 21/0、`smoke` ERRORS none、`mobile-layout` 全绿。
+**唯一红**：`test-bosskits` —— 见「卡点」，与本次改动无关。
+
+**没做的**：37 只配方「好不好看」、§13 剩 8 条人眼 / 性能结论 —— 归 U6-3 / U6-4。
+
 ## U5 收口记录（2026-11-09）
 
 **口径**：U1 定了 SKFX 为准、37 只技能在正常游戏里**一次配方层都不播**。
@@ -219,9 +269,8 @@ HEAD 版本跑同一序列反而 8/5，证明非 U5 回归。给 `WAIT` 表补
 
 ## 下一步（U1~U5 已收口，U6 进行中，别跳）
 
-1. `U6-2` 人物 · **音效三段对齐**：§5 的三段式在音频侧只落了「起手」一层
-   （`SFX.skill`），命中与余韵散在 40+ 处调用点、没有统一时序。
-   先核实现：哪些技能有命中音、哪些有余韵音、时序对不对得上视觉的三段。
+1. `U6-3` 人物 · **逐条配方打磨**：37 只技能「该几颗 / 什么色」逐个复核
+   （V3b 只重配了三条 ④ 位）。U6-1 / U6-2 已 ✅，别回头重做。
 2. U6 的两条口径别踩：① Lv10 的 `enchant` 是**数据声明**不是播放指令，
    别去 `src/vfx.js` 补 case；② 常驻附魔走 FXK、技能演出走 SKFX，
    `vfx-skill-vis`（默认 / `--live`）都不量附魔，附魔有自己那支 `probe-enchant`。
@@ -246,6 +295,13 @@ HEAD 版本跑同一序列反而 8/5，证明非 U5 回归。给 `WAIT` 表补
 - **生成物清单**：`src/sfx.js`（人物演出）、`src/fx2.js`（BOSS 原语）、
   `src/boss-cast.js`（BOSS 施法）、`src/data/data-bosskits.js`（88 招表）——
   四个都是生成物，源文件在 `docs/*.html` 或 `dev/build-*.js`，改完必须 `--write` + `--check`。
+- **`test-bosskits` 在只有 Safari 的机器上是假红，别修**（2026-11-14 实测）：
+  `build-bosskits.js` 靠 `Function.prototype.toString()` + 对象枚举顺序切源码，
+  Safari 与 Chrome 基线不同 —— 同一份特效台生成出来的文本差 **3898 行**、
+  连 `BOSS_NATIVE` 的键顺序都变了（`treeking` 开头 → `chaos` 开头）。
+  **在这台机器上跑 `--write` 会把生成物洗成 Safari 顺序**，属于 U11/U12 的 BOSS 线，
+  不是 U6 的事。要验这条请在有 Chromium 的机器上跑 `node dev/build-bosskits.js --check`。
+  本轮没动过任何 boss / fx2 / playground 文件，`data-bosskits.js` 最后一次改动是 B23（`4d48bf3`）。
 - **判据会过期**：`vfx-skill-vis` 已因 B20 双演出层返工过一次（17/21 假红）；
   U1 又因 SwiftShader 冷启动读到半帧返工一次（`iceshard` 1401~1897 来回跳，
   靠「暖机 + `gl.finish()`」压到 1604~1607 稳定）。合 main 前若再动演出层，

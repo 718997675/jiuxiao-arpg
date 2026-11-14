@@ -3098,7 +3098,7 @@ G.damageEnemy(e, dmg, crit,
 **交给 U6-2 的口径**：`FXK.tier` 是降级的**唯一**入口，
 以后加原语只读这张表，别再写 `q < x`（写第二套阈值就是两套降级打架）。
 
-### U6-2 音效三段对齐 🔄（2026-11-10 开工 · 2026-11-14 代码收口，真机探针待开 Safari 开关）
+### U6-2 音效三段对齐 ✅（2026-11-10 开工 · 2026-11-14 真机收口）
 
 **开工前先量了一遍**（`dev/probe-sfx-align.js`，37 只技能逐只施放，记录
 音效调用 / 伤害结算 / 命中反馈三条时间线）。测出来的真实缺口有三条，
@@ -3119,8 +3119,8 @@ G.damageEnemy(e, dmg, crit,
 | `src/fx.js` | 新增三个余韵专用音色：`tail`（低频衰减）/ `rustle`（细碎沙沙）/ `ring`（悠长余韵） |
 | `src/game.js` | 起手口接 `cast`；`damageEnemy` 的伤害落地处接 `impact`；`explodeAt` 先数命中数再决定是否自响；换图 `reset()` |
 | `index.html` | 两个新脚本，顺序：`data-sfaudio` → `sfx-audio`，且都在 `game.js` 之前 |
-| `dev/test-sfaudio.js`（新） | 静态契约 **47/0** |
-| `dev/probe-sfx-align.js`（新） | 真机三段测量（先量后改的那支，判据也一并升级） |
+| `dev/test-sfaudio.js`（新） | 静态契约 **61/0** |
+| `dev/probe-sfx-align.js`（新） | 真机三段测量 **10/0**（先量后改的那支，判据按真机结果升级过三轮） |
 
 **三条关键口径**（不知道就会踩）：
 
@@ -3131,6 +3131,14 @@ G.damageEnemy(e, dmg, crit,
 3. **`explodeAt` 不能无条件响爆炸音** —— 它与 `damageEnemy` 的 impact 会双响。
    先数一遍命中数：打中 → 交给 impact（按技能选音色 + AOE 去重）；打空 → 自己响
    （否则石头砸空了没声音，玩家以为技能没放出去）。
+4. **余韵不能只挂在 `impact()` 上**。领域每跳是 `opts.silent` 的 DoT、换式 / 护盾 /
+   增益根本不结算伤害 —— 实测 **8/37 只技能整段没有余韵**。所以 `cast()` 给所有施放
+   挂兜底（`_guardAfter`），领域另配 `impactAt` 自报「落地」那一拍。
+5. **延迟伤害必须自己带施法者 id**。陨石前摇 0.9 秒，飞行期间自动施放会把
+   「最近一次施放」覆盖 —— 真机日志里陨石命中被认成 `riposte`，配置音色整个失效。
+   `damageEnemy` 统一问 `SfxAudio.oldestPending()`（最早未命中的那一发），
+   与投射物自带 `sfxId` 同一个思路。慢命中技能配 `afterGuard`，
+   否则余韵兜底会跑到命中**前面**。
 
 **顺手保住的东西**：收口时删掉了 `game.js` 里 37 行散落音，其中几行夹带了
 **身份音**（召唤 / 终极技的 `SFX.boss()` 低频轰鸣、`SFX.heal()`）。单键表达不了和弦，
@@ -3141,19 +3149,27 @@ G.damageEnemy(e, dmg, crit,
 这台机器上 Chrome 被卸载了（占内存），只剩 Safari。puppeteer 驱动不了 Safari，
 所以加了一层门面：**有 Chromium 就原样走 puppeteer（Windows 开发机不受影响），
 只有 Safari 就落到 `safaridriver` 的 WebDriver**。124 个探针的 require 一并切到门面。
+2026-11-14 开关打开后实测补齐了四个语义：`_cmd()` 解包 W3C 的 `{value:...}`
+（不解包会让 evaluate / screenshot / 视口 / goto 全线错位）、`evaluate` 支持字符串表达式
+（`build-bosskits` 的 `waitForFunction` 就是这么写的）、`page.close()`、
+以及进程退出时收 driver + 会话配对重试（异常退出会占住 Safari，后续探针全建不了会话）。
 Safari 侧的硬限制（都写进 `_pptr.js` 注释了）：没有控制台日志接口（靠注入 `__errbuf` 收，
-**页面加载期收不到**）、没有无头模式（会弹真窗口）、没有 CDP、视口只能设窗口尺寸。
+**页面加载期收不到**）、没有无头模式（会弹真窗口）、没有 CDP、视口只能设窗口尺寸、
+**不能模拟 DPR / isMobile / hasTouch**。
 
-**验证**：
-- `test-sfaudio` **47/0**（37 只技能是否配齐、余韵是否落在 200~600ms、
-  AOE 去重、多段不被吞、暴击音、cast2 和弦、异步投射物、换图 reset、
-  以及**源码级**「技能 case 里不许再出现散落的 `SFX.xxx()`」）
-- 全套 node 契约复跑：p5 **989/0** · p5b **116/0** · p2b **924/0** · p3 **106/0** ·
-  p4 **60/0** · combo 76 · elemfx 74 · enchant 235 · vfx-dsl 358 · vfx-kit 80 ——
-  删掉 37 行音效没有碰坏任何一条。
-- ⏸ **真机探针未跑**：`safaridriver` 需要 Safari 里开「允许远程自动化」，
-  那是一个要人点的开关（`safaridriver --enable` 要管理员密码），助手做不了。
-  开关打开后跑 `node dev/probe-sfx-align.js` 即可（代码已就绪，报错信息已翻译成步骤）。
+**验证（真机收口后）**：
+- `test-sfaudio` **61/0**、`probe-sfx-align` **10/0**（37 只逐只真机：
+  起手不空 / 分段键齐全 / 音画同拍 / 无双响 / 每只都有余韵 / 余韵 200~600ms / 零报错）
+- 全套 node 契约无回归、浏览器侧 `test-quest` 57 项 · `test-s1` ·
+  `test-save` 79/0 · `test-items` 21/0 · `smoke` ERRORS none · `mobile-layout` 全绿
+- **唯一红 `test-bosskits` 与本次改动无关**：`build-bosskits` 靠 `toString()` +
+  对象枚举顺序切源码，Safari 与 Chrome 基线不同（实测差 3898 行、键顺序全变）。
+  在这台机器上**不要跑 `--write`**，详见 `vfx-merge.md` 卡点。
 
-**下一步**：等开关打开 → 跑 `probe-sfx-align` 把「音画同拍 / 无双响 / 余韵延迟」三条
-真机判据跑绿 → 才能把 U6-2 标 ✅。**「契约全绿 ≠ 做完」的口径不变。**
+**判据为什么改了三轮**：三段层是唯一出口，验证也只该验出口 ——
+`SfxAudio._play` 发出的音打 `seg=1`，假怪 AI 攻击音 / 跨技能残留定时器 / UI 音全排除；
+分段键从配置表反查（全局音色清单会把起手算成命中）；双响只统计 impact 段且间隔 <120ms；
+余韵基准取第一声 impact 音而不是第一笔 dmg（领域落地比首跳 DoT 早 400ms）。
+逐条细节与 4 个真 bug 的诊断过程写在 `vfx-merge.md` 的「U6-2 收口记录」。
+
+**下一步**：U6-3 逐条配方打磨 → U6-4 §13 清单 → U6-5 收口。U6-2 不再回头。

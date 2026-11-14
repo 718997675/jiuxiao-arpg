@@ -6960,16 +6960,23 @@ const Game = {
        *
        * 没配 impact 音的技能（增益 / 治疗）走 fallback，行为与以前完全一样。 */
       /* [U6-2] 技能 id 的多级兜底（与 ComboFX 的 `opts.skill || this._castSkill` 同思路）：
-       *   ① `opts.sfx`  —— 投射物自己在身上带着施法者 id（**最准**：
-       *      弹道飞 0.3~1.5 秒，这期间玩家可能又放了别的招）
+       *   ① `opts.sfx`  —— 伤害源自己带着施法者 id（**最准**）
        *   ② `opts.skill` —— 部分调用点已经带了这个
-       *   ③ `this._sfxCastId` —— 最近一次施放的技能（同步结算的技能用这个）
-       *   ④ `this._castSkill` —— ComboFX 用的那个同步窗口标记
+       *   ③ `this._proj.sfxId` —— 投射物身上带的（弹道飞 0.3~1.5 秒）
+       *   ④ `SfxAudio.oldestPending()` —— **延迟伤害的统一口径**：
+       *      陨石前摇 0.9 秒 / 突刺 0.2 秒 / 雷雨连落，命中的时候
+       *      `_castSkill` 已清零、而 `_sfxCastId`（最近一次施放）会被飞行期间
+       *      的**自动施放**覆盖。真机实测陨石命中被认成 riposte、
+       *      突刺与天罚直接掉进 fallback —— 都是这个原因。
+       *      问「哪一发还没结算命中」才对，见 sfx-audio.js 的注释。
+       *   ⑤ `_sfxCastId` / `_castSkill` —— 老兜底，最后才用
        * 全空 → 不是技能造成的伤害（装备特效 / 毒爆 / 元素反应），
        * 走 fallback 发原来的受击音。 */
+      const pending = (typeof SfxAudio !== 'undefined' && SfxAudio && SfxAudio.oldestPending)
+        ? SfxAudio.oldestPending() : '';
       const sfxWho = opts.sfx || opts.skill
         || (this._proj && this._proj.sfxId)      /* 投射物身上带着施法者 id（最准） */
-        || this._sfxCastId || this._castSkill || '';
+        || pending || this._sfxCastId || this._castSkill || '';
       const handled = (typeof SfxAudio !== 'undefined' && SfxAudio && sfxWho)
         ? SfxAudio.impact(sfxWho, crit, () => { SFX[crit ? 'crit' : 'hit'](); })
         : false;
@@ -7167,7 +7174,9 @@ const Game = {
       if (DIST2D(e.pos, pos) < radius + e.radius) {
         const { dmg, crit } = this.rollDamage(baseDmg);
         /* `elem` 可选：只有需要「按元素算抗性」的爆炸（毒爆）才传。
-         * 不传就是原来的物理口径，老调用点一个字节都没变。 */
+         * 不传就是原来的物理口径，老调用点一个字节都没变。
+         * 施法者 id 由 damageEnemy 统一问 SfxAudio.oldestPending()，
+         * 这里不再各传一套 —— 一个口径才不会打架。 */
         this.damageEnemy(e, dmg, crit, { knock: 0.5, tag, elem: elem });
       }
     }
