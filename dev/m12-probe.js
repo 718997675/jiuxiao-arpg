@@ -1,7 +1,7 @@
 /* 单怪探针：挑一只「明明该走过来却不动」的怪，逐帧打印它的状态。
  * 用法：node dev/m12-probe.js [mapId]
  */
-const puppeteer = require('puppeteer-core');
+const puppeteer = require('./_pptr');
 const path = require('path');
 const fs = require('fs');
 const ROOT = path.resolve(__dirname, '..');

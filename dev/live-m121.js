@@ -2,7 +2,7 @@
  * 用法：node dev/live-m121.js
  * 注意：GitHub Pages 构建有 40~60 秒延迟，刚 push 完立刻跑会拿到旧版本。
  */
-const puppeteer = require('puppeteer-core');
+const puppeteer = require('./_pptr');
 const path = require('path');
 const fs = require('fs');
 const wait = ms => new Promise(r => setTimeout(r, ms));

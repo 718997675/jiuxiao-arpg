@@ -9,7 +9,7 @@
  *   3. 到点回收：zone 移除、材质 dispose，连放十次不涨
  * 顺带把四种剪影各截一张图，人眼复核用（shots/field-<kind>.png）。
  * ============================================================ */
-const puppeteer = require('puppeteer-core');
+const puppeteer = require('./_pptr');
 const path = require('path');
 const fs = require('fs');
 const exe = require('./_chrome');

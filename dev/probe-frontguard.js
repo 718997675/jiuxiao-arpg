@@ -17,7 +17,7 @@
  *      0.1 秒的已经基本转完 —— 这一条决定「绕背」是不是一段能走完的路
  * ============================================================ */
 'use strict';
-const puppeteer = require('puppeteer-core');
+const puppeteer = require('./_pptr');
 const path = require('path');
 const EXE = require('./_chrome');
 

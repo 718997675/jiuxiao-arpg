@@ -1,5 +1,5 @@
 /* 生成推广用截图：输出到 docs/screenshots/（不受 .gitignore 的 shots/ 影响） */
-const puppeteer = require('puppeteer-core');
+const puppeteer = require('./_pptr');
 const path = require('path');
 const fs = require('fs');
 const wait = ms => new Promise(r => setTimeout(r, ms));

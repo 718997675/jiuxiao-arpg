@@ -46,7 +46,7 @@
  * `vfx-vis` 踩过这个坑）。
  * ============================================================ */
 'use strict';
-const puppeteer = require('puppeteer-core');
+const puppeteer = require('./_pptr');
 const path = require('path');
 const EXE = require('./_chrome');
 

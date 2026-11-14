@@ -26,7 +26,7 @@
  *     它是 setTimeout 延迟的 —— 判「符毒绿符钉」必须等够时间再读数。
  * ============================================================ */
 'use strict';
-const puppeteer = require('puppeteer-core');
+const puppeteer = require('./_pptr');
 const path = require('path');
 const EXE = require('./_chrome');
 const wait = ms => new Promise(r => setTimeout(r, ms));

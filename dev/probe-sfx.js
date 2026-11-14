@@ -21,7 +21,7 @@
  *   - 无头 + 软件渲染下 dt 被夹到 0.05，模拟时间远慢于真实时间 → 一律轮询
  * ============================================================ */
 'use strict';
-const puppeteer = require('puppeteer-core');
+const puppeteer = require('./_pptr');
 const path = require('path');
 const EXE = require('./_chrome');
 

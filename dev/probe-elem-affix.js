@@ -11,7 +11,7 @@
  *   4. 命格固有「流火格」仍是火伤专属 —— 面板显示「火焰伤害」，只加火；
  *   5. 洗练池里只剩「元素伤害」，没有四族旧词条可选。
  * ============================================================ */
-const puppeteer = require('puppeteer-core');
+const puppeteer = require('./_pptr');
 const path = require('path');
 
 const wait = ms => new Promise(r => setTimeout(r, ms));

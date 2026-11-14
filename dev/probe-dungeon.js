@@ -16,7 +16,7 @@
  *
  * 用法：NODE_PATH=<managed node_modules> node dev/probe-dungeon.js
  * ============================================================ */
-const puppeteer = require('puppeteer-core');
+const puppeteer = require('./_pptr');
 const path = require('path');
 const fs = require('fs');
 

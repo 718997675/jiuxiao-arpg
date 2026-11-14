@@ -19,7 +19,7 @@
  *   四、语义对不对（内圈安全、外圈吃伤；格挡会自己摘掉）
  *   五、全程 0 报错
  * ============================================================ */
-const puppeteer = require('puppeteer-core');
+const puppeteer = require('./_pptr');
 const path = require('path');
 const fs = require('fs');
 const wait = (ms) => new Promise(r => setTimeout(r, ms));

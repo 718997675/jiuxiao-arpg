@@ -12,7 +12,7 @@
  *   6. 手机：宫格 4 个技能键 + 一枚「攻」，零重叠
  *   7. 零控制台报错
  * ============================================================ */
-const puppeteer = require('puppeteer-core');
+const puppeteer = require('./_pptr');
 const path = require('path');
 const fs = require('fs');
 const wait = ms => new Promise(r => setTimeout(r, ms));

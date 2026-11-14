@@ -1,7 +1,7 @@
 /* [M6] 仓库面板实景截图（桌面 + 手机）
  * 用法：node dev/stash-shot.js
  */
-const puppeteer = require('puppeteer-core');
+const puppeteer = require('./_pptr');
 const path = require('path');
 const fs = require('fs');
 const ROOT = path.resolve(__dirname, '..');

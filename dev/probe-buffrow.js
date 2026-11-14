@@ -18,7 +18,7 @@
  *     正常重绘算到增益行头上。
  * ============================================================ */
 'use strict';
-const puppeteer = require('puppeteer-core');
+const puppeteer = require('./_pptr');
 const path = require('path');
 const fs = require('fs');
 const EXE = require('./_chrome');

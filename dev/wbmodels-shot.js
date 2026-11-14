@@ -12,7 +12,7 @@
  *
  * 用法：node dev/wbmodels-shot.js
  * ============================================================ */
-const puppeteer = require('puppeteer-core');
+const puppeteer = require('./_pptr');
 const path = require('path');
 const fs = require('fs');
 

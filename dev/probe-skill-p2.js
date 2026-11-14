@@ -14,7 +14,7 @@
  *   5. 洗点把 9 点一分不少退回来
  * ============================================================ */
 'use strict';
-const puppeteer = require('puppeteer-core');
+const puppeteer = require('./_pptr');
 const path = require('path');
 const fs = require('fs');
 

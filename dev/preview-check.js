@@ -14,7 +14,7 @@
  */
 'use strict';
 
-const puppeteer = require('puppeteer-core');
+const puppeteer = require('./_pptr');
 const wait = ms => new Promise(r => setTimeout(r, ms));
 
 const argv = process.argv.slice(2);

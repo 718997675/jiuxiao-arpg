@@ -27,7 +27,7 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
-const puppeteer = require('puppeteer-core');
+const puppeteer = require('./_pptr');
 
 const ROOT = path.resolve(__dirname, '..');
 const wait = (ms) => new Promise(r => setTimeout(r, ms));

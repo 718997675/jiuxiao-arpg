@@ -1,7 +1,7 @@
 /* 移动端 HUD 几何诊断：找出「摇杆消失 / 按钮变大」到底是被哪个变化触发的
  * 用法：node m-diagnose.js [步骤名...]   默认跑全部步骤
  */
-const puppeteer = require('puppeteer-core');
+const puppeteer = require('./_pptr');
 const path = require('path');
 
 const ROOT = path.resolve(__dirname, '..');

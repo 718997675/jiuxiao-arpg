@@ -15,7 +15,7 @@
  *   四、玩家真的在掉血（settle 接上了 damagePlayer）
  *   五、全程 0 报错、演出层不泄漏
  * ============================================================ */
-const puppeteer = require('puppeteer-core');
+const puppeteer = require('./_pptr');
 const path = require('path');
 const fs = require('fs');
 const wait = (ms) => new Promise(r => setTimeout(r, ms));

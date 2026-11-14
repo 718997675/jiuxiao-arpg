@@ -1,7 +1,7 @@
 /* 长时间压力测试：模拟真实战斗 3 分钟，采样 GPU 资源与帧率
  * 用法：node stress.js [秒数]
  */
-const puppeteer = require('puppeteer-core');
+const puppeteer = require('./_pptr');
 const path = require('path');
 const fs = require('fs');
 

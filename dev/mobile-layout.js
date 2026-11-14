@@ -9,7 +9,7 @@
  *                   且 overflow:visible（如 range 滑块头）→ 都不算
  *   · 面板可滚   —— 内容高于/宽于容器时，容器必须 overflow:auto|scroll
  */
-const puppeteer = require('puppeteer-core');
+const puppeteer = require('./_pptr');
 const path = require('path');
 const wait = ms => new Promise(r => setTimeout(r, ms));
 

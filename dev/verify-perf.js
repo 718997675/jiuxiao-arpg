@@ -2,7 +2,7 @@
  * 而是直接把它按到每一档，确认 dpr / 阴影 / 粒子倍率都跟着变、且不报错。
  * 用法：node verify-perf.js
  */
-const puppeteer = require('puppeteer-core');
+const puppeteer = require('./_pptr');
 const path = require('path');
 /* 跨平台浏览器路径：原来写死 macOS Chrome，Windows 上跑直接崩（[M6] 修） */
 const EXE = require('./_chrome');

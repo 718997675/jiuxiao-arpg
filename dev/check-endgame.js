@@ -13,7 +13,7 @@
  * 用法：
  *   NODE_PATH=<node_modules> node dev/check-endgame.js
  * ============================================================ */
-const puppeteer = require('puppeteer-core');
+const puppeteer = require('./_pptr');
 const path = require('path');
 const EXE = require('./_chrome');
 

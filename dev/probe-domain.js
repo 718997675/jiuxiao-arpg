@@ -15,7 +15,7 @@
  *      开了无敌）→ 量伤害之前必须先归零，否则量到的是「0 点，且没报错」。
  * ============================================================ */
 'use strict';
-const puppeteer = require('puppeteer-core');
+const puppeteer = require('./_pptr');
 const path = require('path');
 const EXE = require('./_chrome');
 

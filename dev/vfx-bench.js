@@ -18,7 +18,7 @@
  * 预算要按最坏情况算，不是按「前摇 0.9 秒之后才出」的平均情况算。
  * ============================================================ */
 'use strict';
-const puppeteer = require('puppeteer-core');
+const puppeteer = require('./_pptr');
 const path = require('path');
 const EXE = require('./_chrome');
 

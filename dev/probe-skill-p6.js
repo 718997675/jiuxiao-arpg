@@ -17,7 +17,7 @@
  *   6. 老档兼容 —— 8 格技能条读成 5 格，缺的字段补默认值。
  * ============================================================ */
 'use strict';
-const puppeteer = require('puppeteer-core');
+const puppeteer = require('./_pptr');
 const path = require('path');
 const EXE = require('./_chrome');
 

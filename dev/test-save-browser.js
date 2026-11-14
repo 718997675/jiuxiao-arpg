@@ -13,7 +13,7 @@
  *   通过环境变量 BASE_URL 可覆盖
  * ============================================================ */
 
-const puppeteer = require('puppeteer-core');
+const puppeteer = require('./_pptr');
 const path = require('path');
 const fs = require('fs');
 

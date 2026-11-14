@@ -27,7 +27,7 @@
  *   · 首只技能先跑一轮「暖机」丢弃（U1：SwiftShader 冷启动会读到半帧）。
  * ============================================================ */
 'use strict';
-const puppeteer = require('puppeteer-core');
+const puppeteer = require('./_pptr');
 const path = require('path');
 const EXE = require('./_chrome');
 const wait = ms => new Promise(r => setTimeout(r, ms));

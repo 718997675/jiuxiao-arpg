@@ -128,7 +128,7 @@ ok(Math.abs(fit.cx) < 1e-9 && Math.abs(fit.cz) < 1e-9, '包围盒中心 = 两张
  * ============================================================ */
 (async () => {
   let puppeteer = null;
-  try { puppeteer = require('puppeteer-core'); } catch (e) { /* 没装就跳过 */ }
+  try { puppeteer = require('./_pptr'); } catch (e) { /* 没装就跳过 */ }
   const exe = [
     'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',
     'C:/Program Files/Microsoft/Edge/Application/msedge.exe',

@@ -16,7 +16,7 @@
  *   7. 死后 3 秒从 enemies 里清干净。
  * ============================================================ */
 'use strict';
-const puppeteer = require('puppeteer-core');
+const puppeteer = require('./_pptr');
 const path = require('path');
 const EXE = require('./_chrome');
 

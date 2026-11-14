@@ -11,7 +11,7 @@
  *
  * 用法：node dev/test-quest.js
  * ============================================================ */
-const puppeteer = require('puppeteer-core');
+const puppeteer = require('./_pptr');
 const path = require('path');
 const fs = require('fs');
 const wait = ms => new Promise(r => setTimeout(r, ms));

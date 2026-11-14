@@ -1,4 +1,4 @@
-const puppeteer = require('puppeteer-core');
+const puppeteer = require('./_pptr');
 const wait = ms => new Promise(r => setTimeout(r, ms));
 const URL = 'https://718997675.github.io/jiuxiao-arpg/?t=' + Date.now();
 

@@ -33,7 +33,7 @@
  * 换地图量出来的数没有可比性，所以这里不提供 `--map` 参数。
  * ============================================================ */
 'use strict';
-const puppeteer = require('puppeteer-core');
+const puppeteer = require('./_pptr');
 const path = require('path');
 const EXE = require('./_chrome');
 

@@ -103,7 +103,7 @@ ok(/\.setrow\.off\{opacity/.test(html), '灰掉子项的样式存在');
 /* ============================================================
  * 二、浏览器：真的把东西吸走 / 真的留在地上
  * ============================================================ */
-const puppeteer = (() => { try { return require('puppeteer-core'); } catch (e) { return null; } })();
+const puppeteer = (() => { try { return require('./_pptr'); } catch (e) { return null; } })();
 const exe = [
   'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',
   'C:/Program Files/Microsoft/Edge/Application/msedge.exe',

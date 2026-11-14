@@ -15,7 +15,7 @@
  *
  * 用法：node dev/worldboss-battle-live.js [--shot]
  * ============================================================ */
-const puppeteer = require('puppeteer-core');
+const puppeteer = require('./_pptr');
 const path = require('path');
 const fs = require('fs');
 

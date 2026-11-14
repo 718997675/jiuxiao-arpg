@@ -17,7 +17,7 @@
  * 截图走 --shots，落在 dev/_shots/（不入库）。
  * ============================================================ */
 'use strict';
-const puppeteer = require('puppeteer-core');
+const puppeteer = require('./_pptr');
 const path = require('path');
 const fs = require('fs');
 const EXE = require('./_chrome');

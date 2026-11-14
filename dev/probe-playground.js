@@ -30,7 +30,7 @@
  * 自己在挨打」，放宽到 1200。
  * ============================================================ */
 'use strict';
-const puppeteer = require('puppeteer-core');
+const puppeteer = require('./_pptr');
 const path = require('path');
 const fs = require('fs');
 const EXE = require('./_chrome');

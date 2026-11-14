@@ -18,7 +18,7 @@
  *   6. 死亡 / 换图会清掉，不会把尸体拖到别的图上
  * ============================================================ */
 'use strict';
-const puppeteer = require('puppeteer-core');
+const puppeteer = require('./_pptr');
 const path = require('path');
 const EXE = require('./_chrome');
 

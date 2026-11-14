@@ -8,7 +8,7 @@
  *
  * 用法：node dev/stash-check.js
  */
-const puppeteer = require('puppeteer-core');
+const puppeteer = require('./_pptr');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');

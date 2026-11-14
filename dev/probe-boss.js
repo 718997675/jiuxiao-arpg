@@ -15,7 +15,7 @@
  * 用法：
  *   NODE_PATH=<puppeteer 所在> node dev/probe-boss.js
  * ============================================================ */
-const puppeteer = require('puppeteer-core');
+const puppeteer = require('./_pptr');
 const path = require('path');
 const fs = require('fs');
 const wait = (ms) => new Promise(r => setTimeout(r, ms));

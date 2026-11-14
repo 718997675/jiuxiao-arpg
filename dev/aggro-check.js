@@ -7,7 +7,7 @@
  *
  * 用法：node dev/aggro-check.js
  */
-const puppeteer = require('puppeteer-core');
+const puppeteer = require('./_pptr');
 const path = require('path');
 const fs = require('fs');
 const ROOT = path.resolve(__dirname, '..');

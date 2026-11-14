@@ -11,7 +11,7 @@
  * 欠账」看得清。这个脚本给的是**总量**—— 收尾时看一眼，比翻 900 条断言快。
  * 2026-10-30 起三个职业的「待」都是 0（P2b 收尾）。
  * ============================================================ */
-const puppeteer = require('puppeteer-core');
+const puppeteer = require('./_pptr');
 const path = require('path');
 const exe = require('./_chrome');
 const wait = ms => new Promise(r => setTimeout(r, ms));

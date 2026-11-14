@@ -16,7 +16,7 @@
  * 「有效等级变了面板怎么画」，装备词缀怎么算进有效等级是另一条线（M1 已测）。
  * ============================================================ */
 'use strict';
-const puppeteer = require('puppeteer-core');
+const puppeteer = require('./_pptr');
 const path = require('path');
 
 const wait = ms => new Promise(r => setTimeout(r, ms));

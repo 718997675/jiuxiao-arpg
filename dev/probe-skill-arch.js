@@ -10,7 +10,7 @@
  *   4. 全程零控制台报错（新增 CSS/DOM 不许把面板搞崩）
  *   5. 面板操作没被影响：展开预览后仍能正常加点（点一下树上节点）
  * ============================================================ */
-const puppeteer = require('puppeteer-core');
+const puppeteer = require('./_pptr');
 const path = require('path');
 const fs = require('fs');
 const wait = ms => new Promise(r => setTimeout(r, ms));

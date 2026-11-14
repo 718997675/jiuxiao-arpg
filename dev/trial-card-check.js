@@ -1,5 +1,5 @@
 /* 三选一卡片文本核对：带真实装备，验证「当前 → 选后」是否对得上 */
-const puppeteer = require('puppeteer-core');
+const puppeteer = require('./_pptr');
 const path = require('path'), fs = require('fs');
 const wait = ms => new Promise(r => setTimeout(r, ms));
 const exe = ['C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe','C:/Program Files/Google/Chrome/Application/chrome.exe']

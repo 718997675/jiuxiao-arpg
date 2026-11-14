@@ -101,7 +101,7 @@ ok(/cdr: 40/.test(ssrc), 'cdr 封顶 40（86% 会把 CD 全压到 0.5 秒地板�
 /* ============================================================
  * 二、浏览器：硬拒绝 + 续航
  * ============================================================ */
-const puppeteer = (() => { try { return require('puppeteer-core'); } catch (e) { return null; } })();
+const puppeteer = (() => { try { return require('./_pptr'); } catch (e) { return null; } })();
 const exe = [
   'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',
   'C:/Program Files/Microsoft/Edge/Application/msedge.exe',

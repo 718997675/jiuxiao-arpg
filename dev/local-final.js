@@ -1,4 +1,4 @@
-const puppeteer = require('puppeteer-core');
+const puppeteer = require('./_pptr');
 const pathm = require('path');
 const URL = process.argv[2] || ('file://' + pathm.resolve(__dirname, '..', 'index.html'));
 console.log('测试地址:', URL);

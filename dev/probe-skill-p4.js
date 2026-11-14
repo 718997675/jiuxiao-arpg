@@ -17,7 +17,7 @@
  *      灵兽有登场动作（先小后大、从地下升起，0.5 秒后归位）
  * ============================================================ */
 'use strict';
-const puppeteer = require('puppeteer-core');
+const puppeteer = require('./_pptr');
 const path = require('path');
 const EXE = require('./_chrome');
 

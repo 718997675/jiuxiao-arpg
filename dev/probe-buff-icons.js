@@ -18,7 +18,7 @@
  * 人眼看一眼就知道「箭头是不是箭头、盾是不是盾」（U2-2 的验收是形状，不是断言数）。
  * ============================================================ */
 'use strict';
-const puppeteer = require('puppeteer-core');
+const puppeteer = require('./_pptr');
 const path = require('path');
 const fs = require('fs');
 const EXE = require('./_chrome');

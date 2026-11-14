@@ -2,7 +2,7 @@
  * 用 30 秒拉怪，把每次「卡住」时的位置 / 所在区域 / 目标区域 / 期望的门打出来。
  * 用法：node dev/m12-diag.js [mapId]
  */
-const puppeteer = require('puppeteer-core');
+const puppeteer = require('./_pptr');
 const path = require('path');
 const fs = require('fs');
 const ROOT = path.resolve(__dirname, '..');

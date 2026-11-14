@@ -19,7 +19,7 @@
  * damageEnemy 会读到的字段 —— 不跑技能，免得把技能自己的数值混进来。
  * ============================================================ */
 'use strict';
-const puppeteer = require('puppeteer-core');
+const puppeteer = require('./_pptr');
 const path = require('path');
 
 const wait = ms => new Promise(r => setTimeout(r, ms));

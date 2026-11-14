@@ -1,5 +1,5 @@
 /* 用 CDP screencast 录一段战斗动画，输出 docs/screenshots/demo.webp（主）+ demo.gif（兼容） */
-const puppeteer = require('puppeteer-core');
+const puppeteer = require('./_pptr');
 const path = require('path');
 const fs = require('fs');
 const { execFileSync } = require('child_process');

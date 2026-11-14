@@ -13,7 +13,7 @@
  *   NODE_PATH=<managed node_modules> node dev/trial-smoke.js
  *   （需要本机有 Edge 或 Chrome；默认找 Edge）
  * ============================================================ */
-const puppeteer = require('puppeteer-core');
+const puppeteer = require('./_pptr');
 const path = require('path');
 const fs = require('fs');
 

@@ -13,7 +13,7 @@
  *   7. 面板「混搭」一行的点击真的写进 state.skills[id].el2；
  *   8. 火星按主 70% / 副 30% 的粒子数分两簇。
  * ============================================================ */
-const puppeteer = require('puppeteer-core');
+const puppeteer = require('./_pptr');
 const path = require('path');
 
 const wait = ms => new Promise(r => setTimeout(r, ms));

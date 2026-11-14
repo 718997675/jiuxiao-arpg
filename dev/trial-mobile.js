@@ -1,5 +1,5 @@
 /* 试炼 UI 手机端溢出检查（竖屏 390×844 / 横屏 844×390） */
-const puppeteer = require('puppeteer-core');
+const puppeteer = require('./_pptr');
 const path = require('path'), fs = require('fs');
 const wait = ms => new Promise(r => setTimeout(r, ms));
 const exe = ['C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe','C:/Program Files/Google/Chrome/Application/chrome.exe']

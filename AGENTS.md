@@ -138,6 +138,17 @@ cat docs/status/act-expansion.md             # 细看这条线的节点表 / 下
 
 - 用户在 **Windows** 上开发。仓库早期在 macOS 写的，部分 `dev/*.js` 仍硬编码 macOS Chrome 路径。
 - **新增脚本用 `require('./_chrome')`** 取浏览器路径（`dev/_chrome.js` 跨平台探测）。
+- **探针一律 `require('./_pptr')`，不要直接 `require('puppeteer-core')`**（2026-11-14 起，124 个文件已切）。
+  `_pptr` 是门面：**有 Chromium 就原样转给 puppeteer**（Windows 开发机、CI 行为不变）；
+  **只有 Safari 就落到 `safaridriver` 的 WebDriver**（`dev/_wd.js`）。为什么要有它：
+  macOS 那台把 Chrome 卸了（占内存），puppeteer 驱动不了 Safari。
+  Safari 侧的硬限制（都写在 `_pptr.js` 注释里）：
+  ① 没有控制台日志接口 —— 靠注入 `__errbuf` 收 console.error / onerror / unhandledrejection，
+     **页面加载期（注入之前）的报错收不到**；需要「零报错」的判据请另加 `typeof Game` 兜底。
+  ② 没有无头模式，会弹真 Safari 窗口。③ 没有 CDP（`createCDPSession` 用不了）。
+  ④ 视口只能设**窗口**尺寸（`_pptr` 内做了两轮 innerWidth/Height 校正），设备像素比不能模拟。
+  **第一次用要先开一次开关**（之后一直有效）：Safari → 设置 → 高级 → 勾「显示网页开发者功能」，
+  再在菜单栏「开发」→「允许远程自动化」。没开时 `_pptr` 会直接把这串步骤打出来。
 - **clone 完先 `git config core.autocrlf false`**：仓库里是 LF，Windows 默认把它转成 CRLF，
   而 `dev/test-skill-*.js` 里不少契约是**按 `\n` 写的正则**（切 case 块、抓 SKILL_BEH 登记），
   CRLF 下会莫名其妙假红（实测 p2b 739 条里红 4 条）。已经转了的话：

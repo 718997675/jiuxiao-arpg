@@ -1,5 +1,5 @@
 /* 试炼界面截图（headless）—— 只看画面，不做断言 */
-const puppeteer = require('puppeteer-core');
+const puppeteer = require('./_pptr');
 const path = require('path');
 const fs = require('fs');
 const wait = ms => new Promise(r => setTimeout(r, ms));

@@ -20,7 +20,7 @@
  * 而这里要验的恰恰是「晚一点」。
  * ============================================================ */
 'use strict';
-const puppeteer = require('puppeteer-core');
+const puppeteer = require('./_pptr');
 const path = require('path');
 const EXE = require('./_chrome');
 

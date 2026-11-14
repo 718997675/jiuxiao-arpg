@@ -30,7 +30,7 @@
  * 不去抢主循环的相机 —— 抢了会被下一帧覆盖，截图就拍到别的角度）。
  * ============================================================ */
 'use strict';
-const puppeteer = require('puppeteer-core');
+const puppeteer = require('./_pptr');
 const path = require('path');
 const fs = require('fs');
 const EXE = require('./_chrome');

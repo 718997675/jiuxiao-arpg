@@ -17,7 +17,7 @@
  *     按真实秒数死等会量到「还在飞」，一律改成轮询到条件成立（带超时）。
  * ============================================================ */
 'use strict';
-const puppeteer = require('puppeteer-core');
+const puppeteer = require('./_pptr');
 const path = require('path');
 const EXE = require('./_chrome');
 

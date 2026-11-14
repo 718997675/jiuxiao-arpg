@@ -13,7 +13,7 @@
  * 所以这里：放一轮 → 数 stats → 量 renderer.info.render.calls 的增量 → 截图。
  * ============================================================ */
 'use strict';
-const puppeteer = require('puppeteer-core');
+const puppeteer = require('./_pptr');
 const path = require('path');
 const EXE = require('./_chrome');
 

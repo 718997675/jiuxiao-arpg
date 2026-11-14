@@ -17,7 +17,7 @@
  * 这与「战斗真的读台阶」并不冲突 —— 第 4 / 5 节是真实（不 stub）跑的。
  * ============================================================ */
 'use strict';
-const puppeteer = require('puppeteer-core');
+const puppeteer = require('./_pptr');
 const path = require('path');
 const EXE = require('./_chrome');
 

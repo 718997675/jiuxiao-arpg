@@ -15,7 +15,7 @@
  *
  * 纯位置差异（摆在哪）不算重复；纯颜色差异算重复 —— 那正是要抓的东西。
  * ==========================================================================*/
-const puppeteer = require('puppeteer-core');
+const puppeteer = require('./_pptr');
 const path = require('path');
 const EXE = require('./_chrome');
 

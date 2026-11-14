@@ -3,7 +3,7 @@
  *   node dev/test-s1.js
  * 产出截图：shots/160-s1-stats.png、shots/161-s1-tooltip.png
  * ============================================================ */
-const puppeteer = require('puppeteer-core');
+const puppeteer = require('./_pptr');
 const path = require('path');
 const fs = require('fs');
 const wait = ms => new Promise(r => setTimeout(r, ms));

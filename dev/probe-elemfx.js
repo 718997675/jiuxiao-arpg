@@ -34,7 +34,7 @@
  *     那是每次伤害都有的通用反馈，不是反应视觉。
  * ============================================================ */
 'use strict';
-const puppeteer = require('puppeteer-core');
+const puppeteer = require('./_pptr');
 const path = require('path');
 const EXE = require('./_chrome');
 const wait = ms => new Promise(r => setTimeout(r, ms));
