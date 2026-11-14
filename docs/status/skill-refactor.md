@@ -3172,4 +3172,48 @@ Safari 侧的硬限制（都写进 `_pptr.js` 注释了）：没有控制台日�
 余韵基准取第一声 impact 音而不是第一笔 dmg（领域落地比首跳 DoT 早 400ms）。
 逐条细节与 4 个真 bug 的诊断过程写在 `vfx-merge.md` 的「U6-2 收口记录」。
 
-**下一步**：U6-3 逐条配方打磨 → U6-4 §13 清单 → U6-5 收口。U6-2 不再回头。
+### U6-3 逐条配方打磨 ✅（2026-11-14）
+
+**先量后改，尺子返工三轮**。新建 `dev/skillvfx-shape.js`（从实验室按
+`^id: {` 锚点切 37 只 `v2(c)`，量构件 / 发数 / 颜色 / 时序骨架 / 剪影）、
+`dev/audit-skillvfx.js`（37 行表 + 判据）、`dev/test-skillvfx-shape.js`（160 条契约）。
+量**实验室**不量生成物：改了源头没 `--write` 时，读生成物还是旧的。
+
+前两轮报的红全是尺子漏抓：只数 `FX.*` 把 heal / riposte 判成「只有一个圈」
+（实验室大量演出是手工 `flatMesh` / `billMesh` / `addUpdate` 拼的）；只认 `n:`
+把 16 只判成「没写发数」（还有 `for` 逐颗放、`Math.random()<dt*26` 按速率发射等
+四种写法）；只认数字字面量 `delay(0.34,` 把 `delay(i*0.055)` / `delay(d)` 和
+飞行体 `onHit` 全漏掉。改成数「视觉构件」+「有没有非瞬时骨架」后，
+**只剩 1 条真红：`chain` 是 6 只贴地板里唯一构件 <3 类的**。
+
+**打磨 `chain`（雷弧链）**：原本只有 `bolt + spr`，按键当帧没回执、跳完地面干净，
+`--live` 面积余量 1.25×。按 U1 修偏淡 7 只的 `flatMesh(TEX.ring)` 口径补
+脚下 0.3 秒收缩蓄势环 + 每跳 0.28 秒落地环（随该跳 `delay` 出现，最多 4 个
+短寿命 mesh）。改 `docs/vfx-playground.html` → `--write` → `--check`，
+`src/sfx.js` 由生成器更新。构件 2→4 类、时序骨架 1→2 种，
+面积余量 **1.25× → 2.79×**，`--live` 保持 113/0。
+
+**顺带结掉两桩 Safari 老账**（对照实验证明与本次改动无关）：
+
+1. `vfx-vis` 的 `ring` 在 Safari 下 `diff=0`（其余 12 原语全绿）。真机四路对照：
+   配方层走 `FX.ring` → 连 `Δ≥1` 都是 0 像素，但 mesh 一切正常、draw call +1；
+   直接调 `FX.ring` 给 y=0.08 → 7522 像素；把配方层那一发抬 0.08 → 7525 像素。
+   根因是细贴地环被地面深度吃掉，`polygonOffset(-4,-4)` 在 Safari 不够。
+   `src/fx.js` 的 `FX.ring` y `+0.08 → +0.16`，**不改半径、不改判据**，
+   `vfx-vis` 连跑两次恢复 14/0。HEAD 版本同样 13/1，非本轮引入。
+2. `_pptr.evaluate` 的字符串路径把多语句块塞进 `return (...)`，Safari 报
+   `Unexpected keyword 'const'`，U5 的 `probe-enchant` 在 Safari 下根本跑不起来。
+   门面补第五个语义：只对**语法类**错误回退 IIFE，业务异常照常抛，
+   单表达式 `waitForFunction` 路径不变。`probe-enchant` 恢复 **60/0**。
+
+**验证**：`audit-skillvfx` 13/0 · `test-skillvfx-shape` **160/0** ·
+21 份 node 契约全绿 · 三个 `--check` 一致 · `vfx-vis` 14/0 ·
+`vfx-skill-vis` 39/0 + `--live` 113/0 · `vfx-bench` 186/0（5 连放 +3.6%）·
+真机 6 支探针全绿 · `smoke` ERRORS none · `mobile-layout` 全绿。
+
+**交给 U6-4**：① `dev/vfx-shot.js` 现在拍的是配方层 `VFX.playFor`，
+而 U1 已定 SKFX 为准 —— §13 第 1 条「同职业 5 招灰度后认出 ≥4」必须先把尺子
+对准真实链路，否则勾的是回落路径；② `--live` 现在最贴地板的是
+bloodrage 1.26×（结构不薄，只是面积小），人眼 / 录屏结论归 U6-4。
+
+**下一步**：U6-4 §13 十四条清单勾完 → U6-5 收口。U6-1~U6-3 不再回头。

@@ -8,9 +8,9 @@
   但**不再往那两份里加待办、也不再按它们的 V0~V6 / P0~P2 编号排期**。
 - 进度事实看这两份：`docs/status/skill-refactor.md`（人物主线）、
   `docs/status/boss-kits.md`（B 线 B1~B25）。本文件只管「还差什么、按什么顺序合」。
-- 更新：2026-11-07；进度更新：2026-11-14（U6-1 ✅ / U6-2 ✅ 真机收口）
+- 更新：2026-11-07；进度更新：2026-11-14（U6-1 / U6-2 / U6-3 ✅）
 
-> 当前：**U1 / U2 / U3 / U4 / U5 已收口**（U1 `--live` 113/0、默认 39/0；U2 `probe-buffrow` 29/0 + `probe-buff-icons` 11/0；U3 `test-combo` 76/0 + `probe-combo` 33/0；U4 `test-elemfx` 74/0 + `probe-elemfx` 94/0；U5 `test-enchant` 235/0 + `probe-enchant` 60/0）。**U6 进行中**：U6-1 低画质三档降级 ✅（`test-vfx-kit` 80/0 + `probe-vfx-kit` 52/0）；U6-2 音效三段对齐 ✅（`test-sfaudio` **61/0** + `probe-sfx-align` **10/0**，Safari 真机）。**下一步 U6-3 逐条配方打磨 → U6-4 §13 清单 → U6-5 收口**。两条线的特效代码都已在 feat/skill-refactor 跑通，但 origin/main 一个特效文件都没有。仍按人物先合、BOSS 后合的顺序走。
+> 当前：**U1 / U2 / U3 / U4 / U5 已收口**（U1 `--live` 113/0、默认 39/0；U2 `probe-buffrow` 29/0 + `probe-buff-icons` 11/0；U3 `test-combo` 76/0 + `probe-combo` 33/0；U4 `test-elemfx` 74/0 + `probe-elemfx` 94/0；U5 `test-enchant` 235/0 + `probe-enchant` 60/0）。**U6 进行中**：U6-1 低画质三档降级 ✅（`test-vfx-kit` 80/0 + `probe-vfx-kit` 52/0）；U6-2 音效三段对齐 ✅（`test-sfaudio` 61/0 + `probe-sfx-align` 10/0，Safari 真机）；U6-3 逐条配方打磨 ✅（37 只审计 `13/0` + `test-skillvfx-shape` 160/0，`chain` 面积 1.25× → 2.79×）。**下一步 U6-4 §13 清单 → U6-5 收口**。两条线的特效代码都已在 feat/skill-refactor 跑通，但 origin/main 一个特效文件都没有。仍按人物先合、BOSS 后合的顺序走。
 
 ## 一句话现状
 
@@ -148,7 +148,7 @@ bloodrage 1.29× · thrust 1.38× · heal 1.62×。配方层 `iceshard` 也只�
 |---|---|---|---|---|
 | U6-1 | **低画质降级逐项核验**：§11 降级表五格（粒子数 / 拖尾 / 贴花 / 假 bloom / bolt 分叉）逐格对齐。此前实现是二档（`q<1` / `q<0.75`），中档 0.7 被误判成低档砍掉拖尾、低档却还留着 6 块贴花，与 §11 全对不上 | ✅ | `src/fx-kit.js`（`FXK_TIER` 三档表 + 五个原语只读档位 + `bolt` 递归层数分档） | `test-vfx-kit` **80/0**、`probe-vfx-kit` **52/0**（三档逐项）；`smoke` ERRORS none、`mobile-layout` 全绿 |
 | U6-2 | **音效三段对齐**：§5 的三段式（起手 / 命中 / 余韵）在音频侧只落了「起手」一层（`SFX.skill`），命中与余韵散在 40+ 处调用点、无统一时序。**开工前先量**：余韵 0/37、起手音按元素猜、AOE 命中叠声 | ✅ | `src/data/data-sfaudio.js`（新，37×三段）+ `src/sfx-audio.js`（新，唯一出口 + 施放令牌 + 余韵兜底 + `oldestPending`）+ `src/fx.js`（余韵三音）+ `src/game.js`（起手 / 命中 / explodeAt / reset）+ `dev/test-sfaudio.js` + `dev/probe-sfx-align.js` | 静态契约 **61/0**；Safari 真机 `probe-sfx-align` **10/0**（音画同拍 / 无双响 / 37 只都有余韵 / 余韵 200~600ms / 零控制台报错）；全套 node 契约无回归、`smoke` ERRORS none、`mobile-layout` 全绿 |
-| U6-3 | **逐条配方打磨**：37 只技能的「该几颗 / 什么色」逐个复核（V3b 只重配了三条 ④ 位） | ⬜ | `docs/vfx-playground.html` → `node dev/build-skillvfx.js --write` | 逐条有结论；`build-skillvfx --check` 一致 |
+| U6-3 | **逐条配方打磨**：37 只技能的「该几颗 / 什么色」逐个复核（V3b 只重配了三条 ④ 位） | ✅ | `dev/skillvfx-shape.js`（解析底座）+ `dev/audit-skillvfx.js`（审计表）+ `dev/test-skillvfx-shape.js`（契约）+ `docs/vfx-playground.html` 的 `chain` 三段 → `src/sfx.js` | 37 只逐条有结论（`audit-skillvfx` **13/0**）、契约 **160/0**、`build-skillvfx --check` 一致；`--live` **113/0**、`chain` 面积余量 1.25× → 2.79× |
 | U6-4 | **§13 十四条验收清单勾完**：已勾 6 条（U2 的第 7~11 条），剩 8 条逐条给人眼 / 性能结论 | ⬜ | `docs/SKILL-VFX-PLAN.md §13` | 14 条全部有结论 |
 | U6-5 | **收口**：三份台账 + 当日日志 + commit + push | ⬜ | 三份台账 | `smoke` + `mobile-layout` + 全套契约全绿 |
 
@@ -241,6 +241,79 @@ bloodrage 1.29× · thrust 1.38× · heal 1.62×。配方层 `iceshard` 也只�
 
 **没做的**：37 只配方「好不好看」、§13 剩 8 条人眼 / 性能结论 —— 归 U6-3 / U6-4。
 
+## U6-3 收口记录 · 逐条配方打磨（2026-11-14 · ✅）
+
+**先量后改**。台账只写「逐条配方未逐个调」，不量就只能凭感觉挑几只改。
+新建解析底座 `dev/skillvfx-shape.js`：从**实验室**（唯一源）按 `^id: {` 锚点切出
+37 只 `v2(c)`，逐只量「视觉构件 / 发数 / 颜色 / 时序骨架 / 剪影 / 职业槽位」，
+`dev/audit-skillvfx.js` 出人读的 37 行表 + 判据，`dev/test-skillvfx-shape.js`
+把不能退化的部分钉成 160 条契约。量生成物没用 —— 改了源头没 `--write` 时
+读数还是旧的（U1 踩过：实验室换 `spinBlades`、游戏里还是 `arc`）。
+
+**尺子返工三轮，两轮是假红**（和 V2 / B20 / U1 那几次同一类：先确认量的是谁）：
+
+| 轮 | 报的红 | 真因 |
+|---|---|---|
+| 1 | 只数 `FX.*` → heal / riposte 判成「只有一个圈」 | 实验室大量演出是手工 `flatMesh` / `billMesh` / `addUpdate` 拼的，不算构件就是漏抓 |
+| 1 | 16 只判「没写发数」 | 只认 `n:`，漏了 `for` 循环逐颗放、字面量数组、`Math.random()<dt*26` 按速率发射、固定 mesh 数四种写法 |
+| 1 | missile / chain 判「一帧放完」 | 只认数字字面量 `delay(0.34,`，漏了 `delay(i*0.055)` / `delay(d)` 和飞行体整段写在 `onHit` 里 |
+| 2 | 18 只判「时序骨架 <2 种」 | 凭空加的严格条件，没有方案依据 —— 领域本来就用 `addUpdate` 逐帧演，改回「有没有非瞬时骨架」 |
+| 3 | **`chain` 只剩 1 条真红** | 6 只贴地板技能里唯一构件 <3 类的，确实是欠账 |
+
+最终 `audit-skillvfx` **13/0**，观察项照旧打印：时序骨架覆盖
+`delay 16 / seq 10 / onHit 1 / addUpdate 33`，数量写法
+`n: 21 / for 21 / 数组 4 / dt速率 15 / 固定mesh 5`。
+
+**实质打磨只动了一只 `chain`（雷弧链）**：U1 留的 6 只贴地板里最薄的一只，
+`--live` 面积余量 1.25×，原本只有 `bolt + spr` 两类构件 —— 中间一根折线，
+按键当帧没有回执、电流跳完地面干干净净。按 U1 修偏淡 7 只的同一套
+`flatMesh(TEX.ring)` 口径（自带 `polygonOffset(-4,-4)`）补前后两段：
+脚下 0.3 秒收缩的蓄势环 + 每个跳点随该跳 `delay` 出现的 0.28 秒落地环
+（最多 4 个短寿命 mesh，不另起定时器）。
+改 `docs/vfx-playground.html` → `build-skillvfx --write` → `--check`，
+`src/sfx.js` 由生成器更新，**没有手改**。
+结果：构件 2 → 4 类、时序骨架 1 → 2 种，`--live` 面积余量 **1.25× → 2.79×**，
+`113/0` 保持。
+
+**顺带结掉两桩老账**（都是切 Safari 门面后暴露的既有问题，对照实验证明与 U6-3 改动无关）：
+
+1. **`dev/vfx-vis.js` 的 `ring` 在 Safari 下 `diff=0`，其余 12 原语全绿**。
+   不是冷启动假红，也不是阈值问题：真机量到连 `Δ≥1` 的像素都是 **0**，
+   而 mesh 一切正常（visible / opacity 0.78 / 66 顶点 / draw call +1）。
+   四路对照：配方层 `VFX.play` 走 `FX.ring` → 0 像素；直接 `FX.ring` 给 y=0.08 →
+   **7522 像素**；把配方层那一发 mesh 抬 0.08 → **7525 像素**。
+   根因是**细贴地环被地面深度整个吃掉**，`polygonOffset(-4,-4)` 在 Chrome /
+   SwiftShader 够用、Safari 不够。`src/fx.js` 的 `FX.ring` y 偏移 `+0.08 → +0.16`
+   给共面留余量，polygonOffset 保留双保险；**不改半径、不改判据**
+   （P2c 口径：环画多大就是这一发真的能打到多大）。`vfx-vis` 连跑两次恢复 **14/0**。
+   HEAD 版本跑同一支探针同样 13/1，证明非本轮引入。
+2. **`dev/_pptr.js` 的字符串 `evaluate` 不支持多语句块**。`probe-enchant` 的
+   `TOOLS`（`const` + 若干 `window.__xxx = function`）被塞进 `return (...)`，
+   Safari 报 `Unexpected keyword 'const'`，U5 那支 60/0 的尺子在 Safari 下根本跑不起来。
+   门面补第五个语义：先按原样求值，只有撞上**语法类**错误才回退成 IIFE；
+   业务异常照常抛出，单表达式路径（`waitForFunction('typeof NR === ...')`）
+   一个字节没变。验证：`1+1 → 2`、`typeof Game → object`、
+   `const a=7; return a*6; → 42`，`probe-enchant` 恢复 **60/0**。
+
+**验证**：`audit-skillvfx` 13/0 · `test-skillvfx-shape` **160/0** ·
+21 份 node 契约全绿（dsl 358 / kit 80 / field 35 / enchant 235 / sfaudio 61 /
+p5 989 / p5b 116 / combo 76 / elemfx 74 …）· 三个 `--check` 一致 ·
+`vfx-vis` **14/0** · `vfx-skill-vis` 默认 **39/0** + `--live` **113/0** ·
+`vfx-bench` **186/0**（5 连放 +3.6%）· 真机 `probe-vfx-kit` 52/0 ·
+`probe-vfx-field` 19/0 · `probe-sfx` 12/0 · `probe-enchant` 60/0 ·
+`probe-sfx-align` 10/0 · `probe-skill-p5b` 13/0 ·
+`smoke` ERRORS none · `mobile-layout` 全绿。
+（`probe-sfx-align` 串跑 9/1、单跑 10/0；按口径批量串跑只粗筛，失败项单跑复核。）
+
+**交给 U6-4 的两条**：
+1. **§13 第 1 条的尺子量错层**：`dev/vfx-shot.js` 拍的是 `VFX.playFor`（配方层），
+   但 U1 已定 SKFX 为准、37 只技能在正常游戏里**一次配方层都不播**。
+   「同职业 5 招灰度后认出 ≥4」若拿现有截图勾，量的是回落路径而不是玩家眼睛收到的东西。
+   U6-4 出图前先把尺子对准真实链路（或明确标注两层分别的结论）。
+2. `--live` 现在最贴地板的是 **bloodrage 1.26×**（U1 清单里的 1.29×），
+   其余 5 只已被前几轮推到 2.4× 以上。bloodrage 构件 4 类、发数 10、时序 2 种，
+   结构不薄，只是面积小；人眼 / 录屏结论归 U6-4，别为它单独放大半径硬撑。
+
 ## U5 收口记录（2026-11-09）
 
 **口径**：U1 定了 SKFX 为准、37 只技能在正常游戏里**一次配方层都不播**。
@@ -267,18 +340,23 @@ HEAD 版本跑同一序列反而 8/5，证明非 U5 回归。给 `WAIT` 表补
 `iceshard: 1700`（与 `starfall` 同性质），**判据一个字没改**，连跑 4 次 13/0。
 试过每发前 `FX.clear()`，属换图级重操作、更不稳，已回退。
 
-## 下一步（U1~U5 已收口，U6 进行中，别跳）
+## 下一步（U1~U5 已收口，U6-1~U6-3 ✅，U6-4 待办，别跳）
 
-1. `U6-3` 人物 · **逐条配方打磨**：37 只技能「该几颗 / 什么色」逐个复核
-   （V3b 只重配了三条 ④ 位）。U6-1 / U6-2 已 ✅，别回头重做。
-2. U6 的两条口径别踩：① Lv10 的 `enchant` 是**数据声明**不是播放指令，
+1. `U6-4` 人物 · **§13 十四条验收清单勾完**：已勾 6 条（U2 的第 7~11 条），
+   剩 8 条逐条给人眼 / 性能结论。开工第一件事是把 `dev/vfx-shot.js` 的尺子
+   对准真实链路（现在拍的是配方层 `VFX.playFor`，见 U6-3 收口记录末段），
+   否则「同职业 5 招灰度后认出 ≥4」勾的是回落路径。
+   U6-4 还要给 6 套附魔逐套截图的人眼结论、以及 bloodrage 1.26× 的录屏结论。
+2. 三条口径别踩：① Lv10 的 `enchant` 是**数据声明**不是播放指令，
    别去 `src/vfx.js` 补 case；② 常驻附魔走 FXK、技能演出走 SKFX，
-   `vfx-skill-vis`（默认 / `--live`）都不量附魔，附魔有自己那支 `probe-enchant`。
+   `vfx-skill-vis`（默认 / `--live`）都不量附魔，附魔有自己那支 `probe-enchant`；
+   ③ 逐只演出构成看 `dev/audit-skillvfx.js`，改实验室后跑 `test-skillvfx-shape`。
 3. 改 `src/sfx.js` **一律走生成器**：改 `docs/vfx-playground.html` →
    `node dev/build-skillvfx.js --write` → `node dev/build-skillvfx.js --check`。
    别手改生成物（`abd20ad` 修的 `hitArea` stub 就是这么来的）。
-4. 每个 U 收口后立刻 `git status` + 写本表状态 + commit，再进下一个。台账别攒着写。
-5. U11 / U12 之前先 `./dev/status.sh` 确认三条线各自到哪了。
+4. `U6-5` 收口：三份台账 + 当日日志 + commit + push，全套契约全绿。
+5. 每个 U 收口后立刻 `git status` + 写本表状态 + commit，再进下一个。台账别攒着写。
+6. U11 / U12 之前先 `./dev/status.sh` 确认三条线各自到哪了。
 
 ## 卡点（等拍板 / 硬前置）
 
@@ -302,6 +380,15 @@ HEAD 版本跑同一序列反而 8/5，证明非 U5 回归。给 `WAIT` 表补
   **在这台机器上跑 `--write` 会把生成物洗成 Safari 顺序**，属于 U11/U12 的 BOSS 线，
   不是 U6 的事。要验这条请在有 Chromium 的机器上跑 `node dev/build-bosskits.js --check`。
   本轮没动过任何 boss / fx2 / playground 文件，`data-bosskits.js` 最后一次改动是 B23（`4d48bf3`）。
+- **Safari 门面已补齐 5 个语义，别再当 bug 查**（2026-11-14）：
+  `_cmd()` 解包 `{value:...}`、`evaluate` 支持字符串表达式、`page.close()`、
+  进程退出收 driver + 会话配对重试（U6-2）；**多语句字符串块回退 IIFE**（U6-3，
+  修好 `probe-enchant` 的 `TOOLS`）。剩下的是硬限制：无控制台日志接口（靠
+  `__errbuf`，页面加载期收不到）、无无头模式、无 CDP、不能模拟 DPR /
+  isMobile / hasTouch。**串跑多个 Safari 会话会偶发假红**（`probe-sfx-align`
+  串跑 9/1、单跑 10/0），任何失败项必须单跑复核才算数。
+  `vfx-vis` 的 ring 曾经在 Safari 下 0 像素，已由 `FX.ring` y `0.08→0.16` 修好
+  （见 U6-3 收口记录），**不是**门面的锅，别回退那处改动。
 - **判据会过期**：`vfx-skill-vis` 已因 B20 双演出层返工过一次（17/21 假红）；
   U1 又因 SwiftShader 冷启动读到半帧返工一次（`iceshard` 1401~1897 来回跳，
   靠「暖机 + `gl.finish()`」压到 1604~1607 稳定）。合 main 前若再动演出层，

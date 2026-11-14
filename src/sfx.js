@@ -4040,6 +4040,20 @@ function lunge(dist) {}
   
     },
     "chain": function(c) {
+    /* [U6-3] 起手回执：chain 原本只有 bolt + spr 两类构件，是 U1 留下的
+     * 6 只「贴地板」里最薄的一只（--live 面积余量 1.25×）。折线跳连的读法
+     * 该是「蓄势 → 逐跳 → 落地留痕」三段，原来只有中间那一根线，按键当帧
+     * 没有任何回执，电流跳完地面也干干净净。
+     * 与 U1 修偏淡 7 只同一套 flatMesh 口径：自带 polygonOffset(-4,-4)，
+     * 白天亮地面上不会被共面的地面按深度吃掉。 */
+    const charge = flatMesh(TEX.ring, 0xffe066, THREE.AdditiveBlending, 0);
+    charge.position.set(c.x, 0.04, c.z);
+    addUpdate({ t:0, update(dt){
+      this.t += dt; const k = Math.min(1, this.t/0.3);
+      charge.scale.setScalar(2.6 * (1-k) + 0.7);
+      charge.material.opacity = 0.7 * (1-k);
+      if(k >= 1){ ROOT.remove(charge); this.dead = true; }
+    }});
     const pts = [new THREE.Vector3(c.x, 1.0, c.z)];
     const pool = ACT.enemies.filter(e=>e.deadT<=0);
     let cur = new THREE.Vector3(c.x, 1.0, c.z);
@@ -4062,6 +4076,18 @@ function lunge(dist) {}
         FX.bolt(pts[i], pts[i+1], { color: 0xffe066, branch: 2, width: .16, life: .2 });
         FX.spr(pts[i+1].x, pts[i+1].y, pts[i+1].z, { tex:'spark', life:.3, s0:.5, s1:0, a0:1,
           r:1, g:.95, b:.5 });
+        /* [U6-3] 余韵：电流落到地面留一圈 0.28 秒的黄环，跳过的点才像被打过。
+         * 每个跳点一个短寿命 mesh（最多 4 个），随该跳的延迟一起出现，
+         * 不另起定时器 —— 换图时跟着 updater 一起退场。 */
+        const land = flatMesh(TEX.ring, 0xffe066, THREE.AdditiveBlending, 0.5);
+        land.position.set(pts[i+1].x, 0.05, pts[i+1].z);
+        land.scale.setScalar(1.4);
+        addUpdate({ t:0, update(dt){
+          this.t += dt; const k = Math.min(1, this.t/0.28);
+          land.scale.setScalar(1.4 + k*1.0);
+          land.material.opacity = 0.5 * (1-k);
+          if(k >= 1){ ROOT.remove(land); this.dead = true; }
+        }});
       });
     }
     pts.slice(1).forEach(p=>{
