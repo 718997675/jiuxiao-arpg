@@ -58,6 +58,12 @@ function stopDriver() {
   _proc = null;
 }
 
+/* Safari 一次只能配一个 WebDriver 会话。探针抛异常时往往来不及
+ * `await b.close()`，driver 子进程就留下来了 —— 下一支探针会报
+ * 「The Safari instance is already paired with another WebDriver session」，
+ * 而且看起来像「游戏坏了」。进程退出时无条件收掉自己起的 driver。 */
+process.on('exit', stopDriver);
+
 /* ---------------- HTTP ---------------- */
 
 async function req(port, method, path, body) {
@@ -87,20 +93,31 @@ async function newSession(port, opts) {
       'safari:automaticInspection': false
     }
   };
-  try {
-    const res = await req(port, 'POST', '/session', { capabilities: caps });
-    return res.value;
-  } catch (e) {
-    const m = String(e.message || e);
-    if (/Allow remote automation/i.test(m)) {
-      throw new Error(
-        'Safari 的「允许远程自动化」没开。开一次即可（之后一直有效）：\n'
-        + '  1) Safari → 设置 → 高级 → 勾「显示网页开发者功能」\n'
-        + '  2) 菜单栏「开发」→ 勾「允许远程自动化」\n'
-        + '（或用管理员权限跑一次 `safaridriver --enable`）');
+  let lastErr = null;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    try {
+      const res = await req(port, 'POST', '/session', { capabilities: caps });
+      return res.value;
+    } catch (e) {
+      lastErr = e;
+      const m = String(e.message || e);
+      if (/Allow remote automation/i.test(m)) {
+        throw new Error(
+          'Safari 的「允许远程自动化」没开。开一次即可（之后一直有效）：\n'
+          + '  1) Safari → 设置 → 高级 → 勾「显示网页开发者功能」\n'
+          + '  2) 菜单栏「开发」→ 勾「允许远程自动化」\n'
+          + '（或用管理员权限跑一次 `safaridriver --enable`）');
+      }
+      /* 上一支探针异常退出留下的配对：driver 断开后 Safari 会在一两秒内
+       * 自己解除，等一下再试，别让整批测试跟着一起红。 */
+      if (/already paired|another WebDriver session/i.test(m) && attempt < 4) {
+        await sleep(1000);
+        continue;
+      }
+      throw e;
     }
-    throw e;
   }
+  throw lastErr;
 }
 
 async function deleteSession(port, sid) {

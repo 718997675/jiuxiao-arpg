@@ -149,6 +149,19 @@ cat docs/status/act-expansion.md             # 细看这条线的节点表 / 下
   ④ 视口只能设**窗口**尺寸（`_pptr` 内做了两轮 innerWidth/Height 校正），设备像素比不能模拟。
   **第一次用要先开一次开关**（之后一直有效）：Safari → 设置 → 高级 → 勾「显示网页开发者功能」，
   再在菜单栏「开发」→「允许远程自动化」。没开时 `_pptr` 会直接把这串步骤打出来。
+  **2026-11-14 实测补齐四个语义，别删**：`_cmd()` 解包 W3C 的 `{value:...}`
+  （不解包 → `evaluate` 返回 `{value:3}`、截图变 `[object Object]`、视口校正直接 break、
+  `goto` 白等 30 秒）；`evaluate` 支持字符串表达式（`build-bosskits` 的
+  `waitForFunction('typeof NR === ...')` 就是这么写的）；`page.close()`；
+  进程退出时收 driver + 建会话失败重试。Safari **一次只配一个会话**，
+  探针异常退出不关会话会占住 Safari，后续全线报「already paired」。
+- **靠 `toString()` 的生成器在 Safari 下不可用**（`dev/build-bosskits.js`）：
+  Safari 的 `Function.prototype.toString()` 与对象枚举顺序和 Chrome 基线不同，
+  同一份特效台生成的文本差 **3898 行**、连 `BOSS_NATIVE` 键顺序都变了。
+  表现是 `test-bosskits` 报「生成物与特效台不一致」—— **这是假红**，
+  **绝不能在这台机器上跑 `--write`**（会把生成物洗成 Safari 顺序，污染 BOSS 线）。
+  要验这条请在有 Chromium 的机器上跑 `node dev/build-bosskits.js --check`；
+  详见 `docs/status/vfx-merge.md` 卡点。
 - **clone 完先 `git config core.autocrlf false`**：仓库里是 LF，Windows 默认把它转成 CRLF，
   而 `dev/test-skill-*.js` 里不少契约是**按 `\n` 写的正则**（切 case 块、抓 SKILL_BEH 登记），
   CRLF 下会莫名其妙假红（实测 p2b 739 条里红 4 条）。已经转了的话：

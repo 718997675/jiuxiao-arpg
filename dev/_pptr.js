@@ -102,7 +102,16 @@ class SafariPage {
   }
 
   async _cmd(method, p, body) {
-    return WD.req(this._wd.port, method, '/session/' + this._wd.sid + p, body);
+    const res = await WD.req(this._wd.port, method, '/session/' + this._wd.sid + p, body);
+    /* W3C WebDriver 的**所有**成功响应都是 `{ value: <结果> }`。
+     * 早期这里直接把整个响应返还，于是：
+     *   evaluate → {value:3}（探针判据全错位）
+     *   screenshot → String({value:...}) = '[object Object]'（截图是坏的）
+     *   setViewport → inner 不是数组 → 校正直接 break（1280×800 实际只有 748）
+     *   goto → st === 'complete' 永假 → 每次白等满 30 秒
+     *   _drain → buf 不是数组 → 报错收集器静默失效
+     * 统一在这一层解包，所有调用点拿到的就是 puppeteer 语义的结果。 */
+    return (res && typeof res === 'object' && 'value' in res) ? res.value : res;
   }
 
   /* ---- 导航 ---- */
@@ -172,9 +181,18 @@ class SafariPage {
    * 参数必须可 JSON 化。函数 / DOM 节点 / 类实例过不去 —— 过不去就明确报错，
    * 别让探针悄悄拿到 null 然后判成「全绿」。 */
   async evaluate(fn, ...args) {
+    /* puppeteer 也支持 `evaluate('表达式')`：返回该表达式的值。
+     * 好几支生成器（build-bosskits 的 waitForFunction）就是这么写的，
+     * 早期这里明确拒绝字符串 → waitForFunction 永远拿到 false → 白等 30 秒。 */
+    if (typeof fn === 'string') {
+      const out = await this._cmd('POST', '/execute/sync', {
+        script: 'return (' + fn + ');', args: []
+      });
+      return out === undefined ? null : out;
+    }
     if (typeof fn !== 'function') {
-      /* puppeteer 也支持 evaluate('string')，这里不支持 —— 明确报错好过静默 */
-      throw new Error('_pptr(Safari).evaluate 只接受函数；字符串脚本请自己包成 () => ...');
+      /* 其它类型（对象 / DOM 句柄）不支持 —— 明确报错好过静默 */
+      throw new Error('_pptr(Safari).evaluate 只接受函数或表达式字符串；对象/句柄请自己包成 () => ...');
     }
     const isAsync = fn.constructor && fn.constructor.name === 'AsyncFunction';
     let src = fn.toString();
@@ -288,6 +306,13 @@ return __fn.apply(null, __args);`;
   async content() { return this.evaluate(() => document.documentElement.outerHTML); }
   async title() { return this.evaluate(() => document.title); }
   async url() { return this._cmd('GET', '/url'); }
+  async close() {
+    /* Safari 一个 WebDriver 会话只有一个窗口，真关了后面 newPage() 就没得用。
+     * 只把本页标记为死；调用方（mobile-layout 等）下一次 newPage() 会
+     * 复用这个窗口并重新 goto / reload，状态不会串。 */
+    this._alive = false;
+    return null;
+  }
 }
 
 class SafariBrowser {
