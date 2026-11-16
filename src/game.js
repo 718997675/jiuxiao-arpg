@@ -324,6 +324,9 @@ const Game = {
     this.scene.add(new THREE.AmbientLight(0xffffff, 0.1));
 
     FX.init(this.scene, this.camera, document.getElementById('fxLayer'));
+    /* [U9] 怪物侧常驻视觉层：8 形态微标识 + 12 词缀角标 + Boss 生命周期。
+     * 只读实体，不写数值、不挂判定；绑定一次，之后靠 sync 改实例矩阵。 */
+    if (typeof EnemyFX !== 'undefined') EnemyFX.init(this.scene);
     /* [B16] 怪物侧原语层。它自己管一个 Group，只往这里挂 ——
      * 开场绑一次就够，之后靠每帧 `FX2.update(dt)` 推进。 */
     try {
@@ -1764,6 +1767,8 @@ const Game = {
     /* [P09] 血条归属的计时跟着地图一起清，否则换图后 bossPickCd 还带着上一张图的余数 */
     this.bossPickCd = 0;
     FX.clear();
+    /* [U9] 常驻微标识不归 FX.clear 管（它们是挂在 scene 上的实例网格） */
+    if (typeof EnemyFX !== 'undefined') EnemyFX.clear();
     /* [M18.7] 场地效果（相柳毒沼 / 九尾狐狐火）必须跟着清。
      * FX.clear 只删了看得见的圆，伤害记账还在 `WBFight._hazards` 里 ——
      * 不清的话换图后新地图的落脚点上会继续掉血，而且再也找不到源头。 */
@@ -2528,6 +2533,8 @@ const Game = {
         /* [M12] 拴绳锚点：玩家跑出祭坛之后首领要回位，
          * 而不是顶着祭坛的硬墙原地抖（区域化之前圆环是软的，看不出来）。 */
         b.anchor = { x: pos[0], z: pos[1] };
+        /* [U9] 进场演出：收束环 + 光柱 + 碎星；不改 active，出手时机仍是原来的 */
+        if (typeof EnemyFX !== 'undefined') EnemyFX.bossArrive(b);
       }
     });
   },
@@ -7958,6 +7965,8 @@ const Game = {
       updateActorAnim(a, dt);
       if (e.hitFlash > 0) e.hitFlash = Math.max(0, e.hitFlash - dt * 4);
     }
+    /* [U9] 常驻微标识跟随实体；放在位置更新之后、死亡回收之前 */
+    if (typeof EnemyFX !== 'undefined') EnemyFX.sync(dt, this.time, this.enemies);
     this.enemies = this.enemies.filter(e => {
       if (e.dead && (e.deadT || 0) >= 3) {
         // 整棵子树（模型 + 武器 + 血条）一起释放，共享缓存的几何体由 disposeTree 自动跳过
@@ -8021,6 +8030,8 @@ const Game = {
     if (e.windup > 0) {
       e.windup -= dt;
       if (e.windup <= 0 && DIST2D(e.pos, pp) < e.reach + 1.4) {
+        /* [U9] 抬手回执只亮自己脚下的常驻记号，不新画一朵花 */
+        if (typeof EnemyFX !== 'undefined') EnemyFX.pulse(e, 1);
         /* [P2b·兽群] 被嘲讽的怪这一刀落在灵兽身上 —— 现在是**真的扣血**。
          * 以前灵兽没有血，这里只放一簇火花，于是「群嘲」等于「怪白打几秒」；
          * 现在灵兽会替你把这一刀吃下去，也可能因此死掉。 */
@@ -8168,8 +8179,8 @@ const Game = {
     if (ai.state === 'fuse') {
       ai.fuseT -= dt;
       e.actor.moving = false;
-      /* 引信闪烁：hitFlash 是既有的受击闪白通道，这里借它当警戒灯 */
-      e.hitFlash = Math.max(e.hitFlash, 0.9);
+      /* [U9] 引信警戒改由自己那枚常驻自爆环放大闪烁（EnemyFX.sync 读 fuse 态）。
+       * 不再借 hitFlash 的受击闪白 —— 那会被玩家误读成「我刚打到它了」。 */
       if (d > T.breakAway) {
         ai.state = 'chase'; ai.fuseT = 0;
         FX.ring(e.pos, 1.4, 0xffaa66, 0.3, 0.15);
@@ -8269,6 +8280,8 @@ const Game = {
     if (!tgt || tgt.dead) return;
     const amt = Math.round(tgt.maxHp * T.healPct / 100);
     tgt.hp = Math.min(tgt.maxHp, tgt.hp + amt);
+    /* [U9] 治疗光束：从施法者连到目标，让「谁在奶谁」一眼可读 */
+    if (typeof EnemyFX !== 'undefined') EnemyFX.healLink(e, tgt);
     FX.ring(tgt.pos, 1.7, 0x66d08a, 0.5, 0.18);
     FX.text(new THREE.Vector3(tgt.pos.x, 2.1, tgt.pos.z), '+' + amt, 'info', { life: 0.8 });
   },
@@ -9735,7 +9748,11 @@ const Game = {
     /* [S16] 怪的死声按族与体型合成；精英换成带尾音的那一版（一听就知道杀了什么） */
     if (typeof AudioSys !== 'undefined') AudioSys.mob(e, e.elite && !e.boss ? 'elite' : 'death');
     else SFX.die();
-    if (e.boss) SFX.boss();
+    if (e.boss) {
+      SFX.boss();
+      /* [U9] 首领倒地碎片 + 掉落光柱；掉落物自己的光柱不动，这里不重复造物 */
+      if (typeof EnemyFX !== 'undefined') EnemyFX.bossDeath(e, p);
+    }
     FX.blood(new THREE.Vector3(p.x, 1, p.z), 0x992222, e.boss ? 40 : 16);
     this.hitstop = e.boss ? 140 : 30;
     this.shake = Math.max(this.shake, e.boss ? 0.7 : 0.14);

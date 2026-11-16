@@ -3158,6 +3158,8 @@
 <script src="src/data/data-bosstwist.js"></script>
 <script src="src/data/data-fauna.js"></script>
 <script src="src/data/data-elites.js"></script>
+<!-- [U9] 怪物形态 / 词缀 / 生命周期视觉声明（只声明，不判定） -->
+<script src="src/data/data-enemyfx.js"></script>
 <script src="src/data/data-world.js"></script>
 <script src="src/data/data-quests.js"></script>
 <!-- M12 地图区域结构：world.js / game.js / ui.js 都依赖它，必须排在这三个之前 -->
@@ -3180,6 +3182,8 @@
 <script src="src/wbmodels.js"></script>
 <script src="src/audio.js"></script>
 <script src="src/fx.js"></script>
+<!-- [U9] 怪物侧常驻视觉层：只读实体，不挂判定；必须晚于 fx.js、早于 game.js -->
+<script src="src/enemy-fx.js"></script>
 <!-- [V0] 特效原语层（图集 + spr / trail / bolt / shock / decal）。必须在 fx.js 之后：
      它读 FX.scene / FX.cam / FX.q，并在 FX.update / FX.clear 里被回调 -->
 <script src="src/fx-kit.js"></script>
