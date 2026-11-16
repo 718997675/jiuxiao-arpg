@@ -3167,6 +3167,9 @@
 <script src="src/data/data-dungeon.js"></script>
 <!-- M18 世界 Boss：6 只巨兽 + 刷新配置 + 掉落表。纯数据，worldboss.js 与 game.js 读它 -->
 <script src="src/data/data-worldboss.js"></script>
+<!-- [U8] 世界 Boss 预警层：18 招「判定形状 → 预警形状」映射，独立于 BOSS_TWIST。
+     纯数据 + 纯函数 wbWarnOf，被 worldboss-fight.js 的 cast() 消费 -->
+<script src="src/data/data-wbzone.js"></script>
 <!-- 逻辑层 -->
 <script src="src/weapons.js"></script>
 <script src="src/items.js"></script>

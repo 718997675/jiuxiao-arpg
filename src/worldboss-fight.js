@@ -524,7 +524,7 @@ const WBFight = {
             SFX.cast && SFX.cast();
             const pl = g.playerGroup.position;
             if (this._segDist(pl.x, pl.z, a.x, a.z, b.x, b.z) <= halfW + SL) applyHit();
-          } : null, color);
+          } : null, color, true);
         }
         break;
       }
@@ -542,7 +542,7 @@ const WBFight = {
           if (g.shake !== undefined) g.shake = Math.max(g.shake, 0.45);
           const pl = g.playerGroup.position;
           if (Math.hypot(pl.x - c.x, pl.z - c.z) <= r + SL) applyHit();
-        }, color);
+        }, color, true);
         break;
       }
 
@@ -572,7 +572,7 @@ const WBFight = {
               while (da > Math.PI) da -= Math.PI * 2;
               while (da < -Math.PI) da += Math.PI * 2;
               if (Math.abs(da) <= halfArc) applyHit();
-            } : null, color);
+            } : null, color, true);
           }
         }
         break;
@@ -591,7 +591,7 @@ const WBFight = {
             FX.burst(new THREE.Vector3(p.x, 0.4, p.z), color, 12, { speed: 5, size: 0.16, life: 0.6, gravity: 10 });
             const pl = g.playerGroup.position;
             if (Math.hypot(pl.x - p.x, pl.z - p.z) <= 2.6 + SL) applyHit();
-          }, color);
+          }, color, true);
         }
         break;
       }
@@ -605,16 +605,16 @@ const WBFight = {
           const pl = g.playerGroup.position;
           const dd = Math.hypot(pl.x - e.pos.x, pl.z - e.pos.z);
           if (dd <= r + SL && dd >= inner - SL) applyHit();
-        }, color);
-        /* 内圈画一个「安全区」提示：绿色，不做判定 */
-        FX.telegraph(new THREE.Vector3(e.pos.x, 0, e.pos.z), inner - 0.4, warn, null, 0x66cc88);
+        }, color, true);
+        /* [U8] 内圈安全提示由 FX.zone({shape:'ring'}) 的空心环带表达，
+         * 这里不再单独画一个绿圆（zone 的内沿已经在同一个形状里） */
         break;
       }
 
       /* ---------- 自身：给自己上状态（战吼） ---------- */
       case 'self':
       default: {
-        FX.ring(e.pos, 6, color, warn, 0.3);
+        /* [U8] 脚下圆预警改由 FX.zone({shape:'circle'}) 画，这里不再 FX.ring */
         FX.telegraph(new THREE.Vector3(e.pos.x, 0, e.pos.z), 6, warn, () => {
           FX.flashCircle(e.pos, 6, color, 0.4);
           if (typeof SFX !== 'undefined' && SFX.boss) SFX.boss();
@@ -627,8 +627,20 @@ const WBFight = {
             this._syncAtkCd(e);
             if (typeof UI !== 'undefined' && UI.log) UI.log('【' + e.cfg.name + '】战吼：攻速大涨。', 'bad');
           }
-        }, color);
+        }, color, true);
         break;
+      }
+    }
+
+    /* [U8] 形状匹配预警层：判定与数值在上面各 case 里一格没动（仍挂在
+     * silent 的 telegraph cb 上），这里只补玩家真正该看到的形状。scatter
+     * 的多个落点由 wbWarnOf 折成一个范围圈，逐点判定仍在原 case 里。 */
+    if (typeof wbWarnOf === 'function' && typeof FX.zone === 'function') {
+      const decl = wbWarnOf(sk, { e: e, pp: pp, ang: ang });
+      if (decl) {
+        const z = Object.assign({}, decl);
+        delete z.cb;   // 形状预警只画，判定归 telegraph，绝不在这里结算
+        FX.zone(z);
       }
     }
   },

@@ -735,7 +735,14 @@ const FX = {
   },
 
   /* 地面预警（Boss 技能） */
-  telegraph(pos, radius, dur, cb, color = 0xff3333) {
+  /* `silent`：只留判定回调、不画旧圆。给 [U8] 世界 Boss 叠加形状预警用 ——
+   * 判定仍挂在 telegraph 的 cb 上（离线测试桩照旧能 fire），但视觉交给
+   * 外面那层 FX.zone，避免「形状 zone + 一串旧圆」两种预警叠在一起互相打架。 */
+  telegraph(pos, radius, dur, cb, color = 0xff3333, silent = false) {
+    if (silent) {
+      this.zones.push({ mesh: null, mat: null, life: dur, max: dur, type: 'tele', cb, radius });
+      return null;
+    }
     const geo = fxCircle(40);
     const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.22, side: THREE.DoubleSide, depthWrite: false });
     const m = new THREE.Mesh(geo, mat);
@@ -848,6 +855,38 @@ const FX = {
         grp.add(chev);
       }
       prog = null;
+    } else if (shape === 'fan') {
+      /* [U8] 扇形预警：世界 Boss 的 fan / cone 招（6/18）判定是「距离 ≤ r
+       * 且角度差 ≤ halfArc」，原来却在地上铺 5 个圆 —— 玩家读成「躲开那几个点」
+       * 而不是「离开这片角」。这里画一块真扇形：底盘 + 两条边 + 一道外沿弧。
+       *
+       * THREE 的 RingGeometry 在 XY 平面从 +X 起逆时针张 len 弧度；zone 的 group
+       * 已经 rotation.x=-90° 把本地 XY 铺到世界 XZ。世界角 ang = atan2(dx, dz)
+       * 从 +Z 起顺时针，换算到本地即得下面的 rotation.z。halfArc 是半张角弧度。 */
+      const r = radius;
+      const halfArc = o.halfArc == null ? Math.PI * 0.42 : o.halfArc;
+      const ang = o.ang || 0;                       // 世界朝向 atan2(dx,dz)
+      const span = halfArc * 2;
+      grp.rotation.z = -ang + Math.PI / 2 - halfArc;
+      const disc = new THREE.Mesh(fxRing(0, 1, 40, span), mk(0.20));
+      disc.scale.setScalar(r);
+      grp.add(disc);
+      const rim = new THREE.Mesh(fxRing(0.94, 1, 40, span), mk(0.72));
+      rim.scale.setScalar(r);
+      grp.add(rim);
+      /* 两条径向边：从圆心到弧的两端，读出「张角有多大」 */
+      for (const s of [-1, 1]) {
+        const edge = new THREE.Mesh(fxPlane(1, 1), mk(0.7));
+        const a = s * halfArc;
+        edge.scale.set(0.12, r, 1);
+        edge.position.set(Math.sin(a) * r * 0.5, Math.cos(a) * r * 0.5, 0);
+        edge.rotation.z = -a;
+        grp.add(edge);
+      }
+      /* 外沿弧随前摇收扩：in = 从弧外往圆心收（「要扫过来了」） */
+      prog = new THREE.Mesh(fxRing(0.86, 1, 40, span), mk(0.55));
+      grp.add(prog);
+      if (!sweep) sweep = 'in';
     } else if (shape === 'lock') {
       /* 锁定：准星 + 四根刻度。`follow` 给了就每帧贴过去 ——
        * 「跑不掉」这件事必须画在脚上，画在 Boss 脚下就又变成「躲开就行」。 */
@@ -1319,7 +1358,9 @@ const FX = {
         z.mat.opacity = Math.max(0, (z.op0 || 0.55) * (1 - k));
         z.mesh.scale.setScalar(z.mesh.scale.x * (1 + dt * 0.6));
       } else if (z.type === 'tele') {
-        z.mat.opacity = 0.18 + Math.sin(k * 26) * 0.12 + k * 0.25;
+        /* [U8] silent 的 telegraph 只留判定 cb（mat/mesh 都是 null），
+         * 预警视觉交给 FX.zone —— 这里跳过 opacity，别往 null 上写。 */
+        if (z.mat) z.mat.opacity = 0.18 + Math.sin(k * 26) * 0.12 + k * 0.25;
         if (z.life <= 0 && z.cb) { z.cb(); z.cb = null; }
       } else if (z.type === 'area') {
         z.mat.opacity = Math.max(0, (z.baseOp || 0.18) * (0.85 + Math.sin(k * 14) * 0.2)) * Math.min(1, z.life * 2);
@@ -1333,7 +1374,7 @@ const FX = {
         this._fieldTick(z, dt);
       }
       if (z.life <= 0) {
-        this.scene.remove(z.mesh);
+        if (z.mesh) this.scene.remove(z.mesh);
         /* 领域是一整个 Group、材质有好几份（地纹 / 柱 / 墙 / 剑影各自一份），
          * 只 dispose 一个 `z.mat` 会漏掉其余材质 —— 连放技能就是一路涨显存。
          * 几何体走 `_fxGeo` 的共享缓存，不在这里释放。 */
@@ -1428,6 +1469,8 @@ const FX = {
     }
     this.projectiles.length = 0;
     for (const z of this.zones) {
+      /* [U8] silent telegraph 没有 mesh（判定专用），跳过整段视觉清理 */
+      if (!z.mesh) continue;
       if (z.mesh.parent) z.mesh.parent.remove(z.mesh);
       /* [U7] `zone` 这类多材质条目 `mat` 是 null（材质都在 `mats` 里），
        * 老代码无条件 `z.mat.dispose()` 会当场抛 —— 一换图就崩，且崩在

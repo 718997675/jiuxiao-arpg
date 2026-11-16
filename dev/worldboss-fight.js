@@ -75,10 +75,16 @@ function buildHarness() {
   /* --- FX：全部记账，telegraph 的回调留给测试调 --- */
   const fx = {
     zones: [],            // area() 的产物（`_dropFx` 要能在这里找到它）
-    tele: [],             // telegraph 的预警
+    tele: [],             // telegraph 的预警（判定 cb 挂这里）
+    warns: [],            // [U8] zone() 的形状预警（只画不判定）
     texts: [], rings: [], flashes: [], bursts: [], beams: [], slashes: [],
-    telegraph(pos, radius, dur, cb, color) {
-      this.tele.push({ pos, radius, dur, cb, color });
+    telegraph(pos, radius, dur, cb, color, silent) {
+      this.tele.push({ pos, radius, dur, cb, color, silent: !!silent });
+    },
+    /* [U8] 形状预警层：只记账，cb 恒为 null（判定仍归上面的 telegraph） */
+    zone(o) {
+      this.warns.push(o);
+      return { children: [] };
     },
     area(pos, radius, color, dur, opts) {
       const mesh = { parent: null, removed: false };
@@ -104,7 +110,7 @@ function buildHarness() {
       return n;
     },
     reset() {
-      this.zones.length = 0; this.tele.length = 0; this.texts.length = 0;
+      this.zones.length = 0; this.tele.length = 0; this.warns.length = 0; this.texts.length = 0;
       this.rings.length = 0; this.flashes.length = 0; this.bursts.length = 0;
       this.beams.length = 0; this.slashes.length = 0;
     }

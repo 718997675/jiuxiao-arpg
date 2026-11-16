@@ -193,7 +193,11 @@ console.log('九、生成物没走散');
   let out = '', code = 0;
   try {
     out = execFileSync(process.execPath, [path.join(ROOT, 'dev/build-bosskits.js'), '--check'],
-      { cwd: ROOT, env: Object.assign({}, process.env, { NODE_PATH: '/Users/niekai/node_modules' }), encoding: 'utf8' });
+      /* 子进程要能 require('puppeteer-core')：优先继承调用方给的 NODE_PATH，
+       * 没给才回落原作者的 macOS 路径。写死一条路径会让整份契约在别的机器
+       * 上报「生成物走散」的假红 —— 其实表是一致的，只是子进程找不到依赖。 */
+      { cwd: ROOT, env: Object.assign({}, process.env,
+        { NODE_PATH: process.env.NODE_PATH || '/Users/niekai/node_modules' }), encoding: 'utf8' });
   } catch (e) {
     code = e.status || 1;
     out = (e.stdout || '') + (e.stderr || '');
