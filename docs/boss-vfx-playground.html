@@ -1794,13 +1794,34 @@ BFX.entity = function(o){
   const sh = flatMesh(TEX.soft, c, THREE.AdditiveBlending, .5);
   sh.position.set(o.x || 0, .06, o.z || 0);
   sh.scale.setScalar(size * 1.5);
+  /* [U10] 「亮团」补一个低模实心核：billboard 只有加法光，俯角下读不出体积。
+   * 核用压暗的主色 + 一点点自发光，既不抢 billboard 的亮，又给实体一个
+   * 能挡光、有朝向的轮廓。`lowpoly:false` 可退回纯 billboard（老技能对照）。 */
+  let core = null;
+  if(o.lowpoly !== false){
+    const coreCol = new THREE.Color(c).multiplyScalar(.22).getHex();
+    const coreEmi = new THREE.Color(c).multiplyScalar(.10).getHex();
+    core = new THREE.Mesh(
+      new THREE.IcosahedronGeometry(size * .38, 0),
+      new THREE.MeshLambertMaterial({
+        color: coreCol, emissive: coreEmi, flatShading: true,
+        transparent: true, opacity: .9, depthWrite: false
+      })
+    );
+    core.position.set(o.x || 0, size * .55, o.z || 0);
+    core.scale.set(1, 1.25, 1);
+    scene.add(core);
+  }
   const e = {
     x: o.x || 0, z: o.z || 0, dead: false,
-    body, shadow: sh,
+    body, shadow: sh, core,
     target: o.target || (()=>DUMMY.pos),
     kill(){
+      /* 外部 kill() 之后 updater 还会再走一次收场；二次 dispose 没必要 */
+      if(e.dead) return;
       scene.remove(body); scene.remove(sh);
       body.material.dispose(); sh.material.dispose();
+      if(core){ scene.remove(core); core.geometry.dispose(); core.material.dispose(); }
       e.dead = true;
     }
   };
@@ -1820,6 +1841,12 @@ BFX.entity = function(o){
     const fade = t > life - .5 ? Math.max(0, life - t) / .5 : 1;
     body.material.opacity = (o.opacity != null ? o.opacity : .96) * fade;
     sh.material.opacity = .5 * fade;
+    if(core){
+      core.position.set(e.x, size * .55 + Math.sin(bob) * .07, e.z);
+      core.rotation.y += dt * .9;
+      core.rotation.x += dt * .25;
+      core.material.opacity = .9 * fade;
+    }
     cd -= dt;
     if(cd <= 0 && d < size * .75 + .55){
       cd = o.hitEvery != null ? o.hitEvery : .45;
@@ -1994,66 +2021,219 @@ BFX.lift = function(hit, o = {}){
              : new THREE.Color(glow).multiplyScalar(0.30).getHex();
   const dur  = o.dur  != null ? o.dur  : 1.5;
   const thin = o.thin != null ? o.thin : 1;      /* >1 更稀，<1 更密 */
+  /* [U10] 同形状不再共用一套排布。
+   *   variant 选骨架（6 种），seed 决定相位 / 抖动 / 缺口位置。
+   *   boss-cast._lift 按「Boss id + 技能 id」算 seed —— 同一只的两招同形状
+   *   不会长成同一排，两只不同 Boss 放同一招也不会。 */
+  const variant = ((o.variant != null ? o.variant : 0) | 0) % 6;
+  let sd = (o.seed != null ? o.seed : 1) >>> 0;
+  const rnd = ()=>{ sd = (Math.imul(sd, 1664525) + 1013904223) >>> 0; return sd / 4294967296; };
+  const TAU = Math.PI * 2;
+  const adiff = (a, b)=> Math.abs(((a - b + Math.PI * 3) % TAU) - Math.PI);
   /* 高度跟尺寸走，但封顶 —— 10 米外一根 6 米的柱子会顶到画面上缘 */
   const H = (sz)=>{
     const base = o.h != null ? o.h : (0.95 + (sz || 3) * 0.17);
     return Math.min(3.6, Math.max(0.85, base));
   };
   const put = (px, pz, sz)=> BFX.spikes({
-    x:px, z:pz, n:1, r:.34, h:H(sz), color:body, glow, dur,
+    /* 整排再叠一点 seed 抖动：即使某个骨架是固定点位（中轴脊 / 只立两边），
+     * 两只 Boss 放同一招也不会一像素不差地重合。幅度 0.14，不影响判定。 */
+    x:px + (rnd()-.5)*0.14, z:pz + (rnd()-.5)*0.14,
+    n:1, r:.34, h:H(sz), color:body, glow, dur,
     tilt:.24, thick:1.15
   });
   const x0 = hit.x || 0, z0 = hit.z || 0;
+  const ringAt = (cx, cz, rad, n, phase, sz, skip)=>{
+    for(let i=0;i<n;i++){
+      const a = phase + i/n*TAU;
+      if(skip && skip(a)) continue;
+      put(cx + Math.cos(a)*rad, cz + Math.sin(a)*rad, sz);
+    }
+  };
+  const spokeAt = (cx, cz, a, r0, r1, n, sz)=>{
+    for(let i=0;i<n;i++){
+      const rr = n === 1 ? r1 : r0 + (r1 - r0) * (i / (n - 1));
+      put(cx + Math.cos(a)*rr, cz + Math.sin(a)*rr, sz);
+    }
+  };
 
   if(shape === 'circle'){
     const r = hit.r || 2;
-    const n = Math.max(6, Math.round(11 * thin));
-    for(let i=0;i<n;i++){
-      const a = i/n*6.283 + Math.random()*0.12;
-      put(x0 + Math.cos(a)*r*0.86, z0 + Math.sin(a)*r*0.86, r);
+    if(variant === 1){
+      /* 螺旋：半径从内到外，读作"从地里拧出来" */
+      const n = Math.max(7, Math.round(13 * thin));
+      for(let i=0;i<n;i++){
+        const a = i * 2.39996 + rnd() * 0.2;
+        const rr = r * (0.32 + 0.63 * i / (n - 1));
+        put(x0 + Math.cos(a)*rr, z0 + Math.sin(a)*rr, r);
+      }
+    }else if(variant === 2){
+      /* 留口：朝 +Z 留一道门，读作"这里可以进/出" */
+      ringAt(x0, z0, r*0.86, Math.max(7, Math.round(11*thin)), rnd()*0.2, r,
+        a=> adiff(a, Math.PI/2) < 0.55);
+    }else if(variant === 3){
+      /* 十字：四条辐条，读作"四向推" */
+      for(let k=0;k<4;k++) spokeAt(x0, z0, k*TAU/4 + rnd()*0.1, r*0.3, r*0.9, 3, r*0.9);
+    }else if(variant === 4){
+      /* 双环：外圈 + 内圈，读作"两层" */
+      ringAt(x0, z0, r*0.92, 8, rnd()*0.2, r);
+      ringAt(x0, z0, r*0.48, 5, TAU/10 + rnd()*0.2, r*0.7);
+    }else if(variant === 5){
+      /* 散点：半径随机，读作"不成阵" */
+      for(let i=0;i<10;i++){
+        const a = rnd()*TAU, rr = r*(0.5 + rnd()*0.5);
+        put(x0 + Math.cos(a)*rr, z0 + Math.sin(a)*rr, r);
+      }
+    }else{
+      ringAt(x0, z0, r*0.86, Math.max(6, Math.round(11*thin)), rnd()*0.12, r);
     }
   }
   else if(shape === 'ring'){
     const r = hit.r || 3, r0 = hit.r0 != null ? hit.r0 : r*0.55;
-    const n = Math.max(5, Math.round(9 * thin));
-    for(let i=0;i<n;i++){
-      const a = i/n*6.283;
-      put(x0 + Math.cos(a)*r*0.93, z0 + Math.sin(a)*r*0.93, r);
-    }
-    /* 内圈错开半格：两圈柱子读作"环"，一圈只读作"圆" */
-    for(let i=0;i<n;i++){
-      const a = (i + .5)/n*6.283;
-      put(x0 + Math.cos(a)*r0*0.75, z0 + Math.sin(a)*r0*0.75, r*0.7);
+    if(variant === 1){
+      /* 断环：左右各留口，内圈只放四个方位 */
+      ringAt(x0, z0, r*0.93, Math.max(6, Math.round(10*thin)), rnd()*0.2, r,
+        a=> adiff(a, 0) < 0.35 || adiff(a, Math.PI) < 0.35);
+      ringAt(x0, z0, r0*0.75, 4, TAU/8, r*0.7);
+    }else if(variant === 2){
+      /* 三环：外 / 中 / 内 */
+      ringAt(x0, z0, r*0.93, 8, rnd()*0.2, r);
+      ringAt(x0, z0, (r + r0)/2, 7, TAU/14, r*0.85);
+      ringAt(x0, z0, r0*0.75, 5, TAU/10, r*0.65);
+    }else if(variant === 3){
+      /* 辐条：从内圈往外打八根 */
+      for(let k=0;k<8;k++) spokeAt(x0, z0, k*TAU/8 + rnd()*0.08, r0*0.8, r*0.93, 2, r*0.8);
+    }else if(variant === 4){
+      /* 密环：外十内八 */
+      ringAt(x0, z0, r*0.93, 10, rnd()*0.2, r);
+      ringAt(x0, z0, r0*0.75, 8, TAU/16, r*0.7);
+    }else if(variant === 5){
+      /* 三段弧：环被切成三截，读作"有缺口" */
+      for(let k=0;k<3;k++){
+        for(let i=0;i<4;i++){
+          const a = k*TAU/3 + 0.15 + i*0.24;
+          put(x0 + Math.cos(a)*r*0.93, z0 + Math.sin(a)*r*0.93, r);
+        }
+      }
+      ringAt(x0, z0, r0*0.75, 3, rnd()*TAU, r*0.65);
+    }else{
+      const n = Math.max(5, Math.round(9 * thin));
+      ringAt(x0, z0, r*0.93, n, 0, r);
+      /* 内圈错开半格：两圈柱子读作"环"，一圈只读作"圆" */
+      ringAt(x0, z0, r0*0.75, n, TAU/(2*n), r*0.7);
     }
   }
   else if(shape === 'rect'){
     const len = hit.len || 8, wd = hit.w || 2, ang = hit.angle || 0;
-    /* 沿长轴两侧各一列 —— 中轴一律不放：中间那根会挡住"这是条通道"的读法 */
     const step = Math.max(1.7, len/6) * thin;
     const px = Math.cos(ang), pz = -Math.sin(ang);      /* 垂直于朝向 */
-    let t = 0.6;
-    for(; t < len; t += step){
-      const cx = x0 + Math.sin(ang)*t, cz = z0 + Math.cos(ang)*t;
-      put(cx + px*wd*0.46, cz + pz*wd*0.46, wd*1.6);
-      put(cx - px*wd*0.46, cz - pz*wd*0.46, wd*1.6);
+    const row = (side, offset, sz)=>{
+      for(let t=0.6;t<len;t+=step){
+        const cx = x0 + Math.sin(ang)*t, cz = z0 + Math.cos(ang)*t;
+        put(cx + px*wd*offset*side, cz + pz*wd*offset*side, sz);
+      }
+    };
+    if(variant === 1){
+      row(1, 0.46, wd*1.6);                  /* 单侧墙 */
+    }else if(variant === 2){
+      for(let t=0.6;t<len;t+=step){          /* 中轴脊 */
+        put(x0 + Math.sin(ang)*t, z0 + Math.cos(ang)*t, wd*1.35);
+      }
+    }else if(variant === 3){
+      let k = 0;                             /* 之字：左右交替 */
+      for(let t=0.6;t<len;t+=step, k++){
+        const cx = x0 + Math.sin(ang)*t, cz = z0 + Math.cos(ang)*t;
+        const s = (k % 2) ? 1 : -1;
+        put(cx + px*wd*0.46*s, cz + pz*wd*0.46*s, wd*1.6);
+      }
+    }else if(variant === 4){
+      row(1, 0.32, wd*1.4); row(1, 0.58, wd*1.4);
+      row(-1, 0.32, wd*1.4); row(-1, 0.58, wd*1.4);
+    }else if(variant === 5){
+      /* 中间留空：读作"两头封、中间是路" */
+      for(let t=0.6;t<len;t+=step){
+        if(t > len*0.33 && t < len*0.67) continue;
+        const cx = x0 + Math.sin(ang)*t, cz = z0 + Math.cos(ang)*t;
+        put(cx + px*wd*0.46, cz + pz*wd*0.46, wd*1.6);
+        put(cx - px*wd*0.46, cz - pz*wd*0.46, wd*1.6);
+      }
+    }else{
+      row(1, 0.46, wd*1.6); row(-1, 0.46, wd*1.6);
     }
   }
   else if(shape === 'sector'){
     const r = hit.r || 4, ang = hit.angle || 0;
     const span = hit.span != null ? hit.span : Math.PI*0.6;
     const n = Math.max(4, Math.round(8 * thin));
-    for(let i=0;i<n;i++){
-      const a = ang - span/2 + span*(i/(n-1));
-      put(x0 + Math.sin(a)*r*0.88, z0 + Math.cos(a)*r*0.88, r);
+    const arc = (rad, count, sz)=>{
+      for(let i=0;i<count;i++){
+        const a = ang - span/2 + span*(count === 1 ? 0.5 : i/(count - 1));
+        put(x0 + Math.sin(a)*rad, z0 + Math.cos(a)*rad, sz);
+      }
+    };
+    if(variant === 1){
+      /* 放射：从中心往外五道 */
+      for(let k=0;k<5;k++){
+        const a = ang - span/2 + span*k/4;
+        spokeAt(x0, z0, a, r*0.35, r*0.9, 2, r*0.85);
+      }
+    }else if(variant === 2){
+      /* 只立两条边 */
+      for(const s of [-1, 1]){
+        for(let j=1;j<=3;j++){
+          const a = ang + s*span/2;
+          const rr = r*(0.35 + 0.27*j);
+          put(x0 + Math.sin(a)*rr, z0 + Math.cos(a)*rr, r*0.8);
+        }
+      }
+    }else if(variant === 3){
+      /* 前沿密 + 中心两根 */
+      arc(r*0.9, n, r);
+      put(x0 + Math.sin(ang - span/4)*r*0.45, z0 + Math.cos(ang - span/4)*r*0.45, r*0.7);
+      put(x0 + Math.sin(ang + span/4)*r*0.45, z0 + Math.cos(ang + span/4)*r*0.45, r*0.7);
+    }else if(variant === 4){
+      /* 双弧带 */
+      arc(r*0.9, n, r);
+      arc(r*0.55, Math.max(3, n-2), r*0.7);
+    }else if(variant === 5){
+      /* 内外交错 */
+      for(let i=0;i<n;i++){
+        const a = ang - span/2 + span*(i/(n-1));
+        const rr = r * (i % 2 ? 0.66 : 0.9);
+        put(x0 + Math.sin(a)*rr, z0 + Math.cos(a)*rr, r*0.9);
+      }
+    }else{
+      arc(r*0.88, n, r);
+      /* 两条边各补一根，扇形的"角"才立得住 */
+      put(x0 + Math.sin(ang - span/2)*r*0.45, z0 + Math.cos(ang - span/2)*r*0.45, r*0.7);
+      put(x0 + Math.sin(ang + span/2)*r*0.45, z0 + Math.cos(ang + span/2)*r*0.45, r*0.7);
     }
-    /* 两条边各补一根，扇形的"角"才立得住 */
-    put(x0 + Math.sin(ang - span/2)*r*0.45, z0 + Math.cos(ang - span/2)*r*0.45, r*0.7);
-    put(x0 + Math.sin(ang + span/2)*r*0.45, z0 + Math.cos(ang + span/2)*r*0.45, r*0.7);
   }
   else if(shape === 'scatter'){
-    (hit.pts || []).forEach(p=>{
-      put(p.x, p.z, (p.r || 1.4)*1.5);
-      put(p.x + (Math.random()-.5)*(p.r||1.4), p.z + (Math.random()-.5)*(p.r||1.4), (p.r||1.4)*1.1);
+    const pts = hit.pts || [];
+    let cx = 0, cz = 0;
+    pts.forEach(p=>{ cx += p.x; cz += p.z; });
+    if(pts.length){ cx /= pts.length; cz /= pts.length; }
+    pts.forEach((p, i)=>{
+      const pr = p.r || 1.4;
+      if(variant === 1){
+        put(p.x, p.z, pr*1.5);
+      }else if(variant === 2){
+        for(let k=0;k<3;k++){
+          const a = k*TAU/3 + rnd()*0.3;
+          put(p.x + Math.cos(a)*pr*0.5, p.z + Math.sin(a)*pr*0.5, pr*1.1);
+        }
+      }else if(variant === 3){
+        put(p.x, p.z, pr*1.5);
+        if(i === 0) put(cx, cz, pr*1.2);
+      }else if(variant === 4){
+        put(p.x + (rnd()-.5)*pr*0.7, p.z + (rnd()-.5)*pr*0.7, pr*1.2);
+      }else if(variant === 5){
+        if(i % 2 === 0) put(p.x, p.z, pr*1.5);
+      }else{
+        put(p.x, p.z, pr*1.5);
+        put(p.x + (rnd()-.5)*pr, p.z + (rnd()-.5)*pr, pr*1.1);
+      }
     });
   }
   else if(shape === 'self'){
@@ -2064,9 +2244,28 @@ BFX.lift = function(hit, o = {}){
     const bz = hit.z != null ? hit.z : BOSS.pos.z;
     const r = hit.r || 2.0;
     const n = Math.max(5, Math.round(7 * thin));
-    for(let i=0;i<n;i++){
-      const a = i/n*6.283;
-      put(bx + Math.cos(a)*r*0.9, bz + Math.sin(a)*r*0.9, r*0.8);
+    if(variant === 1){
+      for(let k=0;k<4;k++) spokeAt(bx, bz, k*TAU/4 + rnd()*0.1, r*0.25, r*0.9, 2, r*0.8);
+    }else if(variant === 2){
+      for(let i=0;i<9;i++){
+        const a = i*2.39996 + rnd()*0.2;
+        const rr = r*(0.3 + 0.6*i/8);
+        put(bx + Math.cos(a)*rr, bz + Math.sin(a)*rr, r*0.8);
+      }
+    }else if(variant === 3){
+      for(const sx of [-1, 1]) for(const sz of [-1, 1]){
+        put(bx + sx*r*0.65, bz + sz*r*0.65, r*0.8);
+      }
+    }else if(variant === 4){
+      ringAt(bx, bz, r*0.9, 7, rnd()*0.2, r*0.8);
+      ringAt(bx, bz, r*0.45, 4, TAU/8, r*0.6);
+    }else if(variant === 5){
+      for(let i=0;i<6;i++){
+        const a = -Math.PI/2 + (i/5 - 0.5)*Math.PI;
+        put(bx + Math.cos(a)*r*0.9, bz + Math.sin(a)*r*0.9, r*0.8);
+      }
+    }else{
+      ringAt(bx, bz, r*0.9, n, 0, r*0.8);
     }
   }
 };

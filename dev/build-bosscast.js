@@ -551,9 +551,17 @@ const BossCast = {
     if (sk.vert || typeof sk.hit !== 'function') return;
     const warm = sk.warm != null ? sk.warm : .7;
     const glow = (e.cfg && e.cfg.glow) || 0xff8a4c;
+    /* [U10] 同形状不再共用一套柱子：按「Boss id + 技能 id」算一个稳定 seed。
+     * 同一只的两招同形状会拿到不同的 variant/相位，两只 Boss 放同一招也不会
+     * 长成同一排；同一只反复放同一招仍然是同一套（玩家能记住这只的语言）。 */
+    const key = String((e && (e.kind || (e.cfg && e.cfg.id))) || '') + '|' + String(id || '');
+    let h = 2166136261;
+    for (let i = 0; i < key.length; i++) { h ^= key.charCodeAt(i); h = Math.imul(h, 16777619); }
+    h = h >>> 0;
+    const variant = h % 6;
     delay(warm, () => {
       try {
-        BFX.lift(sk.hit(), { glow, dur: 1.5 });
+        BFX.lift(sk.hit(), { glow, dur: 1.5, variant, seed: h });
       } catch (err) {
         console.warn('[BossCast] ' + id + ' 的竖向层没长出来', err);
       }
