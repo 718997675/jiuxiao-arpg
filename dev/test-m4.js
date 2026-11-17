@@ -9,8 +9,8 @@
  *   5. 卷末首领：actEnd 恰好 5 只、keyTier 对、终局 15%
  *   6. 老档迁移表：旧 5 区 key 全部有归宿
  *
- * [M5] 地下城新增 4 只专属怪（dungeon 字段）与第 6 个图鉴区 rift：
- *   本脚本只钉**野外**那 76 只（幽灵/归区/怪池），地下城部分交给 dev/test-m5.js。
+ * [M5] 地下城新增 4 只专属怪（dungeon 字段）与第 6 个图鉴区 rift；
+ * [P05] 野外怪扩到 116（总 120）。地下城部分交给 dev/test-m5.js。
  *
  * 用法：node dev/test-m4.js（纯 node，不启浏览器）
  * ============================================================ */
@@ -62,10 +62,11 @@ const M4_NEW = ['foxfire', 'cliffram', 'stonecrow', 'mirehorror', 'leechqueen', 
 const { MONSTERS, MAPS, MAP_SPECS, ACTS, CODEX_REGIONS, CODEX_REGION_LEGACY, BOSSES, BALANCE, MON_FAMILIES, MOB_AI_KINDS } = D;
 
 console.log('\n【1】36 只新怪落表');
-/* [M5] 新增 4 只地下城专属怪 → 80。它们的归属由 test-m5 管，这里只钉野外那 76 只。 */
+/* [M5] 4 只地下城专属怪 → 80；[P05] 新增 40 种 → 120（116 野外 + 4 地下城）。
+ * 地下城 4 只归属由 test-m5 管，这里钉 116 只野外的落表与归区。 */
 const WILD = Object.keys(MONSTERS).filter(k => !MONSTERS[k].dungeon);
-ok('MONSTERS 总数 80（76 野外 + 4 地下城）', Object.keys(MONSTERS).length === 80, Object.keys(MONSTERS).length);
-ok('野外怪 76 只', WILD.length === 76, WILD.length);
+ok('MONSTERS 总数 120（116 野外 + 4 地下城，P05 扩到 120）', Object.keys(MONSTERS).length === 120, Object.keys(MONSTERS).length);
+ok('野外怪 116 只', WILD.length === 116, WILD.length);
 const missingNew = M4_NEW.filter(k => !MONSTERS[k]);
 ok('36 个新 key 全部存在', missingNew.length === 0, missingNew);
 const badField = M4_NEW.filter(k => {
@@ -111,11 +112,13 @@ ok('骨架图两份怪池一致', desync.length === 0, desync);
 console.log('\n【4】图鉴 5 大卷');
 const regionOf = ctx.window.__m4.regionOf;
 const uncovered = Object.keys(MONSTERS).filter(k => !regionOf(k));
-ok('80 只全部可归区（含 4 只地下城怪 → rift）', uncovered.length === 0, uncovered.slice(0, 5));
+ok('120 只全部可归区（含 4 只地下城怪 → rift）', uncovered.length === 0, uncovered.slice(0, 5));
 const dist = { part1: 0, part2: 0, part3: 0, part4: 0, part5: 0, rift: 0 };
 for (const k in MONSTERS) dist[regionOf(k)]++;
 ok('六个区都非空', Object.values(dist).every(n => n > 0), dist);
-ok('卷一不超过 32 只（归区策略没有退化回首扫）', dist.part1 <= 32, dist.part1);
+/* [P05] 图鉴扩到 120 种，卷一从 31 → 34；上限放到 40 仍能钉住「没退化成首扫」
+ * （首扫会把绝大多数怪塞进卷一，远超 40）。 */
+ok('卷一不超过 40 只（归区策略没有退化回首扫）', dist.part1 <= 40, dist.part1);
 ok('rift 区恰好 4 只（M5 地下城专属怪）', dist.rift === 4, dist.rift);
 ok('CODEX_REGIONS 是 part1~5 + rift',
   CODEX_REGIONS.length === 6

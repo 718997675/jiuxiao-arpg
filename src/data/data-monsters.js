@@ -664,6 +664,250 @@ const MONSTERS = {
     hp: 178, atk: 34, spd: 2.8, scale: 1.05, color: 0x7a8a9a, cloth: 0x33404e,
     xp: 82, ranged: true, range: 21, atkCd: 2.1, proj: { color: 0x9ac8e0, speed: 19 },
     ai: 'kite', lore: '镣铐还挂在腕上，链子另一头早就没人了。'
+  },
+  /* ===== [P05] 新增 40 种 —— 复用现有 model，换配色 / 缩放 / 命名撑辨识度。
+   * 分布：plant +12 / humanoid +6 / beast +6 / spirit +6 / undead +5 / stone +5。
+   * 每只都按「卷主题」命名并配进对应卷的图池（见 data-world.js / data-maps.js），
+   * 保证 codexRegionOf 能归到卷，不会出现「图鉴永远集不齐」的孤儿怪。 ===== */
+  vinewraith: {
+    name: '藤魅', model: 'treant', family: 'plant',
+    hp: 95, atk: 13, spd: 2.4, scale: 0.85, color: 0x4a7c3a, cloth: 0x2c4a22,
+    xp: 24, melee: true, range: 2.6, atkCd: 1.8, ai: 'flank',
+    lore: '竹林深处缠绕不散的影子，专拖独行者下水。'
+  },
+  bogreed: {
+    name: '沼苇', model: 'treant', family: 'plant',
+    hp: 110, atk: 11, spd: 1.9, scale: 0.9, color: 0x6a7c48, cloth: 0x3c4a28,
+    xp: 26, melee: true, range: 2.8, atkCd: 2.2,
+    lore: '沼泽里成片生长的苇丛，靠近才会发现它有牙。'
+  },
+  bloodbloom: {
+    name: '血花', model: 'brood', family: 'plant',
+    hp: 80, atk: 16, spd: 2.2, scale: 0.8, color: 0x8a2a3a, cloth: 0x4a1828,
+    xp: 28, ranged: true, range: 14, atkCd: 2.3, proj: { color: 0xd0556a, speed: 17 }, ai: 'kite',
+    lore: '花盘里盛着的是血，妖艳得让人忘了毒。'
+  },
+  cinderthorn: {
+    name: '烬棘', model: 'treant', family: 'plant',
+    hp: 180, atk: 26, spd: 2.0, scale: 1.0, color: 0x6a3a28, cloth: 0x3a2018,
+    xp: 55, melee: true, range: 3.0, atkCd: 2.0,
+    lore: '灰烬里长出的荆棘，摸上去还烫手。'
+  },
+  frostfern: {
+    name: '霜蕨', model: 'treant', family: 'plant',
+    hp: 150, atk: 24, spd: 1.8, scale: 0.9, color: 0x5a8a9c, cloth: 0x2c4a58,
+    xp: 52, ranged: true, range: 13, atkCd: 2.4, proj: { color: 0x9ad8ec, speed: 16 }, ai: 'kite',
+    lore: '冰层下舒展的蕨叶，碰它会被冻住指尖。'
+  },
+  netherbloom: {
+    name: '彼岸花', model: 'brood', family: 'plant',
+    hp: 200, atk: 36, spd: 1.6, scale: 0.95, color: 0x7a2a4a, cloth: 0x4a1830,
+    xp: 78, ranged: true, range: 16, atkCd: 2.5, proj: { color: 0xc05080, speed: 17 }, ai: 'kite',
+    lore: '开在忘川两岸，看过的人说它能记住名字。'
+  },
+  gravevine: {
+    name: '坟藤', model: 'treant', family: 'plant',
+    hp: 240, atk: 32, spd: 1.7, scale: 1.1, color: 0x4a5a3a, cloth: 0x28301e,
+    xp: 80, melee: true, range: 3.2, atkCd: 2.1,
+    lore: '从坟头爬出来的藤，缠住的是没走的人。'
+  },
+  swordbamboo: {
+    name: '剑竹', model: 'treant', family: 'plant',
+    hp: 280, atk: 46, spd: 2.2, scale: 1.05, color: 0x7a8a5a, cloth: 0x44502c,
+    xp: 100, melee: true, range: 3.4, atkCd: 1.9,
+    lore: '剑冢里长成的竹，竹节里是断剑的锋。'
+  },
+  ashroot: {
+    name: '灰根', model: 'treant', family: 'plant',
+    hp: 300, atk: 42, spd: 1.8, scale: 1.15, color: 0x5a5248, cloth: 0x302c28,
+    xp: 102, melee: true, range: 3.6, atkCd: 2.3,
+    lore: '烧不尽的根，扎在灰里也活着。'
+  },
+  starleaf: {
+    name: '星藻', model: 'brood', family: 'plant',
+    hp: 330, atk: 56, spd: 2.0, scale: 1.0, color: 0x4a5a9c, cloth: 0x283058,
+    xp: 130, ranged: true, range: 18, atkCd: 2.4, proj: { color: 0x8aa0f0, speed: 18 }, ai: 'kite',
+    lore: '星陨台的水藻，夜里会发出星光。'
+  },
+  mirrorflower: {
+    name: '镜花', model: 'brood', family: 'plant',
+    hp: 300, atk: 58, spd: 2.4, scale: 0.95, color: 0x8a7ab0, cloth: 0x4a3c60,
+    xp: 132, ranged: true, range: 17, atkCd: 2.2, proj: { color: 0xc0a8e8, speed: 18 }, ai: 'kite',
+    lore: '镜渊里的花，照出的影子会自己动。'
+  },
+  voidivy: {
+    name: '虚藤', model: 'treant', family: 'plant',
+    hp: 380, atk: 54, spd: 1.9, scale: 1.2, color: 0x3a2a5a, cloth: 0x1e1430,
+    xp: 135, melee: true, range: 3.8, atkCd: 2.0,
+    lore: '虚空里垂下来的藤，抓不住也砍不断。'
+  },
+  bandit: {
+    name: '山贼', model: 'humanoid', family: 'humanoid',
+    hp: 72, atk: 12, spd: 3.4, scale: 1.0, color: 0x7a5a3a, cloth: 0x4a3a28,
+    xp: 18, melee: true, range: 2.3, atkCd: 1.5, ai: 'flank',
+    lore: '占山为王的小贼，欺软怕硬。'
+  },
+  witchdoctor: {
+    name: '巫祝', model: 'humanoid', family: 'humanoid',
+    hp: 85, atk: 15, spd: 2.9, scale: 0.95, color: 0x6a4a7c, cloth: 0x3c2c48,
+    xp: 24, ranged: true, range: 12, atkCd: 2.0, proj: { color: 0xb070d8, speed: 16 }, ai: 'kite',
+    lore: '跳大神的巫师，请来的不一定是神。'
+  },
+  boatman: {
+    name: '渡夫', model: 'humanoid', family: 'humanoid',
+    hp: 180, atk: 34, spd: 3.0, scale: 1.0, color: 0x4a5a6a, cloth: 0x2c3844,
+    xp: 72, melee: true, range: 3.0, atkCd: 1.9,
+    lore: '黄泉渡口的船家，只渡有缘人，也只收活人的钱。'
+  },
+  swordsman: {
+    name: '剑客', model: 'humanoid', family: 'humanoid',
+    hp: 260, atk: 48, spd: 3.8, scale: 1.05, color: 0x5a6a7a, cloth: 0x30404c,
+    xp: 104, melee: true, range: 3.0, atkCd: 1.4, charge: true, ai: 'flank',
+    lore: '剑冢里的游魂剑客，输了就留在山上。'
+  },
+  starmage: {
+    name: '星术士', model: 'humanoid', family: 'humanoid',
+    hp: 320, atk: 60, spd: 3.1, scale: 1.0, color: 0x5a4a9c, cloth: 0x302858,
+    xp: 134, ranged: true, range: 19, atkCd: 2.1, proj: { color: 0x9a8af0, speed: 20 }, ai: 'kite',
+    lore: '观测星陨的术士，学会了借星光杀人。'
+  },
+  mirrorclone: {
+    name: '镜影人', model: 'humanoid', family: 'humanoid',
+    hp: 350, atk: 58, spd: 4.0, scale: 1.0, color: 0x7a7a9c, cloth: 0x404058,
+    xp: 136, melee: true, range: 3.0, atkCd: 1.6, ai: 'flank',
+    lore: '从镜子里走出来的人，动作总慢半拍。'
+  },
+  mountaincat: {
+    name: '山猫', model: 'wolf', family: 'beast',
+    hp: 65, atk: 14, spd: 5.0, scale: 0.85, color: 0x8a6a4a, cloth: 0x503c28,
+    xp: 20, melee: true, range: 2.4, atkCd: 1.3, ai: 'flank',
+    lore: '山里的野猫，比狼还难缠。'
+  },
+  bonescorp: {
+    name: '骨蝎', model: 'scorpking', family: 'beast',
+    hp: 130, atk: 20, spd: 3.2, scale: 0.95, color: 0x9a8a6a, cloth: 0x544832,
+    xp: 30, melee: true, range: 2.8, atkCd: 1.8,
+    lore: '骨头长成的蝎子，尾巴是墓碑尖。'
+  },
+  snowwolf: {
+    name: '雪狼', model: 'wolf', family: 'beast',
+    hp: 170, atk: 28, spd: 4.8, scale: 1.05, color: 0xb0c0d0, cloth: 0x607080,
+    xp: 56, melee: true, range: 3.0, atkCd: 1.5, ai: 'flank',
+    lore: '寒潭边的狼，毛色和雪一样。'
+  },
+  hellhound: {
+    name: '冥犬', model: 'wolf', family: 'beast',
+    hp: 220, atk: 40, spd: 5.2, scale: 1.1, color: 0x4a2a3a, cloth: 0x281820,
+    xp: 82, melee: true, range: 3.2, atkCd: 1.4, charge: true,
+    lore: '九幽里放出来的狗，专咬活人的影子。'
+  },
+  cloudleopard: {
+    name: '云豹', model: 'beast', family: 'beast',
+    hp: 280, atk: 50, spd: 5.4, scale: 1.05, color: 0x8a9ab0, cloth: 0x4c5868,
+    xp: 108, melee: true, range: 3.2, atkCd: 1.5, ai: 'flank',
+    lore: '云海断桥上的豹，踩着云走。'
+  },
+  stardeer: {
+    name: '星鹿', model: 'beast', family: 'beast',
+    hp: 360, atk: 56, spd: 5.6, scale: 1.15, color: 0x6a7ac0, cloth: 0x38446c,
+    xp: 138, melee: true, range: 3.4, atkCd: 1.6,
+    lore: '角上挂着星光的鹿，跑起来像一道流星。'
+  },
+  mountainspirit: {
+    name: '山灵', model: 'ghost', family: 'spirit',
+    hp: 90, atk: 17, spd: 2.6, scale: 0.9, color: 0x6a8a6a, cloth: 0x3c503c,
+    xp: 26, ranged: true, range: 11, atkCd: 2.2, proj: { color: 0x9ac89a, speed: 16 }, ai: 'kite',
+    lore: '山的性子结晶成的灵，脾气不好。'
+  },
+  flamespirit: {
+    name: '炎灵', model: 'lantern', family: 'spirit',
+    hp: 160, atk: 30, spd: 3.4, scale: 0.9, color: 0xd07030, cloth: 0x703818,
+    xp: 58, melee: true, range: 2.8, atkCd: 1.7,
+    lore: '火焰里诞生的灵，靠近会烫。'
+  },
+  waterspirit: {
+    name: '水灵', model: 'ghost', family: 'spirit',
+    hp: 190, atk: 38, spd: 3.0, scale: 0.95, color: 0x4a8a9a, cloth: 0x28505c,
+    xp: 84, ranged: true, range: 15, atkCd: 2.0, proj: { color: 0x8ad0e0, speed: 18 }, ai: 'kite',
+    lore: '忘川水结的灵，记得所有溺水的人。'
+  },
+  swordspirit: {
+    name: '剑灵', model: 'ghost', family: 'spirit',
+    hp: 250, atk: 52, spd: 3.6, scale: 0.9, color: 0x7a8aa0, cloth: 0x404c5c,
+    xp: 110, melee: true, range: 3.0, atkCd: 1.5, ai: 'flank',
+    lore: '断剑里不肯散的魂，还在找对手。'
+  },
+  mirrorspirit: {
+    name: '镜灵', model: 'ghost', family: 'spirit',
+    hp: 310, atk: 60, spd: 3.8, scale: 0.95, color: 0x9a8ac0, cloth: 0x504468,
+    xp: 140, ranged: true, range: 17, atkCd: 2.1, proj: { color: 0xc8b0f0, speed: 19 }, ai: 'kite',
+    lore: '镜子里住着的灵，你动它也动。'
+  },
+  starspirit: {
+    name: '星灵', model: 'lantern', family: 'spirit',
+    hp: 340, atk: 62, spd: 3.2, scale: 1.0, color: 0x8a9ad0, cloth: 0x485678,
+    xp: 142, ranged: true, range: 18, atkCd: 2.0, proj: { color: 0xaabaf0, speed: 19 }, ai: 'kite',
+    lore: '星陨时逃逸的灵，光得刺眼。'
+  },
+  rotcorpse: {
+    name: '腐尸', model: 'zombie', family: 'undead',
+    hp: 100, atk: 14, spd: 1.8, scale: 1.0, color: 0x7a8a5a, cloth: 0x4a5438,
+    xp: 22, melee: true, range: 2.4, atkCd: 2.0,
+    lore: '烂了一半还在走，不知道要去哪。'
+  },
+  corpsegeneral: {
+    name: '尸将', model: 'headless', family: 'undead',
+    hp: 260, atk: 42, spd: 2.8, scale: 1.15, color: 0x5a6a5a, cloth: 0x303c30,
+    xp: 88, melee: true, range: 3.4, atkCd: 2.0,
+    lore: '死了也还带着兵，军令比命硬。'
+  },
+  netherlamp: {
+    name: '冥灯', model: 'lantern', family: 'undead',
+    hp: 170, atk: 36, spd: 2.4, scale: 0.9, color: 0x6a4a8a, cloth: 0x382850,
+    xp: 80, ranged: true, range: 14, atkCd: 2.3, proj: { color: 0xa070c8, speed: 17 }, ai: 'kite',
+    lore: '灯里烧的是魂油，照见的是死路。'
+  },
+  swordcorpse: {
+    name: '剑骸', model: 'skeleton', family: 'undead',
+    hp: 230, atk: 46, spd: 2.6, scale: 1.0, color: 0x9a9a8a, cloth: 0x54544a,
+    xp: 106, melee: true, range: 3.0, atkCd: 1.9,
+    lore: '骨架上还挂着剑，死前最后一式没使完。'
+  },
+  meteorsoul: {
+    name: '陨魂', model: 'ghost', family: 'undead',
+    hp: 370, atk: 60, spd: 3.0, scale: 1.05, color: 0x7a5a9a, cloth: 0x403050,
+    xp: 144, ranged: true, range: 16, atkCd: 2.2, proj: { color: 0xb080d0, speed: 18 }, ai: 'kite',
+    lore: '跟着陨星一起坠落的魂，烧成了这个样子。'
+  },
+  snowstone: {
+    name: '雪石', model: 'statue', family: 'stone',
+    hp: 160, atk: 18, spd: 1.4, scale: 1.0, color: 0xa0b0c0, cloth: 0x586878,
+    xp: 28, melee: true, range: 2.8, atkCd: 2.4,
+    lore: '雪地里立着的石头，其实是活的。'
+  },
+  lavaguard: {
+    name: '熔岩卫', model: 'golem', family: 'stone',
+    hp: 240, atk: 32, spd: 1.7, scale: 1.2, color: 0x8a4a2a, cloth: 0x4c2818,
+    xp: 60, melee: true, range: 3.2, atkCd: 2.2,
+    lore: '熔炉里浇出来的卫兵，浑身还淌着浆。'
+  },
+  swordgolem: {
+    name: '剑傀', model: 'statue', family: 'stone',
+    hp: 330, atk: 48, spd: 1.6, scale: 1.15, color: 0x6a7a8a, cloth: 0x38444c,
+    xp: 112, melee: true, range: 3.2, atkCd: 2.1,
+    lore: '剑冢里被剑意养出的石傀，挥剑比人还准。'
+  },
+  starstone: {
+    name: '星石', model: 'golem', family: 'stone',
+    hp: 400, atk: 56, spd: 1.8, scale: 1.25, color: 0x6a6a9c, cloth: 0x383858,
+    xp: 146, melee: true, range: 3.6, atkCd: 2.3,
+    lore: '星陨台上捡到的石头，重得不像凡物。'
+  },
+  jadewarden: {
+    name: '玉卫', model: 'statue', family: 'stone',
+    hp: 420, atk: 58, spd: 1.7, scale: 1.2, color: 0x6a9a8a, cloth: 0x385448,
+    xp: 148, melee: true, range: 3.4, atkCd: 2.2,
+    lore: '玉京废墟的守卫，玉身碎了也不倒。'
   }
 };
 
