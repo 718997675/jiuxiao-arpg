@@ -167,6 +167,24 @@ const SaveManager = {
     for (const k in rawReg) if (rawReg[k]) regions[k] = true;
     return { mon, regions };
   },
+  /* [M7.7] 传世收集账：`{ uniqueId: true }`。
+   *
+   * 唯一的用途是「终 boss 抽传世时未收集优先」—— 0.01% 的东西如果还抽到
+   * 重复的，那一百次里有九十次是白刷。**只存 id**，不存件数、不存时间：
+   * 它不是成就系统，多存一个字都是要跟着迁移的债。
+   *
+   * 手改档塞进字符串 / 数组 / 数字一律收敛成空对象 —— `seen[id]` 会直接
+   * 读这个对象，结构不对就是「每次抽签都当成一件没收」或者整段崩。 */
+  _uniqSet(v) {
+    const src = this._obj(v) || {};
+    const out = {};
+    for (const k in src) {
+      if (typeof k !== 'string' || !k) continue;
+      if (src[k]) out[k] = true;
+    }
+    return out;
+  },
+
   /* [M5] 地脉钥匙：固定长度 5 的整数数组，下标 = 阶 − 1。
    * 旧档没有这个字段 → 全新 5 个 0（不是「送一把一阶」，钥匙必须打出来）。
    * 手改档塞进字符串 / 超长数组 / 负数一律收敛：keys[i] 会被 UI 直接当数字显示，
@@ -420,6 +438,9 @@ const SaveManager = {
     if (!Array.isArray(d.stash.items)) d.stash.items = [];
     if (!this._obj(d.stash.mats)) d.stash.mats = {};
     d.codex = this._codex(d.codex);
+    /* [M7.7] 传世收集账。老档没有这个字段 → 空对象（不是「送一套」，
+     * 传世必须自己打出来）。 */
+    d.codexUnique = this._uniqSet(d.codexUnique);
     d.talents = this._obj(d.talents) || {};
     /* [M1] 任务奖励天赋点：旧档没有这个字段，缺省补 0，脏值夹到 0~40 */
     d.talentBonus = this._int(d.talentBonus, 0, 40, 0);
@@ -511,6 +532,9 @@ const SaveManager = {
        * 结构不对（被手改过）时直接丢成 null，下次进货会重新生成。 */
       shop: (s.shop && Array.isArray(s.shop.items)) ? s.shop : null,
       codex: this._codex(s.codex),
+      /* [M7.7] 传世收集账。**必须跟着 codex 一起搬** —— 少了这一行就是
+       * 「存得进、读不回」，表现为「刷到一件传世、刷新一下又当成没拿过」。 */
+      codexUnique: this._uniqSet(s.codexUnique),
       talents: this._obj(s.talents) || {},
       talentBonus: this._int(s.talentBonus, 0, 40, 0),
       attrAlloc: this._attrAlloc(s.attrAlloc),
@@ -567,6 +591,7 @@ const SaveManager = {
       stash: doc.stash || { items: [], mats: {} },
       shop: (doc.shop && Array.isArray(doc.shop.items)) ? doc.shop : null,
       codex: this._codex(doc.codex),
+      codexUnique: this._uniqSet(doc.codexUnique),
       talents: doc.talents || {},
       talentBonus: this._int(doc.talentBonus, 0, 40, 0),
       attrAlloc: this._attrAlloc(doc.attrAlloc),

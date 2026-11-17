@@ -31,6 +31,27 @@ function uniquePool(ilvl, cls, slot) {
   return list.filter(u => u.ilvl <= ilvl && (!u.cls || u.cls === cls));
 }
 
+/* [M7.7] 终 boss 的传世抽取：**全 40 件池 + 未收集优先**。
+ *
+ *   pickFinalUnique(cls, seen, ilvl)
+ *     cls   玩家职业 —— 武器 / 副手按职业过滤，护具与饰品是通用件（`cls` 缺省）
+ *     seen  `state.codexUnique`，已经拿到过的 id
+ *     ilvl  等级上限，低于门槛的传世不参与
+ *
+ * 为什么「未收集优先」不是可选项：
+ *   0.01% ≈ 万分之一。玩家一辈子可能只见到两三次；如果这两三次还是
+ *   已经有的那一件，「长期目标」立刻变成「抽卡赌博」。所以先抽没拿过的，
+ *   **全部收集齐了才回到全池随机** —— 那时候重复才有意义（换词条数值）。
+ *
+ * 抽不到（等级不够 / 职业没有可用件）返回 null，调用方退回神品。 */
+function pickFinalUnique(cls, seen, ilvl) {
+  const ok = UNIQUE_ITEMS.filter(u => u.ilvl <= (ilvl || ILVL_MAX) && (!u.cls || u.cls === cls));
+  if (!ok.length) return null;
+  const fresh = ok.filter(u => !(seen && seen[u.id]));
+  const list = fresh.length ? fresh : ok;
+  return list[Math.floor(Math.random() * list.length)];
+}
+
 /* 固定词条区间 → 实例数值；超出设计等级后按每级 2% 缓慢成长 */
 function rollUniqueStats(def, ilvl) {
   const out = {};
@@ -796,7 +817,17 @@ function rollItem(ilvl, opts = {}) {
   let uniqueDef = null;
   if (rarity === 'unique') {
     const pool = uniquePool(ilvl, cls, opts.slot);
-    if (pool.length) {
+    /* [M7.7] 指定传世：终 boss 的掉落要「未收集优先」，由调用方先抽好
+     * （`pickFinalUnique`）再把 id 传进来。
+     * 不这么做的话，就得把下面那半段（基底 / 词缀 / 孔位 / 传世落值）
+     * 整段抄一份 —— 抄一次必然漂移一次，而且传世的字段以后每加一个
+     * 都要改两处。 */
+    const forced = opts.uniqueId ? UNIQUE_BY_ID.get(opts.uniqueId) : null;
+    if (forced && forced.ilvl <= ilvl) {
+      uniqueDef = forced;
+      slot = uniqueDef.slot;
+      cls = uniqueDef.cls || cls;
+    } else if (pool.length) {
       uniqueDef = PICK(pool);
       slot = uniqueDef.slot;
       cls = uniqueDef.cls || cls;

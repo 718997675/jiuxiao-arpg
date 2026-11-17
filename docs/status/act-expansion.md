@@ -5,12 +5,12 @@
 - 打磨计划：`docs/POLISH-PLAN.md`（用户 2026-10-28 提的 17 项体验 / 平衡，P01~P17，分 4 批）
 - 专题台账：`docs/status/world-boss.md`（M18 世界 Boss，插单，与本线并行；**M18.1~M18.9 全部完成**（含六套骨架 + 两个骨架键 + 掉落 + 说明页），可合 main）
 - 预览站：<https://718997675.github.io/jiuxiao-arpg/preview/act-expansion/>
-- 更新：2026-11-17（M7.6 五阶段终 boss + P5 满血变身落地）
+- 更新：2026-11-17（M7.7 终 boss 全传世掉落落地）
 
 > 当前：M1~M6 已完成（39 张图 · 80 种怪 · 图鉴 5 卷 + 秘境 · 5 阶地下城 · 60 级上限 · 传世 40 件 ·
 > 套装 18 套 · 基底 8 阶）。**M18 世界 Boss 九节全完**，已随本线合入 main。
 > M7 终章重做（八部天龙）进行中：M7.1 结构 / M7.2 八魔将数据 / M7.3 破绽窗口 / M7.4 魔将之印 /
-> M7.5 九套骨架 / **M7.6 五阶段终 boss** 已落地，M7.7~M7.9 待做，见下「M7 小节状态」。另有一条并行线：P 打磨 17 项，
+> M7.5 九套骨架 / M7.6 五阶段终 boss / **M7.7 全传世掉落** 已落地，M7.8~M7.9 待做，见下「M7 小节状态」。另有一条并行线：P 打磨 17 项，
 > **第 1 批（P01 P02 P03 P09 P11 P12 P16）+ 第 2 批的 P04 / P06 / P10 已完成**，
 > 第 2 批剩余（P07 P08 P17）与第 3~4 批未开工，见下「P 系列」。
 
@@ -42,8 +42,8 @@ M7 把「打完终 boss 就结束」改成了终局循环：混沌海从战斗�
 图位 30 → **39**。8 位魔将的弱点**不进图鉴**，只写在 `BOSSES.resist` 里，
 玩家只能靠伤害数字自己摸 —— 打错吃 20%、打对吃 160%，正好 8 倍。
 
-**剩下的**：M7.7 全传世掉落
-→ M7.8 二周目 → M7.9 文案同步，然后才走「合入 main」。
+**剩下的**：M7.8 二周目
+→ M7.9 文案同步，然后才走「合入 main」。
 
 ## 节点表
 
@@ -77,7 +77,7 @@ M7 把「打完终 boss 就结束」改成了终局循环：混沌海从战斗�
 | M7.4 | 魔将之印 + 终门 | ✅ | `game.js`、`core/save.js`、`ui.js`、`README.md`、新建 `dev/check-seals.js`、`dev/seal-live.js` | 印门拦在 `travelTo` + 山河图；**印掉落 / 存档 / 播报已接**（`check-seals` **111 项** · `seal-live` **19 项**）；八印总览面板未做（山河图已写「需 8 印（N）」，不阻塞） |
 | M7.5 | 9 个模型 + 专属动画 | ✅ | 新建 `src/bafomodels.js`、改 `src/actors.js` / `src/game.js` / `index.html`、新建 `dev/test-m7-5.js`、`dev/probe-bafo-models.js`、`dev/shot-bafo-models.js` | 契约 **103/0**、真机 **187/0**（9 只尺寸 / 身份件 / 动画 / draw call）、`verify-perf` 报错 0、九张截图人工过 |
 | M7.6 | 终 boss 五阶段 + P5 满血变身 | ✅ | `data-monsters.js`（`bafoFinal` 五阶段数据）、`game.js`（状态机 10 个方法）、`boss-cast.js`（配招可换）、`ui.js`（五盏灯）、新建 `dev/test-m7-6.js`、`dev/probe-bossfinal.js`、`dev/shot-bossfinal.js` | 契约 **82/0**、真机 **60/0**（逐阶段推进 / 一击打到 0% 仍变身 / 血条填回 100% / 换模型 / 无敌 3 秒 / 弱点轮换 / 脱战复位）、`verify-perf` 报错 0、四张截图人工过 |
-| M7.7 | 全传世掉落（0.01% / 0.1%，未收集优先） | ⬜ | `game.js`、`items.js` | 抽样 10 万次验概率 |
+| M7.7 | 全传世掉落（0.01% / 0.1%，未收集优先） | ✅ | `data-core.js`（`BALANCE.finalUnique`）、`items.js`（`pickFinalUnique` + `rollItem` 按 id 生成）、`game.js`（`_finalUniqueDrop` / `uniqueSeen` / `markUnique`）、`core/save.js`（`codexUnique` 三处）、新建 `dev/test-m7-7.js`、`dev/probe-finaldrop.js` | 契约 **52/0**（含 100 万次 × 4 档概率抽样）、真机 **18/0**（真杀终 boss 保底橙 + 玄晶 / 抽签吃配置 / 2 万次同量级 / 未收集优先 / 一进包就记账 / 老档兜底 / 存档 round-trip） |
 | M7.8 | 二周目最小闭环 | ⬜ | `game.js`、`core/save.js`、`ui.js` | 轮回后强度与掉率生效 |
 | M7.9 | 说明页 / 图鉴 / README 同步 | ⬜ | `ui.js`、`README.md` | 文案与实际一致 |
 
@@ -165,6 +165,29 @@ M7 把「打完终 boss 就结束」改成了终局循环：混沌海从战斗�
 | **性能** | 五阶段不新增任何常驻对象：收缩圈 3 个 mesh（P3 起、变身/死亡/换图时 `disposeTree`）；变身换模型时旧模型**当场释放**（九套骨架每只 100 来个 mesh，只 `scene.remove` 不 dispose 就是每次变身漏一次显存） | `verify-perf` 报错 **0**，calls 287 |
 | **新增体检** | `dev/test-m7-6.js`（离线 82 项：数据自洽 / 状态机 / 五处接线 / 四条硬约束 / 边界）；`dev/probe-bossfinal.js`（真机 60 项：真实 spawn / 逐阶段推进 / 一击变身 / 无敌 / 弱点轮换 / 脱战复位）；`dev/shot-bossfinal.js`（四张出图） | 82 + 60 全绿 |
 | 回归 | `test-m7-5` 103 · `test-m7-3` 22 · `check-bafo` 335 · `check-seals` 111 · `act-check` 651 · `skill-ref` 38 · `test-m4` 25 · `test-m5` 89 · `test-m6` 264 · `test-items` 21 · `test-bosskits` 36 · `test-bosspattern` 28 · `test-elemfx` 74 · `test-combo` 76 · `worldboss-fight` 252 · `check-wbmodels` 182 · `test-quest` 57 · `check-uniques` / `check-sets` / `check-endgame` ✅ · `smoke` ERRORS none · `mobile-layout` 6 视口全绿 | 全绿 |
+
+### M7.7 已交付明细（终 boss 全传世 · 2026-11-17）
+
+**「打完八部天龙，至少摸到一件从没见过的东西」。** 终 boss 原本只有「首领 4% 池内传世」
+这一条线 —— 池子按等级和职业筛，40 件里够格的往往只有几件，玩家刷三十次可能全是同两件。
+本节点在它之外**另开一条独立的终局线**：终 boss 每杀一次，额外抽一次**全池传世**，
+并且**先抽没拿过的**。
+
+| 项 | 落地内容 | 回归 |
+|---|---|---|
+| **两条线并存** | 线 A 是既有的 `BALANCE.drop.boss.pool` 里的 `['unique', 4]`（首领 4% 池内传世）；线 B 是新增的 `BALANCE.finalUnique.rate`（终 boss 额外一次全池抽）。**两者叠加是设计意图**，不是重复 | 真机同一次击杀分别量 |
+| **概率表** | `rate: { novice: 0.0001, normal: 0.0001, hard: 0.0003, nightmare: 0.001 }` —— 普通万分之一、噩梦千分之一（10 倍）。**不乘 `D.drop`** | 契约 100 万次 × 4 档抽样，落 3σ 带 |
+| **为什么不乘 `D.drop`** | 万分之一量级上再乘 0.9 / 1.45，会让「设计值」和「实际值」对不上：玩家算不出、测试也没法验。难度的差异**直接写在 `rate` 表里** | 契约反向断言「`_finalUniqueDrop` 里不许出现 `D.drop`」 |
+| **未收集优先** | `pickFinalUnique(cls, seen, ilvl)`：先抽 `!seen[id]` 的那些，**全收齐了才回到全池随机**。这不是可选项 —— 0.01% ≈ 万分之一，玩家一辈子可能只见两三次，若这两三次还是已有的，「长期目标」立刻变成「抽卡赌博」 | 真机：只差一件时抽 30 次，30 次全是它 |
+| **`uniqueSeen()` 并入三处** | 必须并「账本 + 身上 + 背包」：老档 `codexUnique` 是空的，只看账本的话「已经穿着一件」会被当成「没收过」，万分之一抽出来还是那一件。并进来之后**老档天然正确，不需要写迁移函数** | 真机：账本清空、身上穿一件 → 仍算「收过」 |
+| **一进包就记账** | `addItem` 里 `markUnique(it.uniqueId)`。记账点是「进包」而不是「穿上」—— 传世掉在地上被队友捡走算谁的，是另一件事；本节点只管「到过你手上」 | 真机：`addItem` 之后账本立刻有 |
+| **`rollItem` 支持按 id 生成** | 新增 `opts.uniqueId` 强制指定（`forced && forced.ilvl <= ilvl` 才生效，防止抽到超过等级上限的）。没有它就只能「抽到哪件算哪件」，`pickFinalUnique` 的选择权等于白做 | 契约验 forced 路径 |
+| **保底** | `guaranteed: { legendary: 1, crystal: [20, 34] }` —— 每次必掉 1 件神兵 + 20~34 玄晶。「刷一次不空手」比「偶尔掉传世」更能留住人 | 真机：真杀一只量掉落清单 |
+| **存档三处** | `codexUnique` 要在 `normalizeDoc` / `pack` / `unpack` **三处**都过一遍 `_uniqSet`，少一处就是「存得进、读不回」—— 和 M7.4 的 `seals` 是同一个坑 | 真机 round-trip |
+| **踩到的坑 ①** | 探针传 `{ x: 0, y: 0, z: 0 }` 给 `_finalUniqueDrop`，抽中时内部 `p.clone()` 直接炸（真实路径传的是 `e.pos`）。**修的是探针**：探针要模拟真实调用形状，不该让生产代码为测试妥协 | 崩在第三节 → 改 `new THREE.Vector3()` |
+| **踩到的坑 ②** | 验证脚本别用 `node -e` 塞带引号的表达式 —— Git Bash 会把 `"unique"` 吃掉变成 `/unique/`（正则），`RARITY[/unique/]` 是 `undefined`，报错还完全指不到根因。一律写成文件跑 | 已写进 MEMORY.md |
+| **新增体检** | `dev/test-m7-7.js`（离线 52 项：旋钮表 / 抽取器语义 / 接线 / 存档三处 / 100 万次抽样 / 边界）；`dev/probe-finaldrop.js`（真机 18 项：真杀 / 抽签吃配置 / 真实概率 / 未收集优先 / 记账 / 老档 / round-trip / 零报错） | 52 + 18 全绿 |
+| 回归 | `test-m7-6` 82 · `test-m7-5` 103 · `test-m7-3` 22 · `check-bafo` 335 · `check-seals` 111 · `act-check` 651 · `skill-ref` 38 · `test-m4` 25 · `test-m5` 89 · `test-m6` 264 · `test-items` 21 · `test-bosskits` 36 · `test-bosspattern` 28 · `test-elemfx` 74 · `test-combo` 76 · `worldboss-fight` 252 · `check-wbmodels` 182 · `test-quest` 57 · `check-uniques` / `check-sets` / `check-endgame` ✅ · `smoke` ERRORS none · `mobile-layout` 6 视口全绿 · `verify-perf` 报错 0 | 全绿 |
 
 ### M7.5 已交付明细（九套骨架 · 2026-11-17）
 

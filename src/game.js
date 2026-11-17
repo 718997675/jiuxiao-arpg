@@ -10331,6 +10331,11 @@ const Game = {
       this.spawnLoot(p, it, 0);
     }
 
+    /* [M7.7] 终 boss：全 40 件池的传世 + 保底神兵 / 玄晶。
+     * 与上面那条「首领 4% 池内传世」是**两条独立线**，两者叠加是设计意图 ——
+     * 终局该有终局的样子。详见 BALANCE.finalUnique 的注释。 */
+    if (e.cfg && e.cfg.final) this._finalUniqueDrop(p);
+
     /* [S2] 符文 / 玄晶：材料直接进 state.stash.mats，不占背包格。
      * seeker（山海套）提高符文与玄晶的出率、数量。
      *
@@ -10951,8 +10956,85 @@ const Game = {
       return false;
     }
     this.state.inventory.push(item);
+    /* [M7.7] 传世一进包就记账。挂在这里而不是挂掉落生成 ——
+     * 「掉在地上没人捡」不算拿到，记早了会让玩家白丢一次保底机会。
+     * 捡取 / 商店 / 打造 / 任务奖励全走 addItem，所以这一处就够。 */
+    if (item && item.uniqueId) this.markUnique(item.uniqueId);
     UI.renderInventory();
     return true;
+  },
+
+  /* ============================================================
+   * [M7.7] 传世收集账（终 boss 掉落「未收集优先」的唯一依据）
+   * ============================================================ */
+
+  /* 记一件传世「已经拿到过」。幂等。 */
+  markUnique(id) {
+    if (!id || typeof id !== 'string') return;
+    const s = this.state;
+    if (!s) return;
+    if (!s.codexUnique || typeof s.codexUnique !== 'object') s.codexUnique = {};
+    s.codexUnique[id] = true;
+  },
+
+  /* 玩家已经拿到过的传世 id 集合：**存档账 ∪ 身上 ∪ 背包 ∪ 仓库**。
+   *
+   * 为什么要把身上 / 背包也并进来：老档的 `codexUnique` 是空的，
+   * 只看账本的话，「已经穿着一件」也会被当成「没收过」，
+   * 于是万分之一抽出来的还是那一件 —— 正是这个机制要避免的事。
+   * 并进来之后老档天然正确，不需要写迁移。 */
+  uniqueSeen() {
+    const s = this.state;
+    const out = {};
+    if (!s) return out;
+    const uq = s.codexUnique;
+    if (uq && typeof uq === 'object') for (const k in uq) if (uq[k]) out[k] = true;
+    const add = (it) => { if (it && it.uniqueId) out[it.uniqueId] = true; };
+    if (Array.isArray(s.inventory)) for (const it of s.inventory) add(it);
+    if (s.equipment) for (const k in s.equipment) add(s.equipment[k]);
+    if (s.stash && Array.isArray(s.stash.items)) for (const it of s.stash.items) add(it);
+    return out;
+  },
+
+  /* 终 boss 的传世掉落。返回掉出来的那件（没抽中返回 null）。
+   *
+   * 两段，顺序不能换：
+   *   ① 保底 —— 一件神兵 + 一堆玄晶。**先给保底再抽大奖**，
+   *      抽不中的时候这一趟也得有东西拿回去，否则「刷 100 次什么都没」。
+   *   ② 大奖 —— 全 40 件池、未收集优先、概率按难度（0.01 / 0.03 / 0.1%）。
+   *      概率**不乘 D.drop**，理由见 BALANCE.finalUnique 的注释。 */
+  _finalUniqueDrop(p) {
+    const FU = (typeof BALANCE !== 'undefined' && BALANCE.finalUnique) || null;
+    if (!FU || !this.state) return null;
+    const g = FU.guaranteed || {};
+    for (let i = 0; i < (g.legendary || 0); i++) {
+      const it = rollItem(62, { cls: this.state.cls, rarity: 'legendary', noRelic: true });
+      if (it) this.spawnLoot(p, it, 0);
+    }
+    if (g.crystal) this.spawnLoot(p, null, 0, { crystal: RND(g.crystal[0], g.crystal[1]) });
+
+    const key = this.state.difficulty || 'normal';
+    const rate = (FU.rate && FU.rate[key] != null) ? FU.rate[key] : 0.0001;
+    if (!CHANCE(rate)) return null;
+    const def = (typeof pickFinalUnique === 'function')
+      ? pickFinalUnique(this.state.cls, this.uniqueSeen(), 62) : null;
+    if (!def) return null;
+    const it = rollItem(62, { cls: this.state.cls, rarity: 'unique', uniqueId: def.id });
+    /* 抽不到就退化成神品 —— 宁可给一件橙，也不生成空壳物品 */
+    if (!it || it.rarity !== 'unique') {
+      if (it) this.spawnLoot(p, it, 0);
+      return null;
+    }
+    this.spawnLoot(p, it, 0);
+    /* 万分之一的东西掉在地上，必须让玩家知道这不是普通橙。
+     * 三处一起响：日志（可回看）+ 飘字（当场）+ 播报条（眼睛在中间） */
+    UI.log('【传世】' + def.name + ' —— 就落在这片地上', 'good');
+    UI.toast('传世 · ' + def.name, 'lv');
+    FX.text(new THREE.Vector3(p.x, 3.2, p.z), '传世！', 'lv', { life: 1.6 });
+    FX.ring(p.clone(), 7, 0xffd070, 1.0, 0.3);
+    SFX.levelup();
+    this.shake = Math.max(this.shake, 0.6);
+    return it;
   },
 
   /* [v1.8.5] 穿戴需求：等级 + 根基属性。
