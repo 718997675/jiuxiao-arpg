@@ -968,15 +968,24 @@ function dollReady(a) {
   return !!a && !!a.cf && typeof Doll !== 'undefined' && !!Doll.dress;
 }
 
-/* 装备靴/护手时把骨架自带的那一双藏起来：两双靴筒叠在同一截小腿上，
- * 视觉是「靴子穿了两层」，而且自带那双永远比装备那双宽一圈。
- * 摘掉装备立刻还回来 —— 隐藏而不是删除，因为自带的才是没装备时的样子。 */
-function hideBaseGear(a, hasBoot, hasGlove) {
+/* 换装时把骨架自带的那一层藏起来。
+ *
+ * 「换装」的本质是**新的上、旧的让位**，不是往上加。这些自带件和模组件
+ * 尺寸几乎相同（胸甲 0.232 vs 自带 0.235、腰带 0.214 vs 0.212），
+ * 叠在一起的后果不是「更厚」，是 Z-fighting 一闪一闪。
+ *
+ * 隐藏而不是删除：自带的才是没装备时的样子，脱掉要立刻还回来。 */
+function hideBaseGear(a, worn) {
   const P = a.parts;
-  if (P.bootBaseL) P.bootBaseL.visible = !hasBoot;
-  if (P.bootBaseR) P.bootBaseR.visible = !hasBoot;
-  if (P.wristBaseL) P.wristBaseL.visible = !hasGlove;
-  if (P.wristBaseR) P.wristBaseR.visible = !hasGlove;
+  worn = worn || {};
+  const set = (g, on) => { if (g) g.visible = !on; };
+  set(P.bootBaseL, worn.boots); set(P.bootBaseR, worn.boots);
+  set(P.wristBaseL, worn.gloves); set(P.wristBaseR, worn.gloves);
+  /* 衣身 / 腰封 / 下摆：P2 新增。战甲自带下摆（挂 skirtG），所以装 chest
+   * 就要连自带下摆一起让位，否则两条裙子套在一起。 */
+  set(P.torsoBase, worn.chest);
+  set(P.waistBase, worn.belt);
+  set(P.skirtBase, worn.chest);
 }
 
 function applyPaperDoll(p) {
@@ -984,6 +993,7 @@ function applyPaperDoll(p) {
   const eq = p.equipment;
   const cls = CLASSES[p.cls];
   const P = a.parts;
+  const canDoll = dollReady(a);
 
   /* 身体基础色随职业：古风角色有自己的配色，只在没有装备时保留，
    * 有装备时下面各分支会按装备色覆盖 */
@@ -997,10 +1007,13 @@ function applyPaperDoll(p) {
   }
   P.chestMesh.material = P.clothMat;
 
-  /* 护甲：躯干颜色、金属质感。古风角色保留自己的配色，
-   * 装备只通过头盔/护肩/披风/武器体现，避免把整套古风色冲掉 */
+  /* 护甲 —— 模组装配（P2）。
+   * 老逻辑是「把躯干材质染成装备色」，也就是**换甲只换颜色**；
+   * 现在整件胸甲是一层外套，自带衣身让位（见 hideBaseGear）。 */
   const chest = eq.chest;
-  if (chest && !a.cf) {
+  if (canDoll) {
+    Doll.dress(a, 'chest', chest, p.cls);
+  } else if (chest && !a.cf) {
     const c = itemVisualColor(chest);
     P.clothMat.color.setHex(c.base);
     P.clothMat.metalness = c.metal;
@@ -1012,7 +1025,10 @@ function applyPaperDoll(p) {
     P.clothMat.emissive.setHex(0x000000);
   }
 
-  const canDoll = dollReady(a);
+  /* 腰带 —— 模组装配。和胸甲共用 torsoG 挂点，dress 按 slot 记录，
+   * 所以换腰带不会把胸甲一起摘掉。 */
+  const belt = eq.belt;
+  if (canDoll) Doll.dress(a, 'belt', belt, p.cls);
 
   /* 护腿 / 靴 —— 模组装配。**不再染 bootMat**：靴子是套在小腿上的几何，
    * 染色的结果是「穿靴子 = 小腿整截变色」，脱掉之后那截还是那个色。 */
@@ -1038,7 +1054,12 @@ function applyPaperDoll(p) {
   } else {
     P.handMat.emissive.setHex(0x000000);
   }
-  hideBaseGear(a, canDoll && !!boots, canDoll && !!gloves);
+  hideBaseGear(a, {
+    boots: canDoll && !!boots,
+    gloves: canDoll && !!gloves,
+    chest: canDoll && !!chest,
+    belt: canDoll && !!belt
+  });
 
   /* 头盔 —— 模组装配（15 族） */
   clearGroup(P.helmG);

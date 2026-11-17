@@ -206,19 +206,27 @@
     const torso = slot(root, 0, hipY, 0);
     A.parts.torso = torso;
 
-    put(torso, G.cyl(0.185 * w, 0.208 * w, 0.22, 8), mCloth, 0, 0.10, 0);        // 腹
-    const chest = put(torso, G.cyl(0.222 * w, 0.186 * w, 0.30, 8), mCloth, 0, 0.35, 0);
-    A.parts.chestMesh = chest;                                                    // 换装会用
+    /* 自带衣身（腹 / 胸 / 交领）单独成组：穿上战甲时整组隐藏。
+     * **不藏就是 Z-fighting**：A 族胸甲半径 0.232，自带是 0.222 × w(1.06) = 0.235 ——
+     * 两层几乎完全重合，画面上一闪一闪。这不是「多加一层更保险」，是必须让位。 */
+    const torsoBase = slot(torso, 0, 0, 0);
+    A.parts.torsoBase = torsoBase;
+
+    put(torsoBase, G.cyl(0.185 * w, 0.208 * w, 0.22, 8), mCloth, 0, 0.10, 0);        // 腹
+    const chest = put(torsoBase, G.cyl(0.222 * w, 0.186 * w, 0.30, 8), mCloth, 0, 0.35, 0);
+    A.parts.chestMesh = chest;                                                        // 换装会用
     put(torso, G.box(0.432 * w, 0.100, 0.262), cfg.robe === 'armor' ? mArmor : mCloth2, 0, 0.482, 0);  // 肩线
 
     /* 交领右衽：两襟在胸前交叉成 V */
-    put(torso, G.box(0.044, 0.27, 0.020), mCloth2, -0.063 * w, 0.365, 0.170, 0, 0, 0.46);
-    put(torso, G.box(0.044, 0.27, 0.020), mCloth2, 0.063 * w, 0.365, 0.170, 0, 0, -0.46);
-    put(torso, G.box(0.040, 0.24, 0.016), mCloth2, 0.106 * w, 0.245, 0.178, 0, 0, -0.13);
+    put(torsoBase, G.box(0.044, 0.27, 0.020), mCloth2, -0.063 * w, 0.365, 0.170, 0, 0, 0.46);
+    put(torsoBase, G.box(0.044, 0.27, 0.020), mCloth2, 0.063 * w, 0.365, 0.170, 0, 0, -0.46);
+    put(torsoBase, G.box(0.040, 0.24, 0.016), mCloth2, 0.106 * w, 0.245, 0.178, 0, 0, -0.13);
 
-    /* 腰封 + 玉扣 */
-    put(torso, G.cyl(0.200 * w, 0.206 * w, 0.098, 8), mCloth2, 0, 0.005, 0);
-    put(torso, G.box(0.082, 0.082, 0.026), mTrim, 0, 0.005, 0.192 * w);
+    /* 腰封 + 玉扣（装腰带时隐藏，理由同上：belt 的 band 半径 0.214 vs 自带 0.212） */
+    const waistBase = slot(torso, 0, 0, 0);
+    A.parts.waistBase = waistBase;
+    put(waistBase, G.cyl(0.200 * w, 0.206 * w, 0.098, 8), mCloth2, 0, 0.005, 0);
+    put(waistBase, G.box(0.082, 0.082, 0.026), mTrim, 0, 0.005, 0.192 * w);
 
     /* 肩部：甲片 or 云肩（属于身体造型，不是换装挂点） */
     for (const side of [-1, 1]) {
@@ -299,6 +307,9 @@
       put(elbow, G.box(0.072, 0.094, 0.058), mHand, 0, -0.30, 0);       // 手
       /* 换装护手专用空槽（同上：只给 Doll.dress 用） */
       const gloveG = slot(elbow, 0, 0, 0);
+      /* 换装袖子专用空槽（战甲数据里 slvL/slvR 挂的就是它）。
+       * 不挂 armL 本体：上臂组里装着上臂圆柱和自带袖子，清一次挂点手就没了。 */
+      const sleeveG = slot(arm, 0, 0, 0);
 
       /* 副手 / 武器位：必须是空 Group（换装会 clearGroup） */
       const offSlot = slot(elbow, 0, -0.30, 0.03);
@@ -306,10 +317,10 @@
 
       if (side < 0) {
         A.parts.armL = arm; A.parts.elbowL = elbow; A.parts.offHand = offSlot;
-        A.parts.wristBaseL = wristBase; A.parts.gloveL = gloveG;
+        A.parts.wristBaseL = wristBase; A.parts.gloveL = gloveG; A.parts.sleeveL = sleeveG;
       } else {
         A.parts.armR = arm; A.parts.elbowR = elbow; A.parts.weaponHand = wpnSlot;
-        A.parts.wristBaseR = wristBase; A.parts.gloveR = gloveG;
+        A.parts.wristBaseR = wristBase; A.parts.gloveR = gloveG; A.parts.sleeveR = sleeveG;
       }
     }
 
@@ -317,19 +328,28 @@
     const skirt = slot(root, 0, hipY, 0);
     A.parts.skirt = skirt;
 
+    /* 自带下摆单独成组：穿上带下摆的战甲时整组隐藏，否则两层裙摆套在一起
+     * （而且自带那层永远比装备那层宽一圈，看起来像穿了两条裙子）。
+     * 组挂在 skirt 下，**跟着 skirt 的摆动走** —— 装备下摆挂在兄弟空槽 skirtG，
+     * 同样跟着走，两者位置等价。 */
+    const skirtBase = slot(skirt, 0, 0, 0);
+    A.parts.skirtBase = skirtBase;
+
     if (cfg.robe === 'armor') {
-      put(skirt, G.cyl(0.208 * w, 0.290 * w, 0.42, 8), mArmor, 0, -0.235, 0);
-      put(skirt, G.cyl(0.294 * w, 0.294 * w, 0.030, 8), mTrim, 0, -0.445, 0);
+      put(skirtBase, G.cyl(0.208 * w, 0.290 * w, 0.42, 8), mArmor, 0, -0.235, 0);
+      put(skirtBase, G.cyl(0.294 * w, 0.294 * w, 0.030, 8), mTrim, 0, -0.445, 0);
       for (const side of [-1, 1]) {
-        put(skirt, G.box(0.132, 0.38, 0.020), mArmor, side * 0.178 * w, -0.25, 0.188, 0.08, side * 0.62, 0);
+        put(skirtBase, G.box(0.132, 0.38, 0.020), mArmor, side * 0.178 * w, -0.25, 0.188, 0.08, side * 0.62, 0);
       }
     } else {
-      put(skirt, G.cyl(0.202 * w, 0.305 * w, 0.55, 8), mCloth, 0, -0.295, 0);
-      put(skirt, G.cyl(0.307 * w, 0.310 * w, 0.026, 8), mCloth2, 0, -0.568, 0);
-      put(skirt, G.box(0.116, 0.40, 0.014), mCloth2, -0.076, -0.36, 0.216, 0.10, 0, 0.05);
-      put(skirt, G.box(0.116, 0.40, 0.014), mCloth2, 0.076, -0.36, 0.216, 0.10, 0, -0.05);
-      put(skirt, G.box(0.170, 0.28, 0.012), mCloth2, 0, -0.31, -0.226, -0.10, 0, 0);
+      put(skirtBase, G.cyl(0.202 * w, 0.305 * w, 0.55, 8), mCloth, 0, -0.295, 0);
+      put(skirtBase, G.cyl(0.307 * w, 0.310 * w, 0.026, 8), mCloth2, 0, -0.568, 0);
+      put(skirtBase, G.box(0.116, 0.40, 0.014), mCloth2, -0.076, -0.36, 0.216, 0.10, 0, 0.05);
+      put(skirtBase, G.box(0.116, 0.40, 0.014), mCloth2, 0.076, -0.36, 0.216, 0.10, 0, -0.05);
+      put(skirtBase, G.box(0.170, 0.28, 0.012), mCloth2, 0, -0.31, -0.226, -0.10, 0, 0);
     }
+    /* 换装下摆专用空槽（只给 Doll.dress 用） */
+    A.parts.skirtG = slot(skirt, 0, 0, 0);
 
     /* ================= 披风（本体，独立于 capeG 挂点） ================= */
     if (cfg.cape) {
@@ -346,6 +366,8 @@
     A.parts.shoulderL = slot(torso, -0.268 * w, 0.545, 0);
     A.parts.shoulderR = slot(torso, 0.268 * w, 0.545, 0);
     A.parts.capeG = slot(torso, 0, 0.520, -0.170);
+    /* 战甲 / 腰带（两槽共用 torsoG，dress 按 slot 记录所以互不覆盖） */
+    A.parts.torsoG = slot(torso, 0, 0, 0);
 
     /* ================= 自带武器 ================= */
     if (cfg.weapon && !opt.noWeapon) {
