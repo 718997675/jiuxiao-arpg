@@ -5,7 +5,7 @@
 - 总计划：`V2-ROADMAP.md`（M1~M17）｜结构方案：`AGENTS.md`
 - 更新：2026-10-27 16:40 · `76696f5`
 
-> 当前：v1.13.1 已上线（角色位 10）· **P13 地图风貌差异化进行中**（P13-1 调查 ✅，见下）。
+> 当前：v1.13.1 已上线（角色位 10）· **P13 地图风貌差异化已收口 ✅**（P13-1~P13-5 全完，push 上线）。
 
 ## 一句话现状
 
@@ -43,21 +43,58 @@ v1.13.1 已推上线并验证通过：角色位 3 → 10 全链路（桌面建�
 - **与两条功能线的 schema 冲突**：`src/core/save.js` 是三方共用的热点文件
   （main 的 M7 / act 的 `world.act` / skill 的技能点与元素），谁先改谁定规矩。
 
-## P13 · 每章地图风貌差异化（2026-11-17 开工 · 进行中）
+## P13 · 每章地图风貌差异化（2026-11-17 开工 · ✅ 已收口）
 
-> 当前：**P13-1 只读调查 + 路标 ✅**；生产代码一行未改。
-> 用户 2026-11-17 拍板：**做第一层**（地标 + 天气 + 主色调整），
-> 第二层骨架变体先不做、地标不加文字说明。依据 `docs/P13-FENGMAO-DESIGN.md` + `docs/POLISH-PLAN.md` §P13。
+> 当前：**P13-1~P13-5 全 ✅**，已 push 上线。用户 2026-11-17 拍板做第一层
+> （地标 + 天气 + 主色），第二层骨架变体先不做、地标不加文字说明。
+> 依据 `docs/P13-FENGMAO-DESIGN.md` + `docs/POLISH-PLAN.md` §P13。
 
 ### 节点表
 
 | 节点 | 内容 | 状态 | 产物 | 验收 |
 |---|---|---|---|---|
 | P13-1 | 只读调查 + 路标 | ✅ | 本节 + `docs/P13-FENGMAO-DESIGN.md` | 不动生产代码 |
-| P13-2 | 数据层：31 图加风貌字段 | ⬜ | `data-maps.js` 的 `MAP_SPECS`、`data-world.js` 的 `MAPS` | 字段齐全 + 同章四元组唯一 + 静态契约 |
-| P13-3 | world.js 地标 + 天气层 | ⬜ | `world.js` 新增 `buildLandmark` / `buildWeather`，`buildMap` 接线 | 不改 zone 拓扑，zone-check 全绿 |
-| P13-4 | 验收探针 + 截图 | ⬜ | `dev/probe-p13.js`、`dev/shot-p13.js` | 地标 mesh>0 / 天气粒子 range / 盲测截图 |
-| P13-5 | 回归 + 台账收口 + 发布 | ⬜ | 三份台账 + 日志 + commit + push | 全套回归全绿 + 上线验证 |
+| P13-2 | 数据层：23 图加风貌字段 | ✅ | `data-maps.js` 的 `MAP_SPECS`（23 图 + landmark/weather）、`data-world.js` 的 `MAPS`（13 图调色） | test-p13 数据层 13/0 + zone-check 全绿 |
+| P13-3 | world.js 地标 + 天气层 | ✅ | `world.js` 新增 `buildLandmark`（23 种）/ `buildWeather`（13 种），`buildMap` 接线 | test-p13 源码层 21/0 + smoke ERRORS none |
+| P13-4 | 验收探针 + 截图 | ✅ | `dev/probe-p13.js`（10/0）、`dev/shot-p13.js`（10 张临时目录） | 逐图 mesh 3~7 / 粒子 100~300 / 坐标有限 / 同章四元组唯一 / 盲测出图 |
+| P13-5 | 回归 + 台账收口 + 发布 | ✅ | 本台账 + `POLISH-PLAN.md` + 当日日志 + commit + push | 全套回归全绿（详见下）+ 上线验证 |
+
+### 交付了什么
+
+- **每图一个地标**：23 种低模造型（活物 / 熔铸 / 渡葬 / 兵刃 / 天象五族，3~7 mesh），
+  放在「入口 → 首领」必经的 hall/path 区中心，不带碰撞（玩家穿过不卡）。
+- **每图一种天气**：13 种粒子（雪 / 雨 / 灰 / 火星 / 落叶 / 萤火 / 剑气 / 星屑 / 虚空尘…），
+  一个 Points = 一次 draw call，逐帧只写 y（≤300 粒），换图随 world 销毁。
+- **主色拉开**：13 张图调 sky/fog，卷五 5-1 四张 void 从「暗紫四胞胎」变成
+  玉青 / 星蓝 / 紫 / 墨绿四色（真机截图盲测可分）。
+- **同章四元组唯一**：骨架 + 地貌 + 地标 + 天气，任意两张图不重复（不靠换 ground）。
+
+### 回归读数（2026-11-17）
+
+| 检查 | 读数 |
+|---|---|
+| zone-check / test-p13 | 全绿（16 提醒）/ **21-0** |
+| probe-p13（真机 23 图） | **10-0** |
+| 技能契约十份 | p0 250 / p1 52 / p1c 363 / p2 41 / p2b 924 / p2c 99 / p3 106 / p4 60 / p5 989 / p5b 116 / p6 97，全 0 失败 |
+| test-combo / elemfx / poison / elem-dual / holy / affix | 76 / 74 / 32 / 40 / 50 / 60，全 0 失败 |
+| smoke / mobile-layout | ERRORS none / 全绿 |
+| 生成物一致性 | skillvfx / fx2 / bosskits 全绿；**bosscast 假红（见卡点）** |
+
+### P13 新踩的坑
+
+1. **puppeteer 的 `evaluate` 不能返回 THREE 对象**：探针里把 THREE.Group 数组直接塞进返回值，
+   puppeteer 序列化失败 → 整个返回值变 `undefined`，表现为「所有图都探针未返回」。
+   修法：只返回自己构造的普通对象（mesh 数 / 有限性 / 类型），不返回场景对象本体。
+2. **取景必须挪玩家，不能改相机**：游戏每帧把相机拉回玩家，`camera.lookAt` 设了也会被覆盖。
+   截图脚本要把玩家传送到地标旁（p.z+13），等相机 lerp 跟上再截。
+3. **静态契约数不出循环生成的 mesh**：`boneCol` / `swordForest` / `lanternRow` 用 `for` 循环建模，
+   源码里 `L(` 只出现 2 次但实际出 5~7 个 mesh。静态契约只验「非空壳」，精确 mesh 数交给真机探针。
+4. **lanternRow 曾有 9 个 mesh**：4 灯 ×2 + 底座超了设计稿的 3~6 上限，改成 3 灯 ×2 + 底座 = 7。
+
+### 下一步
+
+P13 已收口。按 `docs/POLISH-PLAN.md` 四批顺序，第 4 批只剩 **P15（Boss 战前剧情）**——
+已拍板「只播一次 + 可跳过」，可直接开工。开工前先确认是否要在做 P15 前把本轮 P13 合入验证。
 
 ### 代码地图（P13-1 调查结论，动手必读）
 
@@ -72,16 +109,24 @@ v1.13.1 已推上线并验证通过：角色位 3 → 10 全链路（桌面建�
 | 天气粒子模板 | `world.js:1236 void 星屑` | `BufferGeometry + PointsMaterial({map:dotTexture(),size,blending})`，一个 Points = 一次 draw call |
 | 必经 zone | `data-maps.js:928 mapZones()` / `:932 mapEntryZone()` | 地标放 `kind==='hall'` 或 `'path'` 的 zone 中心；`zoneById` 按 id 取 |
 
-### 关键坑（调查预判，动手时验证）
+### 调查预判的坑（动手时已验证）
 
 1. **`ground` 色是查表硬编码**（`world.js:725 baseColor` / `:783 BORDER_COL`）：设计稿的 `palette` 若只是改 `sky/fog`，别去动 `ground` 查表 —— 那会让可走区过曝或糊成一片。
-2. **地标 must 落在可走区内**：`pickSpotInZones(mapId, pad)`（`world.js:632`）已在可走区撒点用；地标位置要复用它或取 `hall` zone 中心，否则会摆进墙里。
+2. **地标 must 落在可走区内**：取 `hall` zone 中心（本次就是这么做的），否则会摆进墙里；真机探针逐图验了 `zonesContain`。
 3. **天气粒子数要控**：设计稿 100~300 粒/图，一个 Points 一次 draw call；别用 mesh。
 4. **`zone-check.js` 不许因为加字段而红**：只加数据字段，不改 `ZONE_ARCHETYPES`/拓扑。
 
+### 卡点
+
+- **`build-bosscast.js --check` 假红**：报 `src/boss-cast.js 与特效台不一致`。本轮 P13 只改了 7 个文件，
+  **完全没碰 bosscast 生成链**；本地还有一个 `stash@{0}: U13 sfx-follow WIP`（别人的 WIP），
+  特效台可能在那里被改过。按 AGENTS.md 硬规矩，**绝不在本机跑 `build-bosscast --write`**
+  （会把生成物洗成 Safari 顺序污染 BOSS 线）。要验这条请在有 Chromium 的机器上跑。
+
 ### 下一步
 
-按 P13-2 → P13-5 顺序做，**每完成一个能跑的小节点写台账 + commit + push**，别攒着写。
+P13 已收口。按 `docs/POLISH-PLAN.md` 四批顺序，第 4 批只剩 **P15（Boss 战前剧情）**——
+已拍板「只播一次 + 可跳过」，可直接开工。
 
 ---
 
@@ -92,3 +137,4 @@ v1.13.1 已推上线并验证通过：角色位 3 → 10 全链路（桌面建�
 | 2026-10-27 | 角色位扩展属于**主线功能**，直接在 main 上做，不单独开分支 | 它和两条功能线都不重叠；开分支反而要来回合并 |
 | 2026-10-27 | 三条线单向合并到 main：`act` 优先，`skill` 次之 | 见 `AGENTS.md` §2.3 |
 | 2026-10-27 | 历史分支 6 条全删（dev-v2 / dev-v3 / art-modeling / 旧 skill-refactor / 两个 fix） | 都是 v1.0.x 旧线，落后 main 22 个提交，无合并价值 |
+| 2026-11-17 | P13 只做第一层（地标+天气+主色），第二层骨架变体先不做 | 用户在设计稿拍板；先出可见收益，骨架变体留到验收通过后再评估 |
