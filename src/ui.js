@@ -3980,9 +3980,17 @@ const UI = {
       : inCamp ? '<span class="wm-ml">当前所在</span>'
         : campSeen ? `<button class="btn wm-go" data-go="${camp.mapId}">回营地</button>`
           : '<span class="wm-ml">未抵达</span>';
+    /* [M7.8] 轮回标记。**必须把「怪物 +N 级」和「掉落 ×M」一起写出来** ——
+     * 轮回后 `MAPS[].level` 没变（地图定位不该被轮回改写），但实际生成的怪
+     * 比图上写的高 10×轮回 级。只显示「第 N 轮回」而不说加成，
+     * 玩家会拿「60 级图」去对照一只 70 级的怪，读起来就是数值在骗人。 */
+    const cyc = (typeof Game !== 'undefined' && Game.cycle) ? Game.cycle() : 0;
+    const cycTag = cyc
+      ? ` · <b class="wm-cyc">第 ${cyc} 轮回 · 怪物 +${Game.cycleLv()} 级 · 掉落 ×${Game.cycleDropMul().toFixed(1)}</b>`
+      : '';
     let html = `<div class="wm-head">
       <div class="wm-hn">卷${CN[cur - 1]} · ${pt.name}</div>
-      <div class="wm-hr">${pt.from}–${pt.to} 级 · ${pt.keyName}</div>
+      <div class="wm-hr">${pt.from}–${pt.to} 级 · ${pt.keyName}${cycTag}</div>
       <div class="wm-camp">营地 <b>${camp.name}</b>${campTail}</div>
       <div class="wm-hb">${pt.brief}</div>
     </div>`;

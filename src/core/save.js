@@ -83,6 +83,12 @@ const SaveManager = {
     if (!isFinite(n)) return (def === undefined ? min : def);
     return Math.max(min, Math.min(max, n));
   },
+
+  /* [M7.8] 轮回上限的唯一来源。save.js 加载顺序在 data-core.js 之前，
+   * 所以不能直接读 `BALANCE.cycle.max` 的字面量，用 typeof 兜底。 */
+  _cycleMax() {
+    return (typeof BALANCE !== 'undefined' && BALANCE.cycle && BALANCE.cycle.max) || 9;
+  },
   _num(v, def) {
     const n = Number(v);
     if (!isFinite(n)) return (def || 0);
@@ -441,6 +447,9 @@ const SaveManager = {
     /* [M7.7] 传世收集账。老档没有这个字段 → 空对象（不是「送一套」，
      * 传世必须自己打出来）。 */
     d.codexUnique = this._uniqSet(d.codexUnique);
+    /* [M7.8] 二周目轮回数。老档没有这个字段 → 0（第一周目）。
+     * **不写迁移函数**：0 就是正确缺省，和 codexUnique 空对象同理。 */
+    d.cycle = this._int(d.cycle, 0, this._cycleMax(), 0);
     d.talents = this._obj(d.talents) || {};
     /* [M1] 任务奖励天赋点：旧档没有这个字段，缺省补 0，脏值夹到 0~40 */
     d.talentBonus = this._int(d.talentBonus, 0, 40, 0);
@@ -535,6 +544,10 @@ const SaveManager = {
       /* [M7.7] 传世收集账。**必须跟着 codex 一起搬** —— 少了这一行就是
        * 「存得进、读不回」，表现为「刷到一件传世、刷新一下又当成没拿过」。 */
       codexUnique: this._uniqSet(s.codexUnique),
+      /* [M7.8] 轮回数。跟 codexUnique 同一层，理由一样：少了这行就是
+       * 「轮回了一次、刷新一下又回到第一周目」—— 而轮回是不可逆的进度，
+       * 丢一次等于玩家白打一整局。 */
+      cycle: this._int(s.cycle, 0, this._cycleMax(), 0),
       talents: this._obj(s.talents) || {},
       talentBonus: this._int(s.talentBonus, 0, 40, 0),
       attrAlloc: this._attrAlloc(s.attrAlloc),
@@ -592,6 +605,7 @@ const SaveManager = {
       shop: (doc.shop && Array.isArray(doc.shop.items)) ? doc.shop : null,
       codex: this._codex(doc.codex),
       codexUnique: this._uniqSet(doc.codexUnique),
+      cycle: this._int(doc.cycle, 0, this._cycleMax(), 0),
       talents: doc.talents || {},
       talentBonus: this._int(doc.talentBonus, 0, 40, 0),
       attrAlloc: this._attrAlloc(doc.attrAlloc),

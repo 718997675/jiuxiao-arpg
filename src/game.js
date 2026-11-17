@@ -702,6 +702,9 @@ const Game = {
       barVer: 2,
       skillReset: 1,
       skillResetRefund: 0,
+      /* [M7.8] 二周目：新档从第 0 轮回开始（显示上不写「第 0 轮回」，
+       * 轮回标记只在 >0 时出现）。 */
+      cycle: 0,
       shop: null          // { at, items, rolls } —— 由 ensureShop/genShop 填充
     };
     return s;
@@ -709,7 +712,55 @@ const Game = {
 
   /* 当前难度的配置。旧档没有 difficulty 字段时回落到普通，不报错。 */
   diff() {
-    return getDiff(this.state && this.state.difficulty);
+    /* [M7.8] 轮回的掉落倍率**只在这一处乘**。
+     * `D.drop` 在三个地方被读（装备概率 / 玄晶 / 钥匙），
+     * 挨个去乘就是三份口径，早晚漏一处 —— 而且漏的那处玩家永远查不出来。
+     * 改在这里，所有走 `diff().drop` 的路径自动生效。
+     *
+     * 有缓存：`diff()` 在 spawnEnemy 与每帧的 AI 里都被调，
+     * 每次 Object.assign 一份新对象等于每帧制造垃圾。
+     * key 只由「难度 + 轮回」决定，所以换档 / 入轮回会自动失效，
+     * 不需要在 startNew / 读档里手动清。 */
+    const key = ((this.state && this.state.difficulty) || 'normal') + '|' + this.cycle();
+    if (this._diffKey === key && this._diffCfg) return this._diffCfg;
+    const d = getDiff(this.state && this.state.difficulty);
+    const m = this.cycleDropMul();
+    this._diffCfg = (m === 1) ? d : Object.assign({}, d, { drop: (d.drop || 1) * m });
+    this._diffKey = key;
+    return this._diffCfg;
+  },
+
+  /* ============================================================
+   * [M7.8] 二周目（轮回）· 计划书 §15.7
+   *
+   * 三个口径全部从 `BALANCE.cycle` 派生，不在这里写死数字 ——
+   * 数值要能在 data-core.js 一处调，并且能被契约脚本逐条读出来验。
+   * ============================================================ */
+  cycleCfg() {
+    return (typeof BALANCE !== 'undefined' && BALANCE.cycle)
+      ? BALANCE.cycle : { max: 9, lvPer: 10, dropMul: 0.5 };
+  },
+
+  /* 当前轮回数（夹到 0~max）。老档没有这个字段 → 0，不写迁移。 */
+  cycle() {
+    const C = this.cycleCfg();
+    const v = (this.state && this.state.cycle) | 0;
+    return Math.max(0, Math.min(C.max, v));
+  },
+
+  /* 轮回带来的怪物等级加成。**只加在生成处**，不改 `MAPS[].level`
+   * 也不改 `ILVL_MAX` —— 地图等级是「这张图的定位」，装备上限是
+   * 「玩家能穿到哪」，两者都不该被轮回改写。 */
+  cycleLv() {
+    const C = this.cycleCfg();
+    return this.cycle() * (C.lvPer || 0);
+  },
+
+  /* 轮回带来的掉落倍率（线性）。第 1 轮回正好 ×1.5。 */
+  cycleDropMul() {
+    const C = this.cycleCfg();
+    const m = 1 + this.cycle() * (C.dropMul || 0);
+    return m > 1 ? m : 1;
   },
 
   /* ---------------- 材料（S2：玄晶 / 符文） ----------------
@@ -2116,7 +2167,12 @@ const Game = {
       if (alive >= cap) return null;
     }
     const mapLv = MAPS[this.state.mapId].level;
-    const lvl = levelOverride || (mapLv + RNDI(-1, 2));
+    /* [M7.8] 轮回加成**只在这里加一次**。
+     * `lv0` 存的是不含加成的基础等级，专供 `summonMinions` 回传 ——
+     * 召唤物原本传的是 `e.level`（已含加成），再走一遍这里就会加第二次，
+     * 轮回 9 次之后召唤物比母体高 90 级。 */
+    const lv0 = levelOverride || (mapLv + RNDI(-1, 2));
+    const lvl = lv0 + this.cycleLv();
     const scale = cfg.scale || 1;
     /* [M7.5] 八部魔将的分派键是 `animKind`（数据里的 `model` 还是老的
      * `brute`/`demon`，直接传会落进人形分支，九套骨架永远不生效）。
@@ -2208,6 +2264,9 @@ const Game = {
       /* [v1.12.1] 出生点：脱战后走回这里，避免怪被追着跑之后全堆在入口 */
       home: { x, z },
       level: lvl, hp, maxHp: hp,
+      /* [M7.8] 基础等级（不含轮回加成）。召唤物 / 分裂幼体回传等级时读这个，
+       * 读 `level` 会被加两次。 */
+      lv0: lv0,
       dmg: (cfg.atk || 10) * (1 + lvl * (isBoss ? BB.dmgLv : MB.dmgLv)) * (elite ? MB.eliteDmg : 1) * D.mobDmg,
       spd: (cfg.spd || 3) * D.mobSpd * MV.mobScale,
       /* range 只表示「数据设定的攻击距离」（远程怪用来卡位）。
@@ -7163,7 +7222,7 @@ const Game = {
     FX.text(new THREE.Vector3(e.pos.x, 2.4, e.pos.z), '召唤', 'info', { life: 0.8 });
     for (let i = 0; i < n; i++) {
       const ang = Math.random() * Math.PI * 2;
-      const m = this.spawnEnemy(kind, e.pos.x + Math.cos(ang) * 1.8, e.pos.z + Math.sin(ang) * 1.8, false, e.level);
+      const m = this.spawnEnemy(kind, e.pos.x + Math.cos(ang) * 1.8, e.pos.z + Math.sin(ang) * 1.8, false, e.lv0);
       if (m) {
         m.hp = m.maxHp = Math.max(1, Math.round(e.maxHp * 0.16));
         m.summoned = true;
@@ -8372,7 +8431,7 @@ const Game = {
     for (let i = 0; i < T.count; i++) {
       const ang = Math.random() * 6.28, r = 2.2 + Math.random() * 1.4;
       const m = this.spawnEnemy(kind, e.pos.x + Math.cos(ang) * r, e.pos.z + Math.sin(ang) * r,
-        false, Math.max(1, e.level - T.levelDrop));
+        false, Math.max(1, (e.lv0 || e.level) - T.levelDrop));
       if (m) { FX.flashCircle(m.pos, 1.5, 0xc08ad8, 0.35); m.aggro = true; made++; }
     }
     FX.ring(e.pos, 3.4, 0xc08ad8, 0.5, 0.22);
@@ -9244,7 +9303,7 @@ const Game = {
         const kind = PICK(MAPS[this.state.mapId].spawns || ['bat']);
         for (let i = 0; i < 2 + e.phase; i++) {
           const ang = Math.random() * 6.28, r = 4;
-          const m = this.spawnEnemy(kind, e.pos.x + Math.cos(ang) * r, e.pos.z + Math.sin(ang) * r, false, Math.max(1, e.level - 2));
+          const m = this.spawnEnemy(kind, e.pos.x + Math.cos(ang) * r, e.pos.z + Math.sin(ang) * r, false, Math.max(1, (e.lv0 || e.level) - 2));
           if (m) { FX.flashCircle(m.pos, 1.6, 0xaa66ff, 0.4); m.aggro = true; }
         }
         FX.ring(e.pos, 5, 0xaa66ff, 0.6);
@@ -10472,6 +10531,20 @@ const Game = {
         }, 600);
       } else if (inTrial) {
         if (e.kind === 'chaos') UI.log('混沌之影散去，台上又起新的杀机。', 'good');
+      } else if (e.kind === 'chaosavatar') {
+        /* [M7.8] 终 boss 的收束点：**不重生**，而是给一次「入轮回」的选择。
+         *
+         * 为什么不走下面的 75 秒重生：无相天是 `arena: true` 的终局场，
+         * 「打完等 75 秒再打一遍」既不是终局该有的样子，也让「入轮回」
+         * 这个分岔口永远等不到 —— 玩家会以为这只是一只血厚点的首领。
+         * 玩家选「再等等」也没关系：走出图再进来，`m.bosses` 会重新生成它。
+         *
+         * 延后 1800ms 是因为要等 P5 变身的收尾特效（无敌 3 秒里最后那圈环）
+         * 和掉落物落地 —— 当场弹窗会把「我刚刚干了什么」的爽感切掉。 */
+        setTimeout(() => {
+          if (!this.state || this.dead) return;
+          this.cycleOffer();
+        }, 1800);
       } else {
         const bid = e.kind, gen = this.mapGen;
         setTimeout(() => {
@@ -10947,6 +11020,65 @@ const Game = {
       ]);
       this.save();
     }, 1400);
+  },
+
+  /* ============================================================
+   * [M7.8] 入轮回 · 计划书 §15.7
+   *
+   * 「保留装备 / 等级 / 印」不是「什么都不做」，而是**明确地什么都不清**：
+   * 只 `state.cycle += 1`。所以这里没有 reset 代码 —— 少写一行就是少一个
+   * 「玩家打完终 boss 回来发现装备没了」的机会。
+   * ============================================================ */
+  cycleOffer() {
+    const C = this.cycleCfg();
+    const cy = this.cycle();
+    if (cy >= C.max) {
+      UI.showDialog('轮回', '你已经走完了此界所有的轮回。\n\n再往前，只剩虚空。', [
+        { label: '继续行走山海', primary: true, action: () => UI.closeAll() }
+      ]);
+      return;
+    }
+    const next = cy + 1;
+    const lvAdd = C.lvPer;
+    const dropPct = Math.round(C.dropMul * 100);
+    UI.showDialog('轮回', '无相既破，此界已无对手。\n\n'
+      + `入第 ${next} 轮回：怪物等级 +${lvAdd}、掉落 +${dropPct}%。\n`
+      + '装备、等级、魔将之印**全部保留**，只是这一界的规矩要重写一遍。\n\n'
+      + `（最多 ${C.max} 轮回）`, [
+      { label: `入第 ${next} 轮回`, primary: true, action: () => this.enterCycle() },
+      { label: '再等等', action: () => UI.closeAll() }
+    ]);
+  },
+
+  enterCycle() {
+    const C = this.cycleCfg();
+    const cy = this.cycle();
+    if (cy >= C.max) return false;
+    this.state.cycle = cy + 1;
+    /* `victory` 与轮回是两件事：victory 是「混沌天魔倒了」的一次性剧情标记，
+     * 这里也置上，让「通关过」这件事在存档里说得清（现在没人读，将来有用）。 */
+    this.state.victory = true;
+    /* diff() 的缓存 key 含 cycle，会自动失效；这里只是把话说清楚。 */
+    this._diffKey = null;
+    this.save();
+
+    UI.closeAll();
+    UI.toast('第 ' + this.state.cycle + ' 轮回', 'lv');
+    UI.log('此界重写：怪物等级 +' + C.lvPer + ' · 掉落 +' + Math.round(C.dropMul * 100) + '%', 'good');
+    SFX.levelup();
+    for (let i = 0; i < 6; i++) {
+      setTimeout(() => {
+        if (this.playerGroup) FX.ring(this.playerGroup.position, 9, 0x9a6ad0, 1.1, 0.4);
+      }, i * 220);
+    }
+    /* 送回枢纽而不是留在无相天：这张图只有 boss、没有小怪，
+     * 留在原地玩家只能自己走出去 —— 轮回这种「大动作」不该以「请自行找出口」收尾。
+     * 混沌海是终章枢纽（安全区），8 道门都在那儿，回去就能立刻再打一轮。 */
+    setTimeout(() => {
+      if (!this.state || this.dead) return;
+      if (MAPS['chaossea']) this.travelTo('chaossea');
+    }, 900);
+    return true;
   },
 
   /* ---------------- 物品操作 ---------------- */

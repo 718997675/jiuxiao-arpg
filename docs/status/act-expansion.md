@@ -5,12 +5,12 @@
 - 打磨计划：`docs/POLISH-PLAN.md`（用户 2026-10-28 提的 17 项体验 / 平衡，P01~P17，分 4 批）
 - 专题台账：`docs/status/world-boss.md`（M18 世界 Boss，插单，与本线并行；**M18.1~M18.9 全部完成**（含六套骨架 + 两个骨架键 + 掉落 + 说明页），可合 main）
 - 预览站：<https://718997675.github.io/jiuxiao-arpg/preview/act-expansion/>
-- 更新：2026-11-17（M7.7 终 boss 全传世掉落落地）
+- 更新：2026-11-17（M7.8 二周目最小闭环落地）
 
 > 当前：M1~M6 已完成（39 张图 · 80 种怪 · 图鉴 5 卷 + 秘境 · 5 阶地下城 · 60 级上限 · 传世 40 件 ·
 > 套装 18 套 · 基底 8 阶）。**M18 世界 Boss 九节全完**，已随本线合入 main。
 > M7 终章重做（八部天龙）进行中：M7.1 结构 / M7.2 八魔将数据 / M7.3 破绽窗口 / M7.4 魔将之印 /
-> M7.5 九套骨架 / M7.6 五阶段终 boss / **M7.7 全传世掉落** 已落地，M7.8~M7.9 待做，见下「M7 小节状态」。另有一条并行线：P 打磨 17 项，
+> M7.5 九套骨架 / M7.6 五阶段终 boss / M7.7 全传世掉落 / **M7.8 二周目** 已落地，M7.9 待做，见下「M7 小节状态」。另有一条并行线：P 打磨 17 项，
 > **第 1 批（P01 P02 P03 P09 P11 P12 P16）+ 第 2 批的 P04 / P06 / P10 已完成**，
 > 第 2 批剩余（P07 P08 P17）与第 3~4 批未开工，见下「P 系列」。
 
@@ -42,8 +42,8 @@ M7 把「打完终 boss 就结束」改成了终局循环：混沌海从战斗�
 图位 30 → **39**。8 位魔将的弱点**不进图鉴**，只写在 `BOSSES.resist` 里，
 玩家只能靠伤害数字自己摸 —— 打错吃 20%、打对吃 160%，正好 8 倍。
 
-**剩下的**：M7.8 二周目
-→ M7.9 文案同步，然后才走「合入 main」。
+**剩下的**：M7.9 文案同步
+→ 然后才走「合入 main」。
 
 ## 节点表
 
@@ -78,7 +78,7 @@ M7 把「打完终 boss 就结束」改成了终局循环：混沌海从战斗�
 | M7.5 | 9 个模型 + 专属动画 | ✅ | 新建 `src/bafomodels.js`、改 `src/actors.js` / `src/game.js` / `index.html`、新建 `dev/test-m7-5.js`、`dev/probe-bafo-models.js`、`dev/shot-bafo-models.js` | 契约 **103/0**、真机 **187/0**（9 只尺寸 / 身份件 / 动画 / draw call）、`verify-perf` 报错 0、九张截图人工过 |
 | M7.6 | 终 boss 五阶段 + P5 满血变身 | ✅ | `data-monsters.js`（`bafoFinal` 五阶段数据）、`game.js`（状态机 10 个方法）、`boss-cast.js`（配招可换）、`ui.js`（五盏灯）、新建 `dev/test-m7-6.js`、`dev/probe-bossfinal.js`、`dev/shot-bossfinal.js` | 契约 **82/0**、真机 **60/0**（逐阶段推进 / 一击打到 0% 仍变身 / 血条填回 100% / 换模型 / 无敌 3 秒 / 弱点轮换 / 脱战复位）、`verify-perf` 报错 0、四张截图人工过 |
 | M7.7 | 全传世掉落（0.01% / 0.1%，未收集优先） | ✅ | `data-core.js`（`BALANCE.finalUnique`）、`items.js`（`pickFinalUnique` + `rollItem` 按 id 生成）、`game.js`（`_finalUniqueDrop` / `uniqueSeen` / `markUnique`）、`core/save.js`（`codexUnique` 三处）、新建 `dev/test-m7-7.js`、`dev/probe-finaldrop.js` | 契约 **52/0**（含 100 万次 × 4 档概率抽样）、真机 **18/0**（真杀终 boss 保底橙 + 玄晶 / 抽签吃配置 / 2 万次同量级 / 未收集优先 / 一进包就记账 / 老档兜底 / 存档 round-trip） |
-| M7.8 | 二周目最小闭环 | ⬜ | `game.js`、`core/save.js`、`ui.js` | 轮回后强度与掉率生效 |
+| M7.8 | 二周目最小闭环 | ✅ | `data-core.js`（`BALANCE.cycle`）、`game.js`（`cycle` / `cycleLv` / `cycleDropMul` / `diff` 缓存 / `lv0` / `cycleOffer` / `enterCycle`）、`core/save.js`（`cycle` 三处）、`ui.js` + `index.html`（山河图轮回标记）、新建 `dev/test-m7-8.js`、`dev/probe-cycle.js` | 契约 **66/0**、真机 **37/0**（入轮回 / 怪 +10 级 / 掉率 ×1.5 / 召唤物不重复加 / 装备等级印任务全保留 / 存档 round-trip / 上限拒绝 / 真杀终 boss 弹窗） |
 | M7.9 | 说明页 / 图鉴 / README 同步 | ⬜ | `ui.js`、`README.md` | 文案与实际一致 |
 
 ### M7 已交付明细（M7.1 + M7.2）
@@ -188,6 +188,33 @@ M7 把「打完终 boss 就结束」改成了终局循环：混沌海从战斗�
 | **踩到的坑 ②** | 验证脚本别用 `node -e` 塞带引号的表达式 —— Git Bash 会把 `"unique"` 吃掉变成 `/unique/`（正则），`RARITY[/unique/]` 是 `undefined`，报错还完全指不到根因。一律写成文件跑 | 已写进 MEMORY.md |
 | **新增体检** | `dev/test-m7-7.js`（离线 52 项：旋钮表 / 抽取器语义 / 接线 / 存档三处 / 100 万次抽样 / 边界）；`dev/probe-finaldrop.js`（真机 18 项：真杀 / 抽签吃配置 / 真实概率 / 未收集优先 / 记账 / 老档 / round-trip / 零报错） | 52 + 18 全绿 |
 | 回归 | `test-m7-6` 82 · `test-m7-5` 103 · `test-m7-3` 22 · `check-bafo` 335 · `check-seals` 111 · `act-check` 651 · `skill-ref` 38 · `test-m4` 25 · `test-m5` 89 · `test-m6` 264 · `test-items` 21 · `test-bosskits` 36 · `test-bosspattern` 28 · `test-elemfx` 74 · `test-combo` 76 · `worldboss-fight` 252 · `check-wbmodels` 182 · `test-quest` 57 · `check-uniques` / `check-sets` / `check-endgame` ✅ · `smoke` ERRORS none · `mobile-layout` 6 视口全绿 · `verify-perf` 报错 0 | 全绿 |
+
+### M7.8 已交付明细（二周目 · 2026-11-17）
+
+**「打完就没了」的最后一块。** 在此之前，混沌·无相天魔（真身）倒地之后只会走
+「75 秒后重生」——玩家打完一局、捡完东西，站在原地等一分钟又能再打一遍，
+既没有终点感，也没有「再来一轮」的理由。本节点把它改成**分岔口**：
+打赢之后给你一次「入轮回」的选择，进去之后这一界的规矩重写一遍。
+
+| 项 | 落地内容 | 回归 |
+|---|---|---|
+| **三句话能说清的口径** | 入轮回 = `state.cycle += 1`；怪物等级 **+10 / 轮回**；掉落 **×1.5 / 轮回**。三个数字全在 `BALANCE.cycle`（`max: 9` / `lvPer: 10` / `dropMul: 0.5`），代码里不写第二份 | 契约逐条读 BALANCE 验 |
+| **保留 = 什么都不清** | 计划书写「保留装备 / 等级 / 印」。实现上**没有一行 reset 代码** —— 少写一行就是少一个「回来发现装备没了」的机会。契约反过来钉死：`enterCycle` 函数体里**不许出现** `state.inventory` / `state.equipment` / `state.level` / `state.seals` / `state.quests` / `state.codex` / `state.skills` 任何一个 | 契约七节 9 条反向断言 + 真机逐项比对 |
+| **等级加在生成处，不改地图** | `spawnEnemy` 里 `lv0 = levelOverride \|\| mapLv + RNDI(-1,2)`，`lvl = lv0 + cycleLv()`。`MAPS[].level` 一个字节不动 —— 地图等级是「这张图的定位」，被轮回改写的话山河图上「60 级图」就成了假的 | 真机：指定 60 级的怪在轮回 1 变 70 |
+| **`lv0` 是为了防「加两次」** | 召唤 / 分裂 / 图腾三条路原本传 `e.level`（已含加成），再进 `spawnEnemy` 会被加第二次 —— 轮回 9 次后召唤物比母体高 90 级。改成回传 `e.lv0`（不含加成的基础等级），三处全改 | 真机：母体 70 级，召唤物也是 70（不是 80） |
+| **掉率只乘 `diff().drop` 一处** | `D.drop` 在三个地方被读（装备概率 / 玄晶 / 钥匙）。挨个去乘就是三份口径，早晚漏一处，而漏的那处玩家永远查不出来。改在 `diff()` 里乘，三条路自动生效 | 真机：`diff().drop` 精确 ×1.5 |
+| **`diff()` 必须缓存** | 它在 `spawnEnemy` 与每帧 AI 里都被调，每次 `Object.assign` 一份新对象等于每帧制造垃圾。缓存 key 是「难度 \| 轮回」，换档 / 入轮回自动失效 | 契约验 `_diffKey` / `_diffCfg` 存在且 key 含轮回 |
+| **为什么线性而不是 `1.5^cycle`** | 1.5⁹ ≈ 38 倍，会把终局掉落直接打穿（终 boss 的万分之一被放大到 0.38%）。线性到第 9 轮回是 ×5.5，玩家能算出来、也能感觉到 | 契约：第 9 轮回必须正好 5.5 |
+| **为什么上限是 9（本节点自定）** | 计划书没写上限。怪物血量按 `1 + lv·0.55 + lv²·0.010` 超线性涨，玩家伤害在 60 级封顶后不再涨。lvl 150（第 9 轮回）已是同级 4.4 倍血，再往上不是「难」是「打不动」。与其让玩家点到第 20 轮回发现游戏不可玩，不如在还能打的地方明确停住，并**在对话框里写「再往前只剩虚空」** | 真机：到顶 `enterCycle()` 返回 false、cycle 不再加 |
+| **脏存档要夹** | `cycle = 100` 必须夹回 9，否则倍率炸到 ×51、怪物等级 +1000。`Game.cycle()` 与 `save._cycleMax()` 同一口径 | 真机：塞 100 进去读出来是 9 |
+| **终 boss 不再重生** | `onEnemyDeath` 加 `chaosavatar` 专属分支：不排 75 秒重生，延后 1.8 秒弹「轮回」。无相天是 `arena: true` 的终局场，「等一分钟再打一遍」不是终局该有的样子。玩家选「再等等」也没关系：走出图再进来，`m.bosses` 会重新生成它 | 真机：真杀两次（进 P5 → 打死）后弹窗出现且两个按钮 |
+| **轮回后送回枢纽** | 无相天只有 boss、没有小怪，留在原地玩家只能自己走出去。轮回这种「大动作」不该以「请自行找出口」收尾 —— 送回混沌海（终章枢纽，8 道门都在那儿） | 真机验 `travelTo('chaossea')` 接线 |
+| **UI 必须把加成写全** | 山河图卷头写「第 N 轮回 · 怪物 +N 级 · 掉落 ×M」。**只写「第 N 轮回」是不够的** —— 地图上写着「60 级」，怪却是 70 级，玩家读起来就是数值在骗人。第 0 轮回不显示任何标记（新档看到「第 0 轮回」是噪音） | 契约 4 条 + 出图人工过 |
+| **踩到的坑 ①** | 契约第一版 15 条一起挂，根因是 `fnText(G, 'cycle()')` 命中的是 `diff()` 里的**调用点** `this.cycle()`，不是定义 `cycle() {`，于是返回空串。M7.6 踩过同一个坑（签名没带全）。修法：签名一律带 `{`，并且 `fnText` 里加「`{` 必须在同一行」的判据 | 66/0 |
+| **踩到的坑 ②** | 「三处召唤回传 lv0」这条断言原本用统一模式 `(e.lv0 \|\| e.level)` 数个数，但 `summonMinions` 传的是纯 `e.lv0`（它不可能是 undefined），形状本来就不同。改成三处分别断言，而不是凑一个能同时匹配的宽松正则 | 66/0 |
+| **不做** | **剧情重跑 / 任务重置 / 装备清零**（计划书明写「那是另一套系统，先不铺」）；**轮回专属掉落池**（传世池不变）；**轮回排行榜 / 成就** | 契约反向断言 |
+| **新增体检** | `dev/test-m7-8.js`（离线 66 项：数据 / 三个口径 / diff 缓存 / lv0 / 存档三处 / 接线 / 9 条反向断言 / UI）；`dev/probe-cycle.js`（真机 37 项：基线 / 入轮回 / 怪 +10 / 召唤不重复 / 保留 / round-trip / 上限 / 真杀终 boss 弹窗） | 66 + 37 全绿 |
+| 回归 | `test-m7-7` 52 · `test-m7-6` 82 · `test-m7-5` 103 · `test-m7-3` 22 · `check-bafo` 335 · `check-seals` 111 · `act-check` 651 · `skill-ref` 38 · `test-m4` 25 · `test-m5` 89 · `test-m6` 264 · `test-items` 21 · `test-bosskits` 36 · `test-quest` 57 · `check-uniques` / `check-sets` / `check-endgame` ✅ · `smoke` ERRORS none · `mobile-layout` 6 视口全绿 · `verify-perf` 报错 0 | 全绿 |
 
 ### M7.5 已交付明细（九套骨架 · 2026-11-17）
 
