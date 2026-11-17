@@ -22,6 +22,11 @@
 const puppeteer = require('./_pptr');
 const path = require('path');
 
+/* 默认跑本地 index.html；给 PROBE_URL 就跑远端（上线后实测用）：
+ *   PROBE_URL=https://718997675.github.io/jiuxiao-arpg/ node dev/probe-stagger.js
+ * 同一套断言，只换页面来源 —— 线上量到 20/0 才算真上线。 */
+const TARGET = process.env.PROBE_URL || ('file://' + path.join(__dirname, '..', 'index.html'));
+
 const wait = ms => new Promise(r => setTimeout(r, ms));
 let pass = 0, fail = 0;
 const ok = (c, m, d) => {
@@ -41,7 +46,8 @@ const ok = (c, m, d) => {
   page.on('pageerror', e => errs.push('pageerror: ' + e.message));
   page.on('console', m => { if (m.type() === 'error') errs.push('console: ' + m.text().slice(0, 200)); });
 
-  await page.goto('file://' + path.join(__dirname, '..', 'index.html'), { waitUntil: 'load' });
+  console.log('目标：' + TARGET.replace(/^file:\/\/.*jiuxiao-arpg-skill-refactor\//, 'local ').replace(/^file:\/\//, 'local '));
+  await page.goto(TARGET, { waitUntil: 'load' });
   await wait(1300);
   await page.click('#startBtn').catch(() => { });
   await page.evaluate(() => {

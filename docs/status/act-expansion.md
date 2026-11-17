@@ -115,6 +115,7 @@ M7 把「打完终 boss 就结束」改成了终局循环：混沌海从战斗�
 | **踩到的坑** | 开窗那一帧又走了一次递减，窗口从第一帧就少 `dt` —— 探针量到的时长永远比 `dur` 短一截。加 `return` 让开窗当帧不递减 | `probe-stagger` 首跑 19/1 → 20/0 |
 | **新增体检** | `dev/test-m7-3.js`（离线 22 项：数据 / 抗性 8 倍差 / 三处接线 / 只乘伤害的边界）；`dev/probe-stagger.js`（真机 20 项：8 只逐只开窗 / 时长 / 倍率 / 收束 / 伤害比） | 22 + 20 全绿 |
 | 回归 | `check-bafo` 335 · `check-seals` 111 · `act-check` 651 · `skill-ref` 38 · `test-skill-p5` 989 / `p5b` 116 / `p6` 97 · `elemfx` 74 · `combo` 76 · `bosskits` 36 · `bosspattern` 28 · `worldboss-fight` 252 · `smoke` ERRORS none · `mobile-layout` 全绿 | 全绿 |
+| **上线后线上实测** | `PROBE_URL=https://718997675.github.io/jiuxiao-arpg/ node dev/probe-stagger.js` —— 同一套 20 条断言直接打正式站，8 只魔将的开窗 / 时长 / 倍率 / 收束 / 伤害比 1.500 全部在线上复现 | 线上 **20/0** |
 
 ### M7.4 已交付明细（魔将之印）
 
