@@ -1116,6 +1116,23 @@ function applyPaperDoll(p) {
     }
   }
 
+  /* 项链 / 法器 / 命格 —— P3 三槽（各 3 族）。
+   * 三槽都挂在身上的一个固定点（neckG / relicG / footG），
+   * 没有「自带件让位」的问题：骨架本来就没画项链和法器。 */
+  if (canDoll) {
+    Doll.dress(a, 'amulet', eq.amulet, p.cls);
+    Doll.dress(a, 'relic', eq.relic, p.cls);
+    Doll.dress(a, 'fate', eq.fate, p.cls);
+  }
+
+  /* 戒指两枚：ring1 戴左手、ring2 戴右手。
+   * **必须传 side**：零件表的 anchor 写的是 ringL，装配器默认把 L 镜像成左右两份，
+   * 不传 side 的话一枚戒指会同时出现在两只手上（戴满两枚就是四只手上的戒指）。 */
+  if (canDoll) {
+    Doll.dress(a, 'ring1', eq.ring1, p.cls, { side: -1 });
+    Doll.dress(a, 'ring2', eq.ring2, p.cls, { side: 1 });
+  }
+
   /* 武器 */
   clearGroup(P.weaponHand);
   const wp = eq.weapon;

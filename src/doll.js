@@ -152,13 +152,22 @@
   }
 
   const glowPool = new Map();
-  function glowMat(hex, strong) {
-    const k = hex + '|' + (strong ? 1 : 0);
+  /* 光效材质。`op` 是不透明度（数据里写 `op: 0.5`），缺省 1 = 不透明。
+   *
+   * 为什么需要它：命格 B 族的「命盘」设计是**半透明立盘**，但光效通道默认
+   * 不透明 —— 装配出来的是一块亮黄实心板，把整个后背糊住，看着像路标。
+   * 半透明件还必须 `DoubleSide`：单面的圆盘从背后看什么都没有，
+   * 而「背后立盘」这个造型玩家一半时间是从背面看的。 */
+  function glowMat(hex, strong, op) {
+    const o = (op === undefined || op === null) ? 1 : op;
+    const k = hex + '|' + (strong ? 1 : 0) + '|' + o;
     let m = glowPool.get(k);
     if (!m) {
       m = new THREE.MeshStandardMaterial({
         color: hex, emissive: hex, emissiveIntensity: strong ? 1.15 : 0.55,
-        roughness: 0.4, metalness: 0.2, flatShading: true
+        roughness: 0.4, metalness: 0.2, flatShading: true,
+        transparent: o < 1, opacity: o,
+        side: o < 1 ? THREE.DoubleSide : THREE.FrontSide
       });
       glowPool.set(k, m);
     }
@@ -216,11 +225,17 @@
 
     /* 成对挂点必须**生成左右两份**。数据里护肩只写 `shoulderL` 一份（写两份会
      * 立刻出现「右肩照抄左肩坐标」的重复代码），镜像由这里负责 —— 但第一版漏了，
-     * 结果是**右肩整个没有几何**，截图里看着像被砍了一只肩。 */
+     * 结果是**右肩整个没有几何**，截图里看着像被砍了一只肩。
+     *
+     * opt.side（-1 左 / 1 右）用来关掉镜像：戒指是单件的，ring1 / ring2
+     * 各戴一只手。不传就是老行为（左右各一份）。 */
     function targetsOf(an) {
-      if (/L$/.test(an)) return [[an, -1], [an.replace(/L$/, 'R'), 1]];
-      if (/R$/.test(an)) return [[an, 1], [an.replace(/R$/, 'L'), -1]];
-      return [[an, 1]];
+      let pair;
+      if (/L$/.test(an)) pair = [[an, -1], [an.replace(/L$/, 'R'), 1]];
+      else if (/R$/.test(an)) pair = [[an, 1], [an.replace(/R$/, 'L'), -1]];
+      else return [[an, 1]];
+      if (opt.side) return pair.filter(t => (t[1] === -1) === (opt.side < 0));
+      return pair;
     }
 
     for (const an in solid) {
@@ -252,9 +267,17 @@
         const geo = mergeGeos(items);
         stats.verts += geo.attributes.position.count;
         stats.parts += glow[an].length;
-        const mesh = new THREE.Mesh(geo, glowMat(pal.glow || 0xd8c060, !!pal.glow));
+        const mesh = new THREE.Mesh(geo, glowMat(pal.glow || 0xd8c060, !!pal.glow, glow[an][0].op));
         mesh.userData.doll = key;
-        out[target] = mesh;
+        /* **同一挂点可能同时有实体件和光效件**，那是两个 mesh（emissive 是
+         * 材质级，没法合进同一份顶点色）。第一版直接 `out[target] = mesh`，
+         * 于是光效那一步把实体 mesh 覆盖掉了 —— C 族戒指的两段短链
+         * （link / link2，共 72 个顶点）凭空消失，而且**一声不响**：
+         * 挂点里只有一个 mesh，看着「装上了」，只是少画了两个零件。
+         * 现在把光效 mesh 挂成实体 mesh 的子节点：draw call 不变，
+         * out[target] 仍然是 mesh（mount / dress / stats 全都不用改口径）。 */
+        if (out[target]) out[target].add(mesh);
+        else out[target] = mesh;
       }
     }
 
@@ -351,8 +374,10 @@
       if (an.charAt(0) === '_') continue;
       const o = res[an];
       if (!o) continue;
-      if (o.isMesh && o.geometry) out.push(o.geometry);
-      else if (o.traverse) o.traverse(c => { if (c.isMesh && c.geometry) out.push(c.geometry); });
+      /* **一律 traverse**（它包含自身）：一个挂点下可能是「实体 mesh + 光效子 mesh」
+       * 两层，只取 o.geometry 会把光效那层的几何漏在缓存外面 ——
+       * 缓存满了拆 entry 时它不释放，换装几千次就是几十 MB。 */
+      if (o.traverse) o.traverse(c => { if (c.isMesh && c.geometry) out.push(c.geometry); });
     }
     return out;
   }
@@ -374,7 +399,9 @@
   function build(item, cls, opt) {
     opt = opt || {};
     const isW = item.slot === 'weapon' || item.slot === 'offhand';
-    const ck = cacheKey(item, cls);
+    /* side 必须进缓存 key：ring1（左）与 ring2（右）同族同阶时几何是**镜像**的，
+     * 共用一份缓存等于「左手戴上了右手的戒指」—— 位移镜像了，戒指却挂在左手。 */
+    const ck = cacheKey(item, cls, opt.side ? (opt.side < 0 ? 'L' : 'R') : '');
     let entry = ck ? CACHE.get(ck) : null;
     if (entry) {
       hits++;
@@ -456,7 +483,7 @@
    * 引用计数：同一个 res 可能占多个挂点（护肩 L+R 共享一份几何），
    * 所以按 res 去重后只 release 一次 —— 逐个挂点 release 会把 refs 减穿。
    */
-  function dress(actor, slot, item, cls) {
+  function dress(actor, slot, item, cls, opt) {
     if (!actor || !actor.parts) return false;
     const book = actor.__doll || (actor.__doll = {});
     const prev = book[slot];
@@ -471,7 +498,7 @@
       delete book[slot];
     }
     if (!item) return true;                       // 脱掉：摘干净就算成功
-    const res = build(item, cls);
+    const res = build(item, cls, opt);
     if (!res) return false;
     const rec = {};
     for (const an in res) {
@@ -483,9 +510,13 @@
       /* 挨打要闪：材质必须进 actor.mats（charforge.js 遍历的就是这张表），
        * 否则受击只有身体闪、装备不动，看着像模型分层。
        * 材质是池里共享的，所以**去重** —— 不去重的话换十次装，
-       * 同一份材质在 mats 里出现十次，每次受击多遍历十遍。 */
-      const m = res[an].material;
-      if (m && actor.mats && actor.mats.indexOf(m) < 0) actor.mats.push(m);
+       * 同一份材质在 mats 里出现十次，每次受击多遍历十遍。
+       * 用 traverse 而不是只看 res[an].material：一个挂点下可能是
+       * 「实体 mesh + 光效子 mesh」两层，光效那层的材质也得进来。 */
+      if (res[an].traverse) res[an].traverse(o => {
+        const m = o.material;
+        if (m && actor.mats && actor.mats.indexOf(m) < 0) actor.mats.push(m);
+      });
     }
     if (!Object.keys(rec).length) { release(res); return false; }
     book[slot] = rec;

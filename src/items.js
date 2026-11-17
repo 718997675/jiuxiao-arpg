@@ -836,6 +836,11 @@ function rollItem(ilvl, opts = {}) {
     }
   }
 
+  /* ring1 / ring2 是**装备栏位**，不是物品槽 —— 物品永远只有 `ring` 一种。
+   * 但定向造装（任务奖励 / 商店按栏位补 / 验收探针）会传栏位名，
+   * 不归一化就会去读 `ARMOR_BASES['ring1']` → undefined → `list.length` 一造就崩。
+   * 归一化必须在读基底表**之前**（`isRing` 那行只在最后回写 item.slot）。 */
+  if (slot === 'ring1' || slot === 'ring2') slot = 'ring';
   const isRing = slot === 'ring';
   const item = {
     uid: ITEM_UID++, slot, ilvl, rarity, cls: null,

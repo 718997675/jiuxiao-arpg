@@ -65,10 +65,14 @@ const DOLL_ANCHORS = {
    * charforge 在 elbow/knee 原点各开了一个空子组，位置等价、互不干扰。 */
   gloveL:    'elbowL',  gloveR: 'elbowR',
   bootL:     'kneeL',   bootR:  'kneeR',
-  elbowL:    'elbowL',  elbowR: 'elbowR',     // 戒指：直接挂关节（P3 再收成 ringL/R）
+  /* 戒指：与护手同位置的独立空槽。**一枚戒指只戴一只手**，
+   * ring1 / ring2 分别传 side 给装配器，镜像在这里被关掉。 */
+  ringL:     'elbowL',  ringR: 'elbowR',
+  elbowL:    'elbowL',  elbowR: 'elbowR',     // 旧数据兜底（P3 之后不该再有）
   kneeL:     'kneeL',   kneeR:  'kneeR',      // 旧数据兜底，同 bootL
+  neckG:     'torso',                          // 项链：颈部（不是 torsoG）
   relicG:    'torso',
-  footG:     'root'                            // 命格：脚下
+  footG:     'root'                            // 命格：脚下原点
 };
 
 /* 挂点的世界坐标（战士 build=1.06）。**只给剪影判据与文档用**，
@@ -82,7 +86,15 @@ const DOLL_ANCHOR_WORLD = {
   torsoG:    [0, 0.920, 0],      skirtG:    [0, 0.920, 0],
   elbowL:    [-0.305, 1.085, 0], elbowR:    [0.305, 1.085, 0],
   kneeL:     [-0.154, 0.460, 0], kneeR:     [0.154, 0.460, 0],
-  relicG:    [0.190, 0.990, 0.060],
+  ringL:     [-0.305, 1.085, 0], ringR:     [0.305, 1.085, 0],
+  neckG:     [0, 1.495, 0],
+  /* 法器挂点必须在**身体表面之外、手臂之后**：腰腹半径 0.208~0.222、
+   * 下摆 0.290、自然下垂的前臂在 x≈0.305 / z≈0。
+   * 0.190 落在身体里（被胸甲吃掉）；0.300 撞手臂（被前臂吃掉）；
+   * 0.280 还在下摆半径 0.307 之内（被下摆吃掉）。
+   * 最终是侧后腰 (0.240, -0.260)：下摆在 z=-0.26 处半径只剩 0.163，
+   * 0.240 已经在外；手臂在 z≈0，离法器 26 厘米。 */
+  relicG:    [0.240, 0.990, -0.260],
   footG:     [0, 0, 0]
 };
 
@@ -471,7 +483,7 @@ belt: {
 amulet: {
   A: {
     name: '玉牌', axis: '颈环 + 单坠',
-    anchor: 'torsoG',
+    anchor: 'neckG',
     parts: [
       { i: 'ring', g: 'cyl', s: [0.080, 0.080, 0.016, 10], p: [0, 0.012, 0], m: 'sub' },
       { i: 'cordL', g: 'box', s: [0.010, 0.170, 0.010], p: [-0.030, 0.040, 0.078], r: [0.42, 0, 0.14], m: 'sub' },
@@ -486,7 +498,7 @@ amulet: {
   },
   B: {
     name: '珠串', axis: '多珠下垂',
-    anchor: 'torsoG',
+    anchor: 'neckG',
     parts: [
       { i: 'ring', g: 'cyl', s: [0.082, 0.082, 0.016, 10], p: [0, 0.012, 0], m: 'sub' },
       /* 9 颗沿 U 形弧：角度从 -1.15 到 1.15，半径 0.115，下垂 -0.04 */
@@ -507,7 +519,7 @@ amulet: {
   },
   C: {
     name: '铃', axis: '金属铃 · 侧挂',
-    anchor: 'torsoG',
+    anchor: 'neckG',
     parts: [
       { i: 'ring', g: 'cyl', s: [0.080, 0.080, 0.014, 10], p: [0, 0.012, 0], m: 'sub' },
       { i: 'cord', g: 'box', s: [0.010, 0.140, 0.010], p: [0.062, -0.020, 0.096], r: [0.20, 0, -0.45], m: 'sub' },
@@ -576,7 +588,7 @@ relic: {
 ring: {
   A: {
     name: '素环', axis: '一点微光',
-    anchor: 'elbowL',
+    anchor: 'ringL',
     parts: [
       { i: 'p', g: 'sph', s: [0.013, 5], p: [0.046, -0.318, 0.022], m: 'accent' }
     ],
@@ -584,7 +596,7 @@ ring: {
   },
   B: {
     name: '镶石戒', axis: '宽点 + 元素石',
-    anchor: 'elbowL',
+    anchor: 'ringL',
     parts: [
       { i: 'p', g: 'sph', s: [0.018, 6], p: [0.048, -0.320, 0.024], m: 'accent' },
       { i: 'ring', g: 'cyl', s: [0.020, 0.020, 0.012, 8], p: [0.048, -0.320, 0.024], r: [1.57, 0, 0], m: 'trim' }
@@ -593,7 +605,7 @@ ring: {
   },
   C: {
     name: '双环', axis: '两点 + 短链',
-    anchor: 'elbowL',
+    anchor: 'ringL',
     parts: [
       { i: 'p', g: 'sph', s: [0.014, 5], p: [0.046, -0.316, 0.022], m: 'accent' },
       { i: 'p2', g: 'sph', s: [0.014, 5], p: [-0.044, -0.316, 0.020], m: 'accent' },
@@ -619,7 +631,9 @@ fate: {
     name: '命盘', axis: '背后立盘 · 半透明',
     anchor: 'footG',
     parts: [
-      { i: 'disc', g: 'disc', s: [0.300, 0.008, 16], p: [0, 1.320, -0.330], r: [Math.PI / 2, 0, 0], m: 'accent' },
+      /* op 是不透明度：设计要的就是「半透明立盘」。不写的话光效通道默认
+       * 不透明，装配出来是一块亮黄实心板，把整个后背糊住。 */
+      { i: 'disc', g: 'disc', s: [0.300, 0.008, 16], p: [0, 1.320, -0.330], r: [Math.PI / 2, 0, 0], m: 'accent', op: 0.42 },
       { i: 'rim', g: 'torus', s: [0.310, 0.010, 4, 20], p: [0, 1.320, -0.330], m: 'trim' },
       { i: 'spoke', g: 'box', s: [0.014, 0.560, 0.008], p: [0, 1.320, -0.336], m: 'trim' }
     ],

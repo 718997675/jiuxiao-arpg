@@ -307,6 +307,11 @@
       put(elbow, G.box(0.072, 0.094, 0.058), mHand, 0, -0.30, 0);       // 手
       /* 换装护手专用空槽（同上：只给 Doll.dress 用） */
       const gloveG = slot(elbow, 0, 0, 0);
+      /* 换装戒指专用空槽。与 gloveG 同位置但**必须分开**：
+       * 戒指零件写的是相对肘关节的绝对偏移（p=[0.046, -0.318, 0.022]，
+       * 即「手上」），所以挂点得在肘原点；共用一个组的话，
+       * 护手和戒指会互相踩 clearGroup（一处清空把对方也清了）。 */
+      const ringG = slot(elbow, 0, 0, 0);
       /* 换装袖子专用空槽（战甲数据里 slvL/slvR 挂的就是它）。
        * 不挂 armL 本体：上臂组里装着上臂圆柱和自带袖子，清一次挂点手就没了。 */
       const sleeveG = slot(arm, 0, 0, 0);
@@ -318,9 +323,11 @@
       if (side < 0) {
         A.parts.armL = arm; A.parts.elbowL = elbow; A.parts.offHand = offSlot;
         A.parts.wristBaseL = wristBase; A.parts.gloveL = gloveG; A.parts.sleeveL = sleeveG;
+        A.parts.ringL = ringG;
       } else {
         A.parts.armR = arm; A.parts.elbowR = elbow; A.parts.weaponHand = wpnSlot;
         A.parts.wristBaseR = wristBase; A.parts.gloveR = gloveG; A.parts.sleeveR = sleeveG;
+        A.parts.ringR = ringG;
       }
     }
 
@@ -368,6 +375,27 @@
     A.parts.capeG = slot(torso, 0, 0.520, -0.170);
     /* 战甲 / 腰带（两槽共用 torsoG，dress 按 slot 记录所以互不覆盖） */
     A.parts.torsoG = slot(torso, 0, 0, 0);
+
+    /* P3 三组：项链 / 法器 / 命格。
+     * neckG 是**颈部**（脖子圆柱在 torso 局部 y=0.585），不是 torsoG ——
+     * amulet 的零件表按颈环写的（半径 0.080 套住 0.058~0.068 的脖子），
+     * 挂到 torsoG 上会变成一圈挂在胯上的腰环。P0 写数据时还没有真骨架，
+     * 这里按实机比例定死：颈环中心落在 y≈1.50。 */
+    A.parts.neckG = slot(torso, 0, 0.575, 0);
+    /* 法器：右腰侧。
+     * **必须在身体表面之外**（x≈0.30）：战士腰腹半径 0.208~0.222、下摆 0.290，
+     * 第一版按 DOLL_ANCHOR_WORLD 写的 0.190 落在身体里面 ——
+     * 三族法器全被胸甲和下摆挡住，截图里什么都看不到，而且不报错。
+     * 第二版挪到 0.300 又撞上自然下垂的手臂（前臂正好在 x≈0.305、y≈0.78~1.08），
+     * 所以再往后挪到侧后腰：手臂在 z≈0，法器在 z=-0.16，互不遮挡。
+     * 第三版仍看不见 —— 0.280 还在下摆半径 0.290×1.06=0.307 之内，被下摆吞了。
+     * 最终 (0.240, -0.260)：贴着侧后腰。下摆在 z=-0.26 处半径只剩 0.163，
+     * 所以 0.240 已经在下摆外面；手臂在 z≈0，离法器 26 厘米，不贴手。 */
+    A.parts.relicG = slot(torso, 0.240, 0.070, -0.260);
+    /* 命格：脚下原点。零件表写的是**角色绝对坐标**（A 族符纹环 y=0.02、
+     * B 族命盘 y=1.32、C 族双肩火点 y=1.64），所以这个挂点必须在原点，
+     * 不能像别的挂点那样带偏移。 */
+    A.parts.footG = slot(root, 0, 0, 0);
 
     /* ================= 自带武器 ================= */
     if (cfg.weapon && !opt.noWeapon) {
