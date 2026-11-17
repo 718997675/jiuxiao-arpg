@@ -10842,10 +10842,12 @@ const Game = {
         const done = QuestSys.turnIn(a);
         const nx = QuestSys.nextOf(done);
         if (nx) {
+          /* [P08] 接下一环时也把奖励亮出来 —— 这条链上玩家最常问的就是
+           * 「这一环比上一环给得多吗」。 */
           UI.showDialog(npc.name, nx.brief, [
             { label: '接下「' + nx.name + '」', primary: true, action: () => { QuestSys.accept(nx.id); UI.closeAll(); } },
             { label: '稍后再说', action: () => UI.closeAll() }
-          ]);
+          ], UI.renderRewards(nx.rewards));
         } else {
           const more = QuestSys.offersOf(giver);
           if (more.length) {
@@ -10876,7 +10878,7 @@ const Game = {
         { label: '接下「' + q.name + '」', primary: true, action: () => { QuestSys.accept(q.id); UI.closeAll(); } },
         boardBtn,
         { label: '容我想想', action: () => UI.closeAll() }
-      ]);
+      ], UI.renderRewards(q.rewards));
       return;
     }
 

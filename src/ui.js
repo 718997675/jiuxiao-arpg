@@ -3697,8 +3697,11 @@ const UI = {
         `<div class="qo ${o.done ? 'done' : ''}">· ${o.label}　${o.cur}/${o.count}</div>`
       ).join('');
       const where = (q.map && q.map !== 'any' && MAPS[q.map]) ? `<div class="qo" style="color:#7a7466">目标 · ${MAPS[q.map].name}</div>` : '';
+      /* [P08] 奖励写在 brief 下面、目标进度上面 —— 玩家翻任务卡的第一诉求
+       * 是「这活儿值不值」，进度是第二诉求。 */
+      const rw = this.renderRewards(q.rewards);
       return `<div class="quest"><div class="qn">${q.name}<span style="color:#7a7466;font-size:11px;margin-left:6px">${tag[kind]}</span></div>
-        <div class="qb">${q.brief}</div>${where}${rows}
+        <div class="qb">${q.brief}</div>${where}${rw}${rows}
         </div>`;
     }).join('');
   },
@@ -3886,10 +3889,15 @@ const UI = {
   },
 
   /* ---------------- 对话 ---------------- */
-  showDialog(name, text, options) {
+  showDialog(name, text, options, rewardHtml) {
     const d = document.getElementById('dialog');
     document.getElementById('dlgName').textContent = name;
     document.getElementById('dlgText').textContent = text;
+    /* [P08] 第 4 个参数可选：不传就把奖励条清空（`:empty` 会自己隐藏）。
+     * 奖励单独放一个容器而不是拼进 `text`，是因为 `dlgText` 走 textContent，
+     * 装备品质色会被当成字面量显示出来。 */
+    const rw = document.getElementById('dlgReward');
+    if (rw) rw.innerHTML = rewardHtml || '';
     const btns = document.getElementById('dlgBtns');
     btns.innerHTML = '';
     options.forEach(o => {
@@ -3900,6 +3908,41 @@ const UI = {
       btns.appendChild(b);
     });
     d.style.display = 'block';
+  },
+
+  /* ============================================================
+   * [P08] 任务奖励预览 —— **一个组件，三个出口**
+   *
+   * 出口：接取对话（`openGiver`）、山海志任务卡（`renderQuests`）、
+   *       悬赏板（P07 的 `#boardPanel`）。
+   *
+   * 为什么必须只有一个实现：各写一份的结果是「对话里写 1200 经验、
+   * 任务卡里写 1000 经验」，玩家按哪份信？而且改数值时永远会漏一处。
+   *
+   * 口径来自 `QUESTS[x].rewards`：`{ xp, gold, ilvl, rarity, skill, talent }`。
+   * **不写「按交任务时的等级生成」** —— `QuestSys.turnIn` 用的是
+   * `rewards.ilvl` 这个固定值，不是玩家当前等级。写了就是骗人。
+   * ============================================================ */
+  renderRewards(r) {
+    if (!r) return '';
+    const out = [];
+    if (r.xp) out.push(`<span class="rw rw-xp">${r.xp} 经验</span>`);
+    if (r.gold) out.push(`<span class="rw rw-gold">${r.gold} 金</span>`);
+    if (r.rarity && typeof RARITY !== 'undefined' && RARITY[r.rarity]) {
+      const q = RARITY[r.rarity];
+      const lv = r.ilvl ? ' · ilv' + r.ilvl : '';
+      out.push(`<span class="rw rw-item" style="color:${q.color}">${q.name}${lv} 装备（随机）</span>`);
+    }
+    if (r.skill && typeof SKILLS !== 'undefined' && SKILLS[r.skill]) {
+      out.push(`<span class="rw rw-skill">术法「${SKILLS[r.skill].name}」</span>`);
+    }
+    if (r.talent) out.push(`<span class="rw rw-tal">天赋点 +${r.talent}</span>`);
+    if (!out.length) return '';
+    /* 「随机」两个字要留住：玩家会以为任务给的是某一件固定装备，
+     * 交完发现词条不一样就来问「是不是 bug」。 */
+    const note = (r.rarity && r.ilvl)
+      ? `<div class="rw-note">装备按 ilv ${r.ilvl} 随机生成，词条每次不同</div>` : '';
+    return `<div class="rw-line">奖励 ${out.join('')}</div>${note}`;
   },
 
   /* ---------------- 商店 ---------------- */

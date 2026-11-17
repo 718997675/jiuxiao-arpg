@@ -1635,6 +1635,18 @@
     box-shadow:0 16px 50px rgba(0,0,0,.9)}
   #dialog .dn{font-family:"STKaiti",serif;font-size:15px;color:var(--gold);letter-spacing:3px;padding:9px 16px 0}
   #dialog .dt{font-size:13px;line-height:1.95;color:#ddd4c0;padding:6px 16px 12px;letter-spacing:.5px}
+  /* [P08] 奖励预览条：正文与按钮之间，深色底 + 金色左边线，一眼能分出「这是报酬」。 */
+  #dialog .dr{display:none;padding:0 16px 10px}
+  #dialog .dr:not(:empty){display:block}
+  .rw-line{font-size:12px;line-height:1.8;color:#c9c0ac;background:rgba(216,178,90,.06);
+    border-left:2px solid rgba(216,178,90,.5);padding:6px 10px;border-radius:0 3px 3px 0}
+  .rw-line .rw{margin-right:10px;white-space:nowrap}
+  .rw-line .rw:last-child{margin-right:0}
+  .rw-xp{color:#9ec8f0}
+  .rw-gold{color:#e8c469}
+  .rw-skill{color:#a8d8a0}
+  .rw-tal{color:#c9a0e8}
+  .rw-note{font-size:10.5px;color:#7a7466;margin-top:3px}
   #dialog .dc{display:flex;gap:8px;padding:0 16px 12px;flex-wrap:wrap}
   #dialog .dc .btn{padding:5px 14px;font-size:12px}
 
@@ -2923,6 +2935,9 @@
 <div id="dialog">
   <div class="dn" id="dlgName"></div>
   <div class="dt" id="dlgText"></div>
+  <!-- [P08] 奖励预览：由 UI.renderRewards() 生成，挂在正文与按钮之间。
+       不放正文里是因为 `dlgText` 用 textContent（纯文本），奖励要带品质色。 -->
+  <div class="dr" id="dlgReward"></div>
   <div class="dc" id="dlgBtns"></div>
 </div>
 

@@ -5,7 +5,7 @@
 - 打磨计划：`docs/POLISH-PLAN.md`（用户 2026-10-28 提的 17 项体验 / 平衡，P01~P17，分 4 批）
 - 专题台账：`docs/status/world-boss.md`（M18 世界 Boss，插单，与本线并行；**M18.1~M18.9 全部完成**（含六套骨架 + 两个骨架键 + 掉落 + 说明页），可合 main）
 - 预览站：<https://718997675.github.io/jiuxiao-arpg/preview/act-expansion/>
-- 更新：2026-11-17（M7.9 文案同步落地 · **M7 九节全部收口**）
+- 更新：2026-11-17（P08 奖励预览落地 · M7 九节已全收口）
 
 > 当前：M1~M6 已完成（39 张图 · 80 种怪 · 图鉴 5 卷 + 秘境 · 5 阶地下城 · 60 级上限 · 传世 40 件 ·
 > 套装 18 套 · 基底 8 阶）。**M18 世界 Boss 九节全完**，已随本线合入 main。
@@ -13,7 +13,7 @@
 > M7.5 九套骨架 / M7.6 五阶段终 boss / M7.7 全传世掉落 / M7.8 二周目 / **M7.9 文案同步** 已落地，
 > **M7.1 ~ M7.9 九节全部收口**，见下「M7 小节状态」。另有一条并行线：P 打磨 17 项，
 > **第 1 批（P01 P02 P03 P09 P11 P12 P16）+ 第 2 批的 P04 / P06 / P10 已完成**，
-> 第 2 批剩余（P07 P08 P17）与第 3~4 批未开工，见下「P 系列」。
+> 第 2 批的 **P08 已完成**，剩余 P07 / P17 与第 3~4 批未开工，见下「P 系列」。
 
 ## 一句话现状
 
@@ -43,7 +43,7 @@ M7 把「打完终 boss 就结束」改成了终局循环：混沌海从战斗�
 图位 30 → **39**。8 位魔将的弱点**不进图鉴**，只写在 `BOSSES.resist` 里，
 玩家只能靠伤害数字自己摸 —— 打错吃 20%、打对吃 160%，正好 8 倍。
 
-**剩下的**：P 打磨第 2 批的 P07 / P08 / P17（M7 已九节全收口）。
+**剩下的**：P 打磨第 2 批的 P07 / P17（M7 已九节全收口，P08 已完）。
 
 ## 节点表
 
@@ -60,9 +60,9 @@ M7 把「打完终 boss 就结束」改成了终局循环：混沌海从战斗�
 | M4 | 怪物 / 首领：**36 只新怪**（全量，非 24）；图鉴改 5 大卷；5 个卷末首领强化 | ✅ | `src/data/data-monsters.js`、`src/data/data-world.js`、`src/data/data-maps.js`、`src/game.js`、`src/ui.js`、`src/data/data-core.js`、`dev/test-m4.js` | 本次 |
 | M5 | 地下城：`dungeon.js`；5 类 × 5 阶；词缀；图鉴加成；钥匙掉落 | ✅ | 新建 `src/dungeon.js`、`src/data/data-dungeon.js`、`dev/test-m5.js`、`dev/dungeon-sim.js`、`dev/probe-dungeon.js`；改 `index.html`、`src/game.js`、`src/core/save.js`、`src/items.js`、`src/world.js`、`src/data/data-monsters.js`、`src/data/data-world.js`、`src/data/data-core.js`、`src/data/data-maps.js` | 本次 |
 | M6 | 平衡 / 打磨：60 级曲线复算；**基底保持 8 阶**（否决 12 阶）+ ilvl 终局加速；传世 40 件；套装 18 套；**终局难度回补**；世界结构体检；性能实测；手机端回归 | ✅ | `src/data/data-core.js`、`data-uniques.js`、`data-items.js`、`data-monsters.js`、`data-maps.js`、`data-world.js`、`src/items.js`、`src/actors.js`、`dev/act-check.js` | 本次（见下） |
-| M7 | **终章重做 · 八部天龙**：8 魔将副本 + 8 魔将之印 + 终门 + 五阶段终 boss + 9 个专属模型 + 全传世掉落 | 🔄 | `data-world.js`、`data-maps.js`、`data-monsters.js`、`game.js`、`ui.js`、`dev/check-bafo.js` | 见下「M7 小节状态」 |
+| M7 | **终章重做 · 八部天龙**：8 魔将副本 + 8 魔将之印 + 终门 + 五阶段终 boss + 9 个专属模型 + 全传世掉落 + 二周目轮回 + 文案同步 | ✅ | `data-world.js`、`data-maps.js`、`data-monsters.js`、`data-core.js`、`game.js`、`items.js`、`boss-cast.js`、`core/save.js`、`ui.js`、`bafomodels.js`、`README.md`、`dev/check-bafo.js` 等 8 份体检 | **M7.1~M7.9 九节全部 ✅**，见下「M7 小节状态」 |
 | M3b-fix | **图间门**：一章里第 2 张起的图（落霞坡 / 沉骨滩 / 玄铁矿洞 / 万剑坑 …）在游戏里没有入口 —— M1 只给章尾挂了门。补 `nextMapInWorld`（章内先串、章尾再跨章）；门立在**首领区最深处**、**首领第一次倒地才出现**（`state.mapCleared`），门加名牌 | ✅ | `src/data/data-world.js`、`src/data/data-maps.js`、`src/world.js`、`src/game.js`、`src/core/save.js`、`dev/act-check.js`、`dev/zone-check.js` | `7696f58` + `40f8260` |
-| P | **打磨计划 17 项**（P01~P17，体验 / 平衡，用户 2026-10-28 提）：只出了**计划文档**，代码未动 | 🔄 | `docs/POLISH-PLAN.md` | `0513141`（搭车提交） |
+| P | **打磨计划 17 项**（P01~P17，体验 / 平衡，用户 2026-10-28 提）：**14 项已落地**（第 1 批 7 项 + 第 2 批 P04 / P06 / P08 / P10），剩 P07 / P17 | 🔄 | `docs/POLISH-PLAN.md` + 各条落地脚本 | `0513141`（建档） |
 
 ### M7 小节状态（终章重做 · 换账号按这张表继续）
 
@@ -587,7 +587,7 @@ M7 把「打完终 boss 就结束」改成了终局循环：混沌海从战斗�
 | 批次 | 内容 | 为什么先做这些 |
 |---|---|---|
 | **第 1 批**（3~4 天）✅ | P02、P09、P11、P03、P16、P01、P12 | 前四条是**真 bug**（玩家以为游戏坏了），后三条改数字就见效 |
-| **第 2 批**（4~5 天） | ~~P06、P10、P04~~ ✅、P07、P08、P17 | 战斗手感 + UI。P06 / P10 必须一起做（都是战斗数值，分开调会互相打脸） |
+| **第 2 批**（4~5 天） | ~~P06、P10、P04、P08~~ ✅、P07、P17 | 战斗手感 + UI。P06 / P10 必须一起做（都是战斗数值，分开调会互相打脸） |
 | **第 3 批**（5~7 天） | P05、P14 | 数据量活（写 40 种怪、重排首领落点） |
 | **第 4 批**（6~8 天） | P13、P15 | 内容创作，要先出设计稿再写代码 |
 
@@ -620,7 +620,7 @@ M7 把「打完终 boss 就结束」改成了终局循环：混沌海从战斗�
 ② P09 血条归属从「就近切换」改成「粘性」（就近会让血条在相距 9 米的几只之间来回跳）；
 ③ P12 经验衰减从线性改成三次方（线性实测 40 级打 10 波仍给 115%，验收线是 <15%）。
 
-#### 第 2 批节点表（P04 / P06 / P10 已完，P07 P08 P17 未开工）
+#### 第 2 批节点表（P04 / P06 / P08 / P10 已完，P07 P17 未开工）
 
 | # | 内容 | 改了哪里 | 状态 | 验收脚本 |
 |---|---|---|---|---|
@@ -628,7 +628,7 @@ M7 把「打完终 boss 就结束」改成了终局循环：混沌海从战斗�
 | P10 | 卡位远程打死 Boss | `castRangeFail`（够不着不扣蓝不进 CD，三种 cast 分开判）；`resolveCast` 去掉 `range \|\| 99`；leash 随 P02 落地 | ✅ | `dev/skill-ref.js` 三段 |
 | P04 | 自动拾取 + 品质筛选 | `updateLoot` 加 `autoR 4.2` + 品质门槛 + 「未拾取」角标 + 行囊满 10 秒去重；`Settings` 加五项拾取设置；`ui.js` SET_ROWS 加「拾取」五行（`sub` 灰态）；`items.js` 加 `RARITY_ORDER` / `rarityRank` | ✅ | `dev/pickup-check.js` 52 项 |
 | P07 | 悬赏板 | — | ⬜ | `dev/mobile-layout.js` + 人工 |
-| P08 | 奖励预览 | — | ⬜ | `dev/test-quest.js` 加断言 |
+| P08 | 奖励预览 | `ui.js` `renderRewards` + `showDialog` 第 4 参、`game.js` `openGiver` 两处、`index.html` `#dlgReward` | ✅ | `dev/test-p08.js` 31 项 + `dev/probe-p08.js` 20 项 |
 | P17 | 日志消息流 | — | ⬜ | `dev/log-check.js`（待建） |
 
 **P06 的结论值得单独记一笔**：问题不在「消耗调小了」，而在**口径**。
@@ -648,8 +648,27 @@ M7 把「打完终 boss 就结束」改成了终局循环：混沌海从战斗�
 顺手修了一个真 bug：`Settings.set()` 只对 `mute` 做 `!!v`，而 UI 传的是 `'0'`/`'1'` 字符串，
 `'0'` 是真值，表现就是「关掉了但还在自动捡」。
 
-**下一步**：第 2 批剩下的 P07（悬赏板）/ P08（奖励预览）/ P17（日志消息流），
-三条都是 UI / 交互，互不冲突，可以连着做。
+**P08 的一句话结论**：奖励预览的价值不在「好看」，在**「接之前就知道值不值」**。
+以前 `QUESTS[x].rewards` 只在交任务那一刻被读一次，玩家接一条悬赏前完全看不到报酬 ——
+这直接导致「接了三条才发现都不值」的挫败。落地口径有三条硬约束：
+
+1. **一个组件，三个出口**（接取对话 / 山海志任务卡 / P07 悬赏板）。各写一份的结果是
+   「对话里写 1200 经验、任务卡里写 1000 经验」，玩家按哪份信？
+2. **奖励不能拼进对话正文**：`dlgText` 走 `textContent`，装备品质色会被当字面量显示。
+   所以 `showDialog` 加第 4 个可选参数，奖励单独放 `#dlgReward`，靠 `:empty` 自动显隐 ——
+   不写死 `display`，就少一处「忘了关」。
+3. **不写「按交任务时的等级生成」**：计划书原话是这么写的，但 `QuestSys.turnIn` 用的是
+   `rewards.ilvl` 这个**固定值**，不是玩家当前等级。写了就是骗人。改成「按 ilv N 随机生成，词条每次不同」——
+   既说清「随机」，也不撒谎。
+
+**踩到的坑**：探针第一版直接 `QuestSys.accept(id)` 拿返回值当记录用 —— 它返回的是
+**`true` / `false`**，记录要从 `state.quests.active` 里取，于是 `turnIn(undefined)` 静默返回
+`null`，报错指向「任务没交掉」而不是根因。第二个坑：挑任务时只按「有 gold + talent + ilvl」
+筛，主线后面几章的 `require` 没完成 → `canOffer` false → `accept` false，同样表现为「交不掉」。
+改成先 `QuestSys.canOffer` 过滤才是对的。
+
+**下一步**：第 2 批剩下的 P07（悬赏板，复用 P08 的奖励组件）/ P17（日志消息流），
+两条都是 UI / 交互，互不冲突，可以连着做。
 
 ### 合入 main（M7 完成后）
 
