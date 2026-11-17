@@ -58,9 +58,16 @@ const CRAFT_MATS = {
   soul: {
     id: 'soul', name: '妖丹', tier: 3, color: '#ff6a8a', icon: 'soul',
     from: '首领 · 大妖', desc: '大妖千年修出的一枚内丹，炉火一触便散作灵雾。'
+  },
+  /* [M18.8] 世界魂：**只从世界 Boss 出**，六只必掉 1~2。
+   * 挂在 tier 3（神料）而不是新开一档 —— 炼器台的格子是按 tier 分栏的，
+   * 开第 4 档要连带改 UI 与排序，而它在本作里就是「最高阶的神料」。 */
+  worldsoul: {
+    id: 'worldsoul', name: '世界魂', tier: 3, color: '#e0c8ff', icon: 'soul',
+    from: '世界 Boss · 必掉', desc: '巨兽散于天地间的那口气，凝而不散。传世之器再往上炼，只认这个。'
   }
 };
-const CRAFT_MAT_ORDER = ['ore', 'hide', 'bone', 'silk', 'ember', 'frost', 'scale', 'meteor', 'soul'];
+const CRAFT_MAT_ORDER = ['ore', 'hide', 'bone', 'silk', 'ember', 'frost', 'scale', 'meteor', 'soul', 'worldsoul'];
 const CRAFT_TIER_NAME = { 1: '凡料', 2: '灵料', 3: '神料' };
 
 /* 匠材在 state.stash.mats 里的键前缀（与 xuanjing / crystal1 / rune_xx 同一处） */

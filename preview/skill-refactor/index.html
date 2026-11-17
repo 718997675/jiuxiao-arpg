@@ -34,7 +34,9 @@
   .btn:disabled{opacity:.35;cursor:not-allowed}
 
   /* ---------- 左上角角色板 ---------- */
-  #charplate{position:absolute;left:18px;top:16px;display:flex;gap:10px;align-items:flex-start;pointer-events:auto}
+  /* [V1] flex-wrap 是为了让 #buffrow 换行到血条下面（flex-basis:100%）。
+     不新开悬浮层，进菜单 / 开面板时它跟着 #charplate 一起淡出。 */
+  #charplate{position:absolute;left:18px;top:16px;display:flex;flex-wrap:wrap;column-gap:10px;row-gap:4px;align-items:flex-start;pointer-events:auto}
   #portrait{width:66px;height:66px;border:1px solid var(--gold-d);background:radial-gradient(circle at 50% 35%,#3a3226,#12100c);
     display:flex;align-items:center;justify-content:center;position:relative;box-shadow:0 0 0 1px #000,0 4px 18px rgba(0,0,0,.7)}
   #portrait .glyph{font-family:"STKaiti","KaiTi",serif;font-size:34px;color:#e8c878;text-shadow:0 0 12px rgba(216,178,90,.6)}
@@ -55,7 +57,14 @@
   /* ---------- 右上角 ---------- */
   #topright{position:absolute;right:18px;top:16px;display:flex;flex-direction:column;align-items:flex-end;gap:8px}
   #miniWrap{width:168px;height:168px;border:1px solid var(--line);background:rgba(4,5,8,.8);
-    position:relative;box-shadow:0 6px 24px rgba(0,0,0,.65),inset 0 0 30px rgba(0,0,0,.8);overflow:hidden}
+    position:relative;box-shadow:0 6px 24px rgba(0,0,0,.65),inset 0 0 30px rgba(0,0,0,.8);overflow:hidden;
+    /* [P03] 点它开大图。`#app > *` 默认 pointer-events:none，不显式打开的话
+     * 点击会被整层 HUD 吃掉 —— 代码里绑了 click 也永远不触发。 */
+    pointer-events:auto;cursor:pointer}
+  #miniWrap:hover{border-color:rgba(216,178,90,.7)}
+  #miniWrap::after{content:'';position:absolute;left:0;right:0;top:0;height:100%;pointer-events:none;
+    background:radial-gradient(circle at 50% 50%,transparent 55%,rgba(216,178,90,.10));opacity:0;transition:opacity .2s}
+  #miniWrap:hover::after{opacity:1}
   #minimap{width:100%;height:100%;display:block}
   #zoneName{position:absolute;left:0;right:0;bottom:0;text-align:center;font-size:11px;letter-spacing:2px;
     padding:3px 0;background:linear-gradient(0deg,rgba(0,0,0,.85),transparent);color:var(--gold)}
@@ -65,6 +74,93 @@
   #questTrack .obj{color:#a8a090}
   #questTrack .obj.done{color:#5ce08a;text-decoration:line-through}
   #goldRow{font-size:12px;color:#e8c878;letter-spacing:1px;display:flex;gap:14px;text-shadow:0 1px 3px #000}
+
+  /* ---------- 世界 Boss · 追踪行（M18.3） ----------
+   * 和任务追踪框分开两块：任务三行是「你接了的事」，
+   * 世界 Boss 是「世界正在发生的事」。混在一起玩家会以为那是一条任务，
+   * 然后去山海志里找它的复命按钮。 */
+  #wbTrack{width:210px;display:none;cursor:pointer;padding:6px 10px 7px;
+    background:linear-gradient(90deg,rgba(46,16,10,.86),rgba(10,7,6,.74));
+    border-left:2px solid #c8563a;box-shadow:0 0 16px rgba(200,60,30,.16)}
+  #wbTrack:hover{border-left-color:#ff8a5a;box-shadow:0 0 22px rgba(255,90,50,.3)}
+  #wbTrack .wb-k{font-size:9.5px;letter-spacing:3px;color:#e0895a}
+  #wbTrack .wb-n{font-family:"STKaiti","KaiTi",serif;font-size:14.5px;letter-spacing:2px;
+    color:#ffd0a8;text-shadow:0 0 12px rgba(220,80,40,.55);line-height:1.35}
+  #wbTrack .wb-m{font-size:11px;color:#a89a88;letter-spacing:.5px}
+  #wbTrack .wb-t{color:#ffb070;font-variant-numeric:tabular-nums;letter-spacing:1px}
+  /* 已讨伐：整块降饱和，鼠标也不该再给「可点」的暗示 */
+  #wbTrack.dead{border-left-color:#5a4a42;cursor:default;
+    background:linear-gradient(90deg,rgba(28,24,22,.8),rgba(10,9,8,.7));box-shadow:none}
+  #wbTrack.dead .wb-n{color:#9a8a80;text-shadow:none}
+  #wbTrack.dead .wb-k{color:#7a6a60}
+
+  /* ---------- 世界 Boss · 顶部倒计时（M18.10） ----------
+   * 追踪行在右上角小地图底下，打怪时眼睛根本到不了那儿；玩家要的是
+   * 「抬头就能看见还有多久、在哪刷」。所以另起一条**贴顶居中**的常驻条。
+   *
+   * 和 #wbBanner 分工：那个是「它来了」（3.2 秒闪一下），这个是「还有多久」。
+   * 和 #bossbar 抢位置：打首领时 bossbar 占着顶部中央，靠 body.wb-has-boss
+   * 把这条往下让（见下面的规则），否则两只名字会叠在一起。
+   * top 用 6px 是因为小屏横屏（高 320）再往下压就压到画面中心了。 */
+  #wbTop{position:absolute;left:50%;top:6px;transform:translateX(-50%);
+    display:none;align-items:center;gap:9px;padding:4px 14px 5px;white-space:nowrap;
+    background:linear-gradient(180deg,rgba(38,12,8,.88),rgba(10,7,6,.74));
+    border:1px solid rgba(200,86,58,.42);border-radius:2px;font-size:12px;letter-spacing:1px;
+    color:#c8b8a4;pointer-events:auto;cursor:pointer;z-index:12;
+    box-shadow:0 2px 14px rgba(0,0,0,.5),inset 0 0 18px rgba(200,60,30,.10);
+    transition:top .2s ease}
+  #wbTop:hover{border-color:rgba(255,138,90,.75)}
+  #wbTop .wt-k{font-size:9.5px;letter-spacing:2.5px;color:#e0895a}
+  #wbTop .wt-n{font-family:"STKaiti","KaiTi",serif;font-size:14px;letter-spacing:1.5px;color:#ffd0a8;
+    text-shadow:0 0 10px rgba(220,80,40,.45)}
+  #wbTop .wt-m{color:#a89a88}
+  #wbTop .wt-t{color:#ffb070;font-variant-numeric:tabular-nums;letter-spacing:1px;font-size:13px}
+  #wbTop .wt-s{color:#a89a88}
+  /* 空窗期（已被讨伐）：整块降饱和，倒计时改成「下一只」的口气 */
+  #wbTop.dead{background:linear-gradient(180deg,rgba(26,22,20,.88),rgba(10,9,8,.74));
+    border-color:rgba(120,100,90,.4);box-shadow:0 2px 12px rgba(0,0,0,.45)}
+  #wbTop.dead .wt-k{color:#8a7a6e}
+  #wbTop.dead .wt-n{color:#c0aa98;text-shadow:none}
+  /* 最后一分钟开始呼吸，提醒「要刷了 / 要走了」 */
+  #wbTop.soon{border-color:rgba(255,120,60,.85);animation:wbSoon 1.1s ease-in-out infinite}
+  @keyframes wbSoon{
+    0%,100%{box-shadow:0 2px 14px rgba(0,0,0,.5),inset 0 0 18px rgba(200,60,30,.10)}
+    50%{box-shadow:0 2px 14px rgba(0,0,0,.5),inset 0 0 28px rgba(255,120,60,.32)}}
+  /* 打首领时让位给 #bossbar。
+   * **不要写死像素**：bossbar 的高度不是常数 —— P09 的多首领小血条行会让它
+   * 再长 15px 左右，写死 90px 就直接叠在一起（dev/worldboss-live.js 的 A4
+   * 抓到的就是这个）。现在由 UI._syncBossBarBottom 把实测底边写进
+   * `--bossbar-bottom`，两边谁改了高度都不用再手量一遍。
+   * 兜底 86px = 桌面 top 22 + 单首领高度 64。 */
+  body.wb-has-boss #wbTop{top:calc(var(--bossbar-bottom,86px) + 4px)}
+  body.wb-has-boss #toasts{top:calc(var(--bossbar-bottom,86px) + 42px)}
+  body.in-menu #wbTop{opacity:0;pointer-events:none}
+
+  /* ---------- 世界 Boss · 现世横幅（M18.3） ----------
+   * 位置在屏幕上方 26%（约 1/3 处），横贯整幅 —— 和试炼的中央大字
+   * 刻意区分：那个是「你正在经历的事」，这个是「世界发生的事」。
+   * 颜色由 JS 写进 --wbc（取领域色），六只一眼能分出是谁。 */
+  #wbBanner{position:absolute;left:0;right:0;top:26%;display:none;pointer-events:none;z-index:13;
+    text-align:center;padding:16px 0 18px;opacity:0}
+  #wbBanner.show{display:block;animation:wbbanner 3.2s ease-out forwards}
+  #wbBanner::before,#wbBanner::after{content:'';position:absolute;left:0;right:0;height:1px;
+    background:linear-gradient(90deg,transparent,var(--wbc,#e0895a) 30%,var(--wbc,#e0895a) 70%,transparent);opacity:.85}
+  #wbBanner::before{top:0}
+  #wbBanner::after{bottom:0}
+  #wbBanner .wbb-bg{position:absolute;inset:0;
+    background:linear-gradient(90deg,rgba(10,6,4,0),rgba(10,6,4,.74) 20%,rgba(12,7,5,.86) 50%,rgba(10,6,4,.74) 80%,rgba(10,6,4,0))}
+  #wbBanner .wbb-in{position:relative}
+  #wbBanner .wbb-kicker{font-size:10.5px;letter-spacing:8px;color:var(--wbc,#e0895a);opacity:.9}
+  #wbBanner .wbb-name{font-family:"STKaiti","KaiTi",serif;font-size:clamp(28px,4.2vw,46px);
+    letter-spacing:12px;line-height:1.25;margin-top:2px;
+    text-shadow:0 0 30px currentColor,0 3px 8px #000}
+  #wbBanner .wbb-sub{font-size:11.5px;letter-spacing:3px;color:#c8b8a4;margin-top:2px}
+  @keyframes wbbanner{
+    0%{opacity:0;transform:translateY(-16px)}
+    11%{opacity:1;transform:translateY(0)}
+    76%{opacity:1;transform:translateY(0)}
+    100%{opacity:0;transform:translateY(-6px)}
+  }
 
   /* ---------- Boss 血条 ---------- */
   #bossbar{position:absolute;left:50%;top:22px;transform:translateX(-50%);width:min(560px,52vw);display:none;text-align:center}
@@ -78,6 +174,65 @@
   #bossbar .phase{display:flex;gap:5px;justify-content:center;margin-top:3px}
   #bossbar .phase i{width:22px;height:2px;background:#4a3020}
   #bossbar .phase i.on{background:#e06a40;box-shadow:0 0 8px #e06a40}
+  /* [P09] 多首领：主血条下面一排小血条，点一下切换主显示。
+     宽度 60px 是按「一张图最多 3 只」定的 —— 3×60 + 2×6 间距 = 192px，
+     塞在 560px 的主条下面还有富余，手机上也不会顶到边。 */
+  #bossbar .peers{display:none;gap:6px;justify-content:center;margin-top:5px;flex-wrap:wrap}
+  #bossbar .peer{width:60px;height:5px;background:rgba(0,0,0,.82);border:1px solid rgba(200,60,40,.35);
+    position:relative;overflow:hidden;cursor:pointer;transition:border-color .2s,transform .2s}
+  #bossbar .peer i{display:block;height:100%;background:linear-gradient(180deg,#a83a24,#5a0c06);transition:width .16s}
+  #bossbar .peer:hover{border-color:rgba(240,216,168,.7);transform:translateY(-1px)}
+  #bossbar .peer.on{border-color:#f0d8a8;box-shadow:0 0 8px rgba(240,216,168,.45)}
+  #bossbar .peer.on i{background:linear-gradient(180deg,#e04a30,#6a0e08)}
+  /* 切目标时轻轻闪一下 —— 不然玩家只会觉得「数字怎么突然变了」 */
+  #bossbar.swap{animation:bossSwap .35s ease}
+  @keyframes bossSwap{
+    from{opacity:.2;transform:translateX(-50%) translateY(-5px)}
+    to{opacity:1;transform:translateX(-50%) translateY(0)}
+  }
+
+  /* ---------- 出招播报（B24） ----------
+   * 首领放招时，报「这一只自己的叫法 + 它逼你做什么」。
+   *
+   * 位置：**屏幕下方居中、动作条之上**。
+   * 试过血条正下方（`--bossbar-bottom + 6px`），实测被 #toasts 盖掉 ——
+   * 那个位置正是吐司队列的起点（`--bossbar-bottom + 42px`），
+   * 而 #toasts 在 DOM 里排在 #castbar 后面，谁在上层由顺序决定，
+   * 结果播报「明明写了却没出现」。下半屏那块是空的（左下是战斗日志，
+   * 靠右是动作条），挪下来之后就再没有重叠。 */
+  #castbar{position:absolute;left:50%;bottom:92px;transform:translateX(-50%);
+    width:min(560px,52vw);text-align:center;pointer-events:none;z-index:14;
+    opacity:0;transition:opacity .3s ease}
+  #castbar.on{opacity:1}
+  #castbar .cn{font-family:"STKaiti","KaiTi",serif;font-size:21px;letter-spacing:5px;color:#ffcf9a;
+    text-shadow:0 0 20px rgba(230,90,40,.85),0 2px 5px #000}
+  #castbar .ca{font-size:12px;letter-spacing:2px;color:#e8b98a;margin-top:2px;opacity:.92}
+  /* 本命（第 5 格）不是同一类东西：只出现 1/5 的次数，得压过普通招一头 */
+  #castbar.native .cn{font-size:25px;letter-spacing:8px;color:#ffe6c0;
+    text-shadow:0 0 28px rgba(255,120,40,1),0 2px 6px #000}
+  #castbar.native .ca{color:#ffd28a;font-size:13px}
+
+  /* ---------- 大图（P03） ----------
+   * 独立一层，不占 #miniWrap —— 小地图要一直报「我在哪个区」，
+   * 被大图顶掉的话玩家反而丢了方位感。
+   * 画布内部 720×720，CSS 缩到 min(80vh,80vw)：设备像素比在 2 倍屏上刚好够锐，
+   * 再大就是浪费（一张图最多 12 个区，不需要 4K 精度）。 */
+  #mapBig{position:absolute;inset:0;display:none;align-items:center;justify-content:center;
+    background:rgba(2,3,5,.84);z-index:60;pointer-events:auto}
+  #mapBig.open{display:flex}
+  #mapBig .mb-box{position:relative;width:min(80vh,80vw);height:min(80vh,80vw);
+    border:1px solid var(--line);background:rgba(4,5,8,.96);
+    box-shadow:0 24px 80px rgba(0,0,0,.9),inset 0 0 60px rgba(0,0,0,.8)}
+  #mapBigCv{width:100%;height:100%;display:block;cursor:grab;touch-action:none}
+  #mapBigCv:active{cursor:grabbing}
+  #mapBig .mb-x{position:absolute;right:8px;top:8px;width:34px;height:34px;display:flex;
+    align-items:center;justify-content:center;color:#c8b898;font-size:20px;line-height:1;
+    cursor:pointer;background:rgba(0,0,0,.55);border:1px solid var(--line);border-radius:3px}
+  #mapBig .mb-x:hover{color:#fff;background:rgba(216,178,90,.18)}
+  #mapBig .mb-zoom{position:absolute;left:10px;bottom:8px;font-size:11px;letter-spacing:2px;color:var(--gold)}
+  #mapBig .mb-hint{position:absolute;right:10px;bottom:8px;font-size:10.5px;color:#8a8272;letter-spacing:1px}
+  body.touch #mapBig .mb-hint{display:none}
+  body.touch #mapBig .mb-box{width:min(92vw,92vh);height:min(92vw,92vh)}
 
   /* ---------- 技能栏 ---------- */
   #actionbar{position:absolute;left:50%;bottom:22px;transform:translateX(-50%);display:flex;gap:7px;align-items:flex-end}
@@ -93,6 +248,13 @@
     color:#1a1510;background:linear-gradient(180deg,#e8cf8a,#c8a24a);border-radius:2px;
     font-weight:600;pointer-events:none;z-index:2}
   .skill .cost{position:absolute;right:3px;bottom:1px;font-size:9px;color:#7fb0e8}
+  /* [P2b·刀客⑤] 兵形角标：左下角一格「刀式首字 + 刃势层数」。
+     换式是 1.2 秒冷却的战术动作，没有常驻读数的话玩家只能靠一次 toast 记住
+     自己现在是哪把刀 —— 手机端连 hover 都没有。 */
+  .skill .bl{position:absolute;left:2px;bottom:1px;font-size:9px;line-height:1;padding:0 2px;
+    color:#ffe9a8;background:rgba(60,40,16,.78);border:1px solid rgba(216,178,90,.55);
+    border-radius:2px;pointer-events:none;z-index:2;letter-spacing:0}
+  .skill .bl.full{color:#1a1510;background:linear-gradient(180deg,#ffe9a8,#d8b25a);border-color:#ffe9a8}
   /* [M1] 快捷栏标识：技能条右端的小方章，点它 / 按 Shift 切第二套 */
   /* [v1.8.3] 角标里放剑 / 盾图标 + 「1/2」，不读字也知道自己在第几套 */
   .barset svg{width:16px;height:16px;display:block}
@@ -123,18 +285,37 @@
   .potion .k{position:absolute;top:1px;left:2px;font-size:9px;color:#8a8070}
   .potion.blue .g{color:#6aa8e8}
 
-  /* ---------- 增益 / 减益栏 ---------- */
-  #buffbar{position:absolute;left:50%;bottom:88px;transform:translateX(-50%);display:none;gap:6px;align-items:center;
-    justify-content:center;flex-wrap:wrap;max-width:min(680px,86vw);pointer-events:none;z-index:2}
-  .buff{display:flex;align-items:center;gap:5px;padding:3px 8px 3px 5px;background:rgba(10,10,14,.84);
-    border:1px solid var(--c,#d8b25a);box-shadow:0 0 10px rgba(216,178,90,.18);font-size:11px;letter-spacing:1px;
-    color:#e8dcc0;text-shadow:0 1px 2px #000;animation:buffIn .18s ease-out}
-  .buff .bi{display:flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:2px;
-    background:var(--c,#d8b25a);color:#10100c;font-size:11px;font-weight:700}
-  .buff .bt{margin-left:2px;color:var(--c,#d8b25a);font-variant-numeric:tabular-nums}
-  .buff.debuff{border-style:dashed;background:rgba(28,8,8,.86)}
+  /* ---------- 增益 / 减益行（V1：符号图标 + 血条正下方 + 增量渲染） ----------
+     #buffrow 是 #charplate 的第二行：margin-left = 头像 66 + 列间距 10，
+     宽度与 .bars 的 238px 对齐，不新开悬浮层。 */
+  #buffrow{flex-basis:100%;margin-left:76px;max-width:238px;
+    display:flex;flex-wrap:wrap;align-content:flex-start;gap:4px;pointer-events:auto}
+  .buff{position:relative;display:flex;align-items:center;gap:4px;height:24px;padding:2px 6px 3px 4px;
+    box-sizing:border-box;overflow:hidden;background:rgba(10,10,14,.88);
+    border:1px solid var(--c,#d8b25a);font-size:11px;letter-spacing:.5px;
+    color:#e8dcc0;text-shadow:0 1px 2px #000;opacity:1;transform:none;
+    transition:opacity .2s ease,transform .2s ease}
+  .buff .bi{display:flex;align-items:center;justify-content:center;flex:0 0 16px;width:16px;height:16px;
+    color:var(--c,#d8b25a);font-size:11px;font-weight:700}
+  .buff .bi svg{display:block;width:16px;height:16px}
+  .buff .bn{white-space:nowrap}
+  .buff .bt{margin-left:1px;color:var(--c,#d8b25a);font-size:10px;font-variant-numeric:tabular-nums}
+  .buff .bx{font-size:10px;font-weight:700;line-height:14px;color:#10100c;background:var(--c,#d8b25a);
+    border-radius:2px;padding:0 3px}
+  .buff.full{box-shadow:inset 0 0 0 1px #f0d080,0 0 8px rgba(240,208,128,.35)}
+  .buff.debuff{border-style:dashed;background:rgba(28,8,8,.9);border-top-left-radius:0}
+  /* 色盲兜底：debuff 除了红色还带左上缺角，不只靠颜色区分 */
+  .buff.debuff::before{content:'';position:absolute;left:-1px;top:-1px;
+    border-top:7px solid #0a0a0e;border-right:7px solid transparent}
+  .buff .bprog{position:absolute;left:0;bottom:0;height:2px;width:100%;background:var(--c,#d8b25a);
+    opacity:.72;transition:width 1s linear}
+  .buff.notimer .bprog{display:none}
+  .buff.in{animation:buffIn .18s ease-out}
+  .buff.out{opacity:0;transform:scale(.86);pointer-events:none}
+  .buff.more{min-width:34px;justify-content:center;border-style:dashed;color:#f0d080;cursor:pointer}
   @keyframes buffIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
-  body.touch #buffbar{max-width:76vw;font-size:10px}
+  body.touch #buffrow{max-width:min(238px,64vw);gap:3px}
+  body.touch .buff{height:22px;font-size:10px}
 
   /* ---------- 提示 / 日志 / 交互 ---------- */
   #interact{position:absolute;left:50%;bottom:92px;transform:translateX(-50%);font-size:13px;letter-spacing:2px;
@@ -663,6 +844,11 @@
     overflow:hidden;text-overflow:ellipsis}
   .sk-as i{font-style:normal;color:#5f5a4d;margin-right:3px;font-variant-numeric:tabular-nums}
   .sk-as.k-count,.sk-as.k-evo1,.sk-as.k-evo2,.sk-as.k-final{color:#d9c48c}
+  /* 待实装台阶：文案照写，但压暗 + 一个小「待」角标 ——
+     面板上吹了没做的效果，比不写更伤玩家（同精研「尚未实现」的处理） */
+  .sk-as.todo{color:#5c5749}
+  .sk-as.todo u{text-decoration:none;margin-left:2px;padding:0 2px;font-size:8px;
+    color:#6f6350;border:1px solid rgba(216,178,90,.22);border-radius:2px}
   .sk-ac-foot{font-size:9px;color:#6b6659;line-height:1.35;white-space:nowrap;
     overflow:hidden;text-overflow:ellipsis}
   .sk-arch-tip{padding:0 9px 6px;font-size:9.5px;color:#6f6a5c;line-height:1.5}
@@ -756,6 +942,11 @@
   .skt-nd.pas .box svg{color:#7ad0c0}
   .skt-nd.key .box svg{color:#c090ff}
   .skt-nd.key .box svg{transform:scale(.9)}
+  /* [P1d] 被动 / 关键被动比主动小一圈 —— 它是这条线上的附属，
+   * 不是与主动并列的选项（二选一在 P1c 已删）。视觉上就不该等大。 */
+  .skt-nd.pas,.skt-nd.key{width:38px}
+  .skt-nd.pas .box,.skt-nd.key .box{width:38px;height:38px}
+  .skt-nd.pas .box svg,.skt-nd.key .box svg{width:21px;height:21px}
   .skt-nd:hover .box{border-color:#ffe9a8;box-shadow:0 0 14px rgba(255,233,168,.3)}
   .skt-nd.sel .box{border-color:#ffd479;box-shadow:0 0 16px rgba(255,212,121,.45),inset 0 0 14px rgba(255,212,121,.18)}
   .skt-nd.locked{opacity:.45;filter:grayscale(.6)}
@@ -767,7 +958,10 @@
    * 满级的徽标变金 */
   .skt-nd.pas.own .box{border-color:#7ad0c0;box-shadow:0 0 10px rgba(122,208,192,.4),inset 0 0 12px rgba(122,208,192,.12)}
   .skt-nd.key.own .box{border-color:#a98fd0;box-shadow:0 0 12px rgba(160,120,220,.45),inset 0 0 12px rgba(160,120,220,.14)}
-  .skt-nd.max .bg{color:#ffe9a8;border-color:rgba(216,178,90,.6)}
+  /* [P2] 满级：上限抬到 10 之后「点到 10 才算满」必须一眼看得出来，
+   * 只改角标颜色太弱 —— 金环 + 实心角标，玩家在树上一扫就知道哪些还要点 */
+  .skt-nd.max .box{box-shadow:0 0 0 2px rgba(255,212,121,.45),0 0 12px rgba(255,212,121,.22)}
+  .skt-nd.max .bg{background:rgba(255,212,121,.92);color:#241c0c;font-weight:700;border-color:rgba(255,212,121,.9)}
   .skt-nd .nm{margin-top:4px;font-size:10.5px;line-height:1.2;text-align:center;color:#b6ab92;
     max-width:86px;letter-spacing:.4px;white-space:nowrap}
   .skt-nd.key .nm{color:#b79fdc}
@@ -800,11 +994,16 @@
   .skt-or{position:absolute;font-size:9px;color:#5e5648;letter-spacing:1px}
   .skt-or i{display:inline-block;padding:1px 4px;border:1px solid rgba(216,178,90,.2);
     border-radius:2px;background:#12100d;font-style:normal}
-  /* 岔口锁：互斥岔口的标记与被锁节点的样子（对面投了点，这边先退才能投） */
-  .skt-or.lock i{color:#e08a72;border-color:rgba(214,106,86,.4)}
-  .skt-nd.fklock .box{opacity:.55;filter:saturate(.5)}
-  .skt-nd.fklock .nm{color:#c98268}
-  .skt-nd.fklock{cursor:not-allowed}
+  /* [P1c] 三线并行后没有「二选一」，原来的 .fklock（红）退役：
+   *   .pts  软前置锁 —— 等级够了，但关键被动要「这条线已投入 N 点」。
+   *         用琥珀色而不是红色：这不是互斥，是「再练练这条线」。 */
+  .skt-or.soft i{color:#c9a468;border-color:rgba(216,178,90,.34);font-variant-numeric:tabular-nums}
+  .skt-nd.pts .box{opacity:.66;filter:saturate(.75)}
+  .skt-nd.pts .nm{color:#c9a468}
+  .skt-nd.pts{cursor:not-allowed}
+  /* 手机端同一套语义 */
+  .mt-nd.pts{opacity:.7}
+  .mt-nd.pts .mt-nm{color:#c9a468}
 
   /* 选中节点下方浮出的 ＋ / −：触屏没有右键，这是唯一路径；PC 上也留着好点。
    * 节点下多了「变体名」一行，所以间距从 19px 收到 2px —— 否则会压到下一行节点上。 */
@@ -920,6 +1119,9 @@
     padding:0 3px;border:1px solid rgba(216,178,90,.25);border-radius:2px;color:#8a8266}
   .sk-right .sd-branch .sd-tag.on{color:#1a1510;background:#d8b25a;border-color:#ffe9a8}
   .sk-right .sd-branch .sd-tag.na{color:#a0826a;border-style:dashed;border-color:rgba(160,130,106,.4)}
+  /* [P2c] 最终精通「归一」的 60% 角标：橙色、与「当前」的金色区分开 ——
+     金色说的是「你选的这条」，橙色说的是「20 级额外拿到的六成」。 */
+  .sk-right .sd-branch .sd-tag.cap{color:#ffb06a;border-color:rgba(255,154,60,.55);background:rgba(255,154,60,.1)}
   .sk-top .sk-spent{font-size:10px;color:#7a7466;letter-spacing:0;margin-left:2px}
   .sk-right .sd-branch .dim2{font-size:9px;color:#5e5648;margin-top:6px}
   .sk-right .sd-hintline{margin-top:9px;font-size:9.5px;color:#6a6458;letter-spacing:0}
@@ -1009,11 +1211,20 @@
   .sd-meta{font-size:10px;color:#8a8474;margin:7px 0 10px;padding:6px 9px;background:rgba(0,0,0,.28);
     border-left:2px solid rgba(216,178,90,.4);line-height:1.7}
   .sd-lv{display:flex;align-items:center;gap:9px;margin-bottom:10px}
-  .sk-pips{display:flex;gap:3px;flex:1}
-  .sk-pip{width:8px;height:8px;border:1px solid rgba(216,178,90,.4);transform:rotate(45deg)}
+  /* [P2] 10 格：8px + 3px 间距会顶到 107px，卡窄时把「升级」按钮挤出去 —— 缩到 7px / 2px */
+  .sk-pips{display:flex;gap:2px;flex:1}
+  .sk-pip{width:7px;height:7px;border:1px solid rgba(216,178,90,.4);transform:rotate(45deg)}
   .sk-pip.on{background:#ffd479;box-shadow:0 0 5px rgba(255,212,121,.55)}
   .sk-lvt{font-size:10.5px;color:#a8a090;font-variant-numeric:tabular-nums;white-space:nowrap}
   .sk-lvt b{color:#ffd479}
+  /* [P2c] 精进轨道（11~20）：只在有效等级 > 10 时出现（渐进披露）。
+     15 级那一点略大（精通层三选一在这里开），20 级换橙色（有效等级上限）。 */
+  .sd-lv.mst{margin-top:-3px}
+  .sk-pip.ms{width:9px;height:9px;margin-top:-1px;border-color:rgba(255,212,121,.85)}
+  .sk-pip.cap{border-color:rgba(255,154,60,.95)}
+  .sk-pip.cap.on{background:#ff9a3c;box-shadow:0 0 7px rgba(255,154,60,.7)}
+  /* 可用点 / 总供给：分母用小字，一眼看出「还剩几级」 */
+  .sk-pool{font-style:normal;font-size:10.5px;color:#8a8474;margin-left:2px}
   .sk-lvb{font-family:inherit;font-size:11px;letter-spacing:1px;padding:3px 10px;cursor:pointer;
     background:linear-gradient(180deg,rgba(216,178,90,.22),rgba(216,178,90,.08));
     border:1px solid rgba(216,178,90,.45);color:#e8d8b0;transition:.12s;white-space:nowrap}
@@ -1086,6 +1297,12 @@
   .sb-v.on{border-color:rgba(120,208,255,.28);background:rgba(120,208,255,.06)}
   .sb-v.on b{color:#bfe0f2}
   .sb-vhint{font-size:9px;color:#5f5a4e}
+  /* [P3d] 副元素那一行：横向排（主元素竖排 5 个，副元素只 4 个，横排更省高度），
+   * 用暖色描边和「元素」那行区分开 —— 两行都是元素名，不区分会看成重复项。 */
+  .sb-i2list{flex-direction:row;flex-wrap:wrap;gap:4px}
+  .sb-i2list .sb-v{width:auto;flex:0 0 auto;padding:3px 7px}
+  .sb-i2list .sb-v.on{border-color:rgba(216,178,90,.42);background:rgba(216,178,90,.08)}
+  .sb-i2list .sb-v.on b{color:#ffd479}
   /* [PICK-ROW-CLICKABLE] 取向那两条也是按钮：要花点数，所以用暖色区别于变体（蓝）。
    * 以前这里只有一行纯文字，入口躲在树上节点的小记号里 —— 玩家会一直点节点
    * （每点一次 +1 级），然后问「我都 4 级了怎么还选不了」。 */
@@ -1444,11 +1661,44 @@
   .shop-refresh .sr-btn.dis{opacity:.42;cursor:not-allowed;filter:grayscale(.5)}
 
   /* 传送 */
-  #travelPanel{left:50%;top:50%;transform:translate(-50%,-50%);width:460px}
+  #travelPanel{left:50%;top:50%;transform:translate(-50%,-50%);width:560px;max-height:88vh;overflow:hidden}
   .trow{display:flex;justify-content:space-between;align-items:center;padding:9px 6px;border-bottom:1px solid rgba(255,255,255,.05)}
   .trow.locked{opacity:.4}
   .trow .tn{font-size:13px;color:#e8dcc0;letter-spacing:2px}
   .trow .tl{font-size:10.5px;color:#8a8474}
+
+  /* ---------- 山河图（M0 世界结构：卷 → 章 → 图） ---------- */
+  .wm-wrap{display:flex;flex-direction:column;gap:8px;max-height:calc(88vh - 47px);overflow-y:auto}
+  .wm-tabs{display:flex;gap:5px}
+  .wm-tab{flex:1 1 0;min-width:0;padding:6px 3px;background:rgba(0,0,0,.4);border:1px solid rgba(216,178,90,.22);
+    color:#b8a888;font-family:inherit;font-size:10.5px;cursor:pointer;display:flex;flex-direction:column;
+    align-items:center;gap:1px;line-height:1.35}
+  .wm-tab:hover{border-color:rgba(216,178,90,.5)}
+  .wm-tab.on{background:linear-gradient(180deg,#d8b25a,#a8863a);color:#1a1510;border-color:#d8b25a;font-weight:600}
+  .wm-tab.off{opacity:.42}
+  .wm-tn{font-size:11.5px;letter-spacing:1px;white-space:nowrap}
+  .wm-ts{font-size:9.5px;opacity:.85;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+  .wm-tc{font-size:9px;opacity:.6;font-variant-numeric:tabular-nums}
+  .wm-head{padding:7px 9px;border:1px solid rgba(216,178,90,.18);background:rgba(40,34,24,.4)}
+  .wm-hn{font-size:13px;color:#e8c46a;letter-spacing:2px}
+  .wm-hr{font-size:10px;color:#8a8474;margin-top:3px;line-height:1.6}
+  /* [M1] 营地行：卷头里单独一行，右侧挂「回营地」按钮 */
+  .wm-camp{display:flex;align-items:center;gap:8px;margin-top:4px;font-size:10px;color:#a8a090}
+  .wm-camp b{color:#e8c46a;font-weight:600}
+  .wm-hb{font-size:10.5px;color:#a8a090;margin-top:5px;line-height:1.7}
+  .wm-act{margin-top:8px}
+  .wm-ah{font-size:11.5px;color:#d8c8a0;letter-spacing:1px;padding:3px 2px;
+    border-bottom:1px solid rgba(216,178,90,.18);display:flex;align-items:baseline;gap:6px}
+  .wm-ah b{color:#e8c46a;font-weight:600;flex:none}
+  .wm-ah span{margin-left:auto;font-size:9.5px;color:#6a6458;font-variant-numeric:tabular-nums;flex:none}
+  .wm-maps{display:flex;flex-direction:column}
+  .wm-map{display:flex;align-items:center;gap:8px;padding:6px 4px;border-bottom:1px solid rgba(255,255,255,.04)}
+  .wm-map.shut{opacity:.35}
+  .wm-map.here{background:rgba(216,178,90,.08)}
+  .wm-mn{font-size:12px;color:#e8dcc0;letter-spacing:1px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .wm-mn i{font-style:normal;font-size:9px;color:#8fd0ff;border:1px solid rgba(143,208,255,.4);padding:0 3px;margin-left:5px}
+  .wm-ml{margin-left:auto;font-size:9.5px;color:#8a8474;white-space:nowrap;flex:none}
+  .wm-go{padding:3px 12px;font-size:10.5px;flex:none}
 
   /* ---------- 炼器台（S2） ---------- */
   #forgePanel{left:50%;top:50%;transform:translate(-50%,-50%);width:760px;max-height:88vh;overflow:hidden}
@@ -1580,10 +1830,10 @@
     background:radial-gradient(ellipse at 50% 44%,rgba(20,26,40,.5) 0%,rgba(11,14,21,.78) 52%,rgba(5,6,10,.94) 100%);
     display:flex;flex-direction:column;align-items:center;justify-content:center;pointer-events:auto}
   /* 标题界面隐藏 HUD */
-  body.in-menu #charplate,body.in-menu #topright,body.in-menu #actionbar,body.in-menu #buffbar,
+  body.in-menu #charplate,body.in-menu #topright,body.in-menu #actionbar,
   body.in-menu #log,body.in-menu #bossbar,body.in-menu #mtouch,
   body.in-menu #openBtns,body.in-menu #toasts{opacity:0;pointer-events:none}
-  #charplate,#topright,#actionbar,#buffbar,#log,#bossbar{transition:opacity .45s ease}
+  #charplate,#topright,#actionbar,#log,#bossbar{transition:opacity .45s ease}
   #start::before{content:'';position:absolute;inset:0;
     background:repeating-linear-gradient(0deg,transparent 0 3px,rgba(255,255,255,.012) 3px 4px);pointer-events:none}
   #start h1{font-family:"STKaiti","KaiTi","STSong",serif;font-size:clamp(42px,7vw,86px);font-weight:400;
@@ -1612,12 +1862,15 @@
     box-shadow:0 0 18px rgba(216,178,90,.22)}
   .cdiff .dn{font-size:14px;letter-spacing:3px;color:#f0e4c8;font-family:"STKaiti","KaiTi",serif}
   .cdiff .dt2{font-size:10px;letter-spacing:1px;margin-top:3px;opacity:.85}
+  .cdiff .dlv{font-size:9.5px;letter-spacing:.5px;margin-top:4px;padding-top:4px;color:#8a8478;
+    border-top:1px solid rgba(216,178,90,.14)}
   #diffDesc{margin-top:11px;font-size:11.5px;line-height:1.75;color:#9a9488;
     max-width:520px;text-align:center;min-height:2.6em}
   body.touch .diffs{gap:6px}
   body.touch .cdiff{min-width:72px;padding:7px 8px}
   body.touch .cdiff .dn{font-size:12.5px;letter-spacing:1px}
   body.touch .cdiff .dt2{font-size:9px}
+  body.touch .cdiff .dlv{font-size:8.5px;margin-top:2px;padding-top:2px}
   body.touch #diffDesc{font-size:10px;line-height:1.6;max-width:92vw;margin-top:7px;min-height:3.2em}
   #start .bottom{margin-top:26px;display:flex;gap:12px;align-items:center}
   #start .tips{position:absolute;bottom:22px;font-size:10.5px;color:#6a6458;letter-spacing:1px;text-align:center;line-height:1.9}
@@ -1751,6 +2004,10 @@
   .setseg{display:flex;gap:5px;flex-wrap:wrap;flex:1;min-width:0}
   .setseg .sbtn{min-width:44px;text-align:center;padding:4px 9px}
   .setseg .sbtn.on{pointer-events:none}
+  /* 被总开关关掉的子项（拾取那五行的后四行）：变灰 + 不可点，但不隐藏 ——
+   * 隐藏会让后面的行整体上移，玩家会以为设置项被删掉了 */
+  .setrow.off{opacity:.38}
+  .setrow.off .sbtn{pointer-events:none}
   /* 音频滑杆：用原生 range，但要压掉浏览器的默认蓝白配色，融进这套暗金 UI */
   .setrange-wrap{align-items:center;gap:10px}
   .setrange{-webkit-appearance:none;appearance:none;flex:1;min-width:120px;height:3px;border-radius:2px;
@@ -1888,12 +2145,26 @@
 
   /* ---- HUD 缩放 ---- */
   body.touch #actionbar{display:none}
+  /* 手机上动作条是隐藏的，92px 会压到地上的虚拟摇杆/技能键上：
+   * 往上抬到摇杆区之上，仍然居中。 */
+  body.touch #castbar{bottom:172px;width:86vw}
+  body.touch #castbar .cn{font-size:18px;letter-spacing:3px}
+  body.touch #castbar.native .cn{font-size:22px;letter-spacing:5px}
   body.touch #interact{display:none!important}
   body.touch #charplate{left:10px;top:8px;gap:7px;transform:scale(.8);transform-origin:top left}
   body.touch #topright{right:10px;top:8px;gap:5px}
   body.touch #miniWrap{width:98px;height:98px}
   body.touch #zoneName{font-size:9.5px;padding:2px 0}
   body.touch #questTrack{width:min(180px,42vw);font-size:11px;padding:5px 8px;line-height:1.6}
+  /* 手机顶部只剩一条缝（左上角色板 + 右上小地图各占一头），
+   * 所以顶部条压到 2px、去掉「世界Boss」这行小字，只留「谁 · 哪 · 多久」。 */
+  body.touch #wbTop{top:2px;gap:6px;padding:3px 10px 4px;font-size:11px;max-width:94vw}
+  body.touch #wbTop .wt-k{display:none}
+  body.touch #wbTop .wt-n{font-size:13px;letter-spacing:1px}
+  body.touch #wbTop .wt-t{font-size:12px}
+  /* 手机打首领：同样按实测底边让位（兜底 60 = top 6 + 单首领高度 54） */
+  body.touch.wb-has-boss #wbTop{top:calc(var(--bossbar-bottom,60px) + 4px)}
+  body.touch.wb-has-boss #toasts{top:calc(var(--bossbar-bottom,60px) + 38px)}
   body.touch #goldRow{font-size:11px;gap:10px}
   body.touch #log{left:10px;top:64px;bottom:auto;width:min(240px,44vw);font-size:10.5px;line-height:1.6}
   body.touch #log div:nth-child(n+5){display:none}
@@ -1911,7 +2182,7 @@
 
   /* 面板/对话打开时收起虚拟按键，避免误触 */
   body.touch.ui-open #mtouch,body.touch.ui-open #openBtns{opacity:0;pointer-events:none}
-  body.touch.ui-open #charplate,body.touch.ui-open #topright,body.touch.ui-open #buffbar,
+  body.touch.ui-open #charplate,body.touch.ui-open #topright,
   body.touch.ui-open #log,body.touch.ui-open #toasts{opacity:.18}
 
   /* ---- 触屏面板 ---- */
@@ -2164,7 +2435,9 @@
    * ============================================================ */
 
   /* ---------- 左上角战况 ---------- */
-  #trialHud{position:absolute;left:18px;top:96px;width:238px;display:none;pointer-events:auto;
+  /* [V1] buff 行常驻在 #charplate 内，正好压在旧 top:96px 的位置上。
+     --buff-h 由 UI.renderBuffs 只在行数变化时写一次，不是每帧。 */
+  #trialHud{position:absolute;left:18px;top:calc(96px + var(--buff-h, 0px));width:238px;display:none;pointer-events:auto;
     background:linear-gradient(180deg,rgba(24,18,34,.94),rgba(9,7,12,.94));
     border:1px solid rgba(168,138,216,.42);border-left:2px solid #a88ad8;
     padding:7px 10px 8px;box-shadow:0 6px 24px rgba(0,0,0,.7)}
@@ -2182,6 +2455,32 @@
   #trialHud .th-quit{margin-top:7px;width:100%;font-family:inherit;font-size:10.5px;letter-spacing:2px;
     padding:4px 0;cursor:pointer;color:#9a8fb0;background:none;border:1px solid rgba(168,138,216,.26);border-radius:2px}
   #trialHud .th-quit:hover{color:#e6d4ff;border-color:rgba(168,138,216,.7)}
+
+  /* ============================================================
+   * 地脉裂隙 · 地下城（M5）
+   * 与试炼同一个位置、同一个骨架，只换配色（紫 → 青）：
+   * 两套 HUD 不会同时出现，位置冲突不是问题，换来的是肌肉记忆一致。
+   * ============================================================ */
+  #dgHud{position:absolute;left:18px;top:96px;width:238px;display:none;pointer-events:auto;
+    background:linear-gradient(180deg,rgba(14,26,26,.94),rgba(6,10,10,.94));
+    border:1px solid rgba(79,168,152,.42);border-left:2px solid #4fa898;
+    padding:7px 10px 8px;box-shadow:0 6px 24px rgba(0,0,0,.7)}
+  #dgHud.on{display:block}
+  #dgHud .dh-top{display:flex;align-items:baseline;justify-content:space-between;gap:8px}
+  #dgHud .dh-lab{font-family:"STKaiti","KaiTi",serif;font-size:11px;letter-spacing:3px;color:#8fc8bc}
+  #dgHud .dh-name{font-family:"STKaiti","KaiTi",serif;font-size:19px;line-height:1;color:#d8f0e8;
+    text-shadow:0 0 14px rgba(79,168,152,.65)}
+  #dgHud .dh-layer{font-family:"STKaiti","KaiTi",serif;font-size:15px;color:#9fe0d0;font-variant-numeric:tabular-nums}
+  #dgHud .dh-layer small{font-size:10px;color:#6f9088;letter-spacing:1px;margin-left:1px}
+  #dgHud .dh-line{display:flex;justify-content:space-between;font-size:11px;color:#93aaa4;letter-spacing:.5px;margin-top:4px}
+  #dgHud .dh-line b{color:#ffd479;font-weight:500;font-variant-numeric:tabular-nums}
+  #dgHud .dh-affix{margin-top:4px;font-size:10px;line-height:1.35;color:#c9a8e0;letter-spacing:.5px;
+    max-height:24px;overflow:hidden}
+  #dgHud .dh-bar{height:3px;margin-top:6px;background:rgba(255,255,255,.07);overflow:hidden}
+  #dgHud .dh-bar > i{display:block;height:100%;width:0;background:linear-gradient(90deg,#2f6a5e,#7fe0c8);transition:width .2s}
+  #dgHud .dh-quit{margin-top:7px;width:100%;font-family:inherit;font-size:10.5px;letter-spacing:2px;
+    padding:4px 0;cursor:pointer;color:#7fa89e;background:none;border:1px solid rgba(79,168,152,.26);border-radius:2px}
+  #dgHud .dh-quit:hover{color:#d8f0e8;border-color:rgba(79,168,152,.7)}
 
   /* ---------- 每波开场大字 ---------- */
   #trialBanner{position:absolute;left:50%;top:30%;transform:translate(-50%,-50%);text-align:center;
@@ -2289,9 +2588,13 @@
   #trialEnd .te-hint{font-size:11px;color:#7a6a6a;margin-top:10px;letter-spacing:1px;text-align:center;line-height:1.7}
 
   /* ---------- 移动端 ---------- */
-  body.touch #trialHud{left:10px;top:78px;width:196px;padding:6px 8px}
+  body.touch #trialHud{left:10px;top:calc(78px + var(--buff-h, 0px));width:196px;padding:6px 8px}
   body.touch #trialHud .th-wave{font-size:18px}
   body.touch #trialHud .th-line{font-size:10px}
+  body.touch #dgHud{left:10px;top:78px;width:196px;padding:6px 8px}
+  body.touch #dgHud .dh-name{font-size:16px}
+  body.touch #dgHud .dh-layer{font-size:13px}
+  body.touch #dgHud .dh-line{font-size:10px}
   body.touch #trialBless{padding:12px}
   body.touch .tcard{width:min(46vw,220px);min-height:0}
   body.touch .tcard .tc-key{display:none}
@@ -2360,7 +2663,7 @@
 })();
 </script>
 <script>
-console.info('[预览副本] 分支 feat/skill-refactor @c2069db · 存档已隔离（__pv: 前缀）');
+console.info('[预览副本] 分支 feat/skill-refactor @f151c1b · 存档已隔离（__pv: 前缀）');
 </script>
 </head>
 <body class="in-menu">
@@ -2378,11 +2681,24 @@ console.info('[预览副本] 分支 feat/skill-refactor @c2069db · 存档已隔
       <div class="bar mp"><i id="mpFill"></i><span id="mpText">50 / 50</span></div>
       <div class="bar xp"><i id="xpFill"></i></div>
     </div>
+    <!-- [V1] 增益行：血条正下方。DOM 由 UI.renderBuffs 增量维护，禁止 innerHTML 重建 -->
+    <div id="buffrow"></div>
+  </div>
+
+  <!-- 世界 Boss 顶部倒计时（M18.10）：抬头就能看见「还有多久 / 在哪」。
+       内容全由 UI.renderWorldBoss 每秒写文本，这里只留骨架。 -->
+  <div id="wbTop" onclick="UI.gotoWorldBoss()">
+    <span class="wt-k" id="wtK">世界Boss</span>
+    <span class="wt-n" id="wtName"></span>
+    <span class="wt-m" id="wtMap"></span>
+    <span class="wt-t" id="wtTime">--:--</span>
+    <span class="wt-s" id="wtSuf">后现世</span>
   </div>
 
   <div id="topright">
     <div id="miniWrap"><canvas id="minimap" width="336" height="336"></canvas><div id="zoneName">桃源村</div></div>
     <div id="goldRow"><span id="goldTxt">金 0</span><span id="potionTxt">药 0</span></div>
+    <div id="wbTrack" onclick="UI.gotoWorldBoss()"></div>
     <div id="questTrack"></div>
   </div>
 
@@ -2391,9 +2707,22 @@ console.info('[预览副本] 分支 feat/skill-refactor @c2069db · 存档已隔
     <div class="bt" id="bossTitle"></div>
     <div class="bbar"><i id="bossFill"></i><span id="bossText"></span></div>
     <div class="phase" id="bossPhase"></div>
+    <div class="peers" id="bossPeers"></div>
   </div>
 
-  <div id="buffbar"></div>
+  <!-- 出招播报（B24）：首领取自己的招名 + 一句应对。由 UI.castBanner 驱动。 -->
+  <div id="castbar"><div class="cn" id="castName"></div><div class="ca" id="castHint"></div></div>
+
+  <!-- 大图（P03）：点右上角小地图打开。滚轮 / 双指缩放，拖动平移，Esc 关闭。 -->
+  <div id="mapBig">
+    <div class="mb-box">
+      <canvas id="mapBigCv" width="720" height="720"></canvas>
+      <div class="mb-x" id="mapBigClose">×</div>
+      <div class="mb-zoom" id="mapBigZoom">1.0×</div>
+      <div class="mb-hint">滚轮 / 双指缩放　·　拖动平移　·　Esc 关闭</div>
+    </div>
+  </div>
+
   <div id="actionbar"></div>
   <div id="interact"></div>
   <div id="toasts"></div>
@@ -2411,6 +2740,32 @@ console.info('[预览副本] 分支 feat/skill-refactor @c2069db · 存档已隔
     <div class="th-line"><span>已得祝福</span><b id="thBless">0</b></div>
     <div class="th-bar"><i id="thBar"></i></div>
     <button class="th-quit" onclick="Trial.quit()">退 出 试 炼</button>
+  </div>
+
+  <!-- 地脉裂隙 · 地下城左上角战况 -->
+  <div id="dgHud">
+    <div class="dh-top">
+      <span class="dh-lab">地 脉 裂 隙</span>
+      <span class="dh-layer"><span id="dgLayer">1/3</span><small>层</small></span>
+    </div>
+    <div class="dh-top" style="margin-top:2px">
+      <span class="dh-name" id="dgName">无名地缝</span>
+      <span class="dh-layer" style="font-size:11px"><span id="dgTier">一阶</span></span>
+    </div>
+    <div class="dh-line"><span id="dgState">清怪</span><b id="dgKill">0 / 0</b></div>
+    <div class="dh-affix" id="dgAffix">无词缀</div>
+    <div class="dh-bar"><i id="dgBar"></i></div>
+    <button class="dh-quit" onclick="Dungeon.quit()">退 出 地 脉</button>
+  </div>
+
+  <!-- 世界 Boss 现世横幅（M18.3）：横贯屏幕上方 1/3，3.2 秒 -->
+  <div id="wbBanner">
+    <div class="wbb-bg"></div>
+    <div class="wbb-in">
+      <div class="wbb-kicker">世 界 Boss 现 世</div>
+      <div class="wbb-name" id="wbbName">烛九阴</div>
+      <div class="wbb-sub" id="wbbSub">钟山之神　·　九霄之巅</div>
+    </div>
   </div>
 
   <!-- 每波开场大字 -->
@@ -2526,7 +2881,7 @@ console.info('[预览副本] 分支 feat/skill-refactor @c2069db · 存档已隔
           <button class="sbtn" id="stashUpBtn">扩 容</button></div>
         <div class="stash-filter">
           <div class="sf-cats" id="stashCats"></div>
-          <input class="sf-search" id="stashSearch" maxlength="20" placeholder="搜索名称 / 词缀…">
+          <input class="sf-search" id="stashSearch" maxlength="20" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="搜索名称 / 词缀…">
           <button class="sbtn" id="stashOnlyFit">只显示可装备</button>
         </div>
         <div class="stash-grid" id="stashGrid"></div>
@@ -2625,9 +2980,12 @@ console.info('[预览副本] 分支 feat/skill-refactor @c2069db · 存档已隔
 
 <!-- 传送 -->
 <div class="panel" id="travelPanel">
-  <div class="ph"><h3>传 送 阵</h3><span class="x" onclick="UI.closeAll()">✕</span></div>
-  <div class="pb"><div id="travelList"></div>
-    <div class="hintline">深入更险之地，需先达到对应境界。</div></div>
+  <div class="ph"><h3>山 河 图</h3><span class="x" onclick="UI.closeAll()">✕</span></div>
+  <div class="pb wm-wrap">
+    <div class="wm-tabs" id="wmTabs"></div>
+    <div id="wmBody"></div>
+    <div class="hintline">去过的地方随时能回；没去过的，需先达到对应境界。</div>
+  </div>
 </div>
 
 <!-- 炼器台 -->
@@ -2677,7 +3035,7 @@ console.info('[预览副本] 分支 feat/skill-refactor @c2069db · 存档已隔
     <div class="savenew">
       <div class="stitle">新 建 角 色</div>
       <div class="nline">
-        <input id="newName" maxlength="8" placeholder="道号">
+        <input id="newName" maxlength="8" placeholder="道号" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
         <div class="clsmini" id="newClsPick"></div>
         <button class="btn primary" id="newCharBtn">建 档</button>
       </div>
@@ -2773,7 +3131,7 @@ console.info('[预览副本] 分支 feat/skill-refactor @c2069db · 存档已隔
   <div class="diffs" id="diffPick"></div>
   <div id="diffDesc"></div>
   <div class="bottom">
-    <input id="nameInput" maxlength="8" placeholder="道号" style="pointer-events:auto;background:rgba(0,0,0,.6);border:1px solid var(--line);
+    <input id="nameInput" maxlength="8" placeholder="道号" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" style="pointer-events:auto;background:rgba(0,0,0,.6);border:1px solid var(--line);
       color:#f0e0b8;padding:9px 14px;width:150px;font-family:inherit;font-size:13px;letter-spacing:2px;outline:none;text-align:center">
     <button class="btn primary" id="startBtn">踏 入 山 海</button>
     <button class="btn" id="continueBtn" style="display:none">继 续 前 世</button>
@@ -2810,7 +3168,10 @@ console.info('[预览副本] 分支 feat/skill-refactor @c2069db · 存档已隔
 <script src="src/core/save.js"></script>
 <!-- 数据层：基础 / 装备 / 技能 / 怪物 / 世界（顺序不可换，后者依赖前者的常量） -->
 <script src="src/data/data-core.js"></script>
+<script src="src/data/data-elem.js"></script>
 <script src="src/data/data-icons.js"></script>
+<!-- [V1] 增益符号图标（17 枚 path + key/名字映射），UI.renderBuffs 用它拼 <svg> -->
+<script src="src/data/data-buff-icons.js"></script>
 <script src="src/data/data-items.js"></script>
 <script src="src/core/stash.js"></script>
 <script src="src/data/data-relics.js"></script>
@@ -2822,30 +3183,108 @@ console.info('[预览副本] 分支 feat/skill-refactor @c2069db · 存档已隔
 <script src="src/data/data-skill-icons.js"></script>
 <script src="src/data/data-skill-tree.js"></script>
 <script src="src/data/data-form-fx.js"></script>
+<!-- [V0] 特效配方（形 + 色）：纯数据 + 纯函数，不碰 THREE -->
+<script src="src/data/data-vfx.js"></script>
 <script src="src/data/data-talents.js"></script>
 <!-- 职业包注册表：必须在 CLASSES / SKILLS / SKILL_ICONS / TALENTS 之后加载 -->
 <script src="src/data/class-pack.js"></script>
 <script src="src/data/data-builds.js"></script>
 <script src="src/data/data-monsters.js"></script>
+<!-- B17.1 首领技能表（45 只 × 5 格 / 88 招的判定与演出）—— **生成物**，
+     源是 docs/boss-vfx-playground.html，改完跑 node dev/build-bosskits.js --write -->
+<script src="src/data/data-bosskits.js"></script>
+<!-- [B24] 每只首领自己的四拍（8 只主线已写，其余沿用共享招）。
+     是**手写内容表**，不是生成物 —— 共享池那 31 招不动，这里只写
+     「这一只放它的时候多发生什么」。boss-twist.js 读它。 -->
+<script src="src/data/data-bosstwist.js"></script>
 <script src="src/data/data-fauna.js"></script>
 <script src="src/data/data-elites.js"></script>
+<!-- [U9] 怪物形态 / 词缀 / 生命周期视觉声明（只声明，不判定） -->
+<script src="src/data/data-enemyfx.js"></script>
 <script src="src/data/data-world.js"></script>
+<script src="src/data/data-quests.js"></script>
 <!-- M12 地图区域结构：world.js / game.js / ui.js 都依赖它，必须排在这三个之前 -->
 <script src="src/data/data-maps.js"></script>
 <script src="src/data/data-trial.js"></script>
+<!-- M5 地下城：钥匙阶 / 层 / 类型 / 词缀 / 地脉异闻，dungeon.js 全靠它 -->
+<script src="src/data/data-dungeon.js"></script>
+<!-- M18 世界 Boss：6 只巨兽 + 刷新配置 + 掉落表。纯数据，worldboss.js 与 game.js 读它 -->
+<script src="src/data/data-worldboss.js"></script>
+<!-- [U8] 世界 Boss 预警层：18 招「判定形状 → 预警形状」映射，独立于 BOSS_TWIST。
+     纯数据 + 纯函数 wbWarnOf，被 worldboss-fight.js 的 cast() 消费 -->
+<script src="src/data/data-wbzone.js"></script>
 <!-- 逻辑层 -->
 <script src="src/weapons.js"></script>
 <script src="src/items.js"></script>
 <script src="src/actors.js"></script>
 <script src="src/charforge.js"></script>
+<!-- [M18.6] 世界 Boss 六套程序化骨架。必须在 actors.js 之后：
+     它要用 actors.js 的 boxGeo/sphGeo/coneGeo/cylGeo/torusGeo/mesh/M 这些全局 helper -->
+<script src="src/wbmodels.js"></script>
 <script src="src/audio.js"></script>
 <script src="src/fx.js"></script>
+<!-- [U9] 怪物侧常驻视觉层：只读实体，不挂判定；必须晚于 fx.js、早于 game.js -->
+<script src="src/enemy-fx.js"></script>
+<!-- [V0] 特效原语层（图集 + spr / trail / bolt / shock / decal）。必须在 fx.js 之后：
+     它读 FX.scene / FX.cam / FX.q，并在 FX.update / FX.clear 里被回调 -->
+<script src="src/fx-kit.js"></script>
+<!-- [B16] 怪物侧演出原语层（BFX 17 个：形状即判定 + 5 个「活物」）。
+     生成物，源在 docs/boss-vfx-playground.html —— 改 BFX 改那边，别改这里。
+     只依赖 THREE；bind(scene, camera, renderer) 之后才能出东西。 -->
+<script src="src/fx2.js"></script>
+<!-- [B21] 首领招式运行时：45 只守卫的五格配招在这里真的打出来。
+     88 个 run()/hit() 在 data-bosskits.js（生成物），它们引用的脚手架
+     （BOSS / R / aimAngle / settle …）由本文件提供 —— 少一个就是运行时
+     ReferenceError。**也是生成物**，源在 docs/boss-vfx-playground.html。
+     必须在 fx2.js 之后（顶层直接取 FX2.tools），在 game.js 之前（updateBossAI 要调它）。 -->
+<script src="src/boss-cast.js"></script>
+<!-- [B24] 变形层 + 出招播报：共享池只有 31 招、要撑 180 个格位，
+     不写这一层「树王的砸地」和「石王的砸地」就是同一段代码。
+     必须在 boss-cast.js 之后（它由 tryCast 调用）、game.js 之前。
+     Domains 在更后面加载，但这层只在**放招那一刻**用它 —— 那时早就有了。 -->
+<script src="src/boss-twist.js"></script>
+<!-- [B20] 玩家侧技能演出层（37 只技能的整套画法）。**生成物**，
+     源在 docs/vfx-playground.html —— 改特效去那边改，别改 src/sfx.js。
+     只依赖 THREE；bind(scene, camera, renderer) 之后才能出东西。
+     必须在 game.js 之前（playSkillVfx 要调它），在 fx.js 之后（沿用它的定时器口径）。 -->
+<script src="src/sfx.js"></script>
+<!-- [V0] 配方解释器：把 data-vfx.js 的 cast/loop/impact 翻译成原语调用。
+     必须在 fx-kit.js 之后（它调 FXK.*），且在 game.js 之前（技能要用） -->
+<script src="src/vfx.js"></script>
+<!-- [U6-2] 技能音效三段层（起手 / 命中 / 余韵）。**独立源码，不是生成物**。
+     配置表在 src/data/data-sfaudio.js（纯数据），解释器在 src/sfx-audio.js。
+     必须在 data-sfaudio.js 与 fx.js（SFX 门面）之后、game.js 之前：
+     castSkill 调 cast、damageEnemy 命中口调 impact、命中后自动排 after。 -->
+<script src="src/data/data-sfaudio.js"></script>
+<script src="src/sfx-audio.js"></script>
+<!-- [U3 / V5] 组合特效层：技能之间互相给对方上视觉（4 组技能内组合 + 3 条职业连携）。
+     **独立源码，不是生成物** —— 试验台的 comboApply / COMBOS 在被生成器排除的 §11 里，
+     状态口径（5 层刃势 / 8s 法相 / 全局毒窗）也与游戏对不上。
+     必须在 fx-kit.js（FXK.*）与 vfx.js（VFX._later 带换图作废）之后、game.js 之前：
+     castSkill 尾部调 onCast、damageEnemy 命中口调 onHit。 -->
+<script src="src/combo-fx.js"></script>
+<!-- [U4 / V6] 元素反应专属视觉层：10 组反应各一套视觉语言（蒸汽 / 等离子 / 焚毒 /
+     感电冻结 / 腐霜 / 腐蚀链 / 净化烈焰 / 圣霜 / 天罚 / 解毒雾）。
+     **独立源码，不是生成物**。数值逻辑在 game.js 的 applyElemReaction，
+     视觉搬到这里 —— 两边分开，改数值不碰画面、改画面不碰数值。
+     只用 fx-kit.js 的现有五原语（spr / trail / bolt / shock / decal），不新增原语。
+     必须在 fx-kit.js（FXK.*）之后、game.js 之前：applyElemReaction 调 play。 -->
+<script src="src/elem-fx.js"></script>
 <script src="src/world.js"></script>
 <script src="src/ui-mtree.js"></script>
 <script src="src/ui.js"></script>
 <script src="src/ui-skills.js"></script>
 <script src="src/ui-forge.js"></script>
+<script src="src/quests.js"></script>
+<script src="src/ui-minimap.js"></script>
 <script src="src/trial.js"></script>
+<script src="src/dungeon.js"></script>
+<script src="src/worldboss.js"></script>
+<!-- M18.7 世界 Boss 战斗层：三阶段 + 18 个招牌技能。依赖 worldboss.js 的 rec/live -->
+<script src="src/worldboss-fight.js"></script>
+<!-- B16.6 领域乘区：章节 Boss 放的圈（毒沼 / 水天 / 吞噬 / 幻域）。
+     依赖 worldboss.js 里那套夜色视野函数，必须排在它后面 -->
+<script src="src/domain.js"></script>
 <script src="src/mobile.js"></script>
 <script src="src/ui-save.js"></script>
 <script src="src/game.js"></script>

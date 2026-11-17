@@ -19,16 +19,25 @@
  *   右侧卡从「操作面板」降级成「说明书」：数值、描述、机制、分支，全是只读。
  * ============================================================ */
 
-/* 技能树几何常量。
- * 与 dev/preview-tree.html 顶部那份 G 是同一组数字 —— 预览页和正式面板
- * 必须同源，否则「预览看着行、上线挤成一团」。 */
+/* 技能树几何常量（[P1d] 三列纵向版）。
+ *
+ * 一条线 = 一列。之前是「3 组 × 2 子列」：主动一列、被动一列并排，
+ * 视觉上像是「二选一」；二选一在 P1c 已经删了，所以这里把被动收进列内、
+ * 小一圈挂在主动右边（它是这条线的附属，不是并列选项）。
+ *
+ * 数字怎么定的（2026-10-27 真机量出来的，别随手改）：
+ *   · 主动节点实测 85px 高（46 框 + 名称 + 变体名 + 三个分支记号），
+ *     所以 rowH 不能低于 ~100，否则变体名会压到下一行节点的框上；
+ *   · 破军那条线是最长的（9 个节点 / 5 行），H=530、W=576；
+ *     面板可视区 936×663 → 自适应缩放 1.2（顶格），没有缩字。 */
 const SKG = {
-  node: 46,        // 节点边长
-  rowH: 106,       // 行距
-  subGap: 112,     // 同系内：主动侧 → 被动侧
-  treeGap: 252,    // 系与系之间（主动侧到主动侧）
+  node: 46,        // 主动节点边长
+  pasNode: 38,     // 被动 / 关键被动边长（小一圈）
+  rowH: 104,       // 行距（一行 = 一个岔口：主动 + 它的被动）
+  pasDx: 74,       // 主动左边 → 被动左边（留 8px 给主动的名称溢出）
+  colGap: 196,     // 列与列（主动左边 → 主动左边）
   padX: 8,
-  padY: 30,
+  padY: 34,
   popW: 236        // 分支浮层宽度
 };
 
@@ -73,8 +82,15 @@ Object.assign(UI, {
       const steps = T.visible.map(lv => {
         const kind = (skillTierStep(lv) || {}).kind || 'num';
         const txt = slot.tiers[lv] || '';
+        /* [P2b] 台阶实装状态：文案写了但战斗没接的，必须当场标出来 ——
+         * 面板上写着「三连斩」实际只打一下，比不写更伤玩家。
+         * 判据在读数据层（skillSlotTierDone），不是这张卡里手写名单。 */
+        const done = (typeof skillSlotTierDone === 'function')
+          ? skillSlotTierDone(slot.cls, slot.no, lv) : true;
         /* 卡窄，长文案会被省略号吃掉 —— 补 title 让悬停能看到全文 */
-        return `<span class="sk-as k-${kind}" title="Lv${lv} ${stepName(lv)}：${txt}"><i>${lv}</i>${txt}</span>`;
+        const tip = `Lv${lv} ${stepName(lv)}：${txt}${done ? '' : '（本段尚未实装）'}`;
+        return `<span class="sk-as k-${kind}${done ? '' : ' todo'}" title="${tip}">`
+          + `<i>${lv}</i>${txt}${done ? '' : '<u>待</u>'}</span>`;
       }).join('');
       /* ⑤ 号位每种职业的“身份”写法不同：刀式 / 法相 / 召唤，全部从数据取 */
       let extra = '';
@@ -92,11 +108,27 @@ Object.assign(UI, {
       </div>`;
     }).join('');
     const first = T.curve[0].pct;
+    /* 「待」角标的存量：本职业 5 个位里还有几档没接进战斗。
+     * 一个都没有时不许再说「带待的是还没接的部分」—— 那是欠账期的说明，
+     * 全部接完还挂着就等于告诉玩家「这游戏还有一半没做」。 */
+    const todoAll = list.reduce((n, slot) => n + T.visible.filter(lv =>
+      (typeof skillSlotTierDone === 'function' ? !skillSlotTierDone(slot.cls, slot.no, lv) : false)).length, 0);
+    /* 数量台阶的读数全部现算：写死「1.85 倍」迟早在改系数后变成假话 */
+    const DECAY = (typeof SKILL_COUNT_DECAY === 'number') ? SKILL_COUNT_DECAY : 0.85;
+    const c3 = 1 + DECAY;
+    const c7 = c3 + DECAY * DECAY;
+    const dec = Math.round(DECAY * 100);
     return `<details class="sk-arch"><summary>技能位 · 5 格（左键 + 1~4，与当前动作条一致）</summary>
       <div class="sk-arch-grid">${cards}</div>
-      <div class="sk-arch-tip">1→10 级：每级 +${first}%，Lv3 / Lv7 数量 +1，Lv5 / Lv9 进化，
+      <div class="sk-arch-tip">1→10 级：每级 +${first}%，Lv3 / Lv7 数量 +1（第 n 发 ×${dec}%，总伤
+        ${c3.toFixed(2)} / ${c7.toFixed(2)} 倍，不是 2 / 3 倍），Lv5 / Lv9 进化，
         Lv10 终极形态；11→20 为精进层（来自装备词缀，不占技能点），共 ${skillLvMul(T.cap)} 倍。
-        台阶名：${T.visible.map(lv => lv + ' ' + stepName(lv)).join(' · ')}。动作条 ${SKILL_BAR_SLOTS} 格：左键 = ①，1~4 = ②③④⑤</div>
+        台阶名：${T.visible.map(lv => lv + ' ' + stepName(lv)).join(' · ')}。
+        动作条 ${SKILL_BAR_SLOTS} 格：左键 = ①，1~4 = ②③④⑤。
+        ${todoAll
+    ? `<b>带「待」的台阶目前只有文案，战斗尚未接入</b>（本职业还有 ${todoAll} 档；Lv3 / Lv7 数量
+        要给位内有连发 / 多片 / 多数符类技能才兑现，Lv5 / Lv9 / Lv10 形态逐技能接）。`
+    : '<b>5 个位的台阶全部已接入战斗</b>（没有「待」角标 = 每一档都能在游戏里兑现）。'}</div>
     </details>`;
   },
 
@@ -109,11 +141,15 @@ Object.assign(UI, {
     const s = Game.state;
     const order = SKILL_ORDER[s.cls] || [];
     const pts = Game.skillPoints();
+    /* [P2] 供给与三笔投入都要摊开写：上限抬到 10 级之后「点花在哪了」
+     * 比之前更重要 —— 玩家看到「60 点 · 已投 47」才知道还能点几级 */
+    const pool = (typeof skillPointPool === 'function') ? skillPointPool(s.level) : s.level;
     /* 已投账本：等级点数与分支点数分开写，玩家能看出「点花在哪了」 */
     const skState = Game.skillState();
     let lvSpent = 0;
     for (const sid in skState) lvSpent += Math.max(0, (skState[sid].lv || 1) - 1);
     const brSpent = (typeof Game.branchSpent === 'function') ? Game.branchSpent() : 0;
+    const pasSpent = (typeof Game.passiveSpent === 'function') ? Game.passiveSpent() : 0;
     /* [C3] 未确认改动条 */
     const sdf = document.getElementById('skDraft');
     if (sdf) sdf.innerHTML = this.draftBarHTML('skill');
@@ -132,8 +168,8 @@ Object.assign(UI, {
     }
 
     let h = `<div class="sk-top">
-      <span id="skPtsTxt">可用技能点 <b>${pts}</b></span>
-      <span class="sk-spent" title="等级每升 1 级消耗 1 点；每条取向 1 点；精研与变体不消耗技能点">投入 ${lvSpent} 级 · 分支 ${brSpent}</span>
+      <span id="skPtsTxt">可用技能点 <b>${pts}</b><i class="sk-pool">/${pool}</i></span>
+      <span class="sk-spent" title="供给 = 角色等级 × 1.5；升级 1 级 1 点、每条取向 1 点、被动每级 1 点；精研与变体不消耗技能点">投入 等级 ${lvSpent} · 分支 ${brSpent} · 被动 ${pasSpent}</span>
       <span class="sk-respec"><button class="vb" id="skRespec" title="退光全部技能等级、取向与被动（阶梯收费，每洗一次涨一档）">洗点 ${Game.treeRespecFee ? Game.treeRespecFee() : '?'} 金</button></span>
       <span class="sk-bdbtn"><button class="vb${this.skBuilds ? ' on' : ''}" id="skBuilds" aria-pressed="${this.skBuilds ? 'true' : 'false'}"
         title="按当前存档算三套最省事的流派（契合度，不是强度榜）">推荐流派</button></span>
@@ -146,11 +182,13 @@ Object.assign(UI, {
     h += this.skBuilds ? this.skBuildsHTML() : '';
     /* [P0] 新版技能位预览：只读，默认折叠，不接管任何点击 */
     h += this.skArchHTML();
-    /* 手机：树上换成 DOM 横向树（见 renderSkillTreeDOM），不再用缩放画布。
-     * 外面的 .sk-body / .sk-left / .sk-right 结构不变，所以分栏 CSS 原样复用。 */
+    /* 手机：树上换成 DOM 纵向列（见 renderSkillTreeDOM），不再用缩放画布。
+     * 外面的 .sk-body / .sk-left / .sk-right 结构不变，所以分栏 CSS 原样复用。
+     * [P1d] 分页签必须在这里给：走 MTREE 的路径不经过 skTreeHTML，
+     * 原来那套 `data-skttree` 按钮就永远画不出来 —— 手机上只能看到第一条线。 */
     const mt = (typeof MTREE !== 'undefined') && MTREE.isMobile();
     h += '<div class="sk-body"><div class="sk-left">'
-      + (mt ? '<div class="sk-mt" id="skTree"></div>' : this.skTreeHTML()) + '</div>';
+      + (mt ? this.skTreeTabsHTML() + '<div class="sk-mt" id="skTree"></div>' : this.skTreeHTML()) + '</div>';
     h += this.skCardHTML(this.skShown()) + '</div>';
     h += this.skBarHTML();
 
@@ -572,18 +610,54 @@ Object.assign(UI, {
     const view = this.skillFormView(id);
     const locked = !Game.skillUnlocked(id);
     const isGrant = (SKILL_ORDER[s.cls] || []).indexOf(id) < 0;
-    /* 预览伤害：攻击力 × 倍率 ×（变体 + 等级 + 分支）。
+    /* 预览伤害：攻击力 × 倍率 ×（变体 + 等级 + 分支 + 台阶）。
      * 必须与 Game.effSkillMods(id) 同口径 —— 卡上算一套、施法算另一套，
-     * 玩家就会遇到「面板说 +30%，打出来没变」。 */
-    const smod = mergeSkillMods(Game.skillMod(id),
-      (typeof Game.branchMods === 'function' ? Game.branchMods(id) : null),
-      (typeof Game.formMods === 'function' ? Game.formMods(id) : null));
-    const lvMul = 1 + SKILL_LV_STEP * (lv - 1);
+     * 玩家就会遇到「面板说 +30%，打出来没变」。
+     * [P2b] 这里不再自己 merge 三份修正，直接调战斗那个函数：
+     * 台阶修正加进 effSkillMods 之后，凡是「自己拼一遍」的写法都会漏一层。 */
+    const smod = (typeof Game.effSkillMods === 'function') ? Game.effSkillMods(id) : null;
+    /* [P2] 等级倍率必须与 castSkill 同口径（skillLvMul 分段曲线） */
+    const lvMul = (typeof skillLvMul === 'function') ? skillLvMul(lv) : 1;
     const spow = (smod ? 1 + (smod.dmg || 0) / 100 : 1) * lvMul;
     const dmgTxt = Math.round(s.stats.atk * sk.mult * spow);
     const desc = (sk.desc || '').replace(/\{dmg\}/g, '<b style="color:#ffe9a8">' + dmgTxt + '</b>');
     const castTxt = sk.cast === 'ground' ? '指定位置' : sk.cast === 'dir' ? '指定方向' : sk.cast === 'enemy' ? '自动索敌' : '自身';
     const pips = Array.from({ length: SKILL_LV_MAX }, (_, i) => `<span class="sk-pip ${i < inv ? 'on' : ''}"></span>`).join('');
+
+    /* [P2c] 精进轨道（11~20）。
+     *
+     * 有效等级超过 10 之后，玩家在卡上**看不到任何东西**：10 格全亮、数字变成
+     * 「投入 10/10 · 装备 +3」，再加装备也只改那行小字。方案 §5.2 要求
+     * 「1~10 显示圆满、11~20 显示精进」，并且**渐进披露**（精通层 10 级后才出现）——
+     * 所以这一条只在 `lvBonus > 0` 时画，不到 10 级的玩家看不到它。
+     *
+     * 这里标三个**已经兑现**的点：
+     *   15 级 —— 精通层三选一（真做了，见下面的 mstBlock）
+     *   20 级 —— 有效等级上限 + 最终精通「归一」（三条精通各 60% 同时生效）
+     * 方案 §5.2 拍板「不做每技能独立 capstone」，所以 20 级给的是**统一模板**：
+     * 不新增形态、不新增 beh 键，只把三条精通按 60% 折算后叠加进 effSkillMods。
+     */
+    const T = (typeof SKILL_TIERS !== 'undefined') ? SKILL_TIERS
+      : { baseMax: 10, cap: 20, masteryAt: 15, labels: { mastery: '精进' } };
+    const CAP = T.capstone || null;
+    const capOn = !!CAP && (typeof skillCapstoneOn === 'function') && skillCapstoneOn(lv);
+    const mstSpan = Math.max(1, T.cap - T.baseMax);
+    const mstN = Math.max(0, Math.min(T.cap, lv) - T.baseMax);
+    const mstPips = Array.from({ length: mstSpan }, (_, i) => {
+      const at = T.baseMax + i + 1;
+      const cls = at === T.masteryAt ? ' ms' : (at === T.cap ? ' cap' : '');
+      const tip = at === T.masteryAt ? at + ' 级 · 精通层：三选一（烈 / 疾 / 省）'
+        : at === T.cap
+          ? (CAP ? at + ' 级 · 有效等级上限 · 最终精通「' + CAP.name + '」' + CAP.desc
+            : at + ' 级 · 有效等级上限（含装备 / 词缀加成）')
+          : at + ' 级';
+      return `<span class="sk-pip${i < mstN ? ' on' : ''}${cls}" title="${tip}"></span>`;
+    }).join('');
+    const mstRow = lvBonus > 0
+      ? `<div class="sd-lv mst" title="1~${T.baseMax} 级为${T.labels.base}（投入技能点）；${T.baseMax + 1}~${T.cap} 级为${T.labels.mastery}层 —— ${T.labels.masteryTip}">
+          <div class="sk-pips">${mstPips}</div>
+          <span class="sk-lvt">${T.labels.mastery} <b>${lv}</b>/${T.cap}</span></div>`
+      : '';
 
     /* 标签：装备词缀按这些标签生效，所以摆在卡上（BD 的另一半） */
     const tg = (typeof skillTags === 'function') ? skillTags(id) : [];
@@ -687,7 +761,115 @@ Object.assign(UI, {
       <em class="sb-vhint">${view && view.kind === 'form'
         ? '三选一 · 可随时切换 · 不消耗技能点'
         : '三选一 · 可随时切换 · 不消耗技能点'}</em></div>`;
-    const branch = `<div class="sd-branch">${rows}
+
+    /* [P2c] 精通层三选一（Lv15 起）。
+     *
+     * 与「取向 / 变体」长得像，但门槛看的是**有效等级**（含装备 / 词缀），
+     * 不是投入等级 —— 11~20 是词条层，玩家点不出来。
+     *
+     * 三条都走 mods（dmg / cd / cost），不新增 beh 键：精通层是「数值强化」，
+     * 不是第二套机制（方案 §5.2 拍板「不再新增形态」）。
+     *
+     * 渐进披露与精进轨道同一条线：只在有效等级 > 10 时出现。
+     * 未到 15 级时三条都在、但点不动并写明还差几级 —— 直接藏起来的话，
+     * 玩家攒到 15 级才第一次知道有这么个东西。 */
+    const mstOn = (typeof skillMasteryOn === 'function') && skillMasteryOn(lv);
+    const mstIdx = (typeof Game.skillMastery === 'function') ? Game.skillMastery(id) : 0;
+    const mstDefs = (typeof SKILL_TIERS !== 'undefined' && SKILL_TIERS.mastery) || [];
+    /* [P2c] 最终精通「归一」（Lv20）：三条精通各 60% 同时生效。
+     * 到 20 级时三个按钮都挂一个「60%」角标 —— 玩家能一眼看出
+     * 「我选的那条是全额，另外两条也各拿到六成」，而不是以为要重新选一次。 */
+    const capTip = CAP ? '最终精通「' + CAP.name + '」：' + CAP.desc + '（与所选精通叠加）' : '';
+    const mstItems = mstDefs.map((o, i) => {
+      const on = mstOn && i === mstIdx;
+      const dis = locked || !mstOn;
+      const tip = !mstOn
+        ? '等阶 ' + lv + '：需 ' + T.masteryAt + ' 级方可精通（还差 ' + Math.max(0, T.masteryAt - lv) + ' 级）'
+        : on ? '当前精通' : '切换至「' + o.name + '」（免费，随时可换）';
+      const capChip = capOn ? `<i class="sd-tag cap" title="${capTip}">${CAP.pct}%</i>` : '';
+      return `<button class="sb-v${on ? ' on' : ''}${dis ? ' na' : ''}" data-mset="${id}:${i}"
+        aria-pressed="${on ? 'true' : 'false'}" title="${tip}" ${dis ? 'disabled' : ''}>
+        <b>${o.name}</b><em>${o.desc}</em>${on ? '<i class="sd-tag on">当前</i>'
+          : (!mstOn ? `<i class="sd-tag">${T.masteryAt} 级</i>` : '')}${capChip}</button>`;
+    }).join('');
+    const mstBlock = (lvBonus > 0 && mstItems)
+      ? `<div class="sb-vwrap"><span class="sb-k">精通</span>
+          <div class="sb-vlist sb-mlist">${mstItems}</div>
+          <em class="sb-vhint">${mstOn
+            ? (capOn ? '三选一 · 20 级「' + CAP.name + '」让三条各 ' + CAP.pct + '% 同时生效'
+              : '三选一 · 可随时切换 · 不消耗技能点')
+            : '有效等级达到 ' + T.masteryAt + ' 级开启（11~20 级来自装备 / 词缀）'}</em></div>`
+      : '';
+    /* [P3b] 元素注入（①②③⑤ 位，④ 是增益槽没有元素语义）。
+     *
+     * 门槛是**角色等级**（`SKILL_INJECT.at`），不是技能等级 —— 注入会改整只技能的
+     * 伤害口径，前期放开等于把 1~20 级的平衡重做一遍。
+     * 附加比例跟**技能有效等级**走（10 级 30% → 20 级 50%）：方案里说的「注入等级」
+     * 在本仓库不存在，精进层本来就是词条层，挂在那里最自然。
+     * 与精通同一条规矩：免费、随时可换，不需要「草稿 → 确认」。 */
+    const injDefs = (typeof SKILL_INJECT !== 'undefined' && SKILL_INJECT) ? SKILL_INJECT : null;
+    const injCan = (typeof skillCanInject === 'function') ? skillCanInject(id) : false;
+    const injOpen = !!injDefs && ((Game.state && Game.state.level) || 1) >= injDefs.at;
+    const injCur = (typeof Game.skillInject === 'function') ? Game.skillInject(id) : null;
+    const injCur2 = (typeof Game.skillInject2 === 'function') ? Game.skillInject2(id) : null;
+    const injPct = (typeof skillInjectPct === 'function') ? skillInjectPct(lv) : 0;
+    const injSplit = (typeof skillInjectSplit === 'function')
+      ? skillInjectSplit(injPct) : { total: injPct, main: injPct, sub: 0 };
+    const dualOpen = !!injDefs && ((Game.state && Game.state.level) || 1) >= (injDefs.subAt || 99);
+    const slotInfo = (typeof skillSlotOf === 'function') ? skillSlotOf(id) : null;
+    const nativeKey = (slotInfo && typeof SKILL_ARCHETYPE !== 'undefined'
+      && SKILL_ARCHETYPE.classes[slotInfo.cls]) ? SKILL_ARCHETYPE.classes[slotInfo.cls].elem : 'phys';
+    const nativeName = (typeof elemDef === 'function' && elemDef(nativeKey)) ? elemDef(nativeKey).name : '物理';
+    const elemName = k => ((typeof elemDef === 'function' && elemDef(k)) ? elemDef(k).name : k);
+    const injItems = (injDefs ? [null].concat(injDefs.elems) : []).map(k => {
+      const on = (k || null) === injCur;
+      const nm = k ? elemName(k) : '本命';
+      const tip = k
+        ? '注入' + nm + '：原伤害保留，另附加 ' + injPct + '% 的' + nm + '伤害（免费，随时可换）'
+        : '不注入，按本命元素（' + nativeName + '）结算';
+      return `<button class="sb-v${on ? ' on' : ''}" data-inj="${id}:${k || ''}"
+        aria-pressed="${on ? 'true' : 'false'}" title="${tip}">
+        <b>${nm}</b><em>${k ? '+' + injPct + '%' : nativeName}</em>${on ? '<i class="sd-tag on">当前</i>' : ''}</button>`;
+    }).join('');
+    /* [P3d] 副元素一行：门槛是角色等级 `subAt`（方案 §6.1：40 级解锁混搭）。
+     * 主元素没选时整行不出现 —— 没有「只注副不注主」这种状态，
+     * 摆一个全灰的行只会让人以为坏了。选项里剔掉主元素本身。 */
+    const subItems = (injDefs && injCur && dualOpen)
+      ? [null].concat(injDefs.elems.filter(k => k !== injCur)).map(k => {
+        const on = (k || null) === injCur2;
+        const nm = k ? elemName(k) : '无';
+        const tip = k
+          ? '混搭' + nm + '：总量不变，主 ' + injSplit.main + '% + 副 ' + injSplit.sub + '%'
+          : '只注入主元素';
+        return `<button class="sb-v${on ? ' on' : ''}" data-inj2="${id}:${k || ''}"
+          aria-pressed="${on ? 'true' : 'false'}" title="${tip}">
+          <b>${nm}</b><em>${k ? '+' + injSplit.sub + '%' : '单元素'}</em>${on ? '<i class="sd-tag on">当前</i>' : ''}</button>`;
+      }).join('')
+      : '';
+    const injHint = !injCur
+      ? '不注入 · 附加比例随技能有效等级提升（10 级 30% → 20 级 50%）'
+      : (injCur2
+        ? '原伤害保留 + 主 ' + elemName(injCur) + ' ' + injSplit.main + '% + 副 ' + elemName(injCur2) + ' '
+          + injSplit.sub + '%（总量 ' + injSplit.total + '% 不变）· 可随时更换'
+        : '原伤害保留 + 附加 ' + injPct + '% 的' + elemName(injCur) + '伤害 · 可随时更换'
+          + (dualOpen ? '；也可再混搭一种元素' : '（境界 ' + (injDefs.subAt || 40) + ' 级解锁混搭）'));
+    const injBlock = (injCan && injItems)
+      ? (injOpen
+        ? `<div class="sb-vwrap"><span class="sb-k">元素</span>
+          <div class="sb-vlist sb-ilist">${injItems}</div>
+          <em class="sb-vhint">${injHint}</em></div>`
+          + (subItems
+            ? `<div class="sb-vwrap"><span class="sb-k">混搭</span>
+            <div class="sb-vlist sb-ilist sb-i2list">${subItems}</div>
+            <em class="sb-vhint">双元素：总量不变，按主 ${injDefs.split.main}% / 副 ${injDefs.split.sub}% 拆成两段，
+            各过自己的抗性与元素增伤；主副两种元素都能参与反应</em></div>`
+            : '')
+        : `<div class="sb-vwrap"><span class="sb-k">元素</span>
+          <div class="sb-vlist sb-ilist"><button class="sb-v na" disabled>
+            <b>未开启</b><em>境界 ${injDefs.at} 级</em></button></div>
+          <em class="sb-vhint">境界达到 ${injDefs.at} 级后可给这个技能位注入元素（现在 ${(Game.state && Game.state.level) || 1} 级）</em></div>`)
+      : '';
+    const branch = `<div class="sd-branch">${rows}${mstBlock}${injBlock}
         <div class="dim2">${inv < at
           ? '投入等级 ' + inv + ' · 达到 ' + at + ' 级自动获得精研并开放取向'
             + (lvBonus ? '（装备的 +' + lvBonus + ' 级不算门槛）' : '')
@@ -702,8 +884,10 @@ Object.assign(UI, {
       ${tags}
       <div class="sd-desc">${desc}</div>
       <div class="sd-meta">消耗 ${Game.skillCost(sk)} · 冷却 ${Game.skillCd(sk).toFixed(1)}s · ${castTxt}${sk.castRange ? ' · ' + sk.castRange + ' 码' : ''}</div>
-      <div class="sd-lv"><div class="sk-pips">${pips}</div>
+      <div class="sd-lv" title="1~${T.baseMax} 级为${T.labels.base}：投入技能点，每级 1 点">
+        <div class="sk-pips">${pips}</div>
         <span class="sk-lvt">投入 <b>${inv}</b>/${SKILL_LV_MAX}${lvBonus ? ' · 装备 +' + lvBonus : ''}</span></div>
+      ${mstRow}
       ${branch}
       <div class="sd-hintline">${locked ? '领悟后可分配技能点' : '左键加 1 级 · 右键减 1 级 · 节点标记选择分支'}${inv > 1 ? ' · 已分配 ' + (inv - 1) + ' 点' : ''}</div>
       ${this.skActsHTML(id, 'active', inv, SKILL_LV_MAX, locked)}
@@ -878,58 +1062,110 @@ Object.assign(UI, {
     </div>`;
   },
 
-  /* ---------------- 树形画布 ----------------
-   * 坐标全部来自 SKILL_TREE.layout，不手写。
-   * 一个节点上承载的信息：图标 / 等级（或解锁等级）/ 是否在技能条上 /
-   * 三个分支记号 / 选中时浮出的 ＋ −。 */
+  /* ---------------- 树形画布（[P1d] 三列纵向） ----------------
+   * 一条线 = 一列；列内从上往下按「等级门槛」递增；主动在列的主轴上，
+   * 被动小一圈挂在它右边（它是这条线的附属，不是与主动并列的选项）。
+   * 连线只剩「同线竖向淡引导线」+「主动到自身被动的短线」。
+   * 几何一律由 skTreeLayout 算，不手写；节点内容照旧。 */
+
+  /* 手机：三条线的分页签（桌面不需要 —— 三列一起看才叫「并行」） */
+  skTreeTabsHTML() {
+    const cls = (typeof Game !== 'undefined' && Game.state) ? Game.state.cls : null;
+    const lay = (typeof SKILL_TREE !== 'undefined' && SKILL_TREE.layout && SKILL_TREE.layout[cls]) || [];
+    const trees = lay.map(t => t.name);
+    if (!trees.length) return '';
+    if (this.skTreeTab == null || trees.indexOf(this.skTreeTab) < 0) this.skTreeTab = trees[0];
+    return '<div class="skt-tabs on">' + trees.map(t =>
+      `<button class="${t === this.skTreeTab ? 'on' : ''}" data-skttree="${t}">${t}</button>`).join('') + '</div>';
+  },
+
+  /* 纯数据排布（不碰 DOM，所以探针可以直接断言顺序与是否重叠）
+   * 返回 { cols:[{ name, ci, baseX, nodes:[nd] }], W, H, rows }
+   * nd = { id, kind, name, max, unlock, line, ci, ri, reqLv, needPts, act, baseX, y } */
+  skTreeLayout(cls, onlyName) {
+    const lay = (typeof SKILL_TREE !== 'undefined' && SKILL_TREE.layout && SKILL_TREE.layout[cls]) || [];
+    if (!lay.length) return { cols: [], W: 0, H: 0, rows: 0 };
+    const base = {};
+    skillTreeNodes(cls).forEach(n => { base[n.id] = n; });
+    const lines = (typeof skillLines === 'function') ? skillLines(cls) : [];
+    const cols = [];
+    let maxRi = 0;
+
+    lines.forEach(ln => {
+      if (onlyName && ln.name !== onlyName) return;
+      /* 列号 = 显示顺序（手机只显示一条线时从 0 起，不会留下空列） */
+      const pos = cols.length;
+      /* 行 = 岔口：同一岔口的主动与被动合成一行 —— 之前它们分居两列，
+       * 看着像「二选一」。行序 = reqLv 升序（同级按原岔口序号，重画不跳）。 */
+      const groups = {};
+      ln.nodes.forEach(n => { (groups[n.row] = groups[n.row] || []).push(n); });
+      const rows = Object.keys(groups).map(k => {
+        const arr = groups[k];
+        const act = arr.find(n => n.kind === 'active') || arr[0];
+        return { row: Number(k), act: act, subs: arr.filter(n => n !== act), reqLv: act.reqLv || 1 };
+      }).sort((a, b) => (a.reqLv - b.reqLv) || (a.row - b.row));
+
+      const baseX = SKG.padX + pos * SKG.colGap;
+      const nodes = [];
+      rows.forEach((r, ri) => {
+        if (ri > maxRi) maxRi = ri;
+        const y = SKG.padY + ri * SKG.rowH;
+        [r.act].concat(r.subs).forEach((x, si) => {
+          const b = base[x.id] || {};
+          nodes.push({
+            id: x.id, kind: x.kind, name: x.name || b.name || x.id,
+            max: x.max || b.max || 1, unlock: b.unlock || x.reqLv || 1,
+            line: ln.name, ci: pos, ri: ri, reqLv: x.reqLv, needPts: x.needPts,
+            act: si === 0, baseX: baseX, y: y
+          });
+        });
+      });
+      cols.push({ name: ln.name, ci: pos, baseX: baseX, nodes: nodes });
+    });
+
+    if (!cols.length) return { cols: [], W: 0, H: 0, rows: 0 };
+    const W = SKG.padX * 2 + (cols.length - 1) * SKG.colGap + SKG.pasDx + SKG.pasNode + 56;
+    const H = SKG.padY + maxRi * SKG.rowH + SKG.node + 34;
+    return { cols: cols, W: W, H: H, rows: maxRi + 1 };
+  },
+
   skTreeHTML() {
     const cls = Game.state.cls;
     const lay = (typeof SKILL_TREE !== 'undefined' && SKILL_TREE.layout && SKILL_TREE.layout[cls]) || [];
     if (!lay.length) return '<div class="skt-stage"><div class="vhint">这个职业还没有技能树</div></div>';
 
-    const nodes = skillTreeNodes(cls);
-    const forks = skillTreeForks(cls);
     const trees = lay.map(t => t.name);
     const mob = (typeof IS_TOUCH !== 'undefined' && IS_TOUCH) || window.innerWidth < 780;
     if (this.skTreeTab == null || trees.indexOf(this.skTreeTab) < 0) this.skTreeTab = trees[0];
-    const shown = mob ? [this.skTreeTab] : trees;
-    const list = nodes.filter(n => shown.indexOf(n.tree) >= 0);
-    const forkList = forks.filter(f => shown.indexOf(f.tree) >= 0);
+    const geo = this.skTreeLayout(cls, mob ? this.skTreeTab : null);
+    const cols = geo.cols;
+    const list = [];
+    cols.forEach(c => c.nodes.forEach(n => list.push(n)));
+    const W = geo.W, H = geo.H;
     const z = Math.max(0.45, Math.min(2, this.skZoom || 1));
-
-    const xOf = col => {
-      const ti = Math.floor(col / 2), sub = col % 2;
-      return mob ? SKG.padX + sub * SKG.subGap
-        : SKG.padX + ti * SKG.treeGap + sub * SKG.subGap;
-    };
-    const yOf = row => SKG.padY + row * SKG.rowH;
-    const maxCol = list.reduce((a, n) => Math.max(a, n.col), 0);
-    const maxRow = list.reduce((a, n) => Math.max(a, n.row), 0);
-    const W = mob
-      ? SKG.padX * 2 + SKG.subGap + SKG.node + 92
-      : SKG.padX * 2 + Math.floor(maxCol / 2) * SKG.treeGap + SKG.subGap + SKG.node + 74;
-    const H = yOf(maxRow) + SKG.node + 70;
+    const xOf = n => n.baseX + (n.act ? 0 : SKG.pasDx);
 
     const byId = {};
     list.forEach(n => byId[n.id] = n);
 
-    /* 连线：竖脊 + 到主动的横枝 + 主动↔被动的虚线（虚线 = 二选一） */
+    /* 连线：每条线一根竖向淡引导线（穿在主动节点背后，只表示「这一列是一条线」，
+     * 不是「上一个解锁下一个」—— 三线并行里没有硬前置），
+     * 再加一条「主动 → 自己那一行的被动」短线。跨列的虚线已经不画了：
+     * 那种线原来表示「二选一」，同一行两边现在都能点，画了就是误导。 */
     let wire = `<svg class="skt-wire" width="${W}" height="${H}">`;
-    for (const t of lay) {
-      if (shown.indexOf(t.name) < 0) continue;
-      const sp = byId[t.spine];
-      if (!sp) continue;
-      const spX = xOf(sp.col) + SKG.node / 2;
-      wire += `<path d="M${spX} ${yOf(sp.row) + SKG.node}V${yOf(t.forks.length) + SKG.node / 2}" stroke="rgba(216,178,90,.36)" stroke-width="1.5" fill="none"/>`;
-      for (const f of t.forks) {
-        const a = byId[f.active], p = byId[f.passive];
-        if (!a || !p) continue;
-        const ay = yOf(a.row) + SKG.node / 2;
-        wire += `<path d="M${spX} ${ay}H${xOf(a.col)}" stroke="rgba(216,178,90,.36)" stroke-width="1.5" fill="none"/>`;
-        /* 岔口锁：第 3 个岔口起二选一，虚线换成警示色提醒「这边锁那边」 */
-        const fi = t.forks.indexOf(f);
-        const flocked = (fi + 1) >= (SKILL_TREE.forkLockAt || 3);
-        wire += `<path class="fk-dash" d="M${xOf(a.col) + SKG.node} ${ay}H${xOf(p.col)}" stroke="${flocked ? 'rgba(214,106,86,.55)' : 'rgba(216,178,90,.26)'}" stroke-width="1.3" stroke-dasharray="3 4" fill="none"/>`;
+    for (const c of cols) {
+      const acts = c.nodes.filter(n => n.act);
+      if (!acts.length) continue;
+      const railX = acts[0].baseX + SKG.node / 2;
+      const y1 = acts[0].y + SKG.node / 2;
+      const y2 = acts[acts.length - 1].y + SKG.node / 2;
+      if (y2 > y1) {
+        wire += `<path d="M${railX} ${y1}V${y2}" stroke="rgba(216,178,90,.16)" stroke-width="1.5" fill="none"/>`;
+      }
+      for (const n of c.nodes) {
+        if (n.act) continue;
+        const cy = n.y + SKG.pasNode / 2 + 5;
+        wire += `<path d="M${n.baseX + SKG.node} ${cy}H${n.baseX + SKG.pasDx}" stroke="rgba(216,178,90,.2)" stroke-width="1" fill="none"/>`;
       }
     }
     wire += '</svg>';
@@ -940,10 +1176,7 @@ Object.assign(UI, {
         stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${body || ''}</svg>`;
 
     let h = '';
-    if (mob) {
-      h += '<div class="skt-tabs on">' + trees.map(t =>
-        `<button class="${t === this.skTreeTab ? 'on' : ''}" data-skttree="${t}">${t}</button>`).join('') + '</div>';
-    }
+    if (mob) h += this.skTreeTabsHTML();
     /* 余量（skPad）直接烘进标记里：重排时不会先闪一帧「内容贴边」，
      * 探针在同一帧读到的大小也才是最终值 */
     const pad0 = this.skPad || 0;
@@ -951,13 +1184,13 @@ Object.assign(UI, {
       <div class="skt-plate" data-w="${W}" data-h="${H}" style="width:${W}px;height:${H}px;left:${pad0}px;top:${pad0}px;transform:scale(${z})">`;
     h += wire;
 
-    /* 系标题（手机形态已有分页签，不再重复） */
+    /* 列标题：一条线一列，标题居中压在列上（手机形态已有分页签，不再重复）。
+     * 居中点取「主动中心」与「被动中心」的中点，不是节点宽度之和的一半 ——
+     * 那样会把标题推到列右边去（真机上看出来的）。 */
     if (!mob) {
-      shown.forEach(name => {
-        const cols = list.filter(n => n.tree === name).map(n => n.col);
-        if (!cols.length) return;
-        const x = xOf(Math.min.apply(null, cols)) + (SKG.subGap + SKG.node) / 2 - 24;
-        h += `<div class="skt-cap" style="left:${x}px;top:2px">${name}</div>`;
+      cols.forEach(c => {
+        const cx = c.baseX + (SKG.node / 2 + SKG.pasDx + SKG.pasNode / 2) / 2;
+        h += `<div class="skt-cap" style="left:${cx}px;top:2px;transform:translateX(-50%)">${c.name}</div>`;
       });
     }
 
@@ -967,9 +1200,15 @@ Object.assign(UI, {
       const kind = n.kind === 'active' ? 'act' : (n.kind === 'key' ? 'key' : 'pas');
       /* [P2] 被动也走真投点：门槛 = 同岔口主动的领悟等级，账本在 s.passives */
       const isPas = n.kind !== 'active';
-      const locked = isPas
-        ? !(Game.passiveUnlocked && Game.passiveUnlocked(n.id))
-        : !Game.skillUnlocked(n.id);
+      /* [P1c] 三线并行：两种「点不了」分开显示 ——
+       *   locked  等级不够（角标直接写要求等级）
+       *   ptsLock 等级够了，但关键被动要「该线已投入 N 点」（软前置）
+       * 不再有「岔口二选一」，同一岔口的主动与被动都能点。 */
+      const gate = (typeof Game.skillGate === 'function') ? Game.skillGate(n.id) : null;
+      const locked = gate ? !gate.levelOK
+        : (isPas ? !(Game.passiveUnlocked && Game.passiveUnlocked(n.id)) : !Game.skillUnlocked(n.id));
+      const ptsLock = !!(gate && gate.levelOK && !gate.ptsOK);
+      const reqLv = gate ? gate.reqLv : n.unlock;
       const sel = n.id === this.skShown();
       const slot = n.kind === 'active' ? onBar.indexOf(n.id) : -1;
       const lv = n.kind === 'active' ? Game.skillLevel(n.id) : (Game.passiveLv ? Game.passiveLv(n.id) : 0);
@@ -979,7 +1218,7 @@ Object.assign(UI, {
        * NODE-INVESTED-PATCH */
       const invLv = n.kind === 'active' ? (((Game.skillState()[n.id] || {}).lv) || 1) : lv;
       const full = isPas ? lv >= n.max : invLv >= SKILL_LV_MAX;
-      const x = xOf(n.col), y = yOf(n.row);
+      const x = xOf(n), y = n.y;
 
       /* 三个小记号：精研（到 3 级自动）· 取向（3 级二选一 · 1 点）· 变体（当前 Ⅰ/Ⅱ/Ⅲ）。
        * 门槛与账本一律看「已投等级」invested，不看装备加成后的 skillLevel ——
@@ -1012,32 +1251,25 @@ Object.assign(UI, {
         ? skillIconSvg(n.id, 26)
         : tIcon(SKILL_TREE.icons[n.kind === 'key' ? 'key' : 'passive'], n.kind === 'key' ? 24 : 25);
       const badge = n.kind === 'active'
-        ? (locked ? n.unlock + '级' : lv)
-        : (locked ? n.unlock + '级' : (lv > 0 ? lv : n.max));
+        ? (locked ? reqLv + '级' : lv)
+        : (locked ? reqLv + '级' : (lv > 0 ? lv : n.max));
       /* 等阶比已投高 = 身上有「+技能等级」的加成，角标说清楚，
        * 不然玩家会拿这个数字去对分支门槛（门槛看的是已投） */
-      const badgeTip = (n.kind === 'active' && lv > invLv)
-        ? `等阶 ${lv} = 投入 ${invLv} + 加成 ${lv - invLv}（分支门槛以投入等级 ${invLv} 计）` : '';
+      const badgeTip = full
+        ? `已满级 ${isPas ? lv : invLv}/${n.max}`
+        : (n.kind === 'active' && lv > invLv)
+          ? `等阶 ${lv} = 投入 ${invLv} + 加成 ${lv - invLv}（分支门槛以投入等级 ${invLv} 计）` : '';
       const attr = n.kind === 'active'
         ? `data-skpick="${n.id}"`
         : `data-sktpas="${n.id}" data-sktname="${n.name}"`;
 
-      /* [P2] 岔口锁：第 3 个岔口起主动 ↔ 被动二选一 —— 对面投过点就打被锁标记 */
-      let fkLockNm = null;
-      if (typeof skillForkOf === 'function') {
-        const fk = skillForkOf(n.id);
-        if (fk && fk.lock) {
-          const otherInv = fk.side === 'active'
-            ? (Game.passiveLv ? Game.passiveLv(fk.other) > 0 : false)
-            : ((Game.skillState()[fk.other] || {}).lv || 1) > 1;
-          if (otherInv) {
-            const od = fk.side === 'active' ? SKILL_TREE.passives[fk.other] : SKILLS[fk.other];
-            fkLockNm = (od && od.name) || fk.other;
-          }
-        }
-      }
+      /* [P1c] 软前置提示（关键被动专有）：只说「这条线还差几点」，
+       * 不指向任何具体节点 —— 并行模型里没有「必须先点谁」这回事。 */
+      const ptsTip = ptsLock
+        ? `该线已投入 ${gate.linePts} / ${gate.needPts} 点（软前置：先把这条线练起来，点哪个节点都算）`
+        : '';
 
-      h += `<div class="skt-nd ${kind}${locked ? ' locked' : ''}${sel ? ' sel' : ''}${full ? ' max' : ''}${isPas && lv > 0 ? ' own' : ''}${fkLockNm ? ' fklock' : ''}" ${attr}${fkLockNm ? ` title="岔口二选一：「${fkLockNm}」已分配点数，需先退还"` : ''}
+      h += `<div class="skt-nd ${kind}${locked ? ' locked' : ''}${ptsLock ? ' pts' : ''}${sel ? ' sel' : ''}${full ? ' max' : ''}${isPas && lv > 0 ? ' own' : ''}" ${attr}${ptsTip ? ` title="${ptsTip}"` : ''}
         style="left:${x}px;top:${y}px">
         <div class="box">${inner}<span class="bg"${badgeTip ? ` title="${badgeTip}"` : ''}>${badge}</span>${slot >= 0 ? `<span class="skt-slot">${slot + 1}</span>` : ''}</div>
         <div class="nm">${n.name}</div>${vnmDiv}${marks}`;
@@ -1053,20 +1285,20 @@ Object.assign(UI, {
       h += '</div>';
     }
 
-    /* 「或」标记：压在两节点之间的虚线上方；互斥岔口（第 3 个起）显示「锁」 */
-    for (const f of forkList) {
-      const a = byId[f.active], p = byId[f.passive];
-      if (!a || !p) continue;
-      const x = (xOf(a.col) + SKG.node + xOf(p.col)) / 2 - 9;
-      const y = yOf(a.row) + SKG.node / 2 - 19;
-      const flo = f.row >= (SKILL_TREE.forkLockAt || 3);
-      h += `<div class="skt-or${flo ? ' lock' : ''}" style="left:${x}px;top:${y}px"><i>${flo ? '锁' : '或'}</i></div>`;
+    /* [P1c] 「或 / 锁」标记整块删掉：三线并行后同一岔口的主动与被动
+     * 可以都点，没有二选一可标。这里只在关键被动旁边标一个「软」，
+     * 提示它要「这条线练够 N 点」（不指向任何具体节点）。 */
+    for (const n of list) {
+      if (n.kind !== 'key') continue;
+      const g = (typeof Game.skillGate === 'function') ? Game.skillGate(n.id) : null;
+      if (!g || g.ptsOK) continue;
+      h += `<div class="skt-or soft" style="left:${xOf(n) + SKG.pasNode / 2 - 12}px;top:${n.y - 15}px" title="关键被动软前置：该线已投入 ${g.linePts} / ${g.needPts} 点"><i>线${g.linePts}/${g.needPts}</i></div>`;
     }
 
     /* 分支浮层：就地展开在节点旁，不跳右侧 */
     if (this.skPop && byId[this.skPop]) {
       const n = byId[this.skPop];
-      const nx = xOf(n.col), ny = yOf(n.row);
+      const nx = xOf(n), ny = n.y;
       let px = nx + SKG.node + 10;
       if (px + SKG.popW > W) px = Math.max(2, nx - SKG.popW - 10);
       const py = Math.min(Math.max(2, ny - 8), Math.max(2, H - 210));
@@ -1077,12 +1309,13 @@ Object.assign(UI, {
     return h;
   },
 
-  /* ---------------- 手机上的术法树：3 列 × N 行的横向树 ----------------
+  /* ---------------- 手机上的术法树：一条线一列、纵向排 ----------------
    * 原来的大画布要「双指捏合 + 单指平移」才看得全，节点下的 ＋/− 又只有 26px，
-   * 玩家反馈「操作比较麻烦」。这里改成固定的三列：
-   *   第 0 列 = 本系主干（脊）· 第 1 列 = 各岔口的主动 · 第 2 列 = 对应被动
-   * 岔口按行往下排，同一行左右相邻的主动/被动就是「或」的关系（虚线）。
-   * 一屏能看全，点一下选中，加减在下方说明书卡里。 */
+   * 玩家反馈「操作比较麻烦」。
+   * [P1d] 之前这里是「脊 | 主动 | 被动」三列并排 —— 那是串行二选一的形状，
+   * 三线并行后不再成立。现在改成：顶上三条线的分页签，每页只排一条线，
+   * 从上往下按等级门槛递增（主动 + 它那一行的被动相邻）。一屏一列，点一下选中，
+   * 加减在下方说明书卡里。列的顺序与桌面版同源（都走 skTreeLayout）。 */
   renderSkillTreeDOM() {
     const host = document.getElementById('skTree');
     if (!host || !Game.state) return;
@@ -1093,26 +1326,18 @@ Object.assign(UI, {
     const trees = lay.map(t => t.name);
     if (this.skTreeTab == null || trees.indexOf(this.skTreeTab) < 0) this.skTreeTab = trees[0];
     const cur = lay.find(t => t.name === this.skTreeTab) || lay[0];
-    const nodes = skillTreeNodes(cls);
     const byId = {};
-    nodes.forEach(n => { byId[n.id] = n; });
+    skillTreeNodes(cls).forEach(n => { byId[n.id] = n; });
 
-    const N = cur.forks.length;
-    const midRow = Math.floor((N - 1) / 2);
-    const list = [];
-    if (byId[cur.spine]) {
-      const sp = byId[cur.spine];
-      list.push({ id: sp.id, kind: sp.kind || 'active', col: 0, row: midRow, req: [] });
-    }
-    cur.forks.forEach((f, i) => {
-      const a = byId[f.active], p = byId[f.passive];
-      if (a) list.push({ id: a.id, kind: 'active', col: 1, row: i, req: cur.spine ? [cur.spine] : [] });
-      /* 被动挂在同岔口的主动右边：树上那根虚线就是「或」的意思，这里也一样 */
-      if (p) list.push({
-        id: p.id, kind: byId[p.id] ? (byId[p.id].kind || 'passive') : 'passive',
-        col: 2, row: i, req: a ? [a.id] : (cur.spine ? [cur.spine] : [])
-      });
-    });
+    /* 一条线一页：行序由 skTreeLayout 给（reqLv 升序，同岔口主动在前）。
+     * req 只用来画那根竖引导线 —— 每行连上一行，视觉上就是「这一列是一条线」；
+     * 结算里没有任何前置，这里的 req 只是画线用，别拿去做门槛判断。 */
+    const geo = this.skTreeLayout(cls, cur.name);
+    const one = geo.cols[0];
+    const list = one ? one.nodes.map((n, i) => ({
+      id: n.id, kind: n.kind, col: 0, row: i,
+      req: i ? [one.nodes[i - 1].id] : []
+    })) : [];
 
     const lvOf = n => n.kind === 'active'
       ? Game.skillLevel(n.id)
@@ -1120,9 +1345,19 @@ Object.assign(UI, {
     const invOf = n => n.kind === 'active' ? (((Game.skillState()[n.id] || {}).lv) || 1) : lvOf(n);
     const maxOf = n => n.kind === 'active' ? SKILL_LV_MAX
       : (((SKILL_TREE.passives || {})[n.id] || {}).max || 1);
-    const lockOf = n => n.kind === 'active'
-      ? !Game.skillUnlocked(n.id)
-      : !(Game.passiveUnlocked && Game.passiveUnlocked(n.id));
+    /* [P1c] 三线并行：锁定只看角色等级；关键被动的「该线 N 点」另算软前置 */
+    const gateOf = n => (typeof Game.skillGate === 'function') ? Game.skillGate(n.id) : null;
+    const lockOf = n => {
+      const g = gateOf(n);
+      if (g) return !g.levelOK;
+      return n.kind === 'active'
+        ? !Game.skillUnlocked(n.id)
+        : !(Game.passiveUnlocked && Game.passiveUnlocked(n.id));
+    };
+    const ptsLockOf = n => {
+      const g = gateOf(n);
+      return !!(g && g.levelOK && !g.ptsOK);
+    };
     const onBar = Game.skillBar();
     const tIcon = (body, size) =>
       `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor"
@@ -1136,6 +1371,7 @@ Object.assign(UI, {
       cls: n => {
         const out = [];
         if (lockOf(n)) out.push('locked');
+        if (ptsLockOf(n)) out.push('pts');
         const lv = invOf(n), max = maxOf(n);
         if (lv >= max) out.push('max');
         else if (lv > 0) out.push('own');
@@ -1149,17 +1385,16 @@ Object.assign(UI, {
         const ico = n.kind === 'active'
           ? (typeof skillIconSvg === 'function' ? skillIconSvg(n.id, 24) : '')
           : tIcon(SKILL_TREE.icons[n.kind === 'key' ? 'key' : 'passive'], 22);
-        const badge = lockOf(n) ? (def.unlock || 1) + '级'
+        const g = gateOf(n);
+        const badge = lockOf(n) ? ((g ? g.reqLv : def.unlock) || 1) + '级'
           : (n.kind === 'active' ? lv : (lv > 0 ? lv : max));
         return `<span class="mt-ico">${ico}</span>`
           + `<b class="mt-nm">${def.name || ''}</b>`
           + `<span class="mt-lv">${badge}</span>`;
       },
-      /* 主动 → 同岔口被动那根画成虚线，和画布上的「或」保持一致 */
-      edgeCls: (a, b) => {
-        const nb = list.find(x => x.id === b);
-        return (nb && nb.col === 2) ? 'alt' : '';
-      },
+      /* [P1c] 主动 → 同岔口被动原来是虚线（表示「或」）；三线并行后两边都能点，
+       * 边一律画成普通引导线，不再用线型暗示互斥。 */
+      edgeCls: () => '',
       onPick: id => {
         this.skSel = id;
         this.skHover = null;
@@ -1298,6 +1533,39 @@ Object.assign(UI, {
       if (this._panMoved) return;
       const parts = el.dataset.pset.split(':');
       this.skillPickBranch(parts[0], parseInt(parts[1], 10));
+    });
+
+    /* [P3b] 元素注入：与精通同一条规矩 —— 免费、随时可换，不走「草稿 → 确认」。
+     * `data-inj="id:"` 表示摘掉注入（回到本命）。 */
+    document.addEventListener('click', e => {
+      const el = (e.target && e.target.closest) ? e.target.closest('#skList .sb-ilist [data-inj]') : null;
+      if (!el || el.disabled) return;
+      if (this._panMoved) return;
+      const parts = el.dataset.inj.split(':');
+      if (Game.setSkillInject(parts[0], parts[1] || null)) this.renderSkillPanel();
+    });
+
+    /* [P3d] 副元素（混搭）：与主元素同一条规矩 —— 免费、随时可换。
+     * `data-inj2="id:"` 表示摘掉副元素（回到单元素）。 */
+    document.addEventListener('click', e => {
+      const el = (e.target && e.target.closest) ? e.target.closest('#skList .sb-i2list [data-inj2]') : null;
+      if (!el || el.disabled) return;
+      if (this._panMoved) return;
+      const parts = el.dataset.inj2.split(':');
+      if (Game.setSkillInject2(parts[0], parts[1] || null)) this.renderSkillPanel();
+    });
+
+    /* [P2c] 精通层三条：免费、随时可换，所以不需要「草稿 → 确认」。
+     * 没到 15 级时按钮是 disabled，走不到这里；万一走到了（老档 / 并发改等级），
+     * setSkillMastery 自己会返回原因，照原样 toast 出去，不静默吞掉。 */
+    document.addEventListener('click', e => {
+      const el = (e.target && e.target.closest) ? e.target.closest('#skList .sb-mlist [data-mset]') : null;
+      if (!el || el.disabled) return;
+      if (this._panMoved) return;
+      const parts = el.dataset.mset.split(':');
+      const r = Game.setSkillMastery(parts[0], parseInt(parts[1], 10));
+      if (r && r.ok) this.renderSkillPanel();
+      else if (r && r.msg) UI.toast(r.msg, 'bad');
     });
 
     /* 悬停预览 / 离开树回位：委托在 document 上（mouseover 会冒泡）。

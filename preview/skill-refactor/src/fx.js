@@ -58,6 +58,38 @@ const SFX = {
   thunder() { this.noise(0.3, 0.34, 2200, 0.5); this.tone(88, 0.26, 'square', 0.14, 38); },
   explode() { if (this._clip('explode')) return; this.noise(0.5, 0.42, 300, 0.5); this.tone(68, 0.55, 'sine', 0.26, 28); },
   heal() { if (this._clip('heal')) return; this.tone(660, 0.2, 'sine', 0.12, 990); this.tone(990, 0.32, 'sine', 0.07, 1320); },
+
+  /* ---------------- 余韵三音（[U6-2] 方案 §5 第三段专用） ----------------
+   *
+   * 方案 §5：「余韵 aftermath 200~600ms —— 残留贴花、上升余烬、烟、边缘光衰减」，
+   * 并明写「**没有余韵 = 特效消失得太干净，世界像没被打过**」。
+   * 以前这三样一个都没有 —— 声音一响完就没了，技能像「啪」一下断掉。
+   *
+   * 三个音对应三种余韵：
+   *   tail   —— 低频衰减尾音：重击的「余」（地震 / 陨石 / 崩击）
+   *   rustle —— 细碎沙沙：元素残留（毒雾 / 火海 / 冰霜的持续感）
+   *   ring   —— 悠长余韵：法术 / 太极 / 召唤的余味
+   *
+   * **音量一律压得比命中音低一档**（0.02~0.06 vs 命中的 0.1~0.4）——
+   * 余韵是背景，命中才是前景。余韵盖过命中 = 层次反了。
+   * **时长都比命中音长**（0.4~0.8 秒），因为余韵是「尾巴」不是「事件」。 */
+  tail() {
+    this.tone(72, 0.72, 'sine', 0.055, 38);
+    this.tone(146, 0.44, 'triangle', 0.028, 84);
+    this.noise(0.34, 0.016, 260, 0.4);
+  },
+  rustle() {
+    /* 两层错开的高频噪声 = 细碎沙沙，不是「嗡」 */
+    this.noise(0.42, 0.028, 3200, 1.1);
+    this.noise(0.3, 0.018, 1700, 0.8);
+    this.tone(520, 0.26, 'sine', 0.018, 380);
+  },
+  ring() {
+    this.tone(392, 0.78, 'sine', 0.036, 392);
+    this.tone(588, 0.62, 'sine', 0.022, 594);
+    this.tone(784, 0.46, 'triangle', 0.014, 790);
+  },
+
   die() { this.tone(200, 0.45, 'sawtooth', 0.12, 48); this.noise(0.45, 0.18, 380, 0.6); },
   coin() { if (this._clip('coin')) return; this.tone(980, 0.08, 'square', 0.09); setTimeout(() => this.tone(1460, 0.1, 'square', 0.07), 60); },
   levelup() { if (this._clip('levelup')) return; [523, 659, 784, 1046].forEach((f, i) => setTimeout(() => this.tone(f, 0.35, 'triangle', 0.14), i * 90)); },
@@ -336,8 +368,214 @@ function talismanTexture() {
 }
 const fxPlane = (w, h) => _fxGeo(`p${w}_${h}`, () => new THREE.PlaneGeometry(w, h));
 
+/* ---------------- 领域贴图（程序化，仍然零素材） ----------------
+ * 五张图一次生成、全局共用：sigil（法阵纹）/ taiji（双鱼）/ beam（竖直光柱）/
+ * smoke（雾团）/ blade（剑身）。与 talismanTexture 同一套做法 —— 本仓库不引入
+ * 任何图片素材，贴图全靠 Canvas 现画。
+ *
+ * 约定：**白 = 全亮，透明 = 不画**。加色混合下黑色与透明等价，
+ * 所以"暗部"用低 alpha 画，不要用黑色（黑色在 NormalBlending 的雾里会变脏）。
+ * 纹理只生成一次：每次 new CanvasTexture 都会重传一遍显存，
+ * 技能连放时会直接把上传带宽吃满（与当初投射物挂 PointLight 是同一类问题）。 */
+const _fieldTex = {};
+function fieldTexture(kind) {
+  if (_fieldTex[kind]) return _fieldTex[kind];
+  const c = document.createElement('canvas');
+  const g = c.getContext('2d');
+  const W = (kind === 'beam' || kind === 'blade') ? 64 : (kind === 'smoke' ? 128 : 512);
+  const H = (kind === 'beam' || kind === 'blade') ? 256 : W;
+  c.width = W; c.height = H;
+
+  if (kind === 'sigil') {
+    /* 法阵纹：双环 + 24 道刻度 + 8 根辐条 + 中心符胆。
+     * 不画汉字 —— 512 的图铺到 7 码半径上，笔画会糊成一团黑。 */
+    const cx = W / 2, cy = H / 2;
+    g.strokeStyle = 'rgba(255,255,255,.85)';
+    g.lineWidth = 5;
+    g.beginPath(); g.arc(cx, cy, W * 0.46, 0, Math.PI * 2); g.stroke();
+    g.lineWidth = 2;
+    g.beginPath(); g.arc(cx, cy, W * 0.385, 0, Math.PI * 2); g.stroke();
+    g.beginPath(); g.arc(cx, cy, W * 0.235, 0, Math.PI * 2); g.stroke();
+    g.strokeStyle = 'rgba(255,255,255,.6)';
+    for (let i = 0; i < 24; i++) {
+      const a = (i / 24) * Math.PI * 2;
+      const r1 = W * 0.385, r2 = i % 3 === 0 ? W * 0.46 : W * 0.425;
+      g.beginPath();
+      g.moveTo(cx + Math.cos(a) * r1, cy + Math.sin(a) * r1);
+      g.lineTo(cx + Math.cos(a) * r2, cy + Math.sin(a) * r2);
+      g.stroke();
+    }
+    g.strokeStyle = 'rgba(255,255,255,.42)';
+    g.lineWidth = 3;
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2 + Math.PI / 8;
+      g.beginPath();
+      g.moveTo(cx + Math.cos(a) * W * 0.235, cy + Math.sin(a) * W * 0.235);
+      g.lineTo(cx + Math.cos(a) * W * 0.385, cy + Math.sin(a) * W * 0.385);
+      g.stroke();
+    }
+    /* 中心符胆：一个小六边 + 内点 */
+    g.strokeStyle = 'rgba(255,255,255,.9)';
+    g.lineWidth = 4;
+    g.beginPath();
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2;
+      const x = cx + Math.cos(a) * W * 0.115, y = cy + Math.sin(a) * W * 0.115;
+      i ? g.lineTo(x, y) : g.moveTo(x, y);
+    }
+    g.closePath(); g.stroke();
+    g.fillStyle = 'rgba(255,255,255,.95)';
+    g.beginPath(); g.arc(cx, cy, W * 0.032, 0, Math.PI * 2); g.fill();
+  } else if (kind === 'taiji') {
+    /* 双鱼：整盘压暗（0.30），再把「阳鱼」那一半提亮到 0.85 ——
+     * 加色混合下这正好是「一边亮一边暗」，灰度截图里 S 分界线就是剪影。 */
+    const cx = W / 2, cy = H / 2, R = W * 0.46;
+    g.fillStyle = 'rgba(255,255,255,.34)';
+    g.beginPath(); g.arc(cx, cy, R, 0, Math.PI * 2); g.fill();
+    g.fillStyle = 'rgba(255,255,255,.95)';
+    g.beginPath();
+    g.arc(cx, cy, R, -Math.PI / 2, Math.PI / 2, false);          // 右半大圆
+    g.arc(cx, cy + R / 2, R / 2, Math.PI / 2, -Math.PI / 2, true); // 下小鱼
+    g.arc(cx, cy - R / 2, R / 2, Math.PI / 2, -Math.PI / 2, false); // 上小鱼
+    g.closePath(); g.fill();
+    /* 鱼眼：一亮一暗（暗的用低 alpha，加色下等于"少加一点"） */
+    g.fillStyle = 'rgba(255,255,255,.95)';
+    g.beginPath(); g.arc(cx, cy - R / 2, R * 0.13, 0, Math.PI * 2); g.fill();
+    g.fillStyle = 'rgba(255,255,255,.16)';
+    g.beginPath(); g.arc(cx, cy + R / 2, R * 0.13, 0, Math.PI * 2); g.fill();
+    g.strokeStyle = 'rgba(255,255,255,.5)';
+    g.lineWidth = 4;
+    g.beginPath(); g.arc(cx, cy, R, 0, Math.PI * 2); g.stroke();
+  } else if (kind === 'beam') {
+    /* 竖直光柱：底亮顶透。**不做横向渐变** —— 圆柱 UV 横向是环绕的，
+     * 横向渐变会在接缝处留一道竖线，转起来像根栅栏。 */
+    const grd = g.createLinearGradient(0, 0, 0, H);
+    grd.addColorStop(0, 'rgba(255,255,255,0)');
+    grd.addColorStop(0.55, 'rgba(255,255,255,.35)');
+    grd.addColorStop(1, 'rgba(255,255,255,.95)');
+    g.fillStyle = grd;
+    g.fillRect(0, 0, W, H);
+  } else if (kind === 'smoke') {
+    /* 雾团：几团重叠的径向柔光。**不用纯圆** —— 纯圆的雾看起来是绿饼。 */
+    for (let i = 0; i < 9; i++) {
+      const x = W * (0.3 + Math.random() * 0.4);
+      const y = H * (0.3 + Math.random() * 0.4);
+      const r = W * (0.18 + Math.random() * 0.22);
+      const grd = g.createRadialGradient(x, y, 0, x, y, r);
+      grd.addColorStop(0, 'rgba(255,255,255,.72)');
+      grd.addColorStop(0.6, 'rgba(255,255,255,.34)');
+      grd.addColorStop(1, 'rgba(255,255,255,0)');
+      g.fillStyle = grd;
+      g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill();
+    }
+    /* 外圈柔化：方图直接贴上去会看见四条直边 */
+    const mask = g.createRadialGradient(W / 2, H / 2, W * 0.2, W / 2, H / 2, W * 0.5);
+    mask.addColorStop(0, 'rgba(255,255,255,1)');
+    mask.addColorStop(1, 'rgba(255,255,255,0)');
+    g.globalCompositeOperation = 'destination-in';
+    g.fillStyle = mask;
+    g.fillRect(0, 0, W, H);
+    g.globalCompositeOperation = 'source-over';
+  } else if (kind === 'blade') {
+    /* 剑身：细长多边形 + 中脊亮线。贴地画弧会跟旋风斩的刀气撞，
+     * 所以剑必须是"立着的剑" —— 靠 plane + 朝相机来立起来。 */
+    const cx = W / 2;
+    g.fillStyle = 'rgba(255,255,255,.9)';
+    g.beginPath();
+    g.moveTo(cx, H * 0.04);
+    g.lineTo(cx + W * 0.20, H * 0.30);
+    g.lineTo(cx + W * 0.15, H * 0.86);
+    g.lineTo(cx + W * 0.26, H * 0.90);
+    g.lineTo(cx + W * 0.26, H * 0.96);
+    g.lineTo(cx - W * 0.26, H * 0.96);
+    g.lineTo(cx - W * 0.26, H * 0.90);
+    g.lineTo(cx - W * 0.15, H * 0.86);
+    g.lineTo(cx - W * 0.20, H * 0.30);
+    g.closePath(); g.fill();
+    g.strokeStyle = 'rgba(255,255,255,1)';
+    g.lineWidth = 2;
+    g.beginPath(); g.moveTo(cx, H * 0.06); g.lineTo(cx, H * 0.88); g.stroke();
+  }
+
+  const t = new THREE.CanvasTexture(c);
+  t.needsUpdate = true;
+  _fieldTex[kind] = t;
+  return t;
+}
+
+/* ============================================================
+ * 法身贴图（P4 · 元素法相）
+ *
+ * 「背后浮现一尊巨大的元素相」—— 这张图就是那尊相。
+ * 为什么是**剪影**而不是细节齐全的像：它是背景，玩家要读到的是
+ * 「身后站着一个比我高很多的东西」，细节一多就会跟自己的角色抢注意力；
+ * 而 51° 俯角下，能读出来的只有「头光 + 肩线 + 下摆」这三笔。
+ *
+ * 与 `data-skill-icons.js` 里法相图标同一套画法（头光 + 肩线），
+ * 认得出是同一个东西 —— 图标和场上不该是两个物种。
+ *
+ * 单独一份缓存、不塞进 `FXK_CELLS`：图集是给**粒子**用的方形格，
+ * 这张是 2:3 的竖长 billboard，尺寸语义都不一样（和 `fieldTexture` 同一个理由）。
+ * ============================================================ */
+let _formTex = null;
+function formTexture() {
+  if (_formTex) return _formTex;
+  const W = 256, H = 384;
+  const c = document.createElement('canvas');
+  c.width = W; c.height = H;
+  const g = c.getContext('2d');
+  const cx = W / 2;
+
+  /* 头光：法相最先被读到的是「后面有一团更大的光」 */
+  const halo = g.createRadialGradient(cx, H * 0.24, 0, cx, H * 0.24, W * 0.52);
+  halo.addColorStop(0, 'rgba(255,255,255,.50)');
+  halo.addColorStop(0.42, 'rgba(255,255,255,.14)');
+  halo.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = halo;
+  g.fillRect(0, 0, W, H);
+
+  /* 袍摆：肩宽 → 底宽，**越往下越淡** —— 不淡的话像一块板子插在地上 */
+  const robe = g.createLinearGradient(0, H * 0.3, 0, H);
+  robe.addColorStop(0, 'rgba(255,255,255,.78)');
+  robe.addColorStop(0.55, 'rgba(255,255,255,.34)');
+  robe.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = robe;
+  g.beginPath();
+  g.moveTo(cx - 46, H * 0.32);
+  g.quadraticCurveTo(cx, H * 0.24, cx + 46, H * 0.32);
+  g.lineTo(cx + 84, H);
+  g.lineTo(cx - 84, H);
+  g.closePath();
+  g.fill();
+
+  /* 肩线：图标里那两条弧，同一个记忆点 */
+  g.strokeStyle = 'rgba(255,255,255,.9)';
+  g.lineWidth = 9;
+  g.lineCap = 'round';
+  g.beginPath();
+  g.moveTo(cx - 46, H * 0.33);
+  g.quadraticCurveTo(cx, H * 0.245, cx + 46, H * 0.33);
+  g.stroke();
+
+  /* 头 */
+  g.fillStyle = 'rgba(255,255,255,.95)';
+  g.beginPath(); g.arc(cx, H * 0.2, 24, 0, Math.PI * 2); g.fill();
+
+  const t = new THREE.CanvasTexture(c);
+  t.needsUpdate = true;
+  t.minFilter = THREE.LinearFilter;
+  t.magFilter = THREE.LinearFilter;
+  t.generateMipmaps = false;
+  _formTex = t;
+  return t;
+}
+
 /* 追踪用的临时向量：每帧每个投射物都 new 一个 Vector3 会造成 GC 抖动 */
-const _vHome = new THREE.Vector3();
+const _vHome = new THREE.Vector3();/* 领域脉冲环用的临时向量（每 2 秒一次，但纪律一样：逐帧路径不 new） */
+const _vField = new THREE.Vector3();
+/* 亮度调色的临时色（避免每个原语都 new 一个 Color） */
+const _cLit = new THREE.Color();
+const _cWhite = new THREE.Color(1, 1, 1);
 
 const FX = {
   scene: null, cam: null, layer: null,
@@ -347,6 +585,58 @@ const FX = {
    * 「每帧重建光栅化状态」的来源之一，砍半几乎看不出，帧率能回来不少。 */
   q: 1,
 
+  /* ============================================================
+   * [P2c] 光效强度：技能有效等级 → 亮度倍率（1 ~ 1.22）
+   *
+   * `castSkill` 按技能有效等级调一次 `setAmp(skillFxAmp(lv))`，之后由 `update`
+   * 倒数 `ampHold` 秒自动回落 1。为什么不是「设完立刻还原」：技能的特效有一部分
+   * 是延后出的（陨石砸地 0.9~1.1 秒、火墙四段、崩击三段），只认同步那一帧的话，
+   * 玩家花词条堆到 20 级的技能，**主视觉**反而还是基础亮度。
+   *
+   * 硬约束（写进契约）：**只乘亮度 / 不透明度 / 粒子数，不乘半径、角度、射程。**
+   * 那些是判定的视觉契约 —— 光效圈画大一圈，玩家就会以为打得到更远的地方。
+   * ============================================================ */
+  amp: 1,
+  ampHold: 0,
+  ampMax: 1.25,
+
+  /* [P4] 法身贴图（懒生成 + 缓存）。放出来的原因是「谁的图谁生成」——
+   * game.js 只负责把它挂成 Sprite 并跟着人走，不该知道这张图怎么画 */
+  formTexture,
+
+  setAmp(v, hold = 1.2) {
+    const n = Number(v);
+    this.amp = (isFinite(n) && n > 1) ? Math.min(this.ampMax, n) : 1;
+    this.ampHold = this.amp > 1 ? Math.max(0, Number(hold) || 0) : 0;
+    return this.amp;
+  },
+
+  /* 亮度：把颜色往白里拉一点（加色混合下就是「更亮」）。
+   * amp = 1 时**原样返回** —— 不给没变亮的特效多算一次，也不引入任何误差。 */
+  lit(color) {
+    if (this.amp <= 1.0001) return color;
+    _cLit.set(color).lerp(_cWhite, Math.min(0.45, (this.amp - 1) * 1.8));
+    return _cLit.getHex();
+  },
+
+  /* [P3d] 元素注入的视觉标记：主元素 70% / 副元素 30% 的粒子数。
+   *
+   * 为什么不给整块光效换色：`FX` 是全局的，同一帧敌人放的技能、命中喷的血
+   * 都会跟着变色 —— 那不是「这一下带火」，那是整块屏幕在说谎。而且技能本体
+   * 的颜色是它的身份（火球就是橙的），元素注入是**附魔层**，不是转换。
+   * 所以只加一簇「这一发带了什么」的火星，技能本体一个像素都不动。
+   *
+   * 也不画圈：圈是判定的视觉契约，画多大就得打多大，而注入不改范围。 */
+  elemSpark(pos, colorMain, colorSub) {
+    if (!pos || !colorMain) return;
+    const n = 12;
+    const wMain = (typeof SKILL_INJECT === 'object' && SKILL_INJECT && SKILL_INJECT.split)
+      ? SKILL_INJECT.split.main : 70;
+    const nMain = colorSub ? Math.max(1, Math.round(n * wMain / 100)) : n;
+    this.burst(pos, colorMain, nMain, { speed: 3.2, size: 0.13, life: 0.55, additive: true, gravity: 6 });
+    if (colorSub) this.burst(pos, colorSub, n - nMain, { speed: 2.4, size: 0.11, life: 0.5, additive: true, gravity: 6 });
+  },
+
   init(scene, cam, layer) { this.scene = scene; this.cam = cam; this.layer = layer; },
 
   burst(pos, color, count = 10, opts = {}) {
@@ -354,6 +644,12 @@ const FX = {
      * 绘制批次顶上去。超过上限就直接不出新粒子——画面上少一簇火星没人看得出来，
      * 但 draw call 从 700 掉回 300 是实打实的手感差别。 */
     if (this.parts.length >= 40) return;
+    /* [P2c] 光效随等级变亮：火星**更多更亮**，但速度 / 大小不动 ——
+     * 大小会让「这一簇火有多大」变味，而那正好是玩家判断范围的东西。 */
+    if (this.amp > 1) {
+      count = Math.max(1, Math.round(count * this.amp));
+      color = this.lit(color);
+    }
     // 低画质时按倍率削减粒子数，但至少保留 3 颗，否则打击感会整个消失
     if (this.q < 1) count = Math.max(3, Math.round(count * this.q));
     const speed = opts.speed || 6;
@@ -407,32 +703,50 @@ const FX = {
 
   ring(pos, radius, color = 0xffffff, dur = 0.45, thickness = 0.16) {
     const geo = fxRing(0.9, 1.0, 32, Math.PI * 2);
-    const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.9, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending });
+    /* [P2c] 变亮只走「颜色 + 不透明度」，radius 一个字节都不动 ——
+     * 这个环画多大，就是这一发真的能打到多大。 */
+    const op0 = Math.min(1, 0.9 * this.amp);
+    const mat = new THREE.MeshBasicMaterial({ color: this.lit(color), transparent: true, opacity: op0, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 });
     const m = new THREE.Mesh(geo, mat);
     m.rotation.x = -Math.PI / 2;
-    m.position.set(pos.x, 0.08, pos.z);
+    /* [U6-3] 细贴地环在 Safari / WebGL 下会被地面深度整个吃掉：
+     * polygonOffset(-4,-4) 在 Chrome / SwiftShader 够用，Safari 下这一条
+     * 环**一个像素都画不出来**（`dev/vfx-vis.js` 的 ring 判据 diff=0，
+     * 其余 12 个原语全绿）。真机对照：直接调 FX.ring 给 y=0.08 有 7522 像素，
+     * 走配方层给 y=0.00 是 0；把同一发 mesh 抬 0.08 立刻回到 7525 像素。
+     * 所以这里从 +0.08 提到 +0.16，给共面留一点余量，polygonOffset 保留双保险。
+     * 不改半径、不改判据 —— 环画多大仍是这一发真的能打到多大（P2c 口径）。 */
+    m.position.set(pos.x, pos.y + 0.16, pos.z);
     m.scale.setScalar(radius * 0.25);
     this.scene.add(m);
-    this.zones.push({ mesh: m, mat, life: dur, max: dur, type: 'ring', radius, t: 0 });
+    this.zones.push({ mesh: m, mat, life: dur, max: dur, type: 'ring', radius, t: 0, op0 });
   },
 
   flashCircle(pos, radius, color = 0xffffff, dur = 0.4) {
     const geo = fxCircle(28);
-    const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.55, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending });
+    const op0 = Math.min(1, 0.55 * this.amp);
+    const mat = new THREE.MeshBasicMaterial({ color: this.lit(color), transparent: true, opacity: op0, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 });
     const m = new THREE.Mesh(geo, mat);
     m.rotation.x = -Math.PI / 2;
-    m.position.set(pos.x, 0.07, pos.z);
+    m.position.set(pos.x, pos.y + 0.07, pos.z);
     m.scale.setScalar(radius);
     this.scene.add(m);
-    this.zones.push({ mesh: m, mat, life: dur, max: dur, type: 'flash' });
+    this.zones.push({ mesh: m, mat, life: dur, max: dur, type: 'flash', op0 });
   },
 
   /* 地面预警（Boss 技能） */
-  telegraph(pos, radius, dur, cb, color = 0xff3333) {
+  /* `silent`：只留判定回调、不画旧圆。给 [U8] 世界 Boss 叠加形状预警用 ——
+   * 判定仍挂在 telegraph 的 cb 上（离线测试桩照旧能 fire），但视觉交给
+   * 外面那层 FX.zone，避免「形状 zone + 一串旧圆」两种预警叠在一起互相打架。 */
+  telegraph(pos, radius, dur, cb, color = 0xff3333, silent = false) {
+    if (silent) {
+      this.zones.push({ mesh: null, mat: null, life: dur, max: dur, type: 'tele', cb, radius });
+      return null;
+    }
     const geo = fxCircle(40);
     const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.22, side: THREE.DoubleSide, depthWrite: false });
     const m = new THREE.Mesh(geo, mat);
-    m.rotation.x = -Math.PI / 2; m.position.set(pos.x, 0.06, pos.z); m.scale.setScalar(radius);
+    m.rotation.x = -Math.PI / 2; m.position.set(pos.x, pos.y + 0.06, pos.z); m.scale.setScalar(radius);
     this.scene.add(m);
     const ringGeo = fxRingThin(0.94, 1, 40);
     const rm = new THREE.Mesh(ringGeo, new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.7, side: THREE.DoubleSide, depthWrite: false }));
@@ -440,23 +754,439 @@ const FX = {
     this.zones.push({ mesh: m, mat, life: dur, max: dur, type: 'tele', cb, radius });
   },
 
+  /* ============================================================
+   * [U7] 形状驱动的地面预警
+   *
+   * 老 `telegraph()` 只会画圆。于是「判定是 6 个点串成的火线」「判定是
+   * 一条冲锋带」「判定是锁定、根本跑不掉」全都被画成同一个圆 —— 玩家读到的
+   * 信息是错的：以为能绕，其实绕不掉；以为要跑，其实站着不动就行。
+   *
+   * 这里按 BOSS-VFX-PLAN §3「判定形状决定预警形状」拆成四种：
+   *
+   *   circle  圆点 / 圆形范围 → 实心圆 + 边沿 + 一道收缩环（由外向内收）
+   *   ring    环形冲击        → 空心环带 + 一道扩张环（由内向外扩）
+   *   rect    直线带 / 冲锋   → 长条 + 两条长边 + 三个箭头（指向去向）
+   *   lock    锁定 / 必中     → 挂在他脚下的准星 + 四根刻度（跟着人走）
+   *
+   * `sweep` 控制那道「进度环」的方向：'in' 由外向内收、'out' 由内向外扩、
+   * 不给就只脉动不扫。方向本身就是信息：收 = 往中心砸，扩 = 从中心炸开。
+   *
+   * 调用与 `telegraph` 同形，到点回调 `cb`：
+   *   FX.zone({ shape:'circle', pos, radius:8.5, dur:0.9, sweep:'in', cb })
+   *   FX.zone({ shape:'rect', pos, dir:{x,z}, len:14, halfW:3, dur:0.7, cb })
+   *   FX.zone({ shape:'lock', pos, follow:group, radius:2.2, dur:0.7, cb })
+   * ============================================================ */
+  zone(o) {
+    o = o || {};
+    const shape = o.shape || 'circle';
+    const pos = o.pos || new THREE.Vector3();
+    const dur = o.dur == null ? 0.8 : o.dur;
+    const color = o.color == null ? 0xff3333 : o.color;
+    const radius = o.radius == null ? 2 : o.radius;
+
+    const grp = new THREE.Group();
+    grp.position.set(pos.x, (pos.y || 0) + 0.06, pos.z);
+    /* 平铺到地面：本地 XY → 世界 XZ。之后所有形状都在本地平面里画，
+     * 只有 rect 需要再绕 z 转一个朝向。 */
+    grp.rotation.x = -Math.PI / 2;
+    this.scene.add(grp);
+
+    const fade = [];
+    const mk = (op) => {
+      const m = new THREE.MeshBasicMaterial({
+        color, transparent: true, opacity: op,
+        side: THREE.DoubleSide, depthWrite: false,
+      });
+      fade.push({ m, op0: op });
+      return m;
+    };
+    let prog = null;
+    let sweep = o.sweep || null;
+
+    if (shape === 'circle') {
+      const disc = new THREE.Mesh(fxCircle(40), mk(0.20));
+      disc.scale.setScalar(radius);
+      grp.add(disc);
+      const rim = new THREE.Mesh(fxRingThin(0.93, 1, 40), mk(0.72));
+      rim.scale.setScalar(radius);
+      grp.add(rim);
+      /* 收缩环：默认由外向内，读作「往中间砸下来」 */
+      prog = new THREE.Mesh(fxRingThin(0.88, 1, 40), mk(0.55));
+      grp.add(prog);
+      if (!sweep) sweep = 'in';
+    } else if (shape === 'ring') {
+      /* 空心环带：内圈留空，一眼看出「中间是安全的」 */
+      const band = new THREE.Mesh(fxRingThin(0.72, 1, 48), mk(0.26));
+      band.scale.setScalar(radius);
+      grp.add(band);
+      const inRim = new THREE.Mesh(fxRingThin(0.70, 0.75, 48), mk(0.7));
+      inRim.scale.setScalar(radius);
+      grp.add(inRim);
+      const outRim = new THREE.Mesh(fxRingThin(0.96, 1, 48), mk(0.8));
+      outRim.scale.setScalar(radius);
+      grp.add(outRim);
+      prog = new THREE.Mesh(fxRingThin(0.94, 1, 48), mk(0.6));
+      grp.add(prog);
+      if (!sweep) sweep = 'out';
+    } else if (shape === 'rect') {
+      const len = o.len == null ? 12 : o.len;
+      const halfW = o.halfW == null ? 2.4 : o.halfW;
+      const dx = o.dir ? o.dir.x : 0, dz = o.dir ? o.dir.z : -1;
+      const dl = Math.hypot(dx, dz) || 1;
+      /* 本地 +Y 经 rotation.x=-90° 后指向世界 -Z，再绕 z 转 a：
+       *   a = atan2(-dx, -dz)  ← 代入 (0,-1) 得 a=0（正对 -Z），可自检 */
+      grp.rotation.z = Math.atan2(-dx / dl, -dz / dl);
+      grp.position.x += dx / dl * len * 0.5;
+      grp.position.z += dz / dl * len * 0.5;
+      const body = new THREE.Mesh(fxPlane(1, 1), mk(0.20));
+      body.scale.set(halfW * 2, len, 1);
+      grp.add(body);
+      for (const sx of [-1, 1]) {
+        const edge = new THREE.Mesh(fxPlane(1, 1), mk(0.75));
+        edge.scale.set(0.16, len, 1);
+        edge.position.x = sx * halfW;
+        grp.add(edge);
+      }
+      /* 三个箭头：不是装饰，是在说「这条带子往哪边走」 */
+      for (let i = 0; i < 3; i++) {
+        const chev = new THREE.Mesh(fxRing(0, 1, 3, Math.PI * 0.9), mk(0.62));
+        chev.scale.setScalar(halfW * 0.62);
+        chev.position.y = (i - 1) * len * 0.26;
+        grp.add(chev);
+      }
+      prog = null;
+    } else if (shape === 'fan') {
+      /* [U8] 扇形预警：世界 Boss 的 fan / cone 招（6/18）判定是「距离 ≤ r
+       * 且角度差 ≤ halfArc」，原来却在地上铺 5 个圆 —— 玩家读成「躲开那几个点」
+       * 而不是「离开这片角」。这里画一块真扇形：底盘 + 两条边 + 一道外沿弧。
+       *
+       * THREE 的 RingGeometry 在 XY 平面从 +X 起逆时针张 len 弧度；zone 的 group
+       * 已经 rotation.x=-90° 把本地 XY 铺到世界 XZ。世界角 ang = atan2(dx, dz)
+       * 从 +Z 起顺时针，换算到本地即得下面的 rotation.z。halfArc 是半张角弧度。 */
+      const r = radius;
+      const halfArc = o.halfArc == null ? Math.PI * 0.42 : o.halfArc;
+      const ang = o.ang || 0;                       // 世界朝向 atan2(dx,dz)
+      const span = halfArc * 2;
+      grp.rotation.z = -ang + Math.PI / 2 - halfArc;
+      const disc = new THREE.Mesh(fxRing(0, 1, 40, span), mk(0.20));
+      disc.scale.setScalar(r);
+      grp.add(disc);
+      const rim = new THREE.Mesh(fxRing(0.94, 1, 40, span), mk(0.72));
+      rim.scale.setScalar(r);
+      grp.add(rim);
+      /* 两条径向边：从圆心到弧的两端，读出「张角有多大」 */
+      for (const s of [-1, 1]) {
+        const edge = new THREE.Mesh(fxPlane(1, 1), mk(0.7));
+        const a = s * halfArc;
+        edge.scale.set(0.12, r, 1);
+        edge.position.set(Math.sin(a) * r * 0.5, Math.cos(a) * r * 0.5, 0);
+        edge.rotation.z = -a;
+        grp.add(edge);
+      }
+      /* 外沿弧随前摇收扩：in = 从弧外往圆心收（「要扫过来了」） */
+      prog = new THREE.Mesh(fxRing(0.86, 1, 40, span), mk(0.55));
+      grp.add(prog);
+      if (!sweep) sweep = 'in';
+    } else if (shape === 'lock') {
+      /* 锁定：准星 + 四根刻度。`follow` 给了就每帧贴过去 ——
+       * 「跑不掉」这件事必须画在脚上，画在 Boss 脚下就又变成「躲开就行」。 */
+      const ring = new THREE.Mesh(fxRingThin(0.82, 1, 32), mk(0.85));
+      ring.scale.setScalar(radius);
+      grp.add(ring);
+      const cross = new THREE.Mesh(fxRingThin(0.2, 1, 4), mk(0.5));
+      cross.scale.setScalar(radius * 0.55);
+      grp.add(cross);
+      for (let i = 0; i < 4; i++) {
+        const tick = new THREE.Mesh(fxPlane(1, 1), mk(0.8));
+        tick.scale.set(0.12, radius * 0.42, 1);
+        /* 先绕原点转到该象限，再沿该方向抬出去 */
+        const a = i * Math.PI / 2;
+        tick.position.set(Math.sin(a) * radius * 1.18, Math.cos(a) * radius * 1.18, 0);
+        tick.rotation.z = -a;
+        grp.add(tick);
+      }
+      prog = null;
+    }
+
+    this.zones.push({
+      /* 一个 zone 有好几份材质（底盘 / 边沿 / 进度环 / 刻度），
+       * 挂到 `mats` 上让收尾那段统一 dispose —— 只清 `mat` 会漏，
+       * 连放技能就是一路涨显存（`field` 那层踩过同一个坑）。 */
+      mesh: grp, mat: null, mats: fade.map(f => f.m), fade,
+      life: dur, max: dur,
+      type: 'zone', shape, radius, prog, sweep,
+      cb: o.cb || null, follow: o.follow || null,
+    });
+    return grp;
+  },
+
+  /* 形状预警每帧推进：脉动 + 进度环 + 跟随 + 到点回调 */
+  _zoneTick(z, k, dt) {
+    /* 前 15% 淡入，避免「啪」一下整块出现；之后脉动 */
+    const fadeIn = Math.min(1, k * 6.5);
+    const pulse = 0.80 + 0.20 * Math.sin(k * 24);
+    for (const f of z.fade) f.m.opacity = f.op0 * pulse * fadeIn;
+    if (z.prog) {
+      const t = z.sweep === 'in' ? 1 - k : k;
+      const s = z.radius * (0.06 + 0.94 * t);
+      z.prog.scale.setScalar(Math.max(0.001, s));
+    }
+    if (z.follow && z.follow.position) {
+      z.mesh.position.x = z.follow.position.x;
+      z.mesh.position.z = z.follow.position.z;
+    }
+    if (z.life <= 0 && z.cb) { z.cb(); z.cb = null; }
+  },
+
+
   /* 持续区域（毒雾/火海） */
   area(pos, radius, color, dur, opts = {}) {
     const geo = fxCircle(32);
     // 亮色技能降低不透明度，避免在亮地面上糊成一块
     const cc = new THREE.Color(color);
     const lum = 0.299 * cc.r + 0.587 * cc.g + 0.114 * cc.b;
-    const baseOp = opts.opacity || Math.max(0.07, 0.3 - lum * 0.22);
-    const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: baseOp, side: THREE.DoubleSide, depthWrite: false });
+    /* [P2c] 光效变亮：面积不放大（那是判定范围），只抬不透明度 + 调亮颜色。
+     * 上限 0.75 是 SKILL-VFX-PLAN §亮度预算：5 个技能同屏时不许糊住 Boss 的预警圈。 */
+    const baseOp = Math.min(0.75, (opts.opacity || Math.max(0.07, 0.3 - lum * 0.22)) * this.amp);
+    const mat = new THREE.MeshBasicMaterial({ color: this.lit(color), transparent: true, opacity: baseOp, side: THREE.DoubleSide, depthWrite: false });
     const m = new THREE.Mesh(geo, mat);
-    m.rotation.x = -Math.PI / 2; m.position.set(pos.x, 0.05, pos.z); m.scale.setScalar(radius);
+    m.rotation.x = -Math.PI / 2; m.position.set(pos.x, pos.y + 0.05, pos.z); m.scale.setScalar(radius);
     this.scene.add(m);
-    // 边沿亮圈，避免大色块显得扁平
-    const rim = new THREE.Mesh(fxRingThin(0.93, 1, 40),
-      new THREE.MeshBasicMaterial({ color, transparent: true, opacity: Math.min(0.7, baseOp + 0.32), side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending }));
-    rim.rotation.x = -Math.PI / 2; rim.position.y = 0.012; m.add(rim);
+    /* 边沿亮圈，避免大色块显得扁平。
+     * `opts.rim === false` 时不要 —— 毒雾这种「边界本来就看不见」的领域，
+     * 一圈亮边会把它重新画成一个圆，与 `FX.field('mist')` 自相矛盾。 */
+    if (opts.rim !== false) {
+      const rim = new THREE.Mesh(fxRingThin(0.93, 1, 40),
+        new THREE.MeshBasicMaterial({ color: this.lit(color), transparent: true, opacity: Math.min(0.7, baseOp + 0.32), side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending }));
+      rim.rotation.x = -Math.PI / 2; rim.position.y = 0.012; m.add(rim);
+    }
     this.zones.push({ mesh: m, mat, life: dur, max: dur, type: 'area', radius, color, baseOp });
     return m;
+  },
+
+  /* ============================================================
+   * [VFX·移植] 领域：**四种剪影，不是四种颜色**
+   *
+   * 以前所有领域共用同一副骨架（地面圆盘 + 边沿亮圈），换的只是颜色与半径。
+   * 灰度截图里太极 / 毒雾 / 剑阵 / 法阵读起来是同一个东西 —— 玩家分不出
+   * 「我站在什么阵里」，技能的身份就没了。这里按 kind 分开：
+   *
+   *   sigil   法阵：地纹 + 中央光柱 + 双层环墙 + 2 秒脉冲
+   *   taiji   太极：双鱼地纹 + 两根气旋柱（长在鱼眼上、跟着双鱼一起转）
+   *   mist    雾  ：没有地纹、没有边界，只有翻滚的雾团
+   *   blades  剑阵：淡地纹 + 立着环绕的剑影（椭圆轨道）
+   *
+   * 外轮廓分别是「圆 + 柱」「双螺旋」「不规则的团」「轨道」，遮住颜色也分得开。
+   *
+   * 三条硬约束（写在这里，防止以后加东西时忘掉）：
+   *   ① **半径由调用方按判定半径传进来**，这里绝不自己放大 ——
+   *      领域圈就是判定的视觉契约，画大一圈就是向玩家谎报范围。
+   *   ② **不挂 PointLight**、**不在 update 里 new 对象** —— 与其它原语同一套纪律。
+   *   ③ 低画质档（`FX.q < 0.7`）去掉环墙与剑影数量，只留地纹 ——
+   *      手机端同屏两三个领域是常事。
+   * ============================================================ */
+  field(pos, opts = {}) {
+    const kind = opts.kind || 'sigil';
+    const R = Math.max(0.6, opts.r || 3.2);
+    const life = Math.max(0.4, opts.life || 4.5);
+    const color = opts.color != null ? opts.color : 0x9fe8c8;
+    const op = Math.min(0.9, opts.opacity != null ? opts.opacity : 0.85);
+    const spin = opts.spin != null ? opts.spin : 0.22;
+    const grp = new THREE.Group();
+    grp.position.set(pos.x, pos.y, pos.z);
+    this.scene.add(grp);
+
+    const mats = [];
+    const mkMat = (extra) => {
+      const m = new THREE.MeshBasicMaterial(Object.assign({
+        color: this.lit(color), transparent: true, opacity: 0,
+        depthWrite: false, blending: THREE.AdditiveBlending, fog: false
+      }, extra || {}));
+      mats.push(m);
+      return m;
+    };
+
+    /* 地纹：雾**不画**。带着一圈清晰圆边的"雾"读起来是一张绿饼，
+     * 而雾的身份恰恰是「没有边界」。剑阵压到 0.26 —— 它的主体是剑影。 */
+    let sig = null, sigOp = 0;
+    if (kind !== 'mist') {
+      const tex = fieldTexture(kind === 'taiji' ? 'taiji' : 'sigil');
+      sigOp = kind === 'taiji' ? op * 0.62 : kind === 'blades' ? op * 0.26 : op;
+      const mat = mkMat({ map: tex });
+      sig = new THREE.Mesh(fxPlane(1, 1), mat);
+      sig.rotation.x = -Math.PI / 2;
+      sig.position.y = 0.03;
+      sig.scale.setScalar(R * 2);
+      grp.add(sig);
+    }
+
+    /* 柱与环墙只属于法阵。太极换成气旋柱，雾什么都不长。 */
+    let colMesh = null, walls = [];
+    if (kind === 'sigil') {
+      const cGeo = _fxGeo('fxcol' + R.toFixed(2), () =>
+        new THREE.CylinderGeometry(R * 0.92, R * 0.92, 2.6, 28, 1, true));
+      colMesh = new THREE.Mesh(cGeo, mkMat({ map: fieldTexture('beam'), side: THREE.DoubleSide }));
+      colMesh.position.y = 1.3;
+      grp.add(colMesh);
+
+      const wGeo = _fxGeo('fxwall' + R.toFixed(2), () =>
+        new THREE.CylinderGeometry(R, R, 1.5, 36, 1, true));
+      /* 低画质只留一层墙：两层墙是 2 次 draw call，手机上是纯浪费 */
+      const wallN = this.q < 0.7 ? 1 : 2;
+      for (let i = 0; i < wallN; i++) {
+        const m = new THREE.Mesh(wGeo, mkMat({ map: fieldTexture('beam'), side: THREE.DoubleSide }));
+        m.position.y = 0.55;
+        m.userData.s = i ? -1 : 1;
+        grp.add(m);
+        walls.push(m);
+      }
+    }
+
+    /* 太极的体积感：两根气旋柱，长在两个鱼眼上、跟双鱼图同速公转。
+     * 只靠撒粒子做螺旋，在 51° 俯角下会投影成中心一坨白雾 ——
+     * 而"两根柱"是实打实的竖直物体，俯视时最占屏幕的正是竖直方向。 */
+    const cols = [];
+    if (kind === 'taiji') {
+      for (let i = 0; i < 2; i++) {
+        const g = _fxGeo('fxtj' + R.toFixed(2), () =>
+          new THREE.CylinderGeometry(R * 0.30, R * 0.18, 2.9, 16, 1, true));
+        const m = new THREE.Mesh(g, mkMat({ map: fieldTexture('beam'), side: THREE.DoubleSide }));
+        m.position.y = 1.45;
+        grp.add(m);
+        cols.push(m);
+      }
+    }
+
+    /* 雾片：**NormalBlending**。加色混合的雾会变成一团荧光绿，反而更像光效。 */
+    const puffs = [];
+    if (kind === 'mist') {
+      const n = this.q < 0.7 ? 5 : 9;
+      const tex = fieldTexture('smoke');
+      for (let i = 0; i < n; i++) {
+        const a = (i / n) * Math.PI * 2 + RND(-0.3, 0.3);
+        const rr = Math.sqrt(RND(0.05, 1)) * R * 0.78;
+        const s0 = R * RND(0.75, 1.25);
+        const mat = new THREE.MeshBasicMaterial({
+          map: tex, color: this.lit(color), transparent: true, opacity: 0,
+          depthWrite: false, blending: THREE.NormalBlending, fog: false
+        });
+        mats.push(mat);
+        const m = new THREE.Mesh(fxPlane(1, 1), mat);
+        m.scale.set(s0, s0 * 0.78, 1);
+        /* 雾片是**竖着的 billboard**，中心得抬到自身高度的一半以上，
+         * 否则下半片会插进地面、被地面裁出一条直边（看起来像贴了张方纸）。 */
+        const oy = 0.28 + s0 * 0.42;
+        m.position.set(Math.cos(a) * rr, oy, Math.sin(a) * rr);
+        m.renderOrder = 6;
+        m.userData = { s0, oy, ph: RND(0, 7), ox: Math.cos(a) * rr, oz: Math.sin(a) * rr, ry: RND(0, 7) };
+        grp.add(m);
+        puffs.push(m);
+      }
+    }
+
+    /* 剑影：得是**立着的剑**，不是贴地的弧 —— 贴地弧就是刀气，会跟旋风斩撞。 */
+    const swords = [];
+    if (kind === 'blades') {
+      const n = this.q < 0.7 ? 2 : 4;
+      for (let i = 0; i < n; i++) {
+        const mat = new THREE.MeshBasicMaterial({
+          map: fieldTexture('blade'), color: this.lit(color), transparent: true, opacity: 0,
+          depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false
+        });
+        mats.push(mat);
+        const m = new THREE.Mesh(fxPlane(1, 1), mat);
+        m.renderOrder = 5;
+        grp.add(m);
+        swords.push({ m, a: (i / n) * Math.PI * 2, r: R * 0.74 + (i % 2) * 0.3 });
+      }
+    }
+
+    const z = {
+      mesh: grp, mat: mats[0], mats, life, max: life, type: 'field',
+      kind, R, op, spin, t: 0, sig, sigOp, colMesh, walls, cols, puffs, swords,
+      pulseT: 0, follow: opts.follow || null, color
+    };
+    this.zones.push(z);
+    return grp;
+  },
+
+  /* 领域逐帧：入场缓出 → 稳定 → 收尾淡出（时间轴三段式，SKILL-VFX-PLAN §5）。
+   * 单独一个方法而不是塞进 update 的 if-else：领域有 4 种 kind、7 类部件，
+   * 塞进去会把那个 switch 撑成一屏。 */
+  _fieldTick(z, dt) {
+    z.t += dt;
+    const t = z.t;
+    const k = Math.min(1, t / z.max);
+    const e = 1 - Math.pow(1 - Math.min(1, t / 0.35), 3);   // 入场缓出
+    const outK = k > 0.85 ? Math.max(0, 1 - (k - 0.85) / 0.15) : 1;
+    const f = e * outK;
+    /* 跟随：剑阵的「跟随」变体与毒雾的「追随」都要跟着人走。
+     * 传函数而不是传坐标 —— 阵心每帧都在变，传快照就会「阵留在了原地」。 */
+    if (z.follow) {
+      const p = z.follow();
+      if (p) z.mesh.position.set(p.x, 0, p.z);
+    }
+    const camQ = this.cam ? this.cam.quaternion : null;
+
+    if (z.sig) {
+      z.sig.rotation.z += dt * z.spin;
+      z.sig.material.opacity = z.sigOp * f;
+      z.sig.scale.setScalar(z.R * 2 * (0.55 + e * 0.45));
+    }
+    if (z.colMesh) {
+      z.colMesh.material.opacity = 0.10 * f * (0.8 + 0.2 * Math.sin(t * 3));
+      z.colMesh.rotation.y += dt * 0.35;
+    }
+    for (const w of z.walls) {
+      w.material.opacity = 0.28 * f * (0.75 + 0.25 * Math.sin(t * 5 + w.userData.s));
+      w.rotation.y += dt * 0.55 * w.userData.s;
+    }
+    /* 法阵每 2 秒一次脉冲环：领域"活着"的读数。半径仍取 R（判定口径） */
+    if (z.kind === 'sigil') {
+      z.pulseT += dt;
+      if (z.pulseT >= 2) {
+        z.pulseT = 0;
+        this.ring(_vField.set(z.mesh.position.x, 0.15, z.mesh.position.z),
+          z.R, z.color, 0.5, 0.14);
+      }
+    }
+    if (z.kind === 'taiji') {
+      const eyeA = z.sig ? z.sig.rotation.z : t * z.spin;
+      z.cols.forEach((m, i) => {
+        const a = eyeA + i * Math.PI;
+        m.position.x = Math.cos(a) * z.R * 0.50;
+        m.position.z = Math.sin(a) * z.R * 0.50;
+        m.rotation.y += dt * (i ? -2.2 : 2.2);
+        m.material.opacity = (i ? 0.36 : 0.46) * f * (0.8 + 0.2 * Math.sin(t * 4 + i * 2));
+      });
+    }
+    if (z.kind === 'mist') {
+      for (const m of z.puffs) {
+        const ud = m.userData;
+        ud.ry += dt * 0.3;
+        if (camQ) m.quaternion.copy(camQ);
+        m.rotateZ(ud.ry);
+        const br = 1 + Math.sin(t * 0.9 + ud.ph) * 0.10;
+        m.scale.set(ud.s0 * br, ud.s0 * 0.78 * br, 1);
+        m.position.x = ud.ox + Math.sin(t * 0.5 + ud.ph) * 0.22;
+        m.position.z = ud.oz + Math.cos(t * 0.43 + ud.ph) * 0.22;
+        m.position.y = ud.oy + Math.sin(t * 0.6 + ud.ph) * 0.10;
+        m.material.opacity = 0.50 * f * (0.72 + 0.28 * Math.sin(t * 1.3 + ud.ph));
+      }
+    }
+    if (z.kind === 'blades') {
+      z.swords.forEach((s, i) => {
+        s.a += dt * 2.2;
+        const x = Math.cos(s.a) * s.r;
+        const zz = Math.sin(s.a) * s.r * 0.78;
+        const y = 0.95 + Math.sin(s.a * 2 + i) * 0.22;
+        s.m.position.set(x, y, zz);
+        if (camQ) s.m.quaternion.copy(camQ);
+        s.m.rotateZ(-s.a + Math.PI / 2);
+        s.m.scale.set(0.55, 1.55, 1);
+        s.m.material.opacity = 0.85 * outK;
+      });
+    }
   },
 
   beam(a, b, color = 0x88ddff, dur = 0.16, width = 1) {
@@ -469,7 +1199,7 @@ const FX = {
       pts.push(p);
     }
     const geo = new THREE.BufferGeometry().setFromPoints(pts);
-    const line = new THREE.Line(geo, new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.95, linewidth: width }));
+    const line = new THREE.Line(geo, new THREE.LineBasicMaterial({ color: this.lit(color), transparent: true, opacity: Math.min(1, 0.95 * this.amp), linewidth: width }));
     this.scene.add(line);
     this.beams.push({ line, life: dur, max: dur });
     this.burst(b, color, 8, { speed: 5, size: 0.08, life: 0.3, additive: true, gravity: 0 });
@@ -479,13 +1209,16 @@ const FX = {
   slash(pos, angle, color = 0xffffff, radius = 2.2, arc = 2.2) {
     // 几何体只按半径/弧度缓存，朝向交给 rotation.z（等价于原来的 thetaStart）
     const geo = fxRing(radius * 0.55, radius, 24, arc);
-    const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.85, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending });
+    /* [P2c] 刀光变亮：颜色 + 不透明度。radius / arc 不动 —— 剑光的弧度
+     * 就是这一刀扫过的角度，画大了等于骗玩家「这一下能扫到背后」。 */
+    const op0 = Math.min(1, 0.85 * this.amp);
+    const mat = new THREE.MeshBasicMaterial({ color: this.lit(color), transparent: true, opacity: op0, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending });
     const m = new THREE.Mesh(geo, mat);
     m.rotation.x = -Math.PI / 2;
     m.rotation.z = angle - arc / 2;
-    m.position.set(pos.x, 0.6, pos.z);
+    m.position.set(pos.x, pos.y + 0.6, pos.z);
     this.scene.add(m);
-    this.zones.push({ mesh: m, mat, life: 0.2, max: 0.2, type: 'slash' });
+    this.zones.push({ mesh: m, mat, life: 0.2, max: 0.2, type: 'slash', op0 });
   },
 
   /**
@@ -498,6 +1231,11 @@ const FX = {
   projectile(opts) {
     const r = opts.radius || 0.3;
     const col = opts.color || 0xffaa44;
+    /* [P2c] 光效随等级变亮：**只调亮球体 / 光晕的颜色**，半径一个字节不动 ——
+     * 法球的视觉半径和 hitRadius 本来就是分开的两个数（见上面注释），
+     * 把视觉半径放大等于向玩家谎报判定范围。
+     * `p.color` 仍存原色：拖尾交给 burst 去调亮，存调亮后的值会被调两次。 */
+    const colLit = this.lit(col);
     const style = opts.style || 'orb';
     let m, mat, haloMat = null, haloMat2 = null;
 
@@ -515,23 +1253,23 @@ const FX = {
       });
       m = new THREE.Mesh(fxPlane(0.40 * scl, 0.64 * scl), mat);
       haloMat = new THREE.MeshBasicMaterial({
-        color: col, transparent: true, opacity: 0.42,
+        color: colLit, transparent: true, opacity: Math.min(1, 0.42 * this.amp),
         blending: THREE.AdditiveBlending, depthWrite: false
       });
       const glow = new THREE.Mesh(fxPlane(0.72 * scl, 0.98 * scl), haloMat);
       glow.position.z = -0.01;
       m.add(glow);
     } else {
-      mat = new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.95 });
+      mat = new THREE.MeshBasicMaterial({ color: colLit, transparent: true, opacity: Math.min(1, 0.95 * this.amp) });
       m = new THREE.Mesh(sphGeo(r, 7), mat);
       /* 不再给投射物挂 PointLight。
        * 场景里光源数量一变，three 就会把所有材质的 shader 重新编译一次，
        * 战斗中不停发射/消失 → 每帧几百次重编译 → 这是「非常卡」的头号原因。
        * 改用两层叠加光晕，视觉上几乎等价，成本只是两个精灵。
        */
-      haloMat = new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.34, blending: THREE.AdditiveBlending, depthWrite: false });
+      haloMat = new THREE.MeshBasicMaterial({ color: colLit, transparent: true, opacity: Math.min(1, 0.34 * this.amp), blending: THREE.AdditiveBlending, depthWrite: false });
       m.add(new THREE.Mesh(sphGeo(r * 1.9, 6), haloMat));
-      haloMat2 = new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.13, blending: THREE.AdditiveBlending, depthWrite: false });
+      haloMat2 = new THREE.MeshBasicMaterial({ color: colLit, transparent: true, opacity: Math.min(1, 0.13 * this.amp), blending: THREE.AdditiveBlending, depthWrite: false });
       m.add(new THREE.Mesh(sphGeo(r * 3.4, 6), haloMat2));
       if (opts.scale) m.scale.setScalar(opts.scale);
     }
@@ -552,7 +1290,14 @@ const FX = {
       style, spin: Math.random() * 6.28, spinSpd: opts.spinSpd || 3.2,
       homing: opts.homing || null, homeTurn: opts.homeTurn || 6,
       hitSet: null,
-      tag: opts.tag           // [S1] 伤害乘区标记，命中时由调用方取回
+      tag: opts.tag,           // [S1] 伤害乘区标记，命中时由调用方取回
+      /* [U6-2] 施法者 id：投射物的命中是**异步**的（弹道要飞 0.3~1.5 秒），
+       * 落地时玩家可能已经放了别的招 —— 光靠「最近一次施放」会认错人。
+       * 所以创建时把技能 id 记在这里，命中时由 damageEnemy 取回。 */
+      sfxId: opts.sfxId || null,
+      /* [P3b] 元素注入跟着投射物走：飞出去时施法窗口早就关了，
+       * 创建那一刻把 `{key, amt}` 复制过来，命中时由 Game.curInject 取回 */
+      inj: opts.inj || null
     };
     this.projectiles.push(p);
     return p;
@@ -571,6 +1316,13 @@ const FX = {
   },
 
   update(dt) {
+    /* [P2c] 施法尾窗：castSkill 设完 amp 后在这里倒数。
+     * 技能的延后特效（陨石砸地 / 火墙四段 / 崩击三段）都在 0.4~1.2 秒后出，
+     * 尾窗就是为它们留的 —— 到点回落 1，不会一路亮到下一次施法。 */
+    if (this.ampHold > 0) {
+      this.ampHold -= dt;
+      if (this.ampHold <= 0) { this.ampHold = 0; this.amp = 1; }
+    }
     // 粒子（THREE.Points：整组一个 draw call，位置在这里逐帧刷新）
     for (let i = this.parts.length - 1; i >= 0; i--) {
       const p = this.parts[i];
@@ -601,21 +1353,35 @@ const FX = {
       const k = 1 - z.life / z.max;
       if (z.type === 'ring') {
         z.mesh.scale.setScalar(z.radius * (0.25 + k * 0.9));
-        z.mat.opacity = Math.max(0, 0.9 * (1 - k));
+        z.mat.opacity = Math.max(0, (z.op0 || 0.9) * (1 - k));
       } else if (z.type === 'flash') {
-        z.mat.opacity = Math.max(0, 0.55 * (1 - k));
+        z.mat.opacity = Math.max(0, (z.op0 || 0.55) * (1 - k));
         z.mesh.scale.setScalar(z.mesh.scale.x * (1 + dt * 0.6));
       } else if (z.type === 'tele') {
-        z.mat.opacity = 0.18 + Math.sin(k * 26) * 0.12 + k * 0.25;
+        /* [U8] silent 的 telegraph 只留判定 cb（mat/mesh 都是 null），
+         * 预警视觉交给 FX.zone —— 这里跳过 opacity，别往 null 上写。 */
+        if (z.mat) z.mat.opacity = 0.18 + Math.sin(k * 26) * 0.12 + k * 0.25;
         if (z.life <= 0 && z.cb) { z.cb(); z.cb = null; }
       } else if (z.type === 'area') {
         z.mat.opacity = Math.max(0, (z.baseOp || 0.18) * (0.85 + Math.sin(k * 14) * 0.2)) * Math.min(1, z.life * 2);
         z.mesh.scale.setScalar(z.radius * (0.94 + Math.sin(k * 6) * 0.03));
+      } else if (z.type === 'zone') {
+        this._zoneTick(z, k, dt);
       } else if (z.type === 'slash') {
-        z.mat.opacity = Math.max(0, 0.85 * (1 - k));
+        z.mat.opacity = Math.max(0, (z.op0 || 0.85) * (1 - k));
         z.mesh.rotation.z += dt * 2;
+      } else if (z.type === 'field') {
+        this._fieldTick(z, dt);
       }
-      if (z.life <= 0) { this.scene.remove(z.mesh); z.mat.dispose(); this.zones.splice(i, 1); }
+      if (z.life <= 0) {
+        if (z.mesh) this.scene.remove(z.mesh);
+        /* 领域是一整个 Group、材质有好几份（地纹 / 柱 / 墙 / 剑影各自一份），
+         * 只 dispose 一个 `z.mat` 会漏掉其余材质 —— 连放技能就是一路涨显存。
+         * 几何体走 `_fxGeo` 的共享缓存，不在这里释放。 */
+        if (z.mats) { for (const m of z.mats) m.dispose(); }
+        else if (z.mat) z.mat.dispose();
+        this.zones.splice(i, 1);
+      }
     }
     // 光束
     for (let i = this.beams.length - 1; i >= 0; i--) {
@@ -669,6 +1435,18 @@ const FX = {
       }
       if (p.life <= 0) { this.removeProjectile(i); }
     }
+    /* [V0] 原语层（src/fx-kit.js）：贴图粒子 / 拖尾 / 闪电 / 冲击波 / 贴花。
+     * 单独一个 update 而不是塞进上面几条循环 —— 它的对象形状和生命周期都不一样，
+     * 混进来会让这个函数更难读，而且它可能根本不存在（低画质档整层关掉）。 */
+    if (typeof FXK !== 'undefined' && FXK && typeof FXK.update === 'function') FXK.update(dt);
+    /* [B16] 怪物侧原语层（src/fx2.js）：同样独立一档。注意它的 dt 单位是**秒**，
+     * 跟这里一致；内部会再夹一次 0.05，所以切后台回来的大 dt 不会把
+     * 「0.16 秒扫完的一刀」一帧闪完。 */
+    if (typeof FX2 !== 'undefined' && FX2 && typeof FX2.update === 'function') FX2.update(dt);
+    /* [B20] 玩家侧技能演出层（src/sfx.js）：37 只技能的整套画法。
+     * dt 同样是**秒**；它内部有自己的更新队列（delay / seq / 粒子池），
+     * 不推进的话技能只出第一帧、粒子停在原地。 */
+    if (typeof SKFX !== 'undefined' && SKFX && typeof SKFX.update === 'function') SKFX.update(dt);
   },
 
   removeProjectile(i) {
@@ -691,9 +1469,17 @@ const FX = {
     }
     this.projectiles.length = 0;
     for (const z of this.zones) {
+      /* [U8] silent telegraph 没有 mesh（判定专用），跳过整段视觉清理 */
+      if (!z.mesh) continue;
       if (z.mesh.parent) z.mesh.parent.remove(z.mesh);
-      z.mat.dispose();
-      z.mesh.traverse(o => { if (o.material && o.material !== z.mat) o.material.dispose(); });
+      /* [U7] `zone` 这类多材质条目 `mat` 是 null（材质都在 `mats` 里），
+       * 老代码无条件 `z.mat.dispose()` 会当场抛 —— 一换图就崩，且崩在
+       * 换图路径上，看起来像「进新图黑屏」。有 mats 就按 mats 清。 */
+      if (z.mat) z.mat.dispose();
+      if (z.mats) { for (const m of z.mats) m.dispose(); }
+      z.mesh.traverse(o => {
+        if (o.material && o.material !== z.mat && (!z.mats || z.mats.indexOf(o.material) < 0)) o.material.dispose();
+      });
     }
     this.zones.length = 0;
     for (const pa of this.parts) {
@@ -710,5 +1496,28 @@ const FX = {
     this.beams.length = 0;
     for (const t of this.texts) { if (t.el.parentNode) t.el.remove(); }
     this.texts.length = 0;
+    /* 换图 / 重开时把光效强度也还原：否则上一张图末尾那次 20 级技能的亮度
+     * 会跟着尾窗带进新图（新图起手第一发就莫名偏亮） */
+    this.amp = 1;
+    this.ampHold = 0;
+    /* [V0] 原语层（贴图粒子 / 拖尾 / 闪电 / 冲击波 / 贴花）跟着一起清。
+     * 不接这一句的话，换图时贴花池会留在旧地图坐标上，闪电 / 拖尾的
+     * 半透明面片也会挂在新场景里 —— 表现为「进新图先闪一下旧图的东西」。 */
+    if (typeof FXK !== 'undefined' && FXK && typeof FXK.clear === 'function') FXK.clear();
+    /* [B16] 怪物侧原语层跟着清。它自己持有 Group + 一张 mesh 清单，
+     * 不清的话换图后旧图坐标上的柱子 / 落石 / 冲击墙会挂在新场景里，
+     * 表现是「进新图先闪一下旧图的东西」，而且再也删不掉。 */
+    if (typeof FX2 !== 'undefined' && FX2 && typeof FX2.clear === 'function') FX2.clear();
+    /* [B21] 首领招式的运行时也要清。它自己有一份「谁在放哪一招」的账
+     * （e._cast / e._castUntil）和一批 delay 回调 —— 不清的话，换图之后
+     * 上一张图没放完的那一招会继续在新图坐标上炸，而那时候玩家已经不在
+     * 原地了（表现为「凭空挨一下，血条自己掉」）。 */
+    if (typeof BossCast !== 'undefined' && BossCast && typeof BossCast.clear === 'function') BossCast.clear();
+    /* [B20] 技能演出层跟着清。它挂着自己的 Group、一张 mesh 清单和一个
+     * 更新队列（含 delay / seq 的定时推进），不清的话换图后：
+     *   旧图的斧头 / 符阵 / 灵兽留在新地图坐标上，而且 updater 还在跑。
+     * 这一层比 FX2 更容易漏 —— 它的 updater 是"自己会动"的，
+     * 留在场上看起来像活的怪。 */
+    if (typeof SKFX !== 'undefined' && SKFX && typeof SKFX.clear === 'function') SKFX.clear();
   }
 };

@@ -22,9 +22,10 @@
  * ============================================================ */
 
 const SKILL_TREE = {
-  /* 目标数值：等级 10 → 5，每级 +16%（5 级满 +80%，与旧 10×8% 持平） */
-  lvMax: 5,
-  lvStep: 16,
+  /* [P2] 等级上限 5 → 10，与 SKILL_LV_MAX 同源（两处写死必然有一处忘记改：
+   * 面板写 5、接口放 10，玩家点不到满级还以为卡了）。
+   * `lvStep` 已删 —— 每级加多少只有 skillLvMul() 一个口径。 */
+  lvMax: (typeof SKILL_LV_MAX === 'number' ? SKILL_LV_MAX : 10),
   /* 分支解锁门槛与点数 */
   pickAt: 3,      // 精研到 3 级自动给；取向需技能 3 级
   formAt: 5,      // 变体需技能 5 级
@@ -451,6 +452,27 @@ const SKILL_TREE = {
       ]
     },
 
+    /* [P2b] ⑤ 元素法相（净新增技能，同样要三条分支 —— 否则详情面板是空的）。
+     * 三条全部只走 mods 通道（dmg / dur / cd / cost）：法相本体没有伤害，
+     * 它的「强度」是**元素效果的倍率**，由 case 在开窗时把 spow 记进运行时状态。
+     * 不写 beh 是有意的 —— 分支的 beh 键要另外登记进 SKILL_BEH 才算「已接」，
+     * 而这一位真正需要的新机制（窗口 / 换元素 / 结束新星）都挂在台阶上。 */
+    elementavatar: {
+      /* 相持不能也写「持续 +4 秒」—— 台阶 Lv7 的文案就是这一句，
+       * 两处都写的话面板显示 +8 秒、实际也是 +8 秒，玩家会以为是 bug。
+       * 精研走「元素效果」，与 Lv7 的「时长」各管一头。 */
+      core: ['相持', '法相期间元素效果 +20%', { mods: { dmg: 20 } }],
+      pick: [
+        ['炽相', '元素效果 +25%', { mods: { dmg: 25 } }],
+        ['疾相', '冷却 −20%', { mods: { cd: 20 } }]
+      ],
+      form: [
+        ['三相', '元素效果 +40%，持续 −2 秒', { mods: { dmg: 40, dur: -2 } }],
+        ['久相', '持续 +6 秒，冷却 +30%', { mods: { dur: 6, cd: -30 } }],
+        ['省相', '消耗 −50%，元素效果 −20%', { mods: { cost: 50, dmg: -20 } }]
+      ]
+    },
+
     /* ==================== 符师 ==================== */
     talisman: {
       core: ['符引', '命中后下一次该技能伤害 +20%，最多叠 3 层', { beh: { stack: 20, stackMax: 3 } }],
@@ -520,7 +542,7 @@ const SKILL_TREE = {
       ],
       form: [
         ['静心', '改为每 20 秒自动触发的常驻被动', { mods: { cd: -20 }, beh: { passive: true } }],
-        ['舍身', '药力全部转移给灵兽：灵兽伤害 +80%、续命 8 秒；施法者损失 8% 生命', { beh: { allyBuff: { dmg: 80, life: 8 }, hpCost: 8 } }],
+        ['舍身', '药力全部转移给灵兽：灵兽伤害 +80%、回复 8% 生命；施法者损失 8% 生命', { beh: { allyBuff: { dmg: 80, life: 8 }, hpCost: 8 } }],
         ['灵台', '期间技能冷却 −20%', { beh: { cdr: 20 } }]
       ]
     },
@@ -592,7 +614,7 @@ const SKILL_TREE = {
       ],
       form: [
         ['替身', '改为受到致命伤时自动触发，冷却 +100%', { mods: { cd: -100 }, beh: { autoTrigger: true } }],
-        ['收魂', '复活时灵兽续命 8 秒、伤害 +20%', { beh: { allyBuff: { life: 8, dmg: 20 } } }],
+        ['收魂', '复活时灵兽回复 8% 生命、伤害 +20%', { beh: { allyBuff: { life: 8, dmg: 20 } } }],
         ['逆命', '复活后 8 秒内伤害 +60%，之后 5 秒 −20%', { beh: { afterBuff: 60, afterDebuff: 20 } }]
       ]
     }
@@ -627,6 +649,10 @@ const SKILL_TREE = {
     m_volt: { name: '高压', desc: '雷电伤害 +10%/级', max: 3, icon: 'passive' },
     m_conduct: { name: '导电', desc: '连锁伤害 +12%/级', max: 3, icon: 'passive' },
     m_stormlord: { name: '雷神', desc: '每 6 秒自动对最近的敌人落雷，造成 200% 伤害', max: 1, key: true, icon: 'key' },
+    /* 术士 · 法相（P2b 新增：⑤ 元素法相那一岔口的被动侧）。
+     * 不做成关键被动 —— 关键被动是「每线一个」的招牌位，雷霆的招牌已经是雷神；
+     * 法身是法相自己的小加成，挂在旁边就够。 */
+    m_form: { name: '法身', desc: '法相期间元素效果 +12%/级', max: 3, icon: 'passive' },
     /* 符师 · 符箓 */
     t_sigil: { name: '符力', desc: '符法伤害 +9%/级', max: 3, icon: 'passive' },
     t_quick: { name: '急咒', desc: '施法速度 +10%/级', max: 3, icon: 'passive' },
@@ -635,7 +661,7 @@ const SKILL_TREE = {
     t_bond: { name: '通灵', desc: '灵兽伤害 +10%/级', max: 3, icon: 'passive' },
     /* 名字不能叫「万兽」：召唤系天赋里已经有一个「万兽」节点（一次召 2 头），
      * 同名两个不同效果，玩家会以为点了天赋就该有这个被动。改叫兽契。 */
-    t_beast: { name: '兽契', desc: '场上灵兽上限 +1；灵兽消散时 30% 概率当场重召', max: 1, key: true, icon: 'key' },
+    t_beast: { name: '兽契', desc: '场上灵兽上限 +1；灵兽阵亡时 30% 概率当场重召', max: 1, key: true, icon: 'key' },
     /* 符师 · 丹道 */
     t_merid: { name: '脉络', desc: '治疗量 +10%/级', max: 3, icon: 'passive' },
     t_toxin: { name: '毒经', desc: '毒伤害 +12%/级', max: 3, icon: 'passive' },
@@ -681,7 +707,12 @@ const SKILL_TREE = {
       { name: '雷霆', spine: 'chain', forks: [
         { active: 'starfall', passive: 'm_volt' },
         { active: 'thundercloud', passive: 'm_conduct' },
-        { active: 'judgement', passive: 'm_stormlord' }
+        { active: 'judgement', passive: 'm_stormlord' },
+        /* P2b：⑤ 元素法相是净新增技能，必须有一岔口才点得动 ——
+         * 只放进 SKILL_ORDER 而不进 layout 的话，它在树上画不出来，
+         * 玩家永远停在 1 级，五条台阶全部摸不到。行序按 reqLv 自动排
+         * （34 落在 thundercloud 30 与 judgement 40 之间）。 */
+        { active: 'elementavatar', passive: 'm_form' }
       ] }
     ],
     taoist: [
@@ -945,6 +976,27 @@ function skillLineSpent(cls, lineName, spent) {
   return n;
 }
 
+/* 把存档账本折算成 skillLineSpent 要的 spent 形状。
+ *
+ *   主动：lv - 1（领悟白送的 1 级不算「投入」，与旧岔口锁的口径一致）
+ *   被动：lv 本身（被动没有白送等级）
+ *
+ * 为什么不在 skillLineSpent 里直接读存档：那一层是纯函数，node 里能单测，
+ * 不该知道 s.skills / s.passives 长什么样。
+ */
+function skillSpentMap(skillsState, passiveState) {
+  const out = {};
+  for (const id in (skillsState || {})) {
+    out[id] = Math.max(0, Number(((skillsState[id] || {}).lv) || 1) - 1);
+  }
+  for (const id in (passiveState || {})) {
+    const v = Math.max(0, Number(passiveState[id]) || 0);
+    /* 同一 id 不会既是主动又是被动；真撞了取大的，别互相覆盖成 0 */
+    out[id] = Math.max(out[id] || 0, v);
+  }
+  return out;
+}
+
 /* 门槛判定：只看「角色等级」与「该线已投入点数」，没有任何硬前置 */
 function skillNodeGate(id, opts) {
   const info = skillLineNodeInfo(id);
@@ -961,7 +1013,8 @@ function skillNodeGate(id, opts) {
   };
 }
 
-/* 把某个技能的「满配花费」算出来：等级 4 点 + 取向 1 + 变体 1 = 6 */
+/* 把某个技能的「满配花费」算出来：[P2] 等级 9 点 + 取向 1 + 变体 1 = 11。
+ * 别再写死 6 —— 上限改过一次（5→10），写死的数字会让面板上的「还需 N 点」全部错位。 */
 function skillFullCost() {
   return (SKILL_TREE.lvMax - 1) + SKILL_TREE.branchCost.pick + SKILL_TREE.branchCost.form;
 }
@@ -1081,15 +1134,31 @@ function skillTreeRespecFee(count) {
  *
  * 变体（v / f）**保留**：它不花点，是玩法选择不是投资。
  */
+/* 洗点 / 退还时「留下来的东西」：**不花技能点的选择**。
+ *
+ * lv 归 1、p（取向）清掉 —— 这两个是花点的账，退的就是它们。
+ * v / f（变体）、m（精通）、el / el2（元素注入）都是「换打法不是投资」，
+ * 洗掉等于替玩家重新做了一遍选择，玩家还得再点一遍。
+ *
+ * 这里集中成一处，是为了让 skillRefundAll 与 skillTreeRespecApply
+ * 不可能各自漏一个字段 —— P2 加 m、P3 加 el/el2 时已经漏过一次。 */
+function skillEntryKeep(e) {
+  const keep = { lv: 1, v: (e && e.v) || 0 };
+  if (!e) return keep;
+  if (typeof e.f === 'number') keep.f = e.f;
+  if (typeof e.m === 'number') keep.m = e.m;
+  if (typeof e.el === 'string' && e.el) keep.el = e.el;
+  if (typeof e.el2 === 'string' && e.el2) keep.el2 = e.el2;
+  return keep;
+}
+
 function skillRefundAll(skillsState, passivesState) {
   const sk = skillsState || {};
   let refunded = 0;
   for (const id in sk) {
     const e = sk[id] || {};
     refunded += Math.max(0, (e.lv || 1) - 1);
-    const keep = { lv: 1, v: e.v || 0 };
-    if (typeof e.f === 'number') keep.f = e.f;
-    sk[id] = keep;
+    sk[id] = skillEntryKeep(e);
   }
   const pas = passivesState || {};
   for (const id in pas) { refunded += pas[id] || 0; delete pas[id]; }
@@ -1109,13 +1178,8 @@ function skillTreeRespecApply(skillsState, passivesState, gold, count) {
   if (!lvSpent && !picks && !pasSpent) return { ok: false, msg: '尚未分配技能点，无需重置' };
   const cost = skillTreeRespecFee(count);
   if ((gold || 0) < cost) return { ok: false, msg: '洗点需 ' + cost + ' 金，当前 ' + (gold || 0) };
-  /* 变体不花点，洗点保留：旧通道 v 与新通道 f 都原样带回来 */
-  for (const id in sk) {
-    const e = sk[id] || {};
-    const keep = { lv: 1, v: e.v || 0 };
-    if (typeof e.f === 'number') keep.f = e.f;
-    sk[id] = keep;
-  }
+  /* 免费的选择原样带回来（见 skillEntryKeep 的注释） */
+  for (const id in sk) sk[id] = skillEntryKeep(sk[id]);
   for (const id in pas) delete pas[id];
   return { ok: true, msg: '已重置技能树，扣除 ' + cost + ' 金币', cost, cleaned: lvSpent + picks + pasSpent };
 }

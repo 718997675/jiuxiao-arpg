@@ -334,6 +334,44 @@ const SKILL_BEH = {
   } },
   afterDebuff: { ph: 'self', label: '之后削弱', run() { /* 由 afterBuff 一并消费 */ } },
 
+  /* [P2b] 命中点火海（台阶专用）：在**命中点**留一片火，而不是在「落点」。
+   * 火球是 dir 施法，落点恒在射程尽头（16 码），行为层那套「以落点为圆心」
+   * 的近似对它等于永远打空 —— 所以这一条由 fireball case 的 onHit 消费。 */
+  firePatch: { ph: 'hook', label: '命中火海', run() { /* 由 fireball case 的 onHit 消费 */ } },
+
+  /* [P2b] 台阶落点领域（法师 ② 的 Lv9 / Lv10）：技能落点留一块持续掉血的地。
+   * 值 = **每跳伤害占攻击力 %**，时长默认 4 秒，`tierFieldDur` 可拉到 8 秒。
+   * 四只技能（炎爆 / 雷罚 / 暴雪 / 陨星天火）共用，颜色按元素走。
+   * 不复用 firePatch：那个写死火焰色 + 0.45 倍（火球的 Lv5），
+   * 而这里要跟元素上色、且伤害占比是台阶自己的数。 */
+  tierField: { ph: 'hook', label: '落点领域（台阶）', run() { /* 由四只技能的 case 消费 */ } },
+  tierFieldDur: { ph: 'hook', label: '落点领域时长（台阶）', run() { /* 同上 */ } },
+
+  /* [P2b] 回怒倍率（台阶专用）：whirl case 那一发固定回 8 点，这里给倍数。
+   * 不复用 ragePerHit —— 那是「每命中一个 +N」，两套口径叠在一起会重复计。 */
+  rageMul: { ph: 'hit', label: '回怒倍率', run() { /* 由 whirl case 消费 */ } },
+
+  /* [P2b] 自动索敌（台阶专用）：不瞄准也能打。
+   * castSkill 在 resolveCast 之后消费：值 = 搜索半径，范围内找最近的敌人
+   * 把 aim 挪过去。放在 castSkill 而不是 handler 里，是因为落点必须在
+   * 进入 switch 之前定死（各技能 case 都读 aim），handler 阶段已经晚了。 */
+  autoTarget: { ph: 'hook', label: '自动索敌', run() { /* 由 castSkill 消费 */ } },
+
+  /* [P2b] 命中点连锁（台阶专用）：符箓这类**飞出去再炸**的技能，连锁必须从
+   * 落雷点起跳。走 hit 通道会在施法那一瞬间就结算 —— 符还在飞、闪电先到了，
+   * 画面上是「凭空劈了三下」，而且伤害还吃不到「符打中了谁」。
+   * 所以做成 hook：由 talisman case 的 onHit 消费，值 = 跳几个目标。 */
+  chainHit: { ph: 'hook', label: '命中连锁', run() { /* 由 talisman case 的 onHit 消费 */ } },
+
+  /* [P2b] 命中点符阵（台阶专用）：同上，阵落在落雷点而不是准星。
+   * 由 talisman case 调 Game.createSigilField 铺，值 = 持续秒数。 */
+  zoneHit: { ph: 'hook', label: '命中符阵', run() { /* 由 talisman case 消费 */ } },
+
+  /* [P2b] 命中后改追（台阶专用）：符咒打完一个目标自动锁下一个，
+   * 最多改追 N 次（proj.seekUsed 计数，防止无限连）。
+   * 为什么不复用 autoTarget：那个改的是「出手时瞄谁」，这个是「打完还追谁」。 */
+  seek: { ph: 'hook', label: '命中追击', run() { /* 由 talisman case 消费 */ } },
+
   /* 落点改自身：在 castSkill 里、switch 之前就消费掉了（`aim = pp`），
    * 这里只做登记 —— 技能 case 不用各自判断 */
   selfCast: { ph: 'self', label: '自身施法', run() { /* 由 castSkill 消费 */ } },
@@ -344,6 +382,52 @@ const SKILL_BEH = {
    * （c / segs / pp2），外面拿不到，硬挪只会变成「特效动了、判定没动」。 */
   follow: { ph: 'self', label: '区域跟随', run() { /* 由各技能 case 消费 */ } },
   pin: { ph: 'self', label: '钉阵', run() { /* 由剑阵 case 消费 */ } },
+
+  /* [P2b] 剑阵三条进化台阶（刀客 ③）：全部登记成 hook，由 swordarray case
+   * 铺一份 Game.swordField（阵心 / 半径 / 剩余时间），damagePlayer 消费。
+   * 为什么不在 handler 里直接改敌人：
+   *   slowField 是「每跳刷新一次」的持续场，不是施法瞬间的一次性减速 ——
+   *   走 hit 通道只会在施法那一瞬间给一次，600ms 后就没了；
+   *   arrayGuard / arrayCounter 的触发点在**玩家挨打**上，跟施法完全无关。
+   * 值 = 百分比：slowField 是减速幅度，arrayGuard 是阵内减伤，
+   * arrayCounter 是反击的攻击力百分比；slowFieldDur = 减速残留秒数。 */
+  /* 持续场减速：由**领域类技能自己的每一跳**消费（剑阵 case / 毒雾 case），
+   * 不是施法瞬间的一次性 slow —— 领域会活好几秒，怪随时可能走进来。 */
+  slowField: { ph: 'hook', label: '场内减速', run() { /* 由 swordarray / poison case 消费 */ } },
+  slowFieldDur: { ph: 'hook', label: '减速残留', run() { /* 由 slowField 一并消费 */ } },
+  arrayGuard: { ph: 'hook', label: '阵内减伤', run() { /* 由 damagePlayer 消费 */ } },
+  arrayCounter: { ph: 'hook', label: '阵内反击', run() { /* 由 damagePlayer 消费 */ } },
+  /* 剑阵 Lv3 / Lv7「双圈 / 三圈」：值 = **额外圈数**（1 = 双圈、2 = 三圈）。
+   * 由 swordarray case 铺成同心多层环，一只怪只吃它所在那一层的伤害
+   * （内 100% / 中 85% / 外 72%）—— 层数不是「同一圈打三次」。 */
+  arrayRings: { ph: 'hook', label: '剑气圈数', run() { /* 由 swordarray case 消费 */ } },
+
+  /* [P2b] 刀客 ⑤ 兵形（四个键，全部由 game.js 的兵形状态机消费）。
+   * 这一位不是一个行为键能接完的 —— 它是「刀式状态 + 刃势记账 + 终结技」三件套，
+   * 所以四个键分别对应三个系统的一个开关，而不是「加个数值」：
+   *   stanceUnlock  = 解锁到第几式（1 = 镇岳 / 2 = 摧城，同键递进，后者覆盖前者）
+   *   edgeFinisher  = 刃势有出口（满 4 层时 ⑤ 改为断岳斩）
+   *   edgeKeep      = 换式不清空刃势
+   *   edgeUltimate  = 断岳斩附带 12 秒剑神降世
+   * 四个都登记成 hook：消费点在 castSkill 的 avatar case 与 bladeXxx 系列方法里，
+   * 没有一个走通用 hit 通道（⑤ 是 cast:'self'，通用通道的圆心判定对它没意义）。 */
+  stanceUnlock: { ph: 'hook', label: '解锁刀式（台阶）', run() { /* 由 Game.bladeStanceCount 消费 */ } },
+  edgeFinisher: { ph: 'hook', label: '刃势终结技（台阶）', run() { /* 由 Game.bladeFinisherOn 消费 */ } },
+  edgeKeep: { ph: 'hook', label: '换式保刃势（台阶）', run() { /* 由 Game.bladeCycle 消费 */ } },
+  edgeUltimate: { ph: 'hook', label: '剑神降世（台阶）', run() { /* 由 avatar case 消费 */ } },
+
+  /* [P2b] 法师 ⑤ 元素法相（四个键 + 复用的 ccImmune）。
+   * 这一位是「窗口」而不是「一发」：开窗之后**每一次命中**都要查一次主元素，
+   * 所以消费点分散在 castSkill（开窗 / 换元素）与 damageEnemy（命中附加）两处。
+   *   elemSwap  = 窗口期间可以换主元素（否则恒为火）
+   *   formRider = 命中附带主元素效果（火灼烧 / 冰减速 / 雷麻痹易伤）
+   *   formDur   = 窗口时长 +N 秒
+   *   formNova  = 窗口结束时炸一发（值 = 攻击力百分比）
+   * 10 级的「免疫控制」直接用现成的 `ccImmune`，不另开键 —— 同语义不该有两套判定口。 */
+  elemSwap: { ph: 'hook', label: '元素切换（台阶）', run() { /* 由 elementavatar case 消费 */ } },
+  formRider: { ph: 'hook', label: '法相命中附加（台阶）', run() { /* 由 damageEnemy 的 formRiderHit 消费 */ } },
+  formDur: { ph: 'hook', label: '法相时长（台阶）', run() { /* 由 elementavatar case 消费 */ } },
+  formNova: { ph: 'hook', label: '法相结束新星（台阶）', run() { /* 由 tickBeh 的收窗结算消费 */ } },
 
   /* 击杀类变体：两者都由 onBehKill 钩子消费（噬魂回血 / 燎原尸体再爆） */
   killHeal: { ph: 'self', label: '击杀回血', run() { /* 由 onBehKill 消费 */ } },
@@ -359,6 +443,19 @@ const SKILL_BEH = {
 
   /* 余震伤害：与 aftershock 一并消费 */
   aftershockPct: { ph: 'hit', label: '余震伤害', run() { } },
+
+  /* [P2b] 余震钉人（台阶 Lv5）：与 aftershock 一并消费。
+   * 精研「余震」3 级就自动给了，所以台阶不能也写「地裂持续 2 秒」——
+   * 那是玩家早就有的东西，写了等于没写。台阶给的是「余震也能控」。 */
+  aftershockStun: { ph: 'hit', label: '余震眩晕', run() { } },
+
+  /* [P2b] 命中连锁 / 命中符阵 / 命中追击 的数值参数：
+   * 与 chainHit / zoneHit / seek 一并消费，单独出现没有意义。
+   * 连锁伤害**不能**复用 chainPct —— 那个 handler 一出现就会拿 aim 当圆心
+   * 跑一遍通用连锁，等于把「命中点连锁」偷偷换回去了。 */
+  chainHitPct: { ph: 'hit', label: '命中连锁伤害', run() { /* 由 talisman case 消费 */ } },
+  zonePct: { ph: 'hit', label: '符阵伤害', run() { /* 由 talisman case 消费 */ } },
+  seekPct: { ph: 'hit', label: '追击伤害', run() { /* 由 talisman case 消费 */ } },
 
   /* 标签：让这发技能在装备词缀眼里算某个标签（例如「算作雷系」）。
    * 目前只记录在施法上下文里，词缀系统还没按它分流；
@@ -398,8 +495,11 @@ const SKILL_BEH = {
     const key = 'beh:stack:' + c.id;
     const cur = c.G.buffs.find(x => x.key === key);
     const stats = { dmgAll: v * n, dur: 8 };
-    if (cur) { Object.assign(cur, { stats, dur: 8 }); c.G.recalc(); }
-    else c.G.addBuff('战意 ×' + n, stats, 0xffd166, { key });
+    /* [V1] 层数走 stacks/maxStacks，名字恒为「战意」—— 同 key 只占一个格子，
+     * 由 UI 在图标右下角写 ×N，满层加静态金边（不闪）。 */
+    const layer = { stacks: n, maxStacks: max };
+    if (cur) { Object.assign(cur, { stats, dur: 8, name: '战意' }, layer); c.G.recalc(); }
+    else c.G.addBuff('战意', stats, 0xffd166, Object.assign({ key }, layer));
     if (n >= max) {
       c.GFX.text(new THREE.Vector3(c.G.playerGroup.position.x, 2.9, c.G.playerGroup.position.z),
         '满层 ' + max, 'info', { life: 0.9 });
@@ -417,9 +517,16 @@ const SKILL_BEH = {
   aftershock: { ph: 'hit', label: '余震', run(c, v, b) {
     const pct = (b.aftershockPct || 30) / 100;
     const ticks = Math.max(1, Math.round(behDur(b, v)));
+    /* [P2b] 台阶 Lv5「余震钉住敌人」：余震本来只掉血，现在每跳顺手钉一下。
+     * 为什么做成余震的参数而不是另开一套：能钉人的机制只有一个 ——
+     * e.stun。再写一套只会和怪的眩晕衰减打架。 */
+    const pin = Math.max(0, b.aftershockStun || 0);
     c.tick(v, () => {
       c.GFX.ring(c.center, c.rad, 0xffb070, 0.3, 0.25);
-      for (const e of c.hits()) c.strike(e, pct, { knock: 0.4 });
+      for (const e of c.hits()) {
+        c.strike(e, pct, { knock: 0.4 });
+        if (pin && !e.dead) e.stun = Math.max(e.stun || 0, e.boss ? Math.min(0.35, pin) : pin);
+      }
     });
     c.GFX.text(new THREE.Vector3(c.center.x, 2.4, c.center.z),
       '余震 ' + Math.round(behDur(b, v)) + 's', 'info', { life: 0.8 });
@@ -660,6 +767,116 @@ const SKILL_BEH = {
     /* 与 killExtend 一并消费（castSkill 把它折进 buff.killExtend.max） */
   } },
 
+  /* [P2b] 击杀延长（台阶 Lv9）：**故意不复用 killExtend** —— 那条是
+   * warcry 精研「战鼓」的键，而精研覆盖台阶（合并顺序），warcry 玩家会完全看不到这一级。
+   * 所以另开一条通道，两条各记各的账：战鼓 +1/次 与它 +2/次 叠加。 */
+  killProlong: { ph: 'hook', label: '击杀延长（台阶）', run() {
+    /* 由 Game.onBehKill 消费：与 killExtend 并行，各自有自己的 got/max */
+  } },
+
+  killProlongMax: { ph: 'hook', label: '击杀延长上限（台阶）', run() {
+    /* 与 killProlong 一并消费 */
+  } },
+
+  /* [P2b] 增益期间吸血（台阶 Lv5）：折进**增益本体**，不另开 buff ——
+   * 另开一个 buff 时长就对不上「增益期间」（增益结束了吸血还在，或者反过来先没）。
+   * warcry 自带 8%，台阶再 +10% 是叠加，三只增益都真的变强。 */
+  lifesteal: { ph: 'hook', label: '增益吸血', run() {
+    /* 由 castSkill 的增益 case 折进 buff.lifesteal */
+  } },
+
+  /* [P2b] 免控（台阶 Lv10）：**不是** immune（无敌帧）也不是 noSlow（只减时长）。
+   * 真免控 = 增益期间根本挂不上减速 / 中毒，施法瞬间还清掉身上已有的。
+   * 判定口 Game.ccImmuneNow()，施加口 Game.applyPlayerSlow / playerPoison。 */
+  ccImmune: { ph: 'hook', label: '免疫控制', run() {
+    /* 由 castSkill 的增益 case 标记在 buff.ccImmune 上 */
+  } },
+
+  /* [P2b] 施法瞬回（血怒位 Lv3）：值 = 最大生命的百分比。
+   * 走 healPlayer —— 治疗加成 / 血条钳制 / 弹字全在那一处，别自己加 hp。 */
+  healOnCast: { ph: 'hook', label: '施法瞬回', run() {
+    /* 由 castSkill 的增益 case 消费 */
+  } },
+
+  /* [P2b] 增益延长（血怒位 Lv7）：与变体「持久」给 sdur 的延长**各记各的**，
+   * 两条叠加。撞键的话，带持久的变体一选，这一级就没了。 */
+  tierDur: { ph: 'hook', label: '增益延长（台阶）', run() {
+    /* 由 castSkill 的增益 case 消费：buff.dur += tierDur */
+  } },
+
+  /* [P2b] 低血自动施放（回春位 Lv10）：值 = 生命百分比阈值。
+   * 消费点在 tickBeh（帧级），**不是** autoTrigger —— 那是 revive 变体「替身」
+   * 的键（致命伤时自动触发），语义是「死了才救」；这一条是「快死了先救」。 */
+  lowHpCast: { ph: 'hook', label: '低血自动施放', run() {
+    /* 由 tickBeh 消费：扫动作条，低于阈值的带这个键的技能替玩家放一次 */
+  } },
+
+  /* [P2b] 持续回复（回春位 Lv5）：值 = 每秒回复的最大生命百分比，共 6 跳。
+   * **不复用 hotPct** —— 那是 heal 精研「余春」的键，而且它的值是「治疗量的百分比」，
+   * 与本条的口径（最大生命的百分比）根本不是一个东西，硬加会算错。
+   * 另开一个键，两条各按各的口径回血。
+   * [回春位返工] 台阶上不再用它（Lv5 换成减伤窗口），但太极位 Lv10
+   * 「定身 + 持续回复」还在用 —— 所以这个键留着，不是死代码。 */
+  tierHot: { ph: 'self', label: '持续回复（台阶）', run(c, v, b) {
+    const pct = Math.max(0, Number(v) || 0) / 100;
+    if (!pct) return;
+    c.tick(Math.max(1, Math.round(behDur(b, 6))), () => {
+      c.G.healPlayer(c.G.state.stats.hpMax * pct, true);
+    });
+  } },
+
+  /* [P2b] 护盾窗口（回春位 Lv3，返工后的新档）：施法后 4 秒内吸收 X% 最大生命。
+   *
+   * 为什么换成护盾而不是留着回血：回血**嗑药就能解决** —— 让它占一个格位，
+   * 等于逼玩家用格位去补药品的缺口，这一格既没职业特色、也挡住「我想带个别的」。
+   * 护盾是药给不了的：药是「事后把血补回来」，护盾是「这一下根本不掉血」，
+   * 而且它有**时限**，窗口一过就没了 —— 与主动治疗的「即时到账」是两种东西。
+   *
+   * 走 Game.shield / shieldT 的现有口径，**不另开一套**：
+   * 这样破盾会照常触发 onBehShieldBreak，冰刺取向连带生效。
+   * 厚度取大不叠加 —— 同一时间有两份护盾来源时不会变成双倍。 */
+  tierShield: { ph: 'self', label: '护盾窗口（台阶）', run(c, v, b) {
+    const pct = Math.max(0, Number(v) || 0) / 100;
+    if (!pct) return;
+    const G = c.G;
+    const add = G.state.stats.hpMax * pct;
+    G.shield = Math.max(G.shield || 0, add);
+    G.shieldT = Math.max(G.shieldT || 0, behDur(b, 4));
+    /* 视觉：一圈冰蓝护体环。**不复用配方**：这一条是「状态窗」不是「招式」，
+     * 而 ④ 号位的配方（回春 = 向上生长）说的是治疗，两件事不该同一张脸。 */
+    if (c.GFX && G.playerGroup) {
+      c.GFX.ring(new THREE.Vector3(G.playerGroup.position.x, 0.15, G.playerGroup.position.z),
+        2.4, 0x9ae0ff, 0.5, 0.22);
+    }
+  } },
+
+  /* [P2b] 命中挂持续伤害（火墙位 Lv5）：值 = 每秒的攻击力百分比，共 3 秒。
+   * **不复用 burnPct**：那是通用 hit 通道的键 —— 圆心是准星、元素写死火、
+   * 而且只在施法瞬间给一次。这一位躺着火墙 / 冰霜新星 / 雷云三只，
+   * 冰新星挂一层「灼烧」既错元素又错时机（领域类的怪是后来才走进来的）。
+   * 所以由三只各自的 case 在**每一次命中**上按自己的元素调用 applySkillDot。 */
+  tierDot: { ph: 'hook', label: '持续伤害（台阶）', run() {
+    /* 由 firewall / frostnova / thundercloud 的 case 消费 */
+  } },
+
+  /* [P2b] 破盾 / 爆发补偿（护盾位 Lv10）：值 = 攻击力百分比。
+   * 触发口有两处，但结算只有一份（`Game.behTierNova`）：
+   *   · iceshield —— 护盾被打空时（onBehShieldBreak，和冰刺共用那个钩子）
+   *   · pyroclasm —— 属于「爆发」侧，没有护盾可破，所以在自己的 case 里调
+   * 这一位两只技能只有一只有护盾，写死成「破盾时」对焚天就是空话，
+   * 所以文案与实现都按「破盾 / 爆发」两个入口来。 */
+  tierNova: { ph: 'hook', label: '破盾 / 爆发定身（台阶）', run() {
+    /* 由 Game.behTierNova 消费 */
+  } },
+
+  /* 落点溅射（法师 ② Lv3 台阶）：**单体**技能（天罚）的落点也打到周围一圈。
+   * 同位的另外三只是范围判定，溅射就是半径变大（mods.radius），不需要这个键。
+   * 由 castSkill 的 judgement 结算消费 —— 它不走通用 hit 通道（那条以准星为
+   * 圆心，而天罚的落点锁在目标身上，两者恒不重合）。 */
+  splash: { ph: 'hook', label: '落点溅射（台阶）', run() {
+    /* 由 Game.castSkill 的 judgement case 消费 */
+  } },
+
   detonate: { ph: 'hook', label: '引爆剩余伤害', run() {
     /* 由 Game.onBehKill 消费：带持续伤害的目标死亡时原地引爆 */
   } },
@@ -684,8 +901,10 @@ const SKILL_BEH = {
     /* 由 Game.tickBeh（帧循环）消费：变身期间每 N 秒自动旋风斩 */
   } },
 
+  /* 区域蔓延（毒雾台阶 Lv5 / 火墙共用）：**只登记一次** —— 这个文件里原来写了两遍，
+     后一遍静默覆盖前一遍，等哪天给火墙写实现时会白写。两个消费者都写在这儿。 */
   grow: { ph: 'hook', label: '区域蔓延', run() {
-    /* 施法时由 castSkill 消费：火墙每秒向两侧延伸 */
+    /* 施法时由 castSkill 消费：火墙每秒向两侧延伸 / 毒雾半径随时间长大 */
   } },
 
   ramp: { ph: 'hook', label: '驻留增频', run() {
@@ -722,17 +941,33 @@ const SKILL_BEH = {
   fear: { ph: 'hook', label: '恐惧', run() { /* 由 updateAllies 的灵兽出手消费 */ } },
 
   /* 嘲讽：灵兽每 N 秒把周围敌人拉到自己身上一次。
-   * 灵兽没有血条，所以嘲讽的真实收益是「这几秒里怪不来打你」，
-   * 而不是「灵兽扛伤」—— 说成扛伤就是假机制。 */
+   * [P2b·兽群] 灵兽现在有血：被拉过来的怪挥刀时会真的扣它的血，
+   * 所以这条终于从「怪白打几秒」变成「替你扛伤」。 */
   taunt: { ph: 'hook', label: '嘲讽', run() { /* 由 tickBeh 的灵兽节拍消费 */ } },
 
   dur: { ph: 'self', label: '时长', run() { /* 由 behDur(b) 读取，各 handler 自己消费 */ } },
 
-  /* 灵兽同享：灵兽没有血条，只有「伤害 / 出手间隔 / 存在时间」三样 ——
-   * 所以「加攻 / 上盾 / 回血」一律翻译成这三样，不假装它有血条。
-   * v = { dmg: %, atk: %, life: 秒, drain: 流失倍率, dur: 秒 } */
+  /* 灵兽同享：灵兽有血之后，「加攻 / 上盾 / 回血」都能落到真字段上 ——
+   * dmg / atk 走 emp 倍率，life 折算成回血，drain 变成持续掉血。
+   * v = { dmg: %, atk: %, life: %, drain: 流失倍率, dur: 秒 } */
   allyBuff: { ph: 'self', label: '灵兽同享', run(c, v, b) {
     if (typeof c.G.allyEmpower === 'function') c.G.allyEmpower(v || {}, b);
+  } },
+
+  /* ---------------- 召灵兽位台阶四件（Lv5 / 7 / 9 / 10） ----------------
+   * 灵兽有血、有数量之后这四条才有落点。三条作用在**场上已有的**灵兽身上，
+   * Lv7 例外（它补一只新的），所以都是 self 相位、施法之后执行。 */
+  allyAoe: { ph: 'self', label: '灵兽范围伤害', run(c, v) {
+    if (typeof c.G.grantAllyAoe === 'function') c.G.grantAllyAoe(v || 2.6);
+  } },
+  allyEscort: { ph: 'self', label: '召唤随行灵狼', run(c) {
+    if (typeof c.G.summonWolf === 'function') c.G.summonWolf(1);
+  } },
+  allyGuard: { ph: 'self', label: '灵兽护主减伤', run(c, v) {
+    if (typeof c.G.grantAllyGuard === 'function') c.G.grantAllyGuard(v || 10);
+  } },
+  allyFour: { ph: 'self', label: '四象同场', run(c) {
+    if (typeof c.G.summonFour === 'function') c.G.summonFour();
   } },
 
   /* 常驻：不用按，冷却一好就自动开一次（数值减半、持续拉满到下次冷却）。
@@ -767,6 +1002,16 @@ const SKILL_BEH = {
   spread: { ph: 'hook', label: '尸毒扩散', run() {
     /* 由 Game.onBehKill 消费 */
   } },
+
+  /* [P2b] 尸毒半径（台阶 Lv10）：与 spread 一并消费。
+   * 尸毒这个机制本来就是**变体**给的，台阶再给一次等于「点了没反应」——
+   * 所以台阶给的是更大的那片雾（4.2 码 vs 变体的 3.2），
+   * 已经选了「尸毒」变体的玩家也还能拿到提升。 */
+  spreadRad: { ph: 'hit', label: '尸毒半径', run() { } },
+
+  /* [P2b] 蔓延的毒雾侧细节见上面那条唯一的 grow 登记；这里只补一句：
+   * 判定半径与特效网格必须一起放大 —— 只放大特效就是「看着罩住了、伤害没到」，
+   * 只放大判定就是「看不见的雾在毒人」。 */
 
   /* 每 N 秒冻结一次：由 blizzard 的伤害循环读，命中时顺手钉住 */
   freezeEvery: { ph: 'hook', label: '周期冻结', run() {
@@ -838,8 +1083,16 @@ function makeBehCtx(G, id, o) {
     strike(e, mul, opts) {
       if (!e || e.dead) return;
       const { dmg, crit } = G.rollDamage(ctx.base * mul);
+      /* [U3] skill:id —— 行为层的 strike 是技能伤害的**主路径**（它带元素、不带 tag）。
+       * 不把技能 id 带过去，组合层就认不出「这一发是哪只技能」：
+       *   · 「聚怪 → 塌陷」要拿它跟开窗的那一发比，认不出就永远判不出「另一发」；
+       *   · 「符毒绿符钉」只能靠元素去猜，别的圣系技能会一起误触发。
+       * damageEnemy 不认识这个键，它只是给组合层判身份的凭据。 */
       G.damageEnemy(e, dmg, opts && opts.forceCrit ? true : crit,
-        Object.assign({ elem: (o.sk.elem && o.sk.elem !== 'none') ? o.sk.elem : undefined }, opts || {}));
+        Object.assign({
+          elem: (o.sk.elem && o.sk.elem !== 'none') ? o.sk.elem : undefined,
+          skill: ctx.id
+        }, opts || {}));
     },
     /* 延迟执行：换图 / 死亡就作废，避免「下一张图被上一张图的余震打死」 */
     later(ms, fn) {
@@ -1026,26 +1279,56 @@ Object.assign(Game, {
     return mergeSkillMods.apply(null, parts);
   },
 
-  /* 分支带来的行为修正：精研 + 取向 + 变体（第三层） */
+  /* 分支带来的行为修正：台阶（等级送）+ 精研 + 取向 + 变体（第三层） */
   branchBeh(id) {
     const e = this.skillState()[id];
     const lv = (e && e.lv) || 1;
     const br = skillBranches(id);
-    if (!br) return null;
     const parts = [];
-    if (skillBranchCoreOn(lv) && br.core) parts.push(br.core.beh);
-    const p = this.branchPick(id);
-    if (p >= 0 && br.pick[p]) parts.push(br.pick[p].beh);
-    /* 变体只在整只技能切到 form 通道时才叠（否则仍走旧 variants） */
-    if (this.hasSkillForm(id) && br.form.length) {
-      const fo = br.form[this.skillForm(id)];
-      if (fo) parts.push(fo.beh);
+    /* [P2b] 台阶行为排最前：它是等级白送的「基底形态」，
+     * 精研 / 取向 / 变体会依次覆盖同名键 —— 玩家花点选的东西必须盖过它。
+     * 反过来（台阶放后面）就是「选了疾风变体，参数被台阶换回默认值」，
+     * 选项被吃掉，比没做还糟。 */
+    const tbh = (typeof skillTierBeh === 'function')
+      ? skillTierBeh(id, (typeof this.skillLevel === 'function') ? this.skillLevel(id) : lv)
+      : null;
+    if (tbh) parts.push(tbh);
+    if (br) {
+      if (skillBranchCoreOn(lv) && br.core) parts.push(br.core.beh);
+      const p = this.branchPick(id);
+      if (p >= 0 && br.pick[p]) parts.push(br.pick[p].beh);
+      /* 变体只在整只技能切到 form 通道时才叠（否则仍走旧 variants） */
+      if (this.hasSkillForm(id) && br.form.length) {
+        const fo = br.form[this.skillForm(id)];
+        if (fo) parts.push(fo.beh);
+      }
     }
     const out = {};
     let any = false;
     for (const src of parts) {
       if (!src) continue;
-      for (const k in src) { out[k] = src[k]; any = true; }
+      for (const k in src) {
+        /* 台阶的叠加键不落进 out（它不是真键名），下面单独算 */
+        if (src === tbh && k.charAt(0) === '+') continue;
+        out[k] = src[k]; any = true;
+      }
+    }
+    /* [P2b] 「+键」= **叠加通道**（台阶专用）。
+     * 同名键撞上分支时，玩家期望的是「等级白送的 + 花点选的两份都拿到」，
+     * 而不是花点那份把等级那份顶掉 —— 顶掉就等于这一级对选过分支的人不存在。
+     * 但形态类键（`move` / `follow` / `ring`…）必须保持「分支覆盖台阶」，
+     * 所以不能全局改成相加。折中：台阶里写 `'+hotPct': 0.02` 的键在合并**之后**
+     * 再加一遍，其余键行为一字不变。 */
+    if (tbh) {
+      for (const k in tbh) {
+        if (k.charAt(0) !== '+') continue;
+        const base = k.slice(1);
+        const v = tbh[k];
+        const cur = out[base];
+        if (typeof v === 'number' && typeof cur === 'number') out[base] = cur + v;
+        else if (cur === undefined) out[base] = v;
+        any = true;
+      }
     }
     return any ? out : null;
   },
@@ -1108,6 +1391,68 @@ Object.assign(Game, {
     }
     /* 替身（还魂变体）内置冷却 */
     if ((this._autoReviveCd || 0) > 0) this._autoReviveCd -= dt;
+
+    /* [P2b·法师⑤] 法相窗口：倒数 → 收窗结算。
+     * 必须写在 `if (!this.buffs) return` **之前**（下面还有一处提前 return，
+     * 法相一结束就会被那行吞掉，Lv9 的新星永远炸不出来）。
+     *
+     * 收窗只做两件事：报一句「消散」，以及 Lv9 那发新星。伤害口径是
+     * SKILL_TIER_EVO.elementavatar[9].beh.formNova（攻击力百分比），
+     * 不写在技能本体里 —— 写在那里会变成「一开法相就炸一下」，那是另一只技能。 */
+    if (this.elemAura && this.elemAura.t > 0) {
+      this.elemAura.t -= dt;
+      if (this.elemAura.t <= 0) {
+        this.elemAura.t = 0;
+        this.elemAura.rider = false;
+        const behA = (typeof this.elemAuraBeh === 'function') ? this.elemAuraBeh() : null;
+        const ppA = this.playerGroup.position;
+        const stA = this.state.stats;
+        if (behA && behA.formNova && stA) {
+          const cA = new THREE.Vector3(ppA.x, 0, ppA.z);
+          const rA = 7;
+          FX.flashCircle(cA, rA, 0xffd166, 0.4);
+          FX.ring(cA, rA, 0xffd166, 0.65, 0.3);
+          FX.ring(cA, rA * 0.6, 0xffffff, 0.45, 0.2);
+          SFX.explode();
+          this.shake = Math.max(this.shake || 0, 0.45);
+          for (const e of this.enemies) {
+            if (!e || e.dead) continue;
+            if (DIST2D(e.pos, cA) >= rA + (e.radius || 0)) continue;
+            const { dmg, crit } = this.rollDamage(stA.atk * behA.formNova / 100);
+            this.damageEnemy(e, dmg, crit, { tag: 'aoe', knock: 1.2, elem: 'fire' });
+          }
+          FX.text(new THREE.Vector3(ppA.x, 3.1, ppA.z), '法相 · 新星', 'lv', { life: 1.1 });
+        } else {
+          FX.text(new THREE.Vector3(ppA.x, 2.9, ppA.z), '法相消散', 'info', { life: 0.9 });
+        }
+        if (typeof UI !== 'undefined' && UI.syncElemBadge) UI.syncElemBadge();
+      }
+    }
+
+    /* [P2b] 回春位 Lv10「生命低于 N% 时自动施放」。
+     * 扫**动作条**而不是写死技能：这一位躺着治疗 / 解毒 / 还魂三只，
+     * 玩家放哪只就该自动放哪只（阈值也读各自的 beh，不写死 30）。
+     * 放的是哪只都不收资源 —— 救命技能卡在「蓝不够」上等于这一级没做。
+     * 冷却照走（castSkill 自己会置），所以不会刷屏。
+     * 0.25 秒节流：branchBeh 每次要合并三份 beh，每帧扫满 5 格纯属浪费。 */
+    this._lowHpT = (this._lowHpT || 0) - dt;
+    if (this._lowHpT <= 0 && this.state.stats && typeof this.skillBar === 'function') {
+      this._lowHpT = 0.25;
+      const st0 = this.state.stats;
+      const pct = st0.hpMax > 0 ? (this.state.hp / st0.hpMax) * 100 : 100;
+      for (const sid of this.skillBar()) {
+        if (!sid || (this.cooldowns[sid] || 0) > 0.02) continue;
+        const lb = this.branchBeh(sid);
+        if (!lb || !lb.lowHpCast) continue;
+        if (pct > lb.lowHpCast) continue;
+        this._freeCast = true;
+        try { this.castSkill(sid); } finally { this._freeCast = false; }
+        const nm = (typeof SKILLS !== 'undefined' && SKILLS[sid]) ? SKILLS[sid].name : sid;
+        FX.text(new THREE.Vector3(this.playerGroup.position.x, 3.1, this.playerGroup.position.z),
+          '自动施放 · ' + nm, 'good', { life: 1.1 });
+        break;                       // 一帧只救一次，别把三只救命技能一起倒出来
+      }
+    }
     /* 化龙（青龙变体）：变身期间每 0.6 秒对身边喷一口 */
     if ((this._dragonT || 0) > 0) {
       this._dragonT -= dt;
@@ -1151,6 +1496,9 @@ Object.assign(Game, {
           if (DIST2D(e.pos, al.pos) >= R + (e.radius || 0)) continue;
           e.tauntT = Math.max(e.tauntT || 0, dur);
           e.tauntPt = { x: al.pos.x, z: al.pos.z };
+          /* [P2b·兽群] 记下具体是哪只灵兽：怪挥刀时要扣它的血，
+           * 光有坐标只能「朝那个方向砍一刀」——灵兽挪开半步就打空了。 */
+          e.tauntAlly = al;
           n++;
         }
         if (n) {
@@ -1189,10 +1537,9 @@ Object.assign(Game, {
   /* ============================================================
    * 灵兽三件套（第三批）：增益 / 体型 / 双生
    *
-   * 灵兽没有血条，所以「上盾」「回血」这类写法在这套引擎里没有落点。
-   * 它真正能变的三样是：伤害、出手间隔、还能存在多久 —— 全部翻译成
-   * 这三样，玩家看到的差别才是真的。没有灵兽时明确说一声「场上没有灵兽」，
-   * 不静默吞掉。
+   * [P2b·兽群] 灵兽有了血与血条之后，「上盾 / 回血」不再只能翻译成
+   * 「多活几秒」了：life 折算成回血、drain 变成持续掉血、dmg / atk 仍是倍率。
+   * 没有灵兽时明确说一声「场上没有灵兽」，不静默吞掉。
    * ============================================================ */
   allyEmpower(cfg, b) {
     const c = cfg || {};
@@ -1210,8 +1557,10 @@ Object.assign(Game, {
       if (c.atk) e.atk = Math.max(e.atk, 1 + c.atk / 100);
       if (c.drain) e.drain = Math.min(e.drain, c.drain);
       if (dur > 0) e.t = Math.max(e.t, dur);
-      /* life 是「续命秒数」：灵兽只有存在时间，回血就等于是这个 */
-      if (c.life) al.life += c.life;
+      /* [P2b·兽群] 灵兽有血之后，「续命」变成真回血。
+       * 旧口径是「+N 秒存在时间」（那时灵兽没有血，只能拿时长代替）；
+       * 现在按「回复 N% 最大生命」结算，数值不变、语义换成玩家看得见的那条。 */
+      if (c.life) al.hp = Math.min(al.maxHp, al.hp + al.maxHp * CLAMP(c.life, 0, 50) / 100);
     }
     FX.ring(new THREE.Vector3(pp.x, 0.2, pp.z), 4, 0x9ad8ff, 0.5, 0.25);
     FX.text(new THREE.Vector3(pp.x, 2.9, pp.z), '灵兽同享', 'good', { life: 1 });
@@ -1283,13 +1632,19 @@ Object.assign(Game, {
     /* 战鼓：增益期间每次击杀延长 1 秒，最多 +max 秒。
      * 标记在增益本体上（castSkill 时折进 b.killExtend），只延长还活着的增益。 */
     for (const b of this.buffs) {
-      if (!b.killExtend) continue;
-      const kx = b.killExtend;
-      if ((kx.got || 0) >= kx.max) continue;
-      kx.got = (kx.got || 0) + (kx.per || 1);
-      b.dur += kx.per || 1;
-      FX.text(new THREE.Vector3(this.playerGroup.position.x, 2.9, this.playerGroup.position.z),
-        '战鼓 +' + (kx.per || 1) + 's', 'info', { life: 0.8 });
+      /* [P2b] 两条延长通道各记各的账：killExtend 是精研「战鼓」给的，
+       * killProlong 是等级台阶给的。同一只增益可以同时吃到两条。 */
+      const chans = [];
+      if (b.killExtend) chans.push({ k: b.killExtend, tag: '战鼓' });
+      if (b.killProlong) chans.push({ k: b.killProlong, tag: '延寿' });
+      for (const ch of chans) {
+        const kx = ch.k;
+        if ((kx.got || 0) >= kx.max) continue;
+        kx.got = (kx.got || 0) + (kx.per || 1);
+        b.dur += kx.per || 1;
+        FX.text(new THREE.Vector3(this.playerGroup.position.x, 2.9, this.playerGroup.position.z),
+          ch.tag + ' +' + (kx.per || 1) + 's', 'info', { life: 0.8 });
+      }
     }
     if (!e) return;
     /* 补刀：用处决同步击杀 → 立即重置冷却。
@@ -1331,7 +1686,9 @@ Object.assign(Game, {
     if (pz && pz.spread && this.barSkillOk('poison')
       && ((e.venomT || 0) > 0 || (e.dotT || 0) > 0)) {
       const atk = this.state.stats ? this.state.stats.atk : 0;
-      this.spawnPoisonPatch(new THREE.Vector3(e.pos.x, 0, e.pos.z), 3.2,
+      /* [P2b] 台阶 Lv10 给的是更大的那片（spreadRad），变体没写就按 3.2 */
+      const pr = Math.max(1.5, pz.spreadRad || 3.2);
+      this.spawnPoisonPatch(new THREE.Vector3(e.pos.x, 0, e.pos.z), pr,
         Math.max(0.6, (e.dotDmg || 0) * 0.6, atk * 0.5), 3);
       FX.text(new THREE.Vector3(e.pos.x, 2.4, e.pos.z), '尸毒', 'info', { life: 0.8 });
     }
@@ -1410,28 +1767,65 @@ Object.assign(Game, {
   /* 破盾钩子（damagePlayer 护盾被打空时调用）：冰刺。
    * 只认「被打破」，不认「到期消散」—— 描述写的是破盾。 */
   onBehShieldBreak() {
+    /* [P2b] 这个钩子现在服务两条互相独立的分支效果：
+     *   ① 取向「冰刺」的 breakNova（原有）
+     *   ② 台阶 Lv10 的 tierNova（新）
+     * 所以**不能**再在开头按 breakNova 早退 —— 只登记了台阶、没选冰刺的玩家
+     * 会连破盾爆发一起吞掉。 */
     const beh = this.branchBeh('iceshield');
-    if (!beh || !beh.breakNova || !this.state || this.dead || !this.running) return;
-    const st = this.state.stats;
-    const pp = this.playerGroup.position;
-    const n = Math.max(2, Math.round(beh.breakNova) || 6);
-    for (let i = 0; i < n; i++) {
-      const a = (i / n) * Math.PI * 2;
-      const d2 = new THREE.Vector3(Math.cos(a), 0, Math.sin(a));
-      FX.projectile({
-        pos: new THREE.Vector3(pp.x + d2.x * 0.6, 1.3, pp.z + d2.z * 0.6),
-        dir: d2, speed: 18, color: 0x9ae0ff, radius: 0.24, hitRadius: 0.55, team: 'player',
-        dmg: st.atk * 1.2, life: 0.9, elem: 'ice', tag: 'proj', trail: true,
-        onHit: (e, p) => {
-          if (!e) return;
-          this.damageEnemy(e, p.dmg, false, { tag: 'proj', elem: 'ice' });
-          e.slow = Math.max(e.slow || 0, 0.35);
-          e.slowT = Math.max(e.slowT || 0, 2);
-        }
-      });
+    if (!this.state || this.dead || !this.running) return;
+    if (beh && beh.breakNova) {
+      const st = this.state.stats;
+      const pp = this.playerGroup.position;
+      const n = Math.max(2, Math.round(beh.breakNova) || 6);
+      for (let i = 0; i < n; i++) {
+        const a = (i / n) * Math.PI * 2;
+        const d2 = new THREE.Vector3(Math.cos(a), 0, Math.sin(a));
+        FX.projectile({
+          pos: new THREE.Vector3(pp.x + d2.x * 0.6, 1.3, pp.z + d2.z * 0.6),
+          dir: d2, speed: 18, color: 0x9ae0ff, radius: 0.24, hitRadius: 0.55, team: 'player',
+          dmg: st.atk * 1.2, life: 0.9, elem: 'ice', tag: 'proj', trail: true,
+          onHit: (e, p) => {
+            if (!e) return;
+            this.damageEnemy(e, p.dmg, false, { tag: 'proj', elem: 'ice' });
+            e.slow = Math.max(e.slow || 0, 0.35);
+            e.slowT = Math.max(e.slowT || 0, 2);
+          }
+        });
+      }
+      FX.ring(new THREE.Vector3(pp.x, 0, pp.z), 3, 0x9ae0ff, 0.5, 0.25);
+      FX.text(new THREE.Vector3(pp.x, 2.7, pp.z), '冰刺', 'info', { life: 0.8 });
     }
-    FX.ring(new THREE.Vector3(pp.x, 0, pp.z), 3, 0x9ae0ff, 0.5, 0.25);
-    FX.text(new THREE.Vector3(pp.x, 2.7, pp.z), '冰刺', 'info', { life: 0.8 });
+    /* 台阶 Lv10：破盾补一发范围伤害 + 定身。走同一个结算口 ——
+     * 焚天那边（爆发侧）调的也是这个方法，两处数值不会漂。 */
+    if (typeof this.behTierNova === 'function') this.behTierNova('iceshield');
+  },
+
+  /* [P2b] 台阶 Lv10「护盾破碎 / 爆发时对周围敌人造成伤害并定身」。
+   * 值 = 攻击力百分比。两个入口共用这一份结算：
+   *   · iceshield —— onBehShieldBreak（护盾被打空）
+   *   · pyroclasm —— 自己的 case（它没有护盾，「爆发」就是它本身）
+   * 元素按技能分：冰盾是冰爆，焚天是爆燃 —— 用同一套蓝光会把火系技能做成冰的。 */
+  behTierNova(id, at) {
+    const beh = (typeof this.branchBeh === 'function') ? this.branchBeh(id) : null;
+    const pct = beh && beh.tierNova;
+    if (!pct || !this.state || this.dead) return;
+    const st = this.state.stats;
+    const c = at || this.playerGroup.position;
+    const pos = new THREE.Vector3(c.x, 0, c.z);
+    const rad = 4.5;
+    const warm = (id === 'pyroclasm');
+    const col = warm ? 0xff9040 : 0x9ae0ff;
+    this.explodeAt(pos.clone(), rad, st.atk * pct / 100, col, false, true, 'aoe');
+    /* 定身 = slow 1.0：war3 式的「完全不动」，比 freeze 轻一档（能被打、能被推） */
+    for (const e of this.enemies) {
+      if (e.dead) continue;
+      if (DIST2D(e.pos, pos) > rad + e.radius) continue;
+      e.slow = Math.max(e.slow || 0, 1);
+      e.slowT = Math.max(e.slowT || 0, 1.5);
+    }
+    FX.ring(pos, rad, col, 0.6, 0.3);
+    FX.text(new THREE.Vector3(pos.x, 2.6, pos.z), warm ? '爆燃定身' : '冰爆定身', 'info', { life: 0.9 });
   },
 
   /* 灵兽消散钩子（updateAllies 到期移除时调用）：护主。

@@ -200,9 +200,11 @@ const RELICS = {
 };
 
 const RELIC_IDS = Object.keys(RELICS);
-/* 该职业、不超过该等级段的法器（ilvl 不超过 cap + 6，留一点越级惊喜） */
+/* 该职业、不超过该等级段的法器（ilvl 不超过 cap + 6，留一点越级惊喜）。
+ * [M6] 兜底上限跟 ILVL_MAX 走：写死 40 的话 60 级玩家传送到卷五时
+ * 会拿不到任何一件本职业法器（池子被 46 卡死）。 */
 function relicPool(cls, cap) {
-  const lim = (cap || 40) + 6;
+  const lim = (cap || ((typeof ILVL_MAX === 'number') ? ILVL_MAX : 60)) + 6;
   const all = RELIC_IDS.filter(id => RELICS[id].cls === cls && RELICS[id].ilvl <= lim);
   return all.length ? all : RELIC_IDS.filter(id => RELICS[id].cls === cls);
 }

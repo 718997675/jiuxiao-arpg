@@ -5,12 +5,57 @@
 /* 铁匠铺免费刷新周期：5 分钟（v1.0.4） */
 const SHOP_REFRESH_MS = 5 * 60 * 1000;
 
-/* 场上灵兽上限（P3 收尾）。
- * 以前没有上限：召狼 + 白虎 + 青龙 + 双生 + 双虎 叠在一起能站 6~7 只，
- * 召唤流的收益直接失控，关键被动「灵兽上限 +1」也就无从谈起。
- * 上限是按「场上总数」算的，不是每只技能各算一份 —— 玩家感知得到
- * 「我最多带 3 只，多召一只老的就消散」，而不是一堆互相独立的配额。 */
-const ALLY_CAP_BASE = 3;
+/* 场上灵兽上限。
+ *
+ * [P2b·兽群] 从 3 抬到 8（手机 6），并且**不再顶掉老的**。
+ * 原来的 3 是按「灵兽没有血条、只能靠时间自然退场」定的：那时多招一只就得
+ * 踢掉一只，否则永远不减少。现在灵兽有血、会被怪打死，寿命有了天然的终点，
+ * 数量就该放开 —— 召唤流本来就是「以量取胜」，一边召一边消失是反直觉的。
+ *
+ * 上限仍然存在，因为每只灵兽 = 一个 actor + 每帧一次寻敌/移动/攻击，
+ * 是实打实的 draw call。超限时**新召唤失败并提示**，不静默顶掉在场的。
+ * 关键被动「兽契」照旧 +1。
+ *
+ * 注意：这里**不能**用 IS_TOUCH 求值 —— index.html 先加载 game.js 再加载
+ * mobile.js，顶层读它会在 TDZ 里抛 ReferenceError。平台差异放在 allyCap() 里。 */
+const ALLY_CAP_BASE = 8;
+const ALLY_CAP_TOUCH = 6;
+
+/* 灵兽血条：颜色与怪物血条区分开（灵兽是队友，不能看成一只要打的怪）。 */
+const ALLY_BAR_COLOR = 0x6ad0ff;
+
+/* 灵兽三型的固定参数。以前白虎/青龙的参数写在 castSkill 的 case 里，
+ * 台阶「四象同场」需要凭空补召另外两种，就得把同一份数字抄第二遍 ——
+ * 抄一遍就有一遍漂移的机会，所以收敛成一张表。 */
+const BEAST_PRESET = {
+  wolf: { skill: 'summon', scale: 0.9, color: 0x8affc0, cloth: 0x3a6a50, inherit: 0.6, atkRate: 1.1, name: '灵狼', hpPct: 0.30 },
+  tiger: { skill: 'whitetiger', scale: 1.25, color: 0xffe0b0, cloth: 0xc8a060, inherit: 0.7, atkRate: 0.75, name: '白虎', hpPct: 0.45 },
+  dragon: { skill: 'azuredragon', scale: 1.6, color: 0x6ac8ff, cloth: 0x2a5a8a, inherit: 0.8, atkRate: 1.3, aoe: true, name: '青龙', hpPct: 0.55 }
+};
+
+/* [P2b·法师⑤] 元素法相的三系。
+ *
+ * 顺序就是切换顺序（火 → 冰 → 雷 → 火），起手是火 —— 台阶 1 的文案写的是
+ * 「火法相」，所以 1~2 级（还没解锁切换）看到的一定是火，不能随机。
+ *
+ * 三条效果全部落在**同一个口**上（damageEnemy 的命中附加），各自的字段都是
+ * 引擎里真在用的键，不新造一套状态：
+ *   火 = applySkillDot → e.dotT / e.dotDmg（与火墙 / 雷云同一条跳伤管线，
+ *        燃烬被动、天师套的「对灼烧目标 +40%」都能吃到）
+ *   冰 = e.slow / e.slowT（玄冰套 deepfreeze 的增伤判定读的就是这两个）
+ *   雷 = e.stun + e.vuln / e.vulnT（麻痹 + 易伤，与旋风斩 Lv9 的易伤同一个键）
+ *
+ * 表里只放名字与颜色，不放数值：数值随法相强度（开窗时快照的 spow）与
+ * 被动「法身」（m_form）走，见 elemRiderMul()。 */
+const ELEM_AURA_KINDS = [
+  { key: 'fire', name: '火法相', color: 0xff7a30, glyph: '火' },
+  { key: 'ice', name: '冰法相', color: 0x8ad8ff, glyph: '冰' },
+  { key: 'thunder', name: '雷法相', color: 0x9ad8ff, glyph: '雷' }
+];
+
+/* [P3c] 元素增伤的两条通道与合并函数都搬去 `data-elem.js` 了
+ * （`ELEM_AFFIX` / `ELEM_AFFIX_EX` / `elemAffixMul`）——
+ * 契约测试能直接装数据层验算，不用为了一个纯函数把整个 game.js 塞进 vm。 */
 
 /**
  * 线段 a→b 与圆 (cx,cz,r) 的首次相交参数 t ∈ [0,1]，不相交返回 -1。
@@ -62,6 +107,36 @@ const HOME_WALK = (BALANCE.aggro && BALANCE.aggro.homeWalk) || 0.55;
 /* 刷怪 / 补怪时离玩家至少这么远，避免怪直接刷在脸上 */
 const SPAWN_SAFE = 20;
 
+/* [P01] 地图内补位（用户原话：「任务怪数量少，要开地图几次才能刷满」）。
+ *
+ * 根因不是「任务要求太多」，是**怪死了不补**：`spawnEnemies` 只在 loadMap
+ * 时刷一次，清完就空。于是一条「杀 60 只」的任务必须出图再进图三次。
+ *
+ * 三个旋钮的分工：
+ *   RESPAWN_TICK   6 秒检查一次。不能更密 —— 每帧遍历 40 只怪只为数个数太亏，
+ *                  也不能更疏：玩家清完一片区要等半分钟才见新怪，会以为图坏了。
+ *   RESPAWN_FLOOR  存活低于「计划总数 × 0.6」才补。留 40% 余量是给「刚打完
+ *                  一波、正在捡东西」的玩家留喘息，不然清场时永远有怪在刷。
+ *   RESPAWN_MIN_DIST 只在离玩家 25 米以外的区补。近处补怪 = 凭空出现在视野里，
+ *                  比不补更糟。
+ * 补到的上限是 spawnPlan 里记的原始数量，所以「这张图有多少只」的静态口径不变，
+ * `dev/zone-density.js` 读的仍然是静态值。 */
+const RESPAWN_TICK = 6;
+const RESPAWN_FLOOR = 0.6;
+const RESPAWN_MIN_DIST = 25;
+/* [B16.4] 正面格挡的默认值 —— 就是刑天 M18.7 手写死的那三个数，
+ * 抽出来变成数据（`e.guardFront`）之后，岩石系的「岩甲朝向」才能用同一套结算，
+ * 只改三个数：arc 120°（比盾窄）/ mul 0.2（比盾硬）/ turn 1.2 秒（转身慢，绕背窗口真的存在）。
+ * `turn` 的口径是「转掉 95% 偏差要几秒」，不是半衰期 —— 写数据的人不用换算。 */
+const FRONT_GUARD_DEFAULT = { arc: 150, mul: 0.4, turn: 0.48 };
+/* 一次最多补几只。
+ * 计划书原稿写的是「1~2 只」，但它自己给的验收线是「清空后等 30 秒，
+ * 怪数回到 spawnCount × 0.6」—— 41 只的图要在 5 个 tick 内补回 25 只，
+ * 一次 1~2 只根本追不上（实测 30 秒只补到 10 只，图看起来还是空的）。
+ * 取 5：5 tick × 5 = 25 刚好压线，而且这些怪都落在 25 米外的区里，
+ * 不会在玩家眼前凭空出现。 */
+const RESPAWN_BATCH = 5;
+
 /* [M12] 首领落点改由 data-maps.js 的 MAP_BOSS_POS 提供（必须落在 sanctum 圆内）。
  * 这里保留 BOSS_POS 这个名字，调用方不用改；缺表时退回一组安全默认值。 */
 const BOSS_POS = (typeof MAP_BOSS_POS !== 'undefined') ? MAP_BOSS_POS : {
@@ -71,11 +146,23 @@ const BOSS_POS = (typeof MAP_BOSS_POS !== 'undefined') ? MAP_BOSS_POS : {
 };
 
 /* 技能账本一项的更新：保留没被这次操作改到的字段。
- * s.skills[id] 现在有三个字段（lv 等级 / v 变体 / p 取向），
- * 而升级、降级、换变体三处都习惯「重建对象」—— 每处都手写一遍
- * 保留逻辑，漏一处就让玩家的取向无声消失。统一走这里。 */
+ *
+ * s.skills[id] 的字段分两类，界线是「花不花技能点」：
+ *   · 花点的：lv（投入等级）/ p（取向）
+ *   · 不花点的选择：v（旧变体）/ f（新变体）/ m（精通）/ el · el2（元素注入）
+ *
+ * 升级、降级、换变体三处都习惯「重建对象」，每处手写一遍保留逻辑，
+ * 漏一处就让玩家的选择无声消失 —— P2 加 m、P3 加 el/el2 时已经踩过：
+ * 升一级就把元素注入丢了（面板上还在，进战斗没效果）。
+ *
+ * 所以这里反过来写：**next 没提到的键一律从 prev 带过来**。
+ * 以后再加字段不用回来改这个函数，只要加进名单。 */
+const SKILL_ENTRY_KEEP = ['v', 'f', 'p', 'm', 'el', 'el2'];
 function keepPick(prev, next) {
-  if (prev && prev.p !== undefined) next.p = prev.p;
+  if (!prev) return next;
+  for (const k of SKILL_ENTRY_KEEP) {
+    if (next[k] === undefined && prev[k] !== undefined) next[k] = prev[k];
+  }
   return next;
 }
 
@@ -115,6 +202,11 @@ const CAM_VIEWS = {
 
 /* 震屏强度倍率：设置面板「镜头震动」*/
 const SHAKE_MUL = { off: 0, weak: 0.35, std: 1, strong: 1.8 };
+
+/* [B20] 技能演出层的朝向兜底：`lastMoveDir` 在刚进图、还没移动过时是 null，
+ * 而 sfx 的技能实现全都假定 `c.dir` 有 .x/.z。给一个共享常量而不是每次 new，
+ * 是因为这个兜底会在每一发技能上被读一次。 */
+const SFX_FWD = new THREE.Vector3(0, 0, 1);
 
 const Game = {
   /* three */
@@ -232,6 +324,29 @@ const Game = {
     this.scene.add(new THREE.AmbientLight(0xffffff, 0.1));
 
     FX.init(this.scene, this.camera, document.getElementById('fxLayer'));
+    /* [U9] 怪物侧常驻视觉层：8 形态微标识 + 12 词缀角标 + Boss 生命周期。
+     * 只读实体，不写数值、不挂判定；绑定一次，之后靠 sync 改实例矩阵。 */
+    if (typeof EnemyFX !== 'undefined') EnemyFX.init(this.scene);
+    /* [B16] 怪物侧原语层。它自己管一个 Group，只往这里挂 ——
+     * 开场绑一次就够，之后靠每帧 `FX2.update(dt)` 推进。 */
+    try {
+      if (typeof FX2 !== 'undefined') {
+        FX2.bind(this.scene, this.camera, this.renderer);
+        FX2.shake = (amp, dur) => { this.shake = Math.max(this.shake, amp); };
+      }
+    } catch (e) { console.error('[FX2] 绑定失败', e); }
+    /* [B21] 首领招式运行时。它读 Game 的三个东西：playerGroup（判定要用
+     * 玩家的真实位置）、damagePlayer（88 招唯一的结算口）、shake。
+     * bind 必须晚于 fx2 —— boss-cast.js 顶层就取了 FX2.tools。 */
+    try {
+      if (typeof BossCast !== 'undefined') BossCast.bind(this);
+    } catch (e) { console.error('[BossCast] 绑定失败', e); }
+    /* [B20] 玩家侧技能演出（37 只技能的整套画法）。跟 FX2 同一个套路：
+     * 开场绑一次，之后每帧 update + sync，换图 clear。
+     * 少了 `bind` 不会报错，只会「什么都不出来」—— 所以这一步不能省。 */
+    try {
+      if (typeof SKFX !== 'undefined') SKFX.bind(this.scene, this.camera, this.renderer);
+    } catch (e) { console.error('[SKFX] 绑定失败', e); }
     // 存档地基：先做 V1→V2 迁移，再让 UI 判断有没有档可读
     try {
       if (typeof SaveManager !== 'undefined') {
@@ -332,16 +447,34 @@ const Game = {
 
   /* ======================================================= */
   bindInput() {
-    /* [FIX-BUG1] keydown repeat 问题：
+    /* [FIX-TYPE1] 输入框聚焦时一律不碰游戏按键。
+     * 以前这条判断在 `keys[k] = true` **之后**，于是「在道号里打 w」会真的让角色往前走；
+     * 更糟的是它在 `e.key.toLowerCase()` 之后，而 `e.key` 可能是 undefined。 */
+    const typing = () => {
+      const a = document.activeElement;
+      return !!(a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.isContentEditable));
+    };
+    /* [FIX-TYPE2] keydown repeat 问题：
      * Windows 上按住任意键时 keydown 会持续触发（e.repeat=true），
      * 如果用户开着中文输入法或某些系统热键软件，按住 WASD 移动时
      * 可能额外触发空格 keydown → tryDash() 被反复调用（"回馈"）。
      * 修复：repeat 的 keydown 不执行任何动作逻辑，只更新 keys 状态。 */
     window.addEventListener('keydown', e => {
-      const k = e.key.toLowerCase();
+      /* [FIX-TYPE3] `e.key` 可能是 undefined —— Chrome 在输入框的「历史输入」下拉里
+       * 点选、安卓软键盘、部分输入法都会发这种 keydown/keyup。直接 .toLowerCase()
+       * 抛 TypeError，被 boot.js 兜成「山海未开 · 运行出错」，整页卡死。
+       * 用户报的就是这个：道号框点一下弹出以前的名字，再点一次就报错。 */
+      const k = (e.key || '').toLowerCase();
+      if (!k) return;
+      if (typing()) return;
+      /* [P03] Esc 先关大图。大图是全屏层，不给退出键的话
+       * 键盘玩家会卡在「只能去点右上角 ×」的窘境（鼠标还被 pointer lock 收着）。 */
+      if (k === 'escape') {
+        if (typeof Minimap !== 'undefined' && Minimap.big && Minimap.big.open) {
+          Minimap.closeBig(); e.preventDefault(); return;
+        }
+      }
       this.keys[k] = true;
-      /* 输入框聚焦时不拦截游戏按键 */
-      if (document.activeElement && document.activeElement.tagName === 'INPUT') return;
       /* repeat 的 keydown 不触发翻滚/技能/药水等动作，避免持续触发 */
     if (e.repeat) return;
       if (k === ' ') { this.tryDash(); e.preventDefault(); return; }
@@ -380,8 +513,10 @@ const Game = {
      * 'process' 或 'unidentified'，导致 keys['w'] 等永远无法清除。
      * 修复：keyup 时同时用 e.code（物理键位）做兜底清除。 */
     window.addEventListener('keyup', e => {
-      const k = e.key.toLowerCase();
-      this.keys[k] = false;
+      /* 同样兜 `e.key === undefined`（见上面 FIX-TYPE3）；这里**不能**加 typing() 判断 ——
+       * 按住 w 时鼠标点进输入框再松手，keyup 落在输入框上，不清理就会一直往前走。 */
+      const k = (e.key || '').toLowerCase();
+      if (k) this.keys[k] = false;
       /* 用 code 兜底：KeyW → w, KeyA → a, Space → space */
       const codeMap = {
         'KeyW': 'w', 'KeyA': 'a', 'KeyS': 's', 'KeyD': 'd',
@@ -528,23 +663,45 @@ const Game = {
       stash: { items: [], mats: {} },
       /* [试炼] 无尽试炼的永久记录（跨轮保留）：最高波数 / 总轮数 / 达成时间 */
       trial: { best: 0, runs: 0, bestAt: 0 },
-      quests: { active: [], done: [], next: 'q1', announced: {} },
+      /* [M2] 任务：active 里 progress[i] 对应 objectives[i]；
+       * board 是悬赏板（cd = 到期时间戳，count = 完成次数）。
+       * next 只为兼容老档保留，新逻辑按 require 链推导（见 src/quests.js）。 */
+      quests: { active: [], done: [], next: null, announced: {}, board: { cd: {}, count: {} } },
       mapId: 'village', playerPos: { x: 0, z: 10 },
+      /* [M0] 世界结构：当前卷 / 章、已解锁营地与大传送门、已抵达的图（回头路直传用） */
+      part: 1, act: '1-1', camps: ['campA'], portals: ['portalA'], mapsSeen: ['village'],
       bossKilled: {}, playTime: 0,
+      /* [M7.4] 魔将之印：8 个布尔位 { deva:1, naga:1, ... }。
+       * 只由 onBossKill 写入（八只魔将各掉自己那枚），终门读 sealCount()。 */
+      seals: {},
       /* [S3] 天赋：spent = { 节点id: 级数 }；presets 三套预设（存 spent 快照） */
       talents: { spent: {}, presets: [null, null, null], respecCount: 0 },
       /* [M1] 任务奖励的天赋点（主线四段共 +10，满级 60 → 70） */
       talentBonus: 0,
       /* [v1.8.5] 根基加点：四项手动分配的点数（职业基础 / 等级成长之外的那一份） */
       attrAlloc: { str: 0, agi: 0, vit: 0, int: 0 },
-      /* [S4] 技能：{ 技能id: { lv: 1-10, v: 0-2 变体 } } */
+      /* [S4] 技能：{ 技能id: { lv: 1-10, v/f: 0-2 变体, p: 取向, m: 精通, el/el2: 注入元素 } } */
       skills: {},
+      /* [P2] 被动 / 关键被动账本：{ 被动id: 已投级数 }。每级 1 点，与技能等级同池 */
+      passives: {},
+      /* [P2] 洗点次数：决定下一次洗点的价（阶梯 800 → 35000 封顶），必须落盘 */
+      treeRespecCount: 0,
       /* [S4] 技能条：5 格 × 2 套手动配置（技能 id 或 null），新档只放已领悟的。
        * [P1] 格位 = 功能位（第 i 格只能放第 i 个位的技能），所以用迁移函数归位，
        * 不能像以前那样「按表顺序截前 5 个」—— 那样会出现「② 号位的技能占了 ① 格」。 */
       skillbar: skillBarMigrate((SKILL_ORDER[cls] || []).filter(id => SKILLS[id] && SKILLS[id].unlock <= 1), cls),
       skillbar2: [],
       barSet: 0,
+      /* [P6] 两个一次性迁移标记，新档直接写成「已迁移」。
+       *
+       * normalizeProgress 里有两段只该跑一次的迁移（barVer 补位、skillReset 退点），
+       * 判据是「标记不等于目标值」。以前这两个标记没进存档白名单，
+       * 于是每次读档都以为自己第一次跑 —— 玩家的技能点每重开一次被退光一次。
+       * 修好落盘之后，新档还得在这里**主动写上**，否则「建号 → 投点 → 存档 → 读档」
+       * 这条最常见的路径仍然会撞上第一次退款。 */
+      barVer: 2,
+      skillReset: 1,
+      skillResetRefund: 0,
       shop: null          // { at, items, rolls } —— 由 ensureShop/genShop 填充
     };
     return s;
@@ -707,7 +864,7 @@ const Game = {
    * 同部位同品质再按评分兜底，保证「点两次结果一样」，玩家不会觉得按钮坏了。 */
   stashSort() {
     const d = this.stashData();
-    const rk = Object.keys(RARITY);
+    const rk = RARITY_ORDER;   // 品质顺序只有 items.js 里那一份
     const slotIdx = (it) => {
       const i = SLOT_ORDER.indexOf(it.slot === 'ring' ? 'ring1' : it.slot);
       return i < 0 ? 99 : i;
@@ -975,7 +1132,9 @@ const Game = {
     return s.talents;
   },
 
-  /* 可用天赋点：每级 1 点 + 任务奖励点（[M1] 满级 60 + 主线 10 = 70） */
+  /* 可用天赋点：每级 1 点 + 任务奖励点。
+   * [2026-10-28] 满级点数跟难度走（等级上限 60/70/85/99），所以
+   * 「满级 = 70 点」这句话只对新手难度成立 —— 别再当成定值写进文案。 */
   talentPoints() {
     const s = this.state;
     const sp = this.talentState().spent;
@@ -1205,9 +1364,14 @@ const Game = {
     return (sk && sk.v) || 0;
   },
 
-  /* 可用技能点：每级 1 点，每升 1 级技能花 1 点（1→5 共 4 点）。
-   * [P2] 取向也要花点，一并从这里扣 —— 否则分支等于白送，
-   * 「12 个技能装不满 60 级」的取舍就不成立了。 */
+  /* 可用技能点：总供给 = 等级 × 1.5（skillPointPool），再扣掉三笔已投：
+   *   · 主动技能等级（每级 1 点，1→10 共 9 点）
+   *   · 取向 / 变体（各 1 点）
+   *   · 被动与关键被动（每级 1 点）
+   * [P2] 供给从「等级 × 1」抬到 ×1.5 是配合上限 10 级的：不抬的话
+   * 5 个技能位拉满要 45 点，40 级根本分不出来，只会从「都弱」变成「养不起」。
+   * 只留一个池子（不按方案 §8 拆技能点 / 天赋点）：天赋点已有独立系统，
+   * 再拆一次总和会到 130 点，正好能点满全树 —— 取舍就没了。 */
   skillPoints() {
     const s = this.state;
     let spent = 0;
@@ -1216,7 +1380,39 @@ const Game = {
     if (typeof this.branchSpent === 'function') spent += this.branchSpent();
     /* [P2] 被动 / 关键被动：每级 1 点，一并从可用池里扣 */
     if (typeof this.passiveSpent === 'function') spent += this.passiveSpent();
-    return Math.max(0, (s ? s.level : 1) - spent);
+    const pool = (typeof skillPointPool === 'function')
+      ? skillPointPool(s ? s.level : 1)
+      : (s ? s.level : 1);
+    return Math.max(0, pool - spent);
+  },
+
+  /* ======================================================= */
+  /* [P1c] 三线并行：等级门 + 线内软前置                       */
+  /*                                                        */
+  /* 旧模型是「第 3 个岔口起 主动 ↔ 被动 二选一」，点错一条线  */
+  /* 构筑就锁死。现在改成暗黑 4 式：                          */
+  /*   · 三条线同时开放，没有必点主干                        */
+  /*   · 每个节点只看「角色等级」（reqLv）                    */
+  /*   · 关键被动额外要「该线已投入 ≥ N 点」（needPts，软前置）*/
+  /*   · 同岔口的主动与被动可以都点，不再互斥                 */
+  /* 唯一稀缺的是技能点，取舍变成「点多少」而不是「点哪条」。 */
+  /* ======================================================= */
+
+  /* 某条线已投入的点数（主动 lv-1 + 被动 lv） */
+  lineSpent(lineName) {
+    const s = this.state;
+    if (!s || typeof skillLineSpent !== 'function') return 0;
+    return skillLineSpent(s.cls, lineName, skillSpentMap(this.skillState(), s.passives || {}));
+  },
+
+  /* 节点门槛：{ reqLv, needPts, level, linePts, levelOK, ptsOK, ok }；
+   * 不在树上的节点返回 null（传世秘技等，它们本来就不受树约束）。 */
+  skillGate(id) {
+    const s = this.state;
+    if (!s || typeof skillNodeGate !== 'function') return null;
+    const info = (typeof skillLineNodeInfo === 'function') ? skillLineNodeInfo(id) : null;
+    if (!info) return null;
+    return skillNodeGate(id, { level: s.level, linePts: this.lineSpent(info.line) });
   },
 
   /* ======================================================= */
@@ -1240,6 +1436,8 @@ const Game = {
     s.treeRespecCount = (s.treeRespecCount || 0) + 1;
     this.behStack = {}; this._drainOn = null; this._follows = null;
     this._recharge = null; this._dragonT = 0; this._autoReviveCd = 0; this._pasT = 0;
+    /* [P2b] 脱战计时：洗点 / 换图 / 重生都归零，否则进新图第一秒就在回血 */
+    this._outT = 0;
     this.recalc();
     if (typeof UI !== 'undefined' && UI.log) {
       UI.log('已洗去 ' + r.cleaned + ' 点技能树投入（-' + r.cost + ' 金）。', 'good');
@@ -1252,14 +1450,11 @@ const Game = {
     const s = this.state;
     if (!s || !SKILLS[id]) return { ok: false, msg: '技能不存在' };
     if (!this.skillUnlocked(id)) return { ok: false, msg: '尚未领悟' };
-    /* [P2] 岔口锁：第 3 个岔口起主动 ↔ 被动二选一，对面投过点就拦
-     *（对面只是「领悟送的 1 级」不算投入，账本与装备解耦的道理同前） */
-    if (typeof skillForkOf === 'function') {
-      const fk = skillForkOf(id);
-      if (fk && fk.lock && fk.side === 'active' && this.passiveLv(fk.other) > 0) {
-        const nm = (SKILL_TREE.passives[fk.other] || {}).name || fk.other;
-        return { ok: false, msg: '此岔口二选一：「' + nm + '」已投点，先退掉它再升这边' };
-      }
+    /* [P1c] 三线并行：原来的「第 3 个岔口起主动 ↔ 被动二选一」已删除。
+     * 现在只剩等级门（reqLv 默认取技能领悟等级，layout 可覆盖成更高）。 */
+    const gate = this.skillGate(id);
+    if (gate && !gate.levelOK) {
+      return { ok: false, msg: '「' + SKILLS[id].name + '」需 ' + gate.reqLv + ' 级（当前 ' + gate.level + ' 级）' };
     }
     const sk = this.skillState();
     const cur = (sk[id] && sk[id].lv) || 1;
@@ -1288,10 +1483,15 @@ const Game = {
     return { ok: true, msg: SKILLS[id].name + ' 降至 ' + (cur - 1) + ' 级' };
   },
 
+  /* 旧变体通道（v）。P3 之后换变体走 setSkillForm（写 f），
+   * 这个入口留着只为兼容外部脚本 / 控制台调试。
+   * 注意必须**同时**写 f：`skillFormIdx` 优先读 f，只写 v 的话
+   * 老档升级过一次（f 被带过来了）就再也换不动变体。 */
   setSkillVariant(id, v) {
     if (!SKILLS[id] || v < 0 || v > 2) return false;
     const sk = this.skillState();
-    sk[id] = keepPick(sk[id], { lv: (sk[id] && sk[id].lv) || 1, v });
+    sk[id] = keepPick(sk[id], { lv: (sk[id] && sk[id].lv) || 1, v, f: v });
+    if (typeof this.recalc === 'function') this.recalc();
     return true;
   },
 
@@ -1435,9 +1635,10 @@ const Game = {
     /* 已退出数据表的技能 / 天赋节点清掉，防存档里留死 id */
     for (const id in s.skills) if (!SKILLS[id]) delete s.skills[id];
     /* 技能等级 / 变体整形：脏值不许把面板算崩。
-     * [P3 收尾] 等级上限从 10 降到 5，老档 6~10 级在这里压到 5 ——
-     * 「多出的点」不用单独记账：skillPoints() = 角色等级 − 已投，
-     * lv 一变小，可投点数自然涨回来。变体（v / f）原样保留。 */
+     * [P3 收尾] 等级上限一度降到 5，[P2] 又抬回 10 —— 统一读 SKILL_LV_MAX，
+     * 这里不写死数字。压等级产生的「多出的点」不用单独记账：
+     * skillPoints() = 池 − 已投，lv 一变小，可投点数自然涨回来。
+     * 变体（v / f）、精通（m）、元素注入（el / el2）原样保留。 */
     for (const id in s.skills) {
       const e = s.skills[id];
       if (!e || typeof e !== 'object') { delete s.skills[id]; continue; }
@@ -1480,7 +1681,14 @@ const Game = {
       target = r.slot;
     }
     this.state = this.newState(cls, name);
+    /* [M2] 任务结构归一（新档是空跑，老档在 loadSlot 里才真正迁移） */
+    if (typeof QuestSys !== 'undefined') { QuestSys.ensure(); QuestSys.migrate(); }
     this.skillFlags = {};            // 新角色不继承上个角色的技能领悟
+    /* [P2b·刀客⑤] 兵形归零：换角色 / 开新档从斩锋式起手（换图不清 ——
+     * 刀式是这一局的姿态，不是一张地图的临时状态） */
+    this.blade = { i: 0, mask: 0 };
+    /* [P2b·法师⑤] 法相归零：换角色 / 开新档没有窗口，主元素从火相起手 */
+    this.elemAura = { t: 0, elem: 0, mul: 1, rider: false };
     if (typeof UI !== 'undefined') UI.snaps = null;   // 换角色：上一个人的加点草稿作废
     this.savedSlot = target || 1;
     this.recalc();
@@ -1536,6 +1744,10 @@ const Game = {
     const s = this.state;
     s.mapId = mapId;
     this.mapGen = (this.mapGen || 0) + 1;
+    /* [U6-2] 换图：清掉技能音效层的「这一发施放」状态。
+     * 否则上一张图留下的待命中上下文会被新图的第一声爆炸误认成技能命中。 */
+    if (typeof SfxAudio !== 'undefined' && SfxAudio) SfxAudio.reset();
+    this._sfxCastId = '';
     this.mobTimer = 0;
     // 清场：必须真正释放 GPU 资源。只 scene.remove 不 dispose 的话，
     // 每换一次图就泄漏一整张地图的几何体+材质，几分钟后显存耗尽、上下文丢失。
@@ -1543,24 +1755,54 @@ const Game = {
     this.enemies = [];
     for (const a of this.allies) disposeTree(a.actor.group);
     this.allies = [];
+    /* [P4] 法身是常驻 Sprite，不归 FX 的 gen 管 —— 换图必须自己摘，
+     * 否则它会跟着旧场景一起被丢弃，`_formAura` 里留下一个已经不在场景上的空壳 */
+    if (typeof this._dropFormAura === 'function') this._dropFormAura();
     for (const l of this.loot) disposeTree(l.obj);
     this.loot = [];
     for (const id in this.npcs) disposeTree(this.npcs[id].group);
     this.npcs = {};
     if (this.world) disposeTree(this.world.root);
     this.boss = null; UI.updateBoss(null);
+    /* [P09] 血条归属的计时跟着地图一起清，否则换图后 bossPickCd 还带着上一张图的余数 */
+    this.bossPickCd = 0;
     FX.clear();
+    /* [U9] 常驻微标识不归 FX.clear 管（它们是挂在 scene 上的实例网格） */
+    if (typeof EnemyFX !== 'undefined') EnemyFX.clear();
+    /* [M18.7] 场地效果（相柳毒沼 / 九尾狐狐火）必须跟着清。
+     * FX.clear 只删了看得见的圆，伤害记账还在 `WBFight._hazards` 里 ——
+     * 不清的话换图后新地图的落脚点上会继续掉血，而且再也找不到源头。 */
+    if (typeof WBFight !== 'undefined') WBFight.clear();
+    /* [B16.6] 章节 Boss 的领域同理：`FX.clear` 只删了地上那个法阵，
+     * 结算还挂在 `Domains.list` 里 —— 不清的话回城之后人还站在毒圈上，
+     * 而且新图里根本找不到是谁放的。 */
+    if (typeof Domains !== 'undefined') Domains.clear();
+    /* [U3] 组合特效层：聚怪窗口与 ICD 一起作废 —— 把「上一张图的聚怪」
+     * 带进村里，下一张图随便打一下就会莫名塌一次。 */
+    if (typeof ComboFX !== 'undefined' && ComboFX && ComboFX.reset) ComboFX.reset();
 
     this.buffs = []; this.shield = 0; this.shieldT = 0; this.regen = 0; this.poisonT = 0; this.playerSlow = 0; this.playerSlowT = 0; this.reviveT = 0;
+    /* [P3a] 解毒雾（圣系反应的玩家侧计时器），换图 / 重开都要清 */
+    this.healMist = null;
+    /* [M18.7] 定身（九尾狐 P2 尾缚）跟着换图归零 */
+    this.rootT = 0;
+    /* [B16] 不可控位移（拉拽 / 吞咽 / 摆渡）也跟着归零：
+     * 它是"从 A 拖到 B"的一段脚本位移，跨图还留着的话，进新图第一帧
+     * 会把玩家瞬移到上一张图的坐标上。 */
+    this.pull = null;
     /* 技能树分支叠层（stack）：换图 / 重开都归零 */
     this.behStack = {}; this._drainOn = null; this._follows = null;
     this._recharge = null; this._dragonT = 0; this._autoReviveCd = 0; this._pasT = 0;
+    /* [P2b] 脱战计时：洗点 / 换图 / 重生都归零，否则进新图第一秒就在回血 */
+    this._outT = 0;
     /* [P2] 剑魄的资源记账跟着换图清零；被动计时器归位 */
     this.state.rageSpent = 0;
     this.undyingCd = 0; this.stormT = 6; this.talismanT = 10; this.elixirT = 60; this.phoenixKeyT = 0;
     this.talismanCharges = 0;
     /* [S4] 套装运行时状态：狂怒层数 / 格挡反击与过载天雷的内置冷却 */
     this.frenzy = { n: 0, t: 4 }; this.riposteCd = 0; this.overchargeCd = 0;
+    /* [P2b] 剑阵场地（swordarray case 铺，damagePlayer 消费）与阵内反击内置冷却 */
+    this.swordField = null; this.swordCounterCd = 0;
     this.cooldowns = {};
 
     const m = MAPS[mapId];
@@ -1572,7 +1814,9 @@ const Game = {
     this.sun.color.setHex(m.sun);
     this.sun.intensity = m.sunI * 0.82;
 
-    this.world = buildMap(mapId);
+    /* 出口门要不要这次进图就立起来，取决于「本图首领打过没有」——
+     * 见 world.js 的 makeExitGate / buildMap 注释。 */
+    this.world = buildMap(mapId, { cleared: this.mapCleared(mapId) });
     this.scene.add(this.world.root);
     /* [M12] 出生点取入口区域靠内的位置：从传送阵往地图里挪 6 米，
      * 玩家一进图就站在「门口」，而不是凭空出现在地图中央。
@@ -1593,9 +1837,16 @@ const Game = {
     /* [v1.12.1] 落地保护：进图头几秒不索敌，先让玩家看清地形 */
     this.aggroGrace = (BALANCE.aggro && BALANCE.aggro.grace) || 3;
 
-    if (mapId === 'village') this.spawnNPCs();
+    /* [M1] 以前写死 `mapId === 'village'`，结果 campB~E 的 cfg.npcs 写了也不生成。
+     * 现在只要当前图声明了 npcs 就摆人（营地也有人守着了）。 */
+    if ((m.npcs || []).length) this.spawnNPCs();
     this.spawnEnemies();
     this.spawnBosses();
+    /* [M18.2] 世界 Boss：进图后对齐记录与实体。
+     * 放在 spawnBosses 之后，保证「清场 → 重生」之后它一定在。
+     * **不要**把世界 Boss 写进 MAPS[mapId].bosses：那张表是常驻首领，
+     * 读档会被 spawnBosses 反复重生，30 分钟轮转直接失效。 */
+    if (typeof WorldBoss !== 'undefined') WorldBoss.onMapEnter();
     this.recalc();
     this.applyDoll();
     /* [FIX-TOWN] 回城满血：踏入安全区（桃源村）即回满生命与灵力。
@@ -1611,6 +1862,10 @@ const Game = {
       this.state.mp = st.mpMax;
       this.shield = 0;
       this.poisonT = 0; this.playerSlow = 0; this.playerSlowT = 0; this.shieldT = 0;
+      this.healMist = null;
+      /* [M18.5] 领域压制一律清掉：换图时 WorldBoss.domainTick 也会归位，
+       * 但这一行是「进图 = 干净状态」的口径，别指望下游兜底 */
+      this.domSlow = 0; this.domAspd = 0;
       if (wasHurt) {
         const pp = new THREE.Vector3(this.playerGroup.position.x, 0, this.playerGroup.position.z);
         FX.ring(pp, 3.2, 0x8ce0a8, 0.8, 0.3);
@@ -1641,9 +1896,22 @@ const Game = {
 
   spawnNPCs() {
     /* [M6] 仓管放在村尾右侧（与左侧的试炼使者一左一右），
-     * 新人从传送阵一路走过来会先见到铁匠药师，最后才见到仓库 —— 顺序合理。 */
-    const pos = { elder: [-7, 2], smith: [7, 7], herbalist: [-10, 14], monk: [9, 15], alchemist: [2, 18], warden: [-6, 20], steward: [9, 22] };
-    for (const id of MAPS.village.npcs) {
+     * 新人从传送阵一路走过来会先见到铁匠药师，最后才见到仓库 —— 顺序合理。
+     * [M1] 坐标表按 npc id 通用（营地缺 elder/warden 也能用），
+     * NPC 名单改读当前图的 cfg.npcs —— 以前硬编码 MAPS.village.npcs，
+     * 营地的 npcs 写了等于没写（实测营地里 0 个 NPC）。 */
+    /* [M2] 坐标表按 npc id 通用。每座营地只有一个掌事 + 一个录事，
+     * 所以它们共用老村长那一对坐标（-7,2 / -14,6）不会打架 ——
+     * 同一张图上不可能同时出现两个营地的发布者。 */
+    const pos = {
+      elder: [-7, 2], smith: [7, 7], herbalist: [-10, 14], monk: [9, 15],
+      alchemist: [2, 18], warden: [-6, 20], steward: [9, 22],
+      campA_side: [-14, 6],
+      campB_main: [-7, 2], campC_main: [-7, 2], campD_main: [-7, 2], campE_main: [-7, 2],
+      campB_side: [-14, 6], campC_side: [-14, 6], campD_side: [-14, 6], campE_side: [-14, 6]
+    };
+    const cfg = MAPS[this.state.mapId] || MAPS.village;
+    for (const id of (cfg.npcs || [])) {
       const a = buildNPC(id);
       /* 位置表漏写就退回原点，别让整张图的 NPC 因为一个坐标缺失全部不生成 */
       const p2 = pos[id] || [0, 0];
@@ -1652,9 +1920,19 @@ const Game = {
       a.group.rotation.y = Math.atan2(-x, -(z - 6));
       this.scene.add(a.group);
       this.npcs[id] = { id, actor: a, group: a.group, pos: new THREE.Vector3(x, 0, z), basesY: 0 };
-      if (id === 'elder') {
+      /* [M2] 所有任务发布者都挂 ! / ? 标记（以前只挂老村长）。
+       * 不挂的话，营地里的掌事和录事看起来跟铁匠药师没区别，
+       * 玩家根本不知道谁是发任务的。
+       *
+       * [P11] 两个标记的分工定死：
+       *   金色「!」= 有赏可领（可复命）—— 优先级最高，玩家的第一诉求是交任务
+       *   绿色「?」= 有事可接
+       * 原来正好反过来（金「!」是可接、绿「?」是可交），而用户看到的
+       * 「录事头顶什么都没有」是另一层问题：悬赏的 giver 是 'board'，
+       * `readyOf` / `offersOf` 两边都匹配不到，所以录事的两个标记永远是 hidden。 */
+      if (NPCS[id] && NPCS[id].role === 'quest') {
         const ex = makeLabelSprite('!', '#ffd166', 175, 2.4, 1.2);
-        ex.position.y = 4.1;
+        ex.position.y = 4.1; ex.visible = false;
         a.group.add(ex);
         const qm = makeLabelSprite('?', '#8ae08a', 175, 2.4, 1.2);
         qm.position.y = 4.1; qm.visible = false;
@@ -1667,13 +1945,18 @@ const Game = {
   },
 
   updateQuestMarker() {
-    const n = this.npcs.elder;
-    if (!n || !this.state) return;
-    const active = this.state.quests.active;
-    const ready = active.some(a => this.questReady(a));
-    const avail = active.length === 0 && !!QUESTS[this.state.quests.next];
-    if (n.markEx) n.markEx.visible = avail;
-    if (n.markQ) n.markQ.visible = ready;
+    if (!this.state || typeof QuestSys === 'undefined') return;
+    for (const id in this.npcs) {
+      const n = this.npcs[id];
+      if (!n.markEx) continue;
+      const giver = giverOfNpc(id);
+      const ready = QuestSys.readyOf(giver).length > 0;
+      /* [P11] 悬赏不在 offersOf 里（giver 是 'board'），录事要靠 boardOf 单独算 ——
+       * 不然「板上有三条可接」这件事在 NPC 头顶完全看不出来。 */
+      const avail = QuestSys.offersOf(giver).length > 0 || QuestSys.boardOf(giver).length > 0;
+      n.markEx.visible = ready;                 // 金「!」= 可复命
+      n.markQ.visible = avail && !ready;        // 绿「?」= 可接（可交时让位给「!」）
+    }
   },
 
   spawnEnemies() {
@@ -1685,18 +1968,54 @@ const Game = {
     const zs = (typeof zoneSpawners === 'function') ? zoneSpawners(this.state.mapId) : null;
     if (zs && zs.length) {
       const sp = this.playerGroup.position;
+      /* [M3] 轮转刷怪：所有区一只一只轮着刷，而不是「一个区刷完再刷下一个」。
+       *
+       * 为什么必须改：同屏怪数有硬上限（PC 36 / 触屏 28），
+       * 而 §5.1 要求单图 40~56 只 —— 超出上限的部分一定会被 spawnEnemy 丢掉。
+       * 按区顺序刷的话，被丢掉的永远是最后几个区（后殿道 + 首领场），
+       * 玩家一路打过去会发现北半边是空的，正好是 §5.1 要解决的「大而空」。
+       * 轮转之后每个区都按同一比例被截断，地图密度是均匀的。 */
+      const queues = [];
       for (const z of zs) {
-        const n = z.spawns.count || 0;
-        for (let i = 0; i < n; i++) {
-          const kind = zonePickKind(z, m.spawns);
+        /* [M2] 任务区域：数量 ×1.4（上限 +6），目标怪权重 ×3。
+         * 复命 / 放弃后 QuestSys.activeZones 立刻不再返回这个区，
+         * 所以倍率不会留在图上（§4.3 第 3 条）。 */
+        const qb = (typeof QuestSys !== 'undefined') ? QuestSys.zoneBoost(this.state.mapId, z.id) : null;
+        const base = z.spawns.count || 0;
+        const n = qb ? Math.min(Math.round(base * qb.mult), base + qb.extra) : base;
+        if (n > 0) queues.push({ z: z, left: n, qb: qb });
+      }
+      /* [P01] 记下刷怪计划 —— 补位器用它算「这张图本该有多少只、每个区各几只」。
+       * 必须在下面的 while 之前拷一份：`left` 会被递减到 0。 */
+      this.spawnPlan = queues.map(q => ({ z: q.z, cap: q.left, qb: q.qb }));
+      this.respawnCd = 0;
+      let total = 0;
+      for (const q of queues) total += q.left;
+      while (total > 0) {
+        for (const q of queues) {
+          if (q.left <= 0) continue;
+          q.left--; total--;
+          const z = q.z, qb = q.qb;
+          /* 权重 ×3 用「75% 概率直接取目标怪」近似：目标怪通常是 2~3 种之一，
+           * 1/3 × 3 = 1 的权重比，换算是成立的，且比写一套加权抽样便宜。 */
+          const kind = (qb && qb.kinds && qb.kinds.length && Math.random() < 0.75)
+            ? qb.kinds[Math.floor(Math.random() * qb.kinds.length)]
+            : zonePickKind(z, m.spawns);
           if (!kind) continue;
           /* [v1.12.1] 别刷在出生点附近。走廊上端与入口区是重叠的，
            * 只把入口区的刷怪数量清零不够 —— 走廊刷出来的怪照样站在玩家脸上。
-           * 连试 8 次都找不到远处的位置就跳过这只（宁可少刷也不刷脸）。 */
+           * 连试 8 次都找不到远处的位置就跳过这只（宁可少刷也不刷脸）。
+           *
+           * [M7] 安全距离按图尺寸缩放：固定 20 米是世界图（290~300）的尺度，
+           * 而 8 张副本图只有 140 —— 入口到「竹径 / 下谷」这些近区的距离
+           * 本来就不足 20 米，结果整片近区一只都刷不出来（实测少 2/12，
+           * 副本里少两只就是「怎么这么空」）。改成 size × 0.10 封顶 20：
+           * 世界图仍是 20（一点没变），副本图落到 14，够远又不至于空。 */
+          const safeD = Math.min(SPAWN_SAFE, (m.size || 240) * 0.10);
           let p = null;
           for (let k = 0; k < 8; k++) {
-            const q = randomPointInZone(z, 2.6);
-            if (Math.hypot(q.x - sp.x, q.z - sp.z) >= SPAWN_SAFE) { p = q; break; }
+            const q2 = randomPointInZone(z, 2.6);
+            if (Math.hypot(q2.x - sp.x, q2.z - sp.z) >= safeD) { p = q2; break; }
           }
           if (!p) continue;
           this.spawnEnemy(kind, p.x, p.z, CHANCE(D.elite));
@@ -1704,7 +2023,15 @@ const Game = {
       }
       return;
     }
-    const count = m.spawnCount || 14;
+    /* spawnCount === 0 是**有效值**：地下城的首领场只放守卫，不放杂兵。
+     * 原来的 `m.spawnCount || 14` 把 0 当成「没配」（0 是 falsy），
+     * 结果首领场凭空刷出 14 只小怪，站在首领旁边一起打玩家。
+     * 只有 undefined / null 才回退到旧图的默认 14。 */
+    /* [P01] 老图（没有 zone 配置）没有分区，补位器一律跳过 ——
+     * 它们的 spawnCount 只有 12~14，清完了靠出图重进本来就不痛苦。 */
+    this.spawnPlan = null;
+    const count = (m.spawnCount === undefined || m.spawnCount === null)
+      ? 14 : Math.max(0, m.spawnCount);
     /* [DIFF] 精英出现概率由难度决定：新手 3%，普通 8%，困难 16%，极难 26% */
     for (let i = 0; i < count; i++) {
       const ang = Math.random() * Math.PI * 2;
@@ -1714,8 +2041,67 @@ const Game = {
     }
   },
 
+  /* [P01] 地图内补位。
+   *
+   * 只在**野图**生效：安全区（村子）、raid 图、地下城、试炼场全部跳过 ——
+   * 那些地方要么不该有怪，要么「清干净」本身就是玩法（地下城通关判定）。
+   *
+   * 补位顺序是「离玩家最远的区优先」：玩家的视线在近处，远处补不会穿帮；
+   * 而且这样玩家往前走的时候，身后的区会慢慢填满，回头还能再打一轮。
+   *
+   * 一次补「缺口的一半」，上限 RESPAWN_BATCH 只 —— 不是一次补满：
+   * 一次补满会让整片图瞬间复活，看起来像刷怪作弊；补太少又追不上玩家
+   * 清场的速度（一秒一只），图会一直是空的。缺口按比例补能两头兼顾：
+   * 刚清完时补得最多，快接近 60% 时自动放缓。 */
+  updateRespawn(dt) {
+    if (!this.state || !this.spawnPlan || !this.spawnPlan.length) return;
+    const m = MAPS[this.state.mapId];
+    if (!m || m.safe || m.raid) return;
+    if (typeof Dungeon !== 'undefined' && Dungeon.active) return;
+    if (typeof Trial !== 'undefined' && Trial.active) return;
+    this.respawnCd = (this.respawnCd || 0) - dt;
+    if (this.respawnCd > 0) return;
+    this.respawnCd = RESPAWN_TICK;
+
+    let alive = 0, total = 0;
+    for (const e of this.enemies) if (!e.dead && !e.boss && !e.destructible) alive++;
+    for (const p of this.spawnPlan) total += p.cap;
+    if (!total || alive >= total * RESPAWN_FLOOR) return;
+
+    const pp = this.playerGroup.position;
+    const cand = [];
+    for (const p of this.spawnPlan) {
+      const d = Math.hypot(p.z.x - pp.x, p.z.z - pp.z);
+      if (d > RESPAWN_MIN_DIST) cand.push({ p, d });
+    }
+    if (!cand.length) return;
+    cand.sort((a, b) => b.d - a.d);
+
+    const gap = total * RESPAWN_FLOOR - alive;
+    const need = Math.max(1, Math.min(RESPAWN_BATCH, Math.ceil(gap * 0.5)));
+    const D = this.diff();
+    for (let i = 0; i < need; i++) {
+      const p = cand[i % cand.length].p;
+      const kind = (p.qb && p.qb.kinds && p.qb.kinds.length && Math.random() < 0.75)
+        ? p.qb.kinds[Math.floor(Math.random() * p.qb.kinds.length)]
+        : zonePickKind(p.z, m.spawns);
+      if (!kind) continue;
+      /* 落点仍然要离玩家足够远（同一个区可能有几十米长，区中心远不代表落点远） */
+      let pt = null;
+      for (let k = 0; k < 6; k++) {
+        const q2 = randomPointInZone(p.z, 2.6);
+        if (Math.hypot(q2.x - pp.x, q2.z - pp.z) >= SPAWN_SAFE) { pt = q2; break; }
+      }
+      if (!pt) continue;
+      this.spawnEnemy(kind, pt.x, pt.z, CHANCE(D.elite));
+    }
+  },
+
   spawnEnemy(kind, x, z, elite, levelOverride, bossId) {
-    const cfg = bossId ? BOSSES[bossId] : MONSTERS[kind];
+    /* [M18.2] 世界 Boss 是独立表（WORLD_BOSSES），但字段结构兼容 BOSSES，
+     * 所以这里只多一个回退分支，**不复制一份 spawnEnemy**。
+     * 顺序是 BOSSES 优先：万一将来 id 撞了，常驻首领的手感不能变。 */
+    const cfg = bossId ? (BOSSES[bossId] || (typeof WORLD_BOSSES !== 'undefined' ? WORLD_BOSSES[bossId] : null)) : MONSTERS[kind];
     if (!cfg) return null;
     const isBoss = !!bossId;
     /* [v1.0.5] 同屏普通怪硬上限：超过就不再生成（调用方都已处理 null）。
@@ -1726,7 +2112,7 @@ const Game = {
        * this.mobCap 由 applyPerfLevel 写入，没初始化时退回常量 */
       const cap = this.mobCap || (IS_TOUCH ? MOB_CAP_TOUCH : MOB_CAP_PC);
       let alive = 0;
-      for (const e of this.enemies) if (!e.dead && !e.boss) alive++;
+      for (const e of this.enemies) if (!e.dead && !e.boss && !e.destructible) alive++;
       if (alive >= cap) return null;
     }
     const mapLv = MAPS[this.state.mapId].level;
@@ -1775,6 +2161,10 @@ const Game = {
     /* [S5] 族群抗性：正数减伤、负数增伤；元素免疫在此覆盖对应一项 */
     const fam = MON_FAMILIES[cfg.family] || MON_FAMILIES.humanoid;
     const resist = Object.assign({}, fam.resist);
+    /* [M7] 首领自己的抗性覆盖族群表。八魔将的「隐藏弱点」就走这一条 ——
+     * 弱点必须写在 BOSSES 而不是 MON_FAMILIES：族群表是公开的，
+     * 图鉴会把 resist 显示给玩家，写进去等于把答案贴在门上。 */
+    if (cfg.resist) Object.assign(resist, cfg.resist);
     let wardElem = null;
     if (aff.warded) {
       wardElem = PICK(ELITE_WARD_ELEMS);
@@ -1826,11 +2216,22 @@ const Game = {
       pos: new THREE.Vector3(x, 0, z), dead: false,
       atkCd: RND(0.3, 1.4), windup: 0, anim: 0, hitFlash: 0,
       stun: 0, slow: 0, slowT: 0, poisonT: 0, poisonDmg: 0, venomT: 0,
+      /* [P0·毒] 蚀骨层数：**只有蚀骨毒雾的每一跳**会加，见 POISON_RULES。
+       * 别的来源（装备「中毒几率」、元素注入的毒附加）只刷新 DoT 计时器，
+       * 不碰这两个字段 —— 这就是「道士独占」在代码里的落地方式。 */
+      poisonN: 0, poisonNT: 0,
       dotT: 0, dotTick: 0, dotDmg: 0, dotElem: null, dotLabel: '',
+      /* [P3a] 圣印：sigil 元素命中盖上的印记（秒），圣系 4 组反应的状态位 */
+      sigilT: 0,
       phase: 0, patternCd: 3, tag: kind, facing: new THREE.Vector3(0, 0, 1),
       spawnPos: new THREE.Vector3(x, 0, z), active: !isBoss, hitT: 0,
       /* [S5] 精英词缀与族群抗性 */
       affixes, aff, resist, wardElem,
+      /* [M18.2] 护甲倍率从 cfg 落到实体上。`damageEnemy` 一直在读
+       * `e.armorMul`，但以前只有地下城词缀会写它；世界 Boss 的数据里
+       * 明写 1.0（不许再乘，见 data-worldboss.js 文件头），这里必须
+       * 真的传下去，否则「数据写了但运行时没读到」这种坑会一直留着。 */
+      armorMul: cfg.armorMul || 1,
       family: cfg.family || 'humanoid',
       /* [S16] 发声用的体型：audio.js 按 1/size^0.55 降调。
        * 精英 +12%、首领再 ×1.35，Boss 一吼就该比小怪沉一个八度。 */
@@ -1928,27 +2329,214 @@ const Game = {
      * 没带武器的半成品模型，radius 会严重偏小，玩家直接走进 Boss 身体（穿模）。 */
     const _fr = measureFootR(a.group);
     const _br = Math.max(0.5, _fr + 0.2);                 // +0.2 冗余，避免贴边穿模
-    e.radius = _br;
-    e.reach = Math.max(cfg.range || 2.2, _br * 1.26 + 0.75);
+    /* [M18.6] 世界 Boss 的模型是**真实米数**（烛九阴 44 米、翼展 60 米的鹏），
+     * 量出来的水平包围有十几米。直接当碰撞半径的话：
+     *   ① 玩家得站在 14 米外才不穿模，战士 reach 3.2 永远够不到；
+     *   ② 分离逻辑会把玩家一路往外推，看起来像「被一堵空气墙挡着」。
+     * 数据里的 `body.radius` 描述的是「主干有多粗」，不是「尾巴甩到多远」，
+     * 用它当上限。没有 `body.radius` 的（老模型）保持原样。 */
+    const wbCap = (cfg.body && cfg.body.radius) || 0;
+    e.radius = wbCap ? Math.min(_br, wbCap) : _br;
+    e.reach = Math.max(cfg.range || 2.2, e.radius * 1.26 + 0.75);
 
     this.enemies.push(e);
     return e;
   },
 
+  /* ============================================================
+   * [B16.3 / B16.5] 可破坏目标：图腾 / 卵囊 / 经幡 / 兽鼓
+   *
+   * **为什么复用 `enemies` 而不是新开一个数组**：自动锁定（`nearestEnemy`）、
+   * 点选、AoE 溅射、伤害结算（`damageEnemy` 的护甲 / 抗性 / 暴击 / 暴击字）
+   * 全都已经长在一条道上。新开数组等于把这些逐条再写一遍，
+   * 而它们每一处都是「改了这边忘了那边」的高发区。
+   *
+   * **但它不是怪**，所以四处必须显式放行（漏一处就是一个真 bug）：
+   *   ① `spawnEnemy` 的同屏上限 —— 否则图腾会挤掉真怪的名额，
+   *      表现是「场上只有图腾，怪不刷了」；
+   *   ② `updateEnemies` 的 AI 段 —— 图腾不追人、不挥刀、不吃击退；
+   *   ③ `onEnemyDeath` 的结算段 —— 打掉图腾不给经验、不给掉落、不算击杀。
+   *      图腾可以被 Boss 反复召唤，接上结算就是一条无限刷经验的路；
+   *   ④ 地上读秒环的回收 —— 走 `disposeTree`，和血条同一套。
+   *
+   * **读秒不用 `setTimeout`**：切图 / 死亡 / 重开都会漏，漏了的表现是
+   * 「回城之后图腾还在读秒并炸你一次」。计时器一律挂在实体上按帧递减。
+   * ============================================================ */
+
+  /* 模型：图腾是一根带箍的柱子，卵囊是一颗会跳的囊。
+   * 不塞进 `actors.js` 的 `buildMonster` —— 那两个不是生物，
+   * 骨架 / 行走摆臂 / 武器挂点全用不上，塞进去只会多两条永远走不到的分支。 */
+  _buildDestructibleModel(o) {
+    const g = new THREE.Group();
+    const stone = M(o.color, { rough: 0.96, flat: true });
+    const dark = M(o.color2, { rough: 1.0, flat: true });
+    const glow = M(0x000000, { emissive: o.glow, ei: 1.7 });
+    if (o.kind === 'sac') {
+      const b = mesh(sphGeo(0.62, 10), M(o.color, { rough: 0.5, transparent: true, opacity: 0.93 }), 0, 1.05, 0, g);
+      b.scale.set(1, 1.28, 1);
+      /* 囊上的脉络：三圈暗箍。没有它们就只是一个球，读不出「活的」 */
+      for (let i = 0; i < 3; i++) {
+        const r = mesh(torusGeo(0.5 - i * 0.05, 0.035, 6, 14), dark, 0, 0.68 + i * 0.38, 0, g);
+        r.rotation.x = Math.PI / 2;
+      }
+      mesh(sphGeo(0.16, 6), glow, 0, 1.1, 0, g);
+    } else {
+      mesh(cylGeo(0.34, 0.46, 0.28, 8), dark, 0, 0.14, 0, g);   // 底座
+      mesh(cylGeo(0.2, 0.26, 2.1, 8), stone, 0, 1.19, 0, g);    // 柱身
+      for (let i = 0; i < 3; i++) {                              // 三道箍
+        mesh(cylGeo(0.3, 0.3, 0.11, 8), dark, 0, 0.62 + i * 0.62, 0, g);
+      }
+      const head = mesh(coneGeo(0.34, 0.5, 6), stone, 0, 2.5, 0, g);
+      head.rotation.y = Math.PI / 6;
+      mesh(sphGeo(0.14, 6), glow, 0, 2.28, 0.24, g);            // 祭火
+    }
+    return g;
+  },
+
+  /* 立一个可破坏目标。返回实体（调用方拿它当"这一根"的句柄），
+   * 拿不到（没场景 / 超出兜底上限）返回 null —— 调用方必须处理 null。 */
+  spawnDestructible(opts) {
+    if (!this.scene || !this.playerGroup) return null;
+    /* 兜底：一张图同时存在 24 个以上就不再生。这是给「Boss 每 3 秒召一根」
+     * 这类写法留的安全阀 —— 没有它，一次设错参数就是满屏柱子和血条。 */
+    let n = 0;
+    for (const x of this.enemies) if (!x.dead && x.destructible) n++;
+    if (n >= 24) return null;
+
+    const o = Object.assign({
+      x: 0, z: 0, kind: 'totem', name: '图腾',
+      hp: 120, radius: 0.72,
+      color: 0x7d6a4e, color2: 0x3a2c1c, glow: 0xffb04a,
+      ttl: 0,                  // 0 = 不自己消失，只能打掉
+      onExpire: null,          // 读秒归零（该「惩罚」玩家了）
+      onDeath: null,           // 被玩家打掉（该「奖励」玩家了）
+      quiet: false
+    }, opts || {});
+
+    const g = this._buildDestructibleModel(o);
+    g.position.set(o.x, 0, o.z);
+    g.rotation.y = Math.random() * 6.28;
+    this.scene.add(g);
+    /* `parts.torso` 挂自己：`updateActorAnim` 的 die 分支要它才肯演「倒下」。
+     * 没有它，图腾死后会笔直站满 3 秒才消失，看起来像"没打死"。 */
+    const a = { group: g, mats: [], parts: { torso: g }, time: 0 };
+
+    const e = {
+      id: 'd' + Math.random().toString(36).slice(2),
+      kind: 'destructible',
+      cfg: { name: o.name, hp: o.hp, xp: 0, level: 1, model: o.kind },
+      actor: a, boss: false, elite: false,
+      destructible: {
+        ttl: o.ttl, maxTtl: o.ttl,
+        onExpire: o.onExpire, onDeath: o.onDeath,
+        ring: null, shatter: o.kind === 'sac' ? 0x9be07a : 0xffb04a
+      },
+      home: { x: o.x, z: o.z },
+      level: 1, hp: o.hp, maxHp: o.hp,
+      dmg: 0, spd: 0, range: 0, reach: 0, radius: o.radius,
+      pos: new THREE.Vector3(o.x, 0, o.z), dead: false,
+      atkCd: 999, windup: 0, anim: 0, hitFlash: 0,
+      stun: 0, slow: 0, slowT: 0, poisonT: 0, poisonDmg: 0, venomT: 0,
+      /* [P0·毒] 层数也要有：道士的毒雾能把它烧掉，引爆时它是合法目标 */
+      poisonN: 0, poisonNT: 0,
+      dotT: 0, dotTick: 0, dotDmg: 0, dotElem: null, dotLabel: '',
+      sigilT: 0, phase: 0, patternCd: 999, tag: 'destructible',
+      facing: new THREE.Vector3(0, 0, 1),
+      spawnPos: new THREE.Vector3(o.x, 0, o.z), active: true, hitT: 0,
+      affixes: [], aff: {}, resist: {}, wardElem: null,
+      armorMul: 1, family: 'construct', size: 1.4, name: o.name,
+      shield: 0, shieldCd: 0, summonStep: 0,
+      ai: { kind: 'idle', state: 'idle', t: 0, cd: 0 }
+    };
+    e.bar = makeHpBar(a.group, { gap: 0.22 });
+    /* 读秒环：「还剩几秒」用**缩放**表达比数字省眼，也不用每帧改 DOM */
+    if (o.ttl > 0) {
+      const ring = new THREE.Mesh(ringGeo(0.9, 1.12, 24), new THREE.MeshBasicMaterial({
+        color: 0xff7a3c, transparent: true, opacity: 0.5, side: THREE.DoubleSide, depthWrite: false
+      }));
+      ring.rotation.x = -Math.PI / 2; ring.position.y = 0.04;
+      a.group.add(ring);
+      e.destructible.ring = ring;
+    }
+    this.enemies.push(e);
+    if (!o.quiet && typeof UI !== 'undefined' && UI.log) {
+      UI.log(o.ttl > 0
+        ? (o.name + '立起 —— ' + Math.round(o.ttl) + ' 秒内打掉')
+        : (o.name + '立起 —— 打掉它'), 'bad');
+    }
+    return e;
+  },
+
+  /* 每帧：读秒 + 抖。**不移动、不追人、不挥刀** —— 它是场地的一部分。
+   * 快到期时抖起来：这是「你要来不及了」唯一不靠读数的提示。 */
+  _tickDestructible(e, dt) {
+    const a = e.actor, d = e.destructible;
+    if (d.ttl > 0) {
+      d.ttl = Math.max(0, d.ttl - dt);
+      if (d.ring) {
+        const k = d.maxTtl > 0 ? d.ttl / d.maxTtl : 0;
+        d.ring.scale.setScalar(Math.max(0.15, k));
+        d.ring.material.opacity = 0.26 + k * 0.34;
+      }
+      if (d.ttl <= 0) { this.destroyDestructible(e, true); return; }
+    }
+    const panic = (d.maxTtl > 0 && d.ttl < 1.6) ? (1.6 - d.ttl) : 0;
+    a.group.rotation.z = panic ? Math.sin((a.time || 0) * 34) * 0.05 * panic : 0;
+  },
+
+  /* 唯一的两条收场路径都走这里：`expired` 区分「到点」与「被打掉」。
+   * `onExpire` / `onDeath` 是**回调**，不是特效 —— 由 Boss 的状态机决定
+   * 到点之后干什么（放一波、回一次血、把诅咒解掉），这里只管把场上的东西收干净。 */
+  destroyDestructible(e, expired) {
+    if (!e || e.dead || !e.destructible) return false;
+    const d = e.destructible;
+    e.dead = true; e.hp = 0; e.deadT = 0;
+    e.actor.anim = 'die'; e.actor.moving = false;
+    if (e.bar) e.bar.group.visible = false;
+    if (d.ring) { disposeTree(d.ring); d.ring = null; }
+    const p = e.pos.clone();
+    const col = d.shatter;
+    FX.burst(new THREE.Vector3(p.x, 1.1, p.z), col, expired ? 12 : 26,
+      { speed: expired ? 2.2 : 4.2, size: 0.12, life: 0.8, gravity: -6, additive: true });
+    if (!expired) {
+      FX.ring(new THREE.Vector3(p.x, 0.15, p.z), 2.2, col, 0.55, 0.22);
+      this.shake = Math.max(this.shake, 0.12);
+      if (typeof SFX !== 'undefined' && SFX.die) SFX.die();
+    }
+    const cb = expired ? d.onExpire : d.onDeath;
+    if (typeof cb === 'function') cb(e, p);
+    return true;
+  },
+
   spawnBosses() {
     const m = MAPS[this.state.mapId];
     if (!m.bosses || !m.bosses.length) return;
-    for (const bid of m.bosses) {
-      const pos = BOSS_POS[bid] || [0, -30];
-      const b = this.spawnEnemy(null, pos[0], pos[1], false, BOSSES[bid].level, bid);
+    /* [M3] 落点走 bossPosOf(mapId, bid, idx)，不再直读老表。
+     * 老表只有 12 条坐标，且都是按老图（size 130~140）摆的；
+     * 新图 size 290~300、sanctum 位置完全不同，直接套老坐标会把首领
+     * 丢到祭坛外（zone-check 会报「落点在 sanctum 外」）。
+     * bossPosOf 的顺序是「本图覆盖 → 老坐标（若仍落在本图 sanctum 内）→ 按圆心推导」，
+     * 所以老图手感一个像素都没变。 */
+    m.bosses.forEach((bid, idx) => {
+      const cfg = BOSSES[bid];
+      if (!cfg) return;
+      const pos = (typeof bossPosOf === 'function')
+        ? bossPosOf(this.state.mapId, bid, idx)
+        : (BOSS_POS[bid] || [0, -30]);
+      const b = this.spawnEnemy(null, pos[0], pos[1], false, cfg.level, bid);
       if (b) {
-        b.dmg = BOSSES[bid].atk * (1 + BOSSES[bid].level * 0.09);
+        b.dmg = cfg.atk * (1 + cfg.level * 0.09);
+        /* [P02] 记下原始伤害。狂怒每次进阶段 ×1.15，脱战复位要退回去 ——
+         * 不记的话复位一次涨一档，反复拉远拉近能把首领养成一拳超人。 */
+        b.baseDmg = b.dmg;
         b.patternCd = RND(2.5, 4.5);
         /* [M12] 拴绳锚点：玩家跑出祭坛之后首领要回位，
          * 而不是顶着祭坛的硬墙原地抖（区域化之前圆环是软的，看不出来）。 */
         b.anchor = { x: pos[0], z: pos[1] };
+        /* [U9] 进场演出：收束环 + 光柱 + 碎星；不改 active，出手时机仍是原来的 */
+        if (typeof EnemyFX !== 'undefined') EnemyFX.bossArrive(b);
       }
-    }
+    });
   },
 
   /* 用本帧最终相机姿态校正所有血条朝向（详见 animate 里的说明） */
@@ -1957,6 +2545,52 @@ const Game = {
     for (const e of this.enemies) {
       if (e.bar && e.bar.group.visible) faceHpBar(e.bar, this.camera);
     }
+    /* [P2b·兽群] 灵兽也有血条了，同一帧一起校正 —— 漏掉的话它们的血条
+     * 会随模型转身被甩开（就是怪物血条当年那个 bug）。 */
+    for (const al of (this.allies || [])) {
+      if (al.bar && al.bar.group.visible) faceHpBar(al.bar, this.camera);
+    }
+  },
+
+  /* [B16] 原语层的两个「锚点」。它们的唯一用途是让 `beam` / `entity` 之类
+   * **不传目标时**有个合理默认 —— 不传就朝原点抽的话，所有追踪技都会对着
+   * 地图中心放，看起来像「技能坏了」，其实是少接了这一步。
+   * Boss 取当前血条归属的那只（`this.boss` 是 UI 用的引用，可能为 null）。 */
+  syncFx2Actors() {
+    if (typeof FX2 === 'undefined' || !FX2 || !FX2.actors) return;
+    const pg = this.playerGroup;
+    if (pg) FX2.actors.player.pos.set(pg.position.x, 0, pg.position.z);
+    const b = this.boss;
+    if (b && b.pos) FX2.actors.boss.pos.set(b.pos.x, 0, b.pos.z);
+  },
+
+  /* [B20] 技能演出层每帧的锚点同步。
+   * 它跟 FX2 不一样：技能是**玩家侧**的，需要玩家位置 + 朝向 + 敌人列表
+   * （吸怪 / 连锁要就近找目标，`ACT.player.pos` 不喂就是原点）。
+   * 敌人只传引用、不复制 —— 每帧复制 40 只的坐标纯属浪费。 */
+  syncSfxActors() {
+    if (typeof SKFX === 'undefined' || !SKFX || typeof SKFX.sync !== 'function') return;
+    const pg = this.playerGroup;
+    if (!pg) return;
+    SKFX.sync(pg.position, pg.rotation.y || 0, this.enemies, pg, null);
+  },
+
+  /* [B16] 把玩家从当前位置「拖」到 (x,z)，用 dur 秒。
+   * 这是**脚本位移**，不是击退：击退是一下子给速度然后由物理衰减，
+   * 而拖拽是「Boss 决定你去哪、多久到」—— 魂锁拖拽、吞咽、摆渡都用它。
+   *
+   * 为什么统一成一个入口：这四种效果如果各写一套位移，一定会出现
+   * 「其中两种能同时生效 → 位置在打架」。`this.pull` 只有一个槽，
+   * 后到的直接顶掉前一个（新的控制比旧的更该生效）。 */
+  dragPlayer(x, z, dur = 0.6) {
+    const pg = this.playerGroup;
+    if (!pg || this.dead) return null;
+    this.pull = {
+      x0: pg.position.x, z0: pg.position.z,
+      x1: x, z1: z,
+      t: 0, dur: Math.max(0.08, dur)
+    };
+    return this.pull;
   },
 
   /* ======================================================= */
@@ -1993,6 +2627,15 @@ const Game = {
        * 两者差一帧就会残留可见偏差（实测 dot≈0.955，约 34°）。放在这里等于用本帧
        * 最终相机姿态对齐，怪物转身与镜头移动都不会再让血条错位。 */
       this.faceHpBars();
+      /* [B16] 把「Boss 在哪、玩家在哪」同步给原语层：beam / entity 的默认目标就是
+       * 这两个点，不同步的话所有追踪类技能会朝原点抽。放在 FX.update 之前，
+       * 让本帧的演出用本帧的位置。 */
+      this.syncFx2Actors();
+      /* [B20] 技能演出层同样要在 FX.update 之前拿到本帧的位置与敌人列表 */
+      this.syncSfxActors();
+      /* [B21] 首领招式的「施法占用」逐帧递减（run() 里的 delay 是异步的，
+       * 它自己不会告诉任何人「这一招放完了没有」）。 */
+      if (typeof BossCast !== 'undefined') BossCast.update(dt);
       FX.update(dt);
       this.drawMinimapThrottled(raw);
       UI.updateSkillbar();
@@ -2404,23 +3047,78 @@ const Game = {
     /* [M12] 换区提示：进入新区域时报一次名，让「区域 + 走廊」结构被玩家看见 */
     this.tickZone(dt);
     this.updateAuras(dt);
+    /* [P2b] 职业兜底放在刷怪更新**之前**：本帧刚被怪贴脸时先重置脱战计时再判回血，
+     * 顺序反了会出现「怪还在打你、血条也在涨」。 */
+    this.updateClassPassive(dt);
     this.updateEnemies(dt);
+    /* [P01] 地图内补位：清完的区会慢慢长回来，任务不必出图重进 */
+    this.updateRespawn(dt);
     this.updateAllies(dt);
     /* [P2] 被动的周期触发（战意不灭 / 雷神 / 天师 / 九转还丹 / 涅槃火球） */
     if (typeof this.tickPassives === 'function') this.tickPassives(dt);
     /* [P2] 分支行为的帧级钩子（变身自动旋斩等） */
     if (typeof this.tickBeh === 'function') this.tickBeh(dt);
+    /* [P4] ⑤ 号位的常驻表现：法身跟随 / 刃势满层脉冲。
+     * 放在 tickBeh 之后 —— 法相的收窗与刃势的清零都发生在 tickBeh 里，
+     * 这一帧就该按**新状态**画，晚一帧会看到「窗口已经关了但法身还在呼吸」。 */
+    this.updateSkillForm(dt);
     this.updateProjectiles(dt);
     this.updateLoot(dt);
     this.updateSpawner(dt);
     /* [试炼] 波次状态机：读秒 / 清场判定 / 天雷与嗜血狂潮两条机制祝福。
      * 放在 updateSpawner 之后 —— 试炼场的 spawns 为空，那边会直接返回。 */
     if (typeof Trial !== 'undefined' && Trial.active) Trial.tick(dt);
+    /* [M5] 地下城：无常传送 / HUD 心跳。清场判定走 onKill，不在这里扫。 */
+    if (typeof Dungeon !== 'undefined' && Dungeon.active) Dungeon.update(dt);
+    /* [M18.2] 世界 Boss：每秒一次心跳（到点换人 + 倒计时）。
+     * 放在 Dungeon 之后、updateWorldAnims 之前 —— 它只改实体与 UI 文本，
+     * 不参与本帧的战斗结算，所以放在哪个位置都不影响手感，
+     * 但必须**在 updateEnemies 之后**：tick 里会 despawn 掉敌人，
+     * 在遍历中途改 enemies 数组会漏掉一只。 */
+    if (typeof WorldBoss !== 'undefined') WorldBoss.tick(dt);
+    /* 领域光环的淡入与旋转要按帧走（1 秒节流会一顿一顿）。
+     * 没有光环时内部第一行就判空返回，代价可以忽略。 */
+    if (typeof WorldBoss !== 'undefined') WorldBoss.anim(dt);
+    /* [M18.5] 领域机制：视野 / 毒 / 减速 / 吸力 / 攻速 / 小地图。
+     * 必须按帧走 —— 吸力是位移，1 秒节流会变成「瞬移一下」。
+     * 放在 anim 之后、`hp <= 0 → die()` 之前：
+     * 毒沼把人毒死的那一帧要能正常走死亡流程。 */
+    if (typeof WorldBoss !== 'undefined') WorldBoss.domainTick(dt);
+    /* [B16.6] 章节 Boss 的领域（毒沼 / 水天 / 吞噬 / 幻域）。
+     * 排在 `domainTick` **之后**：那个函数每帧都会把 `domSlow/domAspd` 归位，
+     * 而视野是两边共用的槽位，必须让"最后说话的是这里"。
+     * 写的是另外两个字段（`fieldSlow` / `fieldAspd`），所以互不覆盖 —— 见 domain.js 文件头。 */
+    if (typeof Domains !== 'undefined') Domains.tick(dt);
+    /* [M18.7] 场地效果（相柳毒沼 / 九尾狐狐火）每帧结算。
+     * 没有场地时 `tick` 第一行就返回，代价可忽略。
+     * 必须**在 die 判定之前**：站在毒沼里被毒死的那一帧要能走死亡流程。 */
+    if (typeof WBFight !== 'undefined') WBFight.tick(dt);
     this.updateWorldAnims(dt);
     this.updateInteract();
     this.tickAudio(dt);
     this.autoSave(raw);
     if (this.state.hp <= 0) this.die();
+  },
+
+  /* ---------------- 交火判定（唯一实现） ----------------
+   * 「半径内有没有正在打你的敌人」。两个消费方：音乐层（切战斗曲）与
+   * 职业兜底（脱战才回血）。**只留这一份** —— 两边各写一遍循环，口径就只
+   * 存在于注释里：谁改了一边、另一边会悄悄漂，最后变成「音乐还在战斗中、
+   * 血已经回起来了」这种自相矛盾。
+   *
+   * 半径 16 米：近战 2~3 米、远程怪在 10~12 米开火，取 16 米能把「正在打你」
+   * 的全包住，又不至于走到隔壁房间就进战斗曲。
+   * 注意它只回答「有没有」，**不含任何迟滞** —— 音乐那 4 秒 `_combatHold`
+   * 是切歌的缓冲，回血那 2.5 秒是 `regenDelay`，两件事各自记各自的账。 */
+  nearAggroEnemy(rad) {
+    const pp = this.playerGroup && this.playerGroup.position;
+    if (!pp) return false;
+    const r = rad || 16;
+    for (const e of this.enemies) {
+      if (!e || e.dead || !e.aggro) continue;
+      if (DIST2D(e.pos, pp) < r) return true;
+    }
+    return false;
   },
 
   /* ---------------- 音频心跳（S16） ----------------
@@ -2440,14 +3138,8 @@ const Game = {
     let mode = 'explore';
     if (this.boss && this.boss.active && !this.boss.dead) mode = 'boss';
     else {
-      /* 交火半径 16 米：近战 2~3 米、远程怪在 10~12 米开火，
-       * 取 16 米能把「正在打你」的全包住，又不至于走到隔壁房间就进战斗曲。 */
-      const pp = this.playerGroup.position;
-      let near = false;
-      for (const e of this.enemies) {
-        if (e.dead || !e.aggro) continue;
-        if (DIST2D(e.pos, pp) < 16) { near = true; break; }
-      }
+      /* 交火判定读 nearAggroEnemy（与职业兜底同一份实现，见那个方法上的注释） */
+      const near = this.nearAggroEnemy(16);
       /* 脱战要等 4 秒才淡回探索层：否则打死一只、下一只还没贴上来的空档
        * 音乐会来回抽两次，比不切还出戏 */
       if (near) this._combatHold = 4;
@@ -2455,6 +3147,37 @@ const Game = {
       if (this._combatHold > 0) mode = 'combat';
     }
     AudioSys.bgm(mode);
+  },
+
+  /* [P2b] 职业自带兜底（回春位返工的另一半）
+   *
+   * 回春位原来把「瞬回 8% / 每秒 2% 持续 6 秒」挂在台阶上 —— 这两条**嗑药就能解决**，
+   * 玩家为了活命被迫占一个动作条格位，而这一格既没职业特色、也挡住了「我想带个别的」。
+   * 现在格位改卖药品给不了的东西（护盾 / 减伤 / 驱散 / 无敌 / 自动触发），
+   * 「不放技能也活得下去」的底线就得由职业自己兜住 —— 否则返工只是把生存成本
+   * 从格位挪到药瓶，玩家照样得带一瓶。
+   *
+   * 与主动治疗的口径区分（别做成两份一样的）：
+   *   被动 = 脱战后的**缓慢续航**（不占手、回得慢、只在脱战后生效）
+   *   主动 = 战斗中的**爆发回血**（要按键、有 CD、能救急）
+   * 所以被动**不进 stats / 不进面板预览**，它是帧循环里的运行时账。
+   *
+   * 脱战判定读 `nearAggroEnemy(16)` —— 与音乐层**同一份实现**，不是「同一个数字
+   * 各写一遍」。自己另发明一套条件，会出现「音乐还在战斗中、血已经回起来了」。
+   * 但**不抄 `_combatHold` 那 4 秒**：音乐要等是因为切歌比切状态更刺眼，
+   * 而回血等 4 秒等于「脱战了还不敢停」—— 这里用 `regenDelay` 自己的 2.5 秒。 */
+  updateClassPassive(dt) {
+    const s = this.state;
+    if (!s || !s.stats || this.dead || !this.running) return;
+    const cp = (typeof BALANCE !== 'undefined' && BALANCE.classPassive) || {};
+    const me = cp[s.cls];
+    if (!me) return;
+    const near = this.nearAggroEnemy(16);
+    this._outT = near ? 0 : (this._outT || 0) + dt;
+    if (this._outT < (me.regenDelay || 0)) return;
+    if (s.hp >= s.stats.hpMax) return;
+    /* silent：每秒一次弹字会把屏幕刷满，血条自己在涨就够了 */
+    this.healPlayer(s.stats.hpMax * (me.regenPct || 0) / 100 * dt, true);
   },
 
   /* [M1/C5] 光环结算：装备词缀给的「以自身为中心」常驻范围效果。
@@ -2533,6 +3256,13 @@ const Game = {
     /* [S4] 套装内置冷却：磐石格挡反击 / 雷殛过载天雷 */
     this.riposteCd = Math.max(0, (this.riposteCd || 0) - dt);
     this.overchargeCd = Math.max(0, (this.overchargeCd || 0) - dt);
+    /* [P2b] 剑阵场地计时 + 阵内反击冷却。setInterval 只管「每一跳打谁」，
+     * 「阵还在不在」由这里管 —— 两条时间线不共用，改一个不会影响另一个。 */
+    this.swordCounterCd = Math.max(0, (this.swordCounterCd || 0) - dt);
+    if (this.swordField) {
+      this.swordField.t -= dt;
+      if (this.swordField.t <= 0) this.swordField = null;
+    }
     /* [S4] 还魂持续时间衰减 */
     if (this.reviveT > 0) this.reviveT = Math.max(0, this.reviveT - dt);
 
@@ -2540,6 +3270,13 @@ const Game = {
     if (this.playerSlowT > 0) {
       this.playerSlowT -= dt;
       if (this.playerSlowT <= 0) this.playerSlow = 0;
+    }
+    /* [M18.7] 定身倒计时。冲刺一并作废 —— 不然被定住的瞬间按一下冲刺
+     * 就跑了，「定住」变成一句空话（`dashT` 那段位移不读移速）。 */
+    if (this.rootT > 0) {
+      this.rootT -= dt;
+      if (this.rootT <= 0) this.rootT = 0;
+      this.dashT = 0;
     }
     // 中毒
     if (this.poisonT > 0) {
@@ -2554,7 +3291,29 @@ const Game = {
     // 护盾计时
     if (this.shield > 0) {
       this.shieldT = (this.shieldT || 0) - dt;
-      if (this.shieldT <= 0) { this.shield = 0; UI.log('玄冰护盾消散'); }
+      /* 文案不再写死「玄冰」—— 圣霜护盾（P3a 圣系反应）走的是同一个字段 */
+      if (this.shieldT <= 0) { this.shield = 0; UI.log('护盾消散'); }
+    }
+    /* [P3a] 解毒雾：脚下回血雾。每秒一跳，玩家 + 半径内的灵兽一起回。
+     * 用 silent 回血 —— 每跳都弹字的话，5 秒就是一串 +N 糊在屏幕中间。 */
+    if (this.healMist && this.healMist.t > 0) {
+      const hm = this.healMist;
+      hm.t = Math.max(0, hm.t - dt);
+      hm.tick = (hm.tick || 0) - dt;
+      if (hm.tick <= 0) {
+        hm.tick = 1;
+        const stM = this.state.stats;
+        const amount = stM.hpMax * hm.dps / 100;
+        if (this.state.hp < stM.hpMax) this.healPlayer(amount, true);
+        const pp0 = this.playerGroup.position;
+        for (const al of (this.allies || [])) {
+          if (!al || !(al.hp > 0) || al.hp >= al.maxHp) continue;
+          const ap = (al.actor && al.actor.group) ? al.actor.group.position : al.pos;
+          if (!ap || DIST2D(ap, pp0) > hm.r) continue;
+          al.hp = Math.min(al.maxHp, al.hp + amount);
+        }
+      }
+      if (hm.t <= 0) this.healMist = null;
     }
     if (typeof UI !== 'undefined') UI.renderBuffs();
   },
@@ -2564,12 +3323,43 @@ const Game = {
     const pg = this.playerGroup;
     this.updateAim();
 
+    /* [B16] 不可控位移：拉拽 / 吞咽 / 摆渡。
+     * 它和「定身」（`rootT`）不是一回事：定身是玩家**自己动不了**，
+     * 这个是**被别人拖着走**。所以两条不能合并成一个字段：
+     *   - 定身：速度归零，但朝向和攻击保留（原地挣扎）
+     *   - 拖拽：位置由 Boss 决定，期间不接受输入（不然玩家按方向键会跟它拔河）
+     * 也不读移速 / 减速：拖人的速度是 Boss 的属性，不是玩家的。
+     * 唯一的反制是**冲刺**（`dashT`）—— 一冲就挣开，否则「被拖走」等于宣判。 */
+    if (this.pull) {
+      if (this.dashT > 0) {
+        this.pull = null;                      /* 冲刺挣脱 */
+      } else {
+        const P = this.pull;
+        P.t = Math.min(P.dur, P.t + dt);
+        const k = P.dur > 0 ? P.t / P.dur : 1;
+        /* easeInOutQuad：两头慢中段快。匀速拖拽看起来像「贴图在滑」，
+         * 而真人被拽是「一顿一顿地被扯过去」。 */
+        const e = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
+        pg.position.x = P.x0 + (P.x1 - P.x0) * e;
+        pg.position.z = P.z0 + (P.z1 - P.z0) * e;
+        this.collideWorld(pg.position, 0.55, null);
+        const dx = P.x1 - P.x0, dz = P.z1 - P.z0;
+        if (dx || dz) pg.rotation.y = Math.atan2(dx, dz);   /* 背对施法者被拖走 */
+        this.lastMoveDir = { x: dx, z: dz };
+        if (P.t >= P.dur) this.pull = null;
+      }
+    }
+
     // Q/E 转视角
     if (this.keys['q']) this.camYaw += dt * 1.8;
     if (this.keys['e']) this.camYaw -= dt * 1.8;
 
     let ix = 0, iz = 0;
-    if (IS_TOUCH) {
+    /* [B16] 被拖拽时读键也是白读：位置在上一段已经定死了。
+     * 这里不清 `this.keys`，松开拖拽后玩家手里的方向键立刻生效（不该要求重按）。 */
+    if (this.pull) {
+      /* 什么都不读 */
+    } else if (IS_TOUCH) {
       // 摇杆：屏幕空间方向（上为负），与键盘 W/S 同向
       ix = Mobile.mx; iz = Mobile.my;
     } else {
@@ -2594,8 +3384,17 @@ const Game = {
       /* [M1] 行脚套·疾行：击杀后 3 秒移速 +30% */
       const rush = this.lootRushT > 0 ? 1.3 : 1;
       /* 冲刺期间的速度由 dashSpd 单独决定（见下方 dashT 分支），
-       * 这里不再叠 ×4.6 —— 原来按着方向键冲刺比松开冲刺快一截。 */
-      const spd = st.moveSpd * analog * (1 - (this.playerSlow || 0)) * rush;
+       * 这里不再叠 ×4.6 —— 原来按着方向键冲刺比松开冲刺快一截。
+       *
+       * [M18.5] 领域减速用**独立字段** `domSlow`，不并进 `playerSlow`：
+       * 并进去的话，出圈时要把它减掉，而「减掉多少」在敌人也给过减速时
+       * 是算不清的 —— 少减会留永久残留，多减会顺手抹掉冰霜减速。 */
+      const slow = Math.min(0.85, (this.playerSlow || 0) + (this.domSlow || 0) + (this.fieldSlow || 0));
+      /* [M18.7] 定身（九尾狐 P2「尾缚」）：速度直接归零，不是「减到最慢」。
+       * 不能复用上面的 `slow` —— 它封顶 0.85，拉满也还能走 15%，
+       * 玩家会以为「定身只是变慢」，而数据里 `root: 2.5` 承诺的是「定住」。
+       * 转身与 `moving` 保留：原地挣扎比整个人冻住更像被尾巴缠住。 */
+      const spd = (this.rootT || 0) > 0 ? 0 : st.moveSpd * analog * (1 - slow) * rush;
       pg.position.x += mx * spd * dt;
       pg.position.z += mz * spd * dt;
       this.lastMoveDir = { x: mx, z: mz };
@@ -2693,7 +3492,13 @@ const Game = {
       }
       return;
     }
-    const lim = MAPS[mid].size * 0.47;
+    /* `MAPS[mid]` 必须有兜底：mapId 来自存档 / 换图中途，可能是还没配好的图、
+     * 或者老档里已经删掉的 id。查不到就整帧抛「reading 'size'」——
+     * 那条异常在 animate 兜底里只留一句，玩家看到的是画面忽然卡住。
+     * 没边界配置时宁可**不钳制**（比崩一帧强），下一帧 mapId 正常了会自己回来。 */
+    const spec = MAPS[mid];
+    if (!spec || !(spec.size > 0)) return;
+    const lim = spec.size * 0.47;
     const dd = Math.hypot(pos.x, pos.z);
     if (dd > lim) { pos.x *= lim / dd; pos.z *= lim / dd; }
   },
@@ -2708,7 +3513,13 @@ const Game = {
     const aspdK = (this.aspdCritT > 0 ? 1 + (st.aspdOnCrit || 0) / 100 : 1)
       * (1 + 0.04 * ((this.frenzy && this.frenzy.n) || 0))
       /* [M1] 行脚套·疾行：击杀后 3 秒攻速 +15% */
-      * (this.lootRushT > 0 ? 1.15 : 1);
+      * (this.lootRushT > 0 ? 1.15 : 1)
+      /* [M18.5] 战意领域（刑天）：攻速 -15%。
+       * 走独立字段而不是 buffs —— 领域压制不该被「净化」驱散，
+       * 也不该和药水 / 技能的攻速加成互相覆盖。
+       * [B16.6] `fieldAspd` 是章节 Boss 的领域（同一套理由，分成两个字段
+       * 是因为世界 Boss 每帧都会把 `domAspd` 归位）。 */
+      * Math.max(0.4, 1 + ((this.domAspd || 0) + (this.fieldAspd || 0)) / 100);
     const cdBase = 0.72 / (st.aspd * wpSpeed * aspdK);
     this.atkCd = cdBase;
     this.attacking = 0.32;
@@ -2748,6 +3559,9 @@ const Game = {
         pos: new THREE.Vector3(origin.x + dir.x * 0.7, 1.1, origin.z + dir.z * 0.7),
         dir, speed: 24, color, radius: 0.22, hitRadius: 0.5, team: 'player',
         dmg: st.atk * 0.85, life: 1.4, elem: cc.projElem || 'none',
+        /* [P3b] 注入跟着这一发走：投射物飞出去的时候施法窗口早就关了，
+         * 所以创建时把 inj 复制到自己身上（与 p.tag 同一个用法） */
+        inj: this._elem,
         tag: 'proj',
         onHit: (e, p) => {
           const { dmg, crit } = this.rollDamage(p.dmg);
@@ -2807,12 +3621,33 @@ const Game = {
   },
 
   /* ---------------- 技能 ---------------- */
-  /* [S1] 技能实际消耗（装备的 costReduce 生效后）。技能栏显示与施放判定共用这一个入口，
-   * 否则会出现「按钮显示 12，实际扣 10」或者「明明够蓝却提示灵力不足」。 */
+  /* [P06] 技能实际消耗 = **灵力上限的百分比**，不是固定点数。
+   *
+   * 原来的写法 `sk.cost * (1 - costReduce)` 是固定点数：火球 10 点、
+   * 灵力上限 60 级 3700+ —— 一管蓝 370 发，用户的原话是「一个蓝条都用不完」。
+   * 根因不是数值调小了，是**口径错了**：消耗是常数、蓝量是线性成长，
+   * 比值只会越拉越大，40 级以后任何调参都救不回来。
+   *
+   * 现在 `SKILLS[x].cost` 的含义是「占上限的百分之几」（见 data-skills.js 抬头），
+   * 于是「一管蓝能放几发」是常数，不随等级/装备漂移。
+   *
+   * 三处乘区，顺序不能换：
+   *   ① 上限 × 百分比        —— 主项
+   *   ② × 技能等级成长        —— 1 级 1.00、10 级 1.54（和伤害的 +8%/级 对冲，
+   *                              否则技能升级等于白送续航）
+   *   ③ × (1 - costReduce)    —— 装备 / 传世的消耗缩减，封顶见 STAT_CAPS.costReduce
+   *
+   * 技能栏显示与施放判定共用这一个入口，否则会出现「按钮显示 12，实际扣 10」
+   * 或者「明明够蓝却提示灵力不足」。 */
   skillCost(sk) {
     const st = this.state && this.state.stats;
     if (!st) return sk.cost;      // 开始界面构建技能栏时还没有 state
-    return Math.max(1, Math.round(sk.cost * (1 - (st.costReduce || 0) / 100)));
+    const pct = (sk.cost || 0) / 100;
+    /* 技能等级：读不到（还没建 state.skills）时按 1 级算，不抛错 */
+    const lv = (typeof this.skillLevel === 'function') ? Math.max(1, this.skillLevel(sk.id)) : 1;
+    const lvMul = 1 + 0.06 * (lv - 1);
+    const cut = 1 - (st.costReduce || 0) / 100;
+    return Math.max(1, Math.round((st.mpMax || 0) * pct * lvMul * cut));
   },
 
   /* [S1] cdrFlat 是固定秒数缩减，优先级高于百分比；冷却不低于 0.5 秒防止无限连 */
@@ -2894,6 +3729,17 @@ const Game = {
     const z = zoneAt(mid, pp.x, pp.z);
     if (!z || z.id === this._zoneId) return;
     this._zoneId = z.id;
+    /* [M2] 任务区域：进区报一次名，并推进 reach 目标。
+     * 放在这里而不是另起一个 tick —— 换区检测已经做了 0.2 秒节流，
+     * 再写一份就是第二份口径，迟早会不一致。 */
+    if (typeof QuestSys !== 'undefined') {
+      const boost = QuestSys.zoneBoost(mid, z.id);
+      if (boost && UI.toast) UI.toast('任务区域 · ' + z.name + (boost.main ? '（主线）' : '（支线）'), 'good');
+      if (QuestSys.onZone(mid, z.id)) {
+        UI.updateQuestTrack();
+        this.updateQuestMarker();
+      }
+    }
     if (typeof UI === 'undefined' || !UI.toast) return;
     /* 首领区加个前缀，让「再往前就是 boss」这件事有预告感 */
     if (z.kind === 'boss') UI.toast('⚔ ' + z.name, 'bad');
@@ -2906,9 +3752,532 @@ const Game = {
   effSkillMods(id) {
     const sk = SKILLS[id];
     if (!sk) return null;
+    /* [P2b] 台阶修正：数量台阶（Lv3 / Lv7 各 +1 发）与它的单发递减。
+     * 与装备 / 分支 / 变体走同一个 merge —— 面板预览读的也是这个函数，
+     * 所以不会出现「卡上写三发、打出来一发」。 */
+    const tierMods = (typeof skillTierMods === 'function')
+      ? skillTierMods(id, this.skillLevel(id)) : null;
+    /* [P2c] 精通层（Lv15 起的三选一）：与上面四层同一个 merge、同一条加法通道。
+     * 放在最后只是为了读起来顺 —— mergeSkillMods 是纯加法，顺序不影响结果。 */
     return mergeSkillMods(this.skillMod(id),
       (typeof this.branchMods === 'function' ? this.branchMods(id) : null),
-      (typeof this.formMods === 'function' ? this.formMods(id) : null));
+      (typeof this.formMods === 'function' ? this.formMods(id) : null),
+      tierMods,
+      this.skillMasteryMods(id),
+      this.skillCapstoneMods(id));
+  },
+
+  /* ============================================================
+   * [P2b·刀客 ⑤] 兵形 / 刃势
+   *
+   * 这一位不是「一个行为键」：⑤ 位只有一只技能（`avatar`，剑神降世），而它的
+   * 新身份是**状态机** —— 三件东西叠在一起：
+   *
+   *   刀式（bladeStance）  三种，改的是自身属性，不是「施法时算一次」。
+   *                        走 recalc 的同一张 BUFF 表（bladeMods），所以与装备 /
+   *                        增益 / 套装的结算顺序完全一致，不用另开一条乘区。
+   *   刃势（bladeEdge）    ①②③④ 各用一次积 1 层（按**格位**记账，同一个位重复
+   *                        放不加），满 4 层才有出口。用位而不是用「命中次数」，
+   *                        是因为 ① 是左键、可以一秒点十次 —— 数次数等于白送。
+   *   断岳斩（finisher）   刃势满时 ⑤ 从「换式」切成「终结技」，形态随刀式：
+   *                        斩锋 / 镇岳 = 单体处决（底子 execute，残血翻倍），
+   *                        摧城 = 三段崩击（底子 skysfall，半径 5）。
+   *
+   * 三个「解锁」都读数据层（SKILL_TIER_EVO.avatar 的四个 beh 键），
+   * 不在这里写死「Lv3 解锁镇岳」—— 写死之后改台阶表就等于改了两处。
+   *
+   * 为什么刀式不进存档：它是「这一局怎么打」的临场选择，换图 / 重开都该回到
+   * 斩锋式；而存档 schema 现在是三条线争用的地方（见台账「卡点 2」），
+   * 为一个可一键切回的状态再加字段不划算。
+   * ============================================================ */
+
+  /* 兵形状态（刀式下标 + 刃势位掩码）。懒初始化：中途载入 / 老存档也能用 */
+  bladeState() {
+    if (!this.blade || typeof this.blade !== 'object') this.blade = { i: 0, mask: 0 };
+    if (typeof this.blade.i !== 'number' || !isFinite(this.blade.i)) this.blade.i = 0;
+    if (typeof this.blade.mask !== 'number' || !isFinite(this.blade.mask)) this.blade.mask = 0;
+    return this.blade;
+  },
+
+  /* ⑤ 的台阶行为（只读数据层；非刀客 / 还没领悟 剑神降世 时给空对象） */
+  bladeBeh() {
+    if (!this.state || this.state.cls !== 'warrior') return {};
+    if (!this.skillUnlocked('avatar')) return {};
+    const b = (typeof this.branchBeh === 'function') ? this.branchBeh('avatar') : null;
+    return b || {};
+  },
+
+  /* 已解锁的刀式数量：Lv1 一式（斩锋）、Lv3 两式（+镇岳）、Lv7 三式（+摧城） */
+  bladeStanceCount() {
+    const n = Math.round(this.bladeBeh().stanceUnlock || 0);
+    return 1 + CLAMP(n, 0, 2);
+  },
+
+  /* 当前刀式下标：0 斩锋 / 1 镇岳 / 2 摧城。台阶掉档（洗点）时回落到 0 */
+  bladeStance() {
+    const st = this.bladeState();
+    const max = this.bladeStanceCount() - 1;
+    if (st.i > max) st.i = 0;
+    return st.i;
+  },
+
+  /* 刀式对属性的修正 —— 当成一份「内置增益」，由 recalc 走同一张 BUFF_MUL/ADD 表。
+   * 摧城式的「无视 30% 护甲」走 armorPen（damageEnemy 里按比例削目标护甲），
+   * 那 +20% 的「对护甲目标」在 damageEnemy 里单独结算（要判目标有没有护甲）。 */
+  bladeMods() {
+    if (!this.state || this.state.cls !== 'warrior') return null;
+    /* 没领悟 剑神降世 就没有兵形 —— 否则 26 级之前白拿「伤害 +15%、攻速 +10%」 */
+    if (!this.skillUnlocked('avatar')) return null;
+    const i = this.bladeStance();
+    if (i === 1) return { dmgReduce: 20, block: 15 };   // 镇岳：减伤 20%、格挡 +15%
+    if (i === 2) return { armorPen: 30 };               // 摧城：无视 30% 护甲
+    return { dmgAll: 15, aspd: 10 };                    // 斩锋：伤害 +15%、攻速 +10%
+  },
+
+  /* 刃势：满 4 层。层数 = 掩码里置位的个数（不是「放过几次」） */
+  bladeEdgeMax() { return 4; },
+  bladeEdge() {
+    const m = this.bladeState().mask;
+    let n = 0;
+    for (let b = 0; b < this.bladeEdgeMax(); b++) if (m & (1 << b)) n++;
+    return n;
+  },
+  bladeFinisherOn() { return !!this.bladeBeh().edgeFinisher; },
+
+  /* 刃势记账：一次施放 → 一格位点亮。
+   * 只认 ①~④（`skillArchSlotOf` 返回 1~4），⑤ 自己与传世秘技不积 ——
+   * 否则「放 ⑤ 也攒刃势」会变成自己喂自己，一层刃势能无限续。
+   * 5 级之前不记：没有断岳斩，攒满了也没有出口，只会让玩家以为坏了。 */
+  bladeAddEdge(id) {
+    if (!this.state || this.state.cls !== 'warrior') return 0;
+    if (!this.bladeFinisherOn()) return 0;
+    const slot = (typeof skillArchSlotOf === 'function') ? skillArchSlotOf('warrior', id) : 0;
+    if (slot < 1 || slot > 4) return 0;
+    const st = this.bladeState();
+    const bit = 1 << (slot - 1);
+    if (st.mask & bit) return 0;                       // 同一个位重复放不加
+    st.mask |= bit;
+    const n = this.bladeEdge();
+    const pp = this.playerGroup.position;
+    FX.text(new THREE.Vector3(pp.x, 2.9, pp.z), '刃势 ' + n + '/' + this.bladeEdgeMax(), 'info', { life: 0.7 });
+    if (n >= this.bladeEdgeMax()) {
+      FX.text(new THREE.Vector3(pp.x, 3.3, pp.z), '刃势满 · 断岳斩', 'lv', { life: 1 });
+    }
+    if (typeof UI !== 'undefined' && UI.syncBladeBadge) UI.syncBladeBadge();
+    return 1;
+  },
+
+  /* 换式：斩锋 → 镇岳 → 摧城 → 斩锋，未解锁的式跳过。
+   * Lv9 之前换式会把刃势一起扔掉（这是那一级台阶真正买到的东西）；
+   * Lv9 起保留，于是「先攒满再换摧城打三段」才成立。 */
+  bladeCycle() {
+    const st = this.bladeState();
+    const max = this.bladeStanceCount() - 1;
+    const from = this.bladeStance();
+    st.i = from >= max ? 0 : from + 1;
+    if (!this.bladeBeh().edgeKeep) st.mask = 0;
+    this.recalc();
+    const pp = this.playerGroup.position;
+    const nm = this.bladeFormName(st.i);
+    /* 起手那一圈由 `vfxBladeForm` 的 cast 段播（同一个动作，形状在 impact 段），
+     * 这里不再自己画 ring —— 两个同心圆看起来像「放了两下」 */
+    FX.text(new THREE.Vector3(pp.x, 2.6, pp.z), nm, 'lv', { life: 0.9 });
+    UI.toast('兵形 · ' + nm);
+    return st.i;
+  },
+
+  /* 刀式名（从数据表取，面板 / 角标 / 提示三处共用同一个来源） */
+  bladeFormName(i) {
+    const slot = (typeof skillArchSlot === 'function') ? skillArchSlot('warrior', 5) : null;
+    const f = ((slot && slot.forms) || [])[i];
+    return f ? f.name : '刀式';
+  },
+
+  /* 动作条角标的读数：`斩锋式 · 刃势 2/4` */
+  bladeTip() {
+    return this.bladeFormName(this.bladeStance()) + ' · 刃势 ' + this.bladeEdge() + '/' + this.bladeEdgeMax();
+  },
+
+  /* ============================================================
+   * [P4] 三个 ⑤ 号位的签名表现
+   *
+   * P2b 已经把「机制」做完了（刀式 / 刃势 / 断岳斩、法相窗口、灵兽），
+   * 这一层只补「看得出来」：
+   *   刀客 → 刀气随刀式换形 + 刃势满层刀身发烫
+   *   法师 → 背后法身（法相窗口的实体读法）
+   *   道士 → 召唤阵 + 灵兽从地里升起来
+   *
+   * 三条纪律（与 vfx.js 同源，这里再钉一遍）：
+   *   1. **只播特效**：这一节不改数值、不判定、不写状态（唯一例外是
+   *      `_formAura` 自己的生命周期，那是「特效自己的状态」）。
+   *   2. **画多大 = 打多大**：半径不传就用 `SKILLS[id].radius`。
+   *   3. **换图要能作废**：一次性特效由 FX / VFX 的 gen 管；
+   *      常驻的只有法身一个，所以它必须自己管（见 updateFormAura）。
+   * ============================================================ */
+
+  /* 统一播放口。调用方只说「哪个技能、在哪」，配方与台阶由 data-vfx 决定。
+   *
+   * `color` 是**可选覆盖**（[P5b] 加的）：少数位在 case 里已经有一套自己的配色
+   * （太极的绿、解毒的青），配方默认按元素材质取色，那会把这个位的身份色冲掉。
+   * 传了就用传的 —— 优先级与 `FX.ring(pos, r, color)` 的老口径一致。 */
+  playSkillVfx(id, opts) {
+    const o = opts || {};
+    const sk = (typeof SKILLS !== 'undefined') ? SKILLS[id] : null;
+    const pos = o.pos || this.playerGroup.position;
+    const r = Number(o.radius);
+    const radius = (isFinite(r) && r > 0) ? r : ((sk && sk.radius) || 3);
+
+    /* [B20] 手搓实现优先。
+     * 37 只技能在 `src/sfx.js` 里有整套画法（来自 `docs/vfx-playground.html`），
+     * **有就不播配方** —— 否则同一发会被两套各画一遍，看起来是重影，
+     * 代价是双倍 draw call。
+     *
+     * 分段调用只认「起手」那一拍：sfx 的 v2 是**整只技能一次播完**（里面
+     * 自带 delay / seq 时序），命中段再补一次就是双播。`segments:['impact']`
+     * 那种调用在这里直接返回，不做事。 */
+    if (typeof SKFX !== 'undefined' && SKFX && typeof SKFX.has === 'function' && SKFX.has(id)) {
+      const segs = o.segments;
+      if (!segs || segs.indexOf('cast') >= 0) {
+        const aim = o.aim || pos;
+        /* **dir 口径转换**：游戏这边是方向向量（`THREE.Vector3` 或 `{x,z}`），
+         * 而实验室 SKFX 的 `c.dir` 是 **yaw 角度**（源里写的是
+         * `Math.atan2(aim.x - P.pos.x, aim.z - P.pos.z)`，17 处 `Math.sin(c.dir)`
+         * / `Math.cos(c.dir)` / `rotation.y = c.dir` 全按角度用）。
+         * 直接把向量塞进去 → `Math.sin(Vector3)` = NaN，火线 / 扇形 / 分身全部
+         * 画到 NaN 上：`thrust` 整只技能一个差异像素都没有，而 probe-sfx 只数
+         * 「有没有粒子上场」，NaN 粒子照样算数，所以 12/12 全绿也抓不到。
+         * 口径按 sin→x / cos→z 对齐，与 `SFX_FWD = (0,0,1)` 的 yaw=0 一致。 */
+        const d = o.dir || this.lastMoveDir || SFX_FWD;
+        const yaw = Math.atan2(d.x || 0, d.z || 0);
+        SKFX.play(id, {
+          x: pos.x, z: pos.z,
+          aim: aim,
+          dir: yaw,
+          tx: aim.x, tz: aim.z
+        });
+      }
+      return 1;
+    }
+
+    if (typeof VFX === 'undefined' || !VFX || typeof VFX.playFor !== 'function') return 0;
+    const ctx = {
+      pos: pos,
+      aim: o.aim || pos,
+      dir: o.dir || this.lastMoveDir || null,
+      radius: radius,
+      delay: o.delay || 0
+    };
+    if (o.color !== undefined) ctx.color = o.color;
+    if (o.tex !== undefined) ctx.tex = o.tex;
+    if (o.decal !== undefined) ctx.decal = o.decal;
+    if (o.segments) ctx.segments = o.segments;
+    return VFX.playFor(id, ctx);
+  },
+
+  /* 刀气按刀式换形（P4 · 兵形）。
+   * 形在 `tilt` 不在 `n`：斩锋细长 / 镇岳立起半圆 / 摧城三道短粗 —— 见 data-vfx
+   * 的 `BLADE_FORM_VFX`。这里不判断「有没有解锁」，`bladeStance()` 已经是合法值。 */
+  bladeFormVfx(stance) {
+    if (typeof VFX === 'undefined' || !VFX || typeof vfxBladeForm !== 'function') return 0;
+    const st = (stance == null) ? this.bladeStance() : stance;
+    /* 换式固定按基础段播：5 / 10 级那两道是**终结技**的规格（冲击 + 星火），
+     * 换式是 1.2 秒一次的小动作，跟着满级播就是「每两秒炸一次」 */
+    const rec = vfxBladeForm(st);
+    if (!rec) return 0;
+    const pp = this.playerGroup.position;
+    return VFX.play(rec, {
+      pos: pp, aim: pp, dir: this.lastMoveDir || null, radius: 3.2, elem: 'phys'
+    });
+  },
+
+  /* 断岳斩的刀气：只取刀式那一段（`vfxBladeImpact`）。
+   * 终结技自己已经有动作 / 前摇 / 三段震，不需要再叠一遍换式的起手圈。 */
+  bladeFinisherVfx(stance) {
+    if (typeof VFX === 'undefined' || !VFX || typeof vfxBladeImpact !== 'function') return 0;
+    const rec = vfxBladeImpact(stance == null ? this.bladeStance() : stance);
+    if (!rec) return 0;
+    const pp = this.playerGroup.position;
+    return VFX.play(rec, {
+      pos: pp, aim: pp, dir: this.lastMoveDir || null, radius: 3.4, elem: 'phys'
+    });
+  },
+
+  /* 刃势满层：刀身在发烫。
+   * 不做常驻 mesh —— 那要跟着人走、要管换图、要管死亡，三条都是坑；
+   * 0.6 秒一次的脉冲在 51° 俯角下已经足够读出「满了、该放终结技了」。 */
+  bladeEdgeVfx(dt) {
+    const s = this.state;
+    if (!s || s.cls !== 'warrior' || !this.bladeFinisherOn()) { this._edgeFxT = 0; return; }
+    if (this.bladeEdge() < this.bladeEdgeMax()) { this._edgeFxT = 0; return; }
+    this._edgeFxT = (this._edgeFxT || 0) + dt;
+    if (this._edgeFxT < 0.6) return;
+    this._edgeFxT = 0;
+    const pp = this.playerGroup.position;
+    FX.ring(new THREE.Vector3(pp.x, 0.2, pp.z), 1.2, 0xffd166, 0.34, 0.08);
+    if (typeof FXK !== 'undefined' && FXK && typeof FXK.spr === 'function') {
+      FXK.spr(new THREE.Vector3(pp.x, 1.5, pp.z), {
+        n: 5, tex: 'spark', color: 0xffe6a8, size: 0.16, life: 0.42,
+        speed: 0.7, spread: 0.45, up: 0.9, grav: -1.2, additive: true
+      });
+    }
+  },
+
+  /* ---------------- 法相 · 法身 ----------------
+   * 为什么是 Sprite 而不是 FXKit.spr：`spr` 是一簇**一次性**粒子，要撑 10 秒
+   * 就得每帧重发（10 秒 × 60 帧 = 600 次绘制）；Sprite 一次 draw call 挂全程，
+   * 还能跟着人走、随时换色（换相）。这也是方案 §7.2 写的「一个大号 billboard」。 */
+  _mkFormAura(color) {
+    if (typeof THREE === 'undefined') return null;
+    /* 贴图：人形剪影（头光 + 肩线 + 下摆），与法相图标同一套画法。
+     * 没有 FX.formTexture 时退回图集里的 rune —— 少一层好看的，但不能没有。 */
+    let map = null;
+    if (typeof FX !== 'undefined' && typeof FX.formTexture === 'function') map = FX.formTexture();
+    else if (typeof FXK !== 'undefined' && FXK && FXK.cellTex) map = FXK.cellTex('rune');
+    const mat = new THREE.SpriteMaterial({
+      map: map, color: color, transparent: true, opacity: 0,
+      depthWrite: false, blending: THREE.AdditiveBlending, fog: false
+    });
+    const sp = new THREE.Sprite(mat);
+    /* 2:3 的竖长图，按比例给尺寸 —— 拉变形会让「人形」立刻读不出来 */
+    sp.scale.set(4.0, 6.0, 1);
+    sp.renderOrder = 7;
+    if (this.scene) this.scene.add(sp);
+    this._formAura = { sp, mat, t: 0, out: 0 };
+    return this._formAura;
+  },
+
+  /* 摘掉法身。**只 dispose 材质，不 dispose map** ——
+   * 贴图来自 `fxCellTexture` 的全局缓存，dispose 掉会把其它特效的贴图一起废掉。 */
+  _dropFormAura() {
+    const f = this._formAura;
+    this._formAura = null;
+    if (!f) return;
+    if (f.sp && this.scene) this.scene.remove(f.sp);
+    if (f.mat) f.mat.dispose();
+  },
+
+  updateFormAura(dt) {
+    const on = (typeof this.elemAuraOn === 'function') && this.elemAuraOn();
+    let f = this._formAura;
+    if (on) {
+      const k = this.elemAuraKind();
+      if (!f) f = this._mkFormAura(k.color);
+      if (!f || !f.sp) return;
+      f.out = 0;
+      f.t += dt;
+      /* 换相：颜色直接改、不做渐变 —— 法身是「相」，换相就该当场换 */
+      if (f.mat.color.getHex() !== k.color) f.mat.color.setHex(k.color);
+      const pp = this.playerGroup.position;
+      const d = this.lastMoveDir || { x: 0, z: 1 };
+      /* 站在**身后** 1.2 米：法相是「相在身后」，站到身前会挡住自己的人 */
+      f.sp.position.set(pp.x - d.x * 1.2, 2.5, pp.z - d.z * 1.2);
+      /* 入场 0.3 秒淡入，之后呼吸。上限压到 0.32 —— 加法混合在暗场景里
+       * 0.3 已经很亮，再高就把自己的角色盖住了（这层是背景，不是主体）；
+       * 但也不能更低：白天的桃源村地面本身就亮，0.24 实测几乎读不出来。 */
+      const fade = Math.min(1, f.t / 0.3);
+      f.mat.opacity = fade * (0.29 + Math.sin(f.t * 2.2) * 0.05);
+      const s = 0.9 + fade * 0.1;
+      f.sp.scale.set(4.0 * s, 6.0 * s, 1);
+      return;
+    }
+    if (!f) return;
+    /* 收窗：0.3 秒淡出再摘。直接 remove 是「啪」地消失，
+     * 玩家会读成「被打断了」—— 收窗和被打断必须是两种读法。 */
+    f.out += dt;
+    if (f.mat) f.mat.opacity = Math.max(0, f.mat.opacity - dt * 1.2);
+    if (f.out >= 0.3) this._dropFormAura();
+  },
+
+  /* ============================================================
+   * [U5 / V4] 常驻武器附魔 —— 数据声明 → 玩家状态 → FXK 常驻层
+   *
+   * 为什么这里必须每帧同步、而**不是**在配方里写一条 `enchant` 指令：
+   * U1 定了双演出层以 SKFX 为准，37 只技能在 `Game.playSkillVfx` 里
+   * 命中 SKFX 后立刻 return，配方层在正常游戏中一次都不会播。
+   * 把附魔挂在 `VFX.playFor` 上会写成「契约全绿但游戏里一个像素都没有」。
+   * 所以 `data-vfx.js` 的 Lv10 patch 只是「这个位到 10 级有附魔」的声明，
+   * 真正上场的是这里按**有效等级 + 注入包**算出来的常驻状态。
+   *
+   * 三条口径：
+   *   1. 等级看 `skillLevel(id)`（含装备 / 词缀 / 传世的 +N），不看投入点数；
+   *   2. 元素走 `skillInjectPack(id)` 的主 / 副（70-30），没注入退回
+   *      `SKILLS[id].elem`，再没有就 `phys` —— 不另建元素→特效分支表；
+   *   3. 按技能条 ①→⑤ 取**第一个**满足的位。常驻外观必须稳定，
+   *      跟着「上一次施法」换色会变成每放一招闪一下。
+   *
+   * `FXK.enchant` 内部比对 sig，状态没变时只标「还在」、不重建 mesh；
+   * 换图 / 换武器导致 mount 变化时它自己会重建，不用这里管。
+   * ============================================================ */
+  enchantState() {
+    const s = this.state;
+    if (!s || typeof this.skillBar !== 'function' || typeof vfxRecipe !== 'function') return null;
+    const bar = this.skillBar();
+    for (let i = 0; i < bar.length; i++) {
+      const id = bar[i];
+      if (!id || !this.skillUnlocked(id)) continue;
+      const lv = this.skillLevel(id);
+      if (lv < 10) continue;                       // Lv10 终极台阶才常开
+      const rec = vfxRecipe(id, lv);
+      if (!rec || !rec.enchant) continue;          // 数据层的声明
+      const pack = (typeof this.skillInjectPack === 'function') ? this.skillInjectPack(id) : null;
+      const elem = (pack && pack.key) || (SKILLS[id] && SKILLS[id].elem) || 'phys';
+      return {
+        elem: elem, sub: (pack && pack.sub) || null,
+        subAmt: (pack && pack.subAmt) || 0, src: id, lv: lv, slot: i + 1
+      };
+    }
+    return null;
+  },
+
+  updateEnchant() {
+    if (typeof FXK === 'undefined' || !FXK || typeof FXK.enchant !== 'function') return;
+    const st = this.enchantState();
+    if (!st) { FXK.enchant(null); return; }
+    const a = this.actor;
+    /* 优先挂装备武器的 holder（跟着真实武器轮廓），其次初始建模的武器，
+     * 最后才退到手骨骼 —— 盒子人没有武器 mesh 时也不能整只技能没特效。 */
+    const mount = a
+      ? ((a.mounts && a.mounts.weapon) || a.weapon ||
+         (a.parts && a.parts.weaponHand) || null)
+      : null;
+    if (!mount) { FXK.enchant(null); return; }
+    FXK.enchant({ elem: st.elem, sub: st.sub, subAmt: st.subAmt, mount: mount });
+  },
+
+  /* 每帧的 ⑤ 号位表现总闸（在 tickBeh 之后调用，位置与 updateAuras 同源） */
+  updateSkillForm(dt) {
+    this.updateFormAura(dt);
+    this.bladeEdgeVfx(dt);
+    this.updateEnchant();
+  },
+
+  /* 召唤阵：道士 ⑤ 与三只召唤技能共用。
+   * 用 `FX.field`（领域）而不是撒一圈粒子 —— 阵要有**边界和柱子**，
+   * 那是「门」的读法；一圈粒子只会像「地上有个亮圈」。 */
+  summonGate(pos, color) {
+    if (typeof FX === 'undefined' || typeof FX.field !== 'function') return;
+    const p = pos || this.playerGroup.position;
+    FX.field(new THREE.Vector3(p.x, 0, p.z + 0.8), {
+      kind: 'sigil', r: 1.9, life: 1.15, color: color || 0x9affd0, opacity: 0.72, spin: 0.7
+    });
+  },
+
+  /* ============================================================
+   * [P2b·法师 ⑤] 元素法相
+   *
+   * 这一位与刀客 ⑤ 是同一个套路的两副面孔：都不是「按一下打一发」，而是
+   * **开一个窗口**，窗口里改的是「其他技能长什么样」。
+   *
+   *   法相（elemAura.t）  10 秒窗口。窗口内自身全抗 +20（走 addBuff 的
+   *                      同一张 BUFF 表，所以与装备 / 增益的结算顺序一致）。
+   *   主元素（elemAura.elem） 火 / 冰 / 雷。窗口里再按一次 ⑤ 是**换相**，
+   *                      不是重新开窗 —— 所以两档冷却完全不同（见 case）。
+   *   元素强度（elemAura.mul） 开窗那一刻把 spow 快照下来。窗口内换装 /
+   *                      换相都不该把已经开着的那一发悄悄改强或改弱。
+   *
+   * 为什么强度要快照：rider 是在 damageEnemy 里按「每一次命中」结算的，
+   * 那时手上没有 spow（命中可能来自 1 秒前放出去的火球）。不快照就只能
+   * 在读到的位置现算一遍技能修正 —— 等于把 effSkillMods 复制第二份。
+   *
+   * 不进存档：和刀式同理，是「这一局怎么打」的临场状态，重开回到火相；
+   * 存档 schema 现在是三条线争用的地方（台账「卡点 2」），不值得为它加字段。
+   * ============================================================ */
+
+  /* 法相运行时状态。懒初始化：中途载入 / 老存档 / 老角色也能用 */
+  elemAuraState() {
+    if (!this.elemAura || typeof this.elemAura !== 'object') {
+      this.elemAura = { t: 0, elem: 0, mul: 1, rider: false };
+    }
+    const a = this.elemAura;
+    if (typeof a.t !== 'number' || !isFinite(a.t)) a.t = 0;
+    if (typeof a.elem !== 'number' || !isFinite(a.elem)) a.elem = 0;
+    if (typeof a.mul !== 'number' || !isFinite(a.mul) || a.mul <= 0) a.mul = 1;
+    a.elem = ((a.elem | 0) % ELEM_AURA_KINDS.length + ELEM_AURA_KINDS.length) % ELEM_AURA_KINDS.length;
+    return a;
+  },
+
+  /* ⑤ 的台阶行为（只读数据层；非法师 / 还没领悟 元素法相 时给空对象） */
+  elemAuraBeh() {
+    if (!this.state || this.state.cls !== 'mage') return {};
+    if (!this.skillUnlocked('elementavatar')) return {};
+    const b = (typeof this.branchBeh === 'function') ? this.branchBeh('elementavatar') : null;
+    return b || {};
+  },
+
+  elemAuraOn() { return this.elemAuraState().t > 0; },
+
+  /* 当前主元素（面板 / 角标 / 提示三处共用同一个来源） */
+  elemAuraKind() {
+    return ELEM_AURA_KINDS[this.elemAuraState().elem] || ELEM_AURA_KINDS[0];
+  },
+
+  /* 元素强度 = 开窗快照 × 被动「法身」（+12%/级）。
+   * 被动在命中时现读，所以窗口开着的时候点法身会立刻变强 ——
+   * 与「装备换了就重算」是同一条口径。 */
+  elemRiderMul() {
+    const a = this.elemAuraState();
+    const pm = (typeof this.formElemMul === 'function') ? this.formElemMul() : 1;
+    return a.mul * pm;
+  },
+
+  /* 动作条角标的读数：`火法相 · 剩余 7 秒` / `火法相 · 未开启` */
+  elemTip() {
+    const a = this.elemAuraState();
+    const nm = this.elemAuraKind().name;
+    return a.t > 0 ? nm + ' · 剩余 ' + Math.ceil(a.t) + ' 秒' : nm + ' · 未开启';
+  },
+
+  /* [P2c] 精通层三选一。
+   *
+   * 门槛看**有效等级**（skillLevel，含装备 / 词缀 / 传世的 +N），不看投入 ——
+   * 11~20 是词条层，玩家点不出来，按投入算这一层永远开不了。
+   *
+   * 强度走 mods 通道（dmg / cd / cost），与装备 / 分支 / 台阶**同一个合并口**
+   * （effSkillMods）。所以面板预览、castSkill、召唤的 dmgMul 全都自动同口径，
+   * 不需要在每个 case 里再补一次。 */
+  skillMastery(id) {
+    return (typeof skillMasteryIdx === 'function') ? skillMasteryIdx(this.skillState(), id) : 0;
+  },
+
+  /* 已开启时返回那一条的 mods，否则 null（没到 15 级不该有加成） */
+  skillMasteryMods(id) {
+    if (typeof skillMasteryOn !== 'function') return null;
+    if (!skillMasteryOn(this.skillLevel(id))) return null;
+    const opt = (typeof skillMasteryOpt === 'function') ? skillMasteryOpt(this.skillMastery(id)) : null;
+    return opt ? opt.mods : null;
+  },
+
+  /* [P2c] 精通层最终阶（Lv20「归一」）：三条精通各 60% 同时生效。
+   * 与 15 级选的那条**叠加**（两份 mods 在 effSkillMods 里相加），不是替换 ——
+   * 20 级是「再进一步」，不该把玩家 15 级的选择抹掉。
+   * 门槛同样看有效等级：20 级只能靠装备 / 词缀堆上去。 */
+  skillCapstoneMods(id) {
+    if (typeof skillCapstoneOn !== 'function') return null;
+    if (!skillCapstoneOn(this.skillLevel(id))) return null;
+    return (typeof skillCapstoneBonus === 'function') ? skillCapstoneBonus() : null;
+  },
+
+  /* 选 / 换精通。免费、随时可换 —— 与变体同一条规矩（换打法不该收费）。
+   * 但**只有开启后**才能选：没到 15 级就点，等于让玩家提前把选择用掉。 */
+  setSkillMastery(id, idx) {
+    if (!SKILLS[id]) return { ok: false, msg: '技能不存在' };
+    if (idx !== 0 && idx !== 1 && idx !== 2) return { ok: false, msg: '精通条目不存在' };
+    if (!this.skillUnlocked(id)) return { ok: false, msg: '尚未领悟' };
+    const lv = this.skillLevel(id);
+    if (!(typeof skillMasteryOn === 'function' && skillMasteryOn(lv))) {
+      return {
+        ok: false,
+        msg: '「' + SKILLS[id].name + '」等阶 ' + lv + '，需 ' + SKILL_TIERS.masteryAt
+          + ' 级方可精通（11~20 级来自装备 / 词缀，不占技能点）'
+      };
+    }
+    const opt = skillMasteryOpt(idx);
+    if (!opt) return { ok: false, msg: '精通条目不存在' };
+    const sk = this.skillState();
+    const e = sk[id] || (sk[id] = { lv: 1, v: 0 });
+    e.m = idx;
+    if (typeof this.recalc === 'function') this.recalc();
+    return { ok: true, msg: '精通 · ' + opt.name };
   },
 
   /* 技能落点：ground / enemy 自动夹在施法距离内，dir 用当前朝向，self 以自身为中心 */
@@ -2925,7 +4294,10 @@ const Game = {
       return out;
     }
     if (sk.cast === 'enemy') {
-      const maxR = range || 99;
+      /* [P10] 原来是 `range || 99`：castRange 为 0 / 未写时自动锁敌半径变 99 米。
+       * 当前没有技能触发（全都显式写了），但这是「以后新增技能必踩的坑」——
+       * 忘写一个 castRange 就等于给了一个全图锁敌。没射程就是不能自动锁敌。 */
+      const maxR = range > 0 ? range : 0;
       let target = this.nearestEnemy(aim, maxR);
       if (target && DIST2D(target.pos, pp) > maxR) target = null;
       if (!target) target = this.nearestEnemy(pp, maxR);
@@ -2935,6 +4307,37 @@ const Game = {
     else if (dist < 0.6) out.copy(pp);
     out.y = 0;
     return out;
+  },
+
+  /* [P10] 射程够不够得着。返回 null = 可以放，返回字符串 = 拒绝原因。
+   *
+   * 为什么需要它：射程原来只用来**裁剪落点** —— 站在 30 米外点火球，落点被夹到
+   * 12 米、技能照放（扣蓝、进 CD），只是打空；`cast:'enemy'` 还会自动改锁最近的
+   * 敌人。于是「射程」对玩家不构成任何约束，卡位远程磨死首领就是这么来的。
+   * 现在射程是**否决条件**：够不着就放不出来，不扣蓝、不进 CD、不触发结算。
+   *
+   * 三种 cast 判的东西不一样，别图省事写成一个：
+   *   · self        —— 不判（自身范围技能没有「太远」这回事）
+   *   · dir         —— 判**最近敌人**，不是点击位置：朝朝向飞出去的技能，
+   *                    玩家点哪儿都无所谓，真正决定「打不打得到」的是最近的怪。
+   *                    附近一个怪都没有时**放行**（空放是玩家自己的事，
+   *                    连按都按不出来会让人以为技能坏了）。
+   *   · ground/enemy—— 判落点距离（enemy 的落点本来就会被锁到敌人身上）。
+   * 5% 容差：落点是从屏幕射线反算的，和真实距离差一点点很正常。 */
+  castRangeFail(sk) {
+    const R = sk.castRange || 0;
+    if (sk.cast === 'self' || R <= 0) return null;
+    const pg = this.playerGroup;
+    if (!pg) return null;
+    const pp = new THREE.Vector3(pg.position.x, 0, pg.position.z);
+    if (sk.cast === 'dir') {
+      const e = this.nearestEnemy(pp, R * 3);
+      if (!e) return null;
+      return DIST2D(e.pos, pp) > R * 1.05 ? '距离太远。' : null;
+    }
+    const aim = this.aimPoint;
+    if (!aim) return null;
+    return DIST2D(pp, aim) > R * 1.05 ? '距离太远。' : null;
   },
 
   /* 施法瞬间在地上画一条方向线 + 落点圈，让玩家看清本次判定的方向和最远距离 */
@@ -2967,20 +4370,34 @@ const Game = {
      * 与旧机制变体都不再参与 —— 两套并存会互相叠乘，数值直接失控。
      * 口径收敛在 effSkillMods 里，面板预览与测试都读同一个函数。 */
     const smod = this.effSkillMods(id);
-    const lvMul = 1 + SKILL_LV_STEP * (Math.max(1, this.skillLevel(id)) - 1);
+    /* [P2] 等级倍率：唯一口径 skillLvMul（1~10 每级 8% / 11~15 4% / 16~20 2%）。
+     * 以前这里是「1 + 每级固定 8%」，20 级会到 2.52 倍；
+     * 面板预览与这里必须读同一个函数，否则「卡上 2.02 倍、打出来 2.52 倍」。 */
+    const lvMul = (typeof skillLvMul === 'function')
+      ? skillLvMul(this.skillLevel(id))
+      : 1;
     /* 常驻（变体）：自动施放的那一次按半数值结算 —— 「不用按」的代价就在这里，
      * 否则等于白送一倍强度。 */
     const autoCast = !!this._autoCast;
     let spow = (smod ? 1 + (smod.dmg || 0) / 100 : 1) * lvMul * (autoCast ? 0.5 : 1);
     const srad = smod ? 1 + (smod.radius || 0) / 100 : 1;
-    const sextra = smod ? (smod.count || 0) : 0;
+    /* [P2b] 数量来源汇总（台阶 + 装备 + 天赋 + 取向 + 变体），上限读 skillCountCap()。
+     * 负数要留着：取向「聚雷」就是 count −1（少跳一次换伤害），
+     * 所以只截上界，不夹到 0。 */
+    const cntCap = (typeof skillCountCap === 'function') ? skillCountCap() : 8;
+    const sextra = smod ? Math.min(cntCap, smod.count || 0) : 0;
     /* v1.1.9：技能持续时长修正（青符 4 件：毒雾 +3 秒） */
     const sdur = smod ? (smod.dur || 0) : 0;
     /* [S1] 技能消耗降低；传世还能再减该技能的消耗。
      * [P3] 常驻（变体）自动施放不收资源 —— 它已经用「数值减半」付过账了，
      * 再扣资源会变成背包里的隐形扣血。 */
-    const cost = autoCast ? 0
+    const cost = (autoCast || this._freeCast) ? 0
       : Math.max(1, Math.round(this.skillCost(sk) * (1 - (smod && smod.cost ? smod.cost : 0) / 100)));
+    /* [P10] 射程硬拒绝：够不着就别放。放在扣蓝之前 —— 被拒绝的施法
+     * 不扣蓝、不进 CD、不触发任何后续结算，只给一句提示。
+     * 原来射程只裁剪落点，30 米外点火球照样扣蓝进 CD，射程形同虚设。 */
+    const tooFar = this.castRangeFail(sk);
+    if (tooFar) { UI.log(tooFar, 'bad'); SFX.ui(); return; }
     /* 资源名读职业表：刀客怒气 / 术士灵力 / 符师道力。写死「灵力」会让符师的提示说错 */
     if (s.mp < cost) { UI.log(((CLASSES[s.cls] || {}).res || '资源') + '不足'); SFX.ui(); return; }
     s.mp -= cost;
@@ -2992,7 +4409,34 @@ const Game = {
      * 一定会走到收尾清零 —— 补刀（resetOnKill）只认「这发技能同步打死的」，
      * 毒 / 火的延迟跳伤发生时标记已经清掉，不会误触发。 */
     const bBeh = (typeof this.branchBeh === 'function') ? this.branchBeh(id) : null;
+    /* [U3] 刃势满层标记必须在 switch **之前**算：断岳斩一进 case 'avatar'
+     * 就 bladeState().mask = 0（4832），等 castSkill 尾部再读 bladeEdge() 已经是 0。
+     * 组合层只读这个快照，自己不碰兵形状态。 */
+    const comboEdgeFull = (s.cls === 'warrior' && id === 'avatar' &&
+      this.bladeFinisherOn() && this.bladeEdge() >= this.bladeEdgeMax());
     this._castSkill = id;
+    /* [P2c] 光效随等级变亮：把**有效等级**折成亮度倍率交给 FX（1 ~ 1.22）。
+     * 写在这里是因为上面每一道闸门都可能 return —— 资源不足 / 冷却中 / 没解锁
+     * 都不该把屏幕调亮。只改表现：伤害 / 冷却 / 消耗一个数都不经过它。 */
+    if (typeof FX !== 'undefined' && typeof FX.setAmp === 'function') {
+      FX.setAmp((typeof skillFxAmp === 'function') ? skillFxAmp(this.skillLevel(id)) : 1);
+    }
+    /* [P3b/P3d] 元素注入：这一发带出去的注入包（null = 不注入）。
+     * 与 `_castSkill` 同一个窗口 —— 收尾一起清零，所以「这一次施法」才是它的
+     * 作用域：投射物在创建时把 inj 复制到自己身上（FX.projectile），
+     * 命中时由 curInject 从 `_proj` 取回。 */
+    this._elem = (typeof this.skillInjectPack === 'function') ? this.skillInjectPack(id) : null;
+    /* [P3d] 注入的视觉标记：施法瞬间在脚下喷一簇注入元素色的火星，
+     * 主元素 70% / 副元素 30%（方案 §6.1 的视觉口径）。
+     * 为什么不做「整块屏幕换色」：FX 是全局的，同一帧敌人放的技能、命中喷的血
+     * 都会跟着变色 —— 那不是「这一下带火」，那是整块屏幕在说谎。而且技能本体
+     * 的颜色是它的身份（火球就是橙的），注入是附魔层，不是转换。 */
+    if (this._elem && typeof FX !== 'undefined' && typeof FX.elemSpark === 'function') {
+      const cm = (typeof elemDef === 'function' && elemDef(this._elem.key)) ? elemDef(this._elem.key).color : 0xffffff;
+      const cs = (this._elem.sub && typeof elemDef === 'function' && elemDef(this._elem.sub))
+        ? elemDef(this._elem.sub).color : null;
+      FX.elemSpark(this.playerGroup.position, cm, cs);
+    }
     const st = s.stats;
     /* [S2] 回响之语 / 紫府套：15% 概率不进入冷却
      * [P3] 不竭（变体）：本技能不进冷却，只留 0.2 秒硬直 ——
@@ -3017,9 +4461,26 @@ const Game = {
     this.attacking = 0.35;
     this.camPunch = 0.16;
     this.combatRecently = 5;
-    /* [S16] 技能起手层：36 个技能各自按元素有一声短起手，
-     * 命中/爆发的音效仍在各技能代码里，两者叠着听才是「有手感」 */
-    SFX.skill(sk);
+    /* [U6-2] 技能音效三段 · **起手段**。
+     *
+     * 以前这里是 `SFX.skill(sk)`：按技能**类型 + 元素猜**一个音（36 个技能
+     * 共用七八种），按下键根本听不出放的是哪一招。现在按**技能 id**查
+     * `data-sfaudio.js` 的三段配置，每只技能有自己的起手音。
+     *
+     * 命中音与余韵音不再在这里发 —— 它们分别挂在
+     * 「伤害真正结算的那一刻」与「命中之后」，见 sfx-audio.js。
+     *
+     * 查不到配置就静默：不兜底成某个通用音 —— 兜底 = 所有技能听起来一样，
+     * 而「加技能忘了配音效」本身是个该暴露的 bug。 */
+    if (typeof SfxAudio !== 'undefined' && SfxAudio) {
+      SfxAudio.cast(id, sk);
+      /* 命中音要按**技能**选音色，而伤害是异步结算的（弹道飞到才打中），
+       * 所以这里记下本次施放的 id，damageEnemy 命中口读它。 */
+      this._sfxCastId = id;
+    }
+    /* [S16] 老路径保留：配置表没覆盖到的技能（秘技 / 新加的）仍走元素猜。
+     * 等所有技能都进了配置表，这条可以删。 */
+    if (!skillAudio || !skillAudio(id)) SFX.skill(sk);
     /* [S1] 技能类型 → 伤害乘区标记。
      * 同步结算的技能直接读 this._tag；投射物 / 地板等异步伤害在 opts 里显式传 tag。 */
     const TAG_OF = {
@@ -3035,6 +4496,19 @@ const Game = {
      * 追地（裂地）/ 冰环（霜星）/ 定向（炎爆）共用这一处 ——
      * 各技能 case 不用各自判断，也不会漏掉某一处 aim 引用。 */
     if (bBeh && bBeh.selfCast) aim = pp.clone();
+    /* [P2b] 自动索敌（台阶）：不瞄准也能打 —— 把落点强制指向最近的敌人。
+     * 必须在 switch 之前定死：各技能 case 都直接读 aim，handler 阶段已经晚了。
+     * 自身施法类不需要索敌（落点已经钉在脚下）。 */
+    if (bBeh && bBeh.autoTarget && !bBeh.selfCast) {
+      const tgt = this.nearestEnemy(aim, bBeh.autoTarget) || this.nearestEnemy(pp, bBeh.autoTarget);
+      if (tgt) {
+        aim = new THREE.Vector3(tgt.pos.x, 0, tgt.pos.z);
+        /* 投射物类技能读的是 dir 而不是 aim（火球 / 符都用 dir 出手）——
+         * 只挪落点的话，弹道还是朝原来那个方向飞，玩家一点区别都看不到。 */
+        const nd = new THREE.Vector3(aim.x - pp.x, 0, aim.z - pp.z);
+        if (nd.lengthSq() > 1e-4) dir.copy(nd.normalize());
+      }
+    }
     this.showCastGuide(sk, pp, aim, dir);
     const dmgOf = mult => {
       const { dmg, crit } = this.rollDamage(st.atk * mult);
@@ -3045,22 +4519,52 @@ const Game = {
       /* 战士 */
       case 'whirl': {
         this.actor.atkAnim = 1; this.actor.atkType = 'spin'; this.actor.atkSpeed = 3.2;
-        SFX.swing(); SFX.hit();
+        /* [U6-2] 起手音由 `SfxAudio.cast` 统一发（castSkill 里），
+         * 命中音由 damageEnemy 命中口发。这里不再各发各的 ——
+         * 散着发就是「音画错位」查不出来的根源。 */
         const mult = 1.5 * (st.flags.thunder ? 2.2 : 1);
         const rad = 4.3 * srad;
+        /* [P5b] 剪影交给配方（`SKILL_VFX.whirl`：倾斜刀气绕圈 + 脚下螺旋）。
+         * 原来这里自己画「一圈地面环 + 一簇方块」—— 那正是方案 §1.2 点名的
+         * 「人转了一下 + 地上冒出个圈，脑子里的旋风斩没被画出来」。 */
+        this.playSkillVfx(id, { pos: pp, aim: pp, dir: dir, radius: rad });
         /* [P3] 聚怪变体：旋风斩本来带 1.2 码击退，等于把刚聚起来的怪又推开 ——
          * 选了聚怪就把击退去掉，否则这个变体自己打自己。 */
         const formOptW = (typeof this.formOpt === 'function') ? this.formOpt(id) : null;
         const knockW = (formOptW && formOptW.beh && formOptW.beh.gather) ? 0 : 1.2;
         const hits = this.enemies.filter(e => !e.dead && DIST2D(e.pos, pp) < rad + e.radius);
-        for (const e of hits) {
-          const { dmg, crit } = this.rollDamage(st.atk * mult * spow);
-          this.damageEnemy(e, dmg, crit, { knock: knockW });
+        /* [P2b] 数量台阶：Lv3「双发」/ Lv7「三连斩」= 一次施法扫 passes 段。
+         * 段与段之间不隔帧（隔帧要挂定时器，还得判怪是否已死），
+         * 单发递减已经折进 spow（skillCountDmgPct），所以每段用同一个 spow ——
+         * 总伤与「第 n 段 ×0.85^n」完全相等。
+         * 多段时每段画一圈略大的光环，「打了两下」在画面上要看得出来。 */
+        const passes = 1 + Math.max(0, sextra);
+        /* [P2b] 台阶 Lv9「横扫撕裂」：命中的敌人 4 秒内受伤 +15%。
+         * 走 e.vuln / e.vulnT —— damageEnemy 里真在用的字段（同一个键在
+         * SKILL_BEH.vuln 里也有实现，但那条走通用 hit 通道，而旋风斩是
+         * 自己遍历 hits 直接结算的，压根不经过那个通道）。
+         * 先结算伤害再挂易伤：这一下不吃自己的加成，后续多段与队友的才吃。 */
+        const vulnPct = Math.max(0, (bBeh && bBeh.vuln) || 0);
+        for (let ps = 0; ps < passes; ps++) {
+          for (const e of hits) {
+            const { dmg, crit } = this.rollDamage(st.atk * mult * spow);
+            this.damageEnemy(e, dmg, crit, { knock: knockW });
+            if (vulnPct) {
+              e.vuln = Math.max(e.vuln || 0, vulnPct);
+              e.vulnT = Math.max(e.vulnT || 0, 4);
+            }
+          }
+          if (passes > 1) FX.ring(pp, rad * (1 + 0.07 * ps), 0xffd8a0, 0.3, 0.1 + 0.05 * ps);
         }
-        FX.ring(pp, rad, 0xffd8a0, 0.4);
-        FX.spark(new THREE.Vector3(pp.x, 1, pp.z), 0xffd8a0, 18);
+        /* 多段那一圈（`passes` 里画的）留着：它是**发数**台阶的读数（Lv3 双发 /
+         * Lv7 三连斩），配方只负责剪影，不管「打了几下」。
+         * 原来这里的 `FX.ring(pp, rad)` + `FX.spark` 已经由配方接管 —— 再画一遍
+         * 就是同一圈画两次，而且方块粒子正好盖住新的刀气。 */
         this.shake = 0.25; this.hitstop = 60;
-        s.mp = Math.min(st.mpMax, s.mp + 8);
+        /* [P2b] 台阶 Lv10「命中回怒翻倍」：基数 8 点乘 rageMul。
+         * 用倍率而不是再加一条 ragePerHit —— 后者是「每命中一个 +N」，
+         * 与「回流」双重计时会变成回怒三四倍。 */
+        s.mp = Math.min(st.mpMax, s.mp + 8 * ((bBeh && bBeh.rageMul) || 1));
         if (hits.length > 1) UI.log(`旋风斩命中 ${hits.length} 名敌人`, 'good');
         break;
       }
@@ -3069,7 +4573,7 @@ const Game = {
         /* 龙骧 4 件：突进距离 +30%（冲刺时长等比延长） */
         this.dashT = 0.22 * (st.flags.longDash ? 1.3 : 1); this.invuln = 0.3; this.lastMoveDir = { x: dir.x, z: dir.z };
         this.dashSpd = DASH_SPD.thrust;
-        SFX.fire(); SFX.swing();
+        /* [U6-2] 起手音统一由 SfxAudio.cast 发 */
         this.shake = 0.3;
         const start = pp.clone();
         setTimeout(() => {
@@ -3101,10 +4605,17 @@ const Game = {
             this.cooldowns.thrust = 0;
             FX.text(new THREE.Vector3(p2.x, 2.6, p2.z), '冲撞重置', 'info', { life: 0.9 });
           }
-          FX.flashCircle(p2, 3.4, 0xff7a30, 0.3);
-          FX.burst(new THREE.Vector3(p2.x, 1, p2.z), 0xff7a30, 22, { speed: 8, size: 0.12, life: 0.5, additive: true });
+          /* [P5b] 突刺的落点走裂地位配方（`SKILL_VFX.quake` 的命中段：地面塌陷 +
+           * 尘环）。原来那一行 flashCircle + 一簇方块，正是「所有技能都是地面一个
+           * 圆片 + 一簇方块」的原型；配方给的是**向下**的塌陷，读作「撞进去了」。
+           * 颜色照旧传橙色：突刺的身份色是火橙，不是元素材质给的白 ——
+           * 这一位三只技能共用剪影，靠色区分（§3 形色分离）。 */
+          this.playSkillVfx(id, {
+            pos: p2, aim: p2, dir: dir, radius: 3.4, color: 0xff7a30, segments: ['impact']
+          });
+          /* 起跑扬尘留着：它不是剪影，是「人从这儿窜出去」的痕迹，
+           * 配方里没有对应层，删了就少了「位移从哪儿开始」的读法 */
           FX.burst(new THREE.Vector3(start.x, 0.6, start.z), 0xffaa50, 16, { speed: 5, size: 0.1, life: 0.45, additive: true });
-          SFX.explode();
         }, 200);
         break;
       }
@@ -3117,21 +4628,52 @@ const Game = {
         }
         /* [S4] 变体可以延长增益持续时间 */
         if (sdur) buff.dur = (buff.dur || 8) + sdur;
+        /* [P2b] 台阶 Lv7「增益持续 +3 秒」：与变体「持久」的 sdur 分开记、
+         * 直接叠加 —— 同用一个键的话，带持久的变体一选这一级就没了。 */
+        if (bBeh && bBeh.tierDur) buff.dur = (buff.dur || 8) + bBeh.tierDur;
+        /* [P2b] 台阶 Lv5「增益期间吸血」：折进增益本体，不另开 buff。
+         * 另开一个 buff 时长就对不上「增益期间」—— 增益结束了吸血还在，
+         * 或者吸血先结束。放在 spow 放大**之后**，避免「传世技能」把它再乘一遍。
+         * warcry 自带 8%，这里是 +10%（叠加，不是覆盖）。 */
+        if (bBeh && bBeh.lifesteal) buff.lifesteal = (buff.lifesteal || 0) + bBeh.lifesteal;
         /* 常驻（变体）：持续拉满到下次冷却 —— 数值已经减半，合起来才是
          * 「常驻的一半」；只减半不拉满会变成「按键少了但还得盯时间」的怪东西 */
         if (autoCast) buff.dur = Math.max(buff.dur || 0, this.skillCd(sk) + 0.4);
         const bc = id === 'taiji' || id === 'antidote' ? 0x88ffd0
           : (id === 'riposte' ? 0xd8b25a : (id === 'shieldwall' ? 0x8ab0ff : (id === 'warcry' ? 0xff8a4a : 0xff4a4a)));
         this.addBuff(sk.name, buff, bc, { type: 'buff', icon: sk.glyph, key: 'skill:' + id, refresh: true });
+        /* [VFX·移植] 太极玄阵：双鱼地纹 + 两根气旋柱（长在鱼眼上、跟着双鱼转）。
+         * 这一位是**自身增益**、没有判定范围 —— 阵是「玄阵护体」的视觉，
+         * 不是「站进去就有效」。所以半径只给 2.6 码（贴身），
+         * 也不画法阵那种 2 秒脉冲环（脉冲读起来像"周期性打伤害"）。 */
+        if (id === 'taiji') {
+          FX.field(this.playerGroup.position, {
+            kind: 'taiji', r: 2.6, life: buff.dur || 8, color: bc, opacity: 0.7,
+            follow: () => this.playerGroup.position
+          });
+        }
         /* [P2] hook 相位的分支行为折进增益本体：
          * 嗜血（critHeal）由 damageEnemy 的暴击钩子消费，
          * 战鼓（killExtend + maxExtend）由 onBehKill 的击杀钩子消费。
          * 重施（refresh）会重置延长计数 —— 每一层增益独立记账。 */
-        if (bBeh && (bBeh.critHeal || bBeh.killExtend)) {
+        if (bBeh && (bBeh.critHeal || bBeh.killExtend || bBeh.killProlong || bBeh.ccImmune)) {
           const cb = this.buffs.find(x => x.key === 'skill:' + id);
           if (cb) {
             if (bBeh.critHeal) cb.critHeal = bBeh.critHeal;
             if (bBeh.killExtend) cb.killExtend = { per: bBeh.killExtend, max: bBeh.maxExtend || 4, got: 0 };
+            /* [P2b] 台阶的击杀延长：与 killExtend 并行记账，两条各算各的上限。
+             * 重施（refresh）会重置计数 —— 每一层增益独立记账。 */
+            if (bBeh.killProlong) cb.killProlong = { per: bBeh.killProlong, max: bBeh.killProlongMax || 4, got: 0 };
+            /* [P2b] 台阶 Lv10 免控：标记在增益本体上，判定口 ccImmuneNow()。
+             * 施法瞬间顺手清掉身上已有的减速 / 中毒 —— 否则「免疫控制」在
+             * 已经被控住的时候按下去是没用的，玩家会以为这一级没生效。 */
+            if (bBeh.ccImmune) {
+              cb.ccImmune = true;
+              if ((this.playerSlowT || 0) > 0 || (this.poisonT || 0) > 0) {
+                this.playerSlowT = 0; this.playerSlow = 0; this.poisonT = 0;
+                FX.text(new THREE.Vector3(pp.x, 2.7, pp.z), '免控', 'info', { life: 0.8 });
+              }
+            }
           }
         }
         /* [P3] 舍身（变体）：标记在增益本体上 —— damagePlayer 的格挡分支
@@ -3140,9 +4682,15 @@ const Game = {
           const cb2 = this.buffs.find(x => x.key === 'skill:' + id);
           if (cb2) cb2.noDR = true;
         }
-        FX.ring(pp, 5, bc, 0.7, 0.25);
-        FX.burst(new THREE.Vector3(pp.x, 1.2, pp.z), bc, 26, { speed: 3, size: 0.12, life: 0.8, gravity: -2, additive: true });
-        SFX.cast();
+        /* [P5b] 增益位的剪影交给配方（血怒 / 战吼 / 盾墙 → 从脚下往上冒；
+         * 太极 → 阵内雾粒子；解毒 → 由下而上）。原来的「一圈环 + 一簇方块」
+         * 已经由配方接管，再画一遍就是同一句话画两次。
+         * 太极的半径跟它自己那张双鱼阵走（2.6，贴身护体），其余 5 码 ——
+         * 阵画多大，配方就该画多大。 */
+        this.playSkillVfx(id, {
+          pos: pp, aim: pp, dir: dir, color: bc,
+          radius: id === 'taiji' ? 2.6 : 5
+        });
         UI.toast(sk.name);
         /* [S4] 解毒：立即清除自身中毒与减速 */
         if (id === 'antidote') {
@@ -3154,17 +4702,15 @@ const Game = {
       /* [S4] 还魂：持续内受到致命伤以 35% 生命存活 */
       case 'revive': {
         this.actor.atkAnim = 1; this.actor.atkType = 'cast';
-        SFX.cast(); SFX.heal();
         this.reviveT = 25 + sdur;
-        FX.ring(pp, 2.6, 0xffd166, 0.8, 0.3);
-        FX.burst(new THREE.Vector3(pp.x, 1.4, pp.z), 0xffd166, 22, { speed: 3, size: 0.12, life: 1, gravity: -2, additive: true });
+        /* [P5b] 回春位的剪影（由下而上生长的光点）—— 还魂是同一个位的「守命」变体 */
+        this.playSkillVfx(id, { pos: pp, aim: pp, dir: dir, radius: 2.6, color: 0xffd166 });
         UI.toast('还魂 · ' + this.reviveT + ' 秒');
         break;
       }
       /* [S4] 斩杀：单体重伤，低血目标伤害翻倍 */
       case 'execute': {
         this.actor.atkAnim = 1; this.actor.atkType = 'swing'; this.actor.atkSpeed = 2.2;
-        SFX.swing(); SFX.hit();
         const cp = aim.clone();
         const target = this.nearestEnemy(cp, 3.6) || this.nearestEnemy(pp, 3.6);
         this.shake = 0.3; this.hitstop = 80;
@@ -3172,10 +4718,17 @@ const Game = {
           const lowHp = target.hp < target.maxHp * 0.3;
           const { dmg, crit } = this.rollDamage(st.atk * 5.0 * (lowHp ? 2 : 1) * spow);
           this.damageEnemy(target, dmg, crit, { knock: 1.4 });
-          FX.flashCircle(target.pos, 2.2, lowHp ? 0xff3b3b : 0xffaa50, 0.3);
-          FX.burst(new THREE.Vector3(target.pos.x, 1.2, target.pos.z), lowHp ? 0xff3b3b : 0xffaa50, 20, { speed: 6, size: 0.12, life: 0.5, additive: true });
+          /* [P5b] 处决的落点走裂地位配方。**颜色必须由这里给**：低血处决是
+           * 红色、普通是橙色，这一位三只技能共用同一条剪影，色就是唯一的区别。
+           * 原来那两行（地面圆片 + 一簇方块）由配方的塌陷环 + 尘环接管。 */
+          this.playSkillVfx(id, {
+            pos: target.pos, aim: target.pos, dir: dir, radius: 2.2,
+            color: lowHp ? 0xff3b3b : 0xffaa50, segments: ['impact']
+          });
           if (lowHp) FX.text(new THREE.Vector3(target.pos.x, 2.4, target.pos.z), '处决', 'lv', { life: 0.8 });
         } else {
+          /* 挥空：给一个「刀落在空处」的小圈就够，不要整套塌陷 ——
+           * 打空了还塌一块地，玩家会以为自己打中了 */
           FX.flashCircle(cp, 2.2, 0xffaa50, 0.25);
         }
         break;
@@ -3191,8 +4744,11 @@ const Game = {
         this.dashSpd = DASH_SPD.leap;
         this.invuln = inPlace ? 0.15 : 0.3;
         if (!inPlace) this.lastMoveDir = { x: dir.x, z: dir.z };
-        SFX.fire(); SFX.swing();
         this.shake = 0.3;
+        /* [P5b] 跃击是「先起跳、再落地」，两件事隔着 200ms 与最多 10 码 ——
+         * 所以必须分段：起手段（地裂预警）留在起跳点，命中段跟着落点走。
+         * 整条一起在落点播的话，玩家看到的是「落点凭空多了一圈预警」。 */
+        this.playSkillVfx(id, { pos: pp, aim: aim, dir: dir, radius: 4.5 * srad, segments: ['cast'] });
         setTimeout(() => {
           if (this.dead) return;
           const p2 = this.playerGroup.position;
@@ -3201,17 +4757,15 @@ const Game = {
             const { dmg, crit } = this.rollDamage(st.atk * 2.2 * spow);
             this.damageEnemy(e, dmg, crit, { knock: 2.4 });
           }
-          FX.flashCircle(p2, 4.5 * srad, 0xffb060, 0.35);
-          FX.ring(p2, 4.5 * srad, 0xffb060, 0.5, 0.25);
-          FX.burst(new THREE.Vector3(p2.x, 0.8, p2.z), 0xffb060, 24, { speed: 7, size: 0.13, life: 0.5, additive: true });
-          SFX.explode();
+          /* [P5b] 落地那一下走裂地位配方的命中段 ——
+           * 跃击和裂地是同一个位：都是「纵向塌陷」，只是起手多了 10 码位移 */
+          this.playSkillVfx(id, { pos: p2, aim: p2, dir: dir, radius: 4.5 * srad, segments: ['impact'] });
         }, 200);
         break;
       }
       /* [S4] 剑阵：持续内周身剑鸣，周期伤害 */
       case 'swordarray': {
         this.actor.atkAnim = 1; this.actor.atkType = 'cast';
-        SFX.cast(); SFX.thunder();
         const dur = 8 + sdur;
         const rad = 3.6 * srad;
         let pulses = 0;
@@ -3219,17 +4773,73 @@ const Game = {
         /* [P3] 钉阵（变体）：基础剑阵本来就跟着人走，所以变体给的是**反过来**的
          * 选择 —— 钉在落点，换更大的范围与更高的每跳伤害 */
         const pinOn = !!(bBeh && bBeh.pin);
+        /* [P2b] 三条进化台阶。阵心抽成一个函数：钉阵时它是落点（和上面画环用的
+         * 是同一个表达式，不能各算一套），跟随态时就是玩家 —— damagePlayer 那边
+         * 也要用同一份判定，才不会出现「环画在这儿、减伤算在那儿」。 */
+        const fieldCtr = () => (pinOn ? aim : this.playerGroup.position);
+        const slowPct = CLAMP((bBeh && bBeh.slowField) || 0, 0, 60);
+        const slowDur = Math.max(0.2, (bBeh && bBeh.slowFieldDur) || 0.9);
+        const drPct = CLAMP((bBeh && bBeh.arrayGuard) || 0, 0, 50);
+        const counterPct = Math.max(0, (bBeh && bBeh.arrayCounter) || 0);
+        /* [P2b] Lv3 / Lv7「双圈 / 三圈」：同心多层剑气环。
+         * 每层向外扩 `SKILL_RING_STEP`（42%），同一次剑鸣里一只怪只吃
+         * **它所在那一层**的伤害（内 100% / 中 85% / 外 72%，
+         * 与「多发 ×0.85^n」同一口径，见 `SKILL_RING_DECAY`）。
+         * 层数不是「同一圈打三次」—— 那样双圈就是白送一倍伤害，
+         * 而台阶文案说的是「圈」，不是「伤害翻倍」。
+         * 判层的顺序必须**由内向外**：break 在第一个命中层，
+         * 倒过来的话站在内圈的怪会被算成外圈（伤害反而比没点台阶低）。 */
+        const rings = 1 + Math.max(0, Math.min(2, (bBeh && bBeh.arrayRings) || 0));
+        const ringRad = i => rad * (1 + i * SKILL_RING_STEP);
+        const ringMul = i => Math.pow(SKILL_RING_DECAY, i);
+        const outerRad = ringRad(rings - 1);
+        /* 只有带台阶时才铺这份运行时状态；没台阶就是空，damagePlayer 里两个
+         * 消费点自然短路（不给没点台阶的玩家白送减伤）。
+         * 场地半径取**最外圈**：环画到哪，减伤 / 反击就管到哪 —— 画小一圈
+         * 玩家站在看得见的环里却吃不到减伤，那是光效向玩家谎报范围。 */
+        this.swordField = (drPct || counterPct)
+          ? { rad: outerRad, dr: drPct, counter: counterPct, ctr: fieldCtr, t: dur, gen: gen }
+          : null;
+        /* [VFX·移植] 剑影：立着的剑绕圈飞 —— 这是剑阵的「身份」。
+         * 半径与判定同源（`outerRad`），**不自己放大**：环负责报判定、
+         * 剑影负责让人一眼认出这是剑阵，两者画的是同一个圈。
+         * 跟随变体传 `follow`：阵心每帧都在变，传快照会让阵留在原地。 */
+        FX.field(fieldCtr(), {
+          kind: 'blades', r: outerRad, life: dur, color: 0xd8ffe0,
+          follow: pinOn ? null : fieldCtr
+        });
+        /* [P5b] 剑阵位配方补「剑轨 + 剑鸣火花」（`SKILL_VFX.swordarray`）。
+         * 这里**不删**任何东西：`FX.field` 是领域本体（每跳的剑鸣环也在用它报层数），
+         * 配方加的是它缺的那一层 —— 半透明剑影拖出的椭圆轨道。
+         * 半径传 `outerRad`：画多大 = 打多大，和 Lv9 减伤 / Lv10 反击同一把尺子。 */
+        this.playSkillVfx(id, { pos: fieldCtr(), aim: fieldCtr(), dir: dir, radius: outerRad });
         const iv = setInterval(() => {
           if (this.mapGen !== gen || this.dead) { clearInterval(iv); return; }
           pulses++;
-          const pp2 = pinOn ? aim : this.playerGroup.position;
-          FX.ring(new THREE.Vector3(pp2.x, 0.2, pp2.z), rad, 0xd8ffe0, 0.4, 0.18);
+          const pp2 = fieldCtr();
+          /* 每层一个环；越外越淡，免得三圈糊成一团亮环 */
+          for (let ri = 0; ri < rings; ri++) {
+            FX.ring(new THREE.Vector3(pp2.x, 0.2, pp2.z), ringRad(ri), 0xd8ffe0, 0.4,
+              Math.max(0.1, 0.18 - ri * 0.04));
+          }
           for (const e of this.enemies) {
             if (e.dead) continue;
-            if (DIST2D(e.pos, pp2) < rad + e.radius) {
-              const { dmg, crit } = this.rollDamage(st.atk * 0.9 * spow);
-              this.damageEnemy(e, dmg, crit, { tag: 'aoe', silent: true });
+            const d = DIST2D(e.pos, pp2);
+            /* 落在**最内层**的哪一圈 → 吃那一层的伤害；出最外圈就不打 */
+            let layer = -1;
+            for (let ri = 0; ri < rings; ri++) {
+              if (d < ringRad(ri) + e.radius) { layer = ri; break; }
             }
+            if (layer < 0) continue;
+            /* Lv5 减速：每跳刷新一次，出阵后 slowFieldDur 秒解除 ——
+             * 是「站在阵里会被黏住」而不是「中一次减速走三步」 */
+            if (slowPct) {
+              e.slow = Math.max(e.slow || 0, Math.min(0.7, (e.boss ? slowPct * 0.5 : slowPct) / 100));
+              e.slowT = Math.max(e.slowT || 0, slowDur);
+              e.slowLabel = e.slowLabel || '剑阵';
+            }
+            const { dmg, crit } = this.rollDamage(st.atk * 0.9 * spow * ringMul(layer));
+            this.damageEnemy(e, dmg, crit, { tag: 'aoe', silent: true });
           }
           if (pulses >= Math.ceil(dur / 0.6)) clearInterval(iv);
         }, 600);
@@ -3239,7 +4849,6 @@ const Game = {
       /* [S4] 天崩：三次延迟震击 */
       case 'skysfall': {
         this.actor.atkAnim = 1; this.actor.atkType = 'slam';
-        SFX.explode();
         const cp = aim.clone();
         const gen = this.mapGen;
         for (let i = 0; i < 3; i++) {
@@ -3247,7 +4856,16 @@ const Game = {
             if (this.dead || this.mapGen !== gen) return;
             const t = new THREE.Vector3(cp.x + RND(-2, 2), 0, cp.z + RND(-2, 2));
             this.explodeAt(t, 5 * srad, st.atk * 2.4 * spow, 0xffaa60, true);
-            SFX.explode();
+            /* [P5b] 只有**最后一发**补配方的命中段（塌陷环 + 尘柱）。
+             * 三发都补就是同一句话画三遍，而且 `explodeAt` 自己已经带
+             * 闪光 + 圆环 + 一簇方块 —— 那是判定与手感，不能删。
+             * 所以这一位接的是「收尾比前两发重」，不是「每发都换皮」。 */
+            if (i === 2) {
+              this.playSkillVfx(id, {
+                pos: t, aim: t, dir: dir, radius: 5 * srad,
+                color: 0xffaa60, segments: ['impact']
+              });
+            }
           }, 300 + i * 450);
         }
         FX.telegraph(cp, 6 * srad, 1.4, () => {}, 0xffaa60);
@@ -3256,7 +4874,8 @@ const Game = {
       }
       case 'quake': {
         this.actor.atkAnim = 1; this.actor.atkType = 'slam'; this.actor.atkSpeed = 2.0;
-        SFX.explode(); this.shake = 0.55; this.hitstop = 90;
+        /* [U6-2] 命中音由 damageEnemy 命中口发（见 sfx-audio.js） */
+        this.shake = 0.55; this.hitstop = 90;
         const cp = aim.clone();
         const hits = this.enemies.filter(e => !e.dead && DIST2D(e.pos, cp) < 5.8 * srad + e.radius);
         for (const e of hits) {
@@ -3264,38 +4883,215 @@ const Game = {
           this.damageEnemy(e, dmg, crit, { knock: 1.6 });
           e.stun = Math.max(e.stun, 1.6);
         }
-        FX.ring(cp, 6 * srad, 0xffaa60, 0.6, 0.3);
-        FX.flashCircle(cp, 5.8 * srad, 0xffcc88, 0.35);
-        for (let i = 0; i < 3; i++) setTimeout(() => {
-          FX.burst(new THREE.Vector3(cp.x + RND(-4, 4), 0.2, cp.z + RND(-4, 4)), 0xaa8866, 12, { speed: 6, size: 0.14, life: 0.7, gravity: 16 });
-        }, i * 70);
+        /* [P5b] 裂地位：裂纹预警 → 地面塌陷 → 垂直尘柱（`SKILL_VFX.quake`）。
+         * 原来那三行「大环 + 地面圆片 + 三簇方块」正是方案 §1.2 说的
+         * 「所有技能都是地面一个环 + 一簇方块粒子」。 */
+        this.playSkillVfx(id, { pos: pp, aim: cp, dir: dir, radius: 5.8 * srad });
         break;
       }
+      /* [P2b·刀客⑤] 兵形 / 刃势：整只技能从「召唤剑神」改成一台刀式状态机。
+       *
+       * 一个按键、两种模式，靠**刃势**分流（不是靠冷却 —— 换式要能随时换）：
+       *   · 刃势满 4 层 + 已解锁（Lv5）→ 断岳斩：斩锋 / 镇岳 = 单体处决，
+       *     摧城 = 三段崩击。放完清零，一层刃势只放一次。
+       *   · 其余情况 → 换式：斩锋 → 镇岳 → 摧城 → 斩锋（未解锁的跳过）。
+       *
+       * 冷却与资源按模式改写，**必须写在 case 里**（castSkill 早在 switch 之前
+       * 就把 `this.cooldowns[id]` 和怒气扣掉了）：
+       *   换式 = 战术动作，1.2 秒冷却、不收怒气（把刚扣掉的退回去）；
+       *   终结技 = 吃技能自己的冷却（60 秒 × 冷却修正）。
+       * 不这么分的话，换一次式要等一分钟 —— 那三把刀等于只有一把能用。
+       *
+       * 另外两处「以前顺手写在这里、现在不能留」的东西：
+       *   · `avatarResetThrust`（破军大节点·剑神）必须挪进终结技分支：
+       *     换式冷却只有 1.2 秒，留在外面等于突刺无限刷新。
+       *   · 12 秒全强化（`sk.buff`）改成 Lv10 台阶（`edgeUltimate`）的奖励，
+       *     否则「剑神降世」这一档在面板上写着、实际每级都有。 */
       case 'avatar': {
-        this.actor.atkAnim = 1; this.actor.atkType = 'slam';
-        SFX.boss(); this.shake = 0.8; this.hitstop = 120;
-        /* [S3] 破军系大节点·剑神：释放时立刻刷新烈焰突刺冷却 */
-        if (st.specials && st.specials.avatarResetThrust) {
-          this.cooldowns.thrust = 0;
-          FX.text(new THREE.Vector3(pp.x, 2.8, pp.z), '突刺已续', 'info', { life: 0.9 });
+        const bBlade = this.bladeBeh();
+        const edgeFull = this.bladeEdge() >= this.bladeEdgeMax();
+        if (bBlade.edgeFinisher && edgeFull) {
+          /* ---------------- 断岳斩 ---------------- */
+          const stance = this.bladeStance();
+          /* [P4] 终结技的刀气跟着当前刀式走 —— 「换刀式决定了这一发是点杀
+           * 还是清场」，视觉上也必须是两种形状，否则玩家只在数字上看到差别 */
+          this.bladeFinisherVfx(stance);
+          this.bladeState().mask = 0;              // 一层刃势只放一次
+          if (typeof UI !== 'undefined' && UI.syncBladeBadge) UI.syncBladeBadge();
+          /* 破军系大节点·剑神：终结技立刻刷新烈焰突刺冷却 */
+          if (st.specials && st.specials.avatarResetThrust) {
+            this.cooldowns.thrust = 0;
+            FX.text(new THREE.Vector3(pp.x, 2.8, pp.z), '突刺已续', 'info', { life: 0.9 });
+          }
+          if (stance === 2) {
+            /* 摧城式 → 三段崩击（底子 skysfall）：以自身为心连震三波，
+             * 每波落点小幅抖动 —— 三波完全同心会让人以为只炸了一下。 */
+            this.actor.atkAnim = 1; this.actor.atkType = 'slam';
+            /* [U6-2] 起手/命中音统一由三段层发（SfxAudio.cast / impact） */
+            this.shake = 0.7; this.hitstop = 100;
+            const gen = this.mapGen;
+            const rad = 5 * srad;
+            const ctr = pp.clone();
+            FX.telegraph(ctr, rad * 1.15, 1.2, () => {}, 0xffaa60);
+            for (let i = 0; i < 3; i++) {
+              setTimeout(() => {
+                if (this.dead || this.mapGen !== gen) return;
+                const t = new THREE.Vector3(ctr.x + RND(-1.8, 1.8), 0, ctr.z + RND(-1.8, 1.8));
+                this.explodeAt(t, rad, st.atk * 2.4 * spow, 0xffaa60, true);
+              }, 140 + i * 260);
+            }
+            UI.toast('断岳斩 · 摧城三段', 'lv');
+          } else {
+            /* 斩锋 / 镇岳 → 单体处决（底子 execute）：一刀点杀，残血翻倍 */
+            this.actor.atkAnim = 1; this.actor.atkType = 'swing'; this.actor.atkSpeed = 2.2;
+            this.shake = 0.45; this.hitstop = 110;
+            const target = this.nearestEnemy(pp, 9) || this.nearestEnemy(this.aimPoint, 9);
+            if (target) {
+              const lowHp = target.hp < target.maxHp * 0.3;
+              const { dmg, crit } = this.rollDamage(st.atk * 6.0 * (lowHp ? 2 : 1) * spow);
+              this.damageEnemy(target, dmg, crit, { knock: 1.8 });
+              FX.flashCircle(target.pos, 2.4, lowHp ? 0xff3b3b : 0xffd166, 0.32);
+              FX.burst(new THREE.Vector3(target.pos.x, 1.2, target.pos.z),
+                lowHp ? 0xff3b3b : 0xffd166, 24, { speed: 7, size: 0.12, life: 0.55, additive: true });
+              FX.text(new THREE.Vector3(target.pos.x, 2.6, target.pos.z), lowHp ? '断岳 · 处决' : '断岳斩', 'lv', { life: 0.9 });
+            } else {
+              FX.flashCircle(pp, 3.4, 0xffd166, 0.28);
+              UI.log('断岳斩 · 身前没有目标');
+            }
+            UI.toast('断岳斩 · ' + this.bladeFormName(stance), 'lv');
+          }
+          /* Lv10：断岳斩附带 12 秒剑神降世（改造自 avatar 原来的「巨伤 + 增益」） */
+          if (bBlade.edgeUltimate && sk.buff) {
+            this.addBuff(sk.name, Object.assign({}, sk.buff, { dur: (sk.buff.dur || 12) + sdur }),
+              0xffd166, { type: 'buff', icon: sk.glyph, key: 'skill:avatar', refresh: true });
+            /* [P5b] 剑神降世的「开窗」走兵形位配方的起手段（金环 + 上升光柱）。
+             * 原来这里是 1 个 7 码环 + **24 次 `FX.burst`**（24 次绘制）：
+             * 那 24 簇是「地面上一堆金方块」，而这一档要说的是「剑神开了个窗」——
+             * 一根柱比一堆方块准，还便宜 22 次。 */
+            this.playSkillVfx(id, { radius: 3.4, segments: ['cast'] });
+            FX.text(new THREE.Vector3(pp.x, 3.2, pp.z), '剑 神 降 世', 'lv', { life: 1.2 });
+          }
+          /* 终结技吃技能自己的冷却（与 castSkill 入口那套同口径，含冷却修正） */
+          this.cooldowns[id] = Math.max(8, this.skillCd(sk) * (1 - (smod && smod.cd ? smod.cd : 0) / 100));
+        } else {
+          /* ---------------- 换式 ---------------- */
+          this.actor.atkAnim = 1; this.actor.atkType = 'cast'; this.actor.atkSpeed = 1.6;
+          this.bladeCycle();
+          /* [P4] 换式的刀光按**新刀式**播（不是旧的）：玩家按下去看到的就是
+           * 「换成了什么样」，这是这一格唯一能一眼读懂的反馈 */
+          this.bladeFormVfx();
+          this.cooldowns[id] = 1.2;
+          /* 换式不收资源：怒气是打出来的，不该花在「换个姿势」上 */
+          s.mp = Math.min(st.mpMax, s.mp + cost);
+          if (!bBlade.edgeFinisher) {
+            UI.log('兵形 · 刃势满层（5 级解锁断岳斩）');
+          }
+          /* 动作条上挂着「刀式 + 刃势」角标，换式后必须重画一次 */
+          if (typeof UI !== 'undefined' && UI.buildActionBar) UI.buildActionBar();
         }
-        const hits = this.enemies.filter(e => !e.dead && DIST2D(e.pos, pp) < 9 + e.radius);
-        for (const e of hits) {
-          const { dmg, crit } = this.rollDamage(st.atk * 6.5 * spow);
-          this.damageEnemy(e, dmg, crit, { knock: 3 });
-        }
-        this.addBuff(sk.name, Object.assign({}, sk.buff), 0xffd166, { type: 'buff', icon: sk.glyph, key: 'skill:avatar', refresh: true });
-        FX.ring(pp, 9, 0xffd166, 0.9, 0.4);
-        FX.flashCircle(pp, 9, 0xffe0a0, 0.5);
-        for (let i = 0; i < 40; i++) FX.burst(new THREE.Vector3(pp.x + RND(-6, 6), RND(0, 3), pp.z + RND(-6, 6)), 0xffd166, 2, { speed: 4, size: 0.14, life: 0.9, gravity: -4, additive: true });
-        UI.toast('剑 神 降 世', 'lv');
         break;
       }
+
       /* 法师 */
+      /* [P2b·法师⑤] 元素法相 —— 一只技能两个模式，和刀客 ⑤ 同构：
+       *
+       *   · 窗口关着 → 开窗（10 秒 + 变体持续 + Lv7 台阶，全抗 +20 走增益表）。
+       *   · 窗口开着 → 换相（火 → 冰 → 雷 → 火，Lv3 解锁）。
+       *
+       * 冷却与资源按模式改写，**必须写在 case 里**（castSkill 早在 switch 之前
+       * 就把 `this.cooldowns[id]` 和灵力扣掉了）：
+       *   换相 = 战术动作，1.2 秒冷却、不收灵力（把刚扣掉的退回去）；
+       *   开窗 = 吃技能自己的冷却（55 秒 × 冷却修正），也就是入口那套，不动它。
+       * 不这么分的话，换一次相要等将近一分钟 —— 那三系等于只有一系能用。
+       *
+       * 窗口内的三件事都不在这里结算：
+       *   命中附加（Lv5）→ damageEnemy（每一次命中，含其他技能打出来的）
+       *   收窗新星（Lv9）→ tickBeh（要倒数到 0 才知道结束了）
+       *   免控（Lv10）  → 标记在增益本体上，判定口 ccImmuneNow() */
+      case 'elementavatar': {
+        const ea = this.elemAuraState();
+        const bEa = this.elemAuraBeh();
+        if (ea.t > 0) {
+          /* ---------------- 换相 ---------------- */
+          if (!bEa.elemSwap) {
+            /* 3 级之前没有这个动作：不当成「重开一次」白吃 55 秒冷却，
+             * 只给 1.2 秒硬直并说清楚为什么没反应 */
+            this.actor.atkAnim = 1; this.actor.atkType = 'cast'; this.actor.atkSpeed = 1.6;
+            SFX.ui();
+            UI.log('法相 · 元素切换要 3 级（当前' + this.elemAuraKind().name + '，还剩 '
+              + Math.ceil(ea.t) + ' 秒）');
+            this.cooldowns[id] = 1.2;
+            s.mp = Math.min(st.mpMax, s.mp + cost);
+            break;
+          }
+          ea.elem = (ea.elem + 1) % ELEM_AURA_KINDS.length;
+          const k = this.elemAuraKind();
+          this.actor.atkAnim = 1; this.actor.atkType = 'cast'; this.actor.atkSpeed = 1.6;
+          /* [P4] 换相：配方重播一次（换色），法身由 updateFormAura 当场改色 ——
+           * 换相最怕「只有动作条角标变了」，所以画面上要有两处同时响应。
+           * [P5b] 原来这上面还有一行 `FX.ring` + 一簇 18 颗 `FX.burst`，
+           * 与配方的起手段是同一句话（脚下换色一圈），删掉；**色改由这里传**
+           * —— 位配方的元素取自「主元素注入」，而换相要的是**刚换成的那个**元素。 */
+          this.playSkillVfx('elementavatar', { radius: 3.4, color: k.color });
+          FX.text(new THREE.Vector3(pp.x, 3, pp.z), k.name, 'lv', { life: 0.95 });
+          UI.toast('法相 · ' + k.name);
+          this.cooldowns[id] = 1.2;
+          /* 换相不收灵力：灵力是打出来的，不该花在「换个元素」上 */
+          s.mp = Math.min(st.mpMax, s.mp + cost);
+          if (typeof UI !== 'undefined' && UI.buildActionBar) UI.buildActionBar();
+          break;
+        }
+
+        /* ---------------- 开窗 ---------------- */
+        /* 持续：技能本体 10 秒 + 变体（三相 −2 / 久相 +6，已在 sdur 里）+ 台阶 Lv7 +4。
+         * 下限 4 秒：三相 −2 与洗点叠在一起也不该变成「开了等于没开」。 */
+        const baseDur = (sk.buff && sk.buff.dur) ? sk.buff.dur : 10;
+        const dur = Math.max(4, baseDur + sdur + (bEa.formDur || 0));
+        ea.t = dur;
+        /* 强度快照：命中附加在 damageEnemy 里结算，那时手上没有 spow */
+        ea.mul = spow;
+        ea.rider = !!bEa.formRider;
+        const kind = this.elemAuraKind();
+        const bf = Object.assign({}, sk.buff, { dur });
+        this.addBuff(sk.name, bf, kind.color,
+          { type: 'buff', icon: sk.glyph, key: 'skill:elementavatar', refresh: true });
+        /* 台阶 Lv10 免控：标记在增益本体上（与血怒位 Lv10 同一套判定口）。
+         * 开窗瞬间顺手清掉身上已有的减速 / 中毒 —— 否则「免疫控制」在已经被
+         * 控住的时候按下去是没用的，玩家会以为这一级没生效。 */
+        if (bEa.ccImmune) {
+          const cb = this.buffs.find(x => x.key === 'skill:elementavatar');
+          if (cb) {
+            cb.ccImmune = true;
+            if ((this.playerSlowT || 0) > 0 || (this.poisonT || 0) > 0) {
+              this.playerSlowT = 0; this.playerSlow = 0; this.poisonT = 0;
+              FX.text(new THREE.Vector3(pp.x, 2.7, pp.z), '免控', 'info', { life: 0.8 });
+            }
+          }
+        }
+        this.actor.atkAnim = 1; this.actor.atkType = 'cast'; this.actor.atkSpeed = 1.4;
+        this.shake = Math.max(this.shake, 0.3);
+        /* [P5b] 7 码外环留着 —— 它是「窗口」的边界，配方给的是贴身的阵环；
+         * 中间那圈 4.2 与 22 次 `FX.burst`（22 次绘制）删掉：
+         * 阵环 + 上升光柱由配方的起手段给，一堆金方块说不出「开窗」。 */
+        FX.ring(new THREE.Vector3(pp.x, 0.2, pp.z), 7, kind.color, 0.8, 0.35);
+        FX.text(new THREE.Vector3(pp.x, 3.3, pp.z), kind.name, 'lv', { life: 1.2 });
+        /* [P4] 开窗：法阵 + 上升光柱（配方 cast 段），法身由 updateFormAura 建。
+         * 半径 3.4 而不是技能半径 2.6 —— 开窗是「场上多了一个状态」，
+         * 读法要比一发技能大一圈，否则会被当成普通的起手特效 */
+        this.playSkillVfx('elementavatar', { radius: 3.4, color: kind.color });
+        UI.toast('元素法相 · ' + kind.name + ' ' + Math.round(dur) + ' 秒', 'lv');
+        UI.log('法相已开：' + Math.round(dur) + ' 秒内全抗 +'
+          + (bf.allRes || 0) + (ea.rider ? '，命中附带' + kind.glyph + '效果' : ''));
+        if (typeof UI !== 'undefined' && UI.buildActionBar) UI.buildActionBar();
+        break;
+      }
+
       case 'fireball': {
         this.actor.atkAnim = 1; this.actor.atkType = 'cast';
-        SFX.fire();
         const radius = 2.4 * (st.flags.firetrail ? 1.6 : 1) * srad;
+        /* [P5b] 起手 + 飞行段（`cast` / `loop`）：手里那簇火星与 Lv9 的环绕火球。
+         * 命中段**不在这里播** —— 它在 `onHit` 里（弹道飞到了才炸）。 */
+        this.playSkillVfx(id, { pos: pp, aim: aim, dir: dir, radius: radius, segments: ['cast', 'loop'] });
         /* [S4] 连环变体：1 + sextra 连发，扇形展开 */
         const n = 1 + Math.max(0, sextra);
         const up = new THREE.Vector3(0, 1, 0);
@@ -3305,12 +5101,25 @@ const Game = {
           FX.projectile({
             pos: new THREE.Vector3(pp.x + d2.x * 0.8, 1.4, pp.z + d2.z * 0.8),
             dir: d2, speed: 21, color: 0xff7a30, radius: 0.32, hitRadius: 0.62, team: 'player',
-            dmg: st.atk * 1.9 * spow, life: 1.6, elem: 'fire', trail: true,
+            dmg: st.atk * 1.9 * spow, life: 1.6, elem: 'fire', trail: true, inj: this._elem,
+            /* [U6-2] 施法者 id：弹道飞 0.3~1.5 秒才落地，
+             * 落地时 `_castSkill` 已被清零，光靠它认不出是谁打的。 */
+            sfxId: id,
             /* [P2] 集束（取向）：贯穿弹，不再被第一个敌人挡下 */
             pierce: !!(bBeh && bBeh.pierce),
             onHit: (e, proj) => {
+              /* [P5b] 命中段：闪白 + 爆点 + 元素残留（火海 / 霜痕 / 酸斑由元素决定）。
+               * 跟着**弹道的实际命中点**，不是施法落点 —— 后者恒在射程尽头。 */
+              this.playSkillVfx(id, {
+                pos: proj.pos.clone(), aim: proj.pos.clone(), dir: d2, radius: radius,
+                segments: ['impact']
+              });
               this.explodeAt(proj.pos.clone(), radius, st.atk * 1.9 * spow, 0xff7a30);
               if (st.flags.firetrail) this.createFirePatch(proj.pos.clone(), radius);
+              /* [P2b] 台阶 Lv5「爆炸处留火海」：必须写在命中点。
+               * 行为层的 c.center 是「落点」，而 dir 施法的落点恒在射程尽头，
+               * 拿它点火等于在 16 码外的空气里烧 —— 玩家什么都看不到。 */
+              if (bBeh && bBeh.firePatch) this.createFirePatch(proj.pos.clone(), radius);
             }
           });
         }
@@ -3318,10 +5127,14 @@ const Game = {
       }
       case 'frostnova': {
         this.actor.atkAnim = 1; this.actor.atkType = 'cast';
-        SFX.ice();
         const cp = aim.clone();
         /* [S4] 双重变体：1 + sextra 片新星，副新星在主轴附近随机偏移 */
         const n = 1 + Math.max(0, sextra);
+        /* [P2b] 台阶 Lv9 易伤 / Lv5 持续伤害。新星是瞬发，所以直接挂在命中上 ——
+         * 元素用冰（'霜蚀'），不能借通用 hit 通道的 burnPct（那个写死火焰灼烧）。 */
+        const fnVuln = Math.max(0, (bBeh && bBeh.vuln) || 0);
+        const fnDot = Math.max(0, (bBeh && bBeh.tierDot) || 0);
+        const fnGen = this.mapGen;
         const novaAt = c2 => {
           const hits = this.enemies.filter(e => !e.dead && DIST2D(e.pos, c2) < 6 * srad + e.radius);
           for (const e of hits) {
@@ -3330,12 +5143,34 @@ const Game = {
             e.slow = 0.45; e.slowT = 3.5 + sdur;
             /* 寒冰系大节点 / 星阙旧档：冰霜新星命中的敌人被冻结 */
             if (st.flags.novaFreeze) { e.slow = 1; e.slowT = Math.max(e.slowT, 1.2); }
+            if (fnVuln) {
+              e.vuln = Math.max(e.vuln || 0, fnVuln);
+              e.vulnT = Math.max(e.vulnT || 0, 4);
+            }
+            if (fnDot && !e.dead && (e.dotT || 0) < 0.75) {
+              this.applySkillDot(e, st.atk * fnDot / 100 * spow, 3, 'ice', '霜蚀');
+            }
           }
           FX.ring(c2, 6 * srad, 0x8ad8ff, 0.7, 0.3);
           FX.flashCircle(c2, 6 * srad, 0x8ad8ff, 0.45);
-          for (let i = 0; i < 30; i++) {
-            const ang = Math.random() * 7, r = RND(1, 6);
-            FX.burst(new THREE.Vector3(c2.x + Math.cos(ang) * r, RND(0.1, 1), c2.z + Math.sin(ang) * r), 0xaae8ff, 2, { speed: 2, size: 0.12, life: 0.8, gravity: -1, additive: true });
+          /* [P5b] 新星的「推出去」那一层交给火墙位的 `cast`（一排竖直冰舌）。
+           * 方案 §486 明写：冰霜新星 / 雷云**收敛为火墙的冰 / 雷元素形态** ——
+           * 所以它读作「一圈冰墙从脚下炸开」，而不是「地面多了一簇方块」。
+           *
+           * 原来这里是一个 30 次的 `FX.burst` 循环：**30 次绘制**（一簇 2 颗
+           * 粒子 = 一个 Points），一次新星就把预算打穿 5 倍。换成配方是 3 次。 */
+          this.playSkillVfx(id, {
+            pos: c2, aim: c2, dir: dir, radius: 6 * srad, segments: ['cast']
+          });
+          /* [P2b] 台阶 Lv10「收尾爆燃」：新星没有「结束」这一说，所以落点
+           * 0.6 秒后再炸一发 —— 与变体「霜爆」的 aftershock 是同族观感，
+           * 但走的是 endBurst 这个键，两条会叠加而不是互相顶掉。 */
+          if (bBeh && bBeh.endBurst) {
+            setTimeout(() => {
+              if (this.mapGen !== fnGen || this.dead) return;
+              this.explodeAt(c2.clone(), 6 * srad * 0.9,
+                st.atk * (bBeh.endBurst / 100) * spow, 0x8ad8ff, false, true, 'aoe');
+            }, 600);
           }
         };
         for (let i = 0; i < n; i++) {
@@ -3346,7 +5181,9 @@ const Game = {
       }
       case 'chain': {
         this.actor.atkAnim = 1; this.actor.atkType = 'cast';
-        SFX.thunder();
+        /* [P5b] 起手：手上一簇电（飞弹位 `cast`）。原来这一位只有几道 beam 飞出去，
+         * 玩家按完看不出「是从我手上起的」。 */
+        this.playSkillVfx(id, { pos: pp, aim: aim, dir: dir, radius: 3.2, segments: ['cast'] });
         let cur = this.nearestEnemy(aim, 12) || this.nearestEnemy(pp, 12);
         const hitSet = new Set();
         let from = new THREE.Vector3(pp.x, 1.5, pp.z);
@@ -3366,48 +5203,88 @@ const Game = {
           }
           cur = next;
         }
+        /* [P5b] 命中段**只在最后一跳**播。连锁闪电是同一帧里连跳 5 下的：
+         * 每跳都播一遍命中段就是 5 套闪白 + 冰花同时压上来（5 × 2 = 10 次绘制，
+         * 硬指标是 6）。而「连」这件事本来就已经由那 5 道折线说完了 ——
+         * 配方在这里补的是**收尾**：电弧最后砸中的那一下比前面都亮。 */
+        if (jumps) {
+          this.playSkillVfx(id, {
+            pos: new THREE.Vector3(from.x, 0, from.z),
+            aim: new THREE.Vector3(from.x, 0, from.z),
+            dir: dir, radius: 2.4, segments: ['impact']
+          });
+        }
         if (jumps) this.shake = 0.2;
         break;
       }
       case 'meteor': {
         this.actor.atkAnim = 1; this.actor.atkType = 'cast';
-        SFX.cast();
         const target = aim.clone();
-        FX.telegraph(target, 5.5 * srad, 0.9, () => {
-          this.explodeAt(target, 5.5 * srad, st.atk * 4.2 * spow, 0xff5522, true);
-          SFX.explode(); this.shake = 0.6;
-          for (let i = 0; i < 4; i++) setTimeout(() => {
-            FX.burst(new THREE.Vector3(target.x + RND(-4, 4), 0.3, target.z + RND(-4, 4)), 0xff7a20, 14, { speed: 9, size: 0.16, life: 0.8, gravity: -3, additive: true });
-          }, i * 60);
-        });
-        // 落下的陨石视觉
-        const rock = new THREE.Mesh(sphGeo(0.8, 6), new THREE.MeshBasicMaterial({ color: 0xff5522 }));
-        rock.position.set(target.x, 18, target.z);
-        this.scene.add(rock);
-        const fall = { t: 0 };
-        const fallFn = () => {
-          fall.t += 0.016;
-          rock.position.y -= 20 * 0.05;
-          if (fall.t < 0.95) requestAnimationFrame(fallFn); else { this.scene.remove(rock); }
-        };
-        fallFn();
+        const mRad = 5.5 * srad;
+        /* [P2b] 双陨 / 三连落：1 + sextra 颗（这个位的发数台阶在 Lv5 / Lv7，
+         * 3 级是「溅射」—— 见 SKILL_COUNT_TIER）。
+         * 偏移取 0.55 倍半径：数量轴的折算按「每颗都打中同一只」算，偏出半径
+         * 就是「升一级反而更弱」（火墙位踩过）。留出的余量是为了让几颗石头
+         * 看得见是几颗，而不是全叠成一个点。 */
+        const mCnt = 1 + Math.max(0, sextra);
+        /* [P2b] Lv9 / Lv10「落点留火海」：每颗自己的落点各留一块。
+         * 半径取 0.75 倍爆炸半径 —— 火海比爆炸小一圈，玩家才看得出「炸点」
+         * 与「烧着的地」是两层；等大会让范围读数虚高。 */
+        const mField = Math.max(0, (bBeh && bBeh.tierField) || 0);
+        const mFieldDur = Math.max(1, (bBeh && bBeh.tierFieldDur) || 4);
+        for (let k = 0; k < mCnt; k++) {
+          const a = k * Math.PI * 2 / Math.max(1, mCnt - 1);
+          const off = k === 0 ? 0 : mRad * 0.55;
+          const c = new THREE.Vector3(target.x + Math.cos(a) * off, 0, target.z + Math.sin(a) * off);
+          /* [P5b] 起手段：落点预警圈 + 天降火线（`SKILL_VFX.meteor` 的 cast）。
+           * 0.9 秒的前摇里玩家就靠这两样判断「砸哪儿、砸多大」，一颗石头一份。 */
+          this.playSkillVfx(id, {
+            pos: c, aim: c, dir: dir, radius: mRad, segments: ['cast']
+          });
+          FX.telegraph(c, mRad, 0.9 + k * 0.12, () => {
+            /* [P5b] 命中段：冲击环 + 倒挂尘柱 + 焦痕（台阶越高尘柱越大、焦痕越久） */
+            this.playSkillVfx(id, { pos: c, aim: c, dir: dir, radius: mRad, segments: ['impact'] });
+            this.explodeAt(c, mRad, st.atk * 4.2 * spow, 0xff5522, true);
+            if (mField) this.spawnTierField(c, mRad * 0.75, mField, mFieldDur, 0xff5522);
+            this.shake = 0.6;
+          });
+          // 落下的陨石视觉
+          const rock = new THREE.Mesh(sphGeo(0.8, 6), new THREE.MeshBasicMaterial({ color: 0xff5522 }));
+          rock.position.set(c.x, 18, c.z);
+          this.scene.add(rock);
+          const fall = { t: 0 };
+          const fallFn = () => {
+            fall.t += 0.016;
+            rock.position.y -= 20 * 0.05;
+            if (fall.t < 0.95) requestAnimationFrame(fallFn); else { this.scene.remove(rock); }
+          };
+          fallFn();
+        }
         break;
       }
       case 'iceshield': {
         this.actor.atkAnim = 1; this.actor.atkType = 'cast';
-        SFX.ice();
         this.shield = st.hpMax * 0.35 * (1 + (st.shieldBonus || 0) / 100) * spow;   // [S1] 护盾强度，传世可再强化
-        this.shieldT = 10;
-        FX.ring(pp, 2, 0x9ae0ff, 0.6, 0.2);
+        /* [P2b] 时长必须带 sdur：变体「永冻」的 mods {dur:6} 就是「持续 +6 秒」，
+         * 原来这里写死 10，那一整条变体一个字都没生效（面板还写着 +6 秒）。 */
+        this.shieldT = 10 + sdur;
+        /* [P5b] 护盾位配方：起手长出一簇贴合轮廓的冰晶（Lv5 起两层）+ 持续段的
+         * 冰晶浮动。破盾那一下在 `breakShield` 里补 `impact`。 */
+        this.playSkillVfx(id, { pos: pp, aim: pp, dir: dir, radius: 2, segments: ['cast', 'loop'] });
         UI.toast('玄冰护盾 ' + Math.round(this.shield));
         break;
       }
       case 'starfall': {
         this.actor.atkAnim = 1; this.actor.atkType = 'cast';
-        SFX.cast(); SFX.boss();
         const center = aim.clone();
         let n = 0;
         const gen = this.mapGen;
+        /* [P2b] Lv9 / Lv10「落点留火海」：每颗陨星的落点各留一块。
+         * 一场雨落 16~18 颗，所以 `spawnTierField` 那边有「同时最多 4 块」的
+         * 预算 —— 不然 18 块 3 码的地会把整片战场糊死。留下的 4 块是**最后
+         * 落下的那 4 颗**，观感正好是「雨停了，地上还在烧」。 */
+        const sfField = Math.max(0, (bBeh && bBeh.tierField) || 0);
+        const sfFieldDur = Math.max(1, (bBeh && bBeh.tierFieldDur) || 4);
         /* [P3] 星移（变体）：改成一段「跟着人走」的引导 —— 4 秒内每 0.35 秒
          * 在你**当前**位置砸一颗，所以边跑边下陨星。原口径是「围着落点砸 16 颗」，
          * 换的是「能不能挪窝」，不是数字 */
@@ -3419,7 +5296,8 @@ const Game = {
             ct++;
             const ppc = this.playerGroup.position;
             const t = new THREE.Vector3(ppc.x + RND(-2.4, 2.4), 0, ppc.z + RND(-2.4, 2.4));
-            this.explodeAt(t, 3.0, st.atk * 1.5, 0xff7a30, false, true);
+            this.explodeAt(t, 3.0 * srad, st.atk * 1.5, 0xff7a30, false, true);
+            if (sfField) this.spawnTierField(t, 3.0 * srad * 0.75, sfField, sfFieldDur, 0xff7a30);
             if (ct >= Math.ceil(ch / 0.35)) clearInterval(ivc);
           }, 350);
           UI.toast('星移 · 引导 ' + ch + ' 秒');
@@ -3430,8 +5308,16 @@ const Game = {
           n++;
           const off = new THREE.Vector3(RND(-9, 9), 0, RND(-9, 9));
           const t = center.clone().add(off);
-          this.explodeAt(t, 3.2, st.atk * 1.6, 0xff7a30, false, true);
-          /* 星阙 5 件：陨星 +8 颗（count 修正） */
+          /* [P5b] 每一颗陨星走陨石位的**命中段**（冲击环 + 尘柱 + 焦痕）。
+           * 起手段不播：一场雨落 16 颗，16 条天降火线会把屏幕糊死 ——
+           * 这个位的「从天而降」由 case 自己的落点节奏读出来，不需要配方再说一遍。 */
+          this.playSkillVfx(id, { pos: t, aim: t, dir: dir, radius: 3.2 * srad, segments: ['impact'] });
+          this.explodeAt(t, 3.2 * srad, st.atk * 1.6, 0xff7a30, false, true);
+          if (sfField) this.spawnTierField(t, 3.2 * srad * 0.75, sfField, sfFieldDur, 0xff7a30);
+          /* 星阙 5 件：陨星 +8 颗（count 修正）。
+           * [P2b] 基数 16 = SKILL_COUNT_BASE.starfall；这个位的发数台阶在
+           * Lv5 / Lv7（Lv3 是「溅射」，只改落点半径），所以 sextra 在这里
+           * 只来自 5 / 7 级 + 装备，不再有 3 级那一发。 */
           if (n > 16 + sextra) clearInterval(iv);
         }, 220);
         break;
@@ -3439,7 +5325,6 @@ const Game = {
       /* [S4] 冰锥：三枚扇形冰锥，命中减速 */
       case 'iceshard': {
         this.actor.atkAnim = 1; this.actor.atkType = 'cast';
-        SFX.ice();
         const n = 3 + Math.max(0, sextra);
         /* [P3] 环刺（变体）：改成绕自身八向齐射，不再朝一个扇面 */
         const ringOn = (bBeh && bBeh.ring) ? Math.max(3, Math.round(bBeh.ring)) : 0;
@@ -3453,15 +5338,24 @@ const Game = {
           FX.projectile({
             pos: new THREE.Vector3(pp.x + d2.x * 0.8, 1.4, pp.z + d2.z * 0.8),
             dir: d2, speed: 26, color: 0x9ae0ff, radius: 0.26, hitRadius: 0.5, team: 'player',
-            dmg: st.atk * 1.2 * spow, life: 1.2, elem: 'ice', trail: true, tag: 'proj',
+            dmg: st.atk * 1.2 * spow, life: 1.2, elem: 'ice', trail: true, tag: 'proj', inj: this._elem,
+            /* [U6-2] 施法者 id（见 fireball 的同名注释） */
+            sfxId: id,
             /* [P2] 冰枪（变体）：贯穿冰枪。变体走旧 variants 不进 branchBeh，
              * 这里一并读一下，等变体接进行为层时这条自动生效 */
             pierce: !!(bBeh && bBeh.pierce),
             onHit: (e, proj) => {
               this.damageEnemy(e, proj.dmg, false, { tag: 'proj', elem: 'ice' });
               e.slow = Math.max(e.slow || 0, 0.4); e.slowT = Math.max(e.slowT || 0, 2);
-              FX.flashCircle(proj.pos, 1.6, 0x9ae0ff, 0.25);
-              FX.burst(new THREE.Vector3(proj.pos.x, 1, proj.pos.z), 0x9ae0ff, 8, { speed: 3, size: 0.1, life: 0.4, additive: true });
+              /* [P5b] 命中段走飞弹位配方（闪白 + 冰晶迸溅）。
+               * **`decal: null` 是这里必须的**：这一发是 3~8 连射，每发都留一块
+               * 元素残留，一次齐射就能把贴花池（16 个 quad）吃掉一半，
+               * 而且地上会变成一堆互相叠着的霜斑。冰枪的「残留」是敌人身上的减速，
+               * 不是地上的痕迹 —— 这一位的 `decal` 让位给慢速。 */
+              this.playSkillVfx(id, {
+                pos: proj.pos.clone(), aim: proj.pos.clone(), dir: d2, radius: 1.6,
+                decal: null, segments: ['impact']
+              });
             }
           });
         }
@@ -3470,14 +5364,45 @@ const Game = {
       /* [S4] 暴雪：区域持续冰伤 + 减速 */
       case 'blizzard': {
         this.actor.atkAnim = 1; this.actor.atkType = 'cast';
-        SFX.ice();
-        const c = aim.clone();
+        const core = aim.clone();
         const rad = 6 * srad;
         const dur = 5 + sdur;
-        const zona = FX.area(c, rad, 0x9ad8ff, dur, { opacity: 0.26 });
-        /* [P3] 暴风（变体）：区域跟着人走。锚点 c 是伤害循环真正在读的那个对象，
+        /* [P2b] 多片暴雪（这个位的发数台阶在 Lv5 / Lv7）：1 + sextra 片，围着落点散开。
+         * 偏移必须 < 半径 —— 数量轴的折算按「每片都盖住同一只」算，偏出去就等于
+         * 高一级反而更弱（火墙位踩过这个坑）。 */
+        const zCnt = 1 + Math.max(0, sextra);
+        const cs = [], zfx = [];
+        for (let k = 0; k < zCnt; k++) {
+          const a = k * Math.PI * 2 / Math.max(1, zCnt - 1);
+          const off = k === 0 ? 0 : rad * 0.55;
+          const ck = new THREE.Vector3(core.x + Math.cos(a) * off, 0, core.z + Math.sin(a) * off);
+          cs.push(ck);
+          zfx.push(FX.area(ck, rad, 0x9ad8ff, dur, { opacity: 0.26 }));
+          /* [P5b] 每一片各播一次陨石位的 `cast`（落点预警圈 + 天降光柱）。
+           * 「暴雪从天上来」是这一位的身份，一片一根柱；只在主落点播的话，
+           * 另外两片会「凭空出现一片圆盘」—— 那正是 §1.1 说的老问题。
+           * 三片齐播是 9 次绘制，但只在这一帧（光柱 0.9 秒后自己灭），
+           * 持续段仍然只有 area + 每 0.7 秒一簇，与改造前同价。 */
+          this.playSkillVfx(id, {
+            pos: ck, aim: ck, dir: dir, radius: rad, segments: ['cast']
+          });
+        }
+        /* [P3] 暴风（变体）：区域跟着人走。锚点是伤害循环真正在读的那些对象，
          * 网格一并挪，判定与观感才不会分家 */
-        if (bBeh && bBeh.follow) this.attachFollow([c], [zona], dur);
+        if (bBeh && bBeh.follow) this.attachFollow(cs, zfx, dur);
+        /* [P2b] Lv9 / Lv10「落点留领域」：暴雪是持续 5 秒的区域，所以这一块
+         * **要等它停了才铺**，否则只是在同一片地上叠一层，没有「留」的意思。
+         * 锚点读的是 cs —— 「暴风」变体会把区域带着走，玩家看到的是
+         * 「冰暴最后停在哪」，不是「最初瞄准哪」。 */
+        const zField = Math.max(0, (bBeh && bBeh.tierField) || 0);
+        const zFieldDur = Math.max(1, (bBeh && bBeh.tierFieldDur) || 4);
+        if (zField) {
+          const zGen = this.mapGen;
+          setTimeout(() => {
+            if (this.mapGen !== zGen || this.dead || !this.state) return;
+            for (const ck of cs) this.spawnTierField(ck, rad * 0.7, zField, zFieldDur, 0x9ad8ff);
+          }, dur * 1000);
+        }
         let ticks = 0;
         const gen = this.mapGen;
         /* [P3] 冰封（变体）：每隔 N 秒把区域里的人钉住 1 秒。
@@ -3490,18 +5415,23 @@ const Game = {
           const freezeNow = fe > 0 && ticks % fe === 0;
           for (const e of this.enemies) {
             if (e.dead) continue;
-            if (DIST2D(e.pos, c) < rad + e.radius) {
+            let hitAny = false;
+            for (const c of cs) {
+              if (e.dead) break;
+              if (DIST2D(e.pos, c) >= rad + e.radius) continue;
+              hitAny = true;
               const { dmg } = this.rollDamage(st.atk * 0.6 * spow);
               this.damageEnemy(e, dmg, false, { silent: true, elem: 'ice' });
-              e.slow = Math.max(e.slow || 0, 0.45); e.slowT = Math.max(e.slowT || 0, 1.5);
-              if (freezeNow) {
-                e.stun = Math.max(e.stun || 0, e.boss ? 0.3 : 1);
-                e.slow = 1; e.slowLabel = '冻结';
-                FX.burst(new THREE.Vector3(e.pos.x, 1.1, e.pos.z), 0x9ae8ff, 7, { speed: 3, size: 0.1, life: 0.5, additive: true });
-              }
+            }
+            if (!hitAny) continue;
+            e.slow = Math.max(e.slow || 0, 0.45); e.slowT = Math.max(e.slowT || 0, 1.5);
+            if (freezeNow) {
+              e.stun = Math.max(e.stun || 0, e.boss ? 0.3 : 1);
+              e.slow = 1; e.slowLabel = '冻结';
+              FX.burst(new THREE.Vector3(e.pos.x, 1.1, e.pos.z), 0x9ae8ff, 7, { speed: 3, size: 0.1, life: 0.5, additive: true });
             }
           }
-          FX.burst(new THREE.Vector3(c.x + RND(-rad + 1, rad - 1), 2.2, c.z + RND(-rad + 1, rad - 1)), 0xcfe8ff, 3, { speed: 1.2, size: 0.14, life: 1.4, gravity: -0.4 });
+          FX.burst(new THREE.Vector3(core.x + RND(-rad + 1, rad - 1), 2.2, core.z + RND(-rad + 1, rad - 1)), 0xcfe8ff, 3, { speed: 1.2, size: 0.14, life: 1.4, gravity: -0.4 });
           if (ticks >= Math.ceil(dur / 0.7)) clearInterval(iv);
         }, 700);
         break;
@@ -3509,28 +5439,57 @@ const Game = {
       /* [S4] 火墙：沿施法方向的持续火带 */
       case 'firewall': {
         this.actor.atkAnim = 1; this.actor.atkType = 'cast';
-        SFX.fire();
         const dur = 4 + sdur;
         const rad = 3 * srad;
         const segs = [], wfx = [];
+        /* [P2b] 数量台阶「双段 / 三段」：1 + sextra 道火墙，沿垂直于施法方向的
+         * 一条线并排铺开。间距取 0.95 倍半径 —— 这个数不是拍脑袋：
+         * 数量轴的伤害折算（skillCountDmgPct）是按「每段都打得中同一个目标」算的，
+         * 间距一旦大过半径，站中间的目标只吃到一道，却要背单发 -7.5% 的惩罚，
+         * 三段的实际伤害反而比一段低。0.95 保证中间的目标吃到全部 N 道，
+         * 总伤正好是 Σ0.85^n（1.85 / 2.57 倍）。 */
+        const walls = 1 + Math.max(0, sextra);
+        const perp = new THREE.Vector3(-dir.z, 0, dir.x);
+        /* 第 w 道火墙的起点（围火变体用它外层数，普通形态用它做横向偏移） */
+        const wallOff = w => (w - (walls - 1) / 2) * rad * 0.95;
         /* [P3] 围火（变体）：不再是朝前的火带，改成绕自己一圈的火墙 ——
-         * 防守向的用法，怪一贴身就在烧 */
+         * 防守向的用法，怪一贴身就在烧。多道时是同心环（半径逐层外扩），
+         * 因为绕着人一圈的墙往旁边平移没有意义。 */
         const ringFire = !!(bBeh && bBeh.ring);
         if (ringFire) {
-          const nSeg = 6, rr = Math.max(2.4, rad * 1.2);
-          for (let i = 0; i < nSeg; i++) {
-            const a = (i / nSeg) * Math.PI * 2;
-            const c = new THREE.Vector3(pp.x + Math.cos(a) * rr, 0, pp.z + Math.sin(a) * rr);
-            segs.push(c);
-            wfx.push(FX.area(c, rad, 0xff5522, dur, { opacity: 0.22 }));
+          const nSeg = 6;
+          for (let w = 0; w < walls; w++) {
+            const rr = Math.max(2.4, rad * 1.2) * (1 + w * 0.6);
+            for (let i = 0; i < nSeg; i++) {
+              const a = (i / nSeg) * Math.PI * 2;
+              const c = new THREE.Vector3(pp.x + Math.cos(a) * rr, 0, pp.z + Math.sin(a) * rr);
+              segs.push(c);
+              wfx.push(FX.area(c, rad, 0xff5522, dur, { opacity: 0.22 }));
+            }
           }
         } else {
-          for (let i = 0; i < 4; i++) {
-            const c = new THREE.Vector3(aim.x + dir.x * i * 2.6, 0, aim.z + dir.z * i * 2.6);
-            segs.push(c);
-            wfx.push(FX.area(c, rad, 0xff5522, dur, { opacity: 0.22 }));
+          for (let w = 0; w < walls; w++) {
+            const off = wallOff(w);
+            const o0 = new THREE.Vector3(aim.x + perp.x * off, 0, aim.z + perp.z * off);
+            for (let i = 0; i < 4; i++) {
+              const c = new THREE.Vector3(o0.x + dir.x * i * 2.6, 0, o0.z + dir.z * i * 2.6);
+              segs.push(c);
+              wfx.push(FX.area(c, rad, 0xff5522, dur, { opacity: 0.22 }));
+            }
           }
         }
+        /* [P5b] 火墙位配方：沿施法方向排开的竖直火舌（`cone` 的 `line` 排数）。
+         * `FX.area` 留着 —— 那是**判定圈**（怪站进去才烧），火舌是剪影。
+         * 方案 §7.2 说的「火墙是线、太极是圆」，说的正是这一层：
+         * 以前两者都是圆片，唯一的差别是颜色。 */
+        this.playSkillVfx(id, { pos: pp, aim: aim, dir: dir, radius: rad, segments: ['cast', 'loop'] });
+        /* [P2b] 台阶 Lv9 场内易伤 / Lv5 命中挂持续伤害。
+         * 领域类技能不能靠通用 hit 通道：那个只在施法瞬间、以准星为圆心结算一次，
+         * 而怪是**后来走进火里**的。所以两条都在每一跳上结算。
+         * 持续伤害只在快烧完时补一次（dotT < 0.75）—— 每跳都调 applySkillDot
+         * 会每 0.5 秒刷一行飘字，看着像卡了。 */
+        const fwVuln = Math.max(0, (bBeh && bBeh.vuln) || 0);
+        const fwDot = Math.max(0, (bBeh && bBeh.tierDot) || 0);
         /* [P3] 追随（变体）：整条火带跟着人走（四段锚点 + 四块网格一起挪） */
         if (bBeh && bBeh.follow) this.attachFollow(segs, wfx, dur);
         let ticks = 0;
@@ -3538,7 +5497,6 @@ const Game = {
         /* [P2] 蔓延（精研）：每秒向施法点两侧各延长 1 码，最多 +N 码。
          * 新段与旧段共用 segs 数组 —— 伤害循环节点 iterates 同一份，自动跟上 */
         if (bBeh && bBeh.grow) {
-          const perp = new THREE.Vector3(-dir.z, 0, dir.x);
           const growMax = Math.max(1, Math.round(bBeh.grow));
           let grown = 0;
           const growIv = setInterval(() => {
@@ -3562,13 +5520,21 @@ const Game = {
               if (DIST2D(e.pos, c) < rad + e.radius) {
                 const { dmg } = this.rollDamage(st.atk * 0.55 * spow);
                 this.damageEnemy(e, dmg, false, { silent: true, elem: 'fire' });
+                if (fwVuln) {
+                  e.vuln = Math.max(e.vuln || 0, fwVuln);
+                  e.vulnT = Math.max(e.vulnT || 0, 4);
+                }
+                if (fwDot && (e.dotT || 0) < 0.75) {
+                  this.applySkillDot(e, st.atk * fwDot / 100 * spow, 3, 'fire', '灼烧');
+                }
               }
             }
           }
           if (ticks >= Math.ceil(dur / 0.5)) {
             clearInterval(iv);
-            /* [P3] 爆燃（变体）：火墙烧完在每段原地炸一发。
-             * 放在收尾而不是另开定时器 —— 时段必须跟火墙本体对得上 */
+            /* [P3] 爆燃（变体）/ [P2b] 台阶 Lv10「收尾爆燃」：火墙烧完在每段原地炸一发。
+             * 放在收尾而不是另开定时器 —— 时段必须跟火墙本体对得上。
+             * 台阶用 `+endBurst` 叠加：选了爆燃变体是 120 + 60，没选的是 60。 */
             if (bBeh && bBeh.endBurst) {
               const burst = st.atk * (bBeh.endBurst / 100) * spow;
               for (const c of segs) this.explodeAt(c.clone(), rad * 1.1, burst, 0xff7a30, false, true, 'aoe');
@@ -3582,62 +5548,106 @@ const Game = {
       /* [S4] 焚天：以自身为中心的烈焰新星 */
       case 'pyroclasm': {
         this.actor.atkAnim = 1; this.actor.atkType = 'cast';
-        SFX.fire(); SFX.explode();
         const rad = 7 * srad;
         const hits = this.enemies.filter(e => !e.dead && DIST2D(e.pos, pp) < rad + e.radius);
         for (const e of hits) {
           const { dmg, crit } = this.rollDamage(st.atk * 3.6 * spow);
           this.damageEnemy(e, dmg, crit, { knock: 1.2, elem: 'fire' });
         }
+        /* [P5b] 焚天的「炸开」交给护盾位的命中段（`spr` 各向散开 = 一圈火舌推出去）。
+         * **`FX.ring` 留着** —— 它是 7 码的判定边界（画多大 = 打多大），
+         * 配方里的 cast 环只有半径的一半，用它替就是「看着打到了、其实没到」。
+         * 原来那 36 次 `FX.burst` 循环是 36 次绘制，换成配方是 1~2 次。 */
+        this.playSkillVfx(id, { pos: pp, aim: pp, dir: dir, radius: rad, segments: ['impact'] });
         FX.ring(pp, rad, 0xff7a30, 0.9, 0.4);
-        FX.flashCircle(pp, rad, 0xff9040, 0.5);
-        for (let i = 0; i < 36; i++) {
-          const ang = (i / 36) * 6.2832, r = RND(1, rad);
-          FX.burst(new THREE.Vector3(pp.x + Math.cos(ang) * r, RND(0.2, 1.6), pp.z + Math.sin(ang) * r), 0xff9040, 2, { speed: 5, size: 0.13, life: 0.7, gravity: -2, additive: true });
-        }
         this.shake = 0.55; this.hitstop = 90;
+        /* [P2b] 台阶 Lv10「爆发时定身」：焚天没有护盾，走的是「爆发」这个入口 ——
+         * 结算与破盾侧共用 behTierNova，两个入口的数值不会漂。 */
+        if (bBeh && bBeh.tierNova) this.behTierNova('pyroclasm', pp);
         break;
       }
       /* [S4] 雷云：区域持续随机落雷 */
       case 'thundercloud': {
         this.actor.atkAnim = 1; this.actor.atkType = 'cast';
-        SFX.thunder();
-        const c = aim.clone();
         const rad = 7 * srad;
         const dur = 6 + sdur;
-        const zona = FX.area(c, rad, 0x8a7aff, dur, { opacity: 0.2 });
-        /* [P3] 随身（变体）：雷云跟着人走 */
-        if (bBeh && bBeh.follow) this.attachFollow([c], [zona], dur);
-        let ticks = 0;
+        /* [P2b] 数量台阶「双段 / 三段」：1 + sextra 朵雷云，围着落点散开。
+         * 偏移取 0.55 倍半径：完全叠在一起看不出是两朵（白给），散太开又变成
+         * 三个谁也罩不住怪的小云。这与毒雾多团用的是同一个比例。
+         * 每朵各自维护 ticks / rampN / 定时器 —— 共用一个会让三朵同步跳、
+         * 蓄电也互相串味。 */
+        const clouds = 1 + Math.max(0, sextra);
+        /* [P2b] 台阶 Lv9 易伤 / Lv5 持续伤害：领域类靠每一跳结算，
+         * 不走通用 hit 通道（那个只在施法瞬间、以准星为圆心结算一次）。 */
+        const tcVuln = Math.max(0, (bBeh && bBeh.vuln) || 0);
+        const tcDot = Math.max(0, (bBeh && bBeh.tierDot) || 0);
         const gen = this.mapGen;
-        /* [P2] 蓄电（精研）：玩家停在云里每 1 秒，落雷频率 +15%。
-         * 「频率」落成每跳多劈几道（3 道 × 15% × 驻留秒数），上限 +6 道，
-         * 走出云就清零 —— 换来的增频只在站桩引导时成立 */
-        let rampN = 0;
-        const iv = setInterval(() => {
-          if (this.mapGen !== gen) { clearInterval(iv); return; }
-          ticks++;
-          const inZone = this.enemies.filter(e => !e.dead && DIST2D(e.pos, c) < rad + e.radius);
-          if (bBeh && bBeh.ramp) {
-            const pg = this.playerGroup.position;
-            rampN = DIST2D(pg, c) < rad + 2 ? Math.min(rampN + 1, 20) : 0;
-          }
-          const extra = (bBeh && bBeh.ramp) ? Math.min(6, Math.floor(rampN * 3 * 0.15)) : 0;
-          const bolts = Math.min(inZone.length, Math.min(3, inZone.length) + extra);
-          for (let i = 0; i < bolts; i++) {
-            const e = inZone[Math.floor(Math.random() * inZone.length)];
-            FX.beam(new THREE.Vector3(e.pos.x, 7, e.pos.z), new THREE.Vector3(e.pos.x, 1, e.pos.z), 0xa9c8ff, 0.18);
-            const { dmg, crit } = this.rollDamage(st.atk * 1.1 * spow);
-            this.damageEnemy(e, dmg, crit, { elem: 'lightning', silent: true });
-          }
-          if (ticks >= Math.ceil(dur / 1)) clearInterval(iv);
-        }, 1000);
+        for (let ci = 0; ci < clouds; ci++) {
+          const ang = (ci / clouds) * Math.PI * 2;
+          const off = clouds === 1 ? 0 : rad * 0.55;
+          const c = new THREE.Vector3(aim.x + Math.cos(ang) * off, 0, aim.z + Math.sin(ang) * off);
+          const zona = FX.area(c, rad, 0x8a7aff, dur, { opacity: 0.2 });
+          /* [P5b] 云落地：火墙位的 `cast`（一排竖直雷丝）。方案 §486 的
+           * 「雷云收敛为火墙的雷元素形态」就落在这句上 —— 云不是一块紫圆盘，
+           * 是「一排电在云底烧」。`FX.area` 留着当判定圈，落雷（`beam`）留着当本体。 */
+          this.playSkillVfx(id, {
+            pos: c, aim: c, dir: dir, radius: rad, segments: ['cast']
+          });
+          /* [P3] 随身（变体）：雷云跟着人走 */
+          if (bBeh && bBeh.follow) this.attachFollow([c], [zona], dur);
+          let ticks = 0;
+          /* [P2] 蓄电（精研）：玩家停在云里每 1 秒，落雷频率 +15%。
+           * 「频率」落成每跳多劈几道（3 道 × 15% × 驻留秒数），上限 +6 道，
+           * 走出云就清零 —— 换来的增频只在站桩引导时成立 */
+          let rampN = 0;
+          const iv = setInterval(() => {
+            if (this.mapGen !== gen) { clearInterval(iv); return; }
+            ticks++;
+            const inZone = this.enemies.filter(e => !e.dead && DIST2D(e.pos, c) < rad + e.radius);
+            if (bBeh && bBeh.ramp) {
+              const pg = this.playerGroup.position;
+              rampN = DIST2D(pg, c) < rad + 2 ? Math.min(rampN + 1, 20) : 0;
+            }
+            const extra = (bBeh && bBeh.ramp) ? Math.min(6, Math.floor(rampN * 3 * 0.15)) : 0;
+            const bolts = Math.min(inZone.length, Math.min(3, inZone.length) + extra);
+            for (let i = 0; i < bolts; i++) {
+              const e = inZone[Math.floor(Math.random() * inZone.length)];
+              if (!e || e.dead) continue;
+              FX.beam(new THREE.Vector3(e.pos.x, 7, e.pos.z), new THREE.Vector3(e.pos.x, 1, e.pos.z), 0xa9c8ff, 0.18);
+              const { dmg, crit } = this.rollDamage(st.atk * 1.1 * spow);
+              this.damageEnemy(e, dmg, crit, { elem: 'lightning', silent: true });
+              if (tcVuln) {
+                e.vuln = Math.max(e.vuln || 0, tcVuln);
+                e.vulnT = Math.max(e.vulnT || 0, 4);
+              }
+              if (tcDot && !e.dead && (e.dotT || 0) < 0.75) {
+                this.applySkillDot(e, st.atk * tcDot / 100 * spow, 3, 'lightning', '雷灼');
+              }
+            }
+            if (ticks >= Math.ceil(dur / 1)) {
+              clearInterval(iv);
+              /* [P2b] 台阶 Lv10「收尾爆燃」：云散的时候在云心炸一发。
+               * 雷云本来没有收尾，这一级给它一个「云散了还要挨一下」。
+               * 与火墙共用 endBurst 键（都走 `+` 叠加，不吃变体）。 */
+              if (bBeh && bBeh.endBurst) {
+                this.explodeAt(c.clone(), rad * 0.9,
+                  st.atk * (bBeh.endBurst / 100) * spow, 0xa9c8ff, false, true, 'aoe');
+                /* [P5b] 云散那一下补命中段（火墙位的 `decal` = 一道雷痕）。
+                 * 这是「收尾」的读法：云走了，地上还留着一道被打过的印子。 */
+                this.playSkillVfx(id, {
+                  pos: c, aim: c, dir: dir, radius: rad, segments: ['impact']
+                });
+                if (ci === 0) FX.text(new THREE.Vector3(c.x, 2.8, c.z), '雷爆', 'lv', { life: 0.9 });
+                this.shake = Math.max(this.shake, 0.24);
+              }
+            }
+          }, 1000);
+        }
         break;
       }
       /* [S4] 雷罚：单体天罚巨雷，对首领 +30% */
       case 'judgement': {
         this.actor.atkAnim = 1; this.actor.atkType = 'cast';
-        SFX.thunder(); SFX.boss();
         const target = this.nearestEnemy(aim, 16) || this.nearestEnemy(pp, 16);
         /* [P3] 雷柱（变体）：把一发巨雷改成 3 秒的持续雷柱，每 0.4 秒劈一次。
          * 总伤害略高于单发（要站着挨完），换取「怪不敢进这块地」 */
@@ -3648,6 +5658,14 @@ const Game = {
           let jt = 0;
           const genJ = this.mapGen;
           UI.toast('雷柱 · 引导 ' + chJ + ' 秒');
+          /* [P5b] 雷柱（变体）的**成形**那一拍走陨石位的 `cast`：落点圈 + 天降光柱。
+           * 这一支是**提前 break** 的分支，不补这一句的话，选了「雷柱」的玩家
+           * 整只技能一个配方都播不到 —— 探针就是这么发现它的（契约 grep 是绿的，
+           * 因为 `playSkillVfx` 确实写在文件里，只是写在另一条分支上）。
+           * 之后每 0.4 秒那一道 `beam` 是「柱在劈」，与成形的光柱不是同一层。 */
+          this.playSkillVfx(id, {
+            pos: cj, aim: cj, dir: dir, radius: 3.4 * srad, segments: ['cast']
+          });
           const ivJ = setInterval(() => {
             if (this.mapGen !== genJ || this.dead) { clearInterval(ivJ); return; }
             jt++;
@@ -3663,13 +5681,51 @@ const Game = {
           }, 400);
           break;
         }
+        /* [P2b] 双陨 / 三连落在天罚这里 = 多劈几个目标（它本来就是单体巨雷）。
+         * 目标不够就把多出来的雷补在主目标身上 —— 数量轴的折算（skillCountDmgPct）
+         * 是按「每一发都打中同一只」算的，补打同一只是这套折算唯一自洽的读法。
+         * 也不做「多段分摊到同一只时每段减伤」：递减已经由 spow 统一折过了。 */
+        const jCnt = 1 + Math.max(0, sextra);
+        const jTgts = [];
         if (target) {
-          const bossMul = target.boss ? 1.3 : 1;
-          FX.telegraph(target.pos, 3.2 * srad, 0.7, () => {
-            FX.beam(new THREE.Vector3(target.pos.x, 10, target.pos.z), new THREE.Vector3(target.pos.x, 1, target.pos.z), 0xd8e8ff, 0.3);
+          jTgts.push(target);
+          const others = this.enemies
+            .filter(e => !e.dead && e !== target && DIST2D(e.pos, aim) < 16)
+            .sort((a, b) => DIST2D(a.pos, aim) - DIST2D(b.pos, aim));
+          for (const e of others) { if (jTgts.length >= jCnt) break; jTgts.push(e); }
+          while (jTgts.length < jCnt) jTgts.push(target);
+        }
+        /* [P2b] Lv3「溅射」：天罚是单体判定，靠这一段打到落点周围一圈。
+         * 键来自 SKILL_TIER_EVO.judgement（splash），同位的另外三只是范围
+         * 判定，溅射就是半径变大（mods.radius），不需要这个键。 */
+        const jSplash = Math.max(0, (bBeh && bBeh.splash) || 0);
+        /* [P2b] Lv9 / Lv10「落点留领域」：雷罚的落点是被劈中的那只脚下，
+         * 不是准星 —— 落雷会追到怪身上，两者恒不重合（符箓那边踩过）。 */
+        const jField = Math.max(0, (bBeh && bBeh.tierField) || 0);
+        const jFieldDur = Math.max(1, (bBeh && bBeh.tierFieldDur) || 4);
+        for (let k = 0; k < jTgts.length; k++) {
+          const tgt = jTgts[k];
+          const bossMul = tgt.boss ? 1.3 : 1;
+          FX.telegraph(tgt.pos.clone(), 3.2 * srad, 0.7 + k * 0.1, () => {
+            FX.beam(new THREE.Vector3(tgt.pos.x, 10, tgt.pos.z), new THREE.Vector3(tgt.pos.x, 1, tgt.pos.z), 0xd8e8ff, 0.3);
             const { dmg, crit } = this.rollDamage(st.atk * 8.5 * spow * bossMul);
-            this.damageEnemy(target, dmg, crit, { elem: 'lightning', knock: 1 });
-            FX.flashCircle(target.pos, 3.4, 0xd8e8ff, 0.4);
+            this.damageEnemy(tgt, dmg, crit, { elem: 'lightning', knock: 1 });
+            /* [P5b] 落雷的命中段走陨石位配方（冲击环 + 尘柱 + 焦痕）。
+             * 雷的残留是 `crack`（元素材质给的），不是焦痕 —— 形色分离在这儿生效。
+             * 原来的 `FX.flashCircle` 是一块平铺地面圆片，正是方案 §1.1 说的那类。 */
+            this.playSkillVfx(id, {
+              pos: tgt.pos.clone(), aim: tgt.pos.clone(), dir: dir,
+              radius: 3.4 * srad, segments: ['impact']
+            });
+            if (jField) this.spawnTierField(tgt.pos, 3.2 * srad * 0.75, jField, jFieldDur, 0xd8e8ff);
+            if (jSplash) {
+              for (const e of this.enemies) {
+                if (e.dead || e === tgt) continue;
+                if (DIST2D(e.pos, tgt.pos) >= 3.4 * srad + e.radius) continue;
+                const s2 = this.rollDamage(st.atk * 8.5 * spow * bossMul * jSplash / 100);
+                this.damageEnemy(e, s2.dmg, s2.crit, { elem: 'lightning' });
+              }
+            }
             this.shake = 0.6; this.hitstop = 110;
           }, 0xd8e8ff);
         }
@@ -3678,7 +5734,6 @@ const Game = {
       /* 道士 */
       case 'talisman': {
         this.actor.atkAnim = 1; this.actor.atkType = 'cast';
-        SFX.cast();
         /* [S4] 双符变体：1 + sextra 张，分别追踪不同目标 */
         const tgts = [];
         const primary = this.nearestEnemy(aim, 16) || this.nearestEnemy(pp, 16);
@@ -3698,6 +5753,17 @@ const Game = {
          * 原实现是一条 beam，同一帧生成又消失，画面上只闪一下，
          * 玩家根本看不出技能放没放出去，也没有飞行时间带来的节奏感。
          * 现在是一枚会拐弯追踪的符咒，命中瞬间才落雷。 */
+        /* [P2b] 台阶（Lv5 连锁 / Lv9 符阵 / Lv10 改追）全部在**落雷点**结算，
+         * 所以在这里一次取出、交给下面的 onHit —— 三个键在 skill-beh.js 里
+         * 登记成 hook（ph:'hook'），通用 hit 通道不会碰它们。
+         * 为什么不能走通用通道：那条以「落点（准星）」为圆心，而符会追到怪
+         * 身上，两者恒不重合 —— 拿准星当圆心等于在半空里劈雷。 */
+        const talChain = Math.max(0, Math.round((bBeh && bBeh.chainHit) || 0));
+        const talChainPct = ((bBeh && bBeh.chainHitPct) || 60) / 100;
+        const talZone = Math.max(0, Math.round((bBeh && bBeh.zoneHit) || 0));
+        const talZonePct = ((bBeh && bBeh.zonePct) || 15) / 100;
+        const talSeek = Math.max(0, Math.round((bBeh && bBeh.seek) || 0));
+        const talSeekPct = ((bBeh && bBeh.seekPct) || 70) / 100;
         for (const target of tgts) {
           const start = new THREE.Vector3(pp.x + RND(-0.3, 0.3), 1.5, pp.z + RND(-0.3, 0.3));
           const tdir = target
@@ -3705,17 +5771,75 @@ const Game = {
             : new THREE.Vector3(dir.x, 0, dir.z).normalize();
           FX.projectile({
             pos: start, dir: tdir, speed: 17, color: 0xffd24a, radius: 0.3, hitRadius: 0.45,
-            team: 'player', style: 'talisman', life: 2.0, trail: true, tag: 'proj',
+            team: 'player', style: 'talisman', life: 2.0, trail: true, tag: 'proj', inj: this._elem,
+            /* [U6-2] 施法者 id（见 fireball 的同名注释） */
+            sfxId: id,
             homing: target ? target.pos : null, homeTurn: 9,
             onHit: (e, proj) => {
-              const { dmg, crit } = this.rollDamage(st.atk * 1.7 * spow);
-              this.damageEnemy(e, dmg, crit, { tag: 'proj' });
+              /* [P2b] 改追（Lv10）打出去的那一发按 seekPct 结算 —— 白送一次
+               * 全额的话，「追 2 次」等于 +140% 伤害，比 Lv5 / Lv9 加起来还猛。 */
+              const seekMul = (proj && proj.seekUsed) ? talSeekPct : 1;
+              const { dmg, crit } = this.rollDamage(st.atk * 1.7 * spow * seekMul);
+              /* [U3] skill:id —— 符箓是投射物，命中时施法窗口早关了，
+               * this._castSkill 已被清零，组合层认不出「这是符」就画不出绿符钉。 */
+              this.damageEnemy(e, dmg, crit, { tag: 'proj', skill: id });
               // 符纸炸开 → 天雷落地
-              FX.beam(new THREE.Vector3(e.pos.x, 4.2, e.pos.z), new THREE.Vector3(e.pos.x, 0.9, e.pos.z), 0x9affd0, 0.16);
-              FX.flashCircle(e.pos, 1.9, 0x9affd0, 0.26);
-              FX.burst(new THREE.Vector3(e.pos.x, 1.2, e.pos.z), 0x9affd0, 12, { speed: 4, size: 0.1, life: 0.4, additive: true });
-              SFX.thunder();
+              /* [P5b] 命中段走符箓位配方：折线雷（`bolt`，带分叉）+ 朱砂字。
+               * 原来这里是一条直 `beam` + 一块地面圆片 + 一簇方块 —— 三样加起来
+               * 读作「闪了一下」，而配方给的折线才有「雷」的形状。
+               * Lv9 的阵环、Lv10 的延迟符字都在这一条上（台阶自动生效）。 */
+              this.playSkillVfx(id, {
+                pos: e.pos.clone(), aim: e.pos.clone(), dir: tdir,
+                radius: 1.9, segments: ['impact']
+              });
               this.shake = Math.max(this.shake, 0.12);
+              /* [P2b] Lv5 雷符连锁：从落雷点继续跳，最多 talChain 个。
+               * 伤害按 0.85^n 递减 —— 与数量台阶同一个口径，
+               * 不递减的话「连锁 2 个」等于白送 120% 伤害。 */
+              if (talChain) {
+                const done = new Set([e.id]);
+                let from = new THREE.Vector3(e.pos.x, 1.2, e.pos.z);
+                let cur = e;
+                for (let j = 0; j < talChain; j++) {
+                  let nxt = null, bd = 7;
+                  for (const o of this.enemies) {
+                    if (o.dead || done.has(o.id)) continue;
+                    const d = DIST2D(o.pos, cur.pos);
+                    if (d < bd) { bd = d; nxt = o; }
+                  }
+                  if (!nxt) break;
+                  done.add(nxt.id);
+                  const to = new THREE.Vector3(nxt.pos.x, 1.2, nxt.pos.z);
+                  FX.beam(from, to, 0x9affd0, 0.18, 0.9);
+                  FX.flashCircle(to, 1.2, 0x9affd0, 0.18);
+                  const r2 = this.rollDamage(st.atk * 1.7 * spow * talChainPct * Math.pow(0.85, j));
+                  this.damageEnemy(nxt, r2.dmg, r2.crit, { tag: 'proj' });
+                  from = to; cur = nxt;
+                }
+              }
+              /* [P2b] Lv9 雷符阵：在落雷点铺一片会跳电的符阵（不是准星） */
+              if (talZone) {
+                this.createSigilField(new THREE.Vector3(e.pos.x, 0, e.pos.z),
+                  3.4 * srad, st.atk * 1.7 * spow * talZonePct, talZone);
+              }
+              /* [P2b] Lv10 改追：命中后自动锁下一个目标，最多 talSeek 次。
+               * 用 proj.seekUsed 记账 —— 不记账的话每次命中都会再追一次，
+               * 一符清场（「穿透」那个 special 没有上限，这里必须有）。 */
+              if (talSeek && proj && (proj.seekUsed || 0) < talSeek) {
+                let nxt = null, bd = 10;
+                for (const o of this.enemies) {
+                  if (o.dead || o === e) continue;
+                  if (proj.hitSet && proj.hitSet.has(o.id)) continue;
+                  const d = DIST2D(o.pos, e.pos);
+                  if (d < bd) { bd = d; nxt = o; }
+                }
+                if (nxt) {
+                  proj.seekUsed = (proj.seekUsed || 0) + 1;
+                  proj.pierce = true;
+                  proj.homing = nxt.pos;
+                  FX.text(new THREE.Vector3(e.pos.x, 2.2, e.pos.z), '追符', 'info', { life: 0.6 });
+                }
+              }
               /* [S3] 符箓系大节点·天师：五雷符穿透，命中后飞向附近下一个目标 */
               if (st.specials && st.specials.talismanPierce) {
                 let next = null, bd = 14;
@@ -3734,14 +5858,21 @@ const Game = {
             }
           });
         }
-        // 出手瞬间手边亮一下，抬手动作才有落点
-        FX.flashCircle(new THREE.Vector3(pp.x + dir.x * 0.9, 0.08, pp.z + dir.z * 0.9), 1.1, 0xffd24a, 0.18);
+        /* [P5b] 出手瞬间手边亮一下，抬手动作才有落点 —— 走符箓位配方的
+         * `cast` 段（一簇朱砂符字从手里散开），不是一块地面圆片：
+         * 圆片画在脚边，读起来像「脚下有东西」，而这一发是从手上飞出去的。 */
+        this.playSkillVfx(id, {
+          pos: new THREE.Vector3(pp.x + dir.x * 0.9, 1.2, pp.z + dir.z * 0.9),
+          aim: aim, dir: dir, radius: 1.1, color: 0xffd24a, segments: ['cast']
+        });
         break;
       }
       /* [S4] 符箭：三张追踪符 */
       case 'talismanarrow': {
         this.actor.atkAnim = 1; this.actor.atkType = 'cast';
-        SFX.cast();
+        /* [P5b] 起手：万剑位的 `cast` 段（脚下一圈阵环）。三张符是同一发出去的，
+         * 起手只该有一次 —— 每张符各播一遍就是三个同心圆。 */
+        this.playSkillVfx(id, { pos: pp, aim: aim, dir: dir, radius: 3.2, segments: ['cast'] });
         /* [P3] 符雨（变体）：不再三张追踪，改成往落点砸一片符 ——
          * 单发低、覆盖面大，清群用；单体杀伤交给另外两条 */
         if (bBeh && bBeh.rain) {
@@ -3754,8 +5885,12 @@ const Game = {
             if (this.mapGen !== genR || this.dead) { clearInterval(rIv); return; }
             rn++;
             const t = new THREE.Vector3(c.x + RND(-spread, spread), 0, c.z + RND(-spread, spread));
-            FX.beam(new THREE.Vector3(t.x, 9, t.z), new THREE.Vector3(t.x, 0.5, t.z), 0xd8f0a0, 0.2);
-            FX.flashCircle(t, 1.9, 0xd8f0a0, 0.22);
+            /* [P5b] 每一张符走配方的 `loop` 段（自上而下的符柱）。
+             * 原来是一道直 beam + 一块地面圆片（3 次绘制）说「有东西落下来」，
+             * 而这一位剪影的本义就是**从天而降** —— 一根柱比一道线准，还便宜 2 次。 */
+            this.playSkillVfx(id, {
+              pos: t, aim: t, dir: dir, radius: 1.9, segments: ['loop']
+            });
             for (const e of this.enemies) {
               if (e.dead || DIST2D(e.pos, t) >= 1.9 + e.radius) continue;
               const { dmg, crit } = this.rollDamage(st.atk * 0.7 * spow);
@@ -3781,12 +5916,19 @@ const Game = {
             : dir.clone();
           FX.projectile({
             pos: start, dir: tdir, speed: 19, color: 0xd8f0a0, radius: 0.24, hitRadius: 0.45,
-            team: 'player', style: 'talisman', life: 2.0, trail: true, tag: 'proj',
+            team: 'player', style: 'talisman', life: 2.0, trail: true, tag: 'proj', inj: this._elem,
+            /* [U6-2] 施法者 id（见 fireball 的同名注释） */
+            sfxId: id,
             homing: target ? target.pos : null, homeTurn: 7,
             onHit: (e, proj) => {
               const { dmg, crit } = this.rollDamage(st.atk * 1.0 * spow);
-              this.damageEnemy(e, dmg, crit, { tag: 'proj' });
-              FX.burst(new THREE.Vector3(e.pos.x, 1.1, e.pos.z), 0xd8f0a0, 8, { speed: 3, size: 0.1, life: 0.4, additive: true });
+              this.damageEnemy(e, dmg, crit, { tag: 'proj', skill: id });
+              /* [P5b] 命中段走万剑位配方（剑痕 / 冲击）。符是三张各飞各的，
+               * 落点不同、落地时间也不同，所以不会在同一帧叠成一摞 ——
+               * 这正是它可以直接整段播、而「连锁闪电」必须收着播的原因。 */
+              this.playSkillVfx(id, {
+                pos: e.pos.clone(), aim: e.pos.clone(), dir: tdir, radius: 1.9, segments: ['impact']
+              });
             }
           });
         }
@@ -3795,11 +5937,23 @@ const Game = {
       /* [S4] 天师符：区域符阵持续落雷 */
       case 'mastersigil': {
         this.actor.atkAnim = 1; this.actor.atkType = 'cast';
-        SFX.cast();
         const c = aim.clone();
         const rad = 6 * srad;
-        const dur = 6 + sdur;
+        /* [P2b] 台阶 Lv7「阵法持续 +3 秒」。这一位躺着太极（增益）与天师符（符阵）
+         * 两只 —— 只给增益加时长的话，把天师符放进 ③ 号位的玩家这一级就是假话。 */
+        const dur = 6 + sdur + ((bBeh && bBeh.tierDur) || 0);
         const zona = FX.area(c, rad, 0xffd24a, dur, { opacity: 0.22 });
+        /* [VFX·移植] 法阵剪影：地纹 + 中心光柱 + 环墙 + 2 秒脉冲。
+         * 以前符阵与毒雾、剑阵共用同一个"圆片 + 亮边"，玩家分不出脚下是什么阵。
+         * 半径取 `rad`（判定半径）—— 领域圈就是判定的视觉契约。 */
+        FX.field(c, {
+          kind: 'sigil', r: rad, life: dur, color: 0xffd24a,
+          follow: (bBeh && bBeh.follow) ? (() => c) : null
+        });
+        /* [P5b] 太极位配方补「阵内贴地雾粒子 + 脉冲环」（`SKILL_VFX.taiji`）。
+         * `FX.field` 是阵的**本体**（双鱼 / 地纹），配方补的是阵里飘着的那层，
+         * 两者分工不同，不重复。半径取 `rad`：画多大 = 打多大。 */
+        this.playSkillVfx(id, { pos: c, aim: c, dir: dir, radius: rad, color: 0xffd24a, segments: ['cast', 'loop'] });
         /* [P3] 贴身印（变体）：符印贴在身上跟着走 */
         if (bBeh && bBeh.follow) this.attachFollow([c], [zona], dur);
         let ticks = 0;
@@ -3823,98 +5977,174 @@ const Game = {
       }
       case 'summon': {
         this.actor.atkAnim = 1; this.actor.atkType = 'cast';
-        SFX.heal();
         this.summonWolf();
-        FX.flashCircle(pp, 2.4, 0x9affd0, 0.5);
+        /* [P4] 召唤阵 + 灵兽从阵里升起（登场动作在 updateAllies 的 spawnT） */
+        this.summonGate(pp, 0x9affd0);
+        /* [P5b] 阵环 + 中心光柱由配方给；**色必须传**：三只灵兽共用同一条剪影，
+         * 绿 / 金 / 蓝就是它们的身份（§3 形色分离）。原来那一行 flashCircle
+         * 是「地面一块圆片」，与配方的阵环是同一句话，删。 */
+        this.playSkillVfx('summon', { radius: 1.9, color: 0x9affd0 });
         break;
       }
       /* [S4] 白虎：高攻速近战召唤 */
       case 'whitetiger': {
         this.actor.atkAnim = 1; this.actor.atkType = 'cast';
-        SFX.heal(); SFX.boss();
-        this.summonBeast({ skill: 'whitetiger', scale: 1.25, color: 0xffe0b0, cloth: 0xc8a060, inherit: 0.7, life: 20, atkRate: 0.75, name: '白虎' });
-        FX.flashCircle(pp, 3, 0xffe0b0, 0.5);
+        /* 参数统一读 BEAST_PRESET（台阶「四象同场」要凭空补召同一只，
+         * 数字抄第二遍就多一处漂移的机会） */
+        this.summonBeast({ kind: 'tiger' });
+        this.summonGate(pp, 0xffe0b0);
+        this.playSkillVfx('summon', { radius: 2.2, color: 0xffe0b0 });
         break;
       }
       /* [S4] 青龙：范围攻击召唤 */
       case 'azuredragon': {
         this.actor.atkAnim = 1; this.actor.atkType = 'cast';
-        SFX.heal(); SFX.boss();
         /* [P3] 化龙（变体）：不召唤了，自己变成龙 —— 5 秒内每 0.6 秒吐一口
          * 4 码范围伤害（结算在 tickBeh，因为要跟着人走） */
         if (bBeh && bBeh.transform) {
           this._dragonT = Math.max(1, bBeh.transform);
           this._dragonTickT = 0;
           this._dragonMul = spow;
-          FX.flashCircle(pp, 4.2, 0x6ac8ff, 0.55);
-          FX.ring(pp, 4.6, 0x6ac8ff, 0.7, 0.3);
+          /* [P5b] 化龙是「自己变成龙」，不是召一只出来 —— 走召灵位的起手段
+           * （阵环 + 中心光柱从脚下升起），半径比召龙那一下大一圈，
+           * 读作「变身是从人这儿开始的」。原来那两行（圆片 + 环）就是同一句话。 */
+          this.playSkillVfx('summon', { radius: 3.2, color: 0x6ac8ff });
           FX.text(new THREE.Vector3(pp.x, 2.9, pp.z), '化龙', 'lv', { life: 1.1 });
           UI.toast('化龙 · ' + Math.round(this._dragonT) + ' 秒');
           break;
         }
-        this.summonBeast({ skill: 'azuredragon', scale: 1.6, color: 0x6ac8ff, cloth: 0x2a5a8a, inherit: 0.8, life: 18, atkRate: 1.3, aoe: true, name: '青龙' });
+        this.summonBeast({ kind: 'dragon' });
+        /* [P4] 青龙的阵比另两只大一圈：它是三只里唯一的范围型灵兽 */
+        this.summonGate(pp, 0x6ac8ff);
+        this.playSkillVfx('summon', { radius: 2.6, color: 0x6ac8ff });
         /* [P2] 龙息（取向）：青龙在场时每 N 秒喷吐一次范围伤害。
          * 标记在召唤物身上，updateAllies 里逐帧倒数 */
         if (bBeh && bBeh.breath && this.allies.length) {
           const al = this.allies[this.allies.length - 1];
           al.breath = { every: Math.max(2, bBeh.breath), t: Math.max(2, bBeh.breath) };
         }
-        FX.flashCircle(pp, 3.6, 0x6ac8ff, 0.55);
         break;
       }
       case 'heal': {
         this.actor.atkAnim = 1; this.actor.atkType = 'cast';
-        SFX.heal();
         const amount = st.hpMax * 0.28 * spow;
         /* [S4] 久春变体：持续回复时长 +sdur 秒 */
         const hotDur = (4000 + sdur * 1000) / 1000;
         this.healPlayer(amount);
         this.regen = (this.regen || 0) + st.hpMax * 0.03 * spow;
         setTimeout(() => { this.regen = Math.max(0, (this.regen || 0) - st.hpMax * 0.03 * spow); }, hotDur * 1000);
-        FX.ring(pp, 2.2, 0x8affb0, 0.6);
-        for (let i = 0; i < 14; i++) FX.burst(new THREE.Vector3(pp.x + RND(-1, 1), RND(0.3, 2.2), pp.z + RND(-1, 1)), 0x8affb0, 2, { speed: 1.5, size: 0.1, life: 0.9, gravity: -3, additive: true });
+        /* [P5b] 回春位配方：由下而上生长的光点（不是「炸开」）。
+         * 原来那 1 圈环 + 14 簇方块是「原地炸一下」，读起来更像伤害技能；
+         * 配方给的是从脚下升到头顶的一条光柱，方向本身就是「回复」的语义。 */
+        this.playSkillVfx(id, { pos: pp, aim: pp, dir: dir, radius: 2.2, color: 0x8affb0 });
         if (st.flags.groupheal) this.shield = Math.max(this.shield, st.hpMax * 0.2 * (1 + (st.shieldBonus || 0) / 100));   // [S1]
         break;
       }
       case 'poison': {
         this.actor.atkAnim = 1; this.actor.atkType = 'cast';
-        SFX.cast();
-        const c = aim.clone();
         /* 青符 4 件：蚀骨毒雾范围 +30%、持续 +3 秒 */
         const prad = 5 * srad;
         const pdur = 6 + sdur;
-        const zona = FX.area(c, prad, 0x2f9a3c, pdur, { opacity: 0.3 });
-        /* [P3] 追随（变体）：毒雾跟着人走 */
-        if (bBeh && bBeh.follow) this.attachFollow([c], [zona], pdur);
-        let ticks = 0;
+        /* [P2b] 蔓延（台阶 Lv5）：雾随时间长大，最多 +grow%。
+         * 判定半径 radNow 与特效 scale 必须同步 —— 只放大特效是「看着罩住了、
+         * 伤害没到」，只放大判定是「看不见的雾在毒人」，两种玩家都会骂。 */
+        const grow = Math.max(0, (bBeh && bBeh.grow) || 0);
+        /* [P2b] 雾内减速（台阶 Lv9）：与剑阵共用 slowField —— 它是「每跳刷新一次」
+         * 的持续场，不是施法瞬间的一次性减速，所以要挂在雾的每一跳上。
+         * 原稿「毒雾跟随」撞了变体「追随」的 follow 键，选过追随的玩家毫无反应。 */
+        const slowPct = Math.min(0.7, CLAMP((bBeh && bBeh.slowField) || 0, 0, 60) / 100);
+        const slowDur = Math.max(0.2, (bBeh && bBeh.slowFieldDur) || 0.9);
         const gen = this.mapGen;
-        const iv = setInterval(() => {
-          if (this.mapGen !== gen) { clearInterval(iv); return; }
-          ticks++;
-          for (const e of this.enemies) {
-            if (e.dead) continue;
-            if (DIST2D(e.pos, c) < prad + e.radius) {
-              const { dmg } = this.rollDamage(st.atk * 0.75 * spow);
-              this.damageEnemy(e, dmg, false, { silent: true, elem: 'poison' });
-              /* [S4] 蚀骨印记：天师套「打中毒目标增伤」靠它判定 */
-              e.venomT = Math.max(e.venomT || 0, 2.5);
-              /* [S4] 丹鼎套·毒爆：每跳 25% 概率在目标脚下爆裂 */
-              if (st.specials && st.specials.plagueburst && CHANCE(0.25)) {
-                this.explodeAt(e.pos.clone(), 3, st.atk * 0.8 * spow, 0x7fbf5a, false, true, 'dot');
+        /* [P2b] 数量台阶「双团 / 三团」：1 + sextra 团，围着落点散开。
+         * 以前这一位是「一团吃到底」—— 面板写着双团、实际只铺一团，
+         * 判据还被同位的符箭 / 万剑顶成「已实装」，属于自欺。
+         * 每团各自维护半径与定时器：共用一个 radNow 会让三团胀成一团大的。 */
+        const patches = 1 + Math.max(0, sextra);
+        for (let pi = 0; pi < patches; pi++) {
+          const ang = (pi / patches) * Math.PI * 2;
+          const off = patches === 1 ? 0 : prad * 0.55;
+          const c = new THREE.Vector3(aim.x + Math.cos(ang) * off, 0, aim.z + Math.sin(ang) * off);
+          /* 底色只留一层很淡的地面染色、**不要边沿亮圈**：雾的边界本来就看不见，
+           * 画一圈亮边等于把它重新画成一个圆，与下面的雾团剪影自相矛盾。 */
+          const zona = FX.area(c, prad, 0x2f9a3c, pdur, { opacity: 0.1, rim: false });
+          /* [VFX·移植] 雾团剪影：没有地纹、没有边界，只有翻滚的雾片 ——
+           * 雾的身份就是「边界看不见」。带着一圈清晰圆边的"雾"读起来是一张绿饼。
+           * 半径取 `prad`；台阶「蔓延」长大时下面会连 grp 一起缩放，
+           * 保证「看着罩住了」与「伤害到了」是同一个数。 */
+          const mistField = FX.field(c, {
+            kind: 'mist', r: prad, life: pdur, color: 0x7fbf5a,
+            follow: (bBeh && bBeh.follow) ? (() => c) : null
+          });
+          /* [P5b] 起手段：雾团落地的一圈阵环（万剑位的 `cast`）。
+           * **只接 cast** —— 这一位的 `loop`（剑从天降）和 `impact`（剑痕 / 冲击）
+           * 都是「剑」的读法，雾没有剑。领域类技能的命中形状由它自己的
+           * `FX.field(kind:'mist')` 表达，配方在这里只负责「它是什么时候落下来的」。
+           * 颜色必须由这里给：位配方是道士的朱砂材质，绿色是毒雾的身份色。 */
+          this.playSkillVfx(id, {
+            pos: c, aim: c, dir: dir, radius: prad, color: 0x7fbf5a, segments: ['cast']
+          });
+          /* [P3] 追随（变体）：毒雾跟着人走 */
+          if (bBeh && bBeh.follow) this.attachFollow([c], [zona], pdur);
+          let radNow = prad;
+          let ticks = 0;
+          const iv = setInterval(() => {
+            if (this.mapGen !== gen) { clearInterval(iv); return; }
+            ticks++;
+            if (grow) {
+              const k = Math.min(1, ticks * 0.8 / Math.max(1, pdur));
+              radNow = prad * (1 + (grow / 100) * k);
+              if (zona && zona.scale) zona.scale.setScalar(radNow);
+              /* 雾片跟着一起长：只放大圆片、不放大雾团的话，
+               * 玩家看到的是「一层薄雾罩住了一小片，伤害却打到了雾外面」。 */
+              if (mistField) mistField.scale.setScalar(radNow / prad);
+            }
+            for (const e of this.enemies) {
+              if (e.dead) continue;
+              if (DIST2D(e.pos, c) < radNow + e.radius) {
+                const { dmg } = this.rollDamage(st.atk * 0.75 * spow);
+                this.damageEnemy(e, dmg, false, { silent: true, elem: 'poison' });
+                /* [S4] 蚀骨印记：天师套「打中毒目标增伤」靠它判定 */
+                e.venomT = Math.max(e.venomT || 0, 2.5);
+                /* [P0·毒] **蚀骨 +1 层** —— 全工程只有这一行加层数。
+                 * 这就是「道士独占」的实现：别的职业可以注毒（拿 30~50% 附加伤害），
+                 * 但没有毒雾这只技能，也就没有层数，符打上去自然爆不了。
+                 * 满层后仍然刷新计时器，否则「满层再放雾」会是一坨什么都不做的绿雾。 */
+                if (typeof POISON_RULES === 'object' && POISON_RULES) {
+                  const was = e.poisonN || 0;
+                  e.poisonN = Math.min(POISON_RULES.maxStacks, was + 1);
+                  e.poisonNT = Math.max(e.poisonNT || 0, POISON_RULES.stackDur);
+                  if (e.poisonN !== was) {
+                    FX.text(new THREE.Vector3(e.pos.x, e.boss ? 3.9 : 2.2, e.pos.z),
+                      '蚀骨 ×' + e.poisonN, 'info', { life: 0.6 });
+                  }
+                }
+                /* 雾内减速：每跳刷新，出雾后 slowDur 秒解除。
+                 * 首领砍半 —— 与剑阵同口径，否则一坨雾能把首领黏在原地 5 秒。 */
+                if (slowPct) {
+                  e.slow = Math.max(e.slow || 0, e.boss ? slowPct * 0.5 : slowPct);
+                  e.slowT = Math.max(e.slowT || 0, slowDur);
+                  e.slowLabel = e.slowLabel || '毒雾';
+                }
+                /* [S4] 丹鼎套·毒爆：每跳 25% 概率在目标脚下爆裂 */
+                if (st.specials && st.specials.plagueburst && CHANCE(0.25)) {
+                  this.explodeAt(e.pos.clone(), 3, st.atk * 0.8 * spow, 0x7fbf5a, false, true, 'dot');
+                }
               }
             }
-          }
-          FX.burst(new THREE.Vector3(c.x + RND(-prad + 1, prad - 1), 0.3, c.z + RND(-prad + 1, prad - 1)), 0x7fbf5a, 4, { speed: 1.4, size: 0.16, life: 1.2, gravity: -0.5 });
-          if (ticks >= Math.ceil(pdur / 0.8)) clearInterval(iv);
-        }, 800);
+            FX.burst(new THREE.Vector3(c.x + RND(-prad + 1, prad - 1), 0.3, c.z + RND(-prad + 1, prad - 1)), 0x7fbf5a, 4, { speed: 1.4, size: 0.16, life: 1.2, gravity: -0.5 });
+            if (ticks >= Math.ceil(pdur / 0.8)) clearInterval(iv);
+          }, 800);
+        }
         break;
       }
       case 'swordrain': {
         this.actor.atkAnim = 1; this.actor.atkType = 'cast';
-        SFX.cast(); SFX.thunder();
         const c = aim.clone();
         let n = 0;
         const gen = this.mapGen;
+        /* [P5b] 起手：剑阵开的一圈地纹（万剑位 `cast`）。
+         * 22 把剑要落 3 秒多，玩家得先知道「这片地要挨雨」—— 这一圈就是那句话。 */
+        this.playSkillVfx(id, { pos: c, aim: c, dir: dir, radius: 3.2, segments: ['cast'] });
         const iv = setInterval(() => {
           if (this.mapGen !== gen) { clearInterval(iv); return; }
           n++;
@@ -3930,6 +6160,14 @@ const Game = {
             else {
               this.scene.remove(sword);
               this.explodeAt(t, 2.6, st.atk * sk.mult * spow, 0x9affd0, false, true);
+              /* [P5b] 命中段只在**最后一把**剑落地时补（冲击波 + 剑痕 + 6 秒焦痕）。
+               * 22 把各补一次 = 22 套 shock，那是把预算打穿 20 倍；
+               * 中间每一把的「砸到地上」由 `explodeAt` 自带的三件套表达。 */
+              if (n >= 22 + sextra) {
+                this.playSkillVfx(id, {
+                  pos: t, aim: t, dir: dir, radius: 2.6, segments: ['impact']
+                });
+              }
             }
           };
           anim();
@@ -3943,6 +6181,11 @@ const Game = {
     if (typeof this.castFormFx === 'function') {
       this.castFormFx(id, { pp, aim, dir, spow, srad });
     }
+    /* [P2b] 台阶「施法瞬间回复 N% 生命」：**通用**，放在 switch 之后 ——
+     * 原来写在增益 case 里，结果 heal / revive 这类非增益技能永远吃不到
+     * （面板写着「瞬回 8%」，血条纹丝不动）。走 healPlayer：治疗加成、
+     * 血条钳制、弹字全在那一处。 */
+    if (bBeh && bBeh.healOnCast) this.healPlayer(st.hpMax * bBeh.healOnCast / 100);
     /* [P2] 技能树分支的行为层（减速 / 破甲 / 余震 / 回资源…）。
      * 同样放在 switch 之后：它只追加效果，不参与本发技能自己的伤害结算，
      * 所以「这发技能吃不到自己挂的易伤」—— 否则易伤等于当场双倍。 */
@@ -3952,8 +6195,30 @@ const Game = {
     /* [P3] 不竭是「本次施放才开闸」的：上面的冷却赋值发生在行为层之前，
      * 所以这里补一刀 —— 否则开启的那一下还要等满冷却，手感像没生效。 */
     if (this._drainOn && this._drainOn[id]) this.cooldowns[id] = 0.2;
+    /* [P2b·刀客⑤] 刃势记账：①②③④ 各施放一次点亮一格（⑤ 自己与秘技不积）。
+     * 放在 switch 之后、标记清零之前：这一发已经结算完，记的是「用过了」，
+     * 与「打没打中」无关 —— ① 是左键、一秒能点十次，按命中数记账等于白送。 */
+    if (typeof this.bladeAddEdge === 'function') this.bladeAddEdge(id);
+    /* [U3] 组合特效层（2 条施法连携 + 聚怪开窗）。
+     * 放在 bladeAddEdge 之后、标记清零之前 —— 刃势满的判据在 switch **之前**
+     * 就已经算成 comboEdgeFull（断岳斩一进 case 'avatar' 就把 mask 清零了，
+     * 到这里再读 bladeEdge() 已经是 0）。
+     * 组合层只读状态、只画，不改任何数值；它出错也不能让这发技能哑掉。 */
+    if (typeof ComboFX !== 'undefined' && ComboFX && ComboFX.onCast) {
+      try {
+        ComboFX.onCast(id, {
+          cls: s.cls,
+          slot: (typeof skillArchSlotOf === 'function') ? skillArchSlotOf(s.cls, id) : 0,
+          auraOn: (typeof this.elemAuraOn === 'function') ? this.elemAuraOn() : false,
+          edgeFull: comboEdgeFull,
+          gather: !!(bBeh && bBeh.gather),
+          pos: pp, aim: aim, dir: dir
+        });
+      } catch (err) { /* 组合层出错只吞掉，不影响这发技能 */ }
+    }
     this._tag = null;      // [S1] 技能结算完毕，标记归零，避免污染普攻
     this._castSkill = null;   // [P2] 击杀来源标记同步清零（见施法入口的注释）
+    this._elem = null;        // [P3b] 注入只在这一次施法的窗口内有效（见 curInject）
     UI.renderHUD();
   },
 
@@ -3973,15 +6238,26 @@ const Game = {
   },
 
   addBuff(name, stats, color, opts = {}) {
+    const cur = opts.refresh && opts.key ? this.buffs.find(b => b.key === opts.key) : null;
     const dur = stats.dur || 8;
+    /* [U2] ord = 创建序，是**排序的唯一动态依据**。刷新沿用旧值，绝不重新分配 ——
+     * 否则刷新一次的 buff 会突然跳到队尾。按剩余 dur 排序的老口径已废弃：
+     * dur 每帧都变，组内顺序必然每帧重排，格子就会来回跳（PLAN §6.6 自相矛盾那条）。 */
+    const ord = cur && cur.ord != null
+      ? cur.ord
+      : (this._buffOrd = (this._buffOrd || 0) + 1);
     const entry = {
-      name, stats, dur, color,
+      name, stats, dur, color, ord,
       key: opts.key || null,
       type: opts.type || 'buff',
       icon: opts.icon || (name ? name.slice(0, 1) : '益'),
       desc: opts.desc || ''
     };
-    const cur = opts.refresh && opts.key ? this.buffs.find(b => b.key === opts.key) : null;
+    /* [V1] 叠层改成结构化字段，不再把「×3」写进 name（那样每次叠层都换一个
+     * 名字，图标、排序、节点身份全跟着抖）。条件展开而不是写死 0：
+     * 同 key 的 buff 被别的路径刷新时，Object.assign(cur, entry) 不该抹掉层数。 */
+    if (opts.stacks != null) entry.stacks = opts.stacks;
+    if (opts.maxStacks != null) entry.maxStacks = opts.maxStacks;
     if (cur) Object.assign(cur, entry);
     else this.buffs.push(entry);
     this.recalc();
@@ -3989,14 +6265,46 @@ const Game = {
     if (typeof UI !== 'undefined') UI.renderBuffs();
   },
 
-  /* 玩家身上的减益 / 护盾，统一给 buffbar 渲染 */
+  /* 玩家身上的减益 / 护盾，统一给 #buffrow 渲染 */
   statusBuffs() {
     const out = [];
+    /* [U2] 系统状态条：每条都有**固定**的 st:* key 和**写死**的 ord。
+     * key 不能拿 name 兜底 —— 这里的「定身」(debuff) 和 skill-beh 的
+     * `beh:定身` (buff) 是同名不同物，按名字做 diff key 会把两条揉成一条。
+     * ord 必须是常数，不能用自增计数：少一条状态时后面几条序号会整体前移，
+     * 那还是每帧重排，只是换了张皮。负数 = 同组内稳定排在动态 buff 之前。 */
+    const st = (key, ord, o) => out.push(Object.assign({ key: 'st:' + key, ord }, o));
     /* [S4] 还魂激活中 */
-    if (this.reviveT > 0) out.push({ name: '还魂', dur: this.reviveT, color: '#ffd166', type: 'buff', icon: '魂', desc: '受到致命伤时以 35% 生命存活' });
-    if (this.playerSlowT > 0) out.push({ name: '迟滞', dur: this.playerSlowT, color: '#6ab8ff', type: 'debuff', icon: '缓', desc: '移动速度降低 ' + Math.round((this.playerSlow || 0) * 100) + '%' });
-    if (this.poisonT > 0) out.push({ name: '中毒', dur: this.poisonT, color: '#7fbf5a', type: 'debuff', icon: '毒', desc: '每 0.9 秒受到 ' + Math.round(this.poisonDps || 0) + ' 点毒素伤害' });
-    if (this.shield > 0 && this.shieldT > 0) out.push({ name: '玄冰护盾', dur: this.shieldT, color: '#9ae0ff', type: 'buff', icon: '盾', desc: '吸收 ' + Math.round(this.shield) + ' 点伤害' });
+    if (this.reviveT > 0) st('revive', -108, { name: '还魂', dur: this.reviveT, color: '#ffd166', type: 'buff', icon: '魂', desc: '受到致命伤时以 35% 生命存活' });
+    if (this.playerSlowT > 0) st('slow', -107, { name: '迟滞', dur: this.playerSlowT, color: '#6ab8ff', type: 'debuff', icon: '缓', desc: '移动速度降低 ' + Math.round((this.playerSlow || 0) * 100) + '%' });
+    /* [M18.7] 定身：必须单独一条。它和「迟滞」是两种感受 ——
+     * 迟滞是「走得慢」，定身是「完全走不了」，混在一起玩家会以为没生效。 */
+    if (this.rootT > 0) st('root', -106, { name: '定身', dur: this.rootT, color: '#e0a0ff', type: 'debuff', icon: '缚', desc: '无法移动（仍可攻击与闪避以外的动作）' });
+    /* [B16] 被拖拽：和「定身」分开列。玩家看到「定身」会去按方向键挣扎，
+     * 而拖拽期间按方向键是没用的 —— 唯一的反制是冲刺，所以 desc 里直说。 */
+    if (this.pull) {
+      const P = this.pull;
+      st('pull', -105, {
+        name: '被拖拽', dur: Math.max(0, P.dur - P.t), color: '#ff9a6a', type: 'debuff', icon: '拽',
+        desc: '位置不由你决定 —— 按冲刺（空格 / 闪避键）可以挣脱'
+      });
+    }
+    if (this.poisonT > 0) st('poison', -104, { name: '中毒', dur: this.poisonT, color: '#7fbf5a', type: 'debuff', icon: '毒', desc: '每 0.9 秒受到 ' + Math.round(this.poisonDps || 0) + ' 点毒素伤害' });
+    /* [M18.5] 领域压制：站进世界 Boss 的圈里就常驻一条。
+     * 它没有倒计时（出去就没了），所以带 noTimer，UI 不显示秒数。 */
+    if (typeof WorldBoss !== 'undefined' && WorldBoss.domainBuff) {
+      const db = WorldBoss.domainBuff();
+      if (db) st('domain', -103, db);
+    }
+    /* [B16.6] 章节 Boss 的领域同理，走同一个形状。两套系统互斥（不同图），
+     * 真同时出现也只是 buff 条上多一条 —— 各有各的名字与颜色。 */
+    if (typeof Domains !== 'undefined' && Domains.buff) {
+      const fb = Domains.buff();
+      if (fb) st('zone', -102, fb);
+    }
+    /* 护盾条目标题不写死「玄冰」：圣霜护盾（P3a 圣系反应）走同一个字段，
+     * 写死名字会让玩家以为吃到的是法师的冰盾 */
+    if (this.shield > 0 && this.shieldT > 0) st('shield', -101, { name: '护盾', dur: this.shieldT, color: '#9ae0ff', type: 'buff', icon: '盾', desc: '吸收 ' + Math.round(this.shield) + ' 点伤害' });
     return out;
   },
 
@@ -4032,9 +6340,8 @@ const Game = {
     const st = s.stats;
     /* [S4] 增益结算走 BUFF_MUL / BUFF_ADD 两张表（items.js），
      * 新增增益属性只需要往表里加 key，不用再改这里。 */
-    for (const b of this.buffs) {
-      const bs = b.stats;
-      if (!bs) continue;
+    const applyMods = (bs) => {
+      if (!bs) return;
       for (const k in bs) {
         if (k === 'dur') continue;
         const v = bs[k];
@@ -4042,7 +6349,13 @@ const Game = {
         if (BUFF_MUL[k]) st[BUFF_MUL[k]] *= 1 + v / 100;
         else if (BUFF_ADD.indexOf(k) >= 0) st[k] = (st[k] || 0) + v;
       }
-    }
+    };
+    for (const b of this.buffs) applyMods(b.stats);
+    /* [P2b·刀客⑤] 刀式（兵形）当成一份内置增益：走同一张表，结算顺序与装备 /
+     * 增益完全一致，不另开乘区。它在 buffs 之后，所以增益换不掉刀式 ——
+     * 刀式是「姿态」，不该被一瓶药顶掉。 */
+    if (typeof this.bladeMods === 'function') applyMods(this.bladeMods());
+
     s.setCount = st.setCount;
     if (s.hp > st.hpMax) s.hp = st.hpMax;
     if (s.mp > st.mpMax) s.mp = st.mpMax;
@@ -4070,32 +6383,463 @@ const Game = {
     return st.meleeDmg || 0;
   },
 
+  /* ============================================================
+   * [P3a] 元素反应
+   *
+   * 触发口径：**目标身上带着 A 元素的状态 + 这一次命中带的是 B 元素**（见
+   * `data-elem.js` 文件头）。不需要「元素注入」那套系统，因为玩家实际的打法是
+   * 先冻住再补火 —— 那本来就是「火碰冰」。
+   *
+   * 为什么挂在 damageEnemy 而不是各技能 case 里：它是**所有伤害的唯一出口**
+   * （法相命中附加当初选这里也是同一个理由）。挂在 case 里等于加几十处，
+   * 漏一处就是「这个技能不参与反应」。
+   *
+   * 三道闸门，缺一个都会出事故：
+   *   1. `opts.silent` —— 持续伤害每跳都会再来一次，dot 触发反应会滚成无限反应；
+   *   2. `opts.react` + `_reacting` —— 反应自己造成的伤害（爆炸 / 连锁）不许再触发反应；
+   *   3. 双层 ICD —— 全局 0.5 秒 + 同目标同反应 2 秒，否则一次 AoE 打 8 只怪
+   *      就是 8 次反应、8 圈特效、伤害直接翻倍。
+   * ============================================================ */
+
+  /* ============================================================
+   * [P3b / P3d] 元素注入（单元素 / 双元素）
+   *
+   * 状态存在 `state.skills[id].el`（主）与 `.el2`（副）—— 与 lv / f / m 同一张表，
+   * save 的 `_obj(d.skills)` 整块保留，不用加 normalizeDoc 白名单。
+   * null / 未知值 = 不注入（本命元素）。
+   *
+   * 作用范围**故意收窄**：只作用于「施法当帧的伤害 + 这一次施法扔出去的投射物」。
+   * 延迟落点（陨石砸地 0.9 秒后）、地板跳伤、持续伤害、召唤物出手都**不注入** ——
+   * 那些伤害发生时 `_elem` 已经清空，硬要让它们也吃到就得给每条延迟链单独带参，
+   * 而「这一次施法」和「0.9 秒后那一发」本来就不是同一件事。台账里写清楚了。
+   * ============================================================ */
+
+  /* 这个技能位现在注入的是什么元素（null = 本命）。三道校验都在这里：
+   * 没到等级 / 这个位不能注入 / 存的键不认识 → 一律当作没注入。 */
+  skillInject(id) {
+    const s = this.state && this.state.skills && this.state.skills[id];
+    if (!s || !s.el) return null;
+    if (typeof SKILL_INJECT === 'object' && SKILL_INJECT && (this.state.level || 1) < SKILL_INJECT.at) return null;
+    if (typeof skillCanInject === 'function' && !skillCanInject(id)) return null;
+    const list = (typeof SKILL_INJECT === 'object' && SKILL_INJECT && SKILL_INJECT.elems) || [];
+    return list.indexOf(s.el) >= 0 ? s.el : null;
+  },
+
+  /* 副元素。比主元素多三道校验：角色等级要够「混搭」门槛、不能等于主元素、
+   * 主元素不存在时副元素也不成立（没有「只注副不注主」这种状态）。 */
+  skillInject2(id) {
+    const s = this.state && this.state.skills && this.state.skills[id];
+    if (!s || !s.el2) return null;
+    const main = this.skillInject(id);
+    if (!main) return null;
+    if ((this.state.level || 1) < (SKILL_INJECT.subAt || 99)) return null;
+    const list = (SKILL_INJECT && SKILL_INJECT.elems) || [];
+    if (list.indexOf(s.el2) < 0) return null;
+    return s.el2 === main ? null : s.el2;      // 主副同色 = 没有副元素
+  },
+
+  /* 这一发注入的附加比例（0.30 ~ 0.50，跟技能**有效等级**走）。
+   * 单元素时这就是全部；双元素时它是**总量**，主副按 `SKILL_INJECT.split` 拆。 */
+  skillInjectAmt(id) {
+    const pct = (typeof skillInjectPct === 'function') ? skillInjectPct(this.skillLevel(id)) : 30;
+    return pct / 100;
+  },
+
+  /* 这一次施法带出去的完整注入包（null = 没注入）。
+   *   { key, amt, sub, subAmt, pct }
+   * 单元素：sub = null，amt = pct/100（30%~50%）
+   * 双元素：amt + subAmt = pct/100（50% → 0.35 + 0.15），总量与单元素一致 */
+  skillInjectPack(id) {
+    const key = this.skillInject(id);
+    if (!key) return null;
+    const pct = (typeof skillInjectPct === 'function') ? skillInjectPct(this.skillLevel(id)) : 30;
+    const sub = this.skillInject2(id);
+    if (!sub) return { key: key, amt: pct / 100, sub: null, subAmt: 0, pct: pct };
+    const sp = (typeof skillInjectSplit === 'function')
+      ? skillInjectSplit(pct) : { total: pct, main: pct, sub: 0 };
+    return { key: key, amt: sp.main / 100, sub: sub, subAmt: sp.sub / 100, pct: pct };
+  },
+
+  /* 换注入元素。key 为空 = 摘掉。免费、随时可换（与变体 / 精通同一条规矩）。
+   * 摘掉主元素时副元素一并清掉 —— 没有「只注副不注主」这种状态。 */
+  setSkillInject(id, key) {
+    const s = this.state && this.state.skills && this.state.skills[id];
+    if (!s) { UI.log('尚未领悟这只技能'); SFX.ui(); return false; }
+    if (key) {
+      if (typeof SKILL_INJECT !== 'object' || !SKILL_INJECT) return false;
+      if ((this.state.level || 1) < SKILL_INJECT.at) {
+        UI.log('境界达到 ' + SKILL_INJECT.at + ' 级才能注入元素');
+        SFX.ui(); return false;
+      }
+      if (typeof skillCanInject === 'function' && !skillCanInject(id)) {
+        UI.log('这个技能位不能注入元素'); SFX.ui(); return false;
+      }
+      if (SKILL_INJECT.elems.indexOf(key) < 0) return false;
+      s.el = key;
+      /* 主元素换成和副元素一样的 → 副元素自动摘掉（不然面板上会出现「主冰副冰」） */
+      if (s.el2 === key) delete s.el2;
+    } else {
+      delete s.el;
+      delete s.el2;
+    }
+    return true;
+  },
+
+  /* 换副元素（双元素混搭）。key 为空 = 摘掉。 */
+  setSkillInject2(id, key) {
+    const s = this.state && this.state.skills && this.state.skills[id];
+    if (!s) { UI.log('尚未领悟这只技能'); SFX.ui(); return false; }
+    if (key) {
+      if (typeof SKILL_INJECT !== 'object' || !SKILL_INJECT) return false;
+      if ((this.state.level || 1) < (SKILL_INJECT.subAt || 99)) {
+        UI.log('境界达到 ' + SKILL_INJECT.subAt + ' 级才能混搭第二元素');
+        SFX.ui(); return false;
+      }
+      const main = this.skillInject(id);
+      if (!main) { UI.log('先选一个主元素'); SFX.ui(); return false; }
+      if (key === main) { UI.log('副元素不能和主元素相同'); SFX.ui(); return false; }
+      if (SKILL_INJECT.elems.indexOf(key) < 0) return false;
+      s.el2 = key;
+    } else {
+      delete s.el2;
+    }
+    return true;
+  },
+
+  /* 这一发要把注入拆成几段。返回 [{ key, w }]，与命中元素相同 / 重复的段剔掉。
+   * 剔掉「与命中元素相同」这一段，与 P3b 的单段口径一致：
+   * 注入自己的本命元素等于白送 30% 伤害，那不该发生。 */
+  injectSegs(inj, elem) {
+    if (!inj || !inj.key) return null;
+    const out = [];
+    const seen = {};
+    const add = (k, w) => {
+      if (!k || !(w > 0) || k === elem || seen[k]) return;
+      seen[k] = 1;
+      out.push({ key: k, w: w });
+    };
+    add(inj.key, inj.amt);
+    add(inj.sub, inj.subAmt);
+    return out.length ? out : null;
+  },
+
+  /* 这一次命中实际带出去的注入（投射物 > 施法窗口 > 没有） */
+  curInject(opts) {
+    if (opts && opts.inj) return opts.inj;
+    if (this._proj && this._proj.inj) return this._proj.inj;
+    return this._elem || null;
+  },
+
+  /* 一段元素伤害的乘区：抗性 × 该元素的增伤（通用 × 专属），再乘这一段的权重 */
+  elemHitMul(e, key, w) {
+    const res = e.resist ? (e.resist[key] || 0) : 0;
+    const f = (1 - CLAMP(res, -60, 85) / 100) * elemAffixMul(this.state.stats, key);
+    return w * f;
+  },
+
+  /* 反应能不能触发（只判定，不产生副作用）—— 契约测试直接调它。
+   * `altElem` 收**一个元素或一组元素**：命中元素跟目标状态同元素（或本身不参与反应）时，
+   * 依次试注入的主元素、副元素兜底。传字符串也能用（P3b 的老签名，别的地方还在调）。 */
+  elemReactReady(e, hitElem, opts = {}, altElem) {
+    if (!e || e.dead) return null;
+    if (opts.silent || opts.react || this._reacting) return null;
+    if (typeof elemReactionOn !== 'function') return null;
+    const alts = Array.isArray(altElem) ? altElem : (altElem ? [altElem] : []);
+    let r = elemReactionOn(hitElem, e);
+    for (let i = 0; !r && i < alts.length; i++) {
+      if (alts[i]) r = elemReactionOn(alts[i], e);
+    }
+    if (!r) return null;
+    const now = this.time || 0;
+    const icd = (typeof ELEM_REACT_ICD === 'object' && ELEM_REACT_ICD) || { global: 0.5, sameTarget: 2 };
+    if (this._reactCd && (this._reactCd[r.key] || 0) > now) return null;
+    const at = e._reactAt;
+    if (at && (at[r.key] || 0) > now) return null;
+    return r;
+  },
+
+  /* 记 ICD 并结算 */
+  tryElemReaction(e, hitElem, final, opts = {}, altElem) {
+    const r = this.elemReactReady(e, hitElem, opts, altElem);
+    if (!r) return null;
+    const now = this.time || 0;
+    const icd = (typeof ELEM_REACT_ICD === 'object' && ELEM_REACT_ICD) || { global: 0.5, sameTarget: 2 };
+    if (!this._reactCd) this._reactCd = {};
+    this._reactCd[r.key] = now + icd.global;
+    if (!e._reactAt) e._reactAt = {};
+    e._reactAt[r.key] = now + icd.sameTarget;
+    this._reacting = true;
+    try { this.applyElemReaction(r, e, final); } finally { this._reacting = false; }
+    return r;
+  },
+
+  /* 击退：与 damageEnemy 里那段同口径（Boss 免疫、按玩家→目标的方向推） */
+  knockEnemy(e, power) {
+    if (!e || e.dead || e.boss || !(power > 0)) return;
+    const dx = e.pos.x - this.playerGroup.position.x;
+    const dz = e.pos.z - this.playerGroup.position.z;
+    const d = Math.hypot(dx, dz) || 1;
+    e.pos.x += dx / d * power * 0.5;
+    e.pos.z += dz / d * power * 0.5;
+  },
+
+  /* 连锁：从 from 出发，找最近的、还没被点过的目标，各打一发 dmg（带电弧）
+   * `rkey` = 反应 key（腐蚀链 / 感电冻结），电弧视觉交给 ElemFX.link 画。 */
+  chainReaction(from, count, dmg, color, elem, rkey) {
+    const used = [from];
+    let src = from;
+    let n = 0;
+    for (let i = 0; i < count; i++) {
+      let best = null, bd = 9;
+      for (const o of this.enemies) {
+        if (o.dead || used.indexOf(o) >= 0) continue;
+        const d = DIST2D(o.pos, src.pos);
+        if (d < bd) { bd = d; best = o; }
+      }
+      if (!best) break;
+      if (typeof ElemFX !== 'undefined' && ElemFX && ElemFX.link) {
+        ElemFX.link(new THREE.Vector3(src.pos.x, 1.1, src.pos.z),
+          new THREE.Vector3(best.pos.x, 1.1, best.pos.z), color, rkey);
+      }
+      this.damageEnemy(best, dmg, false, { elem: elem, react: true, tag: 'aoe' });
+      used.push(best);
+      src = best;
+      n++;
+    }
+    return n;
+  },
+
+  /* 结算一组反应：视觉 + 数值。数值全部落在**已有字段**上（shred / dotDmg / slowT），
+   * 不新造 debuff —— 反应是「元素之间互相利用现有状态」，不是第二套 buff 系统。 */
+  applyElemReaction(r, e, final) {
+    const pos = new THREE.Vector3(e.pos.x, 0.2, e.pos.z);
+    const c1 = r.color, c2 = r.color2 || r.color;
+    const label = new THREE.Vector3(e.pos.x, e.boss ? 4.2 : 2.4, e.pos.z);
+    FX.text(label, r.name, 'info', { life: 0.9, color: '#' + ('000000' + c1.toString(16)).slice(-6) });
+    /* [U4] 元素反应专属视觉：10 组各一套语言。数值逻辑一行不动。 */
+    if (typeof ElemFX !== 'undefined' && ElemFX && ElemFX.play) {
+      try {
+        ElemFX.play(r.key, e, { pos: pos, color: c1, color2: c2,
+          radius: r.radius, playerPos: this.playerGroup.position });
+      } catch (err) { /* 视觉层出错不影响反应结算 */ }
+    }
+    switch (r.key) {
+      case 'steam': {
+        /* 白汽浪：向外扩的地面环 + 向内翻卷的烟（视觉在 src/elem-fx.js） */
+        this.explodeAt(pos, r.radius, final * r.dmg / 100, c1, false, true, 'aoe', undefined, true);
+        this.knockEnemy(e, r.knock);
+        break;
+      }
+      case 'plasma': {
+        /* 紫白电弧球：球面跳弧往中心收（视觉在 src/elem-fx.js） */
+        /* 「必定暴击」：命中已经结算过了，没法回头改那一发的暴击 ——
+         * 所以补一发**按暴击倍率算好**的雷伤，读数上就是一次暴击。 */
+        const st = this.state.stats;
+        const extra = final * r.dmg / 100 * (st.critDmg || 150) / 100;
+        this.damageEnemy(e, extra, true, { elem: 'lightning', react: true, tag: 'aoe' });
+        break;
+      }
+      case 'burnpoison': {
+        /* 绿火包橙芯，缓慢上卷（视觉在 src/elem-fx.js） */
+        /* 只在**这一轮 dot** 里加一次，且跳完自动失效 —— 否则反复触发会滚雪球 */
+        if ((e.dotT || 0) > 0 && !e._reactDot) {
+          e._reactDot = true;
+          e.dotDmg = Math.round((e.dotDmg || 0) * r.dotMul);
+        }
+        break;
+      }
+      case 'frozele': {
+        /* 晶体裂纹发光（视觉在 src/elem-fx.js） */
+        if ((e.slowT || 0) > 0) e.slowT *= r.freezeMul;   // 冻结 / 减速时长延长
+        this.chainReaction(e, r.chain, final * r.dmg / 100, c2, 'lightning', 'frozele');
+        break;
+      }
+      case 'frostrot': {
+        /* 霜面腐蚀：白霜底 + 绿斑（视觉在 src/elem-fx.js） */
+        e.shred = Math.max(e.shred || 0, r.shred);
+        e.shredT = Math.max(e.shredT || 0, r.dur);
+        break;
+      }
+      case 'corrochain': {
+        /* 链式绿电弧（视觉在 src/elem-fx.js） */
+        this.chainReaction(e, r.chain, final * r.dmg / 100, c1, 'poison', 'corrochain');
+        break;
+      }
+
+      /* ---- 圣系 4 组：收益落在玩家身上，不在敌人身上 ---- */
+      case 'purify': {
+        /* 圣火：金火向上抽成柱（视觉在 src/elem-fx.js） */
+        /* 「对亡灵 +30%」直接乘在**这一发**上，不开窗口 buff：
+         * 窗口 buff 面板上看不见，玩家打亡灵时也感觉不到，等于这组反应没做。
+         * 亡灵判定读 `family`（data-monsters.js 里骷髅 / 僵尸 / 怨魂都是 undead）。 */
+        const undead = e.family === 'undead';
+        const kp = r.dmg / 100 * (undead ? 1 + r.vsUndead / 100 : 1);
+        this.damageEnemy(e, final * kp, false, { elem: 'sigil', react: true, tag: 'aoe' });
+        if (undead) FX.text(new THREE.Vector3(e.pos.x, e.boss ? 4.6 : 3.0, e.pos.z), '亡灵 +' + r.vsUndead + '%', 'info', { life: 0.8 });
+        this.healPlayer(this.state.stats.hpMax * r.heal / 100);
+        break;
+      }
+      case 'holyfrost': {
+        /* 金光朝玩家收（视觉在 src/elem-fx.js） */
+        const pg = this.playerGroup.position;
+        /* 护盾量 = 最大生命 × shield% × 护盾强度 × (1 + 25%)。
+         * 取 max 不叠加 —— 否则冰环连着砸能把护盾刷成第二条血条。 */
+        const stS = this.state.stats;
+        const add = stS.hpMax * r.shield / 100 * (1 + (stS.shieldBonus || 0) / 100) * (1 + r.shieldMul / 100);
+        if (add > (this.shield || 0)) {
+          this.shield = add;
+          this.shieldT = Math.max(this.shieldT || 0, r.dur);
+          FX.text(new THREE.Vector3(pg.x, 2.9, pg.z), '圣霜护盾 ' + Math.round(add), 'info', { life: 0.9 });
+        }
+        break;
+      }
+      case 'judgment': {
+        /* 圣雷：唯一「从天上下来」的一组（视觉在 src/elem-fx.js） */
+        const kb = e.boss ? 1 + r.vsBoss / 100 : 1;
+        this.damageEnemy(e, final * r.dmg / 100 * kb, false, { elem: 'sigil', react: true, tag: 'aoe' });
+        if (e.boss) FX.text(new THREE.Vector3(e.pos.x, 4.6, e.pos.z), '天罚 +' + r.vsBoss + '%', 'info', { life: 0.8 });
+        break;
+      }
+      case 'cleansmist': {
+        /* 回血雾跟着玩家走（视觉在 src/elem-fx.js） */
+        /* 回血雾不新建实体，挂一个计时器在玩家身上：这里的「友方」是玩家和灵兽，
+         * 敌人踩进来不该回血，所以判定中心跟人走、不钉在这只怪脚下。
+         * 结算在 updateBuffs（每帧都跑，和护盾计时同一处）。 */
+        this.healMist = { t: r.mist.dur, tick: 0, dps: r.mist.dps, r: r.mist.r };
+        FX.text(new THREE.Vector3(this.playerGroup.position.x, 2.9, this.playerGroup.position.z), '解毒雾', 'info', { life: 0.9 });
+        break;
+      }
+      default: break;
+    }
+  },
+
+  /* [B16.4] 正面格挡的唯一读口。
+   * `e.guardFront` 是数据（章节首领：岩甲 / 盾 / 背甲都能用同一套）；
+   * `e.wbBlockFront` 是世界 Boss 的旧布尔位（M18.7 刑天 P2 在写它），
+   * 两者都认，**新代码一律写 `guardFront`**。
+   *
+   * 默认值 `{ arc: 150, mul: 0.4, turn: 0.48 }` 就是刑天当年手写死的那三个数，
+   * 所以世界 Boss 的战斗手感一个字节都没变（turn 0.48 换来的是
+   * 「转 95% 用时 0.48 秒」，等价于原来 `pow(0.002, dt)` 的半衰 0.111 秒）。 */
+  frontGuardOf(e) {
+    if (!e) return null;
+    if (e.guardFront) return e.guardFront;
+    if (e.wbBlockFront) return FRONT_GUARD_DEFAULT;
+    return null;
+  },
+
+  /* 挂 / 摘正面格挡。三种入参：
+   *   setGuardFront(e, null)          → 摘掉
+   *   setGuardFront(e, { arc: 0 })    → 摘掉（用数值表达"取消"，配表时更好写）
+   *   setGuardFront(e, { turn: 1.2 }) → 只改转身，arc / mul 从默认值补
+   * `arc` 不传就是"没要求"，不能当成 0 —— 否则只调一个数会把整块格挡关掉。 */
+  setGuardFront(e, spec) {
+    if (!e) return null;
+    if (!spec || (spec.arc !== undefined && !(spec.arc > 0))) { e.guardFront = null; return null; }
+    e.guardFront = Object.assign({}, FRONT_GUARD_DEFAULT, spec);
+    return e.guardFront;
+  },
+
   damageEnemy(e, dmg, crit, opts = {}) {
     if (e.dead) return;
+    /* [P09] 血条归属：打谁显示谁。
+     * 以前 `this.boss` 是「谁先走进 17 米谁占住」，玩家回头打第一只时
+     * 血条还挂在第二只身上 —— 实际在掉血的那只不更新，看起来像血条坏了。
+     * 现在**攻击是唯一的主动切换途径**：每次命中就把归属钉在目标身上，
+     * `_pickBoss` 只在它死了 / 脱战之后才自己找下一只。 */
+    if (e.boss && e.active && this.boss !== e) {
+      this.boss = e; UI.updateBoss(e);
+    }
     const st = this.state.stats;
     const tag = opts.tag || this._tag || 'melee';
     let final = dmg * (1 + st.skillDmg / 100 * 0.5) * (1 + this.tagBonus(tag) / 100);
 
     /* [S1] 护甲穿透：按比例削减目标有效护甲，最多穿掉 80% */
-    const armor = e.level * 3 + (e.cfg.armorHigh ? e.level * 6 : 0);
+    /* [M5] armorMul：地下城词缀「铁壁」把怪物护甲整体抬一档。
+     * 默认 1，不影响任何现有怪（不写这个乘数的话，护甲是「按等级算出来的」，
+     * 没有地方能挂「+50% 护甲」）。 */
+    const armor = (e.level * 3 + (e.cfg.armorHigh ? e.level * 6 : 0)) * (e.armorMul || 1);
     /* [P2] 破甲（技能树分支挂上的 debuff）：先按穿透削，再按破甲削 */
     const shred = (e.shredT > 0) ? Math.min(80, e.shred || 0) / 100 : 0;
     const effArmor = Math.max(0, armor * (1 - Math.min(0.8, (st.armorPen || 0) / 100)) * (1 - shred));
     final *= 100 / (100 + effArmor);
+    /* [P2b·刀客⑤] 摧城式「对护甲目标 +20%」：判的是**目标本来有没有护甲**，
+     * 不是穿完之后还剩多少 —— 穿甲堆满 80% 的玩家也不该因此丢掉这 20%。
+     * 放在护甲结算之后、抗性之前，是一个独立乘区。 */
+    if (armor > 0 && this.state.cls === 'warrior'
+      && typeof this.bladeStance === 'function' && this.bladeStance() === 2) final *= 1.2;
+
+    /* [M18.7 → B16.4] 刑天 P2「盾」：正面格挡。
+     *
+     * 判的是**玩家站在它正面的哪个角度**，不是「这一击从哪来」——
+     * 本作的伤害大多是范围 / 追踪，没有单一来向，只有站位是玩家能控制的。
+     * boss 的朝向是 `a.group.rotation.y`（`updateBossAI` 末尾每帧转向玩家，
+     * 半衰约 0.16 秒），所以「绕后」是一段**有时限**的操作窗口，不是一句空话。
+     *
+     * 窗口 ±75°（正面 150° 被挡，剩下 210° 安全）：
+     *   - 窗口再大 → 绕到侧面也算正面，等于「永远格挡」，谜题消失；
+     *   - 窗口再小 → 转个身就躲掉了，盾牌变成装饰。
+     * 折减到 40%：挡得很痛但还能打。全免的话 19 万血会拖成十分钟。
+     *
+     * **不分元素**：只挡物理的话，换法术就绕过去了 —— 那又变成「猜元素」，
+     * 和八部天龙的去重直接冲突。这里的答案只有站位。
+     * `silent`（持续伤害）不挡：毒 / 火不认盾牌，而且 DoT 每跳都弹「格挡」
+     * 会把屏幕糊满。 */
+    /* [B16.4] 三个数改成可配（`e.guardFront = { arc, mul, turn }`）：
+     *   arc  正面**总**张角（度）。刑天 150（窗口 ±75°）；石甲巨魔 120。
+     *   mul  折减到几成。刑天 0.4（挡得痛但还能打；全免的话 19 万血拖成十分钟）。
+     *   turn 转完一个身位要几秒 —— **这个数决定绕背窗口到底成不成立**。
+     *        刑天 0.48（贴身绕半圈约半秒，得连着走）；石甲巨魔 1.2（能从容绕到背后）。
+     * 读不到 `guardFront` 就退到默认值，所以老的 `wbBlockFront` 一个数都没变。 */
+    const fg = this.frontGuardOf(e);
+    if (fg && !opts.silent && this.playerGroup && e.actor && e.actor.group) {
+      const pl = this.playerGroup.position;
+      let da = Math.atan2(pl.x - e.pos.x, pl.z - e.pos.z) - e.actor.group.rotation.y;
+      while (da > Math.PI) da -= Math.PI * 2;
+      while (da < -Math.PI) da += Math.PI * 2;
+      /* arc 是**总**张角，所以半角 = arc/2（度）→ 弧度 = π·arc/360 */
+      if (Math.abs(da) <= Math.PI * fg.arc / 360) {
+        final *= fg.mul;
+        /* 提示节流 0.4 秒：连击时每一下都弹字，字会叠成一坨 */
+        const now = Date.now();
+        if (!e._blockAt || now - e._blockAt > 400) {
+          e._blockAt = now;
+          FX.text(new THREE.Vector3(e.pos.x, 4.4, e.pos.z), fg.text || '格挡 · 绕后', 'info', { life: 0.6 });
+        }
+      }
+    }
+
+    /* [M18.7b] 九尾狐 P3「真身现身」：藏进狐火时只吃 60%，
+     * 现身那 5 秒吃 200%。倍率由 `WBFight._revealTick` 每帧写。
+     * 放在格挡之后、抗性之前：它描述的是「有没有打中本体」，
+     * 属于命中层的倍率，和「元素抗性」是两回事，顺序换过来数值也一样。 */
+    if (e.wbVulnMul && e.wbVulnMul !== 1) final *= e.wbVulnMul;
 
     /* [S5] 族群抗性：按本次伤害的元素结算（opts.elem 缺省按物理）。
      * 正数减伤、负数增伤；元素免疫（85%）也走这一条，不另开分支。
      * 上限 +85 / 下限 -60：既能逼玩家换武器，又不至于让某个流派完全打不动。 */
     const elem = opts.elem || 'phys';
-    const res = e.resist ? (e.resist[elem] || 0) : 0;
-    if (res) final *= 1 - CLAMP(res, -60, 85) / 100;
+    /* [P3b] 元素注入：这一发带了几段元素。没注入时走**原路径**（逐字节不变），
+     * 注入了才拆成「原伤害 100% + 附加 X%」两段，各自过自己的抗性与元素词缀。
+     * 为什么不做归一化：方案 §6.1 拍板的是「附加，不转换」—— 附加就该真的多打
+     * 那 30%~50%，归一化等于把注入变成纯色换皮。 */
+    const inj = (opts.react || opts.silent) ? null : this.curInject(opts);
+    /* [P3d] 双元素：主段 + 副段各自过抗性与元素词缀，再和原伤害那段相加。
+     * 段数不写死 2 —— `injectSegs` 已经把「跟命中元素相同」「重复」的段剔掉了。 */
+    const segs = (elem === 'none') ? null : this.injectSegs(inj, elem);
+    if (segs) {
+      let mul = this.elemHitMul(e, elem, 1);
+      for (let i = 0; i < segs.length; i++) mul += this.elemHitMul(e, segs[i].key, segs[i].w);
+      final *= mul;
+    } else {
+      const res = e.resist ? (e.resist[elem] || 0) : 0;
+      if (res) final *= 1 - CLAMP(res, -60, 85) / 100;
 
-    /* [M1] 元素伤害词缀：按本次伤害的元素取对应加成键。
-     * 放在抗性之后、暴击之外，保证「堆火伤打亡灵」和「堆错元素打石魔」
-     * 的体感差别立刻能看出来。 */
-    const ELEM_DMG = { fire: 'fireDmg', ice: 'iceDmg', lightning: 'lightningDmg', poison: 'poisonDmg', sigil: 'sigilDmg' };
-    const edk = ELEM_DMG[elem];
-    if (edk && st[edk]) final *= 1 + st[edk] / 100;
+      /* [M1/P3c] 元素伤害词缀：按本次伤害的元素取加成（通用 × 专属）。
+       * 放在抗性之后、暴击之外，保证「堆元素伤害打亡灵」和「堆错元素打石魔」
+       * 的体感差别立刻能看出来。 */
+      final *= elemAffixMul(st, elem);
+    }
 
     /* [M1] 游侠套·锐意：攻击满血目标必定暴击 */
     if (st.specials && st.specials.deadeye && !crit && e.hp >= e.maxHp * 0.999) {
@@ -4136,6 +6880,45 @@ const Game = {
     }
     e.hp -= final;
     if (e.hp < 0) e.overkill = -e.hp;      // [S1] 记下溢出量，击杀时可能转成护盾
+
+    /* [U6-2] 技能音效三段 · **命中段**。
+     *
+     * 挂在**伤害真正结算**这一刻，不是施法瞬间 —— 这样投射物类
+     * （火球 / 冰锥 / 符）的命中音会等到弹道飞到才响，这才是「打到了」的证据。
+     * 提前响 = 玩家先听到咚、0.9 秒后看到陨石砸下来，感觉「没打中」。
+     *
+     * 三道闸门：
+     *   ① `!opts.silent` —— 持续伤害（DoT）每跳都响命中音 = 噪音
+     *   ② `!opts.react` —— 元素反应的追加伤害不是「玩家这一下」
+     *   ③ `tag !== 'dot'` —— 召唤物的持续攻击同理
+     *
+     * 同一发技能一次命中窗口内只响一声（AOE 打 5 只怪不该叠 5 声爆炸），
+     * 去重在 `SfxAudio.impact` 里做。
+     * **命中音在下面 `FX.text` 那一段发**（伤害数字弹出的同一拍），
+     * 这里不重复发 —— 两处都发就是双响。 */
+    /* [P0·毒] **符引爆蚀骨**：道士的「先铺雾、再点符」。
+     *
+     * 四道闸门，缺一个就会变成「每跳自爆」或「谁都能爆」：
+     *   ① `elem === 'sigil'` —— 只有符能引爆。毒 / 火 / 物理打上去都只是打伤害；
+     *   ② `!opts.silent` —— 毒雾的每跳是 silent 的，不引爆（否则 0.8 秒一发自爆）；
+     *   ③ `!opts.react` —— 元素反应的追加伤害不算「玩家点了符」；
+     *   ④ `e.hp > 0` —— 这一符已经把人打死就不再多算一次。
+     *
+     * 引爆伤害走 `explodeAt`：它是**范围**伤害，主目标吃满、周围吃同样的数。
+     * 层数当场清零，且爆炸本身带 `elem:'poison'`（不再引爆，也不会叠层）。 */
+    if (!opts.silent && !opts.react && elem === 'sigil' && e.hp > 0
+      && typeof POISON_RULES === 'object' && POISON_RULES) {
+      const n0 = (e.poisonN || 0);
+      if (n0 >= (POISON_RULES.burstAt || 2)) {
+        const bd = (typeof poisonBurstDmg === 'function') ? poisonBurstDmg(st.atk, n0) : 0;
+        e.poisonN = 0; e.poisonNT = 0;
+        if (bd > 0) {
+          FX.text(new THREE.Vector3(e.pos.x, e.boss ? 3.9 : 2.2, e.pos.z),
+            '毒爆 ×' + n0, 'lv', { life: 1 });
+          this.explodeAt(e.pos.clone(), 2.4, bd, 0x7fbf5a, false, false, 'poisonburst', 'poison');
+        }
+      }
+    }
     if (crit && st.aspdOnCrit) this.aspdCritT = 2.5;   // [S1] 暴击后攻速
     /* 传世特性·裂魂：暴击时小概率引发小范围爆炸（爆炸伤害不再连锁触发） */
     if (crit && !opts.silent && !this._critbursting && st.specials && st.specials.critburst && CHANCE(0.2)) {
@@ -4170,7 +6953,41 @@ const Game = {
     FX.text(p, Math.round(final).toString(), crit ? 'crit' : 'dmg');
     FX.spark(new THREE.Vector3(e.pos.x, e.boss ? 2 : 1.1, e.pos.z), crit ? 0xffb040 : 0xffe0b0, crit ? 14 : 7);
     if (!opts.silent) {
-      SFX[crit ? 'crit' : 'hit']();
+      /* [U6-2] 技能音效三段 · **命中段**。
+       *
+       * 这里是**伤害真正结算**的那一刻 —— 命中音挂在这儿，不是施法瞬间。
+       * 投射物类（火球 / 冰锥 / 符）的弹道要飞 0.3~1.5 秒、陨石要等 0.9 秒，
+       * 施法瞬间就响 = 玩家先听到「咚」、一秒后才看到东西砸下来，感觉「没打中」。
+       *
+       * 以前这里是 `SFX[crit ? 'crit' : 'hit']()`：所有技能共用两个音，
+       * 加上散在 `game.js` 40+ 处调用点的各自命中音（`SFX.explode()` 等），
+       * 结果是「命中音响几次」全看那只技能当初怎么写的。
+       * 现在统一走 `SfxAudio.impact`：按**技能 id**选音色，
+       * 并在一发技能内去重（AOE 打 5 只怪 = 5 声爆炸 = 噪音）。
+       *
+       * 没配 impact 音的技能（增益 / 治疗）走 fallback，行为与以前完全一样。 */
+      /* [U6-2] 技能 id 的多级兜底（与 ComboFX 的 `opts.skill || this._castSkill` 同思路）：
+       *   ① `opts.sfx`  —— 伤害源自己带着施法者 id（**最准**）
+       *   ② `opts.skill` —— 部分调用点已经带了这个
+       *   ③ `this._proj.sfxId` —— 投射物身上带的（弹道飞 0.3~1.5 秒）
+       *   ④ `SfxAudio.oldestPending()` —— **延迟伤害的统一口径**：
+       *      陨石前摇 0.9 秒 / 突刺 0.2 秒 / 雷雨连落，命中的时候
+       *      `_castSkill` 已清零、而 `_sfxCastId`（最近一次施放）会被飞行期间
+       *      的**自动施放**覆盖。真机实测陨石命中被认成 riposte、
+       *      突刺与天罚直接掉进 fallback —— 都是这个原因。
+       *      问「哪一发还没结算命中」才对，见 sfx-audio.js 的注释。
+       *   ⑤ `_sfxCastId` / `_castSkill` —— 老兜底，最后才用
+       * 全空 → 不是技能造成的伤害（装备特效 / 毒爆 / 元素反应），
+       * 走 fallback 发原来的受击音。 */
+      const pending = (typeof SfxAudio !== 'undefined' && SfxAudio && SfxAudio.oldestPending)
+        ? SfxAudio.oldestPending() : '';
+      const sfxWho = opts.sfx || opts.skill
+        || (this._proj && this._proj.sfxId)      /* 投射物身上带着施法者 id（最准） */
+        || pending || this._sfxCastId || this._castSkill || '';
+      const handled = (typeof SfxAudio !== 'undefined' && SfxAudio && sfxWho)
+        ? SfxAudio.impact(sfxWho, crit, () => { SFX[crit ? 'crit' : 'hit'](); })
+        : false;
+      if (!handled) SFX[crit ? 'crit' : 'hit']();
       /* [S16] 受击闷哼：同一只怪 0.3 秒内只叫一次，
        * 否则高频攻击（旋风斩、连射）会把它变成电钻 */
       if (typeof AudioSys !== 'undefined' && AudioSys.ctx) {
@@ -4220,6 +7037,66 @@ const Game = {
       this.onEnemyDeath(e); return;
     }
 
+    /* [P3a] 圣印：sigil 命中就盖印，给圣系 4 组反应一个可判的状态位。
+     *
+     * 放在反应判定**之前**：这一发自己盖的印不会跟自己反应（`elemReactionOn`
+     * 跳过与命中元素相同的状态），但「圣符打在燃烧目标上」必须算数 ——
+     * 先判后盖的话，道士的圣符永远等不到自己盖的那一枚。
+     *
+     * `opts.react` 不盖印：反应追加的圣伤若再盖印，等于让反应自己给自己续命，
+     * 目标身上一旦有火 dot 就会变成每 0.5 秒一次的无限净化烈焰。 */
+    if (elem === 'sigil' && !opts.react && typeof SIGIL_MARK === 'object' && SIGIL_MARK) {
+      e.sigilT = Math.max(e.sigilT || 0, SIGIL_MARK.dur);
+    }
+
+    /* [P3a] 元素反应：目标身上**原有的** A 元素状态 + 这一下带的 B 元素。
+     * 放在法相命中附加之前 —— 法相会往目标身上挂状态，若先挂再判，同一发
+     * 就能跟自己刚挂上去的状态反应（「火球 + 火法相」自己炸自己）。
+     * 也放在死亡判定之后：打死的那一下不必再反应。 */
+    /* 注入的元素也能当反应源：火球（火）+ 注入冰 打在燃烧目标上，
+     * 原伤害那段是火（同元素不反应），附加那段是冰 —— 该炸蒸汽就炸。
+     * 先看原伤害再看附加：命中元素优先，避免「注入元素抢了本命元素的反应」。
+     * [P3d] 双元素时按「主 → 副」顺序试，先撞上的那一组算数。 */
+    this.tryElemReaction(e, elem, final, opts, inj ? [inj.key, inj.sub].filter(Boolean) : null);
+
+    /* [U3] 组合特效层：4 组技能内组合 + 符毒绿符钉。挂元素反应之后 ——
+     * elem 已算完、e.hp>0 已确认。只读状态、只画，不碰任何数值。 */
+    if (typeof ComboFX !== 'undefined' && ComboFX && ComboFX.onHit) {
+      try {
+        ComboFX.onHit(e, {
+          id: opts.skill || this._castSkill || '', tag: opts.tag || this._tag || '',
+          elem: elem, silent: !!opts.silent, react: !!opts.react
+        });
+      } catch (err) { /* 组合层出错不影响伤害结算 */ }
+    }
+
+    /* [P2b·法师⑤] 法相命中附加（台阶 Lv5）：窗口内的**每一次命中**都带上主元素效果。
+     *
+     * 为什么放在这里而不是各技能 case 里：法相要的是「全技能附带」，法师有
+     * 十几只技能、还有装备 / 套装触发的延迟伤害，逐个 case 加等于加十几处，
+     * 漏一处就是「这个技能在法相下没效果」。damageEnemy 是所有伤害的唯一出口。
+     *
+     * 只认「有感」的命中（silent 的持续伤害不触发）：火相挂的是灼烧 dot，
+     * 若 dot 每跳也回挂一次灼烧，10 秒窗口会变成永久点燃。
+     *
+     * 也放在死亡判定**之后**：打死的那一下再挂减速 / 易伤没有意义，
+     * 只会让尸体的字段多活一帧。 */
+    if (!opts.silent && this.elemAura && this.elemAura.t > 0 && this.elemAura.rider) {
+      const stR = this.state.stats;
+      const kR = this.elemAuraKind();
+      const mR = this.elemRiderMul();
+      if (kR.key === 'fire') {
+        this.applySkillDot(e, stR.atk * 0.18 * mR, 3, 'fire', '灼烧');
+      } else if (kR.key === 'ice') {
+        e.slow = Math.max(e.slow || 0, 0.35);
+        e.slowT = Math.max(e.slowT || 0, 2);
+      } else {
+        if (!e.boss) e.stun = Math.max(e.stun || 0, 0.35);
+        e.vuln = Math.max(e.vuln || 0, 15 * mR);
+        e.vulnT = Math.max(e.vulnT || 0, 3);
+      }
+    }
+
     /* [S5] 召唤：生命每降 25% 召 2 只同族。
      * 用「理论档位 vs 已触发档位」比对，一次大伤害跨两档也不会漏召。 */
     if (e.aff && e.aff.summoner && !e.boss) {
@@ -4267,16 +7144,47 @@ const Game = {
   },
 
   /* [S1] 爆炸一律算范围伤害（tag='aoe'），不管是谁触发的爆炸 */
-  explodeAt(pos, radius, baseDmg, color, big, silent, tag = 'aoe') {
-    if (!silent) { SFX.explode(); this.shake = Math.max(this.shake, big ? 0.5 : 0.25); this.hitstop = 50; }
-    FX.flashCircle(pos, radius, color, 0.35);
-    FX.ring(pos, radius * 1.2, color, 0.45, 0.2);
-    FX.burst(new THREE.Vector3(pos.x, 0.6, pos.z), color, big ? 30 : 16, { speed: 9, size: 0.14, life: 0.6, gravity: 2, additive: true });
+  /* `noFx` = 只结算伤害、不画通用爆炸视觉。
+   * 元素反应（蒸汽爆裂）要的是自己那套 FXK 视觉，不能再叠一圈通用爆炸环。 */
+  explodeAt(pos, radius, baseDmg, color, big, silent, tag = 'aoe', elem, noFx) {
+    /* [U6-2] 爆炸音。
+     *
+     * 以前这里无条件 `SFX.explode()`，而技能命中音又散在各 case 里 ——
+     * 一次爆炸能响两声（爆炸音 + 技能命中音）。
+     * 现在命中音由 `SfxAudio.impact` 统一发（damageEnemy 命中口），
+     * 所以这里**只在没有技能接管时**才发爆炸音：
+     * 毒爆 / 裂魂爆 / 装备特效这些不是「玩家放了一招」，它们没有技能上下文。
+     *
+     * 判据：这次爆炸**打中了没有**。
+     *   · 打中 → 命中音由下面的 damageEnemy 走 SfxAudio（按技能选音色 + AOE 去重），
+     *     这里不能再响一次，否则是双响；
+     *   · 打空 → 没有任何伤害结算，SfxAudio 不会响，这里必须自己响 ——
+     *     否则「石头砸空了」一点声音都没有，玩家以为技能没放出去。
+     *
+     * 所以这里先数一遍命中数，再决定要不要自己发声。 */
+    if (!silent) {
+      let willHit = false;
+      for (const e of this.enemies) {
+        if (e.dead) continue;
+        if (DIST2D(e.pos, pos) < radius + e.radius) { willHit = true; break; }
+      }
+      if (!willHit) SFX.explode();
+      this.shake = Math.max(this.shake, big ? 0.5 : 0.25); this.hitstop = 50;
+    }
+    if (!noFx) {
+      FX.flashCircle(pos, radius, color, 0.35);
+      FX.ring(pos, radius * 1.2, color, 0.45, 0.2);
+      FX.burst(new THREE.Vector3(pos.x, 0.6, pos.z), color, big ? 30 : 16, { speed: 9, size: 0.14, life: 0.6, gravity: 2, additive: true });
+    }
     for (const e of this.enemies) {
       if (e.dead) continue;
       if (DIST2D(e.pos, pos) < radius + e.radius) {
         const { dmg, crit } = this.rollDamage(baseDmg);
-        this.damageEnemy(e, dmg, crit, { knock: 0.5, tag });
+        /* `elem` 可选：只有需要「按元素算抗性」的爆炸（毒爆）才传。
+         * 不传就是原来的物理口径，老调用点一个字节都没变。
+         * 施法者 id 由 damageEnemy 统一问 SfxAudio.oldestPending()，
+         * 这里不再各传一套 —— 一个口径才不会打架。 */
+        this.damageEnemy(e, dmg, crit, { knock: 0.5, tag, elem: elem });
       }
     }
   },
@@ -4296,6 +7204,76 @@ const Game = {
       }
       if (ticks > 3) clearInterval(iv);
     }, 900);
+  },
+
+  /* [P2b] 雷符阵（符箓 Lv9）：落雷点留一片每 0.5 秒跳一次电的符阵。
+   *
+   * 为什么不复用 createFirePatch：那个是「火」，每跳 0.45 倍攻击、0.9 秒
+   * 一跳、带灼烧语义；符阵是「雷」，跳得密（0.5 秒）但每跳更轻。
+   * 两者合一个函数只会变成「加一堆 if 的火」，以后改火就误伤雷。
+   *
+   * dmg 是**每跳**伤害（调用方已经乘好百分比），dur 是秒。 */
+  createSigilField(pos, rad, dmg, dur) {
+    if (!this.state || typeof FX === 'undefined') return;
+    const gen = this.mapGen;
+    FX.area(pos, rad, 0x9affd0, dur, { opacity: 0.16 });
+    FX.ring(pos, rad * 1.05, 0x9affd0, dur, 0.22);
+    let ticks = 0;
+    const step = 500;
+    const iv = setInterval(() => {
+      if (this.mapGen !== gen || this.dead) { clearInterval(iv); return; }
+      ticks++;
+      FX.ring(pos, rad, 0x9affd0, 0.3, 0.16);
+      for (const e of this.enemies) {
+        if (e.dead || DIST2D(e.pos, pos) >= rad + e.radius) continue;
+        const { dmg: d, crit } = this.rollDamage(dmg);
+        this.damageEnemy(e, d, crit, { silent: true, tag: 'dot' });
+      }
+      if (ticks >= Math.round(dur * 1000 / step)) clearInterval(iv);
+    }, step);
+  },
+
+  /* [P2b] 台阶落点领域（法师 ② 的 Lv9 / Lv10「落点留火海」）。
+   *
+   * 四只技能共用这一个消费点：炎爆 / 陨星天火是火，雷罚是雷，暴雪是冰 ——
+   * 机制同一个（站进去就掉血），只是颜色不同。之所以不各写一份：四份几乎
+   * 一样的定时器，改一次平衡要改四处（`createFirePatch` / `createSigilField`
+   * 已经是两处了，别再添）。
+   *
+   * pct 是**每跳伤害占攻击力 %**，dur 是秒，每秒一跳。
+   *
+   * 同时最多 MAX 块：陨星天火一次落 16~18 颗，不记账就是 18 块地糊满屏，
+   * 帧率和伤害都会爆。超出时顶掉最老的一块（跟音频「近的顶掉远的」同一思路）。
+   * 顶掉只清定时器 + 收掉网格，`zones` 里那条记录留着让它自己到期 ——
+   * 提前删数组会让 FX 的 tick 拿到空洞。 */
+  spawnTierField(pos, rad, pct, dur, color) {
+    if (!this.state || typeof FX === 'undefined') return;
+    const MAX = 4;
+    const gen = this.mapGen;
+    this._tierFields = this._tierFields || [];
+    while (this._tierFields.length >= MAX) {
+      const old = this._tierFields.shift();
+      if (!old) continue;
+      clearInterval(old.iv);
+      if (old.vis) { old.vis.visible = false; if (old.vis.parent) old.vis.parent.remove(old.vis); }
+    }
+    const p = pos.clone(); p.y = 0;
+    const vis = FX.area(p, rad, color, dur, { opacity: 0.18 });
+    FX.ring(p, rad * 1.05, color, dur, 0.2);
+    const rec = { iv: 0, vis };
+    this._tierFields.push(rec);
+    let ticks = 0;
+    const total = Math.max(1, Math.round(dur));
+    rec.iv = setInterval(() => {
+      if (this.mapGen !== gen) { clearInterval(rec.iv); return; }
+      ticks++;
+      for (const e of this.enemies) {
+        if (e.dead || DIST2D(e.pos, p) >= rad + e.radius) continue;
+        const { dmg, crit } = this.rollDamage(this.state.stats.atk * pct / 100);
+        this.damageEnemy(e, dmg, crit, { silent: true, tag: 'dot' });
+      }
+      if (ticks >= total) clearInterval(rec.iv);
+    }, 1000);
   },
 
   nearestEnemy(pos, range) {
@@ -4324,8 +7302,31 @@ const Game = {
     }
   },
 
-  damagePlayer(amount, source) {
+  /* [P2b] 剑阵这块「地」的存活判定。
+   * 三个条件缺一不可：还在持续、还在同一张图、人还在阵里（由调用方算距离）。
+   * 换图要作废 —— setInterval 那条已经按 mapGen 自清了，状态不跟着清就会
+   * 「上一张图的剑阵还在给你减伤」。 */
+  swordFieldLive() {
+    const f = this.swordField;
+    if (!f || this.dead) return null;
+    if (f.gen !== this.mapGen) return null;
+    if ((f.t || 0) <= 0) return null;
+    return f;
+  },
+
+  /* `opts.pierce = true` —— 无视护甲 / 格挡 / 抗性 / 难度 / 被动减伤，
+   * 只保留护盾吸收与免死。
+   *
+   * 为什么需要这个开关：领域 DoT 在数据里写的是「每秒扣最大生命的 0.6%」，
+   * 这是**对玩家的一句承诺**。如果它走常规结算，60 级满装能把它压到 0.19%，
+   * 结果就是「堆防御的人完全无视领域」—— 那领域机制等于不存在。
+   * 常规伤害（怪打你）该吃护甲，环境伤害（站在毒沼里）不该。
+   *
+   * [P6] 注意 `pierce` 只关「防御侧」，**不关我方的额外减伤源**：
+   * 剑阵减伤与灵兽护主是「玩家主动摆出来的东西」，与环境伤害无关。 */
+  damagePlayer(amount, source, opts) {
     if (this.dead || this.invuln > 0) return;
+    const pierce = !!(opts && opts.pierce);
     const s = this.state, st = s.stats;
 
     /* [S1] 闪避：完全免伤。给 0.2 秒无敌，避免一次群体攻击连续闪出十几条文字 */
@@ -4351,10 +7352,10 @@ const Game = {
     const reduce = Math.min(0.70, st.def / (st.def + 380 + this.state.level * 28));
     /* [DIFF] 玩家承受伤害系数：放在减伤之后，保证「护甲收益」在四档难度里一致，
      * 难度只放大最终结果，不扭曲装备词条的价值。 */
-    let dmg = amount * (1 - reduce) * this.diff().taken;
+    let dmg = pierce ? amount : amount * (1 - reduce) * this.diff().taken;
 
     /* [S1] 格挡：伤害减半（先于抗性结算） */
-    if (st.block && CHANCE(st.block / 100)) {
+    if (!pierce && st.block && CHANCE(st.block / 100)) {
       /* [P3] 舍身（反击变体）：格挡照挡，但这一下不再减半 ——
        * 换的是格挡后 3 秒的伤害加成（onBehCounter 里给） */
       const noDR = !!(this.buffs && this.buffs.some(b => b.noDR));
@@ -4376,17 +7377,37 @@ const Game = {
       if (typeof this.onBehCounter === 'function') this.onBehCounter(source);
     }
 
-    dmg *= (1 - CLAMP(st.allRes, 0, 60) / 200);
-    /* [S1] 单元素抗性：按来源怪物的元素标记取，无标记按物理 */
-    const cfg = source && source.cfg;
-    const oneRes = cfg
-      ? (cfg.fire ? st.fireRes : cfg.ice ? st.iceRes : cfg.poison ? st.poisonRes : st.physRes)
-      : st.physRes;
-    dmg *= (1 - CLAMP(oneRes || 0, 0, 60) / 200);
-    /* [S1] 固定伤害减免 */
-    dmg *= (1 - CLAMP(st.dmgReduce || 0, 0, 40) / 100);
-    /* [P2] 被动的受伤侧改写（霜甲：贴身来源减伤；不动如山走 dmgReduce 通道） */
-    if (typeof this.passiveTakenMul === 'function') dmg *= this.passiveTakenMul(source);
+    /* [P2b] 剑阵这块「地」的存活 + 位置判定**只算一次**：减伤（下面 if 里）
+     * 和 Lv10 反击（函数末尾）两处都要用。
+     * 必须放在 `if (!pierce)` 外面 —— 反击那一处不在减伤分支里，
+     * 声明写在块内会让它变成 ReferenceError（合并 main 时踩过：探针当场崩）。 */
+    const sf = (typeof this.swordFieldLive === 'function') ? this.swordFieldLive() : null;
+    const inSword = !!(sf && DIST2D(this.playerGroup.position, sf.ctr()) <= sf.rad + 0.8);
+
+    if (!pierce) {
+      dmg *= (1 - CLAMP(st.allRes, 0, 60) / 200);
+      /* [S1] 单元素抗性：按来源怪物的元素标记取，无标记按物理 */
+      const cfg = source && source.cfg;
+      const oneRes = cfg
+        ? (cfg.fire ? st.fireRes : cfg.ice ? st.iceRes : cfg.poison ? st.poisonRes : st.physRes)
+        : st.physRes;
+      dmg *= (1 - CLAMP(oneRes || 0, 0, 60) / 200);
+      /* [S1] 固定伤害减免 */
+      dmg *= (1 - CLAMP(st.dmgReduce || 0, 0, 40) / 100);
+      /* [P2b] 剑阵 Lv9：阵内减伤（sf / inSword 在上面算好了）。
+       * 位置判定而不是「持续期间常驻」—— 钉阵变体下玩家能自己走出去，
+       * 写死成常驻就把这个选择吃掉了。放在抗性后面：它是一层独立的场地减伤。 */
+      if (inSword && sf.dr > 0) dmg *= (1 - sf.dr / 100);
+      /* [P2] 被动的受伤侧改写（霜甲：贴身来源减伤；不动如山走 dmgReduce 通道） */
+      if (typeof this.passiveTakenMul === 'function') dmg *= this.passiveTakenMul(source);
+      /* [P2b·兽群] 召灵兽 Lv9：灵兽在场时护主减伤。取场上最大值（多只不叠加）；
+       * 灵兽死光自然失效 —— 这条不需要「持续几秒」的账，它的条件就是「有没有灵兽」。 */
+      let allyGuard = 0;
+      for (const al of (this.allies || [])) {
+        if (al.hp > 0 && (al.guard || 0) > allyGuard) allyGuard = al.guard;
+      }
+      if (allyGuard > 0) dmg *= (1 - CLAMP(allyGuard, 0, 40) / 100);
+    }
 
     if (this.shield > 0) {
       const absorbed = Math.min(this.shield, dmg);
@@ -4394,6 +7415,13 @@ const Game = {
       FX.text(new THREE.Vector3(this.playerGroup.position.x, 2.4, this.playerGroup.position.z), '吸收 ' + Math.round(absorbed), 'info');
       if (this.shield <= 0) {
         this.shield = 0; UI.log('护盾破碎');
+        /* [P5b] 破盾那一下走护盾位配方的命中段：冰锥四散 + 霜痕（Lv10 起）。
+         * 放在这里而不是 castSkill 里 —— 破盾可能发生在任何一次挨打上，
+         * 跟「什么时候按的键」没有关系。 */
+        if (typeof this.playSkillVfx === 'function') {
+          const bp = this.playerGroup.position;
+          this.playSkillVfx('iceshield', { pos: bp, aim: bp, radius: 2, segments: ['impact'] });
+        }
         /* [P2] 冰刺（iceshield 取向）：破盾瞬间向四周射出冰锥 */
         if (typeof this.onBehShieldBreak === 'function') this.onBehShieldBreak();
       }
@@ -4486,6 +7514,20 @@ const Game = {
     this.actor.flash = 0.45; this.actor.flashWas = true;
     SFX.hit();
     if (st.thorns > 0 && source && !source.dead) this.damageEnemy(source, dmg * st.thorns / 100, false, { silent: true });
+    /* [P2b] 剑阵 Lv10：阵内自动反击。三个约束缺一不可 ——
+     *   ① 人还在阵里（inSword，同上：钉阵变体能走出去）；
+     *   ② 0.4 秒内置冷却（swordCounterCd）：不记账的话一群怪同时抡你就是
+     *      几十次反击，等于白送一个群体秒杀；
+     *   ③ 不复用 counter / onBehCounter：那条是「格挡后回击」，要过格挡判定、
+     *      数值要乘盾墙。这条不要求格挡，口径独立，混用会变成双倍反击。 */
+    if (inSword && sf.counter > 0 && source && !source.dead && (this.swordCounterCd || 0) <= 0) {
+      this.swordCounterCd = 0.4;
+      const ppc = this.playerGroup.position;
+      FX.beam(new THREE.Vector3(ppc.x, 1.2, ppc.z),
+        new THREE.Vector3(source.pos.x, 1.2, source.pos.z), 0xd8ffe0, 0.14);
+      FX.text(new THREE.Vector3(ppc.x, 2.7, ppc.z), '剑阵反击', 'info', { life: 0.6 });
+      this.damageEnemy(source, st.atk * sf.counter / 100, false, { knock: 1.2, tag: 'melee' });
+    }
     /* [S2] 玄冰套 / 玄冰之语：受击时释放冰环冻结周围敌人（4 秒内置冷却） */
     if (st.flags.frostBurst && (this.frostBurstCd || 0) <= 0) {
       this.frostBurstCd = 4;
@@ -4506,9 +7548,9 @@ const Game = {
       this._eliteProc = true;
       const A = source.aff;
       if (A.frost) {
-        this.playerSlow = Math.max(this.playerSlow || 0, A.frost.slow / 100);
-        this.playerSlowT = Math.max(this.playerSlowT || 0, A.frost.slowDur);
-        FX.text(new THREE.Vector3(this.playerGroup.position.x, 2.7, this.playerGroup.position.z), '冰缓', 'info', { life: 0.7 });
+        if (this.applyPlayerSlow(A.frost.slow / 100, A.frost.slowDur)) {
+          FX.text(new THREE.Vector3(this.playerGroup.position.x, 2.7, this.playerGroup.position.z), '冰缓', 'info', { life: 0.7 });
+        }
       }
       if (A.venom) this.playerPoison(source.dmg * (A.venom.dpsPct || 12) / 100);
       if (A.vampiric) {
@@ -4532,6 +7574,18 @@ const Game = {
   die() {
     if (this.dead) return;
     this.dead = true;
+    /* [P2b·法师⑤] 法相随死亡关闭：tickBeh 在 dead 时提前返回，不关的话
+     * 窗口会冻在「还剩 6 秒」，复活后凭空续上 —— 而且免控标记还挂在增益上。 */
+    if (this.elemAura && this.elemAura.t > 0) {
+      this.elemAura.t = 0;
+      this.elemAura.rider = false;
+    }
+    /* [M18.7] 定身必须当场清掉：死亡演出期间 `update` 还在跑，
+     * 带着 2.5 秒定身复活的话，玩家会以为「复活了还是动不了」。 */
+    this.rootT = 0;
+    /* [B16] 死亡演出期间 update 还在跑，拖拽也得当场停：
+     * 否则尸体会继续被拖向 Boss，复活点算在错误的位置上。 */
+    this.pull = null;
     this.actor.anim = 'die';
     this.actor.group.rotation.z = 0;
     SFX.die();
@@ -4541,8 +7595,14 @@ const Game = {
     UI.closeAll();
     /* 试炼里死亡不弹「身陨」框，改弹本轮结算 —— 玩家要看到的是「打到第几波」，
      * 而不是一句「你的道还未走完」。惩罚照旧按难度扣金币。 */
+    const inDungeon = (typeof Dungeon !== 'undefined' && Dungeon.active);
     const inTrial = (typeof Trial !== 'undefined' && Trial.active);
-    if (inTrial) Trial.onPlayerDeath();
+    if (inDungeon) {
+      /* [M5] 地下城死亡：先记账（失败 / 钥匙不返），面板照常用「身陨」——
+       * 它的「回城」按钮是唯一复活入口，真正的换图在 respawn 里做。 */
+      Dungeon.onPlayerDeath();
+      UI.showDeath('你倒在了地脉第 ' + Dungeon.run.layer + ' 层。\n\n钥匙没有回来。');
+    } else if (inTrial) Trial.onPlayerDeath();
     else UI.showDeath('你的道，还未走完。');
     /* [DIFF] 死亡惩罚按难度：新手 0%，普通 10%，困难 15%，极难 25% */
     const rate = this.diff().deathPenalty;
@@ -4567,19 +7627,62 @@ const Game = {
     /* 分支叠层（技能树 stack）跟着 buff 一起清：复活后不该留着满层战意 */
     this.behStack = {}; this._drainOn = null; this._follows = null;
     this._recharge = null; this._dragonT = 0; this._autoReviveCd = 0; this._pasT = 0;
+    /* [P2b] 脱战计时：洗点 / 换图 / 重生都归零，否则进新图第一秒就在回血 */
+    this._outT = 0;
     /* [P2] 被动的战场状态同样清零（剑魄记账 / 计时器 / 护身符） */
     s.rageSpent = 0;
     this.undyingCd = 0; this.stormT = 6; this.talismanT = 10; this.elixirT = 60; this.phoenixKeyT = 0;
     this.talismanCharges = 0;
     this.recalc();
-    this.loadMap('village');
-    UI.toast('于桃源村重生');
+    /* [M5] 地下城里死了回本卷营地（不是村，也不是「最近」）——
+     * onRespawn 顺手把这一把清理掉并返回该去的图 */
+    const dgBack = (typeof Dungeon !== 'undefined' && Dungeon.active) ? Dungeon.onRespawn() : null;
+    this.loadMap(dgBack || 'village');
+    UI.toast(dgBack ? '被抬出地脉裂隙' : '于桃源村重生');
     this.save();
   },
 
   /* ---------------- 敌人 ---------------- */
+  /* [P09] 血条归属重算。
+   *
+   * 规则只有三条：
+   *   ① 当前那只还活着、还在场 → **不换**（粘性）
+   *   ② 它死了 / 脱战了 → 取「离玩家最近的已激活首领」
+   *   ③ 一只都没有 → 收血条
+   *
+   * 为什么是「粘性」而不是「按距离每 0.5 秒重选」：
+   *   多首领图里三只首领相距只有 9~10 米（P14 分场之前就是这样），
+   *   纯按距离选的话，玩家在 A 面前打，B 稍微走位靠近一点血条就跳走 ——
+   *   这正是用户报的「血条显示的是另一只」。距离只在「当前那只已经不在场」
+   *   时用来选下一个目标。
+   *
+   * 换目标的**唯一主动途径是攻击**：`damageEnemy` 里打谁就把 `this.boss` 设成谁。
+   * 这样「实际在掉血的那只」和「血条显示的那只」永远是同一只。
+   *
+   * 重算频率 0.5 秒（不是每帧）：每帧遍历一遍敌人只为了选血条太浪费，
+   * 而 0.5 秒的延迟在人眼看来是「立刻切过去了」。 */
+  _pickBoss(dt, pp) {
+    this.bossPickCd = (this.bossPickCd || 0) - dt;
+    if (this.bossPickCd > 0) return;
+    this.bossPickCd = 0.5;
+    const cur = this.boss;
+    if (cur && !cur.dead && cur.active) return;      // ① 粘住
+    let best = null, bd = Infinity;
+    for (const o of this.enemies) {
+      if (!o.boss || o.dead || !o.active) continue;
+      const d = DIST2D(o.pos, pp);
+      if (d < bd) { bd = d; best = o; }
+    }
+    if (best) {
+      if (best !== cur) { this.boss = best; UI.updateBoss(best); }
+    } else if (cur) {
+      this.boss = null; UI.updateBoss(null);
+    }
+  },
+
   updateEnemies(dt) {
     const pp = new THREE.Vector3(this.playerGroup.position.x, 0, this.playerGroup.position.z);
+    this._pickBoss(dt, pp);
     let aggroBoss = null;
     for (const e of this.enemies) {
       if (e.dead) {
@@ -4603,6 +7706,9 @@ const Game = {
       /* [v1.12.1] 眩晕 / 未激活的首领会 continue 跳过循环末尾的 collideWorld，
        * 万一前一帧被推到边界外就再也夹不回来了（越界计数会一直涨）。
        * 这两个早退分支各补一次边界夹取。 */
+      /* [P3a] 圣印递减。放在 stun 的 `continue` **之前** —— 圣印是给玩家用的
+       * 状态位，若眩晕的怪能把它冻住不减，一波控住就能白嫖 6 秒圣系反应。 */
+      if (e.sigilT > 0) e.sigilT = Math.max(0, e.sigilT - dt);
       if (e.stun > 0) {
         e.stun -= dt; a.moving = false; updateActorAnim(a, dt);
         this.collideWorld(e.pos, e.radius * 0.7, null, true);
@@ -4615,6 +7721,13 @@ const Game = {
       if (e.antiHealT > 0) e.antiHealT = Math.max(0, e.antiHealT - dt);
       /* [S4] 蚀骨印记（毒雾留下的增伤窗口） */
       if (e.venomT > 0) e.venomT = Math.max(0, e.venomT - dt);
+      /* [P0·毒] 蚀骨层数断档清零：层数只在「雾还在跳」的时候活着。
+       * 不写衰减的话，毒雾一结束层数会永远挂着，玩家隔一分钟补一符还能引爆 ——
+       * 那就不叫「铺雾再点符」，而是「一次铺雾，终身可用」。 */
+      if (e.poisonNT > 0) {
+        e.poisonNT = Math.max(0, e.poisonNT - dt);
+        if (e.poisonNT <= 0) e.poisonN = 0;
+      }
       /* [P3] 三个「动 AI」的状态（结算在下面的普怪 AI 段）：
        *   aspdT / aspdMul  攻速压制：atkCd 倒数放慢
        *   fearT            恐惧：掉头逃、不挥刀
@@ -4623,7 +7736,7 @@ const Game = {
       if (e.fearT > 0) e.fearT = Math.max(0, e.fearT - dt);
       if (e.tauntT > 0) {
         e.tauntT = Math.max(0, e.tauntT - dt);
-        if (e.tauntT <= 0) e.tauntPt = null;
+        if (e.tauntT <= 0) { e.tauntPt = null; e.tauntAlly = null; }
       }
       if (e.poisonT > 0) {
         e.poisonT -= dt;
@@ -4638,8 +7751,15 @@ const Game = {
           e.dotTick = 1;
           this.damageEnemy(e, e.dotDmg, false, { silent: true, elem: e.dotElem || undefined, tag: 'dot' });
         }
-        if (e.dotT <= 0) { e.dotT = 0; e.dotDmg = 0; e.dotElem = null; }
+        /* dot 跳完时把「焚毒」的加成标记一起清掉：下一轮 dot 重新算，
+         * 否则一次焚毒会让目标此后所有 dot 都永久 ×1.5（滚雪球） */
+        if (e.dotT <= 0) { e.dotT = 0; e.dotDmg = 0; e.dotElem = null; e._reactDot = false; }
       }
+
+      /* [B16.3] 可破坏目标：读秒 + 抖，到此为止。
+       * 放在 debuff 计时**之后**是故意的 —— 毒 / 流血照样能把它烧掉，
+       * 道士的毒雾铺在卵囊上应该是有效的，不该因为"它不追人"就免疫 DoT。 */
+      if (e.destructible) { this._tickDestructible(e, dt); continue; }
 
       const d = DIST2D(e.pos, pp);
       /* [S16] 没仇恨的怪偶尔叫一声（每只 6~12 秒一次，15 米内才发）。
@@ -4668,11 +7788,39 @@ const Game = {
       }
       const spd = e.spd * (1 - e.slow) * (e.boss ? (1 + e.phase * 0.12) : 1);
 
+      /* [M3 · §5.4] 远处怪的 AI 降频。
+       *
+       * MOB_CULL_DIST（62 米）之外已经 group.visible=false，看不见了，
+       * 但下面整段 AI 照跑，还带 updateActorAnim 的骨骼动画。
+       * M3 之前一张图 10~12 只怪、size 130，62 米外基本没几只；
+       * M3 之后 37~43 只撒在 ±140 米上，**常态就有十几只在视野外空转**。
+       *
+       * 处理：不可见 + 没仇恨 + 非首领 → 每 3 帧才走一次 AI。
+       *   - 必须有 !e.aggro：被激怒的怪会从 62 米外追过来，降频会让它卡顿。
+       *   - 必须有 !e.boss：首领的 phase / 技能节奏对帧敏感。
+       *   - **不需要补 dt**：中毒 / 流血 / 眩晕 / 各类 debuff 的计时器
+       *     在插入点**之前**就已经按真实 dt 结算过了（见上面的 4611~4647 行），
+       *     这里跳过的只有「移动 + 挥刀 + 骨骼动画」，而 62 米外的怪既不挥刀
+       *     也不可见，少算两帧的 atkCd 没有可观测影响。
+       *   - 也绝不能写成 `dt += ...`：dt 是 updateEnemies 的形参，
+       *     改它会把多出来的时间带给下一只怪，一帧之内越滚越大。 */
+      if (culled && !e.boss && !e.aggro) {
+        e.aiSkip = (e.aiSkip || 0) + 1;
+        if (e.aiSkip % 3 !== 0) {
+          a.moving = false;
+          continue;
+        }
+      }
+
       if (e.boss && !e.active) {
         if (d < 17) {
           e.active = true;
-          this.boss = e;
-          UI.updateBoss(e);
+          /* [P09] 不再「谁先靠近谁抢血条」。已经有一只在场时只激活、不换血条 ——
+           * 归属交给「打谁看谁」（damageEnemy），这里只负责「本来就没血条」的情况。 */
+          if (!this.boss || this.boss.dead || !this.boss.active) {
+            this.boss = e;
+            UI.updateBoss(e);
+          }
           UI.toast(e.cfg.name + '　' + (e.cfg.title || ''), 'lv');
           SFX.boss();
           this.shake = 0.5;
@@ -4687,8 +7835,8 @@ const Game = {
         continue;
       }
       /* [P3] 被嘲讽的怪改打灵兽：目标点换成嘲讽点，其它逻辑原样走。
-       * 灵兽没有血条，所以「打到灵兽身上」= 这几秒玩家不掉血，
-       * 这是嘲讽在这套引擎里唯一诚实的收益。 */
+       * [P2b·兽群] 灵兽有血之后，这一刀会真的扣在它身上（见 mobMeleeSwing）——
+       * 以前只是「玩家这几秒不掉血」，现在是「它替你挨」。 */
       const tg = (e.tauntT > 0 && e.tauntPt) ? e.tauntPt : pp;
       const dtg = DIST2D(e.pos, tg);
       if (e.boss) { this.updateBossAI(e, dt, d, pp); }
@@ -4817,6 +7965,8 @@ const Game = {
       updateActorAnim(a, dt);
       if (e.hitFlash > 0) e.hitFlash = Math.max(0, e.hitFlash - dt * 4);
     }
+    /* [U9] 常驻微标识跟随实体；放在位置更新之后、死亡回收之前 */
+    if (typeof EnemyFX !== 'undefined') EnemyFX.sync(dt, this.time, this.enemies);
     this.enemies = this.enemies.filter(e => {
       if (e.dead && (e.deadT || 0) >= 3) {
         // 整棵子树（模型 + 武器 + 血条）一起释放，共享缓存的几何体由 disposeTree 自动跳过
@@ -4880,10 +8030,15 @@ const Game = {
     if (e.windup > 0) {
       e.windup -= dt;
       if (e.windup <= 0 && DIST2D(e.pos, pp) < e.reach + 1.4) {
-        /* [P3] 被嘲讽的怪这一刀落在灵兽身上：伤害不结算到玩家，
-         * 只给一簇火花。灵兽没有血条，所以「扛这一下」等于「这几秒白打」。 */
+        /* [U9] 抬手回执只亮自己脚下的常驻记号，不新画一朵花 */
+        if (typeof EnemyFX !== 'undefined') EnemyFX.pulse(e, 1);
+        /* [P2b·兽群] 被嘲讽的怪这一刀落在灵兽身上 —— 现在是**真的扣血**。
+         * 以前灵兽没有血，这里只放一簇火花，于是「群嘲」等于「怪白打几秒」；
+         * 现在灵兽会替你把这一刀吃下去，也可能因此死掉。 */
         if (e.tauntT > 0 && e.tauntPt) {
-          FX.spark(new THREE.Vector3(e.tauntPt.x, 1.2, e.tauntPt.z), 0xffd8a0, 7);
+          const al = e.tauntAlly || this.allyNear(e.tauntPt, 6);
+          if (al) this.damageAlly(al, e.dmg * RND(0.9, 1.1), e);
+          else FX.spark(new THREE.Vector3(e.tauntPt.x, 1.2, e.tauntPt.z), 0xffd8a0, 7);
         } else {
           this.damagePlayer(e.dmg * RND(0.9, 1.1), e);
           if (e.cfg.poison) this.playerPoison(e.dmg * 0.15);
@@ -5024,8 +8179,8 @@ const Game = {
     if (ai.state === 'fuse') {
       ai.fuseT -= dt;
       e.actor.moving = false;
-      /* 引信闪烁：hitFlash 是既有的受击闪白通道，这里借它当警戒灯 */
-      e.hitFlash = Math.max(e.hitFlash, 0.9);
+      /* [U9] 引信警戒改由自己那枚常驻自爆环放大闪烁（EnemyFX.sync 读 fuse 态）。
+       * 不再借 hitFlash 的受击闪白 —— 那会被玩家误读成「我刚打到它了」。 */
       if (d > T.breakAway) {
         ai.state = 'chase'; ai.fuseT = 0;
         FX.ring(e.pos, 1.4, 0xffaa66, 0.3, 0.15);
@@ -5125,6 +8280,8 @@ const Game = {
     if (!tgt || tgt.dead) return;
     const amt = Math.round(tgt.maxHp * T.healPct / 100);
     tgt.hp = Math.min(tgt.maxHp, tgt.hp + amt);
+    /* [U9] 治疗光束：从施法者连到目标，让「谁在奶谁」一眼可读 */
+    if (typeof EnemyFX !== 'undefined') EnemyFX.healLink(e, tgt);
     FX.ring(tgt.pos, 1.7, 0x66d08a, 0.5, 0.18);
     FX.text(new THREE.Vector3(tgt.pos.x, 2.1, tgt.pos.z), '+' + amt, 'info', { life: 0.8 });
   },
@@ -5241,37 +8398,142 @@ const Game = {
       dmg: e.dmg, life: 2.4, elem: e.cfg.poison ? 'poison' : null,
       onHit: (target, p) => {
         /* [P3] 被嘲讽时这一发是射向灵兽的：即便飞行途中扫到玩家判定圈，
-         * 也不结算伤害（否则「嘲讽」就成了把怪的攻击浪费在空中的假效果）。 */
+         * 也不结算到玩家身上。
+         * [P2b·兽群] 但它现在会真的扣灵兽的血 —— 以前是「直接 return」，
+         * 那等于嘲讽让这一箭凭空消失。 */
         FX.burst(p.pos.clone(), proj.color, 8, { speed: 4, size: 0.08, life: 0.3, additive: true });
-        if (taunted) return;
+        if (taunted) {
+          const al = e.tauntAlly || this.allyNear(e.tauntPt, 5);
+          if (al) this.damageAlly(al, p.dmg, e);
+          return;
+        }
         this.damagePlayer(p.dmg, e);
         if (e.cfg.poison) this.playerPoison(e.dmg * 0.12);
       }
     });
   },
 
+  /* [P2b] 免控判定：身上有没有带 ccImmune 标记的增益（血怒位 Lv10 台阶）。
+   * 与 ccResist 是两回事 —— ccResist 只把时长按 CLAMP(60) 缩短，
+   * 打到身上还是会中；这个是**根本挂不上**。 */
+  ccImmuneNow() {
+    if (!this.buffs) return false;
+    for (const b of this.buffs) if (b.ccImmune) return true;
+    return false;
+  },
+
+  /* [P2b] 职业自带兜底「净体」：负面时长额外缩减的百分比。
+   * 走**乘算**而不是加到 ccResist 上 —— ccResist 在消费处被 CLAMP 到 60，
+   * 加进去会被封顶吃掉，堆了抗性的人一点都拿不到。
+   * 数据在 `BALANCE.classPassive[cls].ccShort`，目前只有道士有。 */
+  clsCcShort() {
+    const s = this.state;
+    if (!s) return 0;
+    const cp = (typeof BALANCE !== 'undefined' && BALANCE.classPassive) || {};
+    const me = cp[s.cls];
+    return (me && me.ccShort) || 0;
+  },
+
+  /* [P2b] 玩家侧减速的唯一施加口。三处 boss / 精英技能原本各写各的
+   * （0.5 / 2.5 秒等字面量），免控要拦就得三处都改 —— 收成一个口，
+   * 漏一处的代价是「免控在冰霜面前无效」，而这恰好是最常见的那一种控制。 */
+  applyPlayerSlow(amount, dur) {
+    if (this.ccImmuneNow()) {
+      FX.text(new THREE.Vector3(this.playerGroup.position.x, 2.7, this.playerGroup.position.z),
+        '免疫', 'info', { life: 0.7 });
+      return false;
+    }
+    /* [S1] 控制抗性同时缩短减速持续时间；[P2b] 再乘道士的「净体」缩减 */
+    const k = (1 - CLAMP(this.state.stats.ccResist || 0, 0, 60) / 100) * (1 - this.clsCcShort() / 100);
+    this.playerSlow = Math.max(this.playerSlow || 0, amount);
+    this.playerSlowT = Math.max(this.playerSlowT || 0, dur * k);
+    return true;
+  },
+
   playerPoison(dps) {
-    /* [S1] 控制抗性同时缩短中毒持续时间 */
-    this.poisonT = 4 * (1 - CLAMP(this.state.stats.ccResist || 0, 0, 60) / 100);
+    if (this.ccImmuneNow()) {
+      FX.text(new THREE.Vector3(this.playerGroup.position.x, 2.7, this.playerGroup.position.z),
+        '免疫', 'info', { life: 0.7 });
+      return;
+    }
+    /* [S1] 控制抗性同时缩短中毒持续时间；[P2b] 再乘道士的「净体」缩减 */
+    const k = (1 - CLAMP(this.state.stats.ccResist || 0, 0, 60) / 100) * (1 - this.clsCcShort() / 100);
+    this.poisonT = 4 * k;
     this.poisonDps = dps;
+  },
+
+  /* [P02] 首领脱战复位。
+   *
+   * 触发条件只有一个：玩家跑出 `BALANCE.boss.leash`（32 米）。
+   * 复位要做满六件事，少一件都会留下怪现象：
+   *   ① 回锚点   —— 不回的话玩家跑回来发现首领在入口等着（它一路追过来的）
+   *   ② 回满血   —— 这是 leash 的全部意义：卡位磨血变成白磨
+   *   ③ 清 debuff —— 不然「毒了 20 秒的 Boss 回位后自己死掉」
+   *   ④ 清技能态 —— windup / charging / pendingMelee 中途复位会让它回位后立刻挥空一刀
+   *   ⑤ phase 归零 —— 血量满了还挂着「狂怒」，等于白送 15% 伤害
+   *   ⑥ 脱战      —— active=false，玩家再走进 17 米会重新走一遍「登场」
+   *
+   * 世界 Boss（e.wb）不走这条：它的三阶段、领域、招牌技能都挂在 e.wb 上，
+   * 中途复位会把阶段状态和血量对不上（WBFight 没有复位入口）。
+   * 世界 Boss 本来就在独立战场里，跑不到 32 米外。 */
+  resetBoss(e) {
+    /* [B21] 脱战复位要把「正在放的那一招」也断掉：占用不清零的话，
+     * 玩家再走进祭坛，首领会在 _castUntil 到期前一直不出招
+     * （表现像卡住了）。已经在飞的演出不用管 —— 它会自己走完。 */
+    e._castUntil = 0;
+    e._cast = null;
+    const an = e.anchor || { x: e.pos.x, z: e.pos.z };
+    e.pos.x = an.x; e.pos.z = an.z;
+    e.hp = e.maxHp;
+    e.active = false;
+    e.phase = 0;
+    e.dmg = e.baseDmg || e.dmg;          // 狂怒期间涨上去的伤害要退回去
+    e.patternCd = RND(2.5, 4.5);
+    e.atkCd = 0;
+    e.windup = 0; e.pendingMelee = false;
+    e.charging = 0; e.chargeHit = false; e.chargeWind = 0;
+    e.slow = 0; e.slowT = 0; e.stun = 0; e.freeze = 0;
+    e.fearT = 0; e.tauntT = 0; e.tauntPt = null;
+    e.poisonT = 0; e.poisonTick = 0; e.poisonDmg = 0;
+    e.poisonN = 0; e.poisonNT = 0;
+    e.dotT = 0; e.dotDmg = 0; e.dotElem = null;
+    e.vulnT = 0; e.shredT = 0; e.antiHealT = 0; e.venomT = 0;
+    e.aspdT = 0; e.aspdMul = 0;
+    e.shield = 0; e.berserkOn = false;
+    if (this.boss === e) { this.boss = null; UI.updateBoss(null); }
+    if (typeof FX !== 'undefined') FX.ring(new THREE.Vector3(an.x, 0, an.z), 5, 0x88aaff, 0.8, 0.22);
+    UI.log('【' + e.cfg.name + '】退回祭坛，伤势尽复。', 'warn');
   },
 
   updateBossAI(e, dt, d, pp) {
     if (e.dead) return;
     const a = e.actor;
+    /* [P02] 拴绳：玩家跑出 32 米 → 脱战复位。
+     * 放在最前面（阶段判定之前），否则这一帧还会先走一次「狂怒」演出。 */
+    if (!e.wb && e.active && d > ((BALANCE.boss && BALANCE.boss.leash) || 32)) {
+      this.resetBoss(e);
+      a.moving = false;
+      return;
+    }
     const hpRatio = e.hp / e.maxHp;
-    /* [DIFF] 困难/极难：Boss 提前进阶段（75% / 45%），压迫感更强 */
-    const rush = this.diff().bossRush;
-    const newPhase = rush
-      ? (hpRatio < 0.45 ? 2 : (hpRatio < 0.75 ? 1 : 0))
-      : (hpRatio < 0.3 ? 2 : (hpRatio < 0.6 ? 1 : 0));
-    if (newPhase > e.phase) {
-      e.phase = newPhase;
-      UI.toast(e.cfg.name + ' 狂怒', 'lv');
-      SFX.boss(); this.shake = 0.6;
-      if (typeof AudioSys !== 'undefined') AudioSys.mob(e, 'bossPhase');
-      FX.ring(e.pos, 6, 0xff5522, 0.8, 0.3);
-      e.dmg *= 1.15;
+    /* [M18.7] 世界 Boss 的「阶段」走自己的三阶段（血量 1.00 / 0.66 / 0.33，
+     * 见 data-worldboss.js 的 phases），**不是**常驻首领那套 0.6 / 0.3 的「狂怒」。
+     * 两套阈值不同，混用会出现「血条已经是 P2、技能还是 P1」，
+     * 而且「狂怒」这个词是常驻首领的语言（世界 Boss 的阶段有自己的名字）。 */
+    if (!e.wb) {
+      /* [DIFF] 困难/极难：Boss 提前进阶段（75% / 45%），压迫感更强 */
+      const rush = this.diff().bossRush;
+      const newPhase = rush
+        ? (hpRatio < 0.45 ? 2 : (hpRatio < 0.75 ? 1 : 0))
+        : (hpRatio < 0.3 ? 2 : (hpRatio < 0.6 ? 1 : 0));
+      if (newPhase > e.phase) {
+        e.phase = newPhase;
+        UI.toast(e.cfg.name + ' 狂怒', 'lv');
+        SFX.boss(); this.shake = 0.6;
+        if (typeof AudioSys !== 'undefined') AudioSys.mob(e, 'bossPhase');
+        FX.ring(e.pos, 6, 0xff5522, 0.8, 0.3);
+        e.dmg *= 1.15;
+      }
     }
 
     e.patternCd -= dt;
@@ -5283,19 +8545,33 @@ const Game = {
       a.moving = false;
       if (e.windup <= 0 && e.pendingMelee) {
         e.pendingMelee = false;
-        if (DIST2D(e.pos, pp) < e.reach + 2.2) this.damagePlayer(e.dmg * RND(0.9, 1.2), e);
+        if (DIST2D(e.pos, pp) < e.reach + 2.2) {
+          this.damagePlayer(e.dmg * RND(0.9, 1.2), e);
+          /* [M18.7] `enter.rootOnHit`（九尾狐 P2「九尾缚」）：连普攻都定身。
+           * 名字叫 onHit 就真的是 onHit —— 只在技能上生效的话，
+           * 玩家会发现「躲开技能就没事」，那 P2 等于没有。 */
+          if (e.wbRoot) this.rootT = Math.max(this.rootT || 0, e.wbRoot);
+        }
       }
     } else if (e.charging > 0) {
       e.charging -= dt;
-      const dir = e.chargeDir;
-      e.pos.x += dir.x * 22 * dt; e.pos.z += dir.z * 22 * dt;
-      a.moving = true;
-      if (DIST2D(e.pos, pp) < e.radius + 1.6 && !e.chargeHit) {
-        e.chargeHit = true;
-        this.damagePlayer(e.dmg * 1.3, e);
-        this.shake = 0.5;
+      /* [U7] 前摇段：站定不动。以前 `charging` 一置上就开始以 22/s 前冲，
+       * 预警矩形带刚铺开人已经到脸上了 —— 那 0.7s 就是白给的。
+       * `chargeWind` 归零之前不位移、也不判命中。 */
+      if (e.chargeWind > 0) {
+        e.chargeWind -= dt;
+        a.moving = false;
+      } else {
+        const dir = e.chargeDir;
+        e.pos.x += dir.x * 22 * dt; e.pos.z += dir.z * 22 * dt;
+        a.moving = true;
+        if (DIST2D(e.pos, pp) < e.radius + 1.6 && !e.chargeHit) {
+          e.chargeHit = true;
+          this.damagePlayer(e.dmg * 1.3, e);
+          this.shake = 0.5;
+        }
+        FX.burst(new THREE.Vector3(e.pos.x, 0.6, e.pos.z), 0xaa8866, 4, { speed: 3, size: 0.14, life: 0.4, gravity: 4 });
       }
-      FX.burst(new THREE.Vector3(e.pos.x, 0.6, e.pos.z), 0xaa8866, 4, { speed: 3, size: 0.14, life: 0.4, gravity: 4 });
     } else if (d > e.reach * 0.8) {
       /* [M12] 拴绳：玩家不在首领所在的区域时，首领走回自己的锚点。
        * 不这么做的话它会一直朝玩家直线走，撞在祭坛的墙上磨 —— 区域化之后
@@ -5318,7 +8594,9 @@ const Game = {
 
     // 普攻
     if (e.atkCd <= 0 && d < e.reach + 1.6 && e.windup <= 0 && e.charging <= 0) {
-      e.atkCd = e.cfg.atkCd || 2;
+      /* [M18.7] 攻速阶段加成走 `e.atkCdBase`（`enter.aspdMul` 写进去的）。
+       * 常驻首领没有这个字段，回落到 cfg.atkCd，行为不变。 */
+      e.atkCd = e.atkCdBase || e.cfg.atkCd || 2;
       e.windup = 0.45;
       e.pendingMelee = true;
       a.atkAnim = 1; a.atkType = 'swing'; a.atkSpeed = 2.6;
@@ -5327,26 +8605,92 @@ const Game = {
     }
 
     // 技能
-    if (e.patternCd <= 0) {
-      e.patternCd = RND(4.5, 7.5) * (1 - e.phase * 0.12);
-      this.bossPattern(e, pp);
+    if (e.wb) {
+      /* [M18.7] 世界 Boss 走自己的 18 个招牌技能（`cfg.skills` + 三阶段过滤），
+       * **不走** `bossPattern()` 的 patterns 招式池 —— 那是八部天龙八只共用的
+       * 语言（slam / roots / ringshot…），撞上就等于「又一只八部」。
+       * 阶段切换也在里面（`phaseOf` → `_enterPhase`），所以上面那段
+       * 「狂怒」不用管它，这里也不按血量再判一次。 */
+      if (typeof WBFight !== 'undefined') WBFight.ai(e, dt, pp);
+    } else if (e.patternCd <= 0) {
+      /* [P02] 技能距离闸。
+       *
+       * 用户报的现象：「Boss 在传送门那边（98 米外）也放技能」。
+       * 根因是这里只等 CD、不看距离 —— 首领一旦被激活过（走进 17 米那一下），
+       * 玩家跑回入口它照样每 4.5~7.5 秒放一轮。`slam` 尤其离谱：落点直接钉在
+       * 玩家脚下，所以 98 米外的祭坛里，玩家脚边照样亮红圈。
+       *
+       * 处理：CD 到点先量距离，超出交战半径就**不放**，并把 CD 压到 1.2 秒重试。
+       * 用短 CD 而不是整轮 CD，是为了「走进 18 米后 1.2 秒就能吃第一发」——
+       * 整轮 CD 会让玩家走到脸上还得干等 5 秒，手感像卡住了。 */
+      const skillR = (BALANCE.boss && BALANCE.boss.skillRange) || 18;
+      if (d > skillR) {
+        e.patternCd = 1.2;
+      } else {
+        /* [B21] 先出招、再按结果定 CD。
+         * 反过来的话（先设满 CD 再出招），BossCast 一旦因为「上一招还没
+         * 演完」而拒绝，这一整轮 4.5~7.5 秒就白等了 —— 实测 25 秒只出得来
+         * 2 招，玩家看到的是一只站着发呆的首领，而《技能试验场》里它是
+         * 每 5 秒一招。没出招就 0.8 秒后重试，跟上面距离闸同一个思路。 */
+        const casted = this.bossPattern(e, pp);
+        e.patternCd = casted ? (RND(4.5, 7.5) * (1 - e.phase * 0.12)) : 0.8;
+      }
     }
 
     // 面向
+    /* [B16.4] 转身速度是**机制**，不是手感：`guardFront.turn` 写「转掉 95%
+     * 偏差要几秒」，这里把它换成每帧的比例。石甲巨魔给 1.2 秒 ——
+     * 于是「贴身绕到背后打」是一段能走完的路，而不是转个身就没了。
+     * 没有 guardFront 时 turn = 0.48，等价于原来 `pow(0.002, dt)` 的半衰 0.111 秒。 */
+    const turnSec = (e.guardFront && e.guardFront.turn) || FRONT_GUARD_DEFAULT.turn;
     const ang = Math.atan2(pp.x - e.pos.x, pp.z - e.pos.z);
-    a.group.rotation.y = this.lerpAngle(a.group.rotation.y, ang, 1 - Math.pow(0.002, dt));
+    a.group.rotation.y = this.lerpAngle(a.group.rotation.y, ang, 1 - Math.pow(0.05, dt / turnSec));
     if (this.boss === e) UI.updateBoss(e);
   },
 
+  /* [P02] 招式落点：以「玩家位置 + 随机散布」为基础，再夹进交战半径内。
+   *
+   * 为什么还要夹一次：距离闸（`skillRange` 18 米）只保证「玩家在范围内」，
+   * 但 `roots` 散 ±5、`rocks` 散 ±8、`swordrain` 散 ±10 —— 玩家站在 17 米时，
+   * 散布能把落点推到离首领 27 米的地方。以前没人管是因为技能本来就能跨图放，
+   * 现在有了距离闸，落点再飘出去就变成「红圈亮在墙外面」，比原来更违和。
+   *
+   * 夹取只影响超出半径的那部分落点，范围内的一切照旧 —— 也就是玩家在正常
+   * 交战距离里看到的弹幕分布一个像素都没变。 */
+  _bossAim(e, pp, spread = 0) {
+    const R = (BALANCE.boss && BALANCE.boss.skillRange) || 18;
+    let x = pp.x, z = pp.z;
+    if (spread) { x += RND(-spread, spread); z += RND(-spread, spread); }
+    const dx = x - e.pos.x, dz = z - e.pos.z;
+    const dd = Math.hypot(dx, dz);
+    if (dd > R) { const k = R / dd; x = e.pos.x + dx * k; z = e.pos.z + dz * k; }
+    return new THREE.Vector3(x, 0, z);
+  },
+
   bossPattern(e, pp) {
+    /* [B21] 45 只守卫走**技能试验场里调好的**那 88 招（data-bosskits +
+     * boss-cast）。下面这 11 个 case 从 v1.0 就在，用的是 FX.telegraph /
+     * FX.burst 那套老特效 —— 它们和试验场里演的完全是两套东西，
+     * 玩家在试验场看到的「藤蔓追着脚下长」，游戏里打出来是一个红圈。
+     *
+     * 所以这里先交给 BossCast：45 只都有五格配招，能出招就 return。
+     * 保留老的 switch 只作兜底 —— 「配招表读不到 / 那一招炸了」时
+     * 首领不至于站着不动（哑火比难看更糟）。世界 Boss 不走这里
+     * （上面 e.wb 分支已经转给 WBFight），小怪也不走（没有 patterns）。 */
+    /* 返回值 = 「这一轮真的放出去一招了没有」。
+     * updateBossAI 靠它决定要不要把 CD 设满（见那边的注释）。 */
+    if (typeof BossCast !== 'undefined' && BossCast.tryCast(e, pp)) return true;
     const pat = PICK(e.cfg.patterns || ['slam']);
     const st = e.dmg;
     const self = e;
+    /* [U7] 兜底特效层可缺省：实验室 / 精简页不加载 fx-kit.js，
+     * 缺了就是「没有竖波和贴花」，不能连带把预警和伤害一起弄没。 */
+    const fxk = (typeof FXK !== 'undefined' && FXK) ? FXK : null;
     SFX.boss();
     this.shake = Math.max(this.shake, 0.3);
     switch (pat) {
       case 'slam': {
-        const target = new THREE.Vector3(pp.x, 0, pp.z);
+        const target = this._bossAim(e, pp, 0);
         FX.telegraph(target, 4.6, 0.85, () => {
           if (this.dead) return;
           FX.flashCircle(target, 4.6, 0xff5522, 0.4);
@@ -5358,7 +8702,7 @@ const Game = {
       }
       case 'roots': {
         for (let i = 0; i < 3; i++) {
-          const t = new THREE.Vector3(pp.x + RND(-5, 5), 0, pp.z + RND(-5, 5));
+          const t = this._bossAim(e, pp, 5);
           FX.telegraph(t, 2.6, 0.7 + i * 0.18, () => {
             FX.burst(new THREE.Vector3(t.x, 0.3, t.z), 0x6aa04a, 18, { speed: 4, size: 0.16, life: 0.8, gravity: -3 });
             if (DIST2D(new THREE.Vector3(this.playerGroup.position.x, 0, this.playerGroup.position.z), t) < 2.6) this.damagePlayer(st * 1.1, self);
@@ -5383,11 +8727,22 @@ const Game = {
         break;
       }
       case 'charge': {
-        e.charging = 0.55; e.chargeHit = false;
+        /* [U7] 公平性：以前 `e.charging = 0.55` **当帧**就开始前冲，预警圈
+         * 刷在自己脚下 —— 玩家看到圈的时候人已经被撞了。
+         * 现在先站定 0.7s，铺一条矩形带（半宽 = 判定半径 `e.radius + 1.6`，
+         * 正好是冲过去扫过的那条带子），带上三个箭头指向冲锋方向。
+         * 倍率（`e.dmg * 1.3`，在 updateBossAI 的 charging 分支里）与判定都没动。 */
+        const WIND = 0.7;
         const dir = new THREE.Vector3(pp.x - e.pos.x, 0, pp.z - e.pos.z).normalize();
         e.chargeDir = { x: dir.x, z: dir.z };
+        e.chargeHit = false;
+        e.chargeWind = WIND;
+        e.charging = WIND + 0.55;
         e.lorder = 0;
-        FX.ring(e.pos, 2.4, 0xffaa44, 0.35);
+        FX.zone({
+          shape: 'rect', pos: e.pos, dir: { x: dir.x, z: dir.z },
+          len: 16, halfW: (e.radius || 1) + 1.6, dur: WIND, color: 0xffaa44,
+        });
         UI.log(e.cfg.name + ' 蓄力冲撞！', 'bad');
         break;
       }
@@ -5412,7 +8767,7 @@ const Game = {
       }
       case 'rocks': {
         for (let i = 0; i < 5; i++) {
-          const t = new THREE.Vector3(pp.x + RND(-8, 8), 0, pp.z + RND(-8, 8));
+          const t = this._bossAim(e, pp, 8);
           FX.telegraph(t, 2.2, 0.9 + i * 0.12, () => {
             FX.burst(new THREE.Vector3(t.x, 0.4, t.z), 0x998877, 14, { speed: 6, size: 0.18, life: 0.7, gravity: 12 });
             if (DIST2D(new THREE.Vector3(this.playerGroup.position.x, 0, this.playerGroup.position.z), t) < 2.2) this.damagePlayer(st * 1.2, self);
@@ -5421,11 +8776,26 @@ const Game = {
         break;
       }
       case 'quake': {
-        FX.ring(e.pos, 9, 0xffaa66, 0.9, 0.4);
-        FX.flashCircle(e.pos, 8, 0xffbb77, 0.5);
-        this.shake = 0.8;
-        SFX.explode();
-        if (DIST2D(new THREE.Vector3(this.playerGroup.position.x, 0, this.playerGroup.position.z), e.pos) < 8.5) this.damagePlayer(st * 1.6, self);
+        /* [U7] 公平性：原来圈和伤害**同一帧**到，玩家没有反应窗口。
+         * 现在 0.9s 前摇：同心环由外向内收（`sweep:'in'`），收到判定半径
+         * 8.5 时才结算。落点用**开招那一刻**的坐标快照 —— 画在哪就炸在哪，
+         * 圈不会跟着 Boss 走（跟着走就变成「站哪都挨」）。
+         * 倍率 ×1.6 没动：补了前摇要不要抬到 ×2.0 见台账卡点（等拍板）。 */
+        const c = new THREE.Vector3(e.pos.x, 0, e.pos.z);
+        FX.zone({
+          shape: 'circle', pos: c, radius: 8.5, dur: 0.9, sweep: 'in', color: 0xffaa66,
+          cb: () => {
+            if (this.dead) return;
+            FX.ring(c, 9, 0xffaa66, 0.9, 0.4);
+            FX.flashCircle(c, 8, 0xffbb77, 0.5);
+            /* §4.1「炸时加 shock 竖波 + 地裂纹」：竖波给高度，裂纹给余味 */
+            if (fxk && fxk.shock) fxk.shock(c, 8, { color: 0xffbb77 });
+            if (fxk && fxk.decal) fxk.decal(c, { tex: 'crack', color: 0x241a12, size: 7, life: 6 });
+            this.shake = 0.8;
+            SFX.explode();
+            if (DIST2D(new THREE.Vector3(this.playerGroup.position.x, 0, this.playerGroup.position.z), c) < 8.5) this.damagePlayer(st * 1.6, self);
+          },
+        });
         break;
       }
       case 'poisonnova': {
@@ -5450,42 +8820,77 @@ const Game = {
         break;
       }
       case 'frostnova': {
+        /* [U7] 公平性：0.8s 前摇，空心环由内向外扩到判定半径 7。
+         * 环是**波前**不是「中间安全」：环走过的范围会被填满（fill 随进度
+         * 亮起），所以整个圆盘都是危险区 —— 和 `DIST2D < 7` 一致。 */
         const c = new THREE.Vector3(e.pos.x, 0, e.pos.z);
-        FX.flashCircle(c, 7, 0x8ad8ff, 0.5);
-        FX.ring(c, 7, 0x8ad8ff, 0.7);
-        SFX.ice();
-        if (DIST2D(new THREE.Vector3(this.playerGroup.position.x, 0, this.playerGroup.position.z), c) < 7) {
-          this.damagePlayer(st * 1.1, self);
-          this.playerSlow = 0.5;
-          this.playerSlowT = 2.5 * (1 - CLAMP(this.state.stats.ccResist || 0, 0, 60) / 100);
-        }
+        FX.zone({
+          shape: 'ring', pos: c, radius: 7, dur: 0.8, sweep: 'out', color: 0x8ad8ff,
+          cb: () => {
+            if (this.dead) return;
+            FX.flashCircle(c, 7, 0x8ad8ff, 0.5);
+            FX.ring(c, 7, 0x8ad8ff, 0.7);
+            SFX.ice();
+            if (fxk && fxk.decal) fxk.decal(c, { tex: 'frost', color: 0x9fd8ff, size: 7, life: 5 });
+            if (DIST2D(new THREE.Vector3(this.playerGroup.position.x, 0, this.playerGroup.position.z), c) < 7) {
+              this.damagePlayer(st * 1.1, self);
+              this.applyPlayerSlow(0.5, 2.5);
+            }
+          },
+        });
         break;
       }
       case 'fireline': {
+        /* [U7] 形状：以前是 6 个圆一个个冒出来、0 前摇，读不出「这是一条线」。
+         * 现在先铺一条矩形带（0.7s，指向玩家），带子亮完再沿它一路炸过去 ——
+         * 看见带子就知道「这条走廊不能站」。倍率 ×0.9 没动。 */
+        const o = new THREE.Vector3(e.pos.x, 0, e.pos.z);
         const dir = new THREE.Vector3(pp.x - e.pos.x, 0, pp.z - e.pos.z).normalize();
-        for (let i = 0; i < 6; i++) {
-          const t = new THREE.Vector3(e.pos.x + dir.x * i * 3, 0, e.pos.z + dir.z * i * 3);
-          setTimeout(() => {
-            FX.flashCircle(t, 2.2, 0xff5522, 0.35);
-            FX.burst(new THREE.Vector3(t.x, 0.6, t.z), 0xff7722, 10, { speed: 5, size: 0.16, life: 0.5, gravity: -2, additive: true });
-            if (DIST2D(new THREE.Vector3(this.playerGroup.position.x, 0, this.playerGroup.position.z), t) < 2.2) this.damagePlayer(st * 0.9, self);
-          }, i * 110);
-        }
+        FX.zone({
+          shape: 'rect', pos: o, dir: { x: dir.x, z: dir.z },
+          len: 6 * 3, halfW: 2.2, dur: 0.7, color: 0xff5522,
+          cb: () => {
+            if (this.dead) return;
+            for (let i = 0; i < 6; i++) {
+              const t = new THREE.Vector3(o.x + dir.x * i * 3, 0, o.z + dir.z * i * 3);
+              setTimeout(() => {
+                if (this.dead) return;
+                FX.flashCircle(t, 2.2, 0xff5522, 0.35);
+                FX.burst(new THREE.Vector3(t.x, 0.6, t.z), 0xff7722, 10, { speed: 5, size: 0.16, life: 0.5, gravity: -2, additive: true });
+                if (DIST2D(new THREE.Vector3(this.playerGroup.position.x, 0, this.playerGroup.position.z), t) < 2.2) this.damagePlayer(st * 0.9, self);
+              }, i * 110);
+            }
+          },
+        });
         break;
       }
       case 'curse': {
+        /* [U7] 形状：判定是「距离 < 14 **无条件**命中」= 锁定、跑不掉，却画了
+         * 一条从 Boss 连到玩家的光束 —— 看着像可以躲的弹道，于是玩家会去躲，
+         * 躲完发现还是掉血，规则就不被相信了。
+         * 现在 0.7s 前摇：准星**挂在玩家脚下**（follow，跟着人走）——
+         * 这是「你被标记了」，不是「快跑」。结算时才连线（那一下是魂丝抽紧）。
+         * 判定与倍率 ×0.6 都没动：中途跑出 14 格也照旧命中，锁定就是锁定。 */
         if (DIST2D(new THREE.Vector3(this.playerGroup.position.x, 0, this.playerGroup.position.z), e.pos) < 14) {
-          this.damagePlayer(st * 0.6, self);
-          this.playerSlow = 0.45;
-          this.playerSlowT = 3 * (1 - CLAMP(this.state.stats.ccResist || 0, 0, 60) / 100);
-          FX.beam(new THREE.Vector3(e.pos.x, 2, e.pos.z), new THREE.Vector3(this.playerGroup.position.x, 1.4, this.playerGroup.position.z), 0xaa66ff, 0.4);
-          UI.log('你被邪咒缠绕，身法迟滞！', 'bad');
+          FX.zone({
+            shape: 'lock', pos: this.playerGroup.position, follow: this.playerGroup,
+            radius: 2.2, dur: 0.7, color: 0xaa66ff,
+            cb: () => {
+              if (this.dead) return;
+              const p = this.playerGroup.position;
+              this.damagePlayer(st * 0.6, self);
+              const slowed = this.applyPlayerSlow(0.45, 3);
+              FX.beam(new THREE.Vector3(e.pos.x, 2, e.pos.z), new THREE.Vector3(p.x, 1.4, p.z), 0xaa66ff, 0.4);
+              UI.log(slowed ? '你被邪咒缠绕，身法迟滞！' : '免控生效，邪咒缠不上身！',
+                slowed ? 'bad' : 'good');
+            },
+          });
         }
         break;
       }
       case 'meteor': {
         for (let i = 0; i < 4; i++) {
-          const t = new THREE.Vector3(pp.x + RND(-7, 7), 0, pp.z + RND(-7, 7));
+          const t = this._bossAim(e, pp, 7);
           FX.telegraph(t, 3.4, 1.1, () => {
             FX.flashCircle(t, 3.4, 0xff5522, 0.4);
             this.shake = 0.4;
@@ -5496,7 +8901,7 @@ const Game = {
       }
       case 'swordrain': {
         for (let i = 0; i < 10; i++) {
-          const t = new THREE.Vector3(pp.x + RND(-10, 10), 0, pp.z + RND(-10, 10));
+          const t = this._bossAim(e, pp, 10);
           FX.telegraph(t, 2.4, 0.8 + i * 0.1, () => {
             FX.burst(new THREE.Vector3(t.x, 0.4, t.z), 0xffe0a0, 10, { speed: 6, size: 0.12, life: 0.5, gravity: 2, additive: true });
             if (DIST2D(new THREE.Vector3(this.playerGroup.position.x, 0, this.playerGroup.position.z), t) < 2.4) this.damagePlayer(st * 0.9, self);
@@ -5505,15 +8910,28 @@ const Game = {
         break;
       }
     }
+    /* 老兜底走完了：确实放了一招（不是 BossCast 那一套，但也不是哑火） */
+    return true;
   },
 
   /* ---------------- 召唤物 ---------------- */
   /* [S4] 变体 / 天赋对召唤的修正：skillMods[技能id] 的 dmg → 伤害，dur → 存活 */
+  /* [P2b·兽群] 必须读 effSkillMods 而不是 skillMod。
+   *
+   * skillMod 只含**装备词条**，精研 / 取向 / 变体的 mods 全漏在外面 ——
+   * 于是「凶兽 +30%」「虎威 +30%」「真龙 +30%」「兽王 +50%」「龙神 +60%」
+   * 这些写进数据的加成，打出来一个都没生效（召唤流弱的真正原因）。
+   * 换成 effSkillMods 之后，分支与台阶的 mods 一并进来；
+   * 台阶「召唤数量 +1」也走同一条路（见 SKILL_TIER_EVO[summon].3.mods.count）。
+   *
+   * lifeAdd 现在没有消费点了（灵兽不再靠倒计时退场），保留字段只为
+   * 不破坏还写着 dur 的分支数据 —— 它们改由 allyEmpower 折算成回血。 */
   _summonMods(skillId) {
-    const sm = this.skillMod(skillId);
+    const sm = this.effSkillMods(skillId) || {};
     return {
-      dmgMul: 1 + (sm ? (sm.dmg || 0) : 0) / 100,
-      lifeAdd: sm ? (sm.dur || 0) : 0
+      dmgMul: 1 + (sm.dmg || 0) / 100,
+      lifeAdd: sm.dur || 0,
+      count: Math.max(0, Math.round(sm.count || 0))
     };
   },
 
@@ -5525,28 +8943,36 @@ const Game = {
     /* [S3] 召唤系：中节点灵狼继承 75%；青符 5 件 90% */
     const inherit = (st.specials && st.specials.wolfPrime) ? 0.9
       : ((st.specials && st.specials.wolfStrong) ? 0.75 : 0.6);
-    const dmg = st.atk * inherit * (1 + st.summonDmg / 100) * mod.dmgMul;
-    const life = 25 + mod.lifeAdd;
-    /* [S3] 召唤系大节点·万兽：一次召出 2 头 */
-    const count = (typeof force === 'number') ? Math.max(1, force)
-      : ((st.specials && st.specials.wolfPack) ? 2 : 1);
-    for (let i = 0; i < count; i++) {
-      const a = buildMonster('beast', { scale: 0.9, color: 0x8affc0, cloth: 0x3a6a50 });
-      const off = count > 1 ? (i === 0 ? -1.4 : 1.4) : 0;
-      a.group.position.set(this.playerGroup.position.x + off, 0, this.playerGroup.position.z + 0.8);
-      this.scene.add(a.group);
-      this.allies.push({
-        actor: a, pos: a.group.position.clone(), life, atkCd: 0, dmg, atkRate: 1.1,
-        skill: 'summon',           // 灵兽自己所属的技能：恐惧 / 嘲讽 / 死亡重召都按它查分支
-        revive: { wolf: 1 }        // 万兽重召用的配方
-      });
+    /* [S3] 召唤系大节点·万兽：一次召出 2 头。
+     * [P2b·兽群] 台阶 / 变体 / 装备的 count 叠加在天赋之上 ——
+     * 「双生」那条变体写了一年多的 mods.count，但从来没有消费点，
+     * 选了它还是只召 1 只；现在真的多一只。 */
+    const base = (st.specials && st.specials.wolfPack) ? 2 : 1;
+    const count = (typeof force === 'number') ? Math.max(1, force) : base + mod.count;
+    const made = this._spawnAlly(BEAST_PRESET.wolf, { count, inherit, dmgMul: mod.dmgMul, kind: 'wolf' });
+    if (made > 0) {
+      UI.log(inherit > 0.6
+        ? '灵狼应召而来（继承 ' + Math.round(inherit * 100) + '% 攻击力' + (made > 1 ? ' ×' + made : '') + '）'
+        : '灵狼应召而来' + (made > 1 ? ' ×' + made : ''));
     }
-    this.trimAllies();
-    UI.log(inherit > 0.6 ? '灵狼应召而来（继承 ' + Math.round(inherit * 100) + '% 攻击力' + (count > 1 ? ' ×2' : '') + '）' : '灵狼应召而来');
+    return made;
   },
 
-  /* 灵兽上限：超出时最老的一只当场消散（不是「召唤失败」——
-   * 失败会让人以为技能坏了；消散是看得见的，代价也清楚）。 */
+  /* 灵兽上限的判定已挪进 _spawnAlly（撞上限就少召一只并给提示），
+   * 「顶掉最老的」这条规则整条删除 —— 见 trimAllies 的注释。 */
+
+  /* [P2b·兽群] 上限从 3 抬到 8（手机 6）：灵兽有了血、会被怪打死，
+   * 寿命有了天然终点，数量就该放开。这里仍要按平台分档 ——
+   * 每只灵兽是一个 actor + 每帧寻敌/移动/攻击，是真实开销。 */
+  allyCap() {
+    let cap = (typeof IS_TOUCH !== 'undefined' && IS_TOUCH) ? ALLY_CAP_TOUCH : ALLY_CAP_BASE;
+    /* 关键被动「兽契」：灵兽上限 +1 */
+    if (typeof this.passiveLv === 'function' && this.passiveLv('t_beast') > 0) cap += 1;
+    return cap;
+  },
+
+  /* 收缩到当前上限。**只在「上限变小」时需要**（洗点退掉兽契、换平台）——
+   * 召唤时由 _spawnAlly 直接判 cap，不会再走这里顶掉刚召的那只。 */
   trimAllies() {
     const cap = this.allyCap();
     while (this.allies.length > cap) {
@@ -5556,31 +8982,152 @@ const Game = {
     }
   },
 
-  allyCap() {
-    let cap = ALLY_CAP_BASE;
-    /* 关键被动「兽契」：灵兽上限 +1 */
-    if (typeof this.passiveLv === 'function' && this.passiveLv('t_beast') > 0) cap += 1;
-    return cap;
+  presetOf(kind) {
+    return BEAST_PRESET[kind] || BEAST_PRESET.wolf;
   },
 
-  /* [S4] 白虎 / 青龙：同框架不同参数（攻速 / 群攻） */
-  summonBeast(o) {
+  /* 造灵兽的唯一入口：三型共用，血条 / 血量 / 偏移 / 上限判定只写一遍。
+   *
+   * 两条与旧实现的关键差别：
+   *   1. 伤害存**系数**（coef）而不是绝对值 —— 召唤之后换装备、加点、
+   *      吃增益，灵兽的每一刀都要跟着变，而不是永远停在召唤那一刻。
+   *   2. 每只都带 hp / maxHp / 血条。以前灵兽没有血，只能靠 life 倒计时退场，
+   *      于是「多召一只」就必须顶掉一只；现在它会被怪打死，倒计时就不再需要。
+   *
+   * 返回真正召出来的只数（撞上限时小于 count，不再静默替换在场的）。 */
+  _spawnAlly(preset, opt) {
+    const o = Object.assign({}, preset, opt || {});
     const st = this.state.stats;
-    const mod = this._summonMods(o.skill);
-    const a = buildMonster('beast', { scale: o.scale, color: o.color, cloth: o.cloth });
-    a.group.position.copy(this.playerGroup.position);
-    this.scene.add(a.group);
-    this.allies.push({
-      actor: a, pos: a.group.position.clone(),
-      life: (o.life || 20) + mod.lifeAdd, atkCd: 0,
-      dmg: st.atk * o.inherit * (1 + st.summonDmg / 100) * mod.dmgMul,
-      atkRate: o.atkRate || 1.1, aoe: !!o.aoe,
-      skill: o.skill || null,
-      /* 万兽重召：留一份配方（不含运行时字段），死了照着再召一只 */
-      revive: Object.assign({}, o)
-    });
-    this.trimAllies();
-    UI.log(o.name + '应召而来');
+    const dmgMul = (opt && opt.dmgMul) || 1;
+    const inherit = (opt && typeof opt.inherit === 'number') ? opt.inherit : (preset.inherit || 0.6);
+    const coef = inherit * (1 + (st.summonDmg || 0) / 100) * dmgMul;
+    const maxHp = Math.max(1, Math.round((st.hpMax || 100) * (preset.hpPct || 0.3)));
+    const count = Math.max(1, Math.round(o.count || 1));
+    const cap = this.allyCap();
+    const pp = this.playerGroup.position;
+    let made = 0;
+    for (let i = 0; i < count; i++) {
+      if (this.allies.length >= cap) break;
+      const a = buildMonster('beast', { scale: o.scale, color: o.color, cloth: o.cloth });
+      const off = count > 1 ? (i - (count - 1) / 2) * 1.5 : 0;
+      a.group.position.set(pp.x + off, 0, pp.z + 0.8);
+      this.scene.add(a.group);
+      const bar = (typeof makeHpBar === 'function') ? makeHpBar(a.group, { gap: 0.42 }) : null;
+      if (bar) {
+        /* 队友的血条不该长得像怪的：蓝底蓝条，一眼分得开 */
+        bar.fill.material.color.setHex(ALLY_BAR_COLOR);
+        bar.bg.material.color.setHex(0x0a1a22);
+      }
+      this.allies.push({
+        actor: a, pos: a.group.position.clone(),
+        kind: o.kind || 'wolf', skill: o.skill || 'summon',
+        hp: maxHp, maxHp, bar,
+        coef, dmgMul,
+        atkRate: o.atkRate || 1.1, aoe: !!o.aoe,
+        atkCd: 0,
+        /* [P4] 登场：从阵里升起来（0.42 秒）。baseScale 存的是**召唤时**的缩放，
+         * 登场动画只乘在它上面 —— 直接写死 1 会把不同体型的灵兽拉成一样大。 */
+        spawnT: 0.42, baseScale: (a.group.scale && a.group.scale.x) || 1,
+        revive: { kind: o.kind || 'wolf' }
+      });
+      made++;
+    }
+    if (made < count) {
+      UI.log('灵兽已满 ' + cap + ' 只，' + (o.name || '这一只') + '没能应召');
+    }
+    return made;
+  },
+
+  /* 灵兽受伤。以前这只角色不存在（灵兽没有血），现在怪会真打到它身上 ——
+   * 于是「群嘲」终于有了代价：它替你挨的每一刀都会真的扣在它身上。 */
+  damageAlly(al, amount, source) {
+    if (!al || al.hp <= 0) return;
+    const dmg = Math.max(1, amount);
+    al.hp -= dmg;
+    FX.text(new THREE.Vector3(al.pos.x, 2.0, al.pos.z), '-' + Math.round(dmg), 'bad', { life: 0.55 });
+    FX.burst(new THREE.Vector3(al.pos.x, 1.1, al.pos.z), 0xffd0a0, 6, { speed: 3, size: 0.09, life: 0.3, additive: true });
+    if (al.actor) al.actor.flash = 0.12;
+    /* 死亡不在这里处理：统一由 updateAllies 收尸（那里才有 splice 与重召队列），
+     * 否则一发 AOE 会同时触发两次重召判定。 */
+  },
+
+  /* 找一只离某点最近的活着的灵兽（嘲讽 / 远程弹道落地时用） */
+  allyNear(pt, range) {
+    let best = null, bd = range || 8;
+    for (const al of this.allies) {
+      if (!al || al.hp <= 0) continue;
+      const d = DIST2D(al.pos, pt);
+      if (d < bd) { bd = d; best = al; }
+    }
+    return best;
+  },
+
+  /* [P2b·兽群] 台阶 Lv5「灵兽攻击附带范围伤害」。
+   * 直接给 al.aoe / al.aoeR —— 那是青龙原本就在用的那套字段，不另开一条判定。
+   * 两套溅射写在不同地方，迟早出现「青龙能溅射、白虎不能」这种半成品。 */
+  grantAllyAoe(rad) {
+    const R = Math.max(1, rad || 2.6);
+    let n = 0;
+    for (const al of this.allies) {
+      if (!al || al.hp <= 0) continue;
+      al.aoe = true;
+      al.aoeR = Math.max(al.aoeR || 0, R);
+      n++;
+    }
+    return n;
+  },
+
+  /* [P2b·兽群] 台阶 Lv9「灵兽在场时自身受伤 -N%」。
+   * 减伤记在**灵兽身上**、damagePlayer 取最大值 —— 记在玩家身上就要再管
+   * 「持续多久」，而这条的语义本来就是「有灵兽替你扛着」，灵兽死光就该没有。 */
+  grantAllyGuard(pct) {
+    const v = CLAMP(pct || 10, 0, 40);
+    let n = 0;
+    for (const al of this.allies) {
+      if (!al || al.hp <= 0) continue;
+      al.guard = Math.max(al.guard || 0, v);
+      n++;
+    }
+    return n;
+  },
+
+  /* [P2b·兽群] 台阶 Lv10「四象同场」：按一次，场上凑齐三种灵兽。
+   * 缺哪只补哪只；每种只补 1 只，不按 count 翻倍 ——
+   * 否则「四象同场」会变成「六只狼 + 一只虎」，恰恰看不到三种。 */
+  summonFour() {
+    const have = {};
+    for (const al of this.allies) if (al && al.hp > 0) have[al.kind] = (have[al.kind] || 0) + 1;
+    let made = 0;
+    for (const kind of ['wolf', 'tiger', 'dragon']) {
+      if (have[kind]) continue;
+      made += (kind === 'wolf')
+        ? this._spawnAlly(BEAST_PRESET.wolf, { count: 1, kind })
+        : this.summonBeast({ kind });
+    }
+    if (made) {
+      const pp = this.playerGroup.position;
+      FX.ring(new THREE.Vector3(pp.x, 0.2, pp.z), 5.5, 0x9ad8ff, 0.6, 0.3);
+      FX.text(new THREE.Vector3(pp.x, 3.0, pp.z), '四象同场', 'lv', { life: 1.2 });
+    }
+    return made;
+  },
+
+  /* [S4] 白虎 / 青龙：同框架不同参数（攻速 / 群攻）。
+   * `allyPair`（青龙变体「双龙」）也走这里，参数是按「同门小弟」给的覆盖值 ——
+   * 所以这里的 preset 合并顺序是「三型默认 → 调用方覆盖」。 */
+  summonBeast(o) {
+    const kind = o.kind || (o.skill === 'whitetiger' ? 'tiger'
+      : (o.skill === 'azuredragon' ? 'dragon' : 'wolf'));
+    const preset = Object.assign({}, this.presetOf(kind), o);
+    /* 分支 / 装备修正按**合并后的** skill 查：只传 { kind } 调用的那些地方
+     * （case 与「四象同场」）没有 o.skill，用 o.skill 会把加成整条丢掉。 */
+    const mod = this._summonMods(preset.skill);
+    /* [P2b·兽群] 数量 = 1 + 台阶/变体/装备的 count（「双虎」「双龙」终于生效） */
+    const made = this._spawnAlly(preset, { count: 1 + mod.count, dmgMul: mod.dmgMul, kind });
+    if (made > 0) {
+      UI.log((o.name || preset.name) + '应召而来' + (made > 1 ? ' ×' + made : ''));
+    }
+    return made;
   },
 
   updateAllies(dt) {
@@ -5590,17 +9137,39 @@ const Game = {
     let reviveQ = null;
     for (let i = this.allies.length - 1; i >= 0; i--) {
       const al = this.allies[i];
+      /* [P4] 登场动作：从地里升起来 + 由小放大。
+       * 灵兽以前是「啪」地出现在场上，玩家分不清「刚召的」和「本来就在的」；
+       * 召唤阵 + 这 0.42 秒合起来才是「从阵里走出来」。
+       * 用 smoothstep 而不是线性：线性收尾会「顿」一下，像卡帧。 */
+      if (al.spawnT > 0) {
+        al.spawnT = Math.max(0, al.spawnT - dt);
+        const k = 1 - al.spawnT / 0.42;
+        const e = k * k * (3 - 2 * k);
+        const bs = al.baseScale || 1;
+        al.actor.group.scale.setScalar(bs * (0.35 + 0.65 * e));
+        /* 高度偏移记在 `spawnLift` 上（本帧末尾统一贴地时读它），
+         * 不要直接写 group.position.y —— 那一行每帧都会把它抹掉 */
+        al.spawnLift = -0.7 * (1 - e);
+        if (al.spawnT === 0) {
+          al.actor.group.scale.setScalar(bs);
+          al.spawnLift = 0;
+        }
+      }
       /* [P3] 灵兽增益（allyBuff）：伤害 / 出手间隔 / 存续流失三样。
-       * 灵兽没有血条，「上盾 / 回血」只能翻译成这三样，否则就是假机制。 */
+       * [P2b·兽群] 灵兽现在有血了 —— 「drain」从「烧寿命」改成「持续掉血」，
+       * 描述里的「持续流失」才有了字面意思。 */
       if (al.emp && al.emp.t > 0) {
         al.emp.t -= dt;
         if (al.emp.t <= 0) { al.emp.dmg = 1; al.emp.atk = 1; al.emp.drain = 1; }
       }
       const emp = al.emp || null;
-      al.life -= dt * (emp && emp.drain ? emp.drain : 1);
-      if (al.life <= 0) {
+      if (emp && emp.drain && emp.drain !== 1) al.hp -= dt * al.maxHp * (emp.drain - 1) * 0.05;
+      /* 死亡只有一个条件：血被打空。倒计时已经删掉 —— 那本来只是
+       * 「灵兽不会被打死」时期的替代品，两套生命周期并存玩家会看不懂。 */
+      if (al.hp <= 0) {
         this.scene.remove(al.actor.group);
-        /* [P2] 护主（取向）：灵兽消散时为主人回复生命 */
+        FX.burst(new THREE.Vector3(al.pos.x, 1.0, al.pos.z), 0x9ad8ff, 14, { speed: 3, size: 0.1, life: 0.6, additive: true });
+        /* [P2] 护主（取向）：灵兽死亡时为主人回复生命 */
         if (typeof this.onBehAllyDeath === 'function') this.onBehAllyDeath();
         /* [P3] 兽契（关键被动）：30% 概率当场照配方重召一只。
          * 概率写在数据描述里（30%），这里不另加隐藏系数。 */
@@ -5609,6 +9178,13 @@ const Game = {
           (reviveQ || (reviveQ = [])).push(al.revive);
         }
         this.allies.splice(i, 1); continue;
+      }
+      /* 血条：和怪物血条同一套（面向相机 / 屏幕上尺寸恒定），只是颜色不同 */
+      if (al.bar && this.camera) {
+        const cp = this.camera.position;
+        const bd2 = Math.hypot(al.pos.x - cp.x, 1.2 - cp.y, al.pos.z - cp.z);
+        al.bar.group.visible = bd2 < 36;
+        updateHpBar(al.bar, al.hp / al.maxHp, bd2, this.camera);
       }
       /* [P2] 龙息（取向）：灵兽自己的周期性吐息（只有青龙带 breath 标记） */
       if (al.breath) {
@@ -5621,7 +9197,8 @@ const Game = {
           SFX.fire();
           for (const e of this.enemies) {
             if (e.dead || DIST2D(e.pos, al.pos) >= R + e.radius) continue;
-            this.damageEnemy(e, al.dmg * 2.4, false, { silent: true, tag: 'aoe', elem: 'lightning' });
+            const t = this.rollDamage(st.atk * al.coef * 2.4);
+            this.damageEnemy(e, t.dmg, t.crit, { silent: true, tag: 'aoe', elem: 'lightning' });
           }
         }
       }
@@ -5647,8 +9224,12 @@ const Game = {
              * atk 是「出手更快」的倍率，除在间隔上 */
             al.atkCd = (al.atkRate || 1.1) / (emp && emp.atk ? emp.atk : 1);
             al.actor.atkAnim = 1; al.actor.atkType = 'swing';
-            const dmg = al.dmg * (emp && emp.dmg ? emp.dmg : 1) * RND(0.9, 1.1);
-            this.damageEnemy(target, dmg, false, {});
+            /* [P2b·兽群] 灵兽的每一刀都走玩家的 rollDamage：
+             * 暴击率 / 暴击伤害 / 通用增伤（dmgAll）从此全部继承。
+             * 之前固定传 `false`，等于召唤物天生不会暴击 —— 堆暴击的召唤流
+             * 把一半词条白扔了。基础值现算（st.atk × al.coef），换装备立刻生效。 */
+            const { dmg, crit } = this.rollDamage(st.atk * al.coef * (emp && emp.dmg ? emp.dmg : 1));
+            this.damageEnemy(target, dmg, crit, {});
             FX.spark(new THREE.Vector3(target.pos.x, 1.2, target.pos.z), 0x8affc0, 6);
             /* [P3] 恐惧：这只灵兽所属技能带 fear 时，每次出手按概率吓退目标。
              * 走「出手」而不是「施法」，数据描述写的就是「每次攻击 N%」。 */
@@ -5683,13 +9264,16 @@ const Game = {
           al.actor.group.rotation.y = Math.atan2(dx, dz);
         } else al.actor.moving = false;
       }
-      al.actor.group.position.set(al.pos.x, 0, al.pos.z);
+      /* [P4] 登场时的高度偏移由 `spawnLift` 带进来 ——
+       * 这里每帧都会把 y 重置成 0（贴地），所以登场动作**不能**自己写
+       * `group.position.y`，否则同一帧就被这一行抹掉，看起来像「没有升起」 */
+      al.actor.group.position.set(al.pos.x, al.spawnLift || 0, al.pos.z);
       updateActorAnim(al.actor, dt);
     }
     if (reviveQ) {
       for (const r of reviveQ) {
-        if (r.wolf) this.summonWolf(1);
-        else this.summonBeast(r);
+        /* 兽契重召：只按种类补一只（不再按 count 翻倍，否则死一只补三只） */
+        this._spawnAlly(this.presetOf(r.kind), { count: 1, kind: r.kind });
         FX.text(new THREE.Vector3(this.playerGroup.position.x, 2.9, this.playerGroup.position.z),
           '兽契·重召', 'good', { life: 1 });
       }
@@ -5723,7 +9307,13 @@ const Game = {
         if (best) {
           /* 命中点：把投射物挪到线段与圆的交点，爆炸/特效就落在模型表面而不是穿到身后 */
           if (!p.pierce) p.pos.lerpVectors(prev, p.pos, bestT);
+          /* [P3b] onHit 里的 damageEnemy 要能拿到「这一发带的注入元素」，
+           * 而施法窗口早关了 —— 所以命中期间把投射物挂到 `_proj` 上，
+           * curInject 从那里取。只有这两行，不用去改 7 个 onHit 回调。 */
+          const prevProj = this._proj;
+          this._proj = p;
           if (p.onHit) p.onHit(best, p);
+          this._proj = prevProj;
           if (!p.pierce) { FX.removeProjectile(i); continue; }
           (p.hitSet || (p.hitSet = new Set())).add(best.id);
         }
@@ -5795,19 +9385,82 @@ const Game = {
     this.scene.add(g);
   },
 
+  /* ---------------- 拾取策略（P04） ----------------
+   * 返回本帧生效的拾取配置。**设置还没加载时按「全默认」**（自动开 / 灵品+），
+   * 而不是按「全关」—— 否则从没开过设置面板的玩家会莫名其妙没有自动拾取。 */
+  pickupCfg() {
+    const S = (typeof Settings !== 'undefined' && Settings.d) ? Settings.d : null;
+    return {
+      auto: S ? S.autoPickup !== false : true,
+      minRank: rarityRank(S ? S.pickupMinRarity : 'magic'),
+      gold: S ? S.pickupGold !== false : true,
+      mat: S ? S.pickupMat !== false : true,
+      rune: S ? S.pickupRune !== false : true
+    };
+  },
+
+  /* 「未拾取」角标：一张 256×64 的贴图 + 一份材质，全场共用。
+   * 每掉一件白装就新建一张 512×128 的贴图是白烧显存，而且这类角标同时存在
+   * 多少个完全取决于「玩家有多懒」，不可控。共享材质走 markShared，
+   * 这样 disposeTree 回收掉落物时不会把它连坐释放掉。 */
+  _holdTagSprite() {
+    if (!this._holdTagMat) {
+      const c = document.createElement('canvas');
+      c.width = 256; c.height = 64;
+      const g2 = c.getContext('2d');
+      g2.font = 'bold 34px "PingFang SC","Microsoft YaHei",sans-serif';
+      g2.textAlign = 'center'; g2.textBaseline = 'middle';
+      g2.lineWidth = 7; g2.strokeStyle = 'rgba(0,0,0,0.85)';
+      g2.strokeText('未拾取', 128, 32);
+      g2.fillStyle = '#9aa0aa';
+      g2.fillText('未拾取', 128, 32);
+      const tex = markShared(new THREE.CanvasTexture(c));
+      this._holdTagMat = markShared(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false }));
+    }
+    const s = new THREE.Sprite(this._holdTagMat);
+    s.scale.set(2.2, 0.55, 1);
+    s.position.y = 1.5;
+    s.renderOrder = 998;
+    return s;
+  },
+
   updateLoot(dt) {
     const pp = this.playerGroup.position;
     /* [S1] 拾取范围：装备上的 pickupRadius 同时放大吸附圈与拾取圈 */
     const pr = this.state.stats.pickupRadius || 0;
     const pullR = 2.4 + pr * 0.55;
     const grabR = 1.3 + pr * 0.3;
+    /* [P04] 够格自动捡的东西吸附圈从 2.4 米放到 4.2 米 —— 怪一死就自己飞过来，
+     * 不用再一个个踩点。**只有够格的那几件享受这个范围**，其余仍走 pullR，
+     * 否则留在地上的白装会跟着玩家满地图跑，看起来像 bug。 */
+    const autoR = 4.2 + pr * 0.6;
+    const cfg = this.pickupCfg();
+    const now = performance.now() / 1000;
     for (let i = this.loot.length - 1; i >= 0; i--) {
       const l = this.loot[i];
       l.t += dt;
       l.obj.position.y = Math.sin(l.t * 3) * 0.1;
       l.box.rotation.y += dt * 2;
+
+      /* 这一件够不够格自动捡 */
+      let auto;
+      if (!cfg.auto) auto = false;
+      else if (l.item) auto = rarityRank(l.item.rarity) >= cfg.minRank;
+      else if (l.rune) auto = cfg.rune;
+      else if (l.mat) auto = cfg.mat;
+      else auto = cfg.gold;               // 金币与玄晶共用一格开关
+
+      /* 「留在地上」必须看得见：开了自动拾取却不捡的装备挂个灰色角标，
+       * 否则玩家会以为东西压根没掉。关掉总开关时不挂 —— 那时候「全都得自己
+       * 走过去」是玩家的主动选择，不是意外，挂满屏幕角标反而是噪音。 */
+      if (l.item && cfg.auto && !auto) {
+        if (!l.tag) { l.tag = this._holdTagSprite(); l.obj.add(l.tag); }
+      } else if (l.tag) {
+        l.obj.remove(l.tag); l.tag = null;
+      }
+
       const d = Math.hypot(pp.x - l.pos.x, pp.z - l.pos.z);
-      if (d < pullR) {
+      if (d < (auto ? autoR : pullR)) {
         // 吸附
         l.pos.x += (pp.x - l.pos.x) * dt * 6;
         l.pos.z += (pp.z - l.pos.z) * dt * 6;
@@ -5841,7 +9494,16 @@ const Game = {
             this.loot.splice(i, 1);
           } else if (l.item) {
             if (this.state.inventory.length >= this.bagCap()) {
-              if (!l.warned) { l.warned = true; UI.log('行囊已满，先清理背包。', 'bad'); }
+              /* 自动拾取因为行囊满而卡住时，一波怪掉 8 件会刷 8 条红字，
+               * 改成 10 秒一次的低频提示。手动捡（走过去踩到的）保持原来的一件一次。 */
+              if (auto) {
+                if (now - (this._autoFullAt || -99) > 10) {
+                  this._autoFullAt = now;
+                  UI.log('行囊已满，自动拾取暂停。', 'bad');
+                }
+              } else if (!l.warned) {
+                l.warned = true; UI.log('行囊已满，先清理背包。', 'bad');
+              }
             } else if (this.addItem(l.item)) {
               SFX.loot(l.item.rarity);
               const col = RARITY[l.item.rarity].color;
@@ -5909,6 +9571,26 @@ const Game = {
     if (!s.codex || typeof s.codex !== 'object') s.codex = { mon: {}, regions: {} };
     if (!s.codex.mon || typeof s.codex.mon !== 'object') s.codex.mon = {};
     if (!s.codex.regions || typeof s.codex.regions !== 'object') s.codex.regions = {};
+    /* [M4] 图鉴从「5 张老图 = 5 区」改成「5 大卷 = 5 区」：老档 regions 里的
+     * 旧 key（forest/swamp/mine/abyss/heaven）一次性搬到新卷 key，然后对
+     * 每卷重跑一次全录检查 —— 已录的怪不丢；旧区全录但新区还缺新怪的，
+     * 等补录完自动补发加成。删掉旧 key，迁移天然幂等（第二次 moved=false）。 */
+    const LEGACY = (typeof CODEX_REGION_LEGACY !== 'undefined') ? CODEX_REGION_LEGACY : null;
+    if (LEGACY) {
+      let moved = false;
+      for (const old in LEGACY) {
+        if (s.codex.regions[old]) {
+          s.codex.regions[LEGACY[old]] = true;
+          delete s.codex.regions[old];
+          moved = true;
+        }
+      }
+      if (moved && typeof CODEX_REGIONS !== 'undefined') {
+        for (const def of CODEX_REGIONS) {
+          try { this.checkCodexRegion(def.id); } catch (err) { /* 面板未就绪时不弹提示 */ }
+        }
+      }
+    }
     return s.codex;
   },
 
@@ -5947,20 +9629,47 @@ const Game = {
     return e;
   },
 
-  /* 一只怪归哪个区：按 MAPS 的声明顺序取第一个刷它的图。
-   * 这样 golem / ghostfire 这类跨区怪只归一个区，不会让两个区都集不齐。 */
+  /* [M4] 一只怪归哪个区（= 哪一卷）：数它在该卷各图怪池里出现的次数，
+   * 归出场最多的那一卷；平局归早（低卷优先）。
+   *
+   * 为什么不用「首次出场」：老怪的怪池跨卷复用（yaoguai 从 1-3 一路
+   * 铺到 3-1），按首次出场会把 38 只都划给卷一、卷五只剩 6 只 ——
+   * 一区要刷 38 只才全录、五区白送。按最多出场是 31/14/13/9/9，
+   * 每卷的图鉴工作量跟游戏进度大致同步。
+   *
+   * 怪池统一声明在 MAPS[id].spawns，一处读全 —— 新图改池只动
+   * data-world.js 一份，这里自动跟上。结果进程内缓存（数据静态）。
+   * 每只怪只属于一个区，不会让两个区都集不齐。 */
   codexRegionOf(kind) {
-    for (const id in MAPS) {
-      const m = MAPS[id];
-      if (m.spawns && m.spawns.indexOf(kind) >= 0) return id;
+    if (typeof ACTS === 'undefined' || typeof MAPS === 'undefined') return null;
+    if (!this._codexRegionCache) this._codexRegionCache = {};
+    if (kind in this._codexRegionCache) return this._codexRegionCache[kind];
+    /* [M5] 地下城专属怪直接归「秘境」：它们不在任何野外图池里，
+     * 走下面的计次统计会得到 null（图鉴里就永远集不齐）。 */
+    const mcfg = (typeof MONSTERS !== 'undefined') ? MONSTERS[kind] : null;
+    if (mcfg && mcfg.dungeon) return (this._codexRegionCache[kind] = 'rift');
+    const cnt = {};
+    for (const aid in ACTS) {
+      const p = ACTS[aid].part;
+      for (const mi of (ACTS[aid].maps || [])) {
+        const m = MAPS[mi.id];
+        if (m && m.spawns && m.spawns.indexOf(kind) >= 0) cnt[p] = (cnt[p] || 0) + 1;
+      }
     }
-    return null;
+    let best = null, bestN = 0;
+    for (let p = 1; p <= 5; p++) {
+      if ((cnt[p] || 0) > bestN) { bestN = cnt[p]; best = 'part' + p; }
+    }
+    this._codexRegionCache[kind] = best;
+    return best;
   },
 
   codexRegionKinds(regionId) {
-    const m = MAPS[regionId];
-    if (!m || !m.spawns) return [];
-    return m.spawns.filter(k => this.codexRegionOf(k) === regionId);
+    const out = [];
+    for (const kind in MONSTERS) {
+      if (this.codexRegionOf(kind) === regionId) out.push(kind);
+    }
+    return out;
   },
 
   checkCodexRegion(regionId) {
@@ -5987,8 +9696,45 @@ const Game = {
     return out;
   },
 
+  /* ---------------- 地脉钥匙（M5） ----------------
+   * 钥匙的**唯一**读写口。`QuestSys.turnIn` 早在 M2 就写着 `Game.addKey(...)`，
+   * 那时候是空钩子；M5 把它接上，所以任务奖励里的 `rewards.key` 现在真的生效。
+   * 真正的存储与提示在 Dungeon 里（keys 数组 + 日志），这里只做转发 ——
+   * 两处各写一遍迟早会出现「任务给了但背包没涨」。 */
+  addKey(tier, n) {
+    if (typeof Dungeon === 'undefined') return 0;
+    return Dungeon.addKey(tier, n);
+  },
+  keyCount(tier) {
+    if (typeof Dungeon === 'undefined') return 0;
+    return Dungeon.keyCount(tier);
+  },
+
+  /* ---------------- 魔将之印（M7） ----------------
+   * 8 个布尔位，存在 state.seals。这里只读不写 —— 写入在 M7.4 的
+   * 击杀结算里（`grantSeal`）。先留读口是因为 travelTo 的印门要它，
+   * 而印门是「结构」的一部分：没有它，无相天从山河图就能直接点进去，
+   * 8 个副本和 8 枚印全成了摆设。
+   *
+   * 老档没有 state.seals 时按「一枚都没有」算，不抛错。 */
+  sealCount() {
+    const s = (this.state && this.state.seals) || {};
+    if (typeof BAFO_SEALS === 'undefined') return 0;
+    let n = 0;
+    for (const it of BAFO_SEALS) if (s[it.key]) n++;
+    return n;
+  },
+  hasSeal(key) {
+    return !!((this.state && this.state.seals) || {})[key];
+  },
+
   onEnemyDeath(e) {
     if (e.dead) return;
+    /* [B16.3] 可破坏目标不是怪：**不走**击杀结算。
+     * 接上结算的后果很具体 —— 图腾可以被 Boss 反复召唤，
+     * 于是「打图腾」= 白拿经验 + 白拿掉落 + 任务计数，一条无限刷的口子。
+     * 它自己的收场（爆散 / 回调）在 `destroyDestructible` 里。 */
+    if (e.destructible) { this.destroyDestructible(e, false); return; }
     e.dead = true;
     e.hp = 0;
     /* [P2] 击杀钩子（战鼓延长 / 补刀重置 / 血旋引爆）。
@@ -6002,7 +9748,11 @@ const Game = {
     /* [S16] 怪的死声按族与体型合成；精英换成带尾音的那一版（一听就知道杀了什么） */
     if (typeof AudioSys !== 'undefined') AudioSys.mob(e, e.elite && !e.boss ? 'elite' : 'death');
     else SFX.die();
-    if (e.boss) SFX.boss();
+    if (e.boss) {
+      SFX.boss();
+      /* [U9] 首领倒地碎片 + 掉落光柱；掉落物自己的光柱不动，这里不重复造物 */
+      if (typeof EnemyFX !== 'undefined') EnemyFX.bossDeath(e, p);
+    }
     FX.blood(new THREE.Vector3(p.x, 1, p.z), 0x992222, e.boss ? 40 : 16);
     this.hitstop = e.boss ? 140 : 30;
     this.shake = Math.max(this.shake, e.boss ? 0.7 : 0.14);
@@ -6054,7 +9804,12 @@ const Game = {
      * 高档图的怪一只给几百点，一小时能从 1 级推到通关。 */
     const XB = (typeof BALANCE !== 'undefined' ? BALANCE.xp : { mobLv: 0.12, bossLv: 30 });
     const baseXp = e.boss ? (e.cfg.level * XB.bossLv) : (e.cfg.xp || 12) * (1 + e.level * XB.mobLv);
-    const xp = Math.round(baseXp * (e.elite ? 2 : 1) * D.xp);
+    /* [M6] 地脉里经验 ×1.8（BALANCE.dungeon.xpMul，计划书 §10.2）：
+     * 钥匙是消耗品，进去这一趟必须比在野外刷同样时间更划算，
+     * 否则没人会去用掉它。首领不吃这个倍率 —— 它自己那条 bossLv 已经很高。 */
+    const dgXp = (typeof Dungeon !== 'undefined' && Dungeon.active && !e.boss
+      && typeof BALANCE !== 'undefined' && BALANCE.dungeon) ? (BALANCE.dungeon.xpMul || 1) : 1;
+    const xp = Math.round(baseXp * (e.elite ? 2 : 1) * D.xp * dgXp);
     this.gainXp(xp);
 
     // 金币
@@ -6089,9 +9844,18 @@ const Game = {
     }
 
     /* [S2] 符文 / 玄晶：材料直接进 state.stash.mats，不占背包格。
-     * seeker（山海套）提高符文与玄晶的出率、数量。 */
+     * seeker（山海套）提高符文与玄晶的出率、数量。
+     *
+     * [P16] 2026-10-28 下调 60%：普通 2.5% → 0.8%、精英 18% → 8%，seeker ×2 → ×1.6。
+     * 用户反馈「符文爆率太高，打造太容易」。原值一张图（40 只）期望掉 1 个符文，
+     * 清两张图就够一次打造 —— 打造本该是「攒」出来的，不是顺手就有的。
+     * 现在一张图期望 40 × 0.008 ≈ 0.32 个，约三张图凑一次打造。
+     * **首领保持 100%**：打首领该有确定性回报，这条不动。
+     * 如果反馈「太慢」，优先回调精英档（8% → 12%），别动普通怪 ——
+     * 普通怪是「意外之喜」，不该是主要来源。 */
     const seeker = !!sto.flags.seeker;
-    const runeChance = e.boss ? 1 : (e.elite ? (seeker ? 0.3 : 0.18) : (seeker ? 0.05 : 0.025));
+    const runeBase = e.boss ? 1 : (e.elite ? 0.08 : 0.008);
+    const runeChance = e.boss ? 1 : runeBase * (seeker ? 1.6 : 1);
     /* [DIFF] 符文/玄晶出率同步按难度提升 */
     const runeRoll = Math.min(1, runeChance * D.rune);
     if (CHANCE(runeRoll)) {
@@ -6110,14 +9874,46 @@ const Game = {
       this.spawnLoot(p, null, 0, { mat: cm });
     }
 
+    /* [M4/M5] 卷末首领的「次阶地下城钥匙」（计划书 §7.1）：8%，终局真身 15%。
+     * keyTier = 本卷 + 1（一阶对一卷：在卷一打到的钥匙开的是二阶门）。
+     * 与下面「本阶钥匙的必掉线」是两条独立线 —— 首领同时吃这两抽。 */
+    const bcfg = e.boss ? e.cfg : null;
+    if (bcfg && bcfg.actEnd && typeof this.addKey === 'function') {
+      const KB = (typeof BALANCE !== 'undefined' && BALANCE.keyDrop) || { actBoss: 0.08, actBossFinal: 0.15 };
+      if (CHANCE(bcfg.final ? KB.actBossFinal : KB.actBoss)) {
+        this.addKey(Math.min(5, bcfg.keyTier || 1), 1);
+      }
+    }
+
+    /* [M5] 钥匙的**常规**供给（§8.1）：小怪 0.6% / 精英 10% / 首领必掉**本阶**。
+     * 阶 = 这张图所在卷（一阶对一卷），所以玩家不用查表。
+     *
+     * 两处刻意排除：
+     *   · 地下城图里的怪不掉 —— 否则「钥匙开地下城、地下城再产钥匙」形成自循环，
+     *     地下城就变成零成本的刷装场（§8.1 要避免的正是这个）。
+     *   · 地下城关卡守卫不走这里 —— 它们的次阶钥匙是通关结算里的 35%（§8.4）。
+     *
+     * 概率写进 BALANCE.keyDrop.mob / .elite，和掉落/经验一样集中在旋钮表里。 */
+    const kmap = MAPS[this.state.mapId];
+    if (kmap && !kmap.dungeon && typeof this.addKey === 'function') {
+      const act = (typeof actOfMap === 'function') ? actOfMap(this.state.mapId) : null;
+      const tier = Math.min(5, Math.max(1, (act && act.part) || this.state.part || 1));
+      const KB2 = (typeof BALANCE !== 'undefined' && BALANCE.keyDrop) || {};
+      const rate = e.boss ? 1 : (e.elite ? (KB2.elite === undefined ? 0.10 : KB2.elite) : (KB2.mob === undefined ? 0.006 : KB2.mob));
+      if (CHANCE(rate * (D.drop || 1))) this.addKey(tier, 1);
+    }
+
     // 击杀回复
     if (sto.killHeal) this.healPlayer(sto.killHeal, true);
     if (sto.mpOnKill) this.state.mp = Math.min(sto.mpMax, this.state.mp + sto.mpOnKill);
-    /* [S2] 血怒：击杀后攻速/移速提升 4 秒，重复触发只刷新时间不叠加 */
+    /* [S2] 血怒：击杀后攻速/移速提升 4 秒，重复触发只刷新时间不叠加。
+     * [U2] 身份改成 key，不再按名字找 —— 名字会被叠层 / 本地化改掉。
+     * 老存档里可能还挂着一条没有 key 的血怒，顺手规范化，别让新旧两条并排显示。 */
     if (sto.flags.bloodRush) {
-      const cur = this.buffs.find(b => b.name === '血怒');
-      if (cur) { cur.dur = 4; }
-      else this.addBuff('血怒', { aspd: 25, moveSpd: 20, dur: 4 }, '#ff6b4a');
+      const K = 'sto:bloodrush';
+      const cur = this.buffs.find(b => b.key === K || (!b.key && b.name === '血怒'));
+      if (cur) { cur.dur = 4; cur.key = K; }
+      else this.addBuff('血怒', { aspd: 25, moveSpd: 20, dur: 4 }, '#ff6b4a', { key: K });
     }
     /* [S3] 狂战系大节点·狂怒：血怒期间每次击杀刷新其持续时间 */
     if (sto.specials && sto.specials.frenzyRefresh) {
@@ -6131,9 +9927,11 @@ const Game = {
     if (sto.specials) {
       if (sto.specials.soulharvest) this.healPlayer(sto.hpMax * 0.03, true);
       if (sto.specials.berserk) {
-        const cur = this.buffs.find(b => b.name === '狂战');
-        if (cur) cur.dur = 3;
-        else this.addBuff('狂战', { aspd: 25, dur: 3 }, '#ff9a4a');
+        /* [U2] 同血怒：稳定 key + 老档名字兜底 */
+        const K = 'sto:berserk';
+        const cur = this.buffs.find(b => b.key === K || (!b.key && b.name === '狂战'));
+        if (cur) { cur.dur = 3; cur.key = K; }
+        else this.addBuff('狂战', { aspd: 25, dur: 3 }, '#ff9a4a', { key: K });
       }
     }
     /* [S1] 溢出伤害转护盾：把超过致死的那部分按比例变成护盾，上限 30% 生命 */
@@ -6150,9 +9948,14 @@ const Game = {
     this.onKill(e);
     /* [试炼] 击杀计数（结算面板用） */
     if (typeof Trial !== 'undefined' && Trial.run) Trial.run.kills++;
+    /* [M5] 地下城：清怪进度。首领单独走 onBossDown（它等于通关结算）。 */
+    const inDungeon = (typeof Dungeon !== 'undefined' && Dungeon.active);
+    if (inDungeon && !e.boss) Dungeon.onKill(e);
     if (e.boss) {
       this.state.bossKilled[e.kind] = (this.state.bossKilled[e.kind] || 0) + 1;
       this.onBossKill(e);
+      /* [M3b-fix] 出口门：本图首领第一次倒地才立起来（boss 区北侧），之后永久存在 */
+      this.markCleared(e);
       if (this.boss === e) { this.boss = null; UI.updateBoss(null); }
       UI.toast('击败 ' + e.cfg.name, 'lv');
       this.save();
@@ -6160,7 +9963,21 @@ const Game = {
        * 二来 BOSS_POS 是按大地图坐标写的，重生点会落在擂台的错误位置。
        * 混沌天魔在试炼里也不触发通关结算（那是主线终章的演出）。 */
       const inTrial = (typeof Trial !== 'undefined' && Trial.active);
-      if (inTrial) {
+      /* [M18.2] 世界 Boss 先分流。它**不能**走下面那个 else 分支：
+       * 那里读的是 `BOSSES[bid].level` 与 `BOSS_POS[bid]`，
+       * 而世界 Boss 既不在 BOSSES 里、也不在老坐标表里 ——
+       * 走进去就是 `undefined.level` 直接抛异常，整场战斗结算中断。 */
+      if (e.wb) {
+        if (typeof WorldBoss !== 'undefined') WorldBoss.onKill(e);
+      } else if (inDungeon) {
+        /* [M5] 地下城守卫倒了 = 通关。延后 600ms 再结算：
+         * onEnemyDeath 正在 updateEnemies 的遍历里跑，结算会 loadMap 换图，
+         * 当场换会打断遍历（和「分裂幼体先入队」是同一类问题）。
+         * 顺带给死亡动画与掉落一点时间。 */
+        setTimeout(() => {
+          if (typeof Dungeon !== 'undefined' && Dungeon.active) Dungeon.onBossDown();
+        }, 600);
+      } else if (inTrial) {
         if (e.kind === 'chaos') UI.log('混沌之影散去，台上又起新的杀机。', 'good');
       } else {
         const bid = e.kind, gen = this.mapGen;
@@ -6179,14 +9996,50 @@ const Game = {
     }
   },
 
+  /* 当前难度能到的等级上限（[2026-10-28] 跟难度走：新手 60 / 普通 70 /
+   * 困难 85 / 极难 99）。难度开档时定死、中途不可改，所以这里不用处理
+   * 「切回低难度后等级超上限」的降级 —— 真要做难度切换，必须先想清楚
+   * 掉级会不会回收属性点/天赋点。 */
+  levelCap() {
+    const k = this.state && this.state.difficulty;
+    if (typeof levelCapOf === 'function') return levelCapOf(k);
+    return (typeof BALANCE !== 'undefined' && BALANCE.levelMax) || 60;
+  },
+
   gainXp(amount) {
     const s = this.state;
     /* [S1] 经验获取加成 */
     amount = Math.round(amount * (1 + (s.stats.expGain || 0) / 100));
+    /* 满级收口：到**当前难度**的上限就停，经验不再累积 ——
+     * 否则 xpNext 会一直往上算，存档里的经验条也永远差一格。
+     * 注意 while 必须在这里跳出，不然 level 卡在上限而 xp 不清零会死循环。 */
+    const lvMax = this.levelCap();
+    if (s.level >= lvMax) {
+      s.level = lvMax;
+      s.xp = 0;
+      /* 提示只出一次：挂在 Game 上而不是 state 上，
+       * state 会被序列化进存档，多一个 _ 开头的小字段不值得。 */
+      if (!this._maxLvHinted) {
+        this._maxLvHinted = true;
+        UI.log('已至境界上限 · ' + lvMax + ' 级。', 'good');
+      }
+      return;
+    }
     s.xp += amount;
     while (s.xp >= s.xpNext) {
       s.xp -= s.xpNext;
       s.level++;
+      /* 到顶那一级不再发经验条，把溢出的经验丢掉（否则会多出半级） */
+      if (s.level >= lvMax) {
+        s.level = lvMax;
+        s.xp = 0;
+        s.xpNext = (typeof xpToNext === 'function') ? xpToNext(s.level) : 1;
+        this.recalc();
+        UI.toast('境界圆满 · ' + lvMax + ' 级', 'lv');
+        UI.log('已至境界上限 · ' + lvMax + ' 级。', 'good');
+        SFX.levelup();
+        break;
+      }
       /* [v1.10.0] 曲线收进 BALANCE（base × L^pow），升级点与新建角色同一口径 */
       s.xpNext = (typeof xpToNext === 'function') ? xpToNext(s.level) : Math.round(180 * Math.pow(s.level, 1.70));
       this.recalc();
@@ -6296,7 +10149,33 @@ const Game = {
     }
     if (!target && this.world) {
       const p = this.world.portal;
-      if (Math.hypot(pp.x - p.x, pp.z - p.z) < 5) { target = { type: 'portal' }; txt = '使用传送阵'; }
+      if (Math.hypot(pp.x - p.x, pp.z - p.z) < 5) {
+        target = { type: 'portal' };
+        /* [M5] 地下城里的传送阵就是「地脉门」：清够本层才开 */
+        if (typeof Dungeon !== 'undefined' && Dungeon.active) {
+          const dp = Dungeon.progress();
+          if (Dungeon.run.layer >= DUNGEON_LAYERS.length) txt = '地脉门 · 离开';
+          else if (dp.open) txt = '地脉门 · 下一层';
+          else txt = '地脉门 · 尚封（' + Math.round(dp.pct * 100) + '% / ' + Math.round(dp.need * 100) + '%）';
+        } else txt = '使用传送阵';
+      }
+    }
+    /* [M1] 章间出口门 / 路标石：判定半径比传送阵小，挨着站时才抢焦点 */
+    if (!target && this.world && this.world.gate) {
+      const g = this.world.gate;
+      if (Math.hypot(pp.x - g.x, pp.z - g.z) < 4) {
+        const need = MAPS[g.to] ? (MAPS[g.to].unlock || 1) : 1;
+        target = { type: 'gate' };
+        txt = this.state.level >= need ? ('前往 ' + g.name) : (g.name + ' · 需 ' + need + ' 级');
+      }
+    }
+    if (!target && this.world && this.world.waystone) {
+      const w = this.world.waystone;
+      if (Math.hypot(pp.x - w.x, pp.z - w.z) < 3.2) {
+        const c = CAMPS[campOfPart(this.state.part)];
+        target = { type: 'waystone' };
+        txt = '路标石 · 回' + (c ? c.name : '营地');
+      }
     }
     this.interactTarget = target;
     const el = document.getElementById('interact');
@@ -6309,9 +10188,19 @@ const Game = {
     if (!t) return;
     if (t.type === 'npc') this.openNPC(t.id);
     else if (t.type === 'portal') {
-      /* 试炼场里的传送阵就是「退场门」：先确认再走，别让人误触丢进度 */
-      if (typeof Trial !== 'undefined' && Trial.active) Trial.quit();
+      /* 试炼场里的传送阵就是「退场门」：先确认再走，别让人误触丢进度。
+       * [M5] 地下城同理，但它是「地脉门」—— 清够本层就下下一层，末层则是离开。 */
+      if (typeof Dungeon !== 'undefined' && Dungeon.active) Dungeon.usePortal();
+      else if (typeof Trial !== 'undefined' && Trial.active) Trial.quit();
       else UI.openTravel();
+    }
+    /* [M1] 章间出口门：直接去下一章第一张图，等级不够由 travelTo 统一拦（同一条口径） */
+    else if (t.type === 'gate') {
+      if (this.world && this.world.gate) this.travelTo(this.world.gate.to);
+    }
+    /* [M1] 路标石：原地回本卷营地 */
+    else if (t.type === 'waystone') {
+      this.travelTo(campMapOfPart(this.state.part));
     }
   },
 
@@ -6319,8 +10208,13 @@ const Game = {
   openNPC(id) {
     const npc = NPCS[id];
     const s = this.state;
-    if (id === 'elder') {
-      this.openElder();
+    /* [M2] 任务发布者统一走 openGiver —— 老村长（campA_main）与四座营地的
+     * 掌事 / 录事是同一套逻辑，不再是「elder 特判 + 其他不管」。 */
+    if (npc && npc.role === 'quest') {
+      this.openGiver(id);
+    } else if (npc && npc.role === 'dungeon') {
+      /* [M5] 地脉守：5 座营地各一个，进门就是「选阶 → 选类型 → 词缀预告」 */
+      if (typeof Dungeon !== 'undefined') Dungeon.openRift(id);
     } else if (id === 'smith') {
       /* 进货走 ensureShop：5 分钟窗口内反复说话不会换货 */
       this.ensureShop();
@@ -6359,124 +10253,189 @@ const Game = {
     }
   },
 
-  openElder() {
-    const s = this.state;
-    const elder = NPCS.elder;
-    // 有可复命的任务
-    const ready = s.quests.active.find(a => this.questReady(a));
-    if (ready) {
-      const q = QUESTS[ready.id];
-      UI.showDialog(elder.name, `「${q.name}」已了。你的手段，比我想的干净。`, [
-        {
-          label: '复命领赏', primary: true, action: () => {
-            this.turnInQuest(ready);
-            const next = q.next ? QUESTS[q.next] : null;
-            if (next) {
-              UI.showDialog(elder.name, next.brief, [
-                { label: '接下「' + next.name + '」', primary: true, action: () => { this.acceptQuest(next.id); UI.closeAll(); } },
-                { label: '稍后再说', action: () => UI.closeAll() }
-              ]);
-            } else {
-              UI.showDialog(elder.name, '九霄已定，山海重归清明。你已是这方天地最后的传说。', [{ label: '（沉默）', action: () => UI.closeAll() }]);
-            }
+  /* ---------------- 任务发布者对话（M2） ----------------
+   * 五种情形，按优先级：有可复命的 → 有新委托 → 有进行中的 → 只剩悬赏板 → 闲话。
+   * 复命之后顺手把下一环递上来，少一次「再点一次掌事」。 */
+  openGiver(npcId) {
+    const npc = NPCS[npcId] || { name: '掌事', lines: ['……'] };
+    const giver = giverOfNpc(npcId);
+    const boardBtn = { label: '看看悬赏板', action: () => this.openBoard(partOfGiver(giver)) };
+    const closeBtn = { label: '告辞', action: () => UI.closeAll() };
+
+    /* 1. 可复命
+     * [P11] 这里原来只认 `ready[0]`，玩家交了三条悬赏要跟录事说三次话。
+     * 现在每条可交的都给一个按钮，一次说完。 */
+    const ready = QuestSys.readyOf(giver);
+    if (ready.length) {
+      const fq = QUESTS[ready[0].id];
+      const tail = fq.kind === 'board' ? '赏钱在这儿，点点。' : '你的手段，比我想的干净。';
+      const extra = ready.length > 1 ? `\n\n另有 ${ready.length - 1} 条也了结了，一并算清。` : '';
+      /* 交完之后的三条出路（下一环 / 还有别的活 / 散了）。
+       * 抽成函数是因为下面每条 ready 的按钮都要走一遍。 */
+      const after = (a) => {
+        const done = QuestSys.turnIn(a);
+        const nx = QuestSys.nextOf(done);
+        if (nx) {
+          UI.showDialog(npc.name, nx.brief, [
+            { label: '接下「' + nx.name + '」', primary: true, action: () => { QuestSys.accept(nx.id); UI.closeAll(); } },
+            { label: '稍后再说', action: () => UI.closeAll() }
+          ]);
+        } else {
+          const more = QuestSys.offersOf(giver);
+          if (more.length) {
+            UI.showDialog(npc.name, '还有一件事，你听听看。', [
+              { label: '听听「' + more[0].name + '」', primary: true, action: () => { QuestSys.accept(more[0].id); UI.closeAll(); } },
+              boardBtn, closeBtn
+            ]);
+          } else {
+            UI.showDialog(npc.name, '这里暂时没别的事了。走走看看，山海的尽头自有答案。', [boardBtn, closeBtn]);
           }
-        },
-        { label: '稍后', action: () => UI.closeAll() }
+        }
+      };
+      const btns = ready.map((a, i) => ({
+        label: '复命「' + (QUESTS[a.id] || { name: a.id }).name + '」' + (QUESTS[a.id].kind === 'board' ? '（领赏）' : ''),
+        primary: i === 0,
+        action: () => after(a)
+      }));
+      btns.push({ label: '稍后', action: () => UI.closeAll() });
+      UI.showDialog(npc.name, `「${fq.name}」已了。${tail}${extra}`, btns);
+      return;
+    }
+
+    /* 2. 有新委托可接 */
+    const offers = QuestSys.offersOf(giver);
+    if (offers.length) {
+      const q = offers[0];
+      UI.showDialog(npc.name, PICK(npc.lines) + '\n\n' + q.brief, [
+        { label: '接下「' + q.name + '」', primary: true, action: () => { QuestSys.accept(q.id); UI.closeAll(); } },
+        boardBtn,
+        { label: '容我想想', action: () => UI.closeAll() }
       ]);
       return;
     }
-    // 进行中
-    if (s.quests.active.length) {
-      const a = s.quests.active[0];
-      const q = QUESTS[a.id];
-      UI.showDialog(elder.name, `「${q.name}」还未了结。\n\n${q.brief}`, [
+
+    /* 3. 有进行中的 */
+    const running = QuestSys.runningOf(giver);
+    if (running.length) {
+      const q = QUESTS[running[0].id];
+      const where = (q && q.map && MAPS[q.map]) ? `（目标：${MAPS[q.map].name}）` : '';
+      UI.showDialog(npc.name, `「${q.name}」还未了结。${where}\n\n${q.brief}`, [
+        boardBtn,
         { label: '知道了', action: () => UI.closeAll() }
       ]);
       return;
     }
-    // 新任务
-    const next = QUESTS[s.quests.next];
-    if (next) {
-      const lines = ['妖气又重了。年轻人，可愿听我一言？', '九霄将倾，总有人要站出来。', '你身上有山海的影子。'];
-      UI.showDialog(elder.name, PICK(lines) + '\n\n' + next.brief, [
-        { label: '接下「' + next.name + '」', primary: true, action: () => { this.acceptQuest(next.id); UI.closeAll(); } },
-        { label: '容我想想', action: () => UI.closeAll() }
+
+    /* 4. 只剩悬赏板 */
+    UI.showDialog(npc.name, PICK(npc.lines) + '\n\n主线的事，去问掌事。我这儿只有零碎的活。', [boardBtn, closeBtn]);
+  },
+
+  /* 悬赏板：一次列 3 条（§4.1），8 分钟刷新（QUEST_BOARD_CD）。
+   * 用对话而不是新面板：木板本身就是「走过去说话」的东西，
+   * 而且手机上少一层面板就少一处溢出风险。 */
+  openBoard(part) {
+    const list = QuestSys.boardTake(part || this.state.part || 1);
+    if (!list.length) {
+      UI.showDialog('悬赏板', '板上的纸都被揭走了，只剩下几个钉孔。\n\n过一会儿再来。', [
+        { label: '离开', action: () => UI.closeAll() }
       ]);
-    } else {
-      UI.showDialog(elder.name, '去吧，山海的尽头，自有答案。', [{ label: '告辞', action: () => UI.closeAll() }]);
+      return;
     }
+    const body = '木板上的纸被风吹得作响。\n\n' +
+      list.map(q => `· ${q.name}（${q.rewards.gold} 金）\n　${q.brief}`).join('\n\n');
+    const btns = list.map(q => ({
+      label: '接下「' + q.name + '」',
+      action: () => { QuestSys.accept(q.id); UI.closeAll(); }
+    }));
+    btns.push({ label: '离开', action: () => UI.closeAll() });
+    UI.showDialog('悬赏板', body, btns);
   },
 
-  /* ---------------- 任务逻辑 ---------------- */
-  acceptQuest(id) {
-    const q = QUESTS[id];
-    this.state.quests.active.push({ id, progress: q.objectives.map(() => 0) });
-    this.state.quests.next = q.next || null;
-    UI.toast('新委托 · ' + q.name);
-    UI.log('【委托】' + q.brief, 'good');
-    SFX.ui();
-    UI.renderQuests(); UI.updateQuestTrack();
-    this.updateQuestMarker();
-    this.save();
-  },
+  /* ---------------- 任务逻辑（M2 起全部委托给 QuestSys） ---------------- */
+  acceptQuest(id) { return QuestSys.accept(id); },
 
-  questReady(a) {
-    const q = QUESTS[a.id];
-    return q.objectives.every((o, i) => (a.progress[i] || 0) >= o.count);
-  },
-
-  turnInQuest(a) {
-    const q = QUESTS[a.id];
-    this.state.gold += q.rewards.gold;
-    this.gainXp(q.rewards.xp);
-    const it = rollItem(q.rewards.ilvl, { cls: this.state.cls, rarity: q.rewards.rarity, magicFind: this.state.stats.magicFind });
-    if (this.addItem(it)) UI.log('获得 ' + it.name, 'good');
-    // [S3] 任务奖励技能书：解锁指定技能（或下一级未解锁技能）
-    if (q.rewards.skill) {
-      const sk = SKILLS[q.rewards.skill];
-      if (sk && !this.skillFlags[q.rewards.skill]) {
-        this.skillFlags[q.rewards.skill] = true;
-        UI.log('获得技能书《' + sk.name + '》，已领悟！', 'lv');
-        SFX.levelup();
-      }
-    }
-    /* [M1] 任务奖励天赋点：主线四段共 +10，满级天赋点 60 → 70 */
-    if (q.rewards.talent) {
-      this.state.talentBonus = (this.state.talentBonus || 0) + q.rewards.talent;
-      UI.log('获得天赋点 +' + q.rewards.talent, 'lv');
-      SFX.levelup();
-    }
-    this.state.quests.active = this.state.quests.active.filter(x => x !== a);
-    this.state.quests.done.push(a.id);
-    UI.toast('委托完成 · ' + q.name, 'lv');
-    UI.log(`【委托完成】${q.name}　+${q.rewards.gold} 金`, 'good');
-    SFX.levelup();
-    UI.renderQuests(); UI.updateQuestTrack();
-    this.updateQuestMarker();
-    this.save();
-  },
+  /* 以下四个是旧调用点的薄包装：其他地方（UI / 存档 / 试炼）还在按老名字调，
+   * 真正的逻辑都在 src/quests.js 的 QuestSys 里，这里只做转发，别再往里写业务。 */
+  questReady(a) { return QuestSys.ready(a); },
+  turnInQuest(a) { return QuestSys.turnIn(a); },
 
   onKill(e) {
-    const s = this.state;
-    for (const a of s.quests.active) {
-      const q = QUESTS[a.id];
-      q.objectives.forEach((o, i) => {
-        if (o.type === 'kill' && o.target === e.tag) a.progress[i] = (a.progress[i] || 0) + 1;
-        if (o.type === 'killAny') a.progress[i] = (a.progress[i] || 0) + 1;
-        if (o.type === 'boss' && o.target === e.kind) a.progress[i] = (a.progress[i] || 0) + 1;
-      });
-      if (this.questReady(a) && !s.quests.announced[a.id]) {
-        s.quests.announced[a.id] = true;
-        UI.toast('委托目标达成 · 回村复命', 'lv');
-        UI.log('【委托】目标达成，回桃源村找村长复命。', 'good');
-      }
-    }
+    QuestSys.onKill(e);
     UI.updateQuestTrack();
     this.updateQuestMarker();
   },
 
+  /* 首领倒地后的一次性结算钩子（现在只有八部魔将用得上）。
+   * [M7.4] 魔将之印：八只魔将各掉自己那一枚，一枚只掉一次。
+   * 为什么挂在 onBossKill 而不是掉落表里：印是**进度物**不是装备，
+   * 不能卖、不能丢、不能重复拿，走 `state.seals` 布尔位最省事，
+   * 也顺手让老档（没有 seals 字段）天然按「0 枚」算。 */
   onBossKill(e) {
-    // 已包含在 onKill 中
+    if (!e || typeof BAFO_SEALS === 'undefined') return;
+    const s = this.state;
+    if (!s) return;
+    const rec = BAFO_SEALS.find((it) => it.boss === e.kind);
+    if (!rec) return;
+    if (!s.seals) s.seals = {};
+    if (s.seals[rec.key]) return;            // 重打不重复给
+    s.seals[rec.key] = 1;
+    const have = this.sealCount();
+    const total = BAFO_SEALS.length;
+    /* 印是终章唯一的钥匙，必须给足反馈：播报 + 音效 + 光柱 */
+    try {
+      UI.toast('得 · ' + rec.name, 'lv');
+      UI.log('魔将已伏，' + rec.name + ' 归位（' + have + ' / ' + total + '）。', 'good');
+      const pp = new THREE.Vector3(this.playerGroup.position.x, 0, this.playerGroup.position.z);
+      FX.ring(pp, 6, rec.color, 1.1, 0.28);
+      SFX.cast();
+    } catch (err) { }
+    if (have >= total) {
+      /* 8/8 当场把「终门已开」喊出来，免得玩家还要自己去数 */
+      try {
+        UI.toast('天 龙 终 门 已 开', 'lv');
+        UI.log('八印齐备，无相之界的大门开了。', 'good');
+        const pp = new THREE.Vector3(this.playerGroup.position.x, 0, this.playerGroup.position.z);
+        FX.flashCircle(pp, 8, 0xffe0a0, 1.2);
+      } catch (err) { }
+    }
+    this.save();
+  },
+
+  /* ---------------- 出口门开关（M3b-fix） ----------------
+   * 门不是一进图就有：**本图首领第一次倒地**才立起来，之后永久存在。
+   * 存档记在 `world.mapCleared[mapId]`（老档由 normalizeDoc 用 bossKilled 反推），
+   * 所以「关掉网页再进来」门还在，不会让玩家以为进度丢了。 */
+  mapCleared(mapId) {
+    const s = this.state;
+    if (!s) return false;
+    const id = mapId || s.mapId;
+    return !!(s.mapCleared && s.mapCleared[id]);
+  },
+
+  /* 首领倒地 → 打上「本图已通关」标记，并把出口门当场立到 boss 区北侧。
+   * 只立一次：重打首领时 world.gate 已存在，直接返回。 */
+  markCleared(e) {
+    const s = this.state;
+    if (!s || !s.mapId) return;
+    /* 世界 Boss 是野图随机刷的，不是本图常驻首领 —— 它倒了不算通关这张图 */
+    if (e && e.wb) return;
+    /* 地下城 / 试炼里的「首领」属于副本流程，通关结算另有其人 */
+    if (typeof Dungeon !== 'undefined' && Dungeon.active) return;
+    if (typeof Trial !== 'undefined' && Trial.active) return;
+    if (!s.mapCleared) s.mapCleared = {};
+    s.mapCleared[s.mapId] = 1;
+    const w = this.world;
+    if (!w || w.gate || !w.gatePending) return;
+    const p = w.gatePending;
+    w.gate = makeExitGate(w.root, p.x, p.z, p.to, w.colliders, w.anims, w.labels);
+    w.gatePending = null;
+    /* 开门演出：玩家刚打完首领，抬头就在 boss 区北侧看见一道金光 */
+    try {
+      FX.flashCircle(new THREE.Vector3(p.x, 0, p.z), 4.5, 0xffd166, 0.9);
+      FX.ring(new THREE.Vector3(p.x, 0, p.z), 6, 0xffd166, 1.2, 0.3);
+      SFX.cast();
+    } catch (err) { }
+    UI.log('前路已开 · ' + p.name, 'good');
   },
 
   victory() {
@@ -7333,11 +11292,58 @@ const Game = {
   travelTo(mapId) {
     if (!MAPS[mapId]) return;
     const m = MAPS[mapId];
-    if (this.state.level < (m.unlock || 1)) { UI.log('境界不足。', 'bad'); return; }
+    /* [M0] 回头路：已经抵达过的图随时能回，不受等级门禁限制
+     * （低等级回高级图是玩家自己的选择；没去过的地方才看境界）。 */
+    const seen = Array.isArray(this.state.mapsSeen) && this.state.mapsSeen.indexOf(mapId) >= 0;
+    /* [M1] 营地「仅限已抵达」：营地是传送网络的中枢，没到过这一卷就走不进去。
+     * 抵达判定 = 存档 camps 里已解锁（save.js 按卷累积）或这张营地本身去过。
+     * 只在营地这一层收口：野图仍走「等级够 或 去过」，因为卷二~卷五还有 25 个图位
+     * id 为 null，把野图也按「仅限已抵达」锁死会让主线无路可走（见台账 M1 决策记录）。 */
+    const campId = (typeof campOfMap === 'function') ? campOfMap(mapId) : null;
+    if (campId) {
+      const unlocked = Array.isArray(this.state.camps) && this.state.camps.indexOf(campId) >= 0;
+      if (!unlocked && !seen) { UI.log('尚未抵达此卷，走不进「' + m.name + '」。', 'bad'); return; }
+    }
+    if (!seen && this.state.level < (m.unlock || 1)) { UI.log('境界不足。', 'bad'); return; }
+    /* [M7] 印门：无相天（终 boss 场）要 8 枚魔将之印才进得去。
+     * 放在 travelTo 这一层而不是只做一道门 —— 山河图也能直接点进去，
+     * 只拦门的话「翻面板传送」就能把整条终章跳过去。
+     * 印没齐时提示差几枚，不然玩家只会以为图坏了。 */
+    if (m.sealNeed) {
+      const have = this.sealCount();
+      if (have < m.sealNeed) {
+        UI.log('天龙终门未开：魔将之印 ' + have + ' / ' + m.sealNeed + '。', 'bad');
+        return;
+      }
+    }
     /* 试炼中不允许直接传送：先把本轮结算掉，否则祝福会跟着人跑到别的地图上 */
     if (typeof Trial !== 'undefined' && Trial.active) {
       Trial.end('quit');
       if (mapId === 'trial') return;
+    }
+    /* [M0] 记录世界进度：去过哪张图、当前在第几卷第几章 */
+    if (Array.isArray(this.state.mapsSeen) && this.state.mapsSeen.indexOf(mapId) < 0) {
+      this.state.mapsSeen.push(mapId);
+    }
+    /* [M1] 进营地也要更新世界进度：营地不属于任何章，章取该卷第一章。
+     * 反过来，进任意一张野图 = 抵达该卷 → 解锁该卷营地（和 save.js「按卷累积」同口径），
+     * 否则玩家打完卷一去了卷二，回营地时 campB 还没解锁，会被判成「没抵达」。 */
+    if (campId && typeof CAMPS !== 'undefined' && CAMPS[campId]) {
+      const part = CAMPS[campId].part;
+      this.state.part = part;
+      const acts = (typeof actsOfPart === 'function') ? actsOfPart(part) : [];
+      if (acts.length) this.state.act = acts[0].id;
+    } else if (typeof actOfMap === 'function') {
+      const a = actOfMap(mapId);
+      if (a && ACTS[a]) { this.state.act = a; this.state.part = ACTS[a].part; }
+    }
+    /* [M1] 营地按卷累积解锁（和 save.js 的 normalizeDoc 同一口径）。
+     * 只 push 当前卷的话，「等级够直接跳卷三」会让 campB 永远解锁不了 ——
+     * 而重开档后 normalizeDoc 又会把 campB 补上，同一个存档两次打开界面不一致。 */
+    if (typeof campsUpToPart === 'function' && Array.isArray(this.state.camps)) {
+      for (const c of campsUpToPart(this.state.part)) {
+        if (this.state.camps.indexOf(c) < 0) this.state.camps.push(c);
+      }
     }
     FX.flashCircle(this.playerGroup.position, 3, 0x88bbff, 0.6);
     SFX.cast();
@@ -7412,11 +11418,35 @@ const Game = {
     const barMissing = !Array.isArray(this.state.skillbar);
     this.normalizeProgress(this.state);
     this.skillBar(barMissing);
-    this.state.quests = this.state.quests || { active: [], done: [], next: 'q1', announced: {} };
-    this.state.quests.announced = this.state.quests.announced || {};
+    /* [M2] 任务：先归一结构，再把老档的 q1~q11 迁到新 id。
+     * 迁移认 legacyId，objectives 逐字一致的直接搬 progress 数组 —— 一条进度不丢。
+     * 迁移有改动就立刻落盘一次，免得玩家在迁移前后关页面又回到 q 号状态。 */
+    if (typeof QuestSys !== 'undefined') {
+      QuestSys.ensure();
+      if (QuestSys.migrate()) {
+        this.save();
+        UI.log('【委托】任务记录已按新体系整理，进度已保留。', 'good');
+      }
+    } else {
+      this.state.quests = this.state.quests || { active: [], done: [], next: null, announced: {}, board: { cd: {}, count: {} } };
+      this.state.quests.announced = this.state.quests.announced || {};
+    }
     /* [试炼] 存档里的 mapId 可能是 trial（在台上被关掉页面）。
      * 试炼的波次进度不落盘（这是 roguelite 的规矩：中途退出即作废），
      * 所以这里把玩家送回村，而不是让他站在一个没有波次的空擂台上。 */
+    /* [地下城] 存档 mapId 可能是 dgn_<类型>_<层>（在地脉里被关掉页面）。
+     * 这些图是运行时注册的，开机时根本不在 MAPS 里 —— 必须**先于**下面那条
+     * 「未知图 → 村」认出来，送回**本卷营地**（人是从营地进的），而不是桃源村。
+     * 进度不落盘是设计：钥匙已经扣了，这一把作废，跟中途退出一个口径。 */
+    if (typeof this.state.mapId === 'string' && this.state.mapId.indexOf('dgn_') === 0) {
+      const back = (typeof campMapOfPart === 'function') ? campMapOfPart(this.state.part) : null;
+      this.state.mapId = (back && MAPS[back]) ? back : 'village';
+      this.state.playerPos = { x: 0, z: 10 };
+      if (typeof Dungeon !== 'undefined') {
+        Dungeon.run = null; Dungeon._t = 0;
+        try { Dungeon.renderHud(false); } catch (e) {}
+      }
+    }
     if (this.state.mapId === 'trial' || !MAPS[this.state.mapId]) {
       this.state.mapId = 'village';
       this.state.playerPos = { x: 0, z: 10 };

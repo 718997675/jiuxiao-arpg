@@ -233,6 +233,21 @@ function setFootR(a) {
 function buildMonster(kind, cfg) {
   let a;
   const s = cfg.scale || 1;
+  /* [M18.6] 世界 Boss 的六套专属骨架（`wbmodels.js`）。
+   * 分派键就是数据里的 `model`（`game.js` 的 spawnEnemy 把 `cfg.model`
+   * 当 kind 传进来），所以这里只需要一次查表 —— 不要在这下面再加
+   * `if (kind === 'wb_xxx')` 分支，那会让 1286 行的文件再长 900 行。
+   *
+   * 返回的 actor 带 `noAutoScale: true`：新骨架按**真实米数**建
+   * （烛九阴 44 米），再乘一次 `scale: 5.4` 会变成 238 米穿出地图。
+   * 所以下面末尾的 `setScalar(s)` 要跳过它。 */
+  if (typeof WBModels !== 'undefined' && WBModels.has(kind)) {
+    const wb = WBModels.build(kind, cfg);
+    /* **不要**调 `setFootR`：它按包围盒算半径，44 米的蛇会得到 14 米，
+     * 玩家得站 14 米外才不穿模，近战永远够不到。碰撞半径由数据里的
+     * `body.radius` 给（「主干有多粗」），`game.js` 那边会夹一次。 */
+    if (wb) return wb;
+  }
   if (kind === 'spider') {
     const g = new THREE.Group();
     a = { group: g, mats: [], parts: {} };
@@ -902,6 +917,15 @@ function buildMonster(kind, cfg) {
       }
     }
   }
+  /* [M18] 兜底缩放：上面只有 brute / demon 那两支写了 g.scale.setScalar(s)，
+   * 于是 `model: 'humanoid'` 的条目**从来不缩放**。受影响的既有首领 5 只
+   * （swordlord 2.2 / boneabbot 1.9 / swordguardian 2.1 / bladelord 2.1 /
+   * swordemperor 2.5）实际一直是 2.17 米 —— 和普通小怪一样高，
+   * 而数据里写的是 2 倍。M18 的世界 Boss 用的是 `wb_*` 新键，
+   * 骨架没做之前也走这条兜底，不修就会得到「5 倍缩放的巨人变成普通人」。
+   * 放在最后统一设一次：brute / demon 已经设过同值，setScalar 是幂等的。 */
+  /* [M18.6] 世界 Boss 的新骨架按真实米数建模，缩放恒为 1（见 buildMonster 开头） */
+  if (a.group && !a.noAutoScale) a.group.scale.setScalar(s);
   return setFootR(a);
 }
 
@@ -1064,17 +1088,25 @@ function applyPaperDoll(p) {
  * （tierIndex 返回 5/6/7）拿到 metal=undefined → palette 是 undefined
  * → `palette[0]` 抛 TypeError，一穿上就崩；而且读档走 applyDoll 是同一个
  * 函数，所以崩过一次之后连存档都进不去（东西没坏，是渲染崩）。
- * 名字对应八阶：凡兵 / 精铁 / 玄铁 / 地煞 / 天罡 / 仙品 / 神兵 / 太初。 */
+ * 名字对应八阶：凡兵 / 精铁 / 玄铁 / 地煞 / 天罡 / 仙品 / 神兵 / 太初。
+ * （[M6] 基底保持 8 阶不扩；ilvl 41~60 由 tierIndex 夹到第 7 档「太初」。）
+ * dev/test-m6.js 会断言 TIER_METAL.length === BASE_TIERS —— 扩档漏改会立刻红。 */
 const TIER_METAL = ['cloth', 'leather', 'iron', 'darkiron', 'steel', 'jade', 'gold', 'dragon'];
 const METAL_PALETTE = {
-  cloth:    [0x6b5a4a, 0x4a3c30, 0.05],
-  leather:  [0x7a5a3a, 0x533c26, 0.1],
-  iron:     [0x8a8f96, 0x5a6068, 0.65],
-  darkiron: [0x4a5058, 0x30343a, 0.8],
-  steel:    [0x7d8a99, 0x4c5764, 0.7],
-  jade:     [0x86a394, 0x4c6b5c, 0.6],
-  gold:     [0xb69a5a, 0x6f5c33, 0.72],
-  dragon:   [0x6a7a5a, 0x3a4530, 0.75]
+  cloth:     [0x6b5a4a, 0x4a3c30, 0.05],
+  leather:   [0x7a5a3a, 0x533c26, 0.1],
+  iron:      [0x8a8f96, 0x5a6068, 0.65],
+  darkiron:  [0x4a5058, 0x30343a, 0.8],
+  steel:     [0x7d8a99, 0x4c5764, 0.7],
+  jade:      [0x86a394, 0x4c6b5c, 0.6],
+  gold:      [0xb69a5a, 0x6f5c33, 0.72],
+  dragon:    [0x6a7a5a, 0x3a4530, 0.75],
+  /* 8~11 阶：颜色往「冷银 → 暗紫 → 赤金 → 灰白」走，
+   * 与品质光效叠加后仍能分辨出高低（越往后越不吃高光、越吃自发光） */
+  star:      [0x9fb4cf, 0x5a6c85, 0.86],
+  voidsteel: [0x6a6a8c, 0x39395a, 0.9],
+  primal:    [0xc0a070, 0x7a6038, 0.95],
+  chaos:     [0xd8d4e0, 0x807c92, 1.0]
 };
 
 function itemVisualColor(item) {
@@ -1173,6 +1205,10 @@ function updateActorAnim(a, dt) {
   const P = a.parts;
   /* 古风角色（charforge）：走自己的动作曲线，多一节屈膝与袖子/下摆摆动 */
   if (a.cf && typeof CharForge !== 'undefined') return CharForge.update(a, dt);
+  /* [M18.6] 世界 Boss 的六套骨架：动作曲线完全不同（盘绕 / 九颈 / 拍翼 /
+   * 张颚 / 抡斧 / 九尾），塞进下面这套「走路摆臂」里没有任何意义。
+   * 和 charforge 同一个套路：模型自带 anim 实现，这里只做分派。 */
+  if (a.wbModel && typeof WBModels !== 'undefined') return WBModels.anim(a, dt);
   const t = a.time = (a.time || 0) + dt;
   if (!P.torso) return;
 

@@ -1,5 +1,5 @@
 /* ============================================================
- * 玩家设置：画质档位 / 渲染倍率 / 阴影 / 粒子 / 同屏怪数 / 帧数显示
+ * 玩家设置：画质档位 / 渲染倍率 / 阴影 / 粒子 / 同屏怪数 / 帧数显示 / 拾取
  *
  * 和角色存档分开存（换角色不用重设），单独一个 localStorage key。
  * 所有值都过 normalize()，脏数据/旧版本字段一律回落默认值，
@@ -41,8 +41,21 @@ const Settings = {
     volMaster: 80,
     volSfx: 80,
     volAmb: 55,
-    volMusic: 45
+    volMusic: 45,
+    /* 拾取（P04）：一个总开关 + 一个品质门槛 + 三类非装备掉落开关。
+     * 语义是「**自动**拾取」而不是「拾取」——关掉任何一项都不会让东西捡不起来，
+     * 只是回到「走到脚边（grabR）才捡」的老行为。这样任何一个开关都不会变成
+     * 「钱永远捡不到」这种死局。 */
+    autoPickup: true,
+    pickupMinRarity: 'magic',   // 低于此品质的装备不自动捡（仍留在地上可手动捡）
+    pickupGold: true,           // 金币 + 玄晶
+    pickupMat: true,            // 匠材
+    pickupRune: true            // 符文
   },
+
+  /* 品质门槛的可选值。**故意写死在这里，不从 RARITY 生成** ——
+   * settings.js 比 data-core.js 先加载，normalize() 可能在数据表就位前被调用。 */
+  RARITY_OPTS: ['common', 'magic', 'rare', 'legendary', 'set'],
 
   /* 画质相关键：动到这些才算「自定义档位」，音量不算 */
   PERF_KEYS: ['scale', 'shadow', 'fx', 'mobCap'],
@@ -85,6 +98,14 @@ const Settings = {
     d.volSfx = this._vol(o.volSfx, this.DEFAULTS.volSfx);
     d.volAmb = this._vol(o.volAmb, this.DEFAULTS.volAmb);
     d.volMusic = this._vol(o.volMusic, this.DEFAULTS.volMusic);
+    /* 拾取：旧存档没有这几项 → 全落默认（自动开 / 灵品以上 / 三类掉落都捡）。
+     * 布尔用「=== false 才关」而不是 !!o.x —— 老存档里字段缺失时 !!undefined 也是 false，
+     * 会把「默认开」写成「关」，玩家会以为新版本把自动拾取弄丢了。 */
+    d.autoPickup = (o.autoPickup === undefined || o.autoPickup === null) ? this.DEFAULTS.autoPickup : !!o.autoPickup;
+    d.pickupMinRarity = this._pick(o.pickupMinRarity, this.RARITY_OPTS, this.DEFAULTS.pickupMinRarity);
+    d.pickupGold = (o.pickupGold === undefined || o.pickupGold === null) ? this.DEFAULTS.pickupGold : !!o.pickupGold;
+    d.pickupMat = (o.pickupMat === undefined || o.pickupMat === null) ? this.DEFAULTS.pickupMat : !!o.pickupMat;
+    d.pickupRune = (o.pickupRune === undefined || o.pickupRune === null) ? this.DEFAULTS.pickupRune : !!o.pickupRune;
     return d;
   },
 
@@ -116,7 +137,11 @@ const Settings = {
       if (!(k in this.DEFAULTS)) return;
       /* 音量 / 静音不参与画质档位判定：调个音量不该把「自动降画质」关掉 */
       if (this.PERF_KEYS.indexOf(k) >= 0) this.d.preset = 'custom';
-      this.d[k] = (k === 'mute') ? !!v : v;
+      /* 布尔项一律收成真正的布尔。UI 传下来的是 '0'/'1' 字符串，
+       * 直接存会让 `d.autoPickup ? …` 恒为真（'0' 也是真值），
+       * 表现就是「关掉了但还是在自动捡」。 */
+      if (typeof this.DEFAULTS[k] === 'boolean') this.d[k] = (v === '0' || v === 0 || v === false) ? false : !!v;
+      else this.d[k] = v;
     }
     this.save();
     this.apply(k);
