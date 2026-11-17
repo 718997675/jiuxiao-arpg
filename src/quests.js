@@ -479,6 +479,32 @@ const QuestSys = {
     return list.slice(0, 3);
   },
 
+  /* [P07] 悬赏板的**全量**视图：本卷所有悬赏 + 每条的状态。
+   *
+   * `boardList` 是「能接的那几条」，是给抽签用的；面板要的是**三态全列**，
+   * 玩家得能一眼分出「可接 / 进行中 / 冷却中」—— 只列可接的话，
+   * 「我刚接的那条去哪了」和「这条为什么接不了」都会变成疑问。
+   *
+   * 状态口径（与 `canOffer` / `turnIn` 严格一致，不另立一套）：
+   *   active —— 已经接在身上（`state.quests.active` 里有）
+   *   cd     —— 交过了、冷却没到（`state.quests.board.cd` 是到期时间戳）
+   *   open   —— 可接
+   */
+  boardAll(part) {
+    const st = this.ensure();
+    if (!st) return [];
+    const now = Date.now();
+    return questsOfPart(part, 'board').map(q => {
+      const a = st.active.find(x => x && x.id === q.id) || null;
+      const cdAt = st.board.cd[q.id] || 0;
+      const count = st.board.count[q.id] || 0;
+      let state = 'open';
+      if (a) state = 'active';
+      else if (now < cdAt) state = 'cd';
+      return { q: q, state: state, cdLeft: Math.max(0, cdAt - now), count: count, active: a };
+    });
+  },
+
   /* ---------------- 任务区域 ---------------- */
 
   /* 这张图上生效的任务区域。

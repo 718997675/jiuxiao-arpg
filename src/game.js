@@ -10898,25 +10898,12 @@ const Game = {
     UI.showDialog(npc.name, PICK(npc.lines) + '\n\n主线的事，去问掌事。我这儿只有零碎的活。', [boardBtn, closeBtn]);
   },
 
-  /* 悬赏板：一次列 3 条（§4.1），8 分钟刷新（QUEST_BOARD_CD）。
-   * 用对话而不是新面板：木板本身就是「走过去说话」的东西，
-   * 而且手机上少一层面板就少一处溢出风险。 */
+  /* 悬赏板。
+   * [P07] 改成独立浮层（`UI.openBoard`）—— 原来是一串对话按钮，
+   * 没有列表结构 / 奖励 / 剩余时间，三态（可接 / 进行中 / 冷却中）分不出来。
+   * 这里只做转发，渲染与倒计时全在 `ui.js`；**不再在这里拼文案**。 */
   openBoard(part) {
-    const list = QuestSys.boardTake(part || this.state.part || 1);
-    if (!list.length) {
-      UI.showDialog('悬赏板', '板上的纸都被揭走了，只剩下几个钉孔。\n\n过一会儿再来。', [
-        { label: '离开', action: () => UI.closeAll() }
-      ]);
-      return;
-    }
-    const body = '木板上的纸被风吹得作响。\n\n' +
-      list.map(q => `· ${q.name}（${q.rewards.gold} 金）\n　${q.brief}`).join('\n\n');
-    const btns = list.map(q => ({
-      label: '接下「' + q.name + '」',
-      action: () => { QuestSys.accept(q.id); UI.closeAll(); }
-    }));
-    btns.push({ label: '离开', action: () => UI.closeAll() });
-    UI.showDialog('悬赏板', body, btns);
+    UI.openBoard(part || this.state.part || 1);
   },
 
   /* ---------------- 任务逻辑（M2 起全部委托给 QuestSys） ---------------- */

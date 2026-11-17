@@ -1718,6 +1718,24 @@
   #forgePanel{left:50%;top:50%;transform:translate(-50%,-50%);width:760px;max-height:88vh;overflow:hidden}
   .forge-wrap{display:flex;flex-direction:column;gap:9px}
   .forge-tabs{display:flex;align-items:center;gap:8px}
+  /* [P07] 悬赏板：三态一眼可分 —— 可接（亮）/ 进行中（绿边）/ 冷却中（灰） */
+  .bd-sub{font-size:11.5px;color:#8a8474;padding:2px 0 8px;letter-spacing:.5px;
+    display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap}
+  .bd-sub b{color:#c9a86a;font-weight:400}
+  .bd-list{display:flex;flex-direction:column;gap:7px;max-height:min(56vh,440px);overflow:auto}
+  .bd-row{border:1px solid #3a3428;background:rgba(255,255,255,.018);border-radius:3px;padding:8px 10px}
+  .bd-row.active{border-color:#4a5a3a;background:rgba(120,180,90,.05)}
+  .bd-row.cd{opacity:.5}
+  .bd-hd{display:flex;align-items:center;gap:6px;font-size:12.5px;color:#e0d8c4}
+  .bd-dot{width:7px;height:7px;border-radius:50%;flex:none}
+  .bd-tag{font-size:9.5px;color:#7a7466;border:1px solid #3a3428;padding:0 4px;border-radius:2px;flex:none}
+  .bd-time{margin-left:auto;font-size:10.5px;color:#8a8474;font-variant-numeric:tabular-nums;flex:none}
+  .bd-row.open .bd-time{color:#a8d8a0}
+  .bd-goal{font-size:11px;color:#9a9484;margin:3px 0 2px}
+  .bd-act{margin-top:5px;display:flex;gap:6px}
+  .bd-act .btn{padding:2px 10px;font-size:11px}
+  .bd-bar{height:3px;background:#2a251c;border-radius:2px;margin-top:5px;overflow:hidden}
+  .bd-bar i{display:block;height:100%;background:linear-gradient(90deg,#7a9a5a,#a8d8a0)}
   .ftab{padding:6px 18px;background:rgba(0,0,0,.4);border:1px solid rgba(216,178,90,.22);color:#b8a888;
     font-family:inherit;font-size:12px;letter-spacing:3px;cursor:pointer;transition:.15s;pointer-events:auto}
   .ftab:hover{border-color:rgba(216,178,90,.55);color:#f0dca8}
@@ -2999,6 +3017,17 @@
       <div class="forge-main" id="alchemistMain"></div>
     </div>
     <div class="hintline">分解装备获得玄晶材料；消耗材料升级装备品质；套装打造可把属性满意的装备转成指定套装件（词缀 / 孔位 / 符文全保留）。</div>
+  </div>
+</div>
+
+<!-- [P07] 悬赏板：独立浮层，三态全列（可接 / 进行中 / 冷却中）。
+     以前是一串对话按钮 —— 没有列表结构、没有奖励预览、没有剩余时间，
+     玩家接一条悬赏前完全不知道报酬，也不知道为什么另一条接不了。 -->
+<div class="panel" id="boardPanel">
+  <div class="ph"><h3>悬 赏 板</h3><span class="x" onclick="UI.closeAll()">✕</span></div>
+  <div class="pb">
+    <div class="bd-sub" id="boardSub"></div>
+    <div class="bd-list" id="boardBody"></div>
   </div>
 </div>
 

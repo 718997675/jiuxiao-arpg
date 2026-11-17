@@ -2167,6 +2167,9 @@ const UI = {
   closeAll(except) {
     /* 关面板时把商店倒计时停掉，否则每秒还在跑一个 setInterval */
     if (this.shopTimer) { clearInterval(this.shopTimer); this.shopTimer = null; }
+    /* [P07] 悬赏板的冷却倒计时同理 —— 它比商店更急，因为它是「每秒重排一行」
+     * 的活。`closeBoard` 里还会顺手清掉状态签名，下次打开不会误判成「没变」。 */
+    if (except !== document.getElementById('boardPanel')) this.closeBoard();
     /* [P03] 大图是独立全屏层（不在 .panel 里），要单独收 */
     if (typeof Minimap !== 'undefined' && Minimap.big && Minimap.big.open) Minimap.closeBig();
     document.querySelectorAll('.panel').forEach(p => { if (p !== except) p.classList.remove('open'); });
@@ -3704,6 +3707,157 @@ const UI = {
         <div class="qb">${q.brief}</div>${where}${rw}${rows}
         </div>`;
     }).join('');
+  },
+
+  /* ============================================================
+   * [P07] 悬赏板
+   *
+   * 以前是 `showDialog` 里一串「接下 · 悬赏名」按钮：没有列表结构、
+   * 没有奖励、没有剩余时间，玩家接之前不知道报酬，也不知道另一条
+   * 为什么接不了。改成独立浮层，**三态全列**：
+   *
+   *   可接   —— 亮底 + 右侧「可接」
+   *   进行中 —— 绿边 + 进度条 + 「12 / 20」
+   *   冷却中 —— 置灰 + 倒计时（每秒跳）
+   *
+   * 两条硬约束：
+   *   ① 倒计时的 `setInterval` **只在面板打开时跑**，`closeAll` 里必须清掉
+   *      （不清就是关掉面板之后每秒还在算一次 DOM）。
+   *   ② 状态口径一律走 `QuestSys.boardAll()`，不在 UI 里另判一遍 ——
+   *      两套判据迟早出现「面板说可接、点下去接不了」。
+   * ============================================================ */
+  boardPart: 1,
+  _boardTimer: null,
+  _boardSig: '',
+
+  openBoard(part) {
+    const p = document.getElementById('boardPanel');
+    if (!p) return;
+    this.closeAll(p);
+    this.boardPart = part || (Game.state && Game.state.part) || 1;
+    this.renderBoard();
+    p.classList.add('open');
+    if (this._boardTimer) clearInterval(this._boardTimer);
+    this._boardTimer = setInterval(() => this.tickBoard(), 1000);
+  },
+
+  closeBoard() {
+    if (this._boardTimer) { clearInterval(this._boardTimer); this._boardTimer = null; }
+    this._boardSig = '';
+  },
+
+  /* 冷却倒计时的唯一格式。悬赏冷却 8 分钟，`m:ss` 足够；
+   * 万一将来调长到小时级，这里自己会进位，不用改调用方。 */
+  _cdText(ms) {
+    const s = Math.max(0, Math.ceil(ms / 1000));
+    const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), r = s % 60;
+    const two = v => (v < 10 ? '0' : '') + v;
+    return h ? (h + ':' + two(m) + ':' + two(r)) : (m + ':' + two(r));
+  },
+
+  /* 悬赏的类型分类。数据里 board 任务只有两种 objective：
+   * `killAny`（15 条）与 `dungeon`（5 条）。
+   * **不做「采集 / 护送」第三第四种颜色** —— 数据里根本没有那两类，
+   * 画一个永远不出现的色点就是在向玩家暗示不存在的内容。 */
+  _boardKind(q) {
+    const o = (q.objectives && q.objectives[0]) || {};
+    if (o.type === 'dungeon') return { key: 'dungeon', name: '地脉', color: '#a07ad8' };
+    return { key: 'kill', name: '肃清', color: '#e0705a' };
+  },
+
+  renderBoard() {
+    const body = document.getElementById('boardBody');
+    const sub = document.getElementById('boardSub');
+    if (!body || typeof QuestSys === 'undefined') return;
+    const part = this.boardPart;
+    const rows = QuestSys.boardAll(part);
+    const CN = '一二三四五';
+    const openN = rows.filter(r => r.state === 'open').length;
+    const actN = rows.filter(r => r.state === 'active').length;
+    const cdN = rows.filter(r => r.state === 'cd').length;
+    this._boardSig = rows.map(r => r.state).join(',');
+
+    if (sub) {
+      sub.innerHTML = `<span>卷${CN[part - 1] || part} · 共 <b>${rows.length}</b> 条</span>`
+        + `<span>可接 <b>${openN}</b> · 进行中 <b>${actN}</b> · 冷却 <b>${cdN}</b></span>`;
+    }
+
+    if (!rows.length) {
+      body.innerHTML = '<div class="bd-row"><div class="bd-hd">这一卷的悬赏板还没立起来。</div></div>';
+      return;
+    }
+
+    /* 排序：可接 → 进行中 → 冷却中。玩家打开板子第一眼要看到「现在能做什么」，
+     * 灰掉的那些排在最后。 */
+    const ORD = { open: 0, active: 1, cd: 2 };
+    rows.sort((a, b) => (ORD[a.state] - ORD[b.state]));
+
+    body.innerHTML = rows.map(r => {
+      const q = r.q;
+      const k = this._boardKind(q);
+      const o = (q.objectives && q.objectives[0]) || {};
+      let tail = '';
+      if (r.state === 'open') {
+        tail = '<span class="bd-time">可接</span>';
+      } else if (r.state === 'cd') {
+        tail = `<span class="bd-time" data-bd="${q.id}">冷却 ${this._cdText(r.cdLeft)}</span>`;
+      } else {
+        const ln = QuestSys.lines(r.active) || [];
+        const done = ln.filter(x => x.done).length;
+        tail = `<span class="bd-time">${ln.length ? done + ' / ' + ln.length : '进行中'}</span>`;
+      }
+
+      let act = '';
+      if (r.state === 'open') {
+        act = `<div class="bd-act"><button class="btn primary" data-take="${q.id}">接下</button></div>`;
+      } else if (r.state === 'active') {
+        const ln = QuestSys.lines(r.active) || [];
+        const done = ln.filter(x => x.done).length;
+        const pct = ln.length ? Math.round(done / ln.length * 100) : 0;
+        act = `<div class="bd-bar"><i style="width:${pct}%"></i></div>`;
+      }
+
+      const cnt = r.count ? `<span class="bd-tag">已做 ${r.count} 次</span>` : '';
+      return `<div class="bd-row ${r.state}">
+        <div class="bd-hd">
+          <span class="bd-dot" style="background:${k.color}"></span>
+          <span>${q.name}</span>
+          <span class="bd-tag">${k.name}</span>${cnt}
+          ${tail}
+        </div>
+        <div class="bd-goal">${o.label || q.brief}</div>
+        ${this.renderRewards(q.rewards)}
+        ${act}
+      </div>`;
+    }).join('');
+
+    body.querySelectorAll('[data-take]').forEach(b => b.addEventListener('click', () => {
+      const id = b.dataset.take;
+      if (QuestSys.accept(id)) {
+        try { SFX.ui(); } catch (e) { }
+        this.renderBoard();
+        UI.updateQuestTrack();
+        UI.renderQuests();
+      } else {
+        UI.toast('这条接不了（可能有前置或名额满了）', 'bad');
+      }
+    }));
+  },
+
+  /* 每秒只改冷却行的文本，**不整块重排** —— 重排会让鼠标 hover 断掉、
+   * 滚动位置跳回顶部。状态真的变了（cd 到期变成可接）才重排一次。 */
+  tickBoard() {
+    const p = document.getElementById('boardPanel');
+    if (!p || !p.classList.contains('open')) { this.closeBoard(); return; }
+    if (typeof QuestSys === 'undefined') return;
+    const rows = QuestSys.boardAll(this.boardPart);
+    const sig = rows.map(r => r.state).join(',');
+    if (sig !== this._boardSig) { this.renderBoard(); return; }
+    for (const r of rows) {
+      if (r.state !== 'cd') continue;
+      const el = p.querySelector('[data-bd="' + r.q.id + '"]');
+      if (el) el.textContent = '冷却 ' + this._cdText(r.cdLeft);
+    }
   },
 
   /* 追踪三行：1 主线 + 2 支线 + 悬赏计数（§4.4）。

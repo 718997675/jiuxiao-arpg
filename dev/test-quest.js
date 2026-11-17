@@ -199,16 +199,20 @@ const ok = (name, cond, extra) => {
     const track = document.getElementById('questTrack').textContent;
     const trackShown = document.getElementById('questTrack').style.display;
 
-    /* 悬赏板对话：3 条 + 离开 = 4 个按钮 */
+    /* [P07] 悬赏板改成独立浮层：不再是一串对话按钮，而是三态全列的行。
+     * 这里验的是「打开 / 行数 / 每行有奖励」三件事，详细行为在 dev/probe-p07.js。 */
     Game.openBoard(1);
-    const boardBtns = Array.from(document.querySelectorAll('#dlgBtns .btn')).map(b => b.textContent);
-    const boardText = document.getElementById('dlgText').textContent;
+    const bpanel = document.getElementById('boardPanel');
+    const boardOpen = bpanel.classList.contains('open');
+    const boardRows = bpanel.querySelectorAll('.bd-row').length;
+    const boardHasGold = /金|经验/.test(bpanel.textContent);
+    const boardTakes = bpanel.querySelectorAll('[data-take]').length;
     UI.closeAll();
 
     return {
       dlgOpen,
       btns, qList, track, trackShown,
-      boardBtns, boardHasGold: /金/.test(boardText)
+      boardOpen, boardRows, boardHasGold, boardTakes
     };
   });
   ok('掌事对话打开', r.dlgOpen === true);
@@ -216,8 +220,10 @@ const ok = (name, cond, extra) => {
   ok('任务面板显示任务名', r.qList.indexOf('竹林异动') >= 0, r.qList.slice(0, 60));
   ok('追踪条显示进度', /0\/8/.test(r.track), r.track);
   ok('追踪条可见', r.trackShown === 'block', r.trackShown);
-  ok('悬赏板列出 3 条 + 离开', r.boardBtns.length === 4, r.boardBtns);
-  ok('悬赏板带赏金', r.boardHasGold === true);
+  ok('[P07] 悬赏板是独立浮层', r.boardOpen === true);
+  ok('[P07] 悬赏板列出本卷全部悬赏', r.boardRows >= 3, r.boardRows);
+  ok('[P07] 悬赏板带奖励', r.boardHasGold === true);
+  ok('[P07] 可接的行有「接下」按钮', r.boardTakes >= 1, r.boardTakes);
 
   /* ---------------- 10. 营地发布者 ---------------- */
   console.log('\n【10】营地发布者');
