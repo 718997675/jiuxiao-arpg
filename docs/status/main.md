@@ -132,7 +132,7 @@ P13 已收口。按 `docs/POLISH-PLAN.md` 四批顺序，第 4 批只剩 **P15�
 
 ## P15 · Boss 战前剧情演绎（2026-11-17 开工 · 🔄 进行中）
 
-> 当前：**P15-1 ~ P15-3 ✅**（intro+UI 契约 15/0，存档契约 21/0）；P15-4 演出逻辑进行中。
+> 当前：**P15-1 ~ P15-4 ✅**（intro+UI+game 契约 29/0，存档契约 21/0，smoke 零错误）；P15-5 真机探针进行中。
 > 依据 `docs/POLISH-PLAN.md` §P15 + §3 拍板第 5 条：只播一次（落盘）、设置可跳过。
 > main 上直接做，不单开分支。
 
@@ -143,7 +143,7 @@ P13 已收口。按 `docs/POLISH-PLAN.md` 四批顺序，第 4 批只剩 **P15�
 | P15-1 | 数据层：45 只 Boss 的 intro | ✅ | `data-monsters.js` 的 `BOSSES[*].intro`（卷末 5 句 / 普通 3 句，{who,text}） | `dev/test-boss-intro.js` 9/0 |
 | P15-2 | 存档 + 设置字段 | ✅ | `bossIntro` 落盘四处 + 兜底模板、`skipBossIntro` 设置项 + 重播动作行 | `dev/test-boss-intro-save.js` 21/0 + test-save 79/0 |
 | P15-3 | UI 演出层（黑边 + 字幕） | ✅ | `index.html` #bossIntro（z-index 58、黑边+三类字幕+跳过提示）、`ui.js` open/line/close 三接口 | `test-boss-intro` 15/0（DOM+接口） |
-| P15-4 | `playBossIntro` + 激活接线 | ⬜ | `game.js` 冻结输入 / 推镜 / 只播一次 | 契约 + smoke |
+| P15-4 | `playBossIntro` + 激活接线 | ✅ | `game.js` `maybeBossIntro/startBossIntro/tickBossIntro/skipBossIntro/finishBossIntro/replayBossIntros`、update 冻结闸门、updateCamera 推镜、keydown/click 跳过、换图清场 | `test-boss-intro` 29/0 + smoke ERRORS none |
 | P15-5 | 验收探针 + 截图 | ⬜ | `dev/probe-boss-intro.js` | 首次播/二次不播/冻结/恢复 |
 | P15-6 | 回归 + 台账 + push | ⬜ | 本台账 + POLISH-PLAN + 日志 + 上线 | 全回归 + live |
 

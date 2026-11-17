@@ -89,5 +89,26 @@ ok(/bossIntroOpen\(cfg\)/.test(ui) && /bossIntroLine\(line/.test(ui) && /bossInt
 ok(/line\.who === '旁白'[\s\S]{0,120}?'narr'/.test(ui) && /line\.who === '你'[\s\S]{0,120}?'hero'/.test(ui),
   '旁白 / 你 两种身份有独立样式');
 
+console.log('\n【7】game.js 演出接线');
+const game = fs.readFileSync(path.join(ROOT, 'src/game.js'), 'utf8');
+ok(/bossIntro:\s*null,\s*introCam:\s*0/.test(game), '演出状态字段常驻');
+ok(/maybeBossIntro\(e\)/.test(game) && /if \(!this\.maybeBossIntro\(e\)\)/.test(game),
+  '激活点接了 maybeBossIntro，未演出走老逻辑');
+ok(/this\.state\.bossIntro\[cfg\.id\] = 1;[\s\S]{0,120}?this\.save\(\)/.test(game), '开演即落盘（只播一次）');
+ok(/skip = \(typeof Settings[\s\S]{0,180}?skipBossIntro\)/.test(game), '读 skipBossIntro 设置');
+ok(/if \(this\.bossIntro && !this\.bossIntro\.done\) \{[\s\S]{0,200}?tickBossIntro\(raw\)[\s\S]{0,80}?return;/.test(game),
+  'update 冻结闸门（定格世界）');
+ok(/this\.bossIntro && !this\.bossIntro\.done\) \{ this\.skipBossIntro\(\); e\.preventDefault\(\); return; \}/.test(game),
+  'keydown 任意键跳过且不放技能');
+ok(/introEl\.addEventListener\('click', \(\) => this\.skipBossIntro\(\)\)/.test(game), '点击演出层跳过');
+ok(/tickBossIntro\(raw\)[\s\S]{0,300}?introCam = Math\.min\(1/.test(game), '推镜计时');
+ok(/if \(this\.introCam > 0\.001 && st && st\.e && st\.e\.pos\)/.test(game), 'updateCamera 推镜 override');
+ok(/replayBossIntros\(\)[\s\S]{0,300}?this\.save\(\)/.test(game), '重播清记录并落盘');
+ok(/this\.bossIntro = null; this\.introCam = 0; this\.keys = \{\}/.test(game), '换图清演出状态（防永久定格）');
+ok(/UI\.bossIntroOpen\(cfg\)/.test(game) && /UI\.bossIntroLine\(/.test(game) && /UI\.bossIntroClose\(\)/.test(game),
+  'open/line/close 三接口都调到');
+ok(/finishBossIntro\(\)[\s\S]{0,1000}?SFX\.boss\(\)/.test(game), '收场才放 SFX.boss（payoff）');
+ok(/P15_LINE_DUR: 0\.8/.test(game), '字幕 0.8s/句（取验收线，非设计稿 1.2s）');
+
 console.log('\n结果：' + pass + ' pass / ' + bad + ' bad');
 process.exit(bad ? 1 : 0);

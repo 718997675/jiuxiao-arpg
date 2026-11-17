@@ -214,6 +214,9 @@ const Game = {
   camYaw: 0, camDist: 11.6, camHeight: 12.2, camPunch: 0,
   /* 镜头（v2.x）：view = CAM_VIEWS 的键；camZoom = 滚轮/捏合的拉近拉远倍率 */
   camView: 'torch', camZoom: 1, shakeMul: SHAKE_MUL.weak, fpPitch: -0.13, pl: false,
+  /* [P15] 战前剧情演出状态机。active 时世界定格、输入冻结；camT 用于推镜插值。
+   * 常驻字段而不是局部变量：update / updateCamera / 输入钩子三处都要读。 */
+  bossIntro: null, introCam: 0,
 
   /* 数据 */
   state: null, actor: null, playerGroup: null,
@@ -467,6 +470,9 @@ const Game = {
       const k = (e.key || '').toLowerCase();
       if (!k) return;
       if (typing()) return;
+      /* [P15] 剧情演出期间：任意键跳过，其余按键一概不生效（不写 keys、不放技能）。
+       * 必须在技能条 / 药水 / 交互判断之前拦下，否则跳过那一下会顺手把技能放了。 */
+      if (this.bossIntro && !this.bossIntro.done) { this.skipBossIntro(); e.preventDefault(); return; }
       /* [P03] Esc 先关大图。大图是全屏层，不给退出键的话
        * 键盘玩家会卡在「只能去点右上角 ×」的窘境（鼠标还被 pointer lock 收着）。 */
       if (k === 'escape') {
@@ -547,6 +553,10 @@ const Game = {
       if (e.button === 2) this.primaryAttack();
     });
     window.addEventListener('mouseup', e => { if (e.button === 0) this.mouseDown = false; });
+    /* [P15] 演出层盖在 canvas 上，点击落在它上面而不是 canvas —— 在这里接跳过。
+     * 触屏同样走这里（click 兼容 tap），移动端也能点一下跳过。 */
+    const introEl = document.getElementById('bossIntro');
+    if (introEl) introEl.addEventListener('click', () => this.skipBossIntro());
     cv.addEventListener('contextmenu', e => e.preventDefault());
     window.addEventListener('mousemove', e => {
       if (IS_TOUCH) return;   // 触屏走自动瞄准
@@ -1875,6 +1885,12 @@ const Game = {
     /* [U3] 组合特效层：聚怪窗口与 ICD 一起作废 —— 把「上一张图的聚怪」
      * 带进村里，下一张图随便打一下就会莫名塌一次。 */
     if (typeof ComboFX !== 'undefined' && ComboFX && ComboFX.reset) ComboFX.reset();
+    /* [P15] 演出状态跟着地图清：否则演出中传送会留下一个永久定格的世界。
+     * 直接清标志而不是 finishBossIntro —— 换图不该补 SFX / 报幕。 */
+    if (this.bossIntro || this.introCam) {
+      this.bossIntro = null; this.introCam = 0; this.keys = {}; this.mouseDown = false;
+      if (typeof UI !== 'undefined' && UI.bossIntroClose) UI.bossIntroClose();
+    }
 
     this.buffs = []; this.shield = 0; this.shieldT = 0; this.regen = 0; this.poisonT = 0; this.playerSlow = 0; this.playerSlowT = 0; this.reviveT = 0;
     /* [P3a] 解毒雾（圣系反应的玩家侧计时器），换图 / 重开都要清 */
@@ -3085,13 +3101,27 @@ const Game = {
     // 竖屏时横向视野窄，把镜头拉远一点，避免角色占满屏幕
     const zm = this.camZoomMul || 1;
     const punch = (this.camPunch || 0) * (v.punch === undefined ? 1 : v.punch);
-    const dist = this.camDist * zm * (1 - punch);
-    const targetX = p.x + Math.sin(this.camYaw) * dist;
-    const targetZ = p.z + Math.cos(this.camYaw) * dist;
+    let dist = this.camDist * zm * (1 - punch);
+    /* [P15] 战前剧情推镜：焦点从玩家滑向 Boss、距离拉近、高度降到近平视。
+     * 只在 introCam>0 时接管；bossIntro 清空后 introCam 逐帧回 0，镜头平滑归位。
+     * Boss 定格在原地（update 早退），所以这里读它的 pos 是稳定的。 */
+    let fx = p.x, fz = p.z, fh = this.camHeight * zm;
+    const st = this.bossIntro;
+    if (this.introCam > 0.001 && st && st.e && st.e.pos) {
+      const t = this.introCam, bp = st.e.pos;
+      fx = LERP(p.x, bp.x, t * 0.82);
+      fz = LERP(p.z, bp.z, t * 0.82);
+      dist = LERP(dist, Math.max(4.6, this.camDist * 0.5), t);
+      fh = LERP(fh, (v.lookY || 1.6) + 2.6, t);
+    } else if (this.introCam > 0.001) {
+      this.introCam = Math.max(0, this.introCam - raw / 0.45);
+    }
+    const targetX = fx + Math.sin(this.camYaw) * dist;
+    const targetZ = fz + Math.cos(this.camYaw) * dist;
     const k = 1 - Math.pow(v.smooth, raw);
     this.camera.position.x = LERP(this.camera.position.x, targetX, k);
     this.camera.position.z = LERP(this.camera.position.z, targetZ, k);
-    this.camera.position.y = LERP(this.camera.position.y, p.y + this.camHeight * zm, k);
+    this.camera.position.y = LERP(this.camera.position.y, p.y + fh, k);
     if (this.shake > 0.001) {
       const s = this.shake * this.shakeMul;
       if (s > 0.001) {
@@ -3101,7 +3131,7 @@ const Game = {
       }
       this.shake *= Math.pow(0.0025, raw);
     } else this.shake = 0;
-    this.camera.lookAt(p.x, p.y + v.lookY, p.z);
+    this.camera.lookAt(fx, p.y + v.lookY, fz);
     this.occT = (this.occT || 0) + raw;
     if (this.occT > 0.08) { this.occT = 0; this.updateOccluders(); }
     this.sun.position.set(p.x + 24, 38, p.z + 18);
@@ -3167,6 +3197,15 @@ const Game = {
   update(dt, raw) {
     this.state.playTime += dt;
     if (this.dead) { FX.update(dt); return; }
+
+    /* [P15] 战前剧情：世界定格。只在 tickBossIntro 里走字幕与推镜计时，
+     * 玩家移动 / 施法 / 怪物 AI / 掉落全部不结算 —— 演出结束的那一帧才恢复。
+     * FX 仍更新，让进演出前已在飞的残影自然收尾（否则会僵在半空）。 */
+    if (this.bossIntro && !this.bossIntro.done) {
+      this.tickBossIntro(raw);
+      FX.update(dt);
+      return;
+    }
 
     // 冷却 / BUFF
     for (const k in this.cooldowns) this.cooldowns[k] = Math.max(0, this.cooldowns[k] - dt);
@@ -3237,6 +3276,102 @@ const Game = {
     this.tickAudio(dt);
     this.autoSave(raw);
     if (this.state.hp <= 0) this.die();
+  },
+
+  /* ============================================================
+   * [P15] Boss 战前剧情演出（轻演出，不做 CG）
+   *
+   * 触发：Boss 首次激活且未看过、且设置未跳过 → startBossIntro。
+   * 演出期间 update() 在 updatePlayer 之前就 return，世界定格、输入无效；
+   * 字幕 0.8s 一句逐条推进，任意键 / 点击走 skipBossIntro。
+   * 只播一次：开演即写 state.bossIntro[id]=1 并 save（跳过也算看过，不留尾巴）。
+   * ============================================================ */
+  P15_LINE_DUR: 0.8,
+
+  maybeBossIntro(e) {
+    if (!e || !e.cfg || this.bossIntro) return false;
+    const id = e.cfg.id;
+    const cfg = (typeof BOSSES !== 'undefined' && BOSSES[id]) ? BOSSES[id] : e.cfg;
+    if (!cfg.intro || !cfg.intro.length) return false;
+    const seen = !!(this.state && this.state.bossIntro && this.state.bossIntro[id]);
+    const skip = (typeof Settings !== 'undefined' && Settings.d && Settings.d.skipBossIntro);
+    if (seen || skip) return false;
+    this.startBossIntro(e, cfg);
+    return true;
+  },
+
+  startBossIntro(e, cfg) {
+    const lines = cfg.intro.slice();
+    /* 开演即落盘：中途跳过 / 刷新都不再重播（"只播一次"是硬约束） */
+    if (!this.state.bossIntro) this.state.bossIntro = {};
+    this.state.bossIntro[cfg.id] = 1;
+    if (typeof this.save === 'function') this.save();
+    /* 定格世界：清掉按住的键，免得演出结束瞬间角色窜出去 */
+    this.keys = {};
+    this.mouseDown = false;
+    this.bossIntro = {
+      e, cfg, lines, idx: -1, t: 0, total: lines.length * this.P15_LINE_DUR,
+      done: false, shake: this.shake || 0
+    };
+    this.shake = 0;
+    /* 压住血条与播报，收场时再带回 */
+    if (typeof UI !== 'undefined') { UI.updateBoss(null); UI.castBanner(null); }
+    if (typeof UI !== 'undefined' && UI.bossIntroOpen) UI.bossIntroOpen(cfg);
+    this._introNextLine();
+  },
+
+  _introNextLine() {
+    const st = this.bossIntro;
+    if (!st) return;
+    st.idx++;
+    if (st.idx >= st.lines.length) { this.finishBossIntro(); return; }
+    if (typeof UI !== 'undefined' && UI.bossIntroLine) UI.bossIntroLine(st.lines[st.idx], st.idx + 1, st.lines.length);
+  },
+
+  /* 每帧推进（在 update 的冻结闸门里调）。dt 用夹过的 raw，避免卡顿跳过字幕。 */
+  tickBossIntro(raw) {
+    const st = this.bossIntro;
+    if (!st || st.done) return;
+    st.t += raw;
+    const want = Math.min(st.lines.length, Math.floor(st.t / this.P15_LINE_DUR) + 1);
+    while (st.idx + 1 < want) this._introNextLine();
+    /* 推镜 0→1，前 0.5s 推到位 */
+    this.introCam = Math.min(1, this.introCam + raw / 0.5);
+    if (st.t >= st.total + 0.35) this.finishBossIntro();
+  },
+
+  skipBossIntro() {
+    const st = this.bossIntro;
+    if (!st || st.done) return false;
+    this.finishBossIntro();
+    return true;
+  },
+
+  finishBossIntro() {
+    const st = this.bossIntro;
+    if (!st || st.done) return;
+    st.done = true;
+    if (typeof UI !== 'undefined' && UI.bossIntroClose) UI.bossIntroClose();
+    /* 血条、报幕与音效收场才回来 —— 演出是"铺垫"，打才是"payoff" */
+    if (typeof UI !== 'undefined') {
+      if (UI.updateBoss) UI.updateBoss(st.e);
+      if (UI.toast) UI.toast(st.cfg.name + '　' + (st.cfg.title || ''), 'lv');
+      if (UI.log) UI.log('【' + st.cfg.name + '】' + PICK(st.cfg.lines || ['……']), 'bad');
+    }
+    if (typeof SFX !== 'undefined' && SFX.boss) SFX.boss();
+    this.shake = st.shake || 0.35;
+    this.keys = {};           // 再清一次：跳过那一下按的键不能带进战斗
+    this.mouseDown = false;
+    this.bossIntro = null;    // introCam 在 updateCamera 里从 1 平滑回 0
+  },
+
+  /* 设置里的"重播"：清空已播记录，下次遇到 Boss 再演一次。返回清掉的条数。 */
+  replayBossIntros() {
+    if (!this.state || !this.state.bossIntro) return 0;
+    const n = Object.keys(this.state.bossIntro).length;
+    this.state.bossIntro = {};
+    if (typeof this.save === 'function') this.save();
+    return n;
   },
 
   /* ---------------- 交火判定（唯一实现） ----------------
@@ -7998,10 +8133,15 @@ const Game = {
             this.boss = e;
             UI.updateBoss(e);
           }
-          UI.toast(e.cfg.name + '　' + (e.cfg.title || ''), 'lv');
-          SFX.boss();
-          this.shake = 0.5;
-          UI.log('【' + e.cfg.name + '】' + PICK(e.cfg.lines || ['……']), 'bad');
+          /* [P15] 首次遭遇插一段战前剧情：演出期间定格世界、冻结输入；
+           * toast / log / SFX.boss / shake 全部推迟到演出结束（finishBossIntro）。
+           * 老玩家（看过）或设了跳过 → 走原来的即时激活，一个字节都不变。 */
+          if (!this.maybeBossIntro(e)) {
+            UI.toast(e.cfg.name + '　' + (e.cfg.title || ''), 'lv');
+            SFX.boss();
+            this.shake = 0.5;
+            UI.log('【' + e.cfg.name + '】' + PICK(e.cfg.lines || ['……']), 'bad');
+          }
         }
       }
 
