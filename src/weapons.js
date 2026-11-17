@@ -196,7 +196,10 @@
       rim.rotation.y = Math.PI / 2;
       const face = put(g, new THREE.CylinderGeometry(0.285, 0.26, 0.045, 12), metal, 0, 0, 0);
       face.rotation.z = Math.PI / 2;
-      const boss = put(g, new THREE.SphereGeometry(0.085, 8, 6), gold, 0.035, 0, 0);
+      /* 盾脐在**外侧**：盾面法线沿 X，而副手挂在左臂（角色左手在 -X），
+       * 所以朝外的是 -X。原来写 +0.035，盾脐一直朝着自己的身体 ——
+       * 玩家看到的那一面永远是光板。 */
+      const boss = put(g, new THREE.SphereGeometry(0.085, 8, 6), gold, -0.035, 0, 0);
       boss.scale.set(0.55, 1, 1);
 
     } else if (shape === 'orb') {

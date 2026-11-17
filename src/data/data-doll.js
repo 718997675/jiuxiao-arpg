@@ -756,8 +756,128 @@ const DOLL_WEAPON_TRIM = {
   guardBig:  { g: 'box', s: [0.240, 0.034, 0.052], p: [0, 0.048, 0], m: 'trim' },
   ringGuard: { g: 'torus', s: [0.062, 0.010, 4, 10], p: [0, 0.052, 0], r: [Math.PI / 2, 0, 0], m: 'trim' },
   tassel:    { g: 'box', s: [0.016, 0.240, 0.014], p: [0.034, -0.300, 0.020], r: [0, 0, 0.12], m: 'sub' },
-  ribbon:    { g: 'box', s: [0.012, 0.320, 0.010], p: [-0.030, -0.330, -0.016], r: [0.10, 0, -0.16], m: 'sub' }
+  ribbon:    { g: 'box', s: [0.012, 0.320, 0.010], p: [-0.030, -0.330, -0.016], r: [0.10, 0, -0.16], m: 'sub' },
+  /* 盾面件。**上面五件全是照刀剑的刃根写的**：spine 挂在 y=0.40，而盾半径
+   * 只有 0.30 —— 直接套到盾上就是一根斜着戳出盾外的棍子（截图里见过）；
+   * guardBig 是沿 X 的 0.24 长横条，盾面法线也沿 X，于是它整根穿进盾里。
+   * 盾自己的两件：横贯盾面的铁箍 + 中央盾脐，都贴在外侧盾面（x 为负 = 朝外，
+   * 副手挂在左臂，角色左手在 -X）。 */
+  shieldBar:  { g: 'box',  s: [0.020, 0.030, 0.520], p: [-0.034, 0, 0], m: 'trim' },
+  shieldBoss: { g: 'cone', s: [0.090, 0.070, 6], p: [-0.030, 0, 0], r: [0, 0, Math.PI / 2], m: 'trim' }
 };
+
+/* ============================================================
+ * 传世签名件（P4）
+ *
+ * 40 件传世不能只是「换个颜色」—— 它们要在模型上有自己的样子。
+ *
+ * 做法：**在同槽三族之间混搭**，而不是手写新坐标。
+ *   同槽三族的零件共用同一个挂点坐标系，所以把 C 族的翼挂到 A 族的帽子上，
+ *   位置天然对得上（都是「相对头顶」写的）。手写 40 套坐标的结果一定是
+ *   一半穿模一半悬空，而且改一次族参数就全废。
+ *
+ * 字段：
+ *   fam   主族（不写就沿用 baseVar 随机出来的族）
+ *   mix   追加的跨族零件，`'C.jade'` = C 族的 jade
+ *   w/t   仅武器：覆盖形制宽度 / 厚度（`len` 是契约，永远不许改）
+ *   trim  仅武器：覆盖装饰件组合
+ *
+ * 判据（计划书 §10 P4）：同槽两两剪影 IoU < 0.9。
+ * 所以同槽里尽量挑不同 fam；同 fam 的两件必须让 mix 拉开足够大的件
+ * （`A.hem` / `B.fur` 这类大件，不是 `rivet` 那种铆钉）。
+ * ============================================================ */
+const DOLL_SIG = {
+  /* ---- helm 4 ---- */
+  jiuyou_veil:    { fam: 'A', mix: ['C.wingL', 'C.wingR', 'C.jade'] },   // 面纱 + 侧翼 + 额玉
+  baigumian:      { fam: 'B', mix: ['C.wingL', 'C.wingR'] },             // 兽面 + 双翼
+  tianji_crown:   { fam: 'C', mix: ['A.tailA', 'A.tailB'] },             // 立冠 + 后垂带
+  jiuxiao_crown:  { fam: 'C', mix: ['B.hornL', 'B.hornR', 'C.wingL', 'C.wingR'] }, // 冠 + 角 + 翼
+
+  /* ---- chest 4 ---- */
+  xuanming_armor: { fam: 'A', mix: ['B.mirror'] },                       // 战袍 + 护心镜
+  xuantie_armor:  { fam: 'B', mix: ['A.hem', 'A.sash'] },                // 重铠 + 宽下摆
+  longlin_armor:  { fam: 'B', mix: ['C.buck', 'C.pouch'] },              // 甲 + 扣 + 腰包
+  tianque_robe:   { fam: 'C', mix: ['A.hem', 'A.lapL', 'A.lapR'] },      // 轻裘 + 宽摆 + 交领
+
+  /* ---- shoulders 3 ---- */
+  zhenshan_pauldron: { fam: 'B', mix: ['A.rim'] },
+  yehuo_shoulder:    { fam: 'C', mix: ['B.spike'] },
+  youying_pauldron:  { fam: 'A', mix: ['B.edge', 'A.drop'] },
+
+  /* ---- cloak 3 ---- */
+  yexing_cloak:     { fam: 'A', mix: ['B.fur'] },
+  xuanshuang_cloak: { fam: 'B', mix: ['C.cloth2'] },
+  wuji_cloak:       { fam: 'C', mix: ['B.fur', 'A.yoke'] },
+
+  /* ---- gloves 3 ---- */
+  xueshou:         { fam: 'B', mix: ['C.palm'] },
+  leiting_gloves:  { fam: 'A', mix: ['B.knuck'] },
+  duanjin_gloves:  { fam: 'C', mix: ['B.point'] },
+
+  /* ---- boots 3 ---- */
+  tayun_boots:    { fam: 'A', mix: ['C.band'] },
+  lingxu_boots:   { fam: 'C', mix: ['B.shin'] },
+  zhuifeng_boots: { fam: 'B', mix: ['A.wrap'] },
+
+  /* ---- belt 3 ---- */
+  panlong_belt: { fam: 'B', mix: ['A.jade'] },
+  jiuyou_belt:  { fam: 'A', mix: ['C.drop'] },
+  suohun_belt:  { fam: 'C', mix: ['B.horn'] },
+
+  /* ---- amulet 3 ---- */
+  tianji_jade:  { fam: 'A', mix: ['B.b3'] },
+  hunyuan_seal: { fam: 'B', mix: ['A.plate'] },
+  shanhai_seal: { fam: 'C', mix: ['A.plate', 'B.b3'] },
+
+  /* ---- ring 3 ---- */
+  lunhui_ring:   { fam: 'B' },
+  xuantian_ring: { fam: 'C' },
+  zhongyan_ring: { fam: 'A', mix: ['B.ring'] },
+
+  /* ---- weapon 6（len 是契约，只改 w / t / trim） ---- */
+  frostmoon:   { w: 1.12, t: 0.86, trim: ['tassel', 'ringGuard'] },   // 细长冷刃
+  duanyue:     { w: 1.58, t: 1.48, trim: ['spine', 'guardBig'] },     // 巨刃
+  emberheaven: { w: 1.10, t: 1.04, trim: ['ringGuard', 'tassel'] },
+  jinshi:      { w: 1.38, t: 1.30, trim: ['spine', 'ribbon'] },
+  taichu:      { w: 0.92, t: 0.90, trim: ['ribbon'] },
+  taixu_wujiu: { w: 1.24, t: 1.20, trim: ['spine', 'ringGuard'] },
+
+  /* ---- offhand 5 ----
+   * 盾用 shieldBar / shieldBoss，不用 spine / guardBig：后两件是照刀剑
+   * 刃根写的坐标，套到盾上会戳出盾外 / 穿进盾里（见 DOLL_WEAPON_TRIM 注释）。 */
+  zhenyue:  { w: 1.30, t: 1.10, trim: ['shieldBar', 'shieldBoss'] },
+  zhenhai:  { w: 1.15, t: 1.42, trim: ['shieldBoss'] },
+  taiyin:   { w: 0.90, t: 0.90, trim: ['ringGuard'] },
+  youquan:  { w: 1.10, t: 1.10, trim: ['ribbon'] },
+  bagua:    { w: 1.05, t: 1.05, trim: ['ringGuard', 'ribbon'] }
+};
+
+/* 签名查询。id 不存在返回 null（普通装备 / 套装走不到这里）。 */
+function dollSig(id) {
+  return (id && DOLL_SIG[id]) ? DOLL_SIG[id] : null;
+}
+
+/* 把签名的跨族零件追加进来。返回新数组，不改原表。
+ * `lod` 取 2（繁）：签名件要的是**完整造型**，不是按基底阶削过的版本 ——
+ * 传世天生就是「名器」，不该因为基底阶低就少一截。 */
+function dollSigParts(slot, fam, lod, sigId) {
+  const list = dollPartsOf(slot, fam, lod);
+  if (!list) return null;
+  const s = dollSig(sigId);
+  if (!s || !s.mix || !s.mix.length) return list;
+  const out = list.slice();
+  for (const ref of s.mix) {
+    const dot = ref.indexOf('.');
+    if (dot < 0) continue;
+    const f = ref.slice(0, dot), id = ref.slice(dot + 1);
+    if (f === fam) continue;                       // 本族零件已经在 list 里
+    const src = dollPartsOf(slot, f, 2) || [];
+    for (const p of src) {
+      if (p.i === id) out.push(Object.assign({}, p, { i: id + '$s' }));
+    }
+  }
+  return out;
+}
 
 /* ============================================================
  * 唯一派生入口 —— 任何地方都不许自己拼 key
@@ -799,7 +919,12 @@ function dollKeyOf(item) {
     }
   }
   const tier = typeof itemBaseTier === 'function' ? itemBaseTier(item) : (item.baseTier || 0);
-  return { slot, fam, lod: dollLod(tier), tier, sig: item.uniqueId || item.setId || null };
+  const sig = item.uniqueId || item.setId || null;
+  /* 传世签名件可以指定主族 —— 40 件里同槽只有 3 个族，
+   * 靠 mix 拉开差距不够时就把主族也钉死（九霄冠固定用立冠造型）。 */
+  const sg = dollSig(sig);
+  if (sg && sg.fam) fam = sg.fam;
+  return { slot, fam, lod: dollLod(tier), tier, sig };
 }
 
 /* 取某族定义（含兜底） */
@@ -821,9 +946,77 @@ function dollPartsOf(slot, fam, lod) {
   return out;
 }
 
+/* ============================================================
+ * 品质光（P4）—— 凡品朴素、神品发光
+ *
+ * 为什么这样做而不是给每个槽手写 accent 零件：
+ *   七个防具槽（helm / chest / shoulders / cloak / gloves / boots / belt）
+ *   的零件表里**一件 accent 都没有**，品质在防具上从来没表现过。
+ *   逐槽手写坐标又不行：同一个槽的三族零件位置差得很远
+ *   （helm A 是扁帽 y≈0、C 是立冠 y=0.17~0.32），写死的坐标必然错位。
+ *
+ *   所以改成**从该族自己的零件里挑最小的 N 件点亮** —— 最小的那些正好是
+ *   结、缝线、簪、铆钉、玉片这类装饰件（主结构件面积大，永远选不上），
+ *   位置天然贴合，三族各自的特征点也各自不同。
+ * ============================================================ */
+const RARITY_ACCENT_N = {
+  common: 0,
+  magic: 1,
+  rare: 1,
+  unique: 2,
+  set: 2,
+  legendary: 3
+};
+
+function dollAccentCount(rarity) {
+  const n = RARITY_ACCENT_N[rarity];
+  return (n === undefined) ? 0 : n;
+}
+
+/* 零件体积。**不用 `_dollRadius` 的投影面积**：那对 box 只取宽高、
+ * 忽略厚度，于是「一块薄板」（靴底 0.15×0.10×0.265）算出来比「一根带子」
+ * 还小，点亮结果会是一块发光的鞋底。体积才是「这件东西占多少地方」。 */
+function _dollVolume(p) {
+  const s = p.s || [0.1];
+  const a = Math.abs(s[0] || 0.1), b = Math.abs(s[1] || 0.1), c = Math.abs(s[2] || 0.1);
+  switch (p.g) {
+    case 'box':   return a * b * c;
+    case 'cyl':   return Math.PI * Math.max(a, b) * Math.max(a, b) * c;
+    case 'cone':  return Math.PI * a * a * b / 3;
+    case 'sph':   return 4 / 3 * Math.PI * a * a * a;
+    case 'dome':  return 2 / 3 * Math.PI * a * a * a;
+    case 'torus': return 2 * Math.PI * Math.PI * a * b * b;
+    case 'disc':  return Math.PI * a * a * b;
+    default:      return 0.001;
+  }
+}
+
+/* 返回**带品质光**的零件表。n = 点亮几件（0 = 原样返回）。
+ * 不改原表：`dollPartsOf` 的元素是共享的，直接改 `m` 会污染后面所有装配。 */
+function dollQualityParts(slot, fam, lod, n, sigId) {
+  const list = (typeof dollSigParts === 'function')
+    ? dollSigParts(slot, fam, lod, sigId)
+    : dollPartsOf(slot, fam, lod);
+  if (!list) return null;
+  if (!n) return list;
+  /* 已经有 accent 件的槽（fate / relic / ring）**不再按品质加**：
+   * 那些光效件是造型本体（符纹环 / 浮珠 / 戒指光点），不是装饰。 */
+  for (let i = 0; i < list.length; i++) if (list[i].m === 'accent') return list;
+
+  const scored = [];
+  for (let i = 0; i < list.length; i++) {
+    const p = list[i];
+    if (p.a) continue;                       // 挂在别的挂点上的零件不在这里点
+    scored.push({ i: i, a: _dollVolume(p) });
+  }
+  scored.sort((x, y) => x.a - y.a);
+  const pick = {};
+  for (let k = 0; k < n && k < scored.length; k++) pick[scored[k].i] = 1;
+  return list.map((p, i) => (pick[i] ? Object.assign({}, p, { m: 'accent' }) : p));
+}
+
 /* 族总数 / 零件总数 —— 说明页与测试断言都读这里，别在别处数 */
-function dollStats() {
-  let fams = 0, parts = 0, lods = 0;
+function dollStats() {  let fams = 0, parts = 0, lods = 0;
   for (const slot in DOLL_PARTS) {
     for (const fam in DOLL_PARTS[slot]) {
       fams++;
@@ -863,9 +1056,11 @@ function _dollRadius(pt) {
 }
 
 /* 展开某族为「世界坐标下的投影椭圆/矩形」列表 */
-function _dollPieces(slot, fam, lod) {
+function _dollPieces(slot, fam, lod, sigId) {
   const def = dollFamDef(slot, fam);
-  const list = dollPartsOf(slot, fam, lod);
+  /* 签名件要参与剪影：传世 40 件的验收判据是「同槽两两 IoU < 0.9」，
+   * 而它们的差异全在 mix 上 —— 不含 mix 的剪影会把它们量成同一个。 */
+  const list = sigId ? dollQualityParts(slot, fam, lod, 0, sigId) : dollPartsOf(slot, fam, lod);
   if (!def || !list) return [];
   const out = [];
   for (const pt of list) {
@@ -900,11 +1095,11 @@ function dollSilBox(slot, lod) {
 }
 
 /* 栅格化：返回 { w, h, bits: Uint8Array, box } */
-function dollSilhouette(slot, fam, lod, box, opt) {
+function dollSilhouette(slot, fam, lod, box, opt, sigId) {
   opt = opt || {};
   const W = opt.w || 56, H = opt.h || 76;
   const b = box || dollSilBox(slot, lod);
-  const pieces = _dollPieces(slot, fam, lod);
+  const pieces = _dollPieces(slot, fam, lod, sigId);
   const bits = new Uint8Array(W * H);
   const sx = W / (b[1] - b[0]);
   const sy = H / (b[3] - b[2]);

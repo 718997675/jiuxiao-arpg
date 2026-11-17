@@ -968,6 +968,38 @@ function dollReady(a) {
   return !!a && !!a.cf && typeof Doll !== 'undefined' && !!Doll.dress;
 }
 
+/* 取某个槽刚挂上去的那个 mesh。
+ *
+ * 为什么需要它：`Doll.dress` 只负责「挂上去」，返回值是「挂成功了没有」，
+ * 不把 mesh 交出来（它内部按 res 引用计数，把 mesh 漏给外面等于鼓励外面去
+ * 改缓存里的东西）。但武器要按骨架手型摆姿态、还要给 a.weapon 留引用，
+ * 所以从它自己的账本 `actor.__doll` 里读 —— 那本来就是「谁挂在哪个挂点上」的
+ * 唯一事实来源，另建一份记录迟早会对不上。 */
+function dollMeshOf(a, slot, anchor) {
+  const rec = a && a.__doll && a.__doll[slot];
+  const r = rec && rec[anchor];
+  return r && r.mesh ? r.mesh : null;
+}
+
+/* 武器 / 副手的握持姿态。**按骨架手型分，不按形制分** ——
+ * 形制表只管「刀长什么样」，怎么拿是骨架的事。
+ *   · cf 古风手型：大刀与桃木剑都斜持（直握会插进地面），这个倾角也让
+ *     挥砍带出横向刀光；杖 / 符立握。
+ *   · 通用人形：右手平举，刃口朝外。 */
+function poseWeapon(w, item, a) {
+  if (!w || !item) return;
+  const shape = item.shape || (item.slot === 'offhand' ? 'shield' : 'sword');
+  if (a.cf) {
+    if (shape === 'staff' || shape === 'charm') { w.rotation.set(0.05, 0, -0.06); w.position.set(0.02, -0.05, 0.02); }
+    else if (shape === 'saber') { w.rotation.set(-0.78, 0, Math.PI + 0.55); w.position.set(0.02, 0.02, 0.03); }
+    else { w.rotation.set(-0.80, 0, Math.PI + 0.45); w.position.set(0.02, 0.02, 0.03); }
+  } else {
+    if (shape === 'staff' || shape === 'charm') w.rotation.set(0, 0, -0.08);
+    else w.rotation.set(-0.12, 0, -0.85);
+    w.position.set(0.1, 0.06, 0.04);
+  }
+}
+
 /* 换装时把骨架自带的那一层藏起来。
  *
  * 「换装」的本质是**新的上、旧的让位**，不是往上加。这些自带件和模组件
@@ -1133,37 +1165,54 @@ function applyPaperDoll(p) {
     Doll.dress(a, 'ring2', eq.ring2, p.cls, { side: 1 });
   }
 
-  /* 武器 */
-  clearGroup(P.weaponHand);
+  /* 武器 —— P4 起走模组形制（data-doll.js 的 DOLL_WEAPON_RIG）。
+   *
+   * 之前这里是本地 `buildWeapon(shape, color, glow)`：只有「剑 / 刀 / 杖」
+   * 三种轮廓，宽厚 / 装饰件 / 传世签名件全在形制表里躺着没人读 ——
+   * 6 件传世武器长得跟同阶白装一模一样。
+   *
+   * 握持姿态**留在本地**（poseWeapon）：它跟骨架手型绑定（cf 古风手斜持
+   * vs 通用人形平举），不属于形制表 —— 形制只管「刀长什么样」，不管「怎么拿」。
+   */
   const wp = eq.weapon;
-  if (wp) {
-    const c = itemVisualColor(wp);
-    const w = buildWeapon(wp.shape || 'sword', c.base, wp.rarity === 'common' ? null : c.glow);
-    if (a.cf) {
-      /* 古风手型：大刀与桃木剑都斜持（直握会插进地面），
-       * 这个倾角也让挥砍带出横向刀光；杖/符立握 */
-      if (wp.shape === 'staff' || wp.shape === 'charm') { w.rotation.set(0.05, 0, -0.06); w.position.set(0.02, -0.05, 0.02); }
-      else if (wp.shape === 'saber') { w.rotation.set(-0.78, 0, Math.PI + 0.55); w.position.set(0.02, 0.02, 0.03); }
-      else { w.rotation.set(-0.80, 0, Math.PI + 0.45); w.position.set(0.02, 0.02, 0.03); }
-    } else {
-      if (wp.shape === 'staff' || wp.shape === 'charm') w.rotation.set(0, 0, -0.08);
-      else w.rotation.set(-0.12, 0, -0.85);
-      w.position.set(0.1, 0.06, 0.04);
+  if (canDoll) {
+    /* 先清手：charforge 骨架**自带一把武器**（charforge.js:401 的 `cfg.weapon`）。
+     * 不清的话手里是两把刀 —— 一把骨架自带的（无 userData.rig、不吃形制表），
+     * 一把模组的，两把还几乎重叠，看着像 Z-fighting 的鬼影。 */
+    clearGroup(P.weaponHand);
+    Doll.dress(a, 'weapon', wp, p.cls);
+    const w = dollMeshOf(a, 'weapon', 'weaponHand');
+    if (w) {
+      poseWeapon(w, wp, a);
+      /* 古风角色要按攻击进度调刀，必须把引用指到这把新武器上 */
+      if (a.cf) a.weapon = w;
     }
-    P.weaponHand.add(w);
-    /* 古风角色要按攻击进度调刀，必须把引用指到这把新武器上 */
-    if (a.cf) a.weapon = w;
-    P.weaponMat = c;
+  } else {
+    clearGroup(P.weaponHand);
+    if (wp) {
+      const c = itemVisualColor(wp);
+      const w = buildWeapon(wp.shape || 'sword', c.base, wp.rarity === 'common' ? null : c.glow);
+      poseWeapon(w, wp, a);
+      P.weaponHand.add(w);
+      if (a.cf) a.weapon = w;
+    }
   }
+  if (wp) P.weaponMat = itemVisualColor(wp);
 
-  /* 副手 */
-  clearGroup(P.offHand);
+  /* 副手 —— 同上。副手的「持盾角」只有一个倾角，比武器简单，就留在这里。 */
   const oh = eq.offhand;
-  if (oh) {
-    const c = itemVisualColor(oh);
-    const w = buildWeapon(oh.shape || 'shield', c.base, oh.rarity === 'common' ? null : c.glow);
-    w.rotation.set(0, 0, 0.2);
-    P.offHand.add(w);
+  if (canDoll) {
+    Doll.dress(a, 'offhand', oh, p.cls);
+    const w = dollMeshOf(a, 'offhand', 'offHand');
+    if (w) w.rotation.set(0, 0, 0.2);
+  } else {
+    clearGroup(P.offHand);
+    if (oh) {
+      const c = itemVisualColor(oh);
+      const w = buildWeapon(oh.shape || 'shield', c.base, oh.rarity === 'common' ? null : c.glow);
+      w.rotation.set(0, 0, 0.2);
+      P.offHand.add(w);
+    }
   }
 
   /* 高阶套装光环 */

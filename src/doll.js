@@ -205,7 +205,14 @@
     const key = dollKeyOf(item);
     if (!key || !dollHasParts(key.slot)) return null;
     const def = dollFamDef(key.slot, key.fam);
-    const list = dollPartsOf(key.slot, key.fam, key.lod);
+    /* 品质光：按品质把该族最小的 N 件装饰点亮（凡品 0 件、神品 3 件）。
+     * 走 dollQualityParts 而不是 dollPartsOf —— 防具 7 槽的零件表里
+     * 一件 accent 都没有，也就是品质在防具上从来没表现过。 */
+    const list = (typeof dollQualityParts === 'function')
+      ? dollQualityParts(key.slot, key.fam, key.lod,
+          (typeof dollAccentCount === 'function') ? dollAccentCount(item.rarity) : 0,
+          key.sig)
+      : dollPartsOf(key.slot, key.fam, key.lod);
     if (!def || !list || !list.length) return null;
 
     const pal = paletteOf(item, cls);
@@ -313,7 +320,18 @@
     const fam = (key && key.fam) || 'A';
     const shape = item.shape || (item.slot === 'offhand' ? 'shield' : 'sword');
     const rig = DOLL_WEAPON_RIG[shape] || DOLL_WEAPON_RIG.sword;
-    const fdef = rig.fam[fam] || rig.fam.A;
+    let fdef = rig.fam[fam] || rig.fam.A;
+    /* 传世签名件：只覆盖 w / t / trim —— **`len` 永远不许改**。
+     * 长度是契约（1.40 米的大刀举起来顶出画面、劈砍扎穿地面），
+     * 形制可以更阔更薄，但不能更长。 */
+    const sg = (typeof dollSig === 'function') ? dollSig(key && key.sig) : null;
+    if (sg && (sg.w || sg.t || sg.trim)) {
+      fdef = Object.assign({}, fdef, {
+        w: sg.w || fdef.w,
+        t: sg.t || fdef.t,
+        trim: sg.trim || fdef.trim
+      });
+    }
 
     const g = WeaponForge.build(shape, pal.trim.getHex(), pal.glow || null, 1);
     /* **y 恒为 1** —— 这一行就是「扩大小」的正确做法 */
@@ -339,7 +357,7 @@
 
     g.userData.doll = key;
     g.userData.fam = fam;
-    g.userData.rig = { shape, len: rig.len, w: fdef.w, t: fdef.t, tag: fdef.tag };
+    g.userData.rig = { shape, fam, len: rig.len, w: fdef.w, t: fdef.t, tag: fdef.tag };
     /* **只返回自己那个挂点**：两个都返回会让同一个 Group 被 add 两次
      * （第二次 add 会把它从第一个父节点摘走，副手槽看起来「消失」）。 */
     return item.slot === 'offhand' ? { offHand: g } : { weaponHand: g };
@@ -364,8 +382,12 @@
   function cacheKey(item, cls, extra) {
     const k = dollKeyOf(item);
     if (!k) return null;
+    /* `item.shape` 必须进 key：武器 / 副手的几何完全由 shape 决定
+     * （sword 与 staff 差着一根杖头），而 slot 都是 weapon、fam 都可能是 A。
+     * 不带 shape 的话，同阶同族的一把剑和一根杖会共用一份缓存 ——
+     * 换上一根杖，手里出现的还是那把剑。防具没有 shape，取值恒为空串。 */
     return [k.slot, k.fam, k.lod, cls, item.rarity || 'common', item.uniqueId || item.setId || '-',
-      extra || ''].join('|');
+      item.shape || '', extra || ''].join('|');
   }
 
   function geosOf(res) {

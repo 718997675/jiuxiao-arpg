@@ -57,11 +57,18 @@ window.__verts = function (name) {
   g.traverse(o => { if (o.isMesh && o.geometry) n += o.geometry.attributes.position.count; });
   return n;
 };
+/* 挂点里**Doll 造的根件**有几个。
+ *
+ * 从 P4 起一个挂点下可能是两层：实体 mesh + 挂在它身上的光效子 mesh
+ * （emissive 是材质级，合不进同一份顶点色 —— 见 doll.js 的 glow 循环）。
+ * 所以这里数的是**根**：既能证明「不是老手写几何」（老几何不带 userData.doll），
+ * 也能证明「没有两件叠在一起」（光效层永远是子节点，不是第二个根）。
+ * 「实体 + 光效共存」由 probe-doll-p3 第五节单独断言。 */
 window.__dollOwned = function (name) {
   const g = Game.actor.parts[name];
   if (!g) return 0;
   let n = 0;
-  g.traverse(o => { if (o.isMesh && o.userData && o.userData.doll) n++; });
+  for (const ch of g.children) if (ch.isMesh && ch.userData && ch.userData.doll) n++;
   return n;
 };
 `;
