@@ -83,14 +83,14 @@ const MAPS = {
    *   portal       —— 必须落在入口 zone 内（zone-check 逐张校验） */
   magmagully: {
     id: 'magmagully', name: '熔脉深沟', safe: false, level: 24,
-    ground: 'rock', sky: 0x2e1a14, fog: 0x3a2018, fogNear: 52, fogFar: 178,
+    ground: 'rock', sky: 0x3a1410, fog: 0x4a1a12, fogNear: 52, fogFar: 178,
     size: 290, ambient: 0x9a6a58, sun: 0xff8a4a, sunI: 0.8, props: 'mine',
     spawns: ['snowstone', 'lavaguard', 'ashhound', 'flamepriest', 'magmaworm', 'magma', 'drowned'], spawnCount: 40,
     bosses: ['magmalord'], portal: { x: 0, z: 75 }, unlock: 23
   },
   ashfield: {
     id: 'ashfield', name: '灰烬荒原', safe: false, level: 26,
-    ground: 'ash', sky: 0x3a2e26, fog: 0x46362a, fogNear: 56, fogFar: 186,
+    ground: 'ash', sky: 0x4a4038, fog: 0x564a40, fogNear: 56, fogFar: 186,
     size: 295, ambient: 0xa8846a, sun: 0xffb070, sunI: 0.86, props: 'mine',
     spawns: ['cinderthorn', 'frostfern', 'ashhound', 'flamepriest', 'magmaworm', 'magma', 'toad'], spawnCount: 42,
     bosses: ['ashwarden'], portal: { x: 0, z: 77.6 }, unlock: 25
@@ -134,14 +134,14 @@ const MAPS = {
   },
   bonestrand: {
     id: 'bonestrand', name: '沉骨滩', safe: false, level: 11,
-    ground: 'bone', sky: 0x5a5048, fog: 0x6a5e52, fogNear: 50, fogFar: 172,
+    ground: 'bone', sky: 0x4a5858, fog: 0x5a6a62, fogNear: 50, fogFar: 172,
     size: 302, ambient: 0xa89a84, sun: 0xd8c0a0, sunI: 0.8, props: 'bone',
     spawns: ['bonescorp', 'vinewraith', 'boar', 'scorpion', 'mirehorror', 'leechqueen', 'bonefisher'], spawnCount: 41,
     bosses: ['chief'], portal: { x: 0, z: 74 }, unlock: 10
   },
   bonetower: {
     id: 'bonetower', name: '骨塔祭场', safe: false, level: 13,
-    ground: 'bone', sky: 0x4a4438, fog: 0x5a5244, fogNear: 48, fogFar: 168,
+    ground: 'bone', sky: 0x4a4050, fog: 0x5a505e, fogNear: 48, fogFar: 168,
     size: 294, ambient: 0x9a8e78, sun: 0xc8b088, sunI: 0.78, props: 'bone',
     spawns: ['bogreed', 'bloodbloom', 'bat', 'skelarch', 'wolf', 'ironmaw', 'cliffram'], spawnCount: 41,
     bosses: ['boneabbot'], portal: { x: 0, z: 72 }, unlock: 12
@@ -170,14 +170,14 @@ const MAPS = {
   },
   abyssdeep: {
     id: 'abyssdeep', name: '九幽深渊', safe: false, level: 37,
-    ground: 'void', sky: 0x140e1c, fog: 0x1a1222, fogNear: 40, fogFar: 158,
+    ground: 'void', sky: 0x101828, fog: 0x16202e, fogNear: 40, fogFar: 158,
     size: 298, ambient: 0x6a5a80, sun: 0x9a6aff, sunI: 0.6, props: 'void',
     spawns: ['netherlamp', 'netherbloom', 'tidewretch', 'scalekeeper', 'wraithlord', 'yaoguai', 'ironbeetle'], spawnCount: 42,
     bosses: ['abysswyrm'], portal: { x: 0, z: 73 }, unlock: 36
   },
   yellowferry: {
     id: 'yellowferry', name: '黄泉渡', safe: false, level: 40,
-    ground: 'flood', sky: 0x2a2018, fog: 0x34281c, fogNear: 48, fogFar: 170,
+    ground: 'flood', sky: 0x3a2e1c, fog: 0x44361e, fogNear: 48, fogFar: 170,
     size: 300, ambient: 0x9a8468, sun: 0xd8a060, sunI: 0.75, props: 'flood',
     spawns: ['gravevine', 'boatman', 'tidewretch', 'scalekeeper', 'wraithlord', 'shade', 'runesmith'], spawnCount: 43,
     bosses: ['yellowspring'], portal: { x: 0, z: 79 }, unlock: 39
@@ -185,14 +185,14 @@ const MAPS = {
   /* 卷四 */
   swordtomb: {
     id: 'swordtomb', name: '天罡剑冢', safe: false, level: 42,
-    ground: 'bone', sky: 0x3a3428, fog: 0x46402e, fogNear: 50, fogFar: 174,
+    ground: 'bone', sky: 0x34404e, fog: 0x40505c, fogNear: 50, fogFar: 174,
     size: 296, ambient: 0xa89a78, sun: 0xe0c890, sunI: 0.85, props: 'bone',
     spawns: ['swordsman', 'swordspirit', 'swordhusk', 'bladewisp', 'duelist', 'statue', 'ironmaiden'], spawnCount: 42,
     bosses: ['swordguardian'], portal: { x: 0, z: 56 }, unlock: 41
   },
   swordpit: {
     id: 'swordpit', name: '万剑坑', safe: false, level: 44,
-    ground: 'ash', sky: 0x322a22, fog: 0x3e3428, fogNear: 50, fogFar: 176,
+    ground: 'ash', sky: 0x3a2824, fog: 0x46322a, fogNear: 50, fogFar: 176,
     size: 297, ambient: 0x9a8a72, sun: 0xd8b070, sunI: 0.8, props: 'mine',
     spawns: ['swordcorpse', 'swordgolem', 'swordhusk', 'bladewisp', 'duelist', 'statue', 'swordwraith'], spawnCount: 42,
     bosses: ['bladelord'], portal: { x: 0, z: 78 }, unlock: 43
@@ -214,7 +214,7 @@ const MAPS = {
   },
   southgate: {
     id: 'southgate', name: '南天残门', safe: false, level: 50,
-    ground: 'heaven', sky: 0x2e4462, fog: 0x445c80, fogNear: 58, fogFar: 192,
+    ground: 'heaven', sky: 0x3a5878, fog: 0x507094, fogNear: 58, fogFar: 192,
     size: 298, ambient: 0x9cb0d0, sun: 0xffdca0, sunI: 1.0, props: 'heaven',
     spawns: ['swordspirit', 'swordcorpse', 'cloudserpent', 'thunderdrum', 'feathered', 'jadeguard'], spawnCount: 43,
     bosses: ['heavenguard'], portal: { x: 0, z: 56 }, unlock: 49
@@ -222,28 +222,28 @@ const MAPS = {
   /* 卷五 */
   jadecapital: {
     id: 'jadecapital', name: '玉京废墟', safe: false, level: 52,
-    ground: 'void', sky: 0x1a1424, fog: 0x221a2e, fogNear: 42, fogFar: 160,
+    ground: 'void', sky: 0x14242a, fog: 0x1c2c32, fogNear: 42, fogFar: 160,
     size: 297, ambient: 0x7a6a96, sun: 0xb89aff, sunI: 0.68, props: 'void',
     spawns: ['starleaf', 'mirrorflower', 'jadewarden', 'jadepuppet', 'starfaller', 'silkweaver', 'voidbeast'], spawnCount: 41,
     bosses: ['jadeemperor'], portal: { x: 0, z: 78 }, unlock: 51
   },
   starfall: {
     id: 'starfall', name: '星陨台', safe: false, level: 54,
-    ground: 'void', sky: 0x140e20, fog: 0x1c1428, fogNear: 44, fogFar: 164,
+    ground: 'void', sky: 0x101c34, fog: 0x182840, fogNear: 44, fogFar: 164,
     size: 299, ambient: 0x706090, sun: 0xa080ff, sunI: 0.7, props: 'void',
     spawns: ['voidivy', 'starmage', 'jadepuppet', 'starfaller', 'silkweaver', 'voidbeast'], spawnCount: 43,
     bosses: ['starlord'], portal: { x: 0, z: 56 }, unlock: 53
   },
   mirrorrealm: {
     id: 'mirrorrealm', name: '无相幻境', safe: false, level: 56,
-    ground: 'void', sky: 0x1c1828, fog: 0x241e34, fogNear: 42, fogFar: 162,
+    ground: 'void', sky: 0x241838, fog: 0x2c2044, fogNear: 42, fogFar: 162,
     size: 298, ambient: 0x8072a0, sun: 0xc0a8ff, sunI: 0.72, props: 'void',
     spawns: ['mirrorclone', 'stardeer', 'jadepuppet', 'starfaller', 'silkweaver', 'voidbeast'], spawnCount: 46,
     bosses: ['mirrordemon'], portal: { x: 0, z: 70 }, unlock: 55
   },
   mirrorabyss: {
     id: 'mirrorabyss', name: '镜渊', safe: false, level: 57,
-    ground: 'void', sky: 0x12101c, fog: 0x181626, fogNear: 40, fogFar: 158,
+    ground: 'void', sky: 0x101c1a, fog: 0x162420, fogNear: 40, fogFar: 158,
     size: 299, ambient: 0x6a6090, sun: 0x9a80e0, sunI: 0.66, props: 'void',
     spawns: ['mirrorspirit', 'starspirit', 'jadepuppet', 'starfaller', 'silkweaver', 'voidbeast'], spawnCount: 43,
     bosses: ['mirrorlord'], portal: { x: 0, z: 73 }, unlock: 56

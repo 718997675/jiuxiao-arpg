@@ -489,21 +489,25 @@ const MAP_SPECS = {
   /* ---------------- 卷二 2-2 / 2-3（M3 第一批，把卷二打通） ---------------- */
   magmagully: {
     archetype: 'spiral', size: 290, ground: 'rock',
+    landmark: 'forge', weather: 'ember',  /* [P13] 风貌 */
     kinds: ['snowstone', 'lavaguard', 'ashhound', 'flamepriest', 'magmaworm', 'magma', 'drowned'],
     names: { gate: '熔脉井口', s0: '矿工井台', s1: '上层回廊', s2: '东转井', e2: '东岔洞', s3: '中段窄道', s4: '西转井', w2: '西岔洞', s5: '下层回廊', nw: '塌方角', hub: '井底大厅', sanctum: '熔心祭坛' }
   },
   ashfield: {
     archetype: 'canyon', size: 295, ground: 'ash',
+    landmark: 'lavaColumn', weather: 'ash',  /* [P13] 风貌 */
     kinds: ['cinderthorn', 'frostfern', 'ashhound', 'flamepriest', 'magmaworm', 'magma', 'toad'],
     names: { gate: '荒原谷口', c1: '下谷灰道', c2: '中谷', c3: '上谷', c4: '谷底', w1: '西侧焦洞', e1: '东侧焦洞', w2: '西侧灰窟', e2: '东侧灰窟', w3: '西侧塌洞', e3: '东侧塌洞', sanctum: '灰烬祭坛' }
   },
   flamecanyon: {
     archetype: 'canyon', size: 300, ground: 'ash',
+    landmark: 'brazier', weather: 'ember',  /* [P13] 风貌 */
     kinds: ['flamespirit', 'snowwolf', 'sootwraith', 'emberhound', 'cinderlord', 'magma', 'golem'],
     names: { gate: '峡谷隘口', c1: '赤岩下谷', c2: '赤岩中谷', c3: '赤岩上谷', c4: '焚风谷底', w1: '西侧火窟', e1: '东侧火窟', w2: '西侧熔洞', e2: '东侧熔洞', w3: '西侧焦穴', e3: '东侧焦穴', sanctum: '焚风祭坛' }
   },
   flamealtar: {
     archetype: 'radial', size: 295, ground: 'ash',
+    landmark: 'altar', weather: 'ash',  /* [P13] 风貌 */
     kinds: ['snowstone', 'lavaguard', 'sootwraith', 'emberhound', 'cinderlord', 'magma', 'ghost'],
     names: { hub: '焚天中庭', gate: '祭坛山门', wingW: '西配殿', wingE: '东配殿', outW: '西火殿', outE: '东火殿', wingNW: '西北廊', wingNE: '东北廊', outNW: '西北火塔', outNE: '东北火塔', nave: '焚天神道', sanctum: '焚天祭坛' }
   },
@@ -527,6 +531,7 @@ const MAP_SPECS = {
    * 用 terrace 而不是 cross —— 卷一前半段全是平地图，这里第一次让玩家「往上走」。 */
   sunset: {
     archetype: 'terrace', size: 294, ground: 'dirt',
+    landmark: 'vinegate', weather: 'leaves',  /* [P13] 风貌 */
     kinds: ['mountainspirit', 'rotcorpse', 'halfork', 'hornet', 'fox', 'lantern', 'foxfire'],
     names: {
       gate: '坡脚', t1: '落霞台', t1w: '西枫台', t1e: '东枫台', r1: '第一坡',
@@ -537,6 +542,7 @@ const MAP_SPECS = {
   /* 沉骨滩：河滩上一层层骨头堆成的岛。isles 的窄桥负责「一岛一岛往前推」。 */
   bonestrand: {
     archetype: 'isles', size: 302, ground: 'bone',
+    landmark: 'bonerib', weather: 'fog',  /* [P13] 风貌 */
     kinds: ['bonescorp', 'vinewraith', 'boar', 'scorpion', 'mirehorror', 'leechqueen', 'bonefisher'],
     names: {
       gate: '骨滩渡口', b1: '南栈桥', isleS: '沉骨岛', b2: '西栈桥', isleW: '西骨岛',
@@ -548,6 +554,7 @@ const MAP_SPECS = {
    * 怪种只取卷一档（骷髅 / 僵尸 / 幽魂 / 狼 / 蝙蝠），不放 lv28 才该出现的骨匠。 */
   bonetower: {
     archetype: 'spiral', size: 294, ground: 'bone',
+    landmark: 'bonetower', weather: 'firefly',  /* [P13] 风貌 */
     kinds: ['bogreed', 'bloodbloom', 'bat', 'skelarch', 'wolf', 'ironmaw', 'cliffram'],
     names: {
       gate: '塔门', s0: '塔前井台', s1: '塔外回廊', s2: '东转阶', e2: '东侧骨龛',
@@ -560,6 +567,7 @@ const MAP_SPECS = {
    * 不用新写一个「铁山山神」。 */
   ironpeak: {
     archetype: 'terrace', size: 296, ground: 'snow',
+    landmark: 'bridge', weather: 'snow',  /* [P13] 风貌 */
     kinds: ['bandit', 'witchdoctor', 'minerghost', 'ironmaw', 'cinderhand', 'forgemaster', 'stonecrow'],
     names: {
       gate: '铁山脚', t1: '铁山坪', t1w: '西矿台', t1e: '东矿台', r1: '铁索坡',
@@ -572,6 +580,7 @@ const MAP_SPECS = {
   /* 白骨长廊：环形回廊，绕一圈回到大殿 —— 「走了很久却回到原地」是这一章的情绪。 */
   bonehall: {
     archetype: 'ring', size: 297, ground: 'bone',
+    landmark: 'boneCol', weather: 'fog',  /* [P13] 风貌 */
     kinds: ['boatman', 'hellhound', 'headless', 'bonewright', 'soulgaoler', 'papereffigy', 'ghostfire'],
     names: {
       gate: '长廊口', inlet: '前甬道', hall: '白骨大殿', ringS: '南回廊', ringE: '东回廊',
@@ -582,6 +591,7 @@ const MAP_SPECS = {
   /* 忘川河滩：浅水 + 岛。isles 的桥在这里是「踩着石头过河」。 */
   forgetshore: {
     archetype: 'isles', size: 302, ground: 'flood',
+    landmark: 'brokenBridge', weather: 'rain',  /* [P13] 风貌 */
     kinds: ['waterspirit', 'corpsegeneral', 'soulgaoler', 'papereffigy', 'wantern', 'shade', 'zombie'],
     names: {
       gate: '渡头', b1: '南木桥', isleS: '河滩南', b2: '西木桥', isleW: '西浅滩',
@@ -592,6 +602,7 @@ const MAP_SPECS = {
   /* 九幽深渊：螺旋往下，越走越黑。void 地貌 + void 道具，地面几乎看不见。 */
   abyssdeep: {
     archetype: 'spiral', size: 298, ground: 'void',
+    landmark: 'lanternRow', weather: 'fogHeavy',  /* [P13] 风貌 */
     kinds: ['netherlamp', 'netherbloom', 'tidewretch', 'scalekeeper', 'wraithlord', 'yaoguai', 'ironbeetle'],
     names: {
       gate: '深渊口', s0: '坠台', s1: '上层悬廊', s2: '东折悬台', e2: '东侧裂口',
@@ -603,6 +614,7 @@ const MAP_SPECS = {
    * 首任用新首领「黄泉主宰」，不沿用 lv30 的冥河渡者（等级差 10 级会被直接跳过）。 */
   yellowferry: {
     archetype: 'canyon', size: 300, ground: 'flood',
+    landmark: 'stele', weather: 'rainHeavy',  /* [P13] 风貌 */
     kinds: ['gravevine', 'boatman', 'tidewretch', 'scalekeeper', 'wraithlord', 'shade', 'runesmith'],
     names: {
       gate: '渡口', c1: '黄泉浅道', c2: '中渡', c3: '上游窄道', c4: '渡头',
@@ -616,6 +628,7 @@ const MAP_SPECS = {
    * 底下埋的全是剑客的骨头。 */
   swordtomb: {
     archetype: 'radial', size: 296, ground: 'bone',
+    landmark: 'sword', weather: 'swordQi',  /* [P13] 风貌 */
     kinds: ['swordsman', 'swordspirit', 'swordhusk', 'bladewisp', 'duelist', 'statue', 'ironmaiden'],
     names: {
       hub: '剑冢中庭', gate: '冢门', wingW: '西剑廊', wingE: '东剑廊',
@@ -626,6 +639,7 @@ const MAP_SPECS = {
   /* 万剑坑：一个被剑砸出来的大坑。canyon 的长条沟在这里读作「坑道」。 */
   swordpit: {
     archetype: 'canyon', size: 297, ground: 'ash',
+    landmark: 'swordForest', weather: 'swordQi',  /* [P13] 风貌 */
     kinds: ['swordcorpse', 'swordgolem', 'swordhusk', 'bladewisp', 'duelist', 'statue', 'swordwraith'],
     names: {
       gate: '坑口', c1: '下坑道', c2: '中坑', c3: '上坑道', c4: '坑底',
@@ -637,6 +651,7 @@ const MAP_SPECS = {
    * 但怪种换成剑魂 / 雷鸟 —— 「同一种地形，不同的敌人」比换地形更省预算也更像真实世界。 */
   swordapex: {
     archetype: 'terrace', size: 300, ground: 'snow',
+    landmark: 'ruinGate', weather: 'snow',  /* [P13] 风貌 */
     kinds: ['cloudleopard', 'swordbamboo', 'swordhusk', 'bladewisp', 'duelist', 'statue', 'thunderbird'],
     names: {
       gate: '绝巅山脚', t1: '剑冢台', t1w: '西剑台', t1e: '东剑台', r1: '第一剑坡',
@@ -648,6 +663,7 @@ const MAP_SPECS = {
    * 「桥断了」这件事只能发生在「两座厅之间只有一条桥」的地图上。 */
   cloudbridge: {
     archetype: 'twin', size: 306, ground: 'heaven',
+    landmark: 'skyBridge', weather: 'cloud',  /* [P13] 风貌 */
     kinds: ['ashroot', 'swordsman', 'cloudserpent', 'thunderdrum', 'feathered', 'jadeguard'],
     names: {
       gate: '云海桥头', westHall: '西云台', wCell: '西云室', wLow: '西下云台', wHigh: '西深层云台',
@@ -658,6 +674,7 @@ const MAP_SPECS = {
   /* 南天残门：卷四收尾。放射中庭 + 两座阙楼。 */
   southgate: {
     archetype: 'radial', size: 298, ground: 'heaven',
+    landmark: 'heavenGate', weather: 'cloud',  /* [P13] 风貌 */
     kinds: ['swordspirit', 'swordcorpse', 'cloudserpent', 'thunderdrum', 'feathered', 'jadeguard'],
     names: {
       hub: '南天中庭', gate: '南天山门', wingW: '西阙廊', wingE: '东阙廊',
@@ -670,6 +687,7 @@ const MAP_SPECS = {
   /* 玉京废墟：环形回廊。玉京是「天庭的都城」，废墟就该是绕不出去的宫城。 */
   jadecapital: {
     archetype: 'ring', size: 297, ground: 'void',
+    landmark: 'jadeStep', weather: 'voidDust',  /* [P13] 风貌 */
     kinds: ['starleaf', 'mirrorflower', 'jadewarden', 'jadepuppet', 'starfaller', 'silkweaver', 'voidbeast'],
     names: {
       gate: '玉京门', inlet: '前朝道', hall: '玉京大殿', ringS: '南玉廊', ringE: '东玉廊',
@@ -680,6 +698,7 @@ const MAP_SPECS = {
   /* 星陨台：放射。陨星砸出来的辐射状裂口，从中央向四周散开。 */
   starfall: {
     archetype: 'radial', size: 299, ground: 'void',
+    landmark: 'meteor', weather: 'star',  /* [P13] 风貌 */
     kinds: ['voidivy', 'starmage', 'jadepuppet', 'starfaller', 'silkweaver', 'voidbeast'],
     names: {
       hub: '星陨中庭', gate: '陨台山门', wingW: '西陨廊', wingE: '东陨廊',
@@ -691,6 +710,7 @@ const MAP_SPECS = {
    * 回到「一眼看得懂的四向结构」反而会觉得不对劲，这正是「幻境」要的效果。 */
   mirrorrealm: {
     archetype: 'cross', size: 298, ground: 'void',
+    landmark: 'mirrorStele', weather: 'star',  /* [P13] 风貌 */
     kinds: ['mirrorclone', 'stardeer', 'jadepuppet', 'starfaller', 'silkweaver', 'voidbeast'],
     names: {
       gate: '幻境口', path: '幻径', hall: '无相主厅', westLink: '西幻廊', west: '西幻翼',
@@ -701,6 +721,7 @@ const MAP_SPECS = {
   /* 镜渊：螺旋。镜面往下沉，一层一层都是自己的影子。 */
   mirrorabyss: {
     archetype: 'spiral', size: 299, ground: 'void',
+    landmark: 'mirrorRing', weather: 'voidDust',  /* [P13] 风貌 */
     kinds: ['mirrorspirit', 'starspirit', 'jadepuppet', 'starfaller', 'silkweaver', 'voidbeast'],
     names: {
       gate: '镜口', s0: '镜台', s1: '上层镜廊', s2: '东折镜厅', e2: '东侧镜龛',
@@ -711,6 +732,7 @@ const MAP_SPECS = {
   /* 九霄之巅：卷五倒数第二张。雪 + 三段台地，全作最高处。 */
   nineapex: {
     archetype: 'terrace', size: 301, ground: 'snow',
+    landmark: 'skyAltar', weather: 'star',  /* [P13] 风貌 */
     kinds: ['meteorsoul', 'starstone', 'jadepuppet', 'starfaller', 'silkweaver', 'voidbeast'],
     names: {
       gate: '九霄山脚', t1: '九霄台', t1w: '西天门台', t1e: '东天门台', r1: '第一霄坡',
@@ -742,6 +764,7 @@ const MAP_SPECS = {
    * 中庭是八部坛，北端 sanctum 是天龙终门。安全区，不刷怪。 */
   chaossea: {
     archetype: 'radial', size: 220, ground: 'void', spawnTotal: 0, kinds: [],
+    landmark: 'chaosCore', weather: 'voidDust',  /* [P13] 风貌 */
     names: {
       gate: '混沌岸', hub: '八部坛',
       wingW: '西廊 · 龙', wingE: '东廊 · 金翅',
