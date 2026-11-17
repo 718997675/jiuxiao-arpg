@@ -76,5 +76,18 @@ const dupLine = ids.filter(id => {
 });
 ok(dupLine.length === 0, 'intro 台词与 lines 战斗台词无一字重复', dupLine);
 
+console.log('\n【6】UI 演出层 DOM 与接口');
+const html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
+const ui = fs.readFileSync(path.join(ROOT, 'src/ui.js'), 'utf8');
+ok(/<div id="bossIntro">/.test(html), 'index.html 有 #bossIntro 演出层');
+const domIds = ['biName', 'biTitle', 'biLine', 'biWho', 'biText', 'biSkip'];
+ok(domIds.every(id => html.indexOf('id="' + id + '"') >= 0), '六个字幕 DOM 齐全', domIds.filter(id => html.indexOf('id="' + id + '"') < 0));
+ok(/#bossIntro\{[^}]*z-index:58/.test(html), '演出层 z-index 58（压 HUD、低于面板）');
+ok(/@keyframes biFade/.test(html), '字幕淡入动画存在');
+ok(/bossIntroOpen\(cfg\)/.test(ui) && /bossIntroLine\(line/.test(ui) && /bossIntroClose\(\)/.test(ui),
+  'ui.js 有 open / line / close 三接口');
+ok(/line\.who === '旁白'[\s\S]{0,120}?'narr'/.test(ui) && /line\.who === '你'[\s\S]{0,120}?'hero'/.test(ui),
+  '旁白 / 你 两种身份有独立样式');
+
 console.log('\n结果：' + pass + ' pass / ' + bad + ' bad');
 process.exit(bad ? 1 : 0);

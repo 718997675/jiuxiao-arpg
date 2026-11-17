@@ -1933,6 +1933,49 @@ const UI = {
     this._syncBossBarBottom();
   },
 
+  /* ============================================================
+   * [P15] Boss 战前剧情演出
+   *
+   * 只负责 DOM 显隐与字幕，不碰游戏状态（冻结 / 计时 / 落盘全在 Game）。
+   * 三个方法：open 开场 → line 逐句 → close 收场。台词来自 BOSSES[*].intro。
+   * who 分三类：旁白（斜体灰）/ Boss 本名（金）/ 你（浅金）—— 样式在 index.html。
+   * ============================================================ */
+  bossIntroOpen(cfg) {
+    const el = document.getElementById('bossIntro');
+    if (!el) return;
+    document.getElementById('biName').textContent = cfg.name || '';
+    document.getElementById('biTitle').textContent = cfg.title || '';
+    this.bossIntroLine({ who: '', text: '' }, 0, 0);   // 清掉上一场残留
+    el.classList.add('open');
+    this.bossIntroOn = true;
+  },
+
+  bossIntroLine(line, idx, total) {
+    const wrap = document.getElementById('biLine');
+    const who = document.getElementById('biWho');
+    const text = document.getElementById('biText');
+    if (!wrap || !who || !text) return;
+    /* 重新触发淡入动画：移 class → 强制回流 → 加回。跟 bossbar.swap 同一个坑。 */
+    wrap.classList.remove('show', 'narr', 'hero');
+    void wrap.offsetWidth;
+    if (line && line.text) {
+      who.textContent = line.who || '';
+      text.textContent = line.text;
+      if (line.who === '旁白') wrap.classList.add('narr');
+      else if (line.who === '你') wrap.classList.add('hero');
+      wrap.classList.add('show');
+    } else {
+      who.textContent = '';
+      text.textContent = '';
+    }
+  },
+
+  bossIntroClose() {
+    const el = document.getElementById('bossIntro');
+    if (el) el.classList.remove('open');
+    this.bossIntroOn = false;
+  },
+
   /* [B24] 出招播报 —— 首领放招时报「这一只自己的叫法 + 它逼你做什么」。
    *
    * 为什么要做这一条：45 只的五格配招、88 招的机制（kind / dmg / answer）
