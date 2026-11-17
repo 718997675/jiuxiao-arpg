@@ -43,7 +43,17 @@ const SKFX = (function () {
   const _live = [];
   const _rootAdd = ROOT.add.bind(ROOT);
   const _rootRemove = ROOT.remove.bind(ROOT);
-  ROOT.add = function (o) { _rootAdd(o); if (!o.userData.shared && _live.indexOf(o) < 0) _live.push(o); return o; };
+  ROOT.add = function (o) {
+    _rootAdd(o);
+    if (!o.userData.shared) {
+      if (_live.indexOf(o) < 0) _live.push(o);
+      /* [U13] 这一发是「随人」技能 → 记进本次窗口，之后每帧跟着玩家平移。
+       * 共享池（粒子 Points / 贴花 quad）不记：它们的位置由池自己管，
+       * 挪一次就被下一次写入覆盖，记了也没用。 */
+      if (_ride && _ride.objs.indexOf(o) < 0) _ride.objs.push(o);
+    }
+    return o;
+  };
   ROOT.remove = function (o) { _rootRemove(o); const i = _live.indexOf(o); if (i >= 0) _live.splice(i, 1); return o; };
 
   /* 每帧由 sync() 填。实验室里这三样是模块级全局，游戏里必须由外面喂进来。 */
@@ -67,6 +77,52 @@ const SKFX = (function () {
   let avatarOn = false;     /* 法相窗口开着没有 */
   let _curLv = 1;           /* 本发技能的等级（tierOn 读它） */
   let stanceIdx = 0;        /* 刀式（0 斩锋 / 1 镇岳 / 2 摧城），由 Game.bladeStance() 同步 */
+
+  /* ============================================================
+   * [U13] 「随人」表 —— 哪些技能的演出必须跟着角色走
+   *
+   * 用户 2026-11-15 报的：旋风斩这类**移动释放**的技能，人一边走一边转，
+   * 斧头却留在起手的位置。根因是 playSkillVfx 把施法瞬间的坐标拍成
+   * c.x / c.z 传进来，之后所有 mesh 都是按那个**快照**摆的。
+   *
+   * 这里按语义分三类，只有第一类要跟：
+   *
+   *   ① 自身光环 / 身上挂件 —— **必须跟**：旋风斩的斧头、护盾、法相、
+   *      回春、血怒、战吼、反击、青龙盘旋、解毒、还魂、剑阵环轨、盾墙
+   *   ② 地面部署 —— **不跟**：火墙 / 召唤阵 / 冰霜新星 / 毒雾 / 太极 /
+   *      天师符。落点就该留在地上，跟着人跑反而变成"贴腿的圈"
+   *   ③ 飞行体 —— **不跟**：飞弹 / 冰锥 / 符箭 / 白虎扑击 / 雷弧链。
+   *      起点在施法者身上是对的，飞出去之后就该独立
+   *
+   * 值是「跟多久」（秒），按各技能**最后一个会跟随的构件消失的时刻**取
+   * （不是起手时长，也不是粒子寿命 —— 粒子是世界空间的，窗口管不到它们）。
+   * 取短了 = 演出后半截留在原地（最难发现，因为前半截是对的）；
+   * 取长了只是多平移几个已经透明的 mesh，代价可以忽略。宁可长一点。
+   *
+   * 键是**游戏技能 id**（data-skills.js 里的正式名），不是实验室的口语名。
+   * 这两套名有 5 只不一样（见上面的 ALIAS 表），最容易踩的是：
+   *   swords（实验室 剑阵）→ swordarray
+   *   avatar（实验室 元素法相）→ elementavatar
+   * 写错不会报错 —— play() 拿到的是游戏 id，查不到 FOLLOW 就静默不跟，
+   * 又是「看起来改了、其实没生效」。契约 dev/test-sfx-follow.js 会拦这一条。
+   * ============================================================ */
+  const FOLLOW = {
+    whirl: 1.2,        /* 气流 vortex 1.1 / 斧头 1.0 */
+    swordarray: 2.6,   /* 剑阵绕身整整 2.6s，中途人一直在走 */
+    bloodrage: 1.3,    /* 血雾从脚下冒 1.2s，心跳环 0.89 */
+    iceshield: 0.95,   /* 冰盾 0.9 */
+    elementavatar: 1.2,/* 法相显形 1.1 */
+    heal: 2.6,         /* 回春光尘一路升到 2.6 */
+    warcry: 1.2,       /* 战吼光环 1.1 */
+    shieldwall: 2.3,   /* 光墙立 2.3s 才收 */
+    riposte: 0.65,     /* 金身 0.3 + 反刀 0.55 */
+    azuredragon: 0.65, /* 青龙盘旋 0.55 */
+    antidote: 0.8,     /* 解毒 0.7 */
+    revive: 1.9        /* 还魂 1.9 */
+  };
+  /* 当前这一次「随人」窗口。同一时刻只认一个 —— 玩家技能是串行的，
+   * 而且两发重叠时后一发本来就会打断前一发的观感。 */
+  let _ride = null;
 /* ===== 程序化贴图 ===== */
 /* =====================================================================
    1. 程序化贴图（不引入任何素材文件）
@@ -2946,7 +3002,12 @@ function lunge(dist) {}
     /* 暗黑三那种：几把斧头在**同一个水平面**上平着转。
        旧版是三道"倾斜 35° 的刀气弧" —— 弧躺在地上又各自斜着抬起来，
        看着像三片斜光，不像武器在转。 */
-    FX.spinBlades(new THREE.Vector3(c.x,0,c.z), {
+    /* [U13] 中心传**活引用 ACT.player.pos**，不是 new THREE.Vector3(c.x,0,c.z) 的快照。
+       斧头本身（grp）只在创建时读一次坐标，跟着走靠 SKFX 的随人窗口平移；
+       但**刃尖火星是每帧从 center 冒的**（见 FX.spinBlades 里 `center.x + cos(a)*R`），
+       传快照就等于「斧头跟过来了、火星还留在起手点」—— 半截跟比整个不跟更难受。
+       ACT.player.pos 每帧被 sync() 刷成玩家当前位置，这里读到的永远是脚下。 */
+    FX.spinBlades(ACT.player.pos, {
       r: 1.85, n: 3, life: 1.0, y: 1.0, spin: 13, color: C(E().glow)
     });
     // 半圈后的补刀：转速回落的一层残影，让"连续转"成立
@@ -2955,7 +3016,9 @@ function lunge(dist) {}
         r: 2.1, n: 2, life: 0.6, y: 0.95, spin: 11, color: C(E().glow)
       });
     });
-    FX.vortex(new THREE.Vector3(c.x,0,c.z), { life: 1.1, r: 1.9, h: 2.6, color: C(E().glow) });
+    /* [U13] 同上：vortex 也是「每帧读一次 pos 再冒粒子」的持续发射器，
+       传活引用才会跟着人走。传快照的话气流会钉在起手点，只剩斧头跟过来。 */
+    FX.vortex(ACT.player.pos, { life: 1.1, r: 1.9, h: 2.6, color: C(E().glow) });
     /* 地面气流圈按技能真实半径（4.2 码）铺开。原来只有 1.5 码，比三把斧头
      * 转出来的 1.85 码还小 —— 玩家看到的是「人在转、斧头在飞，脚下没东西」，
      * 尺子上整段峰值在 2400~2560 之间反复横跳，正好卡在 2500 下界上。
@@ -4515,6 +4578,37 @@ function lunge(dist) {}
     if (stopping) TIME.stop -= dt;
     const step = TIME.pause ? 0 : (stopping ? 0 : dt * TIME.scale);
 
+    /* [U13] 随人窗口：把这一发已经摆出去的东西整体跟着玩家平移。
+     *
+     * 用**增量**而不是「位置 = 玩家 + 偏移」：
+     *   · 增量对「自己的 updater 每帧重设 position」的 mesh 也成立
+     *     （只要它重设的是相对量，就会被我们这一下带上）；
+     *   · 晚到的 mesh（delay / seq 里才建）出生时玩家已经在新位置，
+     *     所以它从出生那一刻起再增量，不会被重复推两次。
+     * 同时把 ctx.x / ctx.z 改成当前位置：实验室里所有
+     * new THREE.Vector3(c.x, 0, c.z) 的发射器（vortex / suck 这类每帧
+     * 从中心冒粒子的）才会从**人现在站的地方**冒，而不是起手的地方。
+     *
+     * ctx.aim 不动 —— 它本来就是 Game.playerGroup.position 的活引用，
+     * 改了反而会把「这一下打向哪」抹掉。 */
+    if (_ride) {
+      const px = ACT.player.pos.x, pz = ACT.player.pos.z;
+      const dx = px - _ride.lastX, dz = pz - _ride.lastZ;
+      if (dx || dz) {
+        const objs = _ride.objs;
+        for (let i = 0; i < objs.length; i++) {
+          const o = objs[i];
+          if (!o) continue;
+          o.position.x += dx;
+          o.position.z += dz;
+        }
+        if (_ride.ctx) { _ride.ctx.x = px; _ride.ctx.z = pz; }
+        _ride.lastX = px; _ride.lastZ = pz;
+      }
+      _ride.t += step;
+      if (_ride.t >= _ride.dur) _ride = null;
+    }
+
     for (let i = updaters.length - 1; i >= 0; i--) {
       const u = updaters[i];
       if (u.dead) { updaters.splice(i, 1); continue; }
@@ -4572,8 +4666,22 @@ function lunge(dist) {}
     curElem = (em && em.key) || 'phys';
     curElem2 = (em && em.sub) || '';
     stanceIdx = (G && typeof G.bladeStance === 'function') ? (Number(G.bladeStance()) || 0) : 0;
+    /* [U13] 新的一发开播 → 上一次的随人窗口结束（玩家技能是串行的）。
+     * 本次这一发如果属于「自身光环类」，开一个窗口把它的 mesh 挂上。 */
+    _ride = null;
+    const rideDur = FOLLOW[key];
+    const c0 = ctx || {};
+    if (rideDur) {
+      c0.x = ACT.player.pos.x;
+      c0.z = ACT.player.pos.z;
+      _ride = {
+        ctx: c0, dur: rideDur, t: 0,
+        lastX: ACT.player.pos.x, lastZ: ACT.player.pos.z,
+        objs: []
+      };
+    }
     try {
-      fn(ctx || {});
+      fn(c0);
       return true;
     } catch (e) {
       /* 特效不该把主循环带崩 —— 但也不能静默：留一条日志，探针能抓到 */
@@ -4602,6 +4710,9 @@ function lunge(dist) {}
     }
     _live.length = 0;
     updaters.length = 0;
+    /* [U13] 换图时随人窗口也要清：留着它下一发会把新特效按上一张图的
+     * 位移推一下（位置偏一截，且只在「换图后第一发」出现，最难查）。 */
+    _ride = null;
     for (const k in POOLS) POOLS[k].update(999);
     /* 贴花是**预分配的 18 个 mesh 的池**，不是"用过的列表" ——
      * 把数组清空会让下一次 FX.decal 拿到 undefined（实测崩在这里）。
