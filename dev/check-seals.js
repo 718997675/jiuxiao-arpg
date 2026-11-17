@@ -232,7 +232,8 @@ ok(packed === null || !!packed, 'pack 可用性探测（不阻塞）');
 const expSrc = fs.readFileSync(path.join(ROOT, 'src/core/save.js'), 'utf8');
 ok(/seals: this\._obj\(s\.seals\) \|\| \{\}/.test(expSrc), '导出白名单含 seals');
 ok(/c\.seals = this\._obj\(c\.seals\) \|\| \{\}/.test(expSrc), 'normalizeDoc 补 seals');
-ok(/bossKilled: \{\}, seals: \{\}/.test(expSrc), '兜底新档带 seals');
+/* [P15] bossIntro 插在 bossKilled 与 seals 之间，断言允许它存在但不许 seals 丢 */
+ok(/bossKilled: \{\}, (bossIntro: \{\}, )?seals: \{\}/.test(expSrc), '兜底新档带 seals');
 
 /* 读档侧：unpack(doc) → flat state。漏了这一行就是「存得进、读不回」——
  * seal-live.js 在浏览器里真的抓到过（刷新后 8 枚变 0 枚），所以必须钉住。 */

@@ -96,7 +96,7 @@ ok(/maybeBossIntro\(e\)/.test(game) && /if \(!this\.maybeBossIntro\(e\)\)/.test(
   '激活点接了 maybeBossIntro，未演出走老逻辑');
 ok(/this\.state\.bossIntro\[cfg\.id\] = 1;[\s\S]{0,120}?this\.save\(\)/.test(game), '开演即落盘（只播一次）');
 ok(/skip = \(typeof Settings[\s\S]{0,180}?skipBossIntro\)/.test(game), '读 skipBossIntro 设置');
-ok(/if \(this\.bossIntro && !this\.bossIntro\.done\) \{[\s\S]{0,200}?tickBossIntro\(raw\)[\s\S]{0,80}?return;/.test(game),
+ok(/if \(this\.bossIntro && !this\.bossIntro\.done\) \{[\s\S]{0,300}?tickBossIntro\([\s\S]{0,60}?\)[\s\S]{0,80}?return;/.test(game),
   'update 冻结闸门（定格世界）');
 ok(/this\.bossIntro && !this\.bossIntro\.done\) \{ this\.skipBossIntro\(\); e\.preventDefault\(\); return; \}/.test(game),
   'keydown 任意键跳过且不放技能');

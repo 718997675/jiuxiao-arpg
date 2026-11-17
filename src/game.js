@@ -2770,6 +2770,8 @@ const Game = {
      * （4fps 会被报成 16fps），那样帧数面板等于骗人，自动降档也会误判。 */
     const real = this.clock.getDelta();
     const raw = Math.min(real, 0.06);
+    /* [P15] update() 只收到 (dt,raw)，演出计时需要真实墙钟（见 update 里的注释） */
+    this._realDt = real;
     this._calls = 0;
     let dt = raw;
     if (this.hitstop > 0) { this.hitstop -= raw * 1000; dt = raw * 0.1; }
@@ -3202,7 +3204,9 @@ const Game = {
      * 玩家移动 / 施法 / 怪物 AI / 掉落全部不结算 —— 演出结束的那一帧才恢复。
      * FX 仍更新，让进演出前已在飞的残影自然收尾（否则会僵在半空）。 */
     if (this.bossIntro && !this.bossIntro.done) {
-      this.tickBossIntro(raw);
+      /* 用真实墙钟而不是夹过的 raw：软件渲染只有 5fps 时 raw 每帧被夹到 60ms，
+       * 3 句 2.4s 的演出会被拖成 10 秒。夹 0.25s 上限只为防切后台回来一次跳完。 */
+      this.tickBossIntro(Math.min(this._realDt || raw, 0.25));
       FX.update(dt);
       return;
     }

@@ -132,7 +132,8 @@ P13 已收口。按 `docs/POLISH-PLAN.md` 四批顺序，第 4 批只剩 **P15�
 
 ## P15 · Boss 战前剧情演绎（2026-11-17 开工 · 🔄 进行中）
 
-> 当前：**P15-1 ~ P15-4 ✅**（intro+UI+game 契约 29/0，存档契约 21/0，smoke 零错误）；P15-5 真机探针进行中。
+> 当前：**P15 全节点 ✅ 已收口并 push 上线**（intro+UI+game 契约 29/0，存档 21/0，真机 17/0，全套回归绿）。
+> **POLISH-PLAN 17 项打磨计划至此全部完成。**
 > 依据 `docs/POLISH-PLAN.md` §P15 + §3 拍板第 5 条：只播一次（落盘）、设置可跳过。
 > main 上直接做，不单开分支。
 
@@ -144,8 +145,35 @@ P13 已收口。按 `docs/POLISH-PLAN.md` 四批顺序，第 4 批只剩 **P15�
 | P15-2 | 存档 + 设置字段 | ✅ | `bossIntro` 落盘四处 + 兜底模板、`skipBossIntro` 设置项 + 重播动作行 | `dev/test-boss-intro-save.js` 21/0 + test-save 79/0 |
 | P15-3 | UI 演出层（黑边 + 字幕） | ✅ | `index.html` #bossIntro（z-index 58、黑边+三类字幕+跳过提示）、`ui.js` open/line/close 三接口 | `test-boss-intro` 15/0（DOM+接口） |
 | P15-4 | `playBossIntro` + 激活接线 | ✅ | `game.js` `maybeBossIntro/startBossIntro/tickBossIntro/skipBossIntro/finishBossIntro/replayBossIntros`、update 冻结闸门、updateCamera 推镜、keydown/click 跳过、换图清场 | `test-boss-intro` 29/0 + smoke ERRORS none |
-| P15-5 | 验收探针 + 截图 | ⬜ | `dev/probe-boss-intro.js` | 首次播/二次不播/冻结/恢复 |
-| P15-6 | 回归 + 台账 + push | ⬜ | 本台账 + POLISH-PLAN + 日志 + 上线 | 全回归 + live |
+| P15-5 | 验收探针 + 截图 | ✅ | `dev/probe-boss-intro.js`（17/0）、`dev/shot-boss-intro.js`（5 张临时目录） | 首播/二次不播/定格/逐句/跳过/跳过设置/重播/换图 + 零报错 + 截图肉眼验收 |
+| P15-6 | 回归 + 台账 + push | ✅ | 本台账 + POLISH-PLAN + 当日日志 + commit + push | 全套回归全绿（见上）+ 上线验证 |
+
+### 回归读数（2026-11-18）
+
+| 检查 | 读数 |
+|---|---|
+| test-boss-intro / test-boss-intro-save | **29/0** / **21/0** |
+| probe-boss-intro（真机） | **17/0** |
+| smoke / test-save / check-seals | ERRORS none / 79/0 / 111/0 |
+| test-quest / quest-ref / zone-check / zone-density | 全绿 |
+| test-vfx-kit / vfx-dsl / elemfx / combo / p13 / sfx-follow | 全绿 |
+| mobile-layout | 全绿（6 视口） |
+| 截图 | `/tmp/p15-shot/s1~s5.png`，黑边 / 三类字幕配色 / 跳过提示肉眼到位 |
+
+### P15 踩的坑（真机才暴露）
+
+1. **演出计时不能用夹过的 `raw`**：软件渲染只有 ~5fps 时 `raw = min(real,0.06)` 每帧只走 60ms，
+   2.4s 的演出被拖成 10 秒。改从 `tickFrame` 传真实墙钟 `_realDt`（夹 0.25s 防切后台跳变）。
+   `real` 不在 `update()` 作用域，必须先存到 `this._realDt`。
+2. **"任意键跳过"与"按移动键验冻结"冲突**：探针里派发 `keydown w` 想验输入冻结，
+   结果那一下直接把演出跳过了。冻结的正确验法是「不按键时玩家坐标随时间不变」；
+   「按键跳过」单独一条验。
+3. **等字幕推进用轮询不要死等毫秒**：帧率不稳时 950ms 可能还在第 1 句。按 AGENTS.md §7.3
+   用 `until(状态出现)` 带上限，读数稳定。
+4. **截图脚本不能经过 Game 状态机**：主循环会继续 `tickBossIntro`，截图时句子已漂移。
+   改直接调 `UI.bossIntroOpen/Line` 驱动视觉层，才能定格在指定句。
+5. **新增进度字段会撞既有契约的死正则**：`check-seals` 断言 `/bossKilled: \{\}, seals: \{\}/`，
+   插入 `bossIntro` 后红。属于契约过时，改成可选匹配（允许中间有 bossIntro、seals 仍必须在）。
 
 ### 设计口径（开工前拍板，必读）
 
@@ -179,3 +207,5 @@ P13 已收口。按 `docs/POLISH-PLAN.md` 四批顺序，第 4 批只剩 **P15�
 | 2026-10-27 | 三条线单向合并到 main：`act` 优先，`skill` 次之 | 见 `AGENTS.md` §2.3 |
 | 2026-10-27 | 历史分支 6 条全删（dev-v2 / dev-v3 / art-modeling / 旧 skill-refactor / 两个 fix） | 都是 v1.0.x 旧线，落后 main 22 个提交，无合并价值 |
 | 2026-11-17 | P13 只做第一层（地标+天气+主色），第二层骨架变体先不做 | 用户在设计稿拍板；先出可见收益，骨架变体留到验收通过后再评估 |
+| 2026-11-18 | P15 字幕取 0.8s/句，不取设计稿的 1.2s/句 | 设计稿「1.2s × 3 句 = 3.6s」与验收线「2.5s 后开打」互斥；取验收线，普通 3 句 2.4s、卷末 5 句 4.0s，任意键跳过 |
+| 2026-11-18 | P15 首遇落盘时，跳过也算"已看" | 避免"演出中跳过 → 下次又播"的尾巴；想重看走设置里的重播动作 |
