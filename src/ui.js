@@ -37,6 +37,8 @@ const UI = {
     this.buildClassCards();
     this.buildDiffCards();
     this.bindEvents();
+    /* [P17] 日志折叠状态（localStorage 记忆）+ 把手绑定 */
+    try { this.initLog(); } catch (e) { }
     // 有任意角色位可读，就亮出「继续前世（含档位与等级）」
     try {
       if (typeof SaveManager !== 'undefined' && typeof SaveUI !== 'undefined') SaveUI.syncStart();
@@ -4829,14 +4831,86 @@ const UI = {
     setTimeout(() => t.remove(), 2500);
   },
 
-  log(text, cls = '') {
+  /* ============================================================
+   * [P17] 日志 = 消息流（不是飘字）
+   *
+   * 以前是「只留 6 条、7 秒后自动删」的一次性飘字：升级、掉落、任务完成
+   * 这些**想回头确认**的信息根本来不及看。现在按消息流设计 ——
+   * 因为用户明确说过「这是为后面多人游戏做基础」。
+   *
+   * 数据层：`UI.logs` 环形缓冲，200 条封顶，每条 `{ t, text, cls, channel, at }`。
+   * `channel` 预留 system / combat / loot / quest / social —— 联机时 `social`
+   * 就是聊天频道，现在只填 system。
+   *
+   * 视图层：`#logList` 固定高度 + 可滚动，新消息插到底部；
+   * **玩家往上翻历史时不自动跳回底部**（`scrollTop + clientHeight >= scrollHeight - 8`
+   * 才跟随）。这一条是「消息流」和「飘字」的分界线：会自己跳的列表没法读。
+   * ============================================================ */
+  logs: [],
+  LOG_MAX: 200,
+  _logFold: false,
+
+  /* 时间戳：`[HH:MM:SS]`。用本地时间，玩家对照「我几点掉的」才有意义。 */
+  _logTime(d) {
+    const two = v => (v < 10 ? '0' : '') + v;
+    return two(d.getHours()) + ':' + two(d.getMinutes()) + ':' + two(d.getSeconds());
+  },
+
+  _logEsc(s) {
+    return String(s).replace(/[&<>"]/g, c => (
+      { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]
+    ));
+  },
+
+  initLog() {
+    const fold = document.getElementById('logFold');
+    if (fold && !fold._bound) {
+      fold._bound = true;
+      fold.addEventListener('click', () => this.setLogOpen(!this._logFold));
+    }
+    let open = false;
+    try { open = localStorage.getItem('jx_logOpen') === '1'; } catch (e) { }
+    this.setLogOpen(open);
+  },
+
+  setLogOpen(v) {
+    this._logFold = !!v;
     const box = document.getElementById('log');
+    const fold = document.getElementById('logFold');
+    if (box) box.classList.toggle('fold-open', this._logFold);
+    if (fold) fold.textContent = (this._logFold ? '▾ 日志' : '▴ 日志');
+    try { localStorage.setItem('jx_logOpen', this._logFold ? '1' : '0'); } catch (e) { }
+    /* 展开之后贴到底：玩家点开就是为了看最新的几条 */
+    if (this._logFold) {
+      const list = document.getElementById('logList');
+      if (list) list.scrollTop = list.scrollHeight;
+    }
+  },
+
+  /* `channel` 默认 `system` —— 现有所有调用点都是「升级 / 掉落 / 任务 / 首领」
+   * 这类高价值低频信息，不需要逐个改。战斗数字走飘字，不经过这里。 */
+  log(text, cls = '', channel = 'system') {
+    if (channel === 'combat') return;          // 降噪：战斗频道只进飘字
+    const rec = { t: this._logTime(new Date()), text: String(text), cls: cls, channel: channel, at: Date.now() };
+    this.logs.push(rec);
+    if (this.logs.length > this.LOG_MAX) this.logs.splice(0, this.logs.length - this.LOG_MAX);
+    this._appendLog(rec);
+  },
+
+  _appendLog(rec) {
+    const list = document.getElementById('logList');
+    if (!list) return;
+    /* **先量再插**：插完再量的话 scrollHeight 已经变大，
+     * 「原本贴底」的判断永远成立，玩家往上翻就再也拉不回来。 */
+    const nearBottom = list.scrollTop + list.clientHeight >= list.scrollHeight - 8;
     const d = document.createElement('div');
-    d.className = cls; d.textContent = text;
-    box.appendChild(d);
-    while (box.children.length > 6) box.removeChild(box.firstChild);
-    setTimeout(() => { d.style.transition = 'opacity 1s'; d.style.opacity = 0; }, 6000);
-    setTimeout(() => d.remove(), 7200);
+    d.className = rec.cls || '';
+    d.innerHTML = '<span class="lt">[' + rec.t + ']</span>' + this._logEsc(rec.text);
+    list.appendChild(d);
+    /* DOM 也跟着封顶：缓冲 200 条，DOM 留 200 条就够，
+     * 不封的话一局几小时能堆上千个节点。 */
+    while (list.children.length > this.LOG_MAX) list.removeChild(list.firstChild);
+    if (nearBottom) list.scrollTop = list.scrollHeight;
   },
 
   /* 键位提示已收进「说明」页，这里保留接口但不再依赖 HUD 元素存在 */

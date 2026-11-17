@@ -322,10 +322,31 @@
     color:#ffe9a8;background:rgba(8,8,12,.82);border:1px solid var(--line);padding:6px 16px;display:none;
     text-shadow:0 1px 4px #000;box-shadow:0 4px 16px rgba(0,0,0,.6)}
   #interact b{color:#fff;border:1px solid var(--gold);padding:0 5px;margin-right:6px;font-weight:500}
+  /* [P17] 日志 = 消息流。`--logH` 是「显示几行」的唯一开关：
+     收起 4 行、展开 10 行，点标题栏切换（状态记在 localStorage）。
+     用高度而不是 `nth-child(n+5)` 隐藏 —— DOM 顺序是**旧的在上、新的在下**，
+     按 nth-child 裁会把最新那几条裁掉（移动端原来就是这么错的）。 */
   #log{position:absolute;left:20px;bottom:100px;width:330px;font-size:11.5px;line-height:1.75;color:#a8a090;
-    text-shadow:0 1px 3px #000;pointer-events:none}
-  #log div{animation:fadein .3s;opacity:.9}
-  #log .good{color:#8ae0a0}.log .bad{color:#e07a6a}
+    text-shadow:0 1px 3px #000;pointer-events:auto;--logH:calc(4 * 1.75em + 8px)}
+  #log.fold-open{--logH:calc(10 * 1.75em + 8px)}
+  #logList{max-height:var(--logH);overflow-y:auto;overflow-x:hidden;padding-right:2px;
+    scrollbar-width:thin;scrollbar-color:#4a4336 transparent}
+  #logList::-webkit-scrollbar{width:4px}
+  #logList::-webkit-scrollbar-thumb{background:#4a4336;border-radius:2px}
+  #logList div{animation:fadein .3s;opacity:.9;word-break:break-word}
+  #logList .lt{color:#5e594e;margin-right:5px;font-variant-numeric:tabular-nums}
+  #logList .good{color:#8ae0a0}
+  #logList .bad{color:#e07a6a}
+  #logList .lv{color:#ffd479}
+  #logList .info{color:#9ec8f0}
+  #logInput{width:100%;margin-top:3px;background:rgba(8,8,12,.5);border:1px solid #3a3428;border-radius:2px;
+    color:#7a7466;font-family:inherit;font-size:10.5px;padding:2px 6px;outline:none;display:none}
+  #log.fold-open #logInput{display:block}
+  #logInput::placeholder{color:#5e594e}
+  /* 折叠把手：贴在列表上方的一条细线，点一下切换 */
+  #logFold{position:absolute;left:0;top:-14px;font-size:9.5px;color:#5e594e;letter-spacing:1px;
+    cursor:pointer;user-select:none;padding:1px 4px;background:rgba(8,8,12,.45);border-radius:2px}
+  #logFold:hover{color:#a89878}
   #toasts{position:absolute;left:50%;top:96px;transform:translateX(-50%);display:flex;flex-direction:column;
     align-items:center;gap:6px;pointer-events:none}
   .toast{font-size:13px;letter-spacing:3px;color:#ffe9a8;background:rgba(10,9,6,.88);border:1px solid var(--line);
@@ -2198,8 +2219,12 @@
   body.touch.wb-has-boss #wbTop{top:calc(var(--bossbar-bottom,60px) + 4px)}
   body.touch.wb-has-boss #toasts{top:calc(var(--bossbar-bottom,60px) + 38px)}
   body.touch #goldRow{font-size:11px;gap:10px}
-  body.touch #log{left:10px;top:64px;bottom:auto;width:min(240px,44vw);font-size:10.5px;line-height:1.6}
-  body.touch #log div:nth-child(n+5){display:none}
+  body.touch #log{left:10px;top:64px;bottom:auto;width:min(240px,44vw);font-size:10.5px;line-height:1.6;
+    --logH:calc(4 * 1.6em + 8px)}
+  body.touch #log.fold-open{--logH:calc(8 * 1.6em + 8px)}
+  /* [P17] 原来这里是 `#log div:nth-child(n+5){display:none}` —— DOM 顺序是
+   * 「旧的在上、新的在下」，按 nth-child 裁掉第 5 条之后，等于把**最新的消息**
+   * 全藏了，移动端只能看到最老的四条。改成按高度裁（`--logH`）就对了。 */
   body.touch #toasts{top:66px;max-width:82vw}
   body.touch .toast{font-size:12px;padding:6px 16px;letter-spacing:2px;text-align:center;max-width:82vw}
   body.touch .toast.lv{font-size:14px;letter-spacing:3px}
@@ -2717,7 +2742,14 @@
   <div id="actionbar"></div>
   <div id="interact"></div>
   <div id="toasts"></div>
-  <div id="log"></div>
+  <!-- [P17] 日志改成消息流：上面是可滚动的记录列表，下面是输入框（联机预留）。
+       以前是「只留 6 条、7 秒自动删」的飘字，升级 / 掉落 / 任务这些
+       「想回头确认」的信息根本来不及看。 -->
+  <div id="log">
+    <span id="logFold" title="展开 / 收起">▴ 日志</span>
+    <div id="logList"></div>
+    <input id="logInput" readonly placeholder="（多人模式开放后可用）" autocomplete="off" spellcheck="false">
+  </div>
   <div id="fpsHud"></div>
 
   <!-- 无尽试炼 · 左上角战况 -->
