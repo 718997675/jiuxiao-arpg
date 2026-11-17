@@ -25,6 +25,17 @@ slug_of() { printf '%s' "$1" | sed -E 's#^(feat|fix|docs|exp|preview|chore)/##' 
 ledger_of() { git show "$1:docs/status/$(slug_of "$1").md" 2>/dev/null; }
 CUR=$(git rev-parse --abbrev-ref HEAD)
 
+# ---------- 数状态列 ----------
+# 本机 Git Bash 的 grep 在 C.UTF-8 下**匹配不了 4 字节 UTF-8 字符**：
+# 模式里带 `🔄`（U+1F504）就永远 0 命中，而 3 字节的 ✅⬜⏸❌ 正常。
+# 后果是「进行中」的节点被整行漏掉、总数悄悄少一行 —— M7.3 就因此在
+# 13/18 上挂了很久（真值是 14/19）。LC_ALL=C 走字节模式后 5 种状态全中。
+# 别改成直接写字形，会复发。
+STATUS_RE='^\|[^|]+\|[^|]+\| *(✅|🔄|⬜|⏸|❌)'
+DONE_RE='^\|[^|]+\|[^|]+\| *✅'
+count_status() { printf '%s\n' "$1" | LC_ALL=C grep -cE "$STATUS_RE" || true; }
+count_done()   { printf '%s\n' "$1" | LC_ALL=C grep -cE "$DONE_RE" || true; }
+
 # ---------- 完整显示某条线 ----------
 case "${1:-}" in
   ""|--check) ;;
@@ -72,8 +83,8 @@ for b in $LIST; do
     continue
   fi
 
-  total=$(printf '%s\n' "$c" | grep -cE '^\|[^|]+\|[^|]+\| *(✅|🔄|⬜|⏸|❌)' || true)
-  done_n=$(printf '%s\n' "$c" | grep -cE '^\|[^|]+\|[^|]+\| *✅' || true)
+  total=$(count_status "$c")
+  done_n=$(count_done "$c")
   cur=$(printf '%s\n' "$c" | grep -m1 '^> 当前：' | sed 's/^> 当前：//' || true)
   [ -z "$cur" ] && cur="（台账缺「> 当前：」行）"
 
@@ -120,8 +131,8 @@ if [ -n "$EXTRAS" ]; then
   echo "  ${B}专题台账${N} ${DIM}（当前分支上的附加任务线，不属于任何分支）${N}"
   for s in $EXTRAS; do
     c=$(cat "docs/status/$s.md" 2>/dev/null || true)
-    total=$(printf '%s\n' "$c" | grep -cE '^\|[^|]+\|[^|]+\| *(✅|🔄|⬜|⏸|❌)' || true)
-    done_n=$(printf '%s\n' "$c" | grep -cE '^\|[^|]+\|[^|]+\| *✅' || true)
+    total=$(count_status "$c")
+    done_n=$(count_done "$c")
     cur=$(printf '%s\n' "$c" | grep -m1 '^> 当前：' | sed 's/^> 当前：//' || true)
     [ -z "$cur" ] && cur="（台账缺「> 当前：」行）"
     printf '  %-26s %-9s %s\n' "$s" "${done_n}/${total}" "$cur"
