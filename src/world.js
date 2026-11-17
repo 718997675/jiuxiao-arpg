@@ -597,6 +597,247 @@ function makePillar(h = 7, broken = false, col = 0x8a8a92) {
   return g;
 }
 
+/* ---------------- [P13] 地图风貌：地标 + 天气 ----------------
+ * 设计依据 docs/P13-FENGMAO-DESIGN.md，用户 2026-11-17 拍板做第一层。
+ * 三条铁律：
+ *   ① 只加视觉，不改 zone 拓扑、不改刷怪、不改数值；
+ *   ② 地标不带 collider（放必经区中心，玩家从中间穿过也不卡），不加 occluder；
+ *   ③ 天气一个 Points = 一次 draw call，逐帧只写 y（≤300 粒），换图随 world 销毁。 */
+
+/* 地标：23 种类型，每种 3~6 个 mesh 的低模几何，返回 Group（底部贴地 y≈0）。 */
+function buildLandmark(type, anims) {
+  const g = new THREE.Group();
+  const L = (geo, mat, x, y, z, rx, ry, rz) => {
+    const m = mesh(geo, mat, x, y, z, g);
+    if (rx) m.rotation.x = rx; if (ry) m.rotation.y = ry; if (rz) m.rotation.z = rz;
+    return m;
+  };
+  const stone = M(0x8a8078, { rough: 0.95 });
+  const dark = M(0x4a3e38, { rough: 0.95 });
+  const bone = M(0xcac0a8, { rough: 0.9 });
+  const metal = M(0x9a8a72, { rough: 0.5, metal: 0.5 });
+  const jade = M(0x8fc4bd, { rough: 0.4, metal: 0.2 });
+  const glow = (c, o) => new THREE.MeshBasicMaterial({
+    color: c, transparent: true, opacity: o || 0.9,
+    blending: THREE.AdditiveBlending, depthWrite: false
+  });
+  switch (type) {
+    /* 活物系 */
+    case 'vinegate': /* 枯藤门 */
+      L(boxGeo(0.7, 5.2, 0.7), stone, -2.4, 2.6, 0); L(boxGeo(0.7, 5.2, 0.7), stone, 2.4, 2.6, 0);
+      L(boxGeo(5.6, 0.5, 0.7), stone, 0, 5.2, 0);
+      L(torusGeo(2.2, 0.16, 5, 12), dark, 0, 2.8, 0, 0, Math.PI / 2, 0.2);
+      L(sphGeo(0.32, 5), glow(0x9ade7a, 0.8), 0, 5.6, 0);
+      break;
+    case 'bonerib': /* 兽骨架 · 巨型肋骨拱 */
+      for (let i = 0; i < 5; i++) {
+        const x = (i - 2) * 0.9;
+        L(cylGeo(0.16, 0.22, 4.6 - Math.abs(i - 2) * 0.7, 5), bone, x, 2.1, 0, 0, 0, (i - 2) * 0.16);
+      }
+      L(boxGeo(6.2, 0.4, 0.6), bone, 0, 0.3, 0);
+      L(coneGeo(0.9, 1.8, 6), bone, 0, 4.2, 0, 0, 0, Math.PI);
+      break;
+    case 'bonetower': /* 骨塔 · 层叠头骨 */
+      L(cylGeo(2.0, 2.4, 1.0, 8), dark, 0, 0.5, 0);
+      for (let i = 0; i < 3; i++) L(sphGeo(1.5 - i * 0.32, 6), bone, 0, 1.6 + i * 1.5, 0);
+      L(coneGeo(1.0, 1.6, 6), bone, 0, 6.4, 0);
+      break;
+    case 'bridge': /* 铁索桥 · 断崖 */
+      L(boxGeo(7.0, 0.3, 1.8), stone, 0, 1.4, 0);
+      L(boxGeo(0.5, 2.6, 0.5), stone, -3.3, 1.3, 0); L(boxGeo(0.5, 2.6, 0.5), stone, 3.3, 1.3, 0);
+      L(cylGeo(0.1, 0.1, 7.0, 5), metal, 0, 2.5, -0.9, 0, 0, Math.PI / 2);
+      L(cylGeo(0.1, 0.1, 7.0, 5), metal, 0, 2.5, 0.9, 0, 0, Math.PI / 2);
+      break;
+    /* 熔铸系 */
+    case 'forge': /* 断熔炉 */
+      L(cylGeo(1.9, 2.2, 2.4, 8), dark, 0, 1.2, 0);
+      L(boxGeo(2.4, 0.5, 2.4), stone, 0, 2.5, 0, 0, 0, 0.12);
+      L(cylGeo(0.7, 0.9, 1.4, 7), metal, 2.0, 0.9, 0, 0, 0, 0.9);
+      L(sphGeo(0.7, 6), glow(0xff7a2a, 0.85), 0, 2.9, 0);
+      break;
+    case 'lavaColumn': /* 冷却岩浆柱 */
+      L(boxGeo(4.4, 0.4, 3.6), dark, 0, 0.2, 0);
+      L(cylGeo(0.7, 1.1, 4.6, 6), dark, -1.2, 2.5, 0.4, 0.08, 0, 0.05);
+      L(cylGeo(0.5, 0.9, 3.4, 6), dark, 1.1, 1.9, -0.6, 0, 0, -0.1);
+      L(cylGeo(0.35, 0.6, 2.2, 6), dark, 1.7, 1.3, 1.0);
+      L(sphGeo(0.3, 5), glow(0xff5a20, 0.7), -1.2, 4.9, 0.4);
+      break;
+    case 'brazier': /* 祭火盆 */
+      L(cylGeo(1.5, 0.9, 0.7, 8), metal, 0, 3.0, 0);
+      for (let i = 0; i < 3; i++) {
+        const a = i / 3 * Math.PI * 2;
+        L(cylGeo(0.16, 0.2, 3.0, 5), metal, Math.cos(a) * 0.9, 1.5, Math.sin(a) * 0.9, 0, 0, Math.cos(a) * 0.12);
+      }
+      L(coneGeo(0.8, 1.8, 6), glow(0xff8a30, 0.85), 0, 4.1, 0);
+      break;
+    case 'altar': /* 焚天坛 · 环形阶梯 */
+      for (let i = 0; i < 3; i++) L(cylGeo(3.2 - i * 0.7, 3.4 - i * 0.7, 0.5, 10), stone, 0, 0.25 + i * 0.5, 0);
+      L(cylGeo(0.7, 0.9, 2.2, 8), dark, 0, 2.4, 0);
+      L(coneGeo(0.7, 1.6, 6), glow(0xff9a3a, 0.9), 0, 4.2, 0);
+      break;
+    /* 渡葬系 */
+    case 'boneCol': /* 骨廊柱 · 两侧肋骨列柱 */
+      for (let s of [-1, 1]) for (let i = 0; i < 2; i++)
+        L(cylGeo(0.22, 0.3, 4.2, 5), bone, s * 2.6, 2.1, (i - 0.5) * 2.4, 0, 0, s * 0.1);
+      L(boxGeo(6.0, 0.4, 0.5), bone, 0, 4.4, 0);
+      break;
+    case 'brokenBridge': /* 残桥 · 三截 */
+      L(boxGeo(2.6, 0.4, 2.0), stone, -2.6, 1.2, 0, 0, 0, 0.05);
+      L(boxGeo(2.0, 0.4, 2.0), stone, 0, 0.9, 0.2, 0, 0.1, -0.08);
+      L(boxGeo(2.4, 0.4, 2.0), stone, 2.7, 1.4, -0.2, 0, 0, 0.1);
+      L(boxGeo(0.5, 3.0, 0.5), stone, -3.6, 1.5, 0);
+      L(boxGeo(0.5, 2.4, 0.5), stone, 3.7, 1.2, 0);
+      break;
+    case 'lanternRow': /* 引魂灯列 */
+      for (let i = 0; i < 4; i++) {
+        const x = (i - 1.5) * 1.8;
+        L(cylGeo(0.07, 0.08, 2.4, 5), dark, x, 1.2, 0);
+        L(sphGeo(0.36, 6), glow(0x9ad8ff, 0.85), x, 2.6 + (i % 2) * 0.4, 0);
+      }
+      L(boxGeo(7.2, 0.3, 0.5), dark, 0, 0.15, 0);
+      break;
+    case 'stele': /* 渡口石碑 */
+      L(boxGeo(2.6, 0.5, 1.4), stone, 0, 0.25, 0);
+      L(boxGeo(1.5, 3.6, 0.5), stone, 0, 2.3, 0, 0, 0, 0.03);
+      L(boxGeo(1.0, 0.16, 0.08), glow(0xd8c890, 0.7), 0, 2.8, 0.3);
+      L(boxGeo(0.8, 0.16, 0.08), glow(0xd8c890, 0.7), 0, 2.2, 0.3);
+      break;
+    /* 兵刃系 */
+    case 'sword': /* 半埋巨剑 */
+      L(boxGeo(1.3, 5.2, 0.32), metal, 0, 2.4, 0, 0, 0, 0.22);
+      L(boxGeo(2.6, 0.35, 0.5), metal, 0.55, 4.5, 0, 0, 0, 0.22);
+      L(cylGeo(0.22, 0.22, 1.4, 6), dark, 1.1, 5.3, 0, 0, 0, 0.22);
+      L(sphGeo(0.32, 6), glow(0xaad8ff, 0.75), 1.25, 6.0, 0);
+      break;
+    case 'swordForest': /* 剑碑林 */
+      for (let i = 0; i < 5; i++) {
+        const x = (i - 2) * 0.9, h = 2.6 + (i % 3) * 0.6;
+        L(boxGeo(0.34, h, 0.2), metal, x, h / 2, (i % 2) * 0.6, 0, i * 0.2, (i - 2) * 0.06);
+      }
+      L(sphGeo(0.24, 5), glow(0xaad8ff, 0.7), 0, 3.6, 0);
+      break;
+    case 'ruinGate': /* 断城门 · 雪山残关 */
+      L(boxGeo(1.3, 5.0, 1.3), stone, -2.8, 2.5, 0, 0, 0, 0.03);
+      L(boxGeo(1.1, 3.4, 1.1), stone, 2.8, 1.7, 0, 0, 0, -0.06);
+      L(boxGeo(4.0, 0.7, 1.0), stone, -1.0, 4.8, 0, 0, 0, 0.08);
+      L(boxGeo(0.9, 0.6, 1.2), stone, -2.8, 5.4, 0);
+      break;
+    case 'skyBridge': /* 云海浮空断桥 */
+      L(boxGeo(6.4, 0.35, 1.6), jade, 0, 3.4, 0);
+      L(coneGeo(1.6, 2.2, 6), stone, -3.2, 1.6, 0, 0, 0, Math.PI);
+      L(coneGeo(1.4, 1.8, 6), stone, 3.1, 1.8, 0, 0, 0, Math.PI);
+      L(sphGeo(0.5, 6), glow(0xcfe8ff, 0.7), 0, 4.0, 0);
+      break;
+    /* 天象系 */
+    case 'jadeStep': /* 破碎玉阶 */
+      for (let i = 0; i < 3; i++) L(boxGeo(3.4 - i * 0.5, 0.4, 1.8), jade, (i - 1) * 0.5, 0.3 + i * 0.8, (i - 1) * 1.0, 0, i * 0.12, 0);
+      L(boxGeo(0.8, 0.5, 0.8), jade, 1.8, 0.5, -1.4, 0, 0.3, 0.5);
+      L(sphGeo(0.3, 5), glow(0xa8fff0, 0.7), 0, 3.2, 0);
+      break;
+    case 'meteor': /* 陨石坑 */
+      L(torusGeo(2.6, 0.5, 6, 14), dark, 0, 0.3, 0, Math.PI / 2, 0, 0);
+      L(sphGeo(1.3, 7), dark, 0, 0.9, 0);
+      L(sphGeo(0.7, 6), glow(0xffc86a, 0.9), 0, 1.7, 0);
+      L(coneGeo(0.5, 1.4, 5), glow(0xff9a4a, 0.6), 0, 2.8, 0, 0, 0, Math.PI);
+      break;
+    case 'mirrorStele': /* 镜面方碑 */
+      L(boxGeo(2.6, 0.5, 1.6), dark, 0, 0.25, 0);
+      L(boxGeo(1.6, 4.2, 0.6), dark, 0, 2.4, 0, 0, 0, 0.02);
+      L(boxGeo(1.3, 3.4, 0.08), glow(0x9fb4ff, 0.55), 0, 2.4, 0.36);
+      L(boxGeo(0.7, 0.7, 0.08), glow(0xe0e8ff, 0.75), 0, 3.3, 0.42);
+      break;
+    case 'mirrorRing': /* 悬空镜环 */
+      const ring = L(torusGeo(2.4, 0.22, 6, 18), jade, 0, 3.6, 0, 0, 0, 0.14);
+      L(torusGeo(1.5, 0.14, 5, 14), glow(0xbfa8ff, 0.6), 0, 3.6, 0, 0.4, 0.6, 0);
+      L(cylGeo(0.9, 1.2, 0.5, 8), dark, 0, 0.25, 0);
+      L(sphGeo(0.4, 6), glow(0xe0d0ff, 0.8), 0, 3.6, 0);
+      if (anims) anims.push(a => { ring.rotation.y = a * 0.18; });
+      break;
+    case 'skyAltar': /* 悬空祭坛 */
+      L(cylGeo(2.6, 2.2, 0.6, 10), jade, 0, 3.4, 0);
+      L(cylGeo(0.9, 1.2, 1.6, 8), dark, 0, 4.4, 0);
+      for (let i = 0; i < 3; i++) {
+        const a = i / 3 * Math.PI * 2;
+        L(boxGeo(0.6, 0.6, 0.6), jade, Math.cos(a) * 3.6, 2.2 + i * 0.3, Math.sin(a) * 3.6, 0, a, 0.2);
+      }
+      L(sphGeo(0.5, 6), glow(0xd8c8ff, 0.8), 0, 5.6, 0);
+      break;
+    case 'heavenGate': /* 残关门 · 破碎天门 */
+      L(boxGeo(1.1, 5.6, 1.1), stone, -2.6, 2.8, 0, 0, 0, 0.02);
+      L(boxGeo(1.1, 4.4, 1.1), stone, 2.6, 2.2, 0, 0, 0, -0.04);
+      L(boxGeo(5.8, 0.6, 1.0), stone, 0, 5.4, 0, 0, 0, 0.04);
+      L(boxGeo(0.9, 0.7, 0.12), glow(0xd8e8ff, 0.8), 0, 3.6, 0.6);
+      break;
+    case 'chaosCore': /* 混沌核 */
+      L(cylGeo(2.2, 2.6, 0.8, 8), dark, 0, 0.4, 0);
+      L(sphGeo(1.2, 8), glow(0xb860ff, 0.75), 0, 2.4, 0);
+      const c1 = L(torusGeo(2.0, 0.16, 5, 16), glow(0xe0a8ff, 0.6), 0, 2.4, 0);
+      const c2 = L(torusGeo(2.0, 0.16, 5, 16), glow(0x9a7aff, 0.6), 0, 2.4, 0, Math.PI / 2, 0, 0);
+      if (anims) anims.push(a => { c1.rotation.x = a * 0.3; c2.rotation.z = -a * 0.24; });
+      break;
+    default: /* 未登记的类型：一个中性石堆，绝不留空 */
+      L(boxGeo(2.4, 0.5, 2.0), stone, 0, 0.25, 0);
+      L(cylGeo(0.9, 1.2, 2.6, 7), stone, 0, 1.5, 0);
+      L(sphGeo(0.4, 6), glow(0xb8c8e8, 0.7), 0, 3.0, 0);
+  }
+  return g;
+}
+
+/* 天气：13 种类型，一个 Points = 一次 draw call。逐帧只写 position.y（≤300 粒）。 */
+const P13_WEATHER = {
+  snow:      { n: 260, col: 0xe8f2ff, size: 0.55, hi: [4, 20], fall: 1.6, add: false, op: 0.85, spin: 0.02 },
+  leaves:    { n: 200, col: 0xd6a24a, size: 0.6, hi: [2, 16], fall: 1.0, add: false, op: 0.9, spin: 0.04 },
+  rain:      { n: 280, col: 0x8ab4d8, size: 0.3, hi: [3, 18], fall: 8.0, add: false, op: 0.7, spin: 0.01 },
+  rainHeavy: { n: 300, col: 0x7aa0c8, size: 0.32, hi: [3, 18], fall: 9.5, add: false, op: 0.78, spin: 0.01 },
+  fog:       { n: 140, col: 0xb8cdd0, size: 2.2, hi: [0.6, 4], fall: 0, add: false, op: 0.22, spin: 0.015 },
+  fogHeavy:  { n: 220, col: 0x8fa8b8, size: 2.6, hi: [0.6, 5], fall: 0, add: false, op: 0.3, spin: 0.01 },
+  cloud:     { n: 160, col: 0xdce8f4, size: 2.8, hi: [2, 10], fall: 0, add: false, op: 0.26, spin: 0.01 },
+  ember:     { n: 220, col: 0xff9a4a, size: 0.42, hi: [1, 12], fall: -2.4, add: true, op: 0.85, spin: 0.03 },
+  ash:       { n: 240, col: 0x9a8e82, size: 0.4, hi: [2, 18], fall: 1.1, add: false, op: 0.55, spin: 0.02 },
+  swordQi:   { n: 200, col: 0xa8d8ff, size: 0.34, hi: [1, 14], fall: 0, add: true, op: 0.7, spin: 0.05 },
+  voidDust:  { n: 200, col: 0xb49ae8, size: 0.5, hi: [1, 18], fall: 0.35, add: true, op: 0.6, spin: 0.015 },
+  star:      { n: 240, col: 0xd8caff, size: 0.6, hi: [6, 24], fall: 0, add: true, op: 0.75, spin: 0.008 },
+  firefly:   { n: 120, col: 0xc8ff8a, size: 0.5, hi: [1, 6], fall: 0, add: true, op: 0.8, spin: 0.02, blink: true }
+};
+function buildWeather(type, R, anims) {
+  const w = P13_WEATHER[type];
+  if (!w) return null;
+  const n = w.n, geo = new THREE.BufferGeometry(), pos = new Float32Array(n * 3), spd = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    const ang = Math.random() * 6.283, rr = Math.sqrt(Math.random()) * R * 0.95;
+    pos[i * 3] = Math.cos(ang) * rr;
+    pos[i * 3 + 1] = RND(w.hi[0], w.hi[1]);
+    pos[i * 3 + 2] = Math.sin(ang) * rr;
+    spd[i] = w.fall * RND(0.7, 1.3);
+  }
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  const mat = new THREE.PointsMaterial({
+    map: dotTexture(), color: w.col, size: w.size, sizeAttenuation: true,
+    transparent: true, opacity: w.op, depthWrite: false,
+    blending: w.add ? THREE.AdditiveBlending : THREE.NormalBlending
+  });
+  const pts = new THREE.Points(geo, mat);
+  pts.frustumCulled = false;
+  const span = w.hi[1] - w.hi[0];
+  let last = 0;
+  anims.push(a => {
+    let d = a - last; last = a;
+    if (!(d > 0) || d > 0.1) d = 0.016;   /* 首帧 / 切图夹取，避免一次跳一大截 */
+    if (w.fall !== 0) {
+      for (let i = 0; i < n; i++) {
+        let y = pos[i * 3 + 1] - spd[i] * d;
+        if (w.fall > 0 && y < w.hi[0]) y += span;
+        else if (w.fall < 0 && y > w.hi[1]) y -= span;
+        pos[i * 3 + 1] = y;
+      }
+      geo.attributes.position.needsUpdate = true;
+    }
+    pts.rotation.y += w.spin * d;
+    if (w.blink) mat.opacity = w.op * (0.55 + 0.45 * Math.sin(a * 5.5));
+  });
+  return pts;
+}
+
 /* ---------------- M12：区域化工具 ----------------
  * 可走区域 = MAP_ZONES 里所有 zone 的并集（见 src/data/data-maps.js）。
  * 这里负责把「数据上的区域」变成看得见的地面、墙和道具分布。 */
@@ -1429,6 +1670,28 @@ function buildMap(mapId, opts) {
         flame.material.opacity = 0.7 * f + 0.2;
       });
     }
+  }
+
+  /* [P13] 地图风貌：地标 + 天气。数据挂在 MAP_SPECS[mapId]（骨架图才有），
+   * 老图 / 试炼场没有字段就跳过。地标放「入口→首领」必经的 hall/path 区中心，
+   * 不带 collider（玩家穿过不卡），不加 occluder（不遮挡剔除）。 */
+  const fspec = (typeof MAP_SPECS !== 'undefined' && MAP_SPECS) ? MAP_SPECS[mapId] : null;
+  if (fspec && fspec.landmark) {
+    let lz = null;
+    if (zones) {
+      for (const z of zones) if (z.kind === 'hall') { lz = z; break; }
+      if (!lz) for (const z of zones) if (z.kind === 'path') { lz = z; break; }
+    }
+    const fx = cfg.portal ? cfg.portal.x : 0, fz = cfg.portal ? cfg.portal.z : 30;
+    const lx = lz ? lz.x : fx, lz2 = lz ? lz.z : fz - 10;
+    const lm = buildLandmark(fspec.landmark, anims);
+    lm.position.set(lx, 0.02, lz2);
+    lm.userData.p13 = { type: fspec.landmark, mapId: mapId };
+    root.add(lm);
+  }
+  if (fspec && fspec.weather) {
+    const wz = buildWeather(fspec.weather, R, anims);
+    if (wz) { wz.userData.p13 = { type: fspec.weather, mapId: mapId }; root.add(wz); }
   }
 
   // 传送阵

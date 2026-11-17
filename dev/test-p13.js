@@ -25,6 +25,9 @@ for (const f of ['src/data/data-core.js', 'src/data/data-monsters.js', 'src/data
 }
 const MAPS = g('MAPS'), MAP_SPECS = g('MAP_SPECS'), ZONES = g('MAP_ZONES');
 const nextMapInWorld = g('nextMapInWorld');
+const dmaps = fs.readFileSync(path.join(ROOT, 'src/data/data-maps.js'), 'utf8');
+const dworld = fs.readFileSync(path.join(ROOT, 'src/data/data-world.js'), 'utf8');
+const world = fs.readFileSync(path.join(ROOT, 'src/world.js'), 'utf8');
 
 let pass = 0, bad = 0;
 function ok(cond, msg, detail) {
@@ -85,14 +88,40 @@ ok(MAPS.ironpeak.sky === 0x9ab4cc && MAPS.sunset.sky === 0xd08a5a,
   '设计稿写「保留」的图主色没被误改（ironpeak / sunset）',
   { ironpeak: MAPS.ironpeak.sky.toString(16), sunset: MAPS.sunset.sky.toString(16) });
 
-console.log('\n【4】不改 zone 拓扑');
-const dmaps = fs.readFileSync(path.join(ROOT, 'src/data/data-maps.js'), 'utf8');
-const world = fs.readFileSync(path.join(ROOT, 'src/world.js'), 'utf8');
-const archStart = dmaps.indexOf('const ZONE_ARCHETYPES = {');
-const archEnd = dmaps.indexOf('\n};', archStart);
-const arch = dmaps.slice(archStart, archEnd);
-ok(!/variant/.test(arch), 'ZONE_ARCHETYPES 没有 variant（第二层骨架变体按拍板不做）');
-ok(/function buildZones\(/.test(dmaps), 'buildZones 仍是唯一的骨架展开函数');
+console.log('\n【4】源码层：world.js 地标 + 天气接线');
+ok(/function buildLandmark\s*\(/.test(world) && /function buildWeather\s*\(/.test(world),
+  'world.js 定义了 buildLandmark 与 buildWeather');
+const LM = ['vinegate', 'bonerib', 'bonetower', 'bridge', 'forge', 'lavaColumn', 'brazier', 'altar',
+  'boneCol', 'brokenBridge', 'lanternRow', 'stele', 'sword', 'swordForest', 'ruinGate', 'skyBridge',
+  'jadeStep', 'meteor', 'mirrorStele', 'mirrorRing', 'skyAltar', 'heavenGate', 'chaosCore'];
+const missLM = LM.filter(t => !new RegExp("case '" + t + "'").test(world));
+ok(missLM.length === 0, '23 种地标类型全部有 case（含 default 兜底）', missLM);
+ok(/default:/.test(world.slice(world.indexOf('function buildLandmark'), world.indexOf('function buildWeather'))),
+  'buildLandmark 有 default 兜底（未登记类型不留空）');
+const WT = ['snow', 'leaves', 'rain', 'rainHeavy', 'fog', 'fogHeavy', 'cloud', 'ember', 'ash', 'swordQi', 'voidDust', 'star', 'firefly'];
+const wtab = world.slice(world.indexOf('const P13_WEATHER'), world.indexOf('function buildWeather'));
+const missWT = WT.filter(t => !new RegExp('^  ' + t + ':', 'm').test(wtab));
+ok(missWT.length === 0, '13 种天气类型全部在 P13_WEATHER 表', missWT);
+/* 每个 case 至少有一次 L() 建模调用（循环生成的 mesh 真机探针里数，静态只验非空壳） */
+const lmBody = world.slice(world.indexOf('function buildLandmark'), world.indexOf('function buildWeather'));
+const cases = lmBody.split(/case '[a-zA-Z]+':/).slice(1);
+ok(cases.length >= 23 && cases.every(c => /\bL\(/.test(c)),
+  '每个地标 case 都有建模调用（非空壳；实际 mesh 数由 probe-p13 真机数）',
+  cases.map((c, i) => LM[i] + ':' + (c.match(/\bL\(/g) || []).length));
+/* 天气粒子数都在 100~300 */
+const ns = [...wtab.matchAll(/\bn:\s*(\d+)/g)].map(m => +m[1]);
+ok(ns.length === 13 && ns.every(n => n >= 100 && n <= 300),
+  '13 种天气粒子数都在 100~300（一次 draw call）', ns);
+/* buildMap 里读了字段并接线 */
+const bm = world.slice(world.indexOf('function buildMap'), world.indexOf('function buildNPC'));
+ok(/MAP_SPECS\[mapId\]/.test(bm) && /fspec\.landmark/.test(bm) && /fspec\.weather/.test(bm),
+  'buildMap 读 MAP_SPECS 的 landmark/weather 并接线');
+ok(/buildLandmark\(fspec\.landmark/.test(bm) && /buildWeather\(fspec\.weather/.test(bm),
+  'buildMap 真的调用了两个构造');
+ok(!/userData\.collider/.test(lmBody.split('return g;')[0].slice(lmBody.indexOf('switch'))),
+  '地标不带 collider（玩家穿过不卡）');
+ok(!/variant/.test(dmaps.slice(dmaps.indexOf('const ZONE_ARCHETYPES'), dmaps.indexOf('\n};', dmaps.indexOf('const ZONE_ARCHETYPES')))),
+  'zone 拓扑仍未加 variant（第二层不做）');
 
 console.log('\n【5】输出汇总');
 console.log('\n' + pass + ' passed, ' + bad + ' failed');
