@@ -1043,7 +1043,11 @@ const BafoModels = {
     const voidM = reg(a, M(0x2a1038, { rough: 0.92 }));
     const robeM = reg(a, M(cfg.cloth !== undefined ? cfg.cloth : 0x1a0824, { rough: 0.95 }));
     const coreM = reg(a, M(0xb050ff, { rough: 0.35, emissive: 0x8020e0, ei: 2.2 }));
-    const haloM = reg(a, M(0x6a30a0, { rough: 0.5, emissive: 0x4010a0, ei: 1.2 }));
+    const haloM = reg(a, M(0x8a44d0, { rough: 0.42, emissive: 0x7028e0, ei: 1.9 }));
+    /* 首级单独一份材质：比躯干亮一档。
+     * 和躯干同色的话，八颗黑球在「无相天」那种暗场里等于不存在 ——
+     * M7.6 在真实场地里出图才看出来（M7.5 的棚拍打光把它照好看了）。 */
+    const skullM = reg(a, M(0x3a1a52, { rough: 0.84, emissive: 0x2e0a4a, ei: 0.95 }));
 
     /* 长袍：一个从胸口一直垂到地面的巨锥，把腿全部吃掉。
      * 十一米的「无相」不该露脚 —— 露脚就变成「一个大人」。 */
@@ -1071,8 +1075,14 @@ const BafoModels = {
       hg.position.set(Math.cos(ang) * 2.20, Math.sin(ang * 2) * 0.26, Math.sin(ang) * 2.20);
       hg.rotation.y = -ang + Math.PI * 0.5;
       orbit.add(hg);
-      const skull = mesh(sphGeo(0.40, 6), voidM, 0, 0, 0, hg);
+      const skull = mesh(sphGeo(0.40, 6), skullM, 0, 0, 0, hg);
       skull.scale.set(0.92, 1.12, 0.92);
+      /* 每个首级顶上一圈**发光环**。
+       * 「八首环绕」这个剪影全靠它：只挂八颗暗球，在无相天那种暗场里
+       * 完全读不出来（M7.6 在真实场地出图才发现，棚拍打光骗了眼睛）。
+       * 环本身也解释了 `parts.halos` 这个名字。 */
+      const ring = mesh(torusGeo(0.50, 0.042, 6, 16), haloM, 0, 0.44, 0, hg);
+      ring.rotation.x = -Math.PI / 2;
       /* 每个首级两点的微光，凑近看才知道是「眼睛」 */
       this._eye(hg, -0.14, 0.07, 0.33, 0.044, 0xc060ff, 2.4);
       this._eye(hg, 0.14, 0.07, 0.33, 0.044, 0xc060ff, 2.4);

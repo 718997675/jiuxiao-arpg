@@ -1800,6 +1800,25 @@ const UI = {
     document.getElementById('bossTitle').textContent = boss.cfg.title || '';
     document.getElementById('bossFill').style.width = CLAMP(boss.hp / boss.maxHp * 100, 0, 100) + '%';
     document.getElementById('bossText').textContent = `${Math.ceil(boss.hp)} / ${Math.round(boss.maxHp)}`;
+    /* [M7.6] 终 boss 是**五阶段**，不是常驻首领那三档「狂怒」。
+     * 灯数与副标题都跟着 `cfg.bafoFinal` 走：
+     *   - 五盏灯，第 N 盏亮 = 现在第 N 段（变身之后是第 5 段）；
+     *   - 副标题写「第 3 / 5 阶段 · 场地塌缩」。
+     * 玩家必须能从血条读出「现在第几段」—— 否则「怎么打了半天还没完」
+     * 会变成挫败感，而不是压力。
+     * 其余 45 只首领没有 `bafoF`，下面那三档逻辑一个字节都没变。 */
+    if (boss.bafoF) {
+      const n = Math.max(1, Math.min(5, boss.bafoStage || 1));
+      const nm = (boss.bafoF.names && boss.bafoF.names[n - 1]) || '';
+      document.getElementById('bossTitle').textContent =
+        '第 ' + n + ' / 5 阶段' + (nm ? ' · ' + nm : '');
+      let html = '';
+      for (let i = 0; i < 5; i++) html += `<i class="${i < n ? 'on' : ''}"></i>`;
+      document.getElementById('bossPhase').innerHTML = html;
+      this.renderBossPeers(boss);
+      this._syncBossBarBottom();
+      return;
+    }
     /* 阶段灯必须按「当前血量占比」算，不能拿 cfg.hp（基础血量）比。
      * 难度会把 maxHp 乘上 0.65~2.4，用基础值算的话血条显示三阶段已亮、
      * 实际 AI 还在一阶段（或反过来），玩家会觉得血条和 BOSS 行为对不上。

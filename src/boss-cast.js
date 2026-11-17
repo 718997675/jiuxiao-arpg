@@ -532,7 +532,13 @@ const BossCast = {
 
   /* ---------------- 选招 ---------------- */
   _pick(e) {
-    const kit = (typeof BOSS_KIT !== 'undefined') ? BOSS_KIT[e.cfg && e.cfg.id] : null;
+    /* [M7.6] 终 boss 的五阶段要**换配招**：P1 只试探、P5 八部合一。
+     * 读 `e.bafoKit`（实体私有）而不是改 `BOSS_KIT[cfg.id]` ——
+     * 后者是全局表，改一次整局都变，而且脱战复位 / 换图之后回不去。
+     * 没这个字段的首领（其余 45 只）走原来那行，行为一个字节都没变。 */
+    const kit = (e.bafoKit && e.bafoKit.length)
+      ? e.bafoKit
+      : ((typeof BOSS_KIT !== 'undefined') ? BOSS_KIT[e.cfg && e.cfg.id] : null);
     if (!kit || !kit.length) return null;
     /* 两个计数器，**不能合成一个**：
      *   _castN  总轮数 —— 只用来判「这一轮是不是压轴」

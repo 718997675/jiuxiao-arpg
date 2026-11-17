@@ -2349,6 +2349,10 @@ const Game = {
     e.radius = cap ? Math.min(_br, cap) : _br;
     e.reach = Math.max(cfg.range || 2.2, e.radius * 1.26 + 0.75);
 
+    /* [M7.6] 终 boss 的五阶段状态机。只有写了 `cfg.bafoFinal` 的那一只
+     * 会有 —— 其余 45 只首领一个字段都不多。 */
+    if (cfg.bafoFinal) this.bossFinalInit(e);
+
     this.enemies.push(e);
     return e;
   },
@@ -6752,6 +6756,19 @@ const Game = {
 
   damageEnemy(e, dmg, crit, opts = {}) {
     if (e.dead) return;
+    /* [M7.6] P5 变身那 3 秒无敌。放在**最前面** —— 无敌期间连伤害数字都不该弹，
+     * 否则玩家看到「打出了 4000」却一点血没掉，会以为判定坏了。
+     * 提示按 0.5 秒节流（和刑天正面格挡同一个理由：连击时每一下都弹字会糊成一坨）。 */
+    if (e.bossInvulnT > 0) {
+      if (!opts.silent) {
+        const now = Date.now();
+        if (!e._invulnAt || now - e._invulnAt > 500) {
+          e._invulnAt = now;
+          FX.text(new THREE.Vector3(e.pos.x, 5.2, e.pos.z), '无敌', 'info', { life: 0.5 });
+        }
+      }
+      return;
+    }
     /* [P09] 血条归属：打谁显示谁。
      * 以前 `this.boss` 是「谁先走进 17 米谁占住」，玩家回头打第一只时
      * 血条还挂在第二只身上 —— 实际在掉血的那只不更新，看起来像血条坏了。
@@ -6894,6 +6911,14 @@ const Game = {
     }
     e.hp -= final;
     if (e.hp < 0) e.overkill = -e.hp;      // [S1] 记下溢出量，击杀时可能转成护盾
+
+    /* [M7.6] P5 变身拦截。**必须拦在这一击里**，不能每帧判 ——
+     * 「一击从 30% 打到 0%」在这个伤害量级下很常见，每帧判的话
+     * 那一击已经把 Boss 打死了，变身永远不触发（探针首跑就是这么漏的）。
+     * 变身自己会把 hp 填回 100%，所以这里不用管溢出。 */
+    if (e.bafoF && !e.bafoForm && e.hp <= e.maxHp * (e.bafoF.formAt || 0.2)) {
+      this.bossFinalTransform(e);
+    }
 
     /* [U6-2] 技能音效三段 · **命中段**。
      *
@@ -8501,6 +8526,10 @@ const Game = {
     e.hp = e.maxHp;
     e.active = false;
     e.phase = 0;
+    /* [M7.6] 五阶段也要一起复位。只把血拉满、阶段留在 P5 的话，
+     * 玩家跑回来会遇到一只「满血的无相真身」—— 模型 / 配招 / 抗性
+     * 全停在第二形态，这是最糟的一种不一致。 */
+    if (e.bafoF) this.bossFinalReset(e);
     e.dmg = e.baseDmg || e.dmg;          // 狂怒期间涨上去的伤害要退回去
     e.patternCd = RND(2.5, 4.5);
     e.atkCd = 0;
@@ -8534,7 +8563,12 @@ const Game = {
      * 见 data-worldboss.js 的 phases），**不是**常驻首领那套 0.6 / 0.3 的「狂怒」。
      * 两套阈值不同，混用会出现「血条已经是 P2、技能还是 P1」，
      * 而且「狂怒」这个词是常驻首领的语言（世界 Boss 的阶段有自己的名字）。 */
-    if (!e.wb) {
+    if (!e.wb && e.bafoF) {
+      /* [M7.6] 终 boss 走自己的五阶段，**整段绕开**下面那套 0.6 / 0.3 的「狂怒」。
+       * 两套同时生效会出现「血条已经是 P3、伤害却按狂怒涨了两次」，
+       * 而且「狂怒」这个词是常驻首领的语言，终章有自己的五个名字。 */
+      this.bossFinalTick(e, dt);
+    } else if (!e.wb) {
       /* [DIFF] 困难/极难：Boss 提前进阶段（75% / 45%），压迫感更强 */
       const rush = this.diff().bossRush;
       const newPhase = rush
@@ -8651,7 +8685,9 @@ const Game = {
          * 2 招，玩家看到的是一只站着发呆的首领，而《技能试验场》里它是
          * 每 5 秒一招。没出招就 0.8 秒后重试，跟上面距离闸同一个思路。 */
         const casted = this.bossPattern(e, pp);
-        e.patternCd = casted ? (RND(4.5, 7.5) * (1 - e.phase * 0.12)) : 0.8;
+        /* [M7.6] `bafoGap`：终 boss P4「狂怒」把技能间隔压到 0.6 ——
+         * 这一段就是计划书里「连段不再断」的落地。其余首领没有这个字段（=1）。 */
+        e.patternCd = casted ? (RND(4.5, 7.5) * (1 - e.phase * 0.12) * (e.bafoGap || 1)) : 0.8;
       }
     }
 
@@ -8740,6 +8776,356 @@ const Game = {
     if (stg.label) UI.log(e.cfg.name + '：' + stg.label, 'good');
     SFX.boss();
     this.shake = Math.max(this.shake, 0.35);
+  },
+
+  /* ============================================================
+   * [M7.6] 终 boss 五阶段 + P5 满血变身（ACT-EXPANSION-PLAN §15.4）
+   *
+   * 为什么另开一套、不并进「狂怒」：
+   *   常驻首领那套是 0.6 / 0.3 两档、每档只涨 15% 伤害；终 boss 要的是
+   *   **五段完全不同的打法**，第五段还得「回满血换模型」。硬塞进狂怒里
+   *   必然出现「血条是 P3、伤害却按狂怒涨了两次」。所以只要写了
+   *   `cfg.bafoFinal`，`updateBossAI` 就整段绕开狂怒。
+   *
+   * 五段的门槛与数值全在 data-monsters 的 `bafoFinal` 里，这里只做状态机。
+   *
+   * ---------------- 四条硬约束 ----------------
+   * 1. **变身必须拦在 `damageEnemy` 里**，不能每帧判。一击从 30% 打到 0%
+   *    很常见，每帧判的话那一击已经把人打死了，变身永远不触发。
+   * 2. **第二条血是真的填回 100%**，不是把 maxHp 翻倍。翻倍会让血条在
+   *    变身那一帧突然变短（占比腰斩），读起来像 bug 而不是「第二条血」。
+   * 3. **旧模型必须 dispose**。九套骨架每只 100 来个 mesh，只 scene.remove
+   *    不释放就是每次变身漏一次 5MB 级别的显存。
+   * 4. **不做全屏闪白**。vfx.js 的纪律三写死了禁止（暗色国风里闪一次会逼
+   *    玩家眨眼，还和受伤红晕的 `#vignette` 打架），所以「白闪」落在
+   *    变身点上做一次有半径的强闪。
+   * ============================================================ */
+
+  /* 一次性建好状态机。只有写了 `cfg.bafoFinal` 的那一只会进来。 */
+  bossFinalInit(e) {
+    const F = e.cfg && e.cfg.bafoFinal;
+    if (!F) return false;
+    e.bafoF = F;
+    e.bafoStage = 1;
+    e.bafoForm = false;        // 是否已经变身（P5）
+    e.bossInvulnT = 0;         // 变身无敌剩余秒数
+    e.bafoWeakT = 0;           // P5 弱点轮换倒计时
+    e.bafoWeakIdx = -1;
+    e.bafoShrinkG = null;      // P3 收缩圈的场景对象
+    e.bafoShrinkR = 0;
+    e.bafoShrinkC = null;      // 收缩圈圆心（进 P3 那一刻钉住，不跟 Boss 走）
+    e.bafoOutT = 0;            // 圈外扣血的 1 秒累加器
+    e.bafoRage = false;
+    e.bafoGap = 1;             // 技能间隔倍率（P4 写 0.6）
+    this._bossFinalKit(e, 1);
+    return true;
+  },
+
+  /* 换配招。`F.kits[n-1]` 为 null 表示**运行时抽签**（P2 借 2 招 / P5 借 4 招）。
+   * 抽签来源是 8 位魔将自己的配招池，所以每一局的终局都不完全一样。 */
+  _bossFinalKit(e, n) {
+    const F = e.bafoF;
+    if (!F) return;
+    const src = F.kits && F.kits[n - 1];
+    if (src && src.length) { e.bafoKit = src.slice(); return; }
+    const want = (n === 2) ? (F.echo || 0) : ((n === 5) ? (F.merge || 0) : 0);
+    if (!want) return;
+    const pool = this._bossFinalPool(F);
+    const drawn = [];
+    while (drawn.length < want && pool.length) {
+      drawn.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0]);
+    }
+    /* 前 4 格轮转、第 5 格本命（见 boss-cast.js `_pick`）。
+     * P2 用两招固定垫底，否则 2 抽 + 本命只有 3 格，本命永远轮不到。 */
+    const head = (n === 2) ? ['slam', 'ringshot'] : [];
+    e.bafoKit = head.concat(drawn).concat(['nt_chaosavatar']).slice(0, 5);
+  },
+
+  /* 抽签池：8 位魔将的配招，去重（8 只的第 0 格都是 `staggerbreak`）。 */
+  _bossFinalPool(F) {
+    const out = [];
+    if (typeof BOSS_KIT === 'undefined' || !BOSS_KIT) return out;
+    const pre = F.poolPrefix || 'bafo_';
+    for (const id in BOSS_KIT) {
+      if (id.indexOf(pre) !== 0) continue;
+      const k = BOSS_KIT[id];
+      if (!k || !k.length) continue;
+      for (let i = 0; i < 4; i++) {
+        if (k[i] && out.indexOf(k[i]) < 0) out.push(k[i]);
+      }
+    }
+    return out;
+  },
+
+  /* 每帧：P1~P4 推阶段 / P5 转弱点 + 无敌倒计时 / 收缩圈 */
+  bossFinalTick(e, dt) {
+    const F = e.bafoF;
+    if (!F || e.dead) return;
+
+    /* ---------- P5：无敌倒计时 + 弱点轮换 ---------- */
+    if (e.bafoForm) {
+      if (e.bossInvulnT > 0) {
+        e.bossInvulnT = Math.max(0, e.bossInvulnT - dt);
+        if (e.bossInvulnT === 0) {
+          UI.log('无相真身：无敌结束', 'warn');
+          FX.ring(e.pos.clone(), 9, 0xffcc66, 0.7, 0.25);
+          SFX.boss();
+        }
+      }
+      e.bafoWeakT -= dt;
+      if (e.bafoWeakT <= 0) this._bossFinalWeak(e);
+      return;
+    }
+
+    /* ---------- P1~P4：按血量占比推 ---------- */
+    const hr = e.maxHp > 0 ? e.hp / e.maxHp : 0;
+    const at = F.at || [];
+    let want = 1;
+    for (let i = 1; i < at.length; i++) if (hr <= at[i]) want = i + 1;
+    if (want > e.bafoStage) this._bossFinalEnter(e, want);
+    /* 收缩圈从 P3 起一直收到变身（变身时撤掉，给一次公平重开） */
+    if (e.bafoShrinkG) this._bossFinalShrinkTick(e, dt);
+  },
+
+  _bossFinalEnter(e, n) {
+    const F = e.bafoF;
+    e.bafoStage = n;
+    this._bossFinalKit(e, n);
+    if (n === 3 && F.shrink) this._bossFinalShrinkFx(e);
+    if (n === 4 && F.rage) {
+      /* 攻速写进 `atkCdBase`（普攻间隔），技能间隔走 `e.bafoGap`。
+       * 不每帧乘 —— 每帧乘会在阶段切换那一帧漏一次，而且脱战复位退不回去。 */
+      e.atkCdBase = (e.cfg.atkCd || 1.8) / (1 + (F.rage.aspd || 0) / 100);
+      e.bafoGap = F.rage.gap || 1;
+      e.bafoRage = true;
+    }
+    const nm = (F.names && F.names[n - 1]) || ('第 ' + n + ' 阶段');
+    UI.toast(e.cfg.name + ' · ' + nm, 'lv');
+    UI.log('【' + e.cfg.name + '】' + nm + '（第 ' + n + ' / 5 阶段）', 'warn');
+    SFX.boss();
+    this.shake = Math.max(this.shake, 0.5);
+    FX.ring(e.pos.clone(), 8, 0xff5522, 0.8, 0.28);
+    if (typeof AudioSys !== 'undefined') AudioSys.mob(e, 'bossPhase');
+    /* 阶段灯立刻翻。等下一帧 `updateBossAI` 末尾那次刷新也来得及，
+     * 但进阶段是**有演出的一拍**，灯慢半拍就变成「音效响了、灯没动」。 */
+    if (this.boss === e) UI.updateBoss(e);
+  },
+
+  /* P5 弱点轮换：每 20 秒换一个元素。
+   *
+   * **必须播报**。八魔将的弱点是「藏起来让玩家摸」，那是因为一局只打一只、
+   * 摸出来就固定了；这里 20 秒换一次，藏起来就变成「随机挨打」。
+   * 口径与八魔将完全一致：弱点 −60（吃 160%）、其余 +80（吃 20%），差 8 倍。 */
+  _bossFinalWeak(e) {
+    const F = e.bafoF;
+    const ord = F.weakOrder || [];
+    if (!ord.length) return;
+    e.bafoWeakIdx = (e.bafoWeakIdx + 1) % ord.length;
+    const w = ord[e.bafoWeakIdx];
+    e.bafoWeakT = F.weakRotate || 20;
+    const r = {};
+    for (const k of ['phys', 'fire', 'ice', 'lightning', 'poison']) r[k] = 80;
+    r[w] = -60;
+    e.resist = r;
+    const nm = { phys: '物理', fire: '火', ice: '冰', lightning: '雷', poison: '毒' };
+    const label = nm[w] || w;
+    UI.log('无相真身：此刻畏' + label + '（' + Math.round(F.weakRotate || 20) + ' 秒后轮换）', 'good');
+    FX.text(new THREE.Vector3(e.pos.x, 6.4, e.pos.z), '畏' + label, 'skill', { life: 1.3 });
+    FX.ring(e.pos.clone(), 5.5, 0xffcc66, 0.5, 0.2);
+  },
+
+  /* ---------- P3 场地塌缩 ---------- *
+   * 三个圈，各说一件事：
+   *   ① **危险带**（边界外侧 1.00~1.30 R）：把「圈外」染成一片暗红，
+   *      否则玩家只看到一根线，读不出线的那一边会掉血；
+   *   ② **边界**（0.955~1.0 R）：当前安全区，跟着收；
+   *   ③ **终点标记**（固定 r1）：这道圈最终会收到哪 —— 没有它，
+   *      玩家只看到圈在动，不知道还要退多远，会一路退到地图边上。
+   * 圈画多大就判多大（FX 层的老规矩），三者的判定半径都等于当前边界。
+   * 不做「整片地面染红」：那会盖掉地形，玩家反而看不见墙和门在哪。 */
+  _bossFinalShrinkFx(e) {
+    this._bossFinalShrinkEnd(e);
+    if (!this.scene || typeof THREE === 'undefined') return;
+    const F = e.bafoF.shrink;
+    if (!F) return;
+    /* 圆心钉在**开 P3 那一刻 Boss 的位置**：跟着 Boss 走的话，
+     * 玩家永远在圈里，这个机制等于不存在。 */
+    const c = { x: e.pos.x, z: e.pos.z };
+    e.bafoShrinkC = c;
+    const g = new THREE.Group();
+    g.position.set(c.x, 0.05, c.z);
+    const mk = (op, col) => new THREE.MeshBasicMaterial({
+      color: col == null ? 0xff4a2a : col, transparent: true, opacity: op,
+      side: THREE.DoubleSide, depthWrite: false,
+      blending: THREE.AdditiveBlending, fog: false
+    });
+    /* ① 危险带：贴边界外侧，随边界一起收 */
+    const band = new THREE.Mesh(new THREE.RingGeometry(1.0, 1.30, 72), mk(0.10, 0x8a1a08));
+    band.rotation.x = -Math.PI / 2;
+    band.position.y = -0.01;
+    g.add(band);
+    /* ② 边界 */
+    const edge = new THREE.Mesh(new THREE.RingGeometry(0.955, 1.0, 72), mk(0.85));
+    edge.rotation.x = -Math.PI / 2;
+    g.add(edge);
+    /* ③ 终点标记：固定半径，不跟着收 */
+    const end = new THREE.Mesh(new THREE.RingGeometry(0.988, 1.0, 72), mk(0.34, 0xffd08a));
+    end.rotation.x = -Math.PI / 2;
+    end.scale.setScalar(F.r1 || 10);
+    end.userData.fixed = true;
+    g.add(end);
+    this.scene.add(g);
+    e.bafoShrinkG = g;
+    e.bafoShrinkR = F.r0 || 26;
+    e.bafoOutT = 0;
+    for (const m of [band, edge]) m.scale.setScalar(e.bafoShrinkR);
+    UI.log('场地开始塌缩 —— 圈外每秒流失生命', 'warn');
+    SFX.boss();
+    this.shake = Math.max(this.shake, 0.45);
+  },
+
+  _bossFinalShrinkEnd(e) {
+    if (e.bafoShrinkG) {
+      /* 走 disposeTree：它只释放独占几何 / 材质，共享资源一律跳过 */
+      if (typeof disposeTree === 'function') disposeTree(e.bafoShrinkG);
+      else if (this.scene) this.scene.remove(e.bafoShrinkG);
+      e.bafoShrinkG = null;
+    }
+    e.bafoShrinkR = 0;
+    e.bafoOutT = 0;
+  },
+
+  _bossFinalShrinkTick(e, dt) {
+    const F = e.bafoF && e.bafoF.shrink;
+    if (!F) return;
+    /* 逐帧收。收到 r1 就停住 —— 一直收到 0 会变成「必须站在 Boss 脚下」，
+     * 那不是压力测试，是把近战职业按死。 */
+    if (e.bafoShrinkR > F.r1) {
+      e.bafoShrinkR = Math.max(F.r1, e.bafoShrinkR - (F.speed || 1.6) * dt);
+      const s = e.bafoShrinkR;
+      /* 只缩「危险带 + 边界」；终点标记是固定半径（`userData.fixed`），
+       * 它得一直停在 r1，告诉玩家「还要退到哪」。 */
+      if (e.bafoShrinkG) for (const m of e.bafoShrinkG.children) if (!m.userData.fixed) m.scale.setScalar(s);
+    }
+    /* 圈外扣血：**按秒结算**，不按帧。按帧扣的话伤害数字一屏 60 个，
+     * 而且帧率越高扣得越多 —— 这种 bug 在高刷手机上才会显形。 */
+    const c = e.bafoShrinkC;
+    const p = this.playerGroup ? this.playerGroup.position : null;
+    if (!c || !p) return;
+    const d = Math.hypot(p.x - c.x, p.z - c.z);
+    if (d > e.bafoShrinkR) {
+      e.bafoOutT = (e.bafoOutT || 0) + dt;
+      if (e.bafoOutT >= 1) {
+        e.bafoOutT -= 1;
+        const dmg = (this.state.stats.hpMax || 100) * (F.dps / 100);
+        /* pierce：这是「场地」伤害，不该被护甲吃成 0（和 Domains 同一口径） */
+        this.damagePlayer(dmg, e, { pierce: true });
+        FX.text(new THREE.Vector3(p.x, 2.4, p.z), '圈外', 'player', { life: 0.7 });
+      }
+    } else e.bafoOutT = 0;
+  },
+
+  /* ---------- P5 变身 ---------- *
+   * 由 `damageEnemy` 在扣血之后调用（见那边的注释：必须拦在这一击里）。 */
+  bossFinalTransform(e) {
+    const F = e.bafoF;
+    if (!F || e.bafoForm || e.dead) return;
+    e.bafoForm = true;
+    e.bafoStage = 5;
+    /* 第二条血：**真的填回 100%** */
+    e.hp = e.maxHp;
+    e.overkill = 0;
+    e.bossInvulnT = F.invuln || 3;
+    e.bafoWeakIdx = -1;
+    e.bafoWeakT = 0;               // 下一帧 tick 立刻抽第一个弱点
+    this._bossFinalKit(e, 5);      // 八部合一
+    this._bossFinalForm(e);        // 换 chaosTrue 骨架（旧模型当场释放）
+    this._bossFinalShrinkEnd(e);   // 场地复原
+    /* 玩家回满血蓝 + 清掉身上的负面 —— 变身不是偷袭，是给一次公平重开 */
+    const st = this.state.stats;
+    this.state.hp = st.hpMax;
+    this.state.mp = st.mpMax;
+    this.poisonT = 0; this.dotT = 0; this.playerSlow = 0; this.playerSlowT = 0;
+    this.invuln = Math.max(this.invuln || 0, 1.2);
+    UI.log('无相天魔撕开了自己的形 —— 第二条血，重新开始', 'warn');
+    UI.toast('无相真身', 'lv');
+    SFX.boss();
+    this.shake = Math.max(this.shake, 1.0);
+    /* 有半径的强闪（不是全屏）：半径取骨架体量的两倍，八首与八臂一起亮 */
+    FX.flashCircle(e.pos.clone(), 16, 0xfff2d8, 0.5);
+    FX.ring(e.pos.clone(), 18, 0xffffff, 1.0, 0.35);
+    FX.ring(e.pos.clone(), 11, 0xffcc66, 0.8, 0.28);
+    FX.burst(new THREE.Vector3(e.pos.x, 4, e.pos.z), 0xfff2d8, 40, { speed: 12, size: 0.16, life: 1.0, gravity: -2, additive: true });
+    if (typeof AudioSys !== 'undefined') AudioSys.mob(e, 'bossPhase');
+    /* 变身是从 `damageEnemy` 里调的，不在 `updateBossAI` 那一帧里 ——
+     * 血条 / 灯 / 副标题必须在这里立刻刷一次，否则玩家会看到
+     * 「血条回满了、灯还是第 4 盏」这种明显对不上的画面。 */
+    if (this.boss === e) UI.updateBoss(e);
+  },
+
+  /* 换模型：从 `chaosTrue` 重建，位置 / 朝向 / 浮空接住旧模型。
+   * 名贴与血条都不挂在 actor 上（首领走顶部血条），所以没有要搬的东西。 */
+  _bossFinalForm(e) {
+    const name = (e.bafoF && e.bafoF.form) || 'chaosTrue';
+    if (typeof BafoModels === 'undefined' || !BafoModels.has(name)) return false;
+    const old = e.actor;
+    const na = BafoModels.build(name, {});
+    if (!na || !na.group) return false;
+    if (old && old.group) {
+      na.group.position.copy(old.group.position);
+      na.group.rotation.y = old.group.rotation.y;
+      na.baseY = old.baseY || 0;
+      na.fly = !!old.fly;
+      na.moving = !!old.moving;
+    }
+    na.flash = 0;
+    this.scene.add(na.group);
+    e.actor = na;
+    /* 碰撞半径跟着换（无相真身 2.6 米 vs 原身 1.8 米）。
+     * 不换的话玩家会走进十一米巨躯的腿里 —— 判定和画面对不上。 */
+    if (na.footR) {
+      e.radius = na.footR;
+      e.reach = Math.max(e.reach || 0, e.radius * 1.26 + 0.75);
+    }
+    if (old && old.group && typeof disposeTree === 'function') disposeTree(old.group);
+    return true;
+  },
+
+  /* [P02] 脱战复位要**连五阶段一起复位**：
+   * 只把血拉满、阶段留在 P5 的话，玩家跑回来会遇到一只「满血的无相真身」，
+   * 而模型、配招、抗性全停在第二形态 —— 那是最糟的一种不一致。 */
+  bossFinalReset(e) {
+    if (!e.bafoF) return;
+    this._bossFinalShrinkEnd(e);
+    e.bafoStage = 1;
+    e.bafoForm = false;
+    e.bossInvulnT = 0;
+    e.bafoWeakT = 0;
+    e.bafoWeakIdx = -1;
+    e.bafoRage = false;
+    e.bafoGap = 1;
+    e.atkCdBase = e.cfg.atkCd || 1.8;
+    /* 抗性回到数据里那一份（族群表 + cfg.resist） */
+    if (typeof MON_FAMILIES !== 'undefined' && MON_FAMILIES[e.cfg.family]) {
+      e.resist = Object.assign({}, MON_FAMILIES[e.cfg.family].resist || {});
+      if (e.cfg.resist) Object.assign(e.resist, e.cfg.resist);
+    }
+    this._bossFinalKit(e, 1);
+    /* 模型换回原身：`cfg.model` 是 `demon`（chaosavatar 没有 animKind） */
+    if (e.actor && e.actor.bafoModel && e.actor.bafoModel === ((e.bafoF.form) || 'chaosTrue')) {
+      const kind = e.cfg.model || 'humanoid';
+      const na = buildMonster(kind, { scale: e.cfg.scale || 1, color: e.cfg.color, cloth: e.cfg.cloth, skin: e.cfg.skin });
+      if (na && na.group) {
+        na.group.position.copy(e.actor.group.position);
+        na.group.rotation.y = e.actor.group.rotation.y;
+        na.baseY = 0;
+        this.scene.add(na.group);
+        const old = e.actor;
+        e.actor = na;
+        if (old && old.group && typeof disposeTree === 'function') disposeTree(old.group);
+        e.radius = na.footR || e.radius;
+      }
+    }
   },
 
   /* [P02] 招式落点：以「玩家位置 + 随机散布」为基础，再夹进交战半径内。
@@ -9836,6 +10222,9 @@ const Game = {
     if (e.destructible) { this.destroyDestructible(e, false); return; }
     e.dead = true;
     e.hp = 0;
+    /* [M7.6] 死在 P3/P4 的时候收缩圈还在场上。不收的话它会一直留在
+     * 场景里（换图才清），玩家回头路过还会看到一个「没有主人」的红圈。 */
+    if (e.bafoF) this._bossFinalShrinkEnd(e);
     /* [P2] 击杀钩子（战鼓延长 / 补刀重置 / 血旋引爆）。
      * 放在 dead 标记之后：引爆再炸死人会递归进这里，dead 挡住回头路 */
     if (typeof this.onBehKill === 'function') this.onBehKill(e);
