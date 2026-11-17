@@ -655,6 +655,18 @@ git checkout main && git merge --ff-only feat/skill-refactor   # ab08f72 → b23
 | 人物 + 地基 9 份契约 | vfx-dsl 358 / vfx-kit 80 / elemfx 74 / combo 76 / p4 60 / p5 989 / p5b 116 / p6 97 / worldboss-fight 252 |
 | act 线（同批上线的积压） | act-check 651 / pickup 52 / skill-ref 38 / minimap 23 / respawn 14 |
 
+**发布后线上实测**（`node dev/probe-live-u12.js`，直连正式站，**21/0**）：
+
+| 项 | 结果 |
+|---|---|
+| 加载 + 开局 | HTTP 200、`Game` 就绪、`running true`、`fatal` 不显示 |
+| U9 `EnemyFX` | 已挂进场景；**8 个形态网格 + 12 个词缀网格**，`drawCap 20` |
+| U8 `wbWarnOf` | 声明 18 条；拿线上真实 `WORLD_BOSSES` 的 6 只 × 3 招逐条翻译，**18/18 有形状**、零失败 |
+| U8 `FX.zone` | `fan` 形状线上可建（U8 新增的分支真的上去了） |
+| U10 `BossCast._lift` | 存在（逐只 seed 排布的入口） |
+| 放技能 | 仍在跑、draw call 244 |
+| 请求 / 报错 | 无失败请求、**零 console / pageerror** |
+
 **如实挂着的一格**：移动端真机 ≥30fps 仍未量（与 U11 同一口径，不为绿灯改判据）。
 
 ## 收口 · U1~U12 全部完成（17/17）
