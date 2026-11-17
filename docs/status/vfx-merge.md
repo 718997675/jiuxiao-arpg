@@ -8,10 +8,11 @@
   但**不再往那两份里加待办、也不再按它们的 V0~V6 / P0~P2 编号排期**。
 - 进度事实看这两份：`docs/status/skill-refactor.md`（人物主线）、
   `docs/status/boss-kits.md`（B 线 B1~B25）。本文件只管「还差什么、按什么顺序合」。
-- 更新：2026-11-07；进度更新：2026-11-15（U7 ✅ · **U11 已上线**）；2026-11-16（U8 ✅ / U9 ✅ / U10 ✅）；2026-11-17（**U12 ✅ 全线上线**）
+- 更新：2026-11-07；进度更新：2026-11-15（U7 ✅ · **U11 已上线**）；2026-11-16（U8 ✅ / U9 ✅ / U10 ✅）；2026-11-17（**U12 ✅ 全线上线**、**U13 ✅ sfx-follow 跟随角色**）
 
-> 当前：**U1~U12 全 ✅，17/17 收口**。人物线 2026-11-15 上线（`ab08f72..b235068`）；
+> 当前：**U1~U13 全 ✅，18/18 收口**。人物线 2026-11-15 上线（`ab08f72..b235068`）；
 > BOSS 线 U8 / U9 / U10 于 2026-11-17 合入 `main`（`bf2214f..ff58d12`）并推正式站。
+> U13（2026-11-17）：**移动释放的技能演出跟着角色走**——旋风斩的斧头/气流不再留在起手点；
 > 用户 2026-11-16 拍板：U8 另开一层、U7 倍率不改数值、BOSS 线补完再一次合，不分批上线。
 > **唯一没有证据的验收格仍是「移动端真机 ≥30fps」**，如实挂着，不假装已验收。
 
@@ -59,6 +60,7 @@ U9 小怪 8 形态与 12 词缀 + U10 逐只排布与低模核。
 | U10 | BOSS · **逐只精修 + 兜底层局限**：同形状两招拿到的柱子排布相同（变形层只改应对动作）、环形暗底偏薄（内圈不暗，语义是「环内安全」，要补先改判定）、共享池只有 31 招导致 45 只必有 2 格重合（92 对）、移动中判定表达不了（只有 6 种静态形状）、实体暗场是「亮团」需低模、活物没厚度（trail 是贴地 ribbon） | ✅ | `docs/boss-vfx-playground.html`（`BFX.lift` 六骨架 + seeded RNG；`BFX.entity` 低模核）→ `node dev/build-fx2.js --write`；`dev/build-bosscast.js` 模板 `_lift` 按 Boss+技能 FNV seed → `node dev/build-bosscast.js --write`；`dev/test-bosslayout.js` / `dev/probe-bosslayout.js` | 静态 **31/0**、真机 **40/0**：六形状 × 六骨架至少 5 种排布；同 seed 可复现、换 seed 必不同；**45 只 × 四格里同形状两招 0 对同排**、跨 Boss 同一招 0 对重合；entity 默认带 Icosahedron 低模核且可 `lowpoly:false` 退回；`dup-audit` 运行时近重复 0 对；`probe-playground` 102/0。**未动**：环形内圈仍不压暗（「环内安全」是判定语义，先改判定才配改视觉）、共享池仍 92 对 2 格重合（池子决定的家族语言）、移动扫掠仍只有 6 种静态形状、trail 仍是贴地 ribbon（地面藤蔓/裂纹的语义，强行加厚度会读成墙）。**已知非回归**：`probe-bosscast` 慢机器 12/3（与 U8 记录同因）；`dup-audit` 静态仍报 6 个 `dom_*` 共用外壳（运行时按 kind 分支不同，不属 BOSS_KIT 45 只） |
 | U11 | 合入 · **人物技能特效合进游戏**：补完 U1~U6 → 固定动作 → 合 main → 推上线 | ✅ | `git merge --ff-only feat/skill-refactor`（130 提交，零冲突）→ `./push.sh`（`ab08f72..b235068`） | 正式站 `https://718997675.github.io/jiuxiao-arpg/` 开局正常、12 个技能全放 **0 失败**、`ERRORS none`、`FXK/SKFX/BossCast/FX.zone` 四个模块全在；`smoke` ERRORS none、`mobile-layout` 6 视口全通过 |
 | U12 | 合入 · **BOSS 技能特效合进游戏**：U8~U10 已补完 → 同 U11 固定动作 → 合 main；**必须基于「已含 U11 的 main」重新对一遍**，不能拿老 main 当基准 | ✅ | `git merge origin/main`（吸收 U11 台账记录，唯一冲突在 `docs/status/vfx-merge.md`）→ `smoke` + `mobile-layout` + 全量契约 → `./dev/publish-preview.sh feat/skill-refactor` → `git push origin main`（`bf2214f..ff58d12`） | `smoke` ERRORS none、`mobile-layout` 6 视口全通过；17 份静态契约全绿（bosskits 36 / bosspattern 28 / bosstwist 35 / bosscast 20 / bosslayout 31 / wbzone 88 / enemyfx 185 / fx2 24 / vfx-dsl 358 / vfx-kit 80 / elemfx 74 / combo 76 / p4 60 / p5 989 / p5b 116 / p6 97 / worldboss-fight 252）；act 线 651+52+38+23+14 全通过；正式站已推 `ff58d12` |
+| U13 | 人物 · **sfx-follow 随人演出**：移动释放的技能（旋风斩等）把坐标拍成 `c.x/c.z` 快照，人一边走一边转、斧头与气流却留在起手点。WIP 在 `stash@{0}`（基于 11-15 的 `bf2214f`，隔 30+ 提交），**无台账、无注释承诺的契约脚本** = 没做完 | ✅ | `dev/build-skillvfx.js`（FOLLOW 表 12 技 + 随人窗口：`ROOT.add` 记账 / `sync` 增量平移 / `play` 开窗 / `clear` 关窗）→ `node dev/build-skillvfx.js --write` → `src/sfx.js`；`docs/vfx-playground.html` 旋风斩传活引用 `P.pos`；`dev/test-sfx-follow.js` + `dev/probe-sfx-follow.js` | 静态 **25/0**（12 键全是游戏 id / 三分类语义 / 时长 0.5~3s / 四处接线 / 生成物一致）、真机 **6/0**（whirl 随人 mesh 位移=玩家位移、firewall 地面部署不跟、窗口 1.2s 到时停跟、换图不污染、零报错）；`smoke` ERRORS none、`mobile-layout` + 技能契约十份 + combo/elemfx/vfx13/kit/field 全绿 |
 
 ## U2 收口注记（2026-11-09）
 
