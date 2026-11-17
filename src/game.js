@@ -6852,6 +6852,10 @@ const Game = {
      * 放在抗性 / 元素之后、暴击之前，纯粹是一个独立乘区，
      * 不会和已有的增伤词缀互相挤占。 */
     if (e.vulnT > 0 && e.vuln) final *= 1 + e.vuln / 100;
+    /* [M7.3] 破绽窗口（八部天龙 8 只）：长后摇招放完的那几秒受伤 ×1.5。
+     * 与弱点抗性（吃 160%）是两个独立乘区 —— 打对弱点又撞上破绽才是设计里的
+     * 「极端 12 倍」（0.2 → 1.6 → ×1.5 = 2.4）。这里只乘伤害，不改判定。 */
+    if (e.staggerT > 0 && e.staggerMul) final *= e.staggerMul;
     if (st.flags.bossSlayer && e.boss) final *= 1.4;
     /* [S3] 狂战系·浴血：生命低于 50% 时造成的伤害 +25% */
     if (st.flags.lowHpFury && this.state.hp < st.hpMax * 0.5) final *= 1.25;
@@ -8536,6 +8540,10 @@ const Game = {
       }
     }
 
+    /* [M7.3] 破绽窗口：前摇走完开窗、窗口倒计时、结束收束。
+     * 只有写了 `cfg.stagger` 的八部天龙 8 只才会真的开窗，其余首领这里空转。 */
+    this.bossStaggerTick(e, dt);
+
     e.patternCd -= dt;
     e.atkCd = Math.max(0, e.atkCd - dt);
 
@@ -8648,6 +8656,82 @@ const Game = {
     if (this.boss === e) UI.updateBoss(e);
   },
 
+  /* ============================================================
+   * [M7.3] 破绽窗口 —— 八部天龙 8 只的「打空了才有的大机会」
+   *
+   * 口径（ACT-EXPANSION-PLAN §15.2）：每只魔将的 `patterns` 里有一个
+   * **长后摇招**（`cfg.stagger.skill`）。它放完之后进入 `dur` 秒破绽，
+   * 期间受伤 × `mul`（8 只都是 1.5）。这是「弱点」的第二半：
+   *   抗性侧（M7.2 已落地）打对弱点吃 160%、打错只吃 20%；
+   *   破绽侧再 ×1.5 —— 两个乘区相乘才是设计里的「极端 12 倍」。
+   *
+   * 三条硬约束：
+   *   1. **只乘伤害**。判定几何、招式的 `mul`、AI 的移动一格都不动 ——
+   *      窗口是「奖励打对的人」，不是「改难度」。
+   *   2. **前摇走完才开窗**。slam 这类招有 0.85s 前摇，出招瞬间就开
+   *      等于「它还没砸下来就露破绽」，玩家读到的是「放招=变脆」，
+   *      而不是「这一下打空了，趁现在」。
+   *   3. **视觉缺件不连带机制**。`FXK` 没加载时只丢裂纹，窗口照样开
+   *      （和 U7 兜底特效层同一个口径）。
+   * ============================================================ */
+
+  /* 出招成功时调用：这一招是不是本只的破绽来源 */
+  bossStaggerArm(e) {
+    const stg = e && e.cfg && e.cfg.stagger;
+    if (!stg || !stg.skill) return;
+    const cast = e._cast;
+    if (!cast || cast.id !== stg.skill) return;
+    /* 前摇长度优先读招式自己的 `warm`（88 招数据里就有），读不到按 0.85 */
+    const warm = (cast.sk && cast.sk.warm != null) ? cast.sk.warm : 0.85;
+    e.staggerArm = { stg: stg, t: Math.max(0.15, warm) };
+  },
+
+  /* 每帧推进：待触发 → 开窗 → 收束 */
+  bossStaggerTick(e, dt) {
+    if (e.staggerArm) {
+      e.staggerArm.t -= dt;
+      if (e.staggerArm.t <= 0) {
+        const stg = e.staggerArm.stg;
+        e.staggerArm = null;
+        e.staggerT = Math.max(0.4, stg.dur || 2.5);
+        e.staggerMax = e.staggerT;
+        e.staggerMul = stg.mul || 1.5;
+        this._staggerFx(e, stg);
+        /* 开窗这一帧不再递减：否则窗口从第一帧就少 dt，
+         * 探针量到的时长永远比 cfg.stagger.dur 短一截 */
+        return;
+      }
+    }
+    if (e.staggerT > 0) {
+      e.staggerT -= dt;
+      if (e.staggerT <= 0) {
+        e.staggerT = 0;
+        e.staggerMul = 1;
+        FX.text(new THREE.Vector3(e.pos.x, 3.4, e.pos.z), '破绽收束', 'info', { life: 0.6 });
+      }
+    }
+  },
+
+  /* 开窗那一拍的三件套：地面裂纹 + 飘字 + 播报。纯表现，不参与任何结算。 */
+  _staggerFx(e, stg) {
+    if (typeof FXK !== 'undefined' && FXK && FXK.enabled) {
+      try {
+        FXK.decal(e.pos, {
+          tex: 'crack', color: 0xffcc66,
+          size: (e.radius || 1.2) * 3.4,
+          life: Math.max(0.8, stg.dur || 2.5),
+          opacity: 0.75,
+        });
+      } catch (err) {
+        /* 视觉层缺件只丢这一层，窗口已经开了，别把它一起弄没 */
+      }
+    }
+    FX.text(new THREE.Vector3(e.pos.x, 3.9, e.pos.z), '破绽！', 'lv', { life: 1.1 });
+    if (stg.label) UI.log(e.cfg.name + '：' + stg.label, 'good');
+    SFX.boss();
+    this.shake = Math.max(this.shake, 0.35);
+  },
+
   /* [P02] 招式落点：以「玩家位置 + 随机散布」为基础，再夹进交战半径内。
    *
    * 为什么还要夹一次：距离闸（`skillRange` 18 米）只保证「玩家在范围内」，
@@ -8679,7 +8763,12 @@ const Game = {
      * （上面 e.wb 分支已经转给 WBFight），小怪也不走（没有 patterns）。 */
     /* 返回值 = 「这一轮真的放出去一招了没有」。
      * updateBossAI 靠它决定要不要把 CD 设满（见那边的注释）。 */
-    if (typeof BossCast !== 'undefined' && BossCast.tryCast(e, pp)) return true;
+    if (typeof BossCast !== 'undefined' && BossCast.tryCast(e, pp)) {
+      /* [M7.3] 这一招是不是这只魔将的「破绽来源」—— 是就武装，
+       * 等它的前摇走完再开窗（出招瞬间就开 = 还没砸下来就露破绽）。 */
+      this.bossStaggerArm(e);
+      return true;
+    }
     const pat = PICK(e.cfg.patterns || ['slam']);
     const st = e.dmg;
     const self = e;

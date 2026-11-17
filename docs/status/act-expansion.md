@@ -5,12 +5,12 @@
 - 打磨计划：`docs/POLISH-PLAN.md`（用户 2026-10-28 提的 17 项体验 / 平衡，P01~P17，分 4 批）
 - 专题台账：`docs/status/world-boss.md`（M18 世界 Boss，插单，与本线并行；**M18.1~M18.9 全部完成**（含六套骨架 + 两个骨架键 + 掉落 + 说明页），可合 main）
 - 预览站：<https://718997675.github.io/jiuxiao-arpg/preview/act-expansion/>
-- 更新：2026-10-29 00:20
+- 更新：2026-11-17（M7.3 破绽窗口落地）
 
 > 当前：M1~M6 已完成（39 张图 · 80 种怪 · 图鉴 5 卷 + 秘境 · 5 阶地下城 · 60 级上限 · 传世 40 件 ·
 > 套装 18 套 · 基底 8 阶）。**M18 世界 Boss 九节全完**，已随本线合入 main。
-> M7 终章重做（八部天龙）进行中：M7.1 结构 / M7.2 八魔将数据 / **M7.4 魔将之印**已落地，
-> M7.3 破绽窗口 + M7.5~M7.9 待做，见下「M7 小节状态」。另有一条并行线：P 打磨 17 项，
+> M7 终章重做（八部天龙）进行中：M7.1 结构 / M7.2 八魔将数据 / **M7.3 破绽窗口** / **M7.4 魔将之印**已落地，
+> M7.5~M7.9 待做，见下「M7 小节状态」。另有一条并行线：P 打磨 17 项，
 > **第 1 批（P01 P02 P03 P09 P11 P12 P16）+ 第 2 批的 P04 / P06 / P10 已完成**，
 > 第 2 批剩余（P07 P08 P17）与第 3~4 批未开工，见下「P 系列」。
 
@@ -42,7 +42,7 @@ M7 把「打完终 boss 就结束」改成了终局循环：混沌海从战斗�
 图位 30 → **39**。8 位魔将的弱点**不进图鉴**，只写在 `BOSSES.resist` 里，
 玩家只能靠伤害数字自己摸 —— 打错吃 20%、打对吃 160%，正好 8 倍。
 
-**剩下的**：M7.3 破绽窗口 → M7.4 印掉落与 UI → M7.5 九个模型 → M7.6 五阶段终 boss
+**剩下的**：M7.5 九个模型 → M7.6 五阶段终 boss
 → M7.7 全传世掉落 → M7.8 二周目 → M7.9 文案同步，然后才走「合入 main」。
 
 ## 节点表
@@ -73,7 +73,7 @@ M7 把「打完终 boss 就结束」改成了终局循环：混沌海从战斗�
 |---|---|---|---|---|
 | M7.1 | 结构：`ACTS['5-2']` 改成枢纽 + 8 副本图位 + 终 boss 场 | ✅ | `data-world.js`、`data-maps.js`、`ui.js`、`act-check` / `zone-check` / `zone-density` | `act-check` **556 项**（图位 30 → **39**）；`zone-check` / `zone-density` 全绿 |
 | M7.2 | 8 魔将数据（`resist` / `stagger` / `seal` / `animKind`）+ `BAFO_SEALS` 八印表 | ✅ | `data-monsters.js`、`data-world.js`、`game.js`、新建 `dev/check-bafo.js` | `check-bafo` **335 项**（含「8.00 倍差」硬断言） |
-| M7.3 | 弱点与破绽机制 | 🔄 | `game.js` | 抗性侧已成立（`damageEnemy` 读 `boss.resist`）；**破绽窗口未做** |
+| M7.3 | 弱点与破绽机制 | ✅ | `game.js`（`bossStaggerArm` / `bossStaggerTick` / `_staggerFx`）、新建 `dev/test-m7-3.js`、`dev/probe-stagger.js` | 抗性侧随 M7.2 已成立；**破绽窗口已落地**：8 只魔将的长后摇招（`cfg.stagger.skill`）放完、前摇走完才开窗 `dur` 秒，期间受伤 ×`mul`（1.5）；契约 **22/0**、真机 **20/0**（8 只逐只量开窗 / 时长 / 倍率 / 收束，伤害比 1.500） |
 | M7.4 | 魔将之印 + 终门 | ✅ | `game.js`、`core/save.js`、`ui.js`、`README.md`、新建 `dev/check-seals.js`、`dev/seal-live.js` | 印门拦在 `travelTo` + 山河图；**印掉落 / 存档 / 播报已接**（`check-seals` **111 项** · `seal-live` **19 项**）；八印总览面板未做（山河图已写「需 8 印（N）」，不阻塞） |
 | M7.5 | 9 个模型 + 专属动画 | ⬜ | `actors.js`、`fx.js` | `verify-perf` 报错 0 |
 | M7.6 | 终 boss 五阶段 + P5 满血变身 | ⬜ | `data-monsters.js`、`game.js` | 阶段与血条重置可复现 |
@@ -97,6 +97,24 @@ M7 把「打完终 boss 就结束」改成了终局循环：混沌海从战斗�
 | **新增体检** | `dev/check-bafo.js`：八印清单 / 四向对齐 / 8 副本图 / 8 魔将（抗性·破绽·模型·印）/ 无相天 | 335 项全绿 |
 | **顺带修的真 bug** | `SPAWN_SAFE = 20` 是世界图尺度，140 尺寸的副本图里「入口 → 近区」不足 20 米，整片近区刷不出怪（实测 12 只只出 10 只）。改成 `min(20, size × 0.10)`：世界图仍 20（零变化），副本落到 14 | 8 副本全部恢复 12 只 |
 | 回归 | `act-check` 556 · `check-bafo` 335 · `zone-check` ✅ · `zone-density` ✅ · `test-m6` 264 · `test-items` 21 · `test-m4` 25 · `test-m5` 89 · `dungeon-sim` 60 · `test-save` · `check-uniques` · `check-sets` · `check-endgame` · `quest-ref` 39 · `smoke` ERRORS none · `mobile-layout` 全通过 · `verify-perf` 报错 0 | 全绿 |
+
+### M7.3 已交付明细（破绽窗口 · 2026-11-17）
+
+**弱点的第二半。** M7.2 只做了抗性侧（打对吃 160% / 打错吃 20%），
+「打空了才有的大机会」这一半一直是空的 —— 数据里 8 只都有 `stagger` 声明，
+但 `game.js` 从来没读过它。
+
+| 项 | 落地内容 | 回归 |
+|---|---|---|
+| **触发点** | `bossPattern` 里 `BossCast.tryCast` 成功后调 `bossStaggerArm(e)`；只认 `e._cast.id === cfg.stagger.skill` 那一招，别的招不武装 | `test-m7-3` 三节 |
+| **前摇门控** | 武装时记 `staggerArm = { stg, t: sk.warm }`（读不到按 0.85），**前摇走完才开窗**。出招瞬间就开等于「它还没砸下来就露破绽」，玩家读到的是「放招=变脆」而不是「这一下打空了」 | `probe-stagger` 三节：推进 0.3s 仍 `staggerT === 0` |
+| **窗口** | `staggerT = dur`（2.5~4s）、`staggerMul = mul`（8 只都是 1.5）；`updateBossAI` 每帧调 `bossStaggerTick` 递减，归零复位 `staggerMul = 1` | 真机 8 只逐只量时长与倍率 |
+| **只乘伤害** | `damageEnemy` 里 `if (e.staggerT > 0) final *= e.staggerMul`，放在易伤之后、暴击之前；与抗性是两个独立乘区 —— 打对弱点又撞破绽 = 1.6 × 1.5 = 2.4 倍，对打错（0.2）正好 12 倍 | 真机伤害比 **1.500**（同元素 / 同满血起点控制变量） |
+| **不碰的东西** | 判定几何、招式 `mul`、`damagePlayer`、AI 移动一格都没动；`staggerMul` 全文只出现在 `damageEnemy` / `bossStaggerTick` | 契约四节（`damagePlayer` 不读、不写 `e.radius`） |
+| **视觉三件套** | `_staggerFx`：`FXK.decal({ tex:'crack' })` 地面裂纹 + `FX.text('破绽！')` + `UI.log(cfg.stagger.label)` + `SFX.boss()`；`FXK` 缺件只丢裂纹，窗口照开 | 真机 8 只都画出了裂纹 |
+| **踩到的坑** | 开窗那一帧又走了一次递减，窗口从第一帧就少 `dt` —— 探针量到的时长永远比 `dur` 短一截。加 `return` 让开窗当帧不递减 | `probe-stagger` 首跑 19/1 → 20/0 |
+| **新增体检** | `dev/test-m7-3.js`（离线 22 项：数据 / 抗性 8 倍差 / 三处接线 / 只乘伤害的边界）；`dev/probe-stagger.js`（真机 20 项：8 只逐只开窗 / 时长 / 倍率 / 收束 / 伤害比） | 22 + 20 全绿 |
+| 回归 | `check-bafo` 335 · `check-seals` 111 · `act-check` 651 · `skill-ref` 38 · `test-skill-p5` 989 / `p5b` 116 / `p6` 97 · `elemfx` 74 · `combo` 76 · `bosskits` 36 · `bosspattern` 28 · `worldboss-fight` 252 · `smoke` ERRORS none · `mobile-layout` 全绿 | 全绿 |
 
 ### M7.4 已交付明细（魔将之印）
 
