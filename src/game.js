@@ -2631,14 +2631,30 @@ const Game = {
      * 丢到祭坛外（zone-check 会报「落点在 sanctum 外」）。
      * bossPosOf 的顺序是「本图覆盖 → 老坐标（若仍落在本图 sanctum 内）→ 按圆心推导」，
      * 所以老图手感一个像素都没变。 */
+    const spawned = [];
     m.bosses.forEach((bid, idx) => {
       const cfg = BOSSES[bid];
       if (!cfg) return;
       const pos = (typeof bossPosOf === 'function')
         ? bossPosOf(this.state.mapId, bid, idx)
         : (BOSS_POS[bid] || [0, -30]);
+      /* [P14] 分场：落点在 wing 的首领是「副首领」，改分批激活 + 血量 ×0.7。
+       * 用 bossZoneOf 判（region 圆心落点），而不是 bossId 白名单 —— 同一只首领
+       * 可能在主图是主首领、在别图是副首领，判定必须按「本图的落点在哪」。 */
+      const bz = (typeof bossZoneOf === 'function') ? bossZoneOf(this.state.mapId, bid) : null;
+      const wing = !!(bz && bz.kind !== 'boss');
       const b = this.spawnEnemy(null, pos[0], pos[1], false, cfg.level, bid);
       if (b) {
+        /* 副首领独享一个偏殿，不该和主祭坛那只一样肉 */
+        if (wing) {
+          b.hp = Math.round(b.hp * 0.7);
+          b.maxHp = b.hp;
+          b.wingBoss = true;
+          /* 激活闸门要判「玩家踏进它的偏殿」，把 zone 形状拷进来（不放整对象，
+           * 避免持有 MAP_ZONES 的引用被后续改动影响）。 */
+          b.wingZoneType = bz.type; b.wingZoneX = bz.x; b.wingZoneZ = bz.z;
+          b.wingZoneW = bz.w; b.wingZoneH = bz.h; b.wingZoneR = bz.r;
+        }
         b.dmg = cfg.atk * (1 + cfg.level * 0.09);
         /* [P02] 记下原始伤害。狂怒每次进阶段 ×1.15，脱战复位要退回去 ——
          * 不记的话复位一次涨一档，反复拉远拉近能把首领养成一拳超人。 */
@@ -2649,8 +2665,14 @@ const Game = {
         b.anchor = { x: pos[0], z: pos[1] };
         /* [U9] 进场演出：收束环 + 光柱 + 碎星；不改 active，出手时机仍是原来的 */
         if (typeof EnemyFX !== 'undefined') EnemyFX.bossArrive(b);
+        spawned.push(b);
       }
     });
+    /* [P14] 把副首领显式挂到主首领（数组第 0 个、非 wing 的那只）上。
+     * 激活闸门读 e.leadBoss.dead —— 不能用 this.boss：它会被「打谁看谁」改成副首领，
+     * 也会在开局为 null，两种情况下「主首领还活着」都会被误判成「已死」。 */
+    const lead = spawned.find(b => b && !b.wingBoss) || null;
+    for (const b of spawned) if (b && b.wingBoss) b.leadBoss = lead;
   },
 
   /* 用本帧最终相机姿态校正所有血条朝向（详见 animate 里的说明） */
@@ -7952,7 +7974,20 @@ const Game = {
       }
 
       if (e.boss && !e.active) {
-        if (d < 17) {
+        /* [P14] 副首领分批激活：主祭坛那只没死之前，偏殿副首领不会因「路过 17 米」
+         * 就跟着醒。玩家真的踏进它的偏殿，或主首领已经倒下，才放行。
+         * 没有分场的图（wingBoss 未标）走老逻辑，一个像素都不变。 */
+        let gateOpen = true;
+        if (e.wingBoss) {
+          /* 主首领已死（或本图压根没有主首领，leadBoss 为 null）才按距离放行；
+           * 否则必须玩家真的踏进它的偏殿。 */
+          const mainDead = !e.leadBoss || e.leadBoss.dead;
+          const inZone = typeof zoneContains === 'function'
+            && zoneContains({ type: e.wingZoneType, x: e.wingZoneX, z: e.wingZoneZ,
+              w: e.wingZoneW, h: e.wingZoneH, r: e.wingZoneR }, pp.x, pp.z);
+          gateOpen = mainDead || inZone;
+        }
+        if (d < 17 && gateOpen) {
           e.active = true;
           /* [P09] 不再「谁先靠近谁抢血条」。已经有一只在场时只激活、不换血条 ——
            * 归属交给「打谁看谁」（damageEnemy），这里只负责「本来就没血条」的情况。 */

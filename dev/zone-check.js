@@ -31,7 +31,7 @@ for (const f of ['src/data/data-core.js', 'src/data/data-monsters.js', 'src/data
 const MAPS = g('MAPS'), ZONES = g('MAP_ZONES'), BOSSES = g('BOSSES'), NPCS = g('NPCS');
 const MAP_SPECS = g('MAP_SPECS');
 const zoneContains = g('zoneContains'), mapZones = g('mapZones');
-const zonesOfMap = g('zonesOfMap'), bossPosOf = g('bossPosOf');
+const zonesOfMap = g('zonesOfMap'), bossPosOf = g('bossPosOf'), bossZoneOf = g('bossZoneOf');
 const gatePosOf = g('gatePosOf'), nextMapInWorld = g('nextMapInWorld'), zonesContain = g('zonesContain');
 
 /* [M3] 要校验的图 = 手写 MAP_ZONES + 骨架展开 MAP_SPECS。
@@ -125,19 +125,37 @@ for (const mapId of ALL_MAPS) {
     }
   }
 
-  /* 5. 首领在 sanctum 内 —— [M3] 落点一律走 bossPosOf，不再直读 MAP_BOSS_POS。
-   * 原因：同一只首领可能出现在多张图上（新图的 sanctum 位置不同），
-   * 老表的坐标只对老图成立。bossPosOf 会先试老坐标、不在 sanctum 内就按圆心推导。 */
+  /* 5. 首领落点 —— [M3] 一律走 bossPosOf，不再直读 MAP_BOSS_POS。
+   * [P14] 分场之后副首领落在本图指定的 wing zone（不是 sanctum），
+   * 所以判据变成「落在 bossZoneOf 指定的 zone 里；没指定的仍须在 sanctum 内」。 */
   const sanctum = zones.find(z => z.kind === 'boss');
   if (cfg.bosses && cfg.bosses.length) {
     if (!sanctum) fail('有 ' + cfg.bosses.length + ' 个首领但没有 sanctum 区域');
     else {
+      const posOf = [];
       cfg.bosses.forEach((bid, idx) => {
         if (!BOSSES[bid]) { fail('首领 ' + bid + ' 在 BOSSES 里不存在'); return; }
         const p = bossPosOf(mapId, bid, idx);
         if (!p) { fail('首领 ' + bid + ' 没有落点'); return; }
-        if (!zoneContains(sanctum, p[0], p[1])) fail('首领 ' + bid + ' 落点 (' + p[0] + ',' + p[1] + ') 在 sanctum 外');
+        posOf.push({ bid: bid, p: p });
+        const bz = (typeof bossZoneOf === 'function') ? bossZoneOf(mapId, bid) : null;
+        const home = bz || sanctum;
+        if (!zoneContains(home, p[0], p[1]))
+          fail('首领 ' + bid + ' 落点 (' + p[0] + ',' + p[1] + ') 在 ' + (bz ? home.id : 'sanctum') + ' 外');
+        /* [P14] 落点不能贴 zone 边界：首领有体积，贴墙会被夹取逻辑来回推 */
+        const edgeDist = home.type === 'circle'
+          ? home.r - Math.hypot(p[0] - home.x, p[1] - home.z)
+          : Math.min(home.w / 2 - Math.abs(p[0] - home.x), home.h / 2 - Math.abs(p[1] - home.z));
+        if (edgeDist < 3) fail('首领 ' + bid + ' 落点离 ' + home.id + ' 边界只有 ' + edgeDist.toFixed(1) + ' 米，贴墙了');
       });
+      /* [P14] 多首领两两距离 ≥ 18 米，且各在自己的 zone 里 —— 不许再挤同一个祭坛 */
+      for (let i = 0; i < posOf.length; i++) {
+        for (let j = i + 1; j < posOf.length; j++) {
+          const dd = Math.hypot(posOf[i].p[0] - posOf[j].p[0], posOf[i].p[1] - posOf[j].p[1]);
+          if (dd < 18) fail('首领 ' + posOf[i].bid + ' 与 ' + posOf[j].bid + ' 相距只有 '
+            + dd.toFixed(1) + ' 米（< 18），会同时激活');
+        }
+      }
     }
   }
 

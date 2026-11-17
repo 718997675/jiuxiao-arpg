@@ -186,6 +186,28 @@ const MAP_BOSS_POS = {
 /* 按图覆盖（只有「老表里的坐标不在本图 sanctum 内」时才需要写） */
 const MAP_BOSS_AT = {};
 
+/* [P14] 多首领图的「分场」：每只副首领独享一个 zone，不再三只挤在同一个祭坛。
+ * 主首领（数组第 0 个）仍留 sanctum；副首领放到 west / east 偏殿。
+ * 骨架里每张多首领图都有 west / east 两个 wing（见 data-world.js），
+ * 两个副首领的图各占一边，三个副首领的图暂时只有 swamp/abyss（各 2 副）够用。
+ * 血量由 game.spawnBosses 按「落点是否在 sanctum」判 ×0.7，不在这里写死。 */
+const MAP_BOSS_ZONES = {
+  forest:  { batking: 'east' },
+  swamp:   { golemking: 'west', snakequeen: 'east' },
+  mine:    { icequeen: 'east' },
+  abyss:   { ferryman: 'west', swordlord: 'east' },
+  frost:   { firegeneral: 'west' }
+};
+
+/* [P14] 取首领落点所在 zone 的圆心（wing 用矩形中心）。
+ * 返回 null 表示「没有分场」（单首领或回退），调用方按老逻辑走。 */
+function bossZoneOf(mapId, bossId) {
+  const spec = MAP_BOSS_ZONES[mapId];
+  if (!spec || !spec[bossId]) return null;
+  const zs = mapZones(mapId);
+  return (zs || []).find(z => z.id === spec[bossId]) || null;
+}
+
 /* 首领落点：老图保持原坐标不变（手感不能改），新图按 sanctum 推导。
  *   idx 是这只首领在本图 bosses 数组里的序号 —— 多首领时沿小圆环散开。 */
 function bossPosOf(mapId, bossId, idx) {
@@ -194,6 +216,9 @@ function bossPosOf(mapId, bossId, idx) {
   const zs = mapZones(mapId);
   const sanctum = zs ? zs.find(z => z.kind === 'boss') : null;
   const legacy = MAP_BOSS_POS[bossId];
+  /* [P14] 分场优先：副首领放自己 zone 的圆心，不再挤在 sanctum 的圆环上 */
+  const bz = bossZoneOf(mapId, bossId);
+  if (bz) return [bz.x, bz.z];
   /* 老表坐标落在本图 sanctum 内 → 原样用（现有 6 张图走这条，一个像素都不变） */
   if (sanctum && legacy && zoneContains(sanctum, legacy[0], legacy[1])) return legacy;
   if (!sanctum) return legacy || [0, -30];
