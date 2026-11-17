@@ -3,13 +3,15 @@
 - 分支：`feat/skill-refactor`（与技能重构并行；只共用 `ui.js` 说明页一处）
 - 方案文档：`docs/EQUIP-DOLL-PLAN.md`（15 节）
 - 工作台：`docs/equip-doll-playground.html`（**生成物**，源是 `dev/doll-playground.src.html`）
-- 更新：2026-11-17 · **P5 完成**（试衣间 + 33 张族级图标 + 同源说明页）
-- 下一动：**P6 回归**（老档穷举 / 移动端 / 泄漏 / 平衡无关性）
+- 更新：2026-11-17 · **P6 完成**（全专题收口：老档 / 泄漏 / 移动端 + 六条美术欠账）
+- 下一动：**专题收官**。`equip-doll` 9/9 节点全绿，无未交件。
 
-> 当前：**P0 ~ P5 全部完成**。14 个槽位全部走模组装配，33 个造型族在游戏里真的出得来；
+> 当前：**P0 ~ P6 全部完成**。14 个槽位全部走模组装配，33 个造型族在游戏里真的出得来；
 > 7 槽防具的品质从「没有表现」变成 0→3 件光效件，40 件传世各有自己的零件组合；
 > 行囊左列能实时试衣，图标与说明页都从同一张族表数出来。
-> 剩下 **P6（回归）** 一节。
+> 老档 384 件穷举、50 轮换装不泄漏、试衣间开合 30 轮状态全还原，
+> 六条美术欠账（护肩 / 背光 / 腰包 / 戒指 / 法球 / 双法杖）逐条截图人工过。
+> **本专题到此收官。**
 
 ## 一句话现状
 
@@ -40,7 +42,7 @@ P5 把这张身份表接到了界面上：行囊左列能实时试衣（悬停�
 | P3 | 首饰与法器（amulet / ring / relic / fate），12 族（含 6 个光效族） | ✅ | `charforge.js` 四个新挂点（`neckG` / `relicG` / `footG` / `ringL,R`）、`doll.js` 单侧镜像 + 光效共存 + 不透明度、`data-doll.js` 两处 anchor 修正、`actors.js:applyPaperDoll`、`dev/probe-doll-p3.js` | 本次提交 |
 | P4 | 品质 accent 规则 + 传世 40 件签名件 + 8 阶材质细化 | ✅ | `data-doll.js`（`RARITY_ACCENT_N` / `dollQualityParts` / `DOLL_SIG` 40 条 / `DOLL_WEAPON_TRIM` 加 2 件盾面件）、`doll.js`（品质光 + 签名主族 + 缓存 key 加 `shape`）、`actors.js`（武器 / 副手接 `Doll.buildWeapon`）、`weapons.js`（盾脐翻到外侧）、`dev/test-p4.js`、`dev/probe-p4.js` | 本次提交 |
 | P5 | 试衣间（离屏 RT + 2D blit，不新建 GL context）+ 33 张族级图标 + 说明页 | ✅ | `src/doll-preview.js`（共用 renderer 的 RT 预览 + 悬停试穿）、`src/game.js:previewLook`（独立试穿角色）、`items.js`（33 张族级图标 + `itemIconKey` 走 `dollKeyOf`）、`ui.js`（说明页第十六节 + 换装刷新）、`index.html`（预览 DOM + CSS）、`dev/test-p5.js`、`dev/probe-p5.js` | 本次提交 |
-| P6 | 回归：老档穷举 / 移动端 / 泄漏 / `smoke` + `mobile-layout` | ⬜ | `dev/test-doll.js`、`dev/probe-doll.js` | — |
+| P6 | 回归：老档穷举 / 移动端 / 泄漏 / 六条美术欠账 / `smoke` + `mobile-layout` | ✅ | `src/data/data-doll.js`（背光亮边 / 戒指光点 / 双杖头件）、`src/weapons.js`（法球缩小）、`dev/probe-p6.js`、`dev/probe-p6-mobile.js`、`dev/shot-p6-*.js` | 本次提交 |
 
 ## 2026-11-02 · P0 落地
 
@@ -558,14 +560,62 @@ node dev/probe-doll-p2.js     # 33 项真机（四挂点 / 共用挂点隔离 / 
 - **33 族图标**：11 行 × 3 列全部有图，A/B/C 的纹饰差别一眼可辨，没有空壳或重复。
 - **说明页**：第十六节 33 条族名 + 三轴，文字不挤不叠。
 
+## 2026-11-17 · P6 落地（专题收官）
+
+### 做完了什么
+
+| 件 | 做法 | 判据 |
+|---|---|---|
+| 老档穷举 | 真机按 `ARMOR_BASES` / `WEAPON_BASES` / `OFFHAND_BASES` 全表装配 384 件 + 空 equipment + 双戒指两态 | `dev/probe-p6.js` 10/0，0 抛错 |
+| 泄漏 | 同批 3 套配置换 50 轮 + 试衣间开合 30 轮 | geometries 532→526 / 583→583，textures 16→16 |
+| renderer 状态 | 每次渲完查 `getRenderTarget()` / `getScissorTest()` | 30 轮全还原，脏 0 次；GL context 始终 1 |
+| 移动端 | iPhone SE 375×667 打开试衣间，canvas 334×220 不出屏、可滚、能出图 | `dev/probe-p6-mobile.js` 11/0 |
+| 帧率口径 | 无头 SwiftShader 是软件光栅，绝对帧率到不了 30 —— 改判「开关试衣间帧率不退化 + 静止不重渲」 | 基线 5.5 → 开 12.0fps；静止 500ms 渲染 0 次 |
+| 六条美术欠账 | 逐条改完、逐条出图人工过 | 见下 |
+
+### 六条美术欠账的收法
+
+1. **护肩过宽**：`data-doll.js` B 族护肩三层塔半径收 ~12%（0.230→0.205），
+   肩关节 x≈0.284，原来镜像总宽 0.58 米比胸甲 0.56 还宽；现在接近头宽。
+2. **札甲背光过黑**：chest B 背面加两条 trim 亮边（z=-0.186，避开 plate 背面 -0.1775）。
+3. **重氅背光过黑**：cloak B 背面加两条 trim 亮边（x=±0.278 压布边，在 inner 层半宽 0.260 之外）。
+   两条都走 **trim 通道，不是 accent** —— accent 会让 `dollQualityParts` 提前返回、关掉该槽品质光。
+4. **C 族腰包偏亮**：查证已是 P4 调色板重构的既成收益 —— 现在 `pouch` 走 `sub` 通道
+   （亮度 53 vs main 89 / trim 131），中性布光与游戏内都不再是亮橙块。未再改数据。
+5. **戒指光点过大**：A/B/C 的 accent 球半径统一收 ~25%（0.013/0.018/0.014 → 0.010/0.014/0.011）。
+   只改半径不动分段与件数 —— probe-p3 靠顶点数区分族。
+6. **法球偏大**：`weapons.js` orb 半径 0.155→0.110、环 0.225→0.162（直径 0.45→0.32 米）。
+   **不动 `DOLL_WEAPON_RIG.orb.len`**（0.46 是长度契约，签名与探针都读它）。
+7. **双法杖难辨**：新增两件杖头形制件 `flameSpire`（火尖锥）/ `ashHalo`（倾斜光环），
+   各挂一件到 emberheaven / jinshi 的 trim。只改 trim，不动 len。
+
+### 验收
+
+| 探针 | 结果 |
+|---|---|
+| `dev/test-doll.js` / `test-p4.js` / `test-p5.js` / `check-help.js` | 127/0 · 27/0 · 27/0 · 41/0 |
+| `dev/probe-doll-p1/p2/p3.js` / `probe-p4.js` / `probe-p5.js` | 69/0 · 33/0 · 62/0 · 33/0 · 23/0 |
+| `dev/probe-doll.js` / **`probe-p6.js`** / **`probe-p6-mobile.js`** | 23/0 · **10/0** · **11/0** |
+| 全量回归 | act-check · check-bafo 335 · check-wbmodels 182 · worldboss-fight 252 · test-m6 264 · test-m5 · test-m7-5 103 / -6 82 / -7 52 / -8 66 · test-p07 37 · test-p08 31 · test-quest · test-items 21 · smoke ERRORS none · mobile-layout 全绿 · verify-perf 报错 0 |
+
+### 截图人工过
+
+`dev/_shots/p6-*.png`（不入库）。工作台的**中性布光**看不出背光问题，所以背光两条另用
+`dev/shot-p6-back.js` 在游戏里把相机转到角色背后、太阳在前的林地场景复现：
+
+- **p6-back-cloakB.png**：重氅背面两条竖亮边清晰可见，不再是整块黑 —— 这是六条里最需要
+  真场景验的一条。
+- **p6-01-shouldersB-front.png**：护肩收窄后三层塔仍在（B 族辨识度），不再像两块门板。
+- **p6-04-chestC-pouch.png**：腰包已是暗 sub 色，不再跳橙。
+- **p6-sig-staff-emberheaven.png / p6-sig-staff-jinshi.png**：火尖 vs 光环，一眼可分。
+- **p6-sig-orb-taiyin.png**：法球直径约为躯干宽 1/3，不再挡半条手臂。
+- **p5 全套保持**：试衣间 / 33 图标 / 说明页无回归。
+
 ## 下一步
 
-**P6 回归：老档 / 移动端 / 泄漏 / 平衡无关性。**
-
-1. 384 件基底穷举 `dollKeyOf` 不抛错、不返回空族（`test-doll` 已覆盖，P6 再与真机对一遍）。
-2. iPhone SE 尺寸 ≥ 30fps；`smoke` + `mobile-layout` 全绿（已通过，P6 补试衣间打开态）。
-3. 换装 50 轮 `geometries` / `textures` 波动 ≤ 2 —— **重点补试衣间反复开合的泄漏**。
-4. 清美术欠账：护肩偏宽 / 背光过暗 / 腰包偏亮 / 戒指光点偏大 / 法球偏大 / 双法杖难辨。
+**专题收官。** `equip-doll` 9/9 节点全绿，无预留未交件。后续若动装备，只需守三条：
+① 文案与实装对齐（面板写的每句游戏里要兑现）；② 光效只加亮度不加尺寸；
+③ 投入等级（≤10）与有效等级（≤20）两笔账不混。
 
 ## 卡点
 
@@ -574,8 +624,8 @@ node dev/probe-doll-p2.js     # 33 项真机（四挂点 / 共用挂点隔离 / 
   不是代码 —— 但这仍是**要返工的量**，越早定越省。
 - **P2 已经动过一次 B 族的体量**（札甲加厚）。如果 §12 第 1 条最终决定「重甲不改体量」，
   这次改动要回退 —— 但那样 B vs C 的 15% 就过不去，得换别的办法拉开差距。
-- **美术欠账（P6 清）**：护肩偏宽、重氅与札甲背光过暗、C 族腰包偏亮、戒指光点特写下略大
-  （`sph 0.013`）、法球直径 0.45 米偏大、两把法杖辨识度弱。
+- **美术欠账已全清（P6）**：护肩 / 背光 / 腰包 / 戒指 / 法球 / 双法杖逐条改完并截图人工过；
+  腰包一条经查证是 P4 调色板重构的既成收益，未重复改数据。
 - **P5 没有新增存档字段**：图标与预览都走 `dollKeyOf`，老档照旧能读；
   但「试穿打开态」是运行时状态，不进存档 —— 下次开背包按桌面/触屏默认态走。
 - 说明页那一节与技能重构都动 `ui.js`，**后落地的那个 rebase**。P5 只改了 `renderInventory`

@@ -203,13 +203,17 @@
       boss.scale.set(0.55, 1, 1);
 
     } else if (shape === 'orb') {
-      const o = put(g, new THREE.SphereGeometry(0.155, 10, 8),
+      /* P6：原来球半径 0.155 + 环 0.225 = 直径 0.45 米，在手里快赶上躯干宽。
+       * 整体收 ~28%：球 0.110 / 环 0.162（直径 0.324），仍然是「一颗带双环的法珠」，
+       * 只是不再挡住半条手臂。注意这改的是几何尺寸，**不动 DOLL_WEAPON_RIG.orb.len**
+       * —— 那个 0.46 是长度契约，签名和探针都读它。 */
+      const o = put(g, new THREE.SphereGeometry(0.110, 10, 8),
         MAT(color, { rough: 0.3, metal: 0.4, emissive: glow || color, ei: 0.45 }), 0, 0.05, 0);
       o.material.transparent = true;
       o.material.opacity = 0.92;
-      const r = put(g, new THREE.TorusGeometry(0.225, 0.014, 4, 12), gold, 0, 0.05, 0);
+      const r = put(g, new THREE.TorusGeometry(0.162, 0.010, 4, 12), gold, 0, 0.05, 0);
       r.rotation.x = 1.15;
-      const r2 = put(g, new THREE.TorusGeometry(0.225, 0.012, 4, 12), gold, 0, 0.05, 0);
+      const r2 = put(g, new THREE.TorusGeometry(0.162, 0.008, 4, 12), gold, 0, 0.05, 0);
       r2.rotation.set(1.15, 0, Math.PI / 2.2);
 
     } else if (shape === 'charm') {
