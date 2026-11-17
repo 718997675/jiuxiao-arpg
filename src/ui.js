@@ -1151,7 +1151,13 @@ const UI = {
       const hub = (typeof MAPS !== 'undefined' && MAPS.chaossea) ? MAPS.chaossea : null;
       const fg = (hub && hub.finalGate) || {};
       const need = fg.sealNeed || BAFO_SEALS.length;
-      H.push(sec('十五 · 终章', `${BAFO_SEALS.length} 印 · ${need} 印开门`, [
+      /* [M7.9] 副标题跟着数据走：五阶段数、轮回上限都读表，改数值这一行自己变。 */
+      const _F = (typeof BOSSES !== 'undefined' && BOSSES.chaosavatar && BOSSES.chaosavatar.bafoFinal) || null;
+      const _C = (typeof BALANCE !== 'undefined' && BALANCE.cycle) || null;
+      const sub = `${BAFO_SEALS.length} 印 · ${need} 印开门`
+        + (_F && _F.names ? ` · ${_F.names.length} 阶段` : '')
+        + (_C ? ` · 最多 ${_C.max} 轮回` : '');
+      H.push(sec('十五 · 终章', sub, [
         row('怎么走', `卷五终章是一座<b>坛</b>：坛心<b>八扇门</b>，每扇通一座魔将殿，一殿一只魔将。`
           + `打完八只、收齐<b>${need} 枚魔将之印</b>，坛北的<b>${fg.name || '天龙终门'}</b>才开`),
         row('八印', BAFO_SEALS.map(s => `<b>${s.name}</b>（${s.part}）`).join(' · ')),
@@ -1161,7 +1167,51 @@ const UI = {
           + `也就是说：带错元素，一场架要打八倍长；带对元素，它就是个普通首领。`
           + `每只还有一个<b>破绽窗口</b>（放完大招有硬直），抓住那几秒能多打一截`),
         row('卡住了', `终门不开只有一种原因：印没齐。山河图上那扇门会写「<b>需 ${need} 印（你有几枚）</b>」，`
-          + `照着缺的那几枚去打就行 —— 门本身不会坏`)
+          + `照着缺的那几枚去打就行 —— 门本身不会坏`),
+        /* [M7.9] 以下三行对账 M7.6 / M7.7 / M7.8 的实装。
+         * 数值一律从数据表读，不在这里写第二份 —— 写了第二份就迟早对不上。 */
+        row('终门之后', (() => {
+          const F = (typeof BOSSES !== 'undefined' && BOSSES.chaosavatar && BOSSES.chaosavatar.bafoFinal) || null;
+          if (!F) return '终局首领的具体打法以当前版本为准。';
+          const nm = (F.names || []).join(' → ');
+          return `混沌·无相天魔是<b>五段</b>的：<b>${nm}</b>。`
+            + `前四段按血量推进（${(F.at || []).map(v => Math.round(v * 100) + '%').join(' / ')}），`
+            + `第四段它<b>攻速 +${(F.rage && F.rage.aspd) || 40}%</b>、技能间隔缩到 <b>${(F.rage && F.rage.gap) || 0.6} 倍</b>；`
+            + `掉到 <b>${Math.round((F.formAt || 0.2) * 100)}%</b> 那一刻<b>满血变身</b>（模型换掉、${F.invuln || 3} 秒无敌、你的血蓝也回满）。`
+            + `第三段会<b>塌缩场地</b>：安全圈从 ${(F.shrink && F.shrink.r0) || 26} 米收到 ${(F.shrink && F.shrink.r1) || 10} 米，圈外每秒掉 <b>${(F.shrink && F.shrink.dps) || 6}%</b> 最大生命。`;
+        })()),
+        row('真身怎么打', (() => {
+          const F = (typeof BOSSES !== 'undefined' && BOSSES.chaosavatar && BOSSES.chaosavatar.bafoFinal) || null;
+          const rot = (F && F.weakRotate) || 20;
+          return `变身后的真身<b>每 ${rot} 秒换一个元素弱点</b>，五档轮转（雷 / 火 / 冰 / 毒 / 物理）。`
+            + `口径和八位魔将完全一样：<b>弱点 −60</b>（吃 160%）、<b>其余 +80</b>（只吃 20%），差 8 倍。`
+            + `它换弱点时会播报 —— 20 秒一轮还藏起来，那就成了随机挨打。`;
+        })()),
+        row('终局传世', (() => {
+          const FU = (typeof BALANCE !== 'undefined' && BALANCE.finalUnique) || null;
+          if (!FU) return '终局传世以当前版本为准。';
+          const R = FU.rate || {};
+          const pc = v => (v * 100).toFixed(2).replace(/\.?0+$/, '') + '%';
+          /* 保底那段按字段拼，**一个兜底数字都不写** —— 写死「20~34」的话，
+           * 将来把区间改成 30~50，这句就会在数据缺失时显示成假数字。 */
+          const G = FU.guaranteed || {};
+          const guar = [];
+          if (G.legendary) guar.push(G.legendary + ' 件神兵');
+          if (Array.isArray(G.crystal) && G.crystal.length === 2) guar.push(G.crystal.join('~') + ' 玄晶');
+          return `每杀一次真身，在常规掉落之外<b>额外抽一次全池传世</b>：`
+            + `新手 / 普通 <b>${pc(R.normal)}</b>、困难 <b>${pc(R.hard)}</b>、极难 <b>${pc(R.nightmare)}</b>。`
+            + `而且<b>先抽你没拿过的</b> —— 万分之一的东西，一辈子可能只见两三次，若这两三次还是已有的，长期目标就成了抽卡。`
+            + `收集齐了才回到全池随机。`
+            + (guar.length ? `另外每趟<b>必掉 ${guar.join(' + ')}</b>，不会空手。` : '');
+        })()),
+        row('入轮回', (() => {
+          const C = (typeof BALANCE !== 'undefined' && BALANCE.cycle) || null;
+          if (!C) return '二周目以当前版本为准。';
+          return `打赢真身之后可以<b>入轮回</b>：装备、等级、魔将之印、任务进度<b>全部保留</b>，`
+            + `只是这一界的规矩重写一遍 —— 怪物 <b>+${C.lvPer} 级</b>、掉落 <b>+${Math.round(C.dropMul * 100)}%</b>（第 1 轮回正好 ×1.5）。`
+            + `每轮回叠加一次，<b>最多 ${C.max} 轮回</b>（怪物 +${C.lvPer * C.max} 级、掉落 ×${(1 + C.dropMul * C.max).toFixed(1)}）。`
+            + `山河图卷头会一直写着你现在第几轮回。`;
+        })())
       ]));
     }
 

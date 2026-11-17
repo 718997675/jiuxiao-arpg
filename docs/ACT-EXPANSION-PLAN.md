@@ -1133,13 +1133,13 @@ node dev/live-check.js     # 推 main 后线上能否开局
 |---|---|---|---|---|
 | M7.1 | 数据结构：`ACTS['5-2']` 改成枢纽 + 8 副本图位 + 终 boss 场；`CAMPS` 不变 | ✅ | `data-world.js`、`data-maps.js`、`ui.js`、`dev/act-check.js`、`dev/zone-check.js`、`dev/zone-density.js` | `act-check` 556 项通过（图位 30 → **39**）；`zone-check` / `zone-density` 全绿 |
 | M7.2 | 8 魔将数据：`BOSSES` 新增 8 条（含 `resist` / `stagger` / `seal` / `animKind`）；`BAFO_SEALS` 八印表 | ✅ | `data-monsters.js`、`data-world.js`、`game.js`、新建 `dev/check-bafo.js` | `check-bafo` 335 项通过（含「弱点/非弱点 = 8.00 倍」硬断言） |
-| M7.3 | 弱点与破绽机制：`damageEnemy` 读 `boss.resist`（**已随 M7.2 落地**）；`stagger` 状态与窗口 | 🔄 | `game.js` | 单测：命中弱点 ≈ 8 倍差（抗性侧已成立，破绽窗口待做） |
-| M7.4 | 魔将之印：掉落、存档字段、8 印齐开终门（**印门已拦在 `travelTo`**，掉落与 UI 待做） | 🔄 | `game.js`、`core/save.js`、`ui.js` | 老档补字段不丢档 |
-| M7.5 | 9 个模型 + 专属动画 | ⬜ | `actors.js`、`fx.js` | `verify-perf` 报错 0；截图人工过 |
-| M7.6 | 终 boss 五阶段 + P5 满血变身 | ⬜ | `data-monsters.js`、`game.js` | 阶段切换与血条重置可复现 |
-| M7.7 | 掉落：全传世池 + 0.01%/0.1% + 未收集优先 | ⬜ | `game.js`、`items.js` | 抽样 10 万次验证概率 |
-| M7.8 | 二周目最小闭环 | ⬜ | `game.js`、`core/save.js`、`ui.js` | 轮回后怪物强度与掉率生效 |
-| M7.9 | 说明页 / 图鉴 / README 同步 | ⬜ | `ui.js`、`README.md` | 文案与实际一致 |
+| M7.3 | 弱点与破绽机制：`damageEnemy` 读 `boss.resist`；`stagger` 状态与窗口 | ✅ | `game.js`（`bossStaggerArm` / `bossStaggerTick` / `_staggerFx`）、`dev/test-m7-3.js`、`dev/probe-stagger.js` | 契约 22/0、真机 20/0（8 只逐只量开窗 / 时长 / 倍率，伤害比 1.500） |
+| M7.4 | 魔将之印：掉落、存档字段、8 印齐开终门 | ✅ | `game.js`、`core/save.js`、`ui.js`、`README.md`、`dev/check-seals.js`、`dev/seal-live.js` | `check-seals` 111 项 · `seal-live` 19 项；老档补字段不丢档 |
+| M7.5 | 9 个模型 + 专属动画 | ✅ | 新建 `src/bafomodels.js`、`actors.js`、`game.js`、`dev/test-m7-5.js`、`dev/probe-bafo-models.js` | 契约 103/0、真机 187/0；`verify-perf` 报错 0；九张截图人工过 |
+| M7.6 | 终 boss 五阶段 + P5 满血变身 | ✅ | `data-monsters.js`（`bafoFinal`）、`game.js`（状态机）、`boss-cast.js`（`e.bafoKit`）、`ui.js`（五盏灯）、`dev/test-m7-6.js`、`dev/probe-bossfinal.js` | 契约 82/0、真机 60/0（一击打到 0% 仍变身 / 血条填回 100% / 无敌 3 秒 / 弱点轮换） |
+| M7.7 | 掉落：全传世池 + 0.01%/0.1% + 未收集优先 | ✅ | `data-core.js`（`BALANCE.finalUnique`）、`items.js`（`pickFinalUnique`）、`game.js`（`_finalUniqueDrop`）、`core/save.js`（`codexUnique`）、`dev/test-m7-7.js`、`dev/probe-finaldrop.js` | 契约 52/0（含 100 万次 × 4 档抽样）、真机 18/0 |
+| M7.8 | 二周目最小闭环 | ✅ | `data-core.js`（`BALANCE.cycle`）、`game.js`（`cycle` / `cycleLv` / `cycleDropMul` / `diff` 缓存 / `lv0` / `enterCycle`）、`core/save.js`、`ui.js`、`dev/test-m7-8.js`、`dev/probe-cycle.js` | 契约 66/0、真机 37/0（怪 +10 级 / 掉率 ×1.5 / 装备等级印全保留 / 存档 round-trip / 上限拒绝） |
+| M7.9 | 说明页 / 图鉴 / README 同步 | ✅ | `ui.js`（终章四行 + 副标题读表）、`README.md`、`dev/check-help.js`、`dev/probe-help.js` | 文案对账 41/0、说明页真机 22/0（数字读运行时数据 / 零渲染残留） |
 
 ### 15.9 风险与不做的事
 
