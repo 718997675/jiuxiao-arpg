@@ -689,12 +689,12 @@ function buildLandmark(type, anims) {
       L(boxGeo(0.5, 2.4, 0.5), stone, 3.7, 1.2, 0);
       break;
     case 'lanternRow': /* 引魂灯列 */
-      for (let i = 0; i < 4; i++) {
-        const x = (i - 1.5) * 1.8;
+      for (let i = 0; i < 3; i++) {
+        const x = (i - 1) * 2.0;
         L(cylGeo(0.07, 0.08, 2.4, 5), dark, x, 1.2, 0);
         L(sphGeo(0.36, 6), glow(0x9ad8ff, 0.85), x, 2.6 + (i % 2) * 0.4, 0);
       }
-      L(boxGeo(7.2, 0.3, 0.5), dark, 0, 0.15, 0);
+      L(boxGeo(5.4, 0.3, 0.5), dark, 0, 0.15, 0);
       break;
     case 'stele': /* 渡口石碑 */
       L(boxGeo(2.6, 0.5, 1.4), stone, 0, 0.25, 0);
