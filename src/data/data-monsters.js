@@ -918,6 +918,12 @@ const BOSSES = {
     hp: 1800, atk: 20, spd: 2.6, color: 0x3f5a30, cloth: 0x2c3f22, model: 'treant', scale: 1.85,
     melee: true, range: 4.2, atkCd: 2.2, family: 'plant',
     patterns: ['slam', 'roots', 'summon'],
+    /* [P15] 战前剧情：{ who, text } 数组，只演一次（落盘 bossIntro）。 */
+    intro: [
+      { who: '旁白', text: '林子里没有鸟叫。竹子一排排低着头，像在等什么。' },
+      { who: '巨木妖王', text: '活人？这片林子，只埋死人。' },
+      { who: '你', text: '树根从脚下钻出来时，你才知道——整片林子都是它的身体。' }
+    ],
     lines: ['这片竹林……是我的坟场。', '凡人的血，最养竹。']
   },
   batking: {
@@ -925,6 +931,12 @@ const BOSSES = {
     hp: 2400, atk: 24, spd: 4.6, color: 0x7a1f2e, cloth: 0x3d0c13, model: 'batking', scale: 1.65,
     melee: true, range: 3.6, atkCd: 1.5, fly: true, family: 'beast',
     patterns: ['ringshot', 'charge', 'summon'],
+    /* [P15] 战前剧情：{ who, text } 数组，只演一次（落盘 bossIntro）。 */
+    intro: [
+      { who: '旁白', text: '天暗了一瞬。不是云，是翅膀。' },
+      { who: '血蝠魔君', text: '血……都是我的血！你闻起来，也一样。' },
+      { who: '你', text: '倒吊的影子铺满地面，你握紧了兵刃。' }
+    ],
     lines: ['血……都是我的血！', '你闻起来很香甜。']
   },
   chief: {
@@ -932,6 +944,12 @@ const BOSSES = {
     hp: 4200, atk: 34, spd: 3.2, color: 0x7a5a38, cloth: 0x4a2414, model: 'brute', scale: 1.85, skin: 0x9a7a5a,
     melee: true, range: 4.6, atkCd: 2.0, family: 'humanoid',
     patterns: ['slam', 'charge', 'summon'],
+    /* [P15] 战前剧情：{ who, text } 数组，只演一次（落盘 bossIntro）。 */
+    intro: [
+      { who: '旁白', text: '骨堆后面站起来一头巨兽，手里拖着还在滴血的骨棒。' },
+      { who: '半兽人酋长·碎骨', text: '你也是来抢酋长位子的？拿骨头说话。' },
+      { who: '你', text: '它胸前的图腾，每一枚都是一颗人头。' }
+    ],
     lines: ['碎骨！我要把你碎成骨！', '部族的勇士，都死在你的手里？']
   },
   golemking: {
@@ -946,6 +964,14 @@ const BOSSES = {
     melee: true, range: 5.0, atkCd: 2.6, armorHigh: true, family: 'stone',
     actEnd: true, keyTier: 2,
     patterns: ['slam', 'rocks', 'quake'],
+    /* [P15] 战前剧情：{ who, text } 数组，只演一次（落盘 bossIntro）。 */
+    intro: [
+      { who: '旁白', text: '山整个塌下来，碎石在祭坛前堆成一个人的形状。' },
+      { who: '石甲巨魔', text: '我身上这些裂纹，都是你们的刀刻的。' },
+      { who: '石甲巨魔', text: '你打碎我一层，我就再长一层。' },
+      { who: '石甲巨魔', text: '东边那个山口，从今天起封了。' },
+      { who: '你', text: '你想起山那边还有五卷路。这一拳，必须接住。' }
+    ],
     lines: ['石头……不会痛。', '你也会变成石头。', '翻过这座山？先问过我的拳头。']
   },
   snakequeen: {
@@ -953,6 +979,12 @@ const BOSSES = {
     hp: 5200, atk: 38, spd: 3.6, color: 0x2f7f5f, cloth: 0x1d3f30, model: 'snake',
     melee: false, ranged: true, range: 14, atkCd: 1.9, family: 'beast',
     patterns: ['poisonnova', 'ringshot', 'summon'],
+    /* [P15] 战前剧情：{ who, text } 数组，只演一次（落盘 bossIntro）。 */
+    intro: [
+      { who: '旁白', text: '草丛里有东西在游。鳞片摩擦的声音，从四面八方来。' },
+      { who: '蛇姬·青鳞', text: '别躲，我闻得到你身上活人的热气。' },
+      { who: '你', text: '毒雾漫上来时，你屏住了呼吸。' }
+    ],
     lines: ['来，让我看看你的骨头。', '毒会先吃掉你的眼睛。']
   },
   ghostlord: {
@@ -960,6 +992,12 @@ const BOSSES = {
     hp: 7800, atk: 46, spd: 3.0, color: 0x7fd6c0, cloth: 0x1f3a38, model: 'ghost',
     melee: false, ranged: true, range: 16, atkCd: 2.0, family: 'spirit',
     patterns: ['ringshot', 'curse', 'summon'],
+    /* [P15] 战前剧情：{ who, text } 数组，只演一次（落盘 bossIntro）。 */
+    intro: [
+      { who: '旁白', text: '矿道深处的灯全灭了。有人念经，声音却从你背后传来。' },
+      { who: '幽魂道尊', text: '这条矿道不许活人走——你却走过来了。' },
+      { who: '你', text: '你回头，那里空无一人。' }
+    ],
     lines: ['生者，为何踏入死地？', '你的魂魄，我收下了。']
   },
   /* [M4] 赤炎魔将挪回 2-1：主线 m2_1_1「冰火双魔」一直在寒潭水牢找它，
@@ -971,6 +1009,12 @@ const BOSSES = {
     hp: 8400, atk: 50, spd: 3.4, color: 0xa82c20, cloth: 0x551008, model: 'brute', scale: 1.9,
     melee: true, range: 4.6, atkCd: 1.8, fire: true, family: 'humanoid',
     patterns: ['slam', 'fireline', 'charge'],
+    /* [P15] 战前剧情：{ who, text } 数组，只演一次（落盘 bossIntro）。 */
+    intro: [
+      { who: '旁白', text: '寒潭的水在沸腾。火光从水底往上烧。' },
+      { who: '赤炎魔将', text: '寒潭都烧开了，你还站着？' },
+      { who: '你', text: '明明是冰封的潭，火却烧得这样理直气壮。' }
+    ],
     lines: ['焚尽！焚尽一切！', '你的血肉，会为我燃起。']
   },
   icequeen: {
@@ -978,6 +1022,12 @@ const BOSSES = {
     hp: 8800, atk: 58, spd: 3.2, color: 0x7fb8e0, cloth: 0x2a4f6b, model: 'ghost', scale: 1.85,
     melee: false, ranged: true, range: 15, atkCd: 1.9, ice: true, family: 'spirit',
     patterns: ['frostnova', 'ringshot', 'summon'],
+    /* [P15] 战前剧情：{ who, text } 数组，只演一次（落盘 bossIntro）。 */
+    intro: [
+      { who: '旁白', text: '呼出的气结成了霜。潭面从边缘开始，一寸寸冻实。' },
+      { who: '冰魄妖后', text: '再看一眼潭底，那里全是冻住的人。' },
+      { who: '你', text: '冰里封着很多人。他们的眼睛，都朝着你。' }
+    ],
     lines: ['冷么？很快就感觉不到了。', '冰封，是最好的棺。']
   },
   spidermother: {
@@ -985,6 +1035,12 @@ const BOSSES = {
     hp: 13500, atk: 62, spd: 3.0, color: 0x6b4278, cloth: 0x2e1a35, model: 'spider', scale: 2.15,
     melee: true, range: 4.4, atkCd: 1.7, poison: true, family: 'beast',
     patterns: ['summon', 'poisonnova', 'charge'],
+    /* [P15] 战前剧情：{ who, text } 数组，只演一次（落盘 bossIntro）。 */
+    intro: [
+      { who: '旁白', text: '网从顶上垂下来，粘住你的肩。网后面，有东西在数你的脚步。' },
+      { who: '万毒蛛母', text: '别踩那些卵。它们听得见。' },
+      { who: '你', text: '你听见卵囊里，传来咀嚼的声音。' }
+    ],
     lines: ['我的孩子们……饿了。', '别踩坏我的卵。']
   },
   /* [M4] 冥河渡者降级为 3-1 的驻场首领：卷末位让给黄泉主宰（yellowspring，
@@ -996,6 +1052,12 @@ const BOSSES = {
     hp: 21000, atk: 88, spd: 2.8, color: 0x5b6b8a, cloth: 0x2a3244, model: 'golem', scale: 1.95,
     melee: true, range: 5.2, atkCd: 2.3, armorHigh: true, family: 'undead',
     patterns: ['quake', 'ringshot', 'curse'],
+    /* [P15] 战前剧情：{ who, text } 数组，只演一次（落盘 bossIntro）。 */
+    intro: [
+      { who: '旁白', text: '河水不流，船却不系自漂。船头站着一个撑篙的人。' },
+      { who: '冥河渡者', text: '这河只渡死人。你还站着，说明船钱没带够。' },
+      { who: '你', text: '你没上船。船却朝你漂了过来。' }
+    ],
     lines: ['上船吧，船票是命。', '忘川水凉，别回头。']
   },
   swordlord: {
@@ -1003,6 +1065,12 @@ const BOSSES = {
     hp: 18000, atk: 78, spd: 4.0, color: 0xb0a480, cloth: 0x50441f, model: 'humanoid',
     melee: true, range: 3.8, atkCd: 1.3, family: 'spirit',
     patterns: ['swordrain', 'charge', 'slam'],
+    /* [P15] 战前剧情：{ who, text } 数组，只演一次（落盘 bossIntro）。 */
+    intro: [
+      { who: '旁白', text: '万剑插满剑冢，无风自鸣。最高的那柄，自己出了鞘。' },
+      { who: '天罡剑魂', text: '拔剑吧。剑冢不认没出鞘的人。' },
+      { who: '你', text: '你拔剑的手，比心慢了一拍。' }
+    ],
     lines: ['剑，即是道。', '接我这一剑。']
   },
   /* ---------------- 卷二 · 血月焚天（M3） ----------------
@@ -1018,6 +1086,12 @@ const BOSSES = {
     hp: 11200, atk: 60, spd: 2.8, color: 0xb03a18, cloth: 0x5a1408, model: 'golem', scale: 1.9,
     melee: true, range: 4.8, atkCd: 2.1, fire: true, family: 'stone',
     patterns: ['slam', 'fireline', 'meteor'],
+    /* [P15] 战前剧情：{ who, text } 数组，只演一次（落盘 bossIntro）。 */
+    intro: [
+      { who: '旁白', text: '井底三百年的火，今天找到了出口。' },
+      { who: '熔脉之主·赤髓', text: '这口井，烧了三百年。你也想变成炉渣吗？' },
+      { who: '你', text: '热浪扑面，你的血像要在血管里沸腾。' }
+    ],
     lines: ['这口井，烧了三百年。', '你也想变成炉渣吗？']
   },
   ashwarden: {
@@ -1025,6 +1099,12 @@ const BOSSES = {
     hp: 12800, atk: 66, spd: 2.4, color: 0x6a6058, cloth: 0x2e2a26, model: 'golem', scale: 1.95,
     melee: true, range: 5.0, atkCd: 2.4, armorHigh: true, family: 'stone',
     patterns: ['quake', 'rocks', 'slam'],
+    /* [P15] 战前剧情：{ who, text } 数组，只演一次（落盘 bossIntro）。 */
+    intro: [
+      { who: '旁白', text: '荒原上最后一尊石像，眼睛里还有火。' },
+      { who: '灰烬守望者', text: '灰会记住每一个脚印。风停了，你也该停了。' },
+      { who: '你', text: '你踩碎的灰烬里，全是别人的脚印。' }
+    ],
     lines: ['灰会记住每一个脚印。', '风停了，你也该停了。']
   },
   flamewraith: {
@@ -1032,6 +1112,12 @@ const BOSSES = {
     hp: 14200, atk: 72, spd: 3.6, color: 0xd8622a, cloth: 0x6a2410, model: 'ghost', scale: 1.9,
     melee: false, ranged: true, range: 15, atkCd: 1.9, fire: true, family: 'spirit',
     patterns: ['ringshot', 'fireline', 'curse'],
+    /* [P15] 战前剧情：{ who, text } 数组，只演一次（落盘 bossIntro）。 */
+    intro: [
+      { who: '旁白', text: '峡谷里不肯散的，不是火，是不肯合眼的人。' },
+      { who: '焚风怨灵', text: '烧过了，就不冷了。风带我走，火留我下来。' },
+      { who: '你', text: '火焰里有一张脸，朝你笑了一下。' }
+    ],
     lines: ['烧过了，就不冷了。', '风带我走，火留我下来。']
   },
   flameemperor: {
@@ -1040,6 +1126,14 @@ const BOSSES = {
     melee: true, range: 5.0, atkCd: 1.8, fire: true, family: 'humanoid',
     actEnd: true, keyTier: 3,
     patterns: ['slam', 'fireline', 'meteor', 'summon'],
+    /* [P15] 战前剧情：{ who, text } 数组，只演一次（落盘 bossIntro）。 */
+    intro: [
+      { who: '旁白', text: '祭坛四周的火一齐矮了半截，像在向谁行礼。' },
+      { who: '焚天炎帝', text: '这坛火从我嘴里生出来，烧了三百年。' },
+      { who: '焚天炎帝', text: '你们叫它天劫，我管它叫干活。' },
+      { who: '焚天炎帝', text: '站这么近，是想第一个化成灰？' },
+      { who: '你', text: '火从四面合拢。你没有退——身后是你要守的人。' }
+    ],
     lines: ['焚天不是我的名号，是我的活。', '天要烧，我就替它烧。', '你烧不起来的，我教你。']
   },
   /* ---------------- 卷一 ~ 卷五 新图首领（M3b） ----------------
@@ -1062,6 +1156,12 @@ const BOSSES = {
     hp: 5200, atk: 40, spd: 3.0, color: 0xb0a488, cloth: 0x4a4234, model: 'humanoid', scale: 1.9,
     melee: false, ranged: true, range: 14, atkCd: 2.1, family: 'undead',
     patterns: ['curse', 'summon', 'ringshot'],
+    /* [P15] 战前剧情：{ who, text } 数组，只演一次（落盘 bossIntro）。 */
+    intro: [
+      { who: '旁白', text: '塔里每一块骨头都在低声念经，声浪把你裹在中间。' },
+      { who: '骨塔主持', text: '这塔里的每一块骨头，都念过一遍经。你也留下来听吧。' },
+      { who: '你', text: '经声是从你自己骨头里响起来的。' }
+    ],
     lines: ['这塔里的每一块骨头，都念过一遍经。', '你也留下来听吧。']
   },
   marrowlord: {
@@ -1069,6 +1169,12 @@ const BOSSES = {
     hp: 28600, atk: 95, spd: 2.6, color: 0xc8bca0, cloth: 0x3a3328, model: 'golem', scale: 1.95,
     melee: true, range: 5.0, atkCd: 2.4, armorHigh: true, family: 'undead',
     patterns: ['quake', 'slam', 'rocks'],
+    /* [P15] 战前剧情：{ who, text } 数组，只演一次（落盘 bossIntro）。 */
+    intro: [
+      { who: '旁白', text: '长廊尽头没有门，只有一具坐着的骨架，比山还高。' },
+      { who: '髓主', text: '九十九个人走到这儿，没一个能再走回去。' },
+      { who: '你', text: '你走过九十九具白骨，它们是它吐出来的。' }
+    ],
     lines: ['长廊很长，走到头就是我的骨髓。', '你的骨头，比上一批硬。']
   },
   riverwraith: {
@@ -1076,6 +1182,12 @@ const BOSSES = {
     hp: 31000, atk: 97, spd: 3.4, color: 0x6a8a9a, cloth: 0x22303a, model: 'ghost', scale: 1.9,
     melee: false, ranged: true, range: 16, atkCd: 1.9, family: 'spirit',
     patterns: ['ringshot', 'curse', 'poisonnova'],
+    /* [P15] 战前剧情：{ who, text } 数组，只演一次（落盘 bossIntro）。 */
+    intro: [
+      { who: '旁白', text: '河滩上有很多人影，都在等船。只有一个背对着河。' },
+      { who: '忘川怨魂', text: '我还没喝那碗汤。你替我喝了吧。' },
+      { who: '你', text: '它转过身，脸正是你的。' }
+    ],
     lines: ['我还没喝那碗汤。', '你替我喝了吧。']
   },
   abysswyrm: {
@@ -1083,6 +1195,12 @@ const BOSSES = {
     hp: 35800, atk: 102, spd: 3.8, color: 0x3a2a52, cloth: 0x1a1226, model: 'snake', scale: 2.3,
     melee: true, range: 5.4, atkCd: 1.8, poison: true, family: 'beast',
     patterns: ['charge', 'slam', 'poisonnova'],
+    /* [P15] 战前剧情：{ who, text } 数组，只演一次（落盘 bossIntro）。 */
+    intro: [
+      { who: '旁白', text: '地底传来一声呼吸，整个洞窟随之起伏。' },
+      { who: '深渊古蟒', text: '深渊不是坑，是嘴。我在这里，比九幽还早。' },
+      { who: '你', text: '你脚下的“地面”，其实在缓缓蠕动。' }
+    ],
     lines: ['深渊不是坑，是嘴。', '我在这里，比九幽还早。']
   },
   yellowspring: {
@@ -1091,6 +1209,14 @@ const BOSSES = {
     melee: true, range: 5.2, atkCd: 2.2, armorHigh: true, family: 'undead',
     actEnd: true, keyTier: 4,
     patterns: ['quake', 'ringshot', 'curse', 'slam'],
+    /* [P15] 战前剧情：{ who, text } 数组，只演一次（落盘 bossIntro）。 */
+    intro: [
+      { who: '旁白', text: '渡口空了。船板自己漂回去，像在给谁让路。' },
+      { who: '黄泉主宰', text: '渡口荒了多少年，还有人来排队。' },
+      { who: '黄泉主宰', text: '铜钱带不走。你身上还有别的能留下。' },
+      { who: '黄泉主宰', text: '过了这渡口，就没有回头路了。' },
+      { who: '你', text: '你把最后一枚铜钱扔进水里。水，没有响。' }
+    ],
     lines: ['船早就不在了，你们还在等。', '黄泉不收钱，只收人。']
   },
   swordguardian: {
@@ -1098,6 +1224,12 @@ const BOSSES = {
     hp: 47800, atk: 115, spd: 3.8, color: 0xb8ac88, cloth: 0x50462a, model: 'humanoid', scale: 2.1,
     melee: true, range: 4.0, atkCd: 1.4, family: 'spirit',
     patterns: ['swordrain', 'charge', 'slam'],
+    /* [P15] 战前剧情：{ who, text } 数组，只演一次（落盘 bossIntro）。 */
+    intro: [
+      { who: '旁白', text: '万人守剑，如今只剩一个。他背对万剑，像在跟它们说话。' },
+      { who: '剑冢守灵', text: '这里的每一把剑，都有名字。你没有。' },
+      { who: '你', text: '你想问自己的剑叫什么。它沉默着。' }
+    ],
     lines: ['这里的每一把剑，都有名字。', '你没有。']
   },
   bladelord: {
@@ -1105,6 +1237,12 @@ const BOSSES = {
     hp: 52600, atk: 121, spd: 3.6, color: 0xa89a72, cloth: 0x443c22, model: 'humanoid', scale: 2.1,
     melee: true, range: 4.2, atkCd: 1.3, family: 'spirit',
     patterns: ['swordrain', 'ringshot', 'charge'],
+    /* [P15] 战前剧情：{ who, text } 数组，只演一次（落盘 bossIntro）。 */
+    intro: [
+      { who: '旁白', text: '坑底的剑全在震，只有一柄不动。那柄，是它的。' },
+      { who: '万剑之君', text: '万剑归我，我归坑。拔出来试试。' },
+      { who: '你', text: '你伸手握住剑柄，坑底的剑一齐看向了你。' }
+    ],
     lines: ['万剑归我，我归坑。', '拔出来试试。']
   },
   swordemperor: {
@@ -1112,6 +1250,12 @@ const BOSSES = {
     hp: 55000, atk: 123, spd: 4.0, color: 0xd8c8a0, cloth: 0x6a5c30, model: 'humanoid', scale: 2.5,
     melee: true, range: 4.4, atkCd: 1.2, family: 'spirit',
     patterns: ['swordrain', 'charge', 'slam', 'summon'],
+    /* [P15] 战前剧情：{ who, text } 数组，只演一次（落盘 bossIntro）。 */
+    intro: [
+      { who: '旁白', text: '绝巅上那道背影，站了太久，和石头长在了一起。' },
+      { who: '剑帝', text: '剑不是兵器，是墓志。你的墓志，我来写。' },
+      { who: '你', text: '你拔剑。这一次，山风停了。' }
+    ],
     lines: ['剑不是兵器，是墓志。', '你的墓志，我来写。']
   },
   cloudwarden: {
@@ -1119,6 +1263,12 @@ const BOSSES = {
     hp: 64600, atk: 134, spd: 3.2, color: 0x8a9ab8, cloth: 0x36425a, model: 'brute', scale: 2.2, skin: 0xa8b8d0,
     melee: true, range: 4.8, atkCd: 1.9, family: 'humanoid',
     patterns: ['slam', 'charge', 'ringshot'],
+    /* [P15] 战前剧情：{ who, text } 数组，只演一次（落盘 bossIntro）。 */
+    intro: [
+      { who: '旁白', text: '断桥那头站着人。桥断了，他还在守。' },
+      { who: '云海守将', text: '桥是我拆的。过不去的，就不该过去。' },
+      { who: '你', text: '脚下是万丈云海。你只能往前。' }
+    ],
     lines: ['桥是我拆的。', '过不去的，就不该过去。']
   },
   heavenguard: {
@@ -1127,6 +1277,14 @@ const BOSSES = {
     melee: true, range: 5.4, atkCd: 2.5, armorHigh: true, family: 'stone',
     actEnd: true, keyTier: 5,
     patterns: ['quake', 'slam', 'rocks', 'ringshot'],
+    /* [P15] 战前剧情：{ who, text } 数组，只演一次（落盘 bossIntro）。 */
+    intro: [
+      { who: '旁白', text: '门塌了。石头里伸出一只手，把碎门重新立了起来。' },
+      { who: '南天守门神', text: '门塌了三回，我立了三回。' },
+      { who: '南天守门神', text: '这道口子，只进不出。' },
+      { who: '南天守门神', text: '多少人来过，多少具骨头还堆在门后。' },
+      { who: '你', text: '你抬头看那扇不存在的门。它比门更像门。' }
+    ],
     lines: ['门没了，守的还是门。', '南天不开。']
   },
   jadeemperor: {
@@ -1134,6 +1292,12 @@ const BOSSES = {
     hp: 71800, atk: 141, spd: 3.2, color: 0x6a9a8a, cloth: 0x1e3a34, model: 'demon', scale: 2.3,
     melee: true, range: 5.0, atkCd: 1.9, family: 'spirit',
     patterns: ['slam', 'ringshot', 'curse', 'summon'],
+    /* [P15] 战前剧情：{ who, text } 数组，只演一次（落盘 bossIntro）。 */
+    intro: [
+      { who: '旁白', text: '废墟里有人端坐，玉身碎了，姿势却一丝没乱。' },
+      { who: '玉京残帝', text: '玉京塌了，朕还在。跪吧，跪着死体面些。' },
+      { who: '你', text: '你不跪。膝盖一弯，就再也站不起来了。' }
+    ],
     lines: ['玉京塌了，朕还在。', '跪吧，跪着死体面些。']
   },
   starlord: {
@@ -1141,6 +1305,12 @@ const BOSSES = {
     hp: 76600, atk: 147, spd: 3.4, color: 0x7a6ab0, cloth: 0x2a2044, model: 'demon', scale: 2.4,
     melee: false, ranged: true, range: 17, atkCd: 1.8, family: 'spirit',
     patterns: ['meteor', 'ringshot', 'charge'],
+    /* [P15] 战前剧情：{ who, text } 数组，只演一次（落盘 bossIntro）。 */
+    intro: [
+      { who: '旁白', text: '天上掉下来的不止一颗星。每一颗，都砸出一个坑。' },
+      { who: '陨星之主', text: '台上那些坑，都是我砸的。天上还有的是。' },
+      { who: '你', text: '你脚下这片焦土，昨晚还是山。' }
+    ],
     lines: ['台上那些坑，都是我砸的。', '天上还有的是。']
   },
   mirrordemon: {
@@ -1148,6 +1318,12 @@ const BOSSES = {
     hp: 81400, atk: 152, spd: 3.6, color: 0x8a7ac0, cloth: 0x2e2450, model: 'demon', scale: 2.5,
     melee: true, range: 5.2, atkCd: 1.8, family: 'spirit',
     patterns: ['slam', 'ringshot', 'curse', 'summon'],
+    /* [P15] 战前剧情：{ who, text } 数组，只演一次（落盘 bossIntro）。 */
+    intro: [
+      { who: '旁白', text: '镜子里先动的是你，还是它？你分不清了。' },
+      { who: '无相天魔', text: '我就是你，只是没输过。照照镜子吧。' },
+      { who: '你', text: '镜中人笑了。你没有。' }
+    ],
     lines: ['我就是你，只是没输过。', '照照镜子吧。']
   },
   mirrorlord: {
@@ -1155,6 +1331,12 @@ const BOSSES = {
     hp: 170000, atk: 154, spd: 3.4, color: 0x6a5aa8, cloth: 0x1e1840, model: 'demon', scale: 2.5,
     melee: false, ranged: true, range: 16, atkCd: 1.7, family: 'spirit',
     patterns: ['ringshot', 'charge', 'curse', 'meteor'],
+    /* [P15] 战前剧情：{ who, text } 数组，只演一次（落盘 bossIntro）。 */
+    intro: [
+      { who: '旁白', text: '渊底一面镜，映出的却是你从未走过的路。' },
+      { who: '镜渊之主', text: '往下看，看到的都是真的。镜子里那个，才是本尊。' },
+      { who: '你', text: '你握剑的手在抖。镜里那只，很稳。' }
+    ],
     lines: ['往下看，看到的都是真的。', '镜子里那个，才是本尊。']
   },
   nineheaven: {
@@ -1162,6 +1344,12 @@ const BOSSES = {
     hp: 175000, atk: 157, spd: 3.8, color: 0xd8c890, cloth: 0x6a5a2a, model: 'brute', scale: 2.6, skin: 0xe0c8a0,
     melee: true, range: 5.0, atkCd: 1.8, family: 'humanoid',
     patterns: ['slam', 'charge', 'meteor', 'summon'],
+    /* [P15] 战前剧情：{ who, text } 数组，只演一次（落盘 bossIntro）。 */
+    intro: [
+      { who: '旁白', text: '最后一层的天，近得能摸到。上面站着人。' },
+      { who: '九霄神将', text: '九霄之上，没有更高的地方了。上去，就得踩着神过。' },
+      { who: '你', text: '你踩上去。天，裂了一道缝。' }
+    ],
     lines: ['九霄之上，没有更高的地方了。', '上去，就得踩着神过。']
   },
   chaosavatar: {
@@ -1228,6 +1416,14 @@ const BOSSES = {
       /* P4 狂怒：普攻间隔 ÷1.4（攻速 +40%），技能间隔 ×0.6 —— 不再有长空档 */
       rage: { aspd: 40, gap: 0.6 }
     },
+    /* [P15] 战前剧情：{ who, text } 数组，只演一次（落盘 bossIntro）。 */
+    intro: [
+      { who: '旁白', text: '天阙那一具倒下后，真正的它才睁开眼。' },
+      { who: '混沌·无相天魔（真身）', text: '先倒下的那个，是我的影子。' },
+      { who: '混沌·无相天魔（真身）', text: '一路走到这儿，你终于看清了脸。' },
+      { who: '混沌·无相天魔（真身）', text: '你脚下踩的从来不是地，是我。' },
+      { who: '你', text: '你忽然明白——这一路，都是它看着你走过来的。' }
+    ],
     lines: ['天阙那一具，只是我伸出去的手。', '现在，你见到我了。', '九霄本来就没有底，你以为你站在上面？']
   },
   /* ============================================================
@@ -1262,6 +1458,12 @@ const BOSSES = {
     stagger: { skill: 'slam', dur: 2.5, mul: 1.5, label: '金刚杵落空，甲胄散了' },
     seal: 'deva', sealName: '天之印',
     patterns: ['slam', 'ringshot', 'summon', 'charge'],
+    /* [P15] 战前剧情：{ who, text } 数组，只演一次（落盘 bossIntro）。 */
+    intro: [
+      { who: '旁白', text: '天界的鼓响了三声，第三声里走出一个持杵的人。' },
+      { who: '帝释·持杵天主', text: '八部之首，是我。杵举起来的时候，你该退。' },
+      { who: '你', text: '你没退。杵落下来，地陷了一寸。' }
+    ],
     lines: ['八部之首，是我。', '杵举起来的时候，你该退。', '……雷。你怎么会知道。']
   },
 
@@ -1275,6 +1477,12 @@ const BOSSES = {
     stagger: { skill: 'slam', dur: 4, mul: 1.5, label: '鳞甲被烧穿，露出底下的软肉' },
     seal: 'naga', sealName: '龙之印',
     patterns: ['slam', 'ringshot', 'charge', 'summon'],
+    /* [P15] 战前剧情：{ who, text } 数组，只演一次（落盘 bossIntro）。 */
+    intro: [
+      { who: '旁白', text: '渊底的水自己立了起来，中间盘着一条龙。' },
+      { who: '难陀·盘渊龙众', text: '水底下那具龙尸，是上一个我。' },
+      { who: '你', text: '龙鳞不怕刀。你想起是谁说过这句话。' }
+    ],
     lines: ['渊底的水，是我翻身搅起来的。', '龙鳞不怕刀。怕什么，你自己想。']
   },
 
@@ -1288,6 +1496,12 @@ const BOSSES = {
     stagger: { skill: 'quake', dur: 3, mul: 1.5, label: '毒入骨缝，护甲一块块掉' },
     seal: 'yaksa', sealName: '夜叉之印',
     patterns: ['slam', 'quake', 'charge', 'ringshot'],
+    /* [P15] 战前剧情：{ who, text } 数组，只演一次（落盘 bossIntro）。 */
+    intro: [
+      { who: '旁白', text: '四只手，四把刀。你数不清哪只是真身。' },
+      { who: '毗沙·四臂鬼将', text: '四只手，够接你八招。骨面之下，才是真的我。' },
+      { who: '你', text: '你把刀砍向骨面。它笑了。' }
+    ],
     lines: ['四只手，够接你八招。', '骨面之下，才是真的我。']
   },
 
@@ -1301,6 +1515,12 @@ const BOSSES = {
     stagger: { skill: 'ringshot', dur: 3.5, mul: 1.5, label: '曲子断了，护身的乐障散了' },
     seal: 'gandharva', sealName: '乾闼婆之印',
     patterns: ['ringshot', 'curse', 'meteor', 'summon'],
+    /* [P15] 战前剧情：{ who, text } 数组，只演一次（落盘 bossIntro）。 */
+    intro: [
+      { who: '旁白', text: '有人弹琴。琴声里，你的血在跟着节拍走。' },
+      { who: '乾闼婆·弦歌乐神', text: '听。这是给你弹的。刀兵之声最难听——也最伤我。' },
+      { who: '你', text: '你捂住耳朵，琴声改从骨头里响。' }
+    ],
     lines: ['听。这是给你弹的。', '刀兵之声最难听 —— 也最伤我。']
   },
 
@@ -1314,6 +1534,12 @@ const BOSSES = {
     stagger: { skill: 'charge', dur: 3, mul: 1.5, label: '怒气冲顶，自己被冻在原地' },
     seal: 'asura', sealName: '阿修罗之印',
     patterns: ['slam', 'charge', 'quake', 'ringshot'],
+    /* [P15] 战前剧情：{ who, text } 数组，只演一次（落盘 bossIntro）。 */
+    intro: [
+      { who: '旁白', text: '三个头，六条臂。每个头都在用不同的声音骂你。' },
+      { who: '罗睺·三头阿修罗', text: '三头六臂。你砍哪个？怒到极处，连自己也烧。' },
+      { who: '你', text: '你砍向中间那个。三个头一起笑了。' }
+    ],
     lines: ['三头六臂。你砍哪个？', '怒到极处，连自己也烧。']
   },
 
@@ -1327,6 +1553,12 @@ const BOSSES = {
     stagger: { skill: 'charge', dur: 2.5, mul: 1.5, label: '俯冲落地，翅骨还在颤' },
     seal: 'garuda', sealName: '迦楼罗之印',
     patterns: ['charge', 'ringshot', 'slam', 'meteor'],
+    /* [P15] 战前剧情：{ who, text } 数组，只演一次（落盘 bossIntro）。 */
+    intro: [
+      { who: '旁白', text: '天暗下来。不是夜，是一对翅膀。' },
+      { who: '金翅·迦楼罗王', text: '翅膀一遮，这片天就没你的份了。' },
+      { who: '你', text: '你抬头。雷从天上来——那是它的天。' }
+    ],
     lines: ['飞起来的时候，你连我的影子都摸不到。', '雷从天上来 —— 那是我的天。']
   },
 
@@ -1340,6 +1572,12 @@ const BOSSES = {
     stagger: { skill: 'ringshot', dur: 3, mul: 1.5, label: '高音被毒哑，琴弦一根根断' },
     seal: 'kimnara', sealName: '紧那罗之印',
     patterns: ['ringshot', 'roots', 'curse', 'summon'],
+    /* [P15] 战前剧情：{ who, text } 数组，只演一次（落盘 bossIntro）。 */
+    intro: [
+      { who: '旁白', text: '林子里有鹿鸣。三声之后，鸟全都不叫了。' },
+      { who: '紧那罗·鹿鸣乐天', text: '这曲子只弹给活人听——弹完就都不活了。' },
+      { who: '你', text: '第三声落下时，你发现自己的耳朵在流血。' }
+    ],
     lines: ['鹿鸣三声，林子里就没有活人了。', '我的歌能杀人，也能救 —— 可惜我只唱前半段。']
   },
 
@@ -1353,6 +1591,12 @@ const BOSSES = {
     stagger: { skill: 'slam', dur: 3.5, mul: 1.5, label: '缠身的蛇群被烧退，露出腹鳞' },
     seal: 'mahoraga', sealName: '摩睺罗迦之印',
     patterns: ['slam', 'roots', 'charge', 'summon'],
+    /* [P15] 战前剧情：{ who, text } 数组，只演一次（落盘 bossIntro）。 */
+    intro: [
+      { who: '旁白', text: '地底下缠上来的，分不清是蛇还是谁的手。' },
+      { who: '摩睺罗迦·大蟒腹', text: '地底下缠上来的，都是我。蟒腹里没有光，也没有你。' },
+      { who: '你', text: '你被缠住了。越挣扎，越紧。' }
+    ],
     lines: ['地底下缠上来的，都是我。', '蟒腹里没有光，也没有你。']
   },
 
@@ -1361,6 +1605,12 @@ const BOSSES = {
     hp: 42000, atk: 105, spd: 3.4, color: 0x5a2478, cloth: 0x220c30, model: 'demon', scale: 2.1, skin: 0x6a3a7a,
     melee: true, range: 5.6, atkCd: 1.9, all: true, family: 'spirit',
     patterns: ['slam', 'ringshot', 'charge', 'meteor', 'summon', 'curse'],
+    /* [P15] 战前剧情：{ who, text } 数组，只演一次（落盘 bossIntro）。 */
+    intro: [
+      { who: '旁白', text: '九霄之上，本该什么都没有。可这里站着一个人。' },
+      { who: '混沌·无相天魔', text: '九霄之上，本无神佛。你不过是又一个妄念。' },
+      { who: '你', text: '你拔出剑。它张开双臂，像在等一个老朋友。' }
+    ],
     lines: ['九霄之上，本无神佛。', '你不过是又一个妄念。', '来吧，让我看看你的道。']
   },
 
@@ -1385,6 +1635,12 @@ const BOSSES = {
     scale: 2.05, color: 0xb8b0a0, cloth: 0x53504a, skin: 0xd8d0c0,
     melee: true, range: 4.8, atkCd: 2.0, armorHigh: true,
     patterns: ['slam', 'quake', 'ringshot'],
+    /* [P15] 战前剧情：{ who, text } 数组，只演一次（落盘 bossIntro）。 */
+    intro: [
+      { who: '旁白', text: '坑里的骨头忽然一起站了起来，组成一个人的形状。' },
+      { who: '骨将·白起', text: '坑杀四十万，还嫌不够。死人不会喊疼，你也不必。' },
+      { who: '你', text: '你踩着的每一寸土，下面都是人。' }
+    ],
     lines: ['坑杀四十万，还嫌不够。', '死人不会喊疼，你也不必。']
   },
   dgb_well: {
@@ -1393,6 +1649,12 @@ const BOSSES = {
     scale: 2.0, color: 0x7a6a58, cloth: 0x3a3028,
     melee: true, range: 5.0, atkCd: 2.4, armorHigh: true,
     patterns: ['quake', 'slam', 'rocks'],
+    /* [P15] 战前剧情：{ who, text } 数组，只演一次（落盘 bossIntro）。 */
+    intro: [
+      { who: '旁白', text: '井壁在响。不是要塌，是有人在推。' },
+      { who: '矿主·塌', text: '这条脉是我的，你们挖不得。塌下来，一起埋着。' },
+      { who: '你', text: '矿灯灭了。你听见石头在往上爬。' }
+    ],
     lines: ['这条脉是我的，你们挖不得。', '塌下来，一起埋着。']
   },
   dgb_den: {
@@ -1401,6 +1663,12 @@ const BOSSES = {
     scale: 2.1, color: 0x8a5a3a, cloth: 0x3a2418,
     melee: true, range: 4.2, atkCd: 1.5, charge: true,
     patterns: ['charge', 'slam', 'summon'],
+    /* [P15] 战前剧情：{ who, text } 数组，只演一次（落盘 bossIntro）。 */
+    intro: [
+      { who: '旁白', text: '兽窟最深处，有东西在磨牙。声音很近。' },
+      { who: '獠王', text: '这窟里的，都听我的。你身上有血味。' },
+      { who: '你', text: '所有兽的眼睛，都转向了你。' }
+    ],
     lines: ['这窟里的，都听我的。', '你身上有血味。']
   },
   dgb_gaol: {
@@ -1409,6 +1677,12 @@ const BOSSES = {
     scale: 2.0, color: 0x5a6a78, cloth: 0x28323c,
     melee: true, range: 4.6, atkCd: 2.0,
     patterns: ['ringshot', 'curse', 'slam'],
+    /* [P15] 战前剧情：{ who, text } 数组，只演一次（落盘 bossIntro）。 */
+    intro: [
+      { who: '旁白', text: '水已经到胸口。牢门却从外面锁上了。' },
+      { who: '狱卒长·枷', text: '水涨到哪儿，人就关到哪儿。放你出去，我就得进去。' },
+      { who: '你', text: '你抬头。水面，还在涨。' }
+    ],
     lines: ['水涨到哪儿，人就关到哪儿。', '放你出去，我就得进去。']
   },
   dgb_fall: {
@@ -1417,6 +1691,12 @@ const BOSSES = {
     scale: 2.0, color: 0x4a2a6a, cloth: 0x1e1030,
     melee: true, range: 5.2, atkCd: 1.9, all: true,
     patterns: ['slam', 'ringshot', 'meteor', 'charge'],
+    /* [P15] 战前剧情：{ who, text } 数组，只演一次（落盘 bossIntro）。 */
+    intro: [
+      { who: '旁白', text: '有人从天上掉下来，插在这里，很久了。' },
+      { who: '堕天者', text: '我从上面掉下来，才知道下面也有人在爬。风推着我，也推着你。' },
+      { who: '你', text: '它抬头看你，像看一个也终将掉下去的人。' }
+    ],
     lines: ['我从上面掉下来，才知道下面也有人在爬。', '风推着我，也推着你。']
   }
 };

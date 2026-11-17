@@ -5,7 +5,7 @@
 - 总计划：`V2-ROADMAP.md`（M1~M17）｜结构方案：`AGENTS.md`
 - 更新：2026-10-27 16:40 · `76696f5`
 
-> 当前：v1.13.1 已上线（角色位 10）· **P13 地图风貌差异化已收口 ✅**（P13-1~P13-5 全完，push 上线）。
+> 当前：v1.13.1 已上线（角色位 10）· **P13 地图风貌差异化已收口 ✅** · U13 特效跟随已收口 ✅ · **P15 Boss 战前剧情进行中 🔄**（P15-1 数据层 ✅）。
 
 ## 一句话现状
 
@@ -127,6 +127,47 @@ P13 已收口。按 `docs/POLISH-PLAN.md` 四批顺序，第 4 批只剩 **P15�
 
 P13 已收口。按 `docs/POLISH-PLAN.md` 四批顺序，第 4 批只剩 **P15（Boss 战前剧情）**——
 已拍板「只播一次 + 可跳过」，可直接开工。
+
+---
+
+## P15 · Boss 战前剧情演绎（2026-11-17 开工 · 🔄 进行中）
+
+> 当前：**P15-1 数据层 ✅**（45 只 Boss 的 intro 台词已注入，契约 9/0）。
+> 依据 `docs/POLISH-PLAN.md` §P15 + §3 拍板第 5 条：只播一次（落盘）、设置可跳过。
+> main 上直接做，不单开分支。
+
+### 节点表
+
+| 节点 | 内容 | 状态 | 产物 | 验收 |
+|---|---|---|---|---|
+| P15-1 | 数据层：45 只 Boss 的 intro | ✅ | `data-monsters.js` 的 `BOSSES[*].intro`（卷末 5 句 / 普通 3 句，{who,text}） | `dev/test-boss-intro.js` 9/0 |
+| P15-2 | 存档 + 设置字段 | ⬜ | `bossIntro` 落盘四处、`skipBossIntro` 设置项 | 契约 + 读档往返 |
+| P15-3 | UI 演出层（黑边 + 字幕 + 镜头） | ⬜ | `index.html` 演出层 + `ui.js` 接口 | 移动端不越界 |
+| P15-4 | `playBossIntro` + 激活接线 | ⬜ | `game.js` 冻结输入 / 推镜 / 只播一次 | 契约 + smoke |
+| P15-5 | 验收探针 + 截图 | ⬜ | `dev/probe-boss-intro.js` | 首次播/二次不播/冻结/恢复 |
+| P15-6 | 回归 + 台账 + push | ⬜ | 本台账 + POLISH-PLAN + 日志 + 上线 | 全回归 + live |
+
+### 设计口径（开工前拍板，必读）
+
+1. **时长**：设计稿写「每句 1.2s × 3 句 = 3.6s」与验收线「2.5s 后开打」互斥。
+   **取验收线** → 固定 **0.8s/句**（普通 3 句 = 2.4s，卷末 5 句 = 4.0s），任意键/点击可跳过。
+2. **只播一次**：`state.bossIntro[bossId] = 1` 落盘（走 P13/P6 的四处铁律），重刷不重播。
+3. **可跳过**：`skipBossIntro` 设置项默认关；跳过时按老逻辑（toast + log + SFX.boss），不冻结输入。
+4. **剧情台词与战斗 lines 完全不重复**：intro 是全新场景/对白，lines 留给战斗时随机喊。
+5. **叙事骨架**：首句旁白铺陈 → 中间 Boss 自白 → 末句「你」代入；卷末 5 句给终局四连 + 玩家收尾。
+
+### 代码地图（P15-1 调查结论，动手必读）
+
+| 关注点 | 位置 | 结论 |
+|---|---|---|
+| Boss 激活点 | `game.js:7990`（`updateEnemies` 内） | `d<17 && gateOpen` 时 `e.active=true` + toast + `SFX.boss()` + shake + log 一句。演出接这里 |
+| 输入冻结 | `game.js:462 keydown` / `:3164 update` | 现有 `this.keys` 无全局 inputLock；演出用自己的 `this.bossIntro.active` 闸门 |
+| 镜头 | `game.js:3046 updateCamera(raw)` | 每帧 LERP 到玩家 + `lookAt(player)`，演出推镜需在 lookAt 前插入 override |
+| 血条 | `ui.js:1858 updateBoss(boss)` | `bar.style.display='block'`；演出时压住、结束再显示 |
+| 存档四处 | `game.js:673` / `save.js:333` / `:519` / `:591` | 进度字段铁律（见 AGENTS.md §7.2）：新档 / normalize / pack / unpack 缺一不可 |
+| 设置项 | `settings.js:25 DEFAULTS` + `:82 normalize` / `ui.js:491 SET_ROWS` | bool 键 `Settings.set` 已收 `'0'`→false，新增照 `autoPickup` 写 |
+| 设置动作行 | `ui.js:1337 onSettingsClick` + `index.html:2066 .setrow` | 可做「重播」按钮（act 型，仿 fullscreen） |
+| bossbar 让位 | `index.html:1903` | `body.in-menu` 会隐藏 bossbar；演出加自己的 body class |
 
 ---
 
