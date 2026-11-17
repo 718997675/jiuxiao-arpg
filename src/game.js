@@ -1796,6 +1796,41 @@ const Game = {
     });
   },
 
+  /* [P5] 试衣间：在一具**独立的角色**上穿一套指定装备，只为离屏预览服务。
+   *
+   * 为什么不 clone Game.actor：clone 出来的 mesh 没有 `actor.__doll` 账本，
+   * 再 dress 一次就会两件叠在一起、旧的还永远 release 不掉。
+   * 为什么不动真角色：试穿必须能「看一件、不穿一件」，点错了不能把真装备改掉。
+   *
+   * 这具角色只活在游戏进程里，不进 scene、不进 update —— 只在预览那一刻
+   * 被 `DollPreview` 渲进 RenderTarget。换职业才重建（骨架不同）。 */
+  previewLook(equipment, cls) {
+    const c = cls || this.state.cls;
+    let a = this._lookActor;
+    if (!a || this._lookCls !== c) {
+      if (a && typeof Doll !== 'undefined' && Doll.undress) {
+        try { Doll.undress(a); } catch (e) { }
+      }
+      const CL = CLASSES[c] || CLASSES.warrior;
+      a = (typeof CharForge !== 'undefined' && CharForge.has(c))
+        ? CharForge.build(c)
+        : buildHumanoid({
+          color: CL.color, cloth: CL.cloth, skin: 0xe8c8a8,
+          legColor: CL.cloth, bootColor: 0x2a2018, sleeve: CL.color, glove: CL.cloth
+        });
+      a.group.scale.setScalar(a.cf ? 1.0 : 1.12);
+      this._lookActor = a;
+      this._lookCls = c;
+    }
+    applyPaperDoll({
+      actor: a, cls: c,
+      equipment: equipment || {},
+      stats: (this.state.stats && this.state.stats.setBonuses)
+        ? this.state.stats : { setBonuses: [] }
+    });
+    return a;
+  },
+
   /* ======================================================= */
   loadMap(mapId) {
     const s = this.state;

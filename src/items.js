@@ -1451,10 +1451,58 @@ const ITEM_ICONS = {
     <circle cx="16" cy="16" r="1.2" fill="${ICON_HOLE}" opacity=".8"/>`
 };
 
+/* ---------------- [P5] 族级图标：33 张，键 = 槽 + '-' + 族 ----------------
+ * 底座复用 ITEM_ICONS 的槽位轮廓（不抄第二遍），叠一层**三族的形状语言**：
+ *   A 均衡 = 一条中缝；B 重防 = 加厚外框 + 四枚铆钉；C 轻灵 = 两侧飞翼 + 三道风痕。
+ * 这样同一槽的三张图标在 32px 下就能分开，而且跟 3D 的族气质对得上
+ * （B 族是加厚札甲、C 族是轻裘流苏，不是换了个颜色）。
+ *
+ * **键由数据表生成**：`DOLL_PARTS × DOLL_FAM_NAME` 才是唯一的族集合，
+ * 手写 33 个键迟早变成「表里 34 族、图标 33 张」。`dev/test-p5.js` 反向断言
+ * 「图标键集合 == 族键集合」，加族忘了加图标会立刻红。
+ *
+ * 武器 / 副手**不做族级图标**：它们按 shape 出图（剑就是剑、杖就是杖），
+ * 传世武器的差异是宽厚与装饰件，在 32px 下画不出来，交给试衣间的 3D 预览看。 */
+const DOLL_FAM_ICON = {
+  A: `<path d="M16 3.6 16 28.4" stroke="${ICON_HOLE}" stroke-width="1.2" opacity=".4"/>`,
+  B: `<path d="M2.6 2.6H29.4V29.4H2.6Z" fill="none" stroke="currentColor" stroke-width="1.7" opacity=".36"/>
+    <circle cx="6.3" cy="6.3" r="1.65" opacity=".92"/><circle cx="25.7" cy="6.3" r="1.65" opacity=".92"/>
+    <circle cx="6.3" cy="25.7" r="1.65" opacity=".92"/><circle cx="25.7" cy="25.7" r="1.65" opacity=".92"/>`,
+  C: `<path d="M3.2 11.2 8.6 8.2 8.6 14.4Z" opacity=".9"/><path d="M28.8 11.2 23.4 8.2 23.4 14.4Z" opacity=".9"/>
+    <path d="M9.4 25.6 12.8 22.2M16 27 19.4 23.6M22 25.6 25.4 22.2" fill="none" stroke="currentColor" stroke-width="1.2" opacity=".55"/>`
+};
+/* 法器原来走 RELIC_ICONS（按 relicId 取字形），ITEM_ICONS 里没有 relic 底座。
+ * 族级图标要的是「法器这一类」的轮廓，用一块符牌 + 法阵外圈，不碰器物字形。 */
+const DOLL_RELIC_ICON = `<circle cx="16" cy="16" r="11.6" fill="none" stroke="currentColor" stroke-width="1.4" opacity=".55"/>
+  <path d="M11 7.4 21 7.4 21 24.6 16 28.6 11 24.6Z" opacity=".94"/>
+  <path d="M13.4 11.6 18.6 11.6M13.4 15.6 18.6 15.6M14.8 19.6 17.2 19.6" stroke="${ICON_HOLE}" stroke-width="1.4" opacity=".6"/>`;
+const DOLL_ICONS = {};
+(function buildDollIcons() {
+  const base = Object.assign({}, ITEM_ICONS, { relic: DOLL_RELIC_ICON });
+  const slots = (typeof DOLL_PARTS !== 'undefined') ? Object.keys(DOLL_PARTS) : [];
+  const fams = (typeof DOLL_FAM_NAME !== 'undefined') ? DOLL_FAM_NAME : [];
+  for (const slot of slots) {
+    for (const fam of fams) {
+      DOLL_ICONS[slot + '-' + fam] = (base[slot] || ITEM_ICONS.chest) + (DOLL_FAM_ICON[fam] || '');
+    }
+  }
+})();
+
 function itemIconKey(item) {
-  if (!item) return 'chest';
-  const k = (item.slot === 'weapon' || item.slot === 'offhand') ? (item.shape || 'sword') : item.slot;
-  return ITEM_ICONS[k] ? k : (ITEM_ICONS[item.slot] ? item.slot : 'chest');
+  if (!item) return 'chest-A';
+  /* 武器 / 副手继续按 shape：icon 认的是「这是一根杖」，不是族 */
+  if (item.slot === 'weapon' || item.slot === 'offhand') {
+    const k = item.shape || 'sword';
+    return ITEM_ICONS[k] ? k : 'sword';
+  }
+  /* 其余 11 槽按 dollKeyOf —— 与 3D 装配、说明页共用同一个键出口。
+   * 老档没 baseVar 也不怕：dollKeyOf 会按 baseName 反查变体下标。 */
+  if (typeof dollKeyOf === 'function') {
+    const key = dollKeyOf(item);
+    const k = key.slot + '-' + key.fam;
+    if (DOLL_ICONS[k]) return k;
+  }
+  return 'chest-A';
 }
 
 /* ---------------- 法器（v1.3.0） ----------------
@@ -1504,9 +1552,10 @@ function itemIcon(item, opts = {}) {
       style="color:${r.color};filter:drop-shadow(0 0 3px ${r.color}cc)" aria-hidden="true">${aura}${shape}</svg>`;
   }
   const key = itemIconKey(item);
+  const path = ITEM_ICONS[key] || DOLL_ICONS[key] || ITEM_ICONS.chest;
   const glow = item.rarity === 'legendary' || item.rarity === 'set' || item.rarity === 'unique';
   const style = `color:${r.color}${glow ? `;filter:drop-shadow(0 0 3px ${r.color}bb)` : ''}`;
-  return `<svg class="it-ico${opts.cls ? ' ' + opts.cls : ''}" viewBox="0 0 32 32" fill="currentColor" style="${style}" aria-hidden="true">${ITEM_ICONS[key]}</svg>`;
+  return `<svg class="it-ico${opts.cls ? ' ' + opts.cls : ''}" viewBox="0 0 32 32" fill="currentColor" style="${style}" aria-hidden="true">${path}</svg>`;
 }
 
 /* ---------------- 提示框 ---------------- */

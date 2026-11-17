@@ -1217,6 +1217,37 @@ const UI = {
       ]));
     }
 
+    /* [P5] 装备模组：条目数全部从数据表数出来，一个「33」都不写死。
+     * 加一槽 / 加一族，这一节自动多一行；dev/test-p5.js 反向断言
+     * 「说明页条数 == DOLL_PARTS × DOLL_FAM_NAME」，漏一处就红。 */
+    if (typeof DOLL_PARTS !== 'undefined') {
+      const dSlots = Object.keys(DOLL_PARTS);
+      const dFams = (typeof DOLL_FAM_NAME !== 'undefined') ? DOLL_FAM_NAME : [];
+      const dLab = (typeof DOLL_FAM_LABEL !== 'undefined') ? DOLL_FAM_LABEL : {};
+      const dRows = [];
+      for (const slot of dSlots) {
+        for (const f of dFams) {
+          const d = DOLL_PARTS[slot] && DOLL_PARTS[slot][f];
+          if (!d) continue;
+          const sn = (typeof SLOT_NAME !== 'undefined' && SLOT_NAME[slot]) || slot;
+          dRows.push(row(`${sn} · ${f} ${dLab[f] || f}`,
+            `${d.name || '—'}：${d.axis || '—'}`));
+        }
+      }
+      H.push(sec('十六 · 装备模组', `${dSlots.length} 槽 × ${dFams.length} 族 = ${dRows.length} 族`, [
+        row('造型从哪来', '每件装备按<b>槽位 × 造型族</b>取一张零件表，同一个挂点里的零件合并成一层 mesh。'
+          + '造型族已经写在存档的 <span class="hp-key">baseVar</span> 里，换装不用迁移存档。'),
+        row('品质光', (() => {
+          if (typeof dollAccentCount !== 'function') return '按品质点亮该族最小的几件装饰。';
+          const CN = { common: '凡品', magic: '魔法', rare: '玄品', unique: '传世', set: '套装', legendary: '神品' };
+          return Object.keys(CN).map(r => `${CN[r]} ${dollAccentCount(r)}`)
+            .join(' · ') + ' 件；点亮的是该族体积最小的几件，不是把整件装备染亮。';
+        })()),
+        row('试衣间', '行囊面板左列有「试衣间」：显示当前穿在身上的样子；悬停行囊里的装备可以先试穿，'
+          + '点一下才真的换上。预览与主画面共用同一个 WebGL 渲染器，不会开第二个。')
+      ].concat(dRows)));
+    }
+
     /* 反解短名：'一 · 怎么玩' → '怎么玩'，作为左侧页签文字 */
     const SECTIONS = H.map((html, i) => {
       const m = html.match(/<h4>([^<]*)/);
@@ -2213,6 +2244,10 @@ const UI = {
     if (!s) return;
     this.bindDollFold();
     this.renderDoll();
+    /* [P5] 装备一变就重渲试衣间：点行囊装备 → equipFromInv → applyDoll
+     * → renderInventory → 这里。签名没变时 DollPreview 自己会跳过，
+     * 所以切栏位 / 排序这类无关于装备的重绘不会白跑一次 readPixels。 */
+    if (typeof DollPreview !== 'undefined') DollPreview.refresh();
     const tab = this.invTab || 'equip';
     /* 排序 / 分解 / 图鉴 只对「装备」栏有意义，其余栏位收起 */
     const sortbar = document.getElementById('invSort');

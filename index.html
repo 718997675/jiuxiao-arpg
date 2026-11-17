@@ -470,6 +470,22 @@
     margin-left:6px;flex:none}
   .doll.fold .doll-head .fold{transform:rotate(-90deg)}
   .doll.fold .inv-stats{display:none}
+  /* [P5] 试衣间：左列里的一块小窗。canvas 内部分辨率固定 288×360，
+   * CSS 高度压到 168px 给下面的属性表留位置；object-fit 保持比例不把人拉胖。 */
+  .dp-head{display:flex;align-items:center;justify-content:space-between;gap:8px;
+    margin:8px 0 2px;padding-top:6px;border-top:1px solid rgba(216,178,90,.16);
+    cursor:pointer;user-select:none;-webkit-user-select:none}
+  .dp-head span{font-family:"STKaiti","KaiTi",serif;font-size:11.5px;letter-spacing:3px;color:#c9a86a}
+  .dp-head i{font-style:normal;font-size:9px;color:#5e594e;letter-spacing:.5px;margin-left:auto}
+  .dp-head .fold{font-style:normal;font-size:9px;color:#a89878;transition:transform .15s;
+    margin-left:6px;flex:none}
+  .dp-body{margin:2px 0 4px;padding:5px;border:1px solid rgba(216,178,90,.18);
+    background:linear-gradient(180deg,rgba(14,19,27,.95),rgba(8,10,14,.95))}
+  #dpCanvas{display:block;width:100%;height:168px;object-fit:contain;background:#0e131b}
+  .dp-cap{font-size:9px;color:#7a7466;text-align:center;margin-top:3px;white-space:nowrap;overflow:hidden}
+  body.touch #dpCanvas{height:220px}
+  body.touch .dp-head{padding-top:9px}
+  body.touch .dp-head .fold{font-size:11px;padding:0 4px}
   body.touch .doll-head{padding:9px 2px 7px;margin:8px 0 2px}
   body.touch .doll-head .fold{font-size:11px;padding:0 4px}
   /* 纸娃娃：按身体方向排（v1.3.0 参考暗黑 3）
@@ -2847,6 +2863,14 @@
     <div class="doll">
       <div class="doll-title">装 备 栏</div>
       <div class="doll-grid" id="dollGrid"></div>
+      <!-- [P5] 试衣间：共用主 renderer 离屏渲一张，blit 到这张 2D canvas。
+           不新建 WebGL context —— 手机上第二个 context 会把主画面挤黑。 -->
+      <div class="dp-head" id="dpHead" role="button" tabindex="0" aria-expanded="true">
+        <span>试 衣 间</span><i>悬停行囊可试穿</i><b class="fold">▾</b></div>
+      <div class="dp-body" id="dpBody" style="display:none">
+        <canvas id="dpCanvas" width="288" height="360"></canvas>
+        <div class="dp-cap" id="dpCap">正在准备预览…</div>
+      </div>
       <div class="doll-head" id="dollHead" role="button" tabindex="0" aria-expanded="true">
         <span>角 色 属 性</span><i>滚轮查看全部</i><b class="fold">▾</b></div>
       <div class="inv-stats" id="invStats"></div>
@@ -3337,6 +3361,9 @@
 <script src="src/mobile.js"></script>
 <script src="src/ui-save.js"></script>
 <script src="src/game.js"></script>
+<!-- [P5] 试衣间离屏预览。必须在 game.js 之后：要用 Game.previewLook / Game.renderer。
+     ui.js 只在 renderInventory 里运行时调 DollPreview.refresh，不依赖加载次序。 -->
+<script src="src/doll-preview.js"></script>
 <script src="src/skill-beh.js"></script>
 <script src="src/skill-passive.js"></script>
 </body>
