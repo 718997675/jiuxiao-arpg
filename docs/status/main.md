@@ -132,7 +132,7 @@ P13 已收口。按 `docs/POLISH-PLAN.md` 四批顺序，第 4 批只剩 **P15�
 
 ## P15 · Boss 战前剧情演绎（2026-11-17 开工 · 🔄 进行中）
 
-> 当前：**P15-1 数据层 ✅**（45 只 Boss 的 intro 台词已注入，契约 9/0）。
+> 当前：**P15-1 数据层 ✅ + P15-2 存档/设置 ✅**（intro 契约 9/0，存档契约 21/0）。
 > 依据 `docs/POLISH-PLAN.md` §P15 + §3 拍板第 5 条：只播一次（落盘）、设置可跳过。
 > main 上直接做，不单开分支。
 
@@ -141,7 +141,7 @@ P13 已收口。按 `docs/POLISH-PLAN.md` 四批顺序，第 4 批只剩 **P15�
 | 节点 | 内容 | 状态 | 产物 | 验收 |
 |---|---|---|---|---|
 | P15-1 | 数据层：45 只 Boss 的 intro | ✅ | `data-monsters.js` 的 `BOSSES[*].intro`（卷末 5 句 / 普通 3 句，{who,text}） | `dev/test-boss-intro.js` 9/0 |
-| P15-2 | 存档 + 设置字段 | ⬜ | `bossIntro` 落盘四处、`skipBossIntro` 设置项 | 契约 + 读档往返 |
+| P15-2 | 存档 + 设置字段 | ✅ | `bossIntro` 落盘四处 + 兜底模板、`skipBossIntro` 设置项 + 重播动作行 | `dev/test-boss-intro-save.js` 21/0 + test-save 79/0 |
 | P15-3 | UI 演出层（黑边 + 字幕 + 镜头） | ⬜ | `index.html` 演出层 + `ui.js` 接口 | 移动端不越界 |
 | P15-4 | `playBossIntro` + 激活接线 | ⬜ | `game.js` 冻结输入 / 推镜 / 只播一次 | 契约 + smoke |
 | P15-5 | 验收探针 + 截图 | ⬜ | `dev/probe-boss-intro.js` | 首次播/二次不播/冻结/恢复 |

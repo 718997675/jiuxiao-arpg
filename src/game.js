@@ -671,6 +671,9 @@ const Game = {
       /* [M0] 世界结构：当前卷 / 章、已解锁营地与大传送门、已抵达的图（回头路直传用） */
       part: 1, act: '1-1', camps: ['campA'], portals: ['portalA'], mapsSeen: ['village'],
       bossKilled: {}, playTime: 0,
+      /* [P15] 战前剧情已播记录：{ bossId: 1 }，只播一次、落盘。
+       * 跟 bossKilled 一起搬，四处齐全（newState/normalizeDoc/pack/unpack）。 */
+      bossIntro: {},
       /* [M7.4] 魔将之印：8 个布尔位 { deva:1, naga:1, ... }。
        * 只由 onBossKill 写入（八只魔将各掉自己那枚），终门读 sealCount()。 */
       seals: {},

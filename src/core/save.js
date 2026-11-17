@@ -331,6 +331,15 @@ const SaveManager = {
     c.maxInv = this._int(c.maxInv, 10, 200, 40);
     c.playTime = this._num(c.playTime, m.playTime);
     c.bossKilled = this._obj(c.bossKilled) || {};
+    /* [P15] 战前剧情已播：{ bossId:1 }。逐项夹成 0/1，跟 seals 同一套整形。
+     * 老档没有这个字段 → 补空对象 → 首次遇到 Boss 照常播一次。 */
+    c.bossIntro = this._obj(c.bossIntro) || {};
+    /* 字符串 '0' 也是真值，直接 !!v 会把手改/旧版的 '0' 误判成「已播」，
+     * 玩家就永远看不到那只 Boss 的剧情。跟 Settings 的布尔键同口径收一次。 */
+    for (const k in c.bossIntro) {
+      const v = c.bossIntro[k];
+      c.bossIntro[k] = (v === 0 || v === '0' || v === false || v === null || v === undefined) ? 0 : 1;
+    }
     /* [M7.4] 魔将之印：8 个布尔位，值一律夹成 0/1，被手改过的档也不会算出 9 枚 */
     c.seals = this._obj(c.seals) || {};
     for (const k in c.seals) c.seals[k] = c.seals[k] ? 1 : 0;
@@ -517,6 +526,8 @@ const SaveManager = {
         inventory: Array.isArray(s.inventory) ? s.inventory.filter(Boolean) : [],
         maxInv: this._int(s.maxInv, 10, 200, 40),
         bossKilled: this._obj(s.bossKilled) || {},
+        /* [P15] 战前剧情已播，跟 bossKilled 同层搬 */
+        bossIntro: this._obj(s.bossIntro) || {},
         seals: this._obj(s.seals) || {},
         playTime
       },
@@ -589,6 +600,8 @@ const SaveManager = {
       skillFlags: c.skillFlags || {},
       equipment: c.equipment, inventory: c.inventory, maxInv: c.maxInv,
       bossKilled: c.bossKilled || {}, playTime: c.playTime || 0,
+      /* [P15] 战前剧情已播：少了这行就是「播过、刷新后又播一遍」。 */
+      bossIntro: this._obj(c.bossIntro) || {},
       /* [M7.4] 魔将之印：跟着 bossKilled 一起搬。少了这一行就是「存得进、读不回」，
        * 表现为「打完八只魔将、刷新一下印全没了、终门又关死」—— seal-live.js 抓过。 */
       seals: this._obj(c.seals) || {},
@@ -829,7 +842,7 @@ const SaveManager = {
       /* [M0] 世界结构（新档默认停在卷一第 1 章，只到过桃源村） */
       part: 1, act: '1-1', camps: ['campA'], portals: ['portalA'], mapsSeen: ['village'],
       mapCleared: {},
-      bossKilled: {}, seals: {}, playTime: 0
+      bossKilled: {}, bossIntro: {}, seals: {}, playTime: 0
     };
   },
 

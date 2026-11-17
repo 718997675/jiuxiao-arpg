@@ -50,7 +50,10 @@ const Settings = {
     pickupMinRarity: 'magic',   // 低于此品质的装备不自动捡（仍留在地上可手动捡）
     pickupGold: true,           // 金币 + 玄晶
     pickupMat: true,            // 匠材
-    pickupRune: true            // 符文
+    pickupRune: true,           // 符文
+    /* [P15] Boss 战前剧情：关（false）= 首次遇到播一次；开（true）= 跳过演出直接开打。
+     * 语义是「跳过」而不是「播」——刷子玩家一键打开就不用每次首遇看 2.4 秒。 */
+    skipBossIntro: false
   },
 
   /* 品质门槛的可选值。**故意写死在这里，不从 RARITY 生成** ——
@@ -106,6 +109,8 @@ const Settings = {
     d.pickupGold = (o.pickupGold === undefined || o.pickupGold === null) ? this.DEFAULTS.pickupGold : !!o.pickupGold;
     d.pickupMat = (o.pickupMat === undefined || o.pickupMat === null) ? this.DEFAULTS.pickupMat : !!o.pickupMat;
     d.pickupRune = (o.pickupRune === undefined || o.pickupRune === null) ? this.DEFAULTS.pickupRune : !!o.pickupRune;
+    /* [P15] 跳过演出：布尔键，set() 里已按 DEFAULTS 的类型把 '0' 收成 false */
+    d.skipBossIntro = (o.skipBossIntro === undefined || o.skipBossIntro === null) ? this.DEFAULTS.skipBossIntro : !!o.skipBossIntro;
     return d;
   },
 

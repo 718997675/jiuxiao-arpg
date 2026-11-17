@@ -529,6 +529,12 @@ const UI = {
       opts: [['0', '关'], ['1', '开']] },
     { k: 'pickupRune', label: '符文', bool: true, sub: 'autoPickup',
       opts: [['0', '关'], ['1', '开']] },
+    /* [P15] 剧情分区：跳过开关 + 重播动作（重播只清已播记录，下次遇到再播一次） */
+    { head: '剧情' },
+    { k: 'skipBossIntro', label: '首领剧情', bool: true,
+      opts: [['0', '观看'], ['1', '跳过']] },
+    { k: 'replayIntro', label: '重播已看剧情', act: 'replayIntro',
+      opts: [['1', '重置记录']] },
     /* 音频分区：四条滑杆 + 静音。mute 用 bool 标记，值是 Boolean 而不是字符串 */
     { head: '音频' },
     { k: 'mute', label: '静音', bool: true,
@@ -1293,9 +1299,12 @@ const UI = {
       }
       /* fps 存的是布尔值，选项却是 '0'/'1'，直接 String() 会永远对不上高亮；
        * 静音也是布尔，同一套处理。全屏同理 —— 但它读的是浏览器状态，不是设置值 */
-      const cur = r.act === 'fs'
-        ? ((typeof Game !== 'undefined' && Game.isFullscreen && Game.isFullscreen()) ? '1' : '0')
-        : (r.bool ? (d[r.k] ? '1' : '0') : (r.k === 'fps' ? (d.fps ? '1' : '0') : String(d[r.k])));
+      /* [P15] act 型动作行（重播剧情）没有设置值，永远不高亮，只做按钮 */
+      const cur = r.act === 'replayIntro'
+        ? '__none__'
+        : r.act === 'fs'
+          ? ((typeof Game !== 'undefined' && Game.isFullscreen && Game.isFullscreen()) ? '1' : '0')
+          : (r.bool ? (d[r.k] ? '1' : '0') : (r.k === 'fps' ? (d.fps ? '1' : '0') : String(d[r.k])));
       /* sub = 「总开关」键：总开关关掉时这一行变灰且不可点。
        * 不做成彻底隐藏 —— 位置一跳，玩家会以为设置项被删了。 */
       return `<div class="setrow${r.sub && !d[r.sub] ? ' off' : ''}"><span class="setlab">${r.label}</span><div class="setseg">`
@@ -1343,6 +1352,14 @@ const UI = {
     if (k === 'fullscreen') {
       if (typeof Game !== 'undefined' && Game.toggleFullscreen) Game.toggleFullscreen();
       setTimeout(() => this.renderSettings(), 260);
+      return;
+    }
+    /* [P15] 重播是动作而非设置：清掉已播记录，下次遇到 Boss 再演一次 */
+    if (k === 'replayIntro') {
+      if (typeof Game !== 'undefined' && Game.replayBossIntros) {
+        const n = Game.replayBossIntros();
+        this.toast(n ? ('已重置 ' + n + ' 条剧情记录，下次遇到首领重新播放') : '还没有看过的首领剧情');
+      }
       return;
     }
     const row = this.SET_ROWS.filter(r => r.k === k)[0];
