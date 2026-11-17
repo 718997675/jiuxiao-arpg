@@ -182,12 +182,24 @@
 
       const knee = slot(leg, 0, -0.46, 0);
       put(knee, G.cyl(0.090, 0.072, 0.36, 7), mPants, 0, -0.18, 0);
-      put(knee, G.cyl(0.098, 0.090, 0.16, 7), mBoot, 0, -0.29, 0);      // 靴筒
-      put(knee, G.box(0.150, 0.10, 0.265), mBoot, 0, -0.41, 0.05);      // 靴底
-      put(knee, G.box(0.100, 0.045, 0.055), mTrim, 0, -0.235, 0.108);   // 靴口铜扣
+      /* 自带靴子单独成组：穿上装备靴时整组隐藏，否则两双靴筒叠在一起
+       * （模组靴的数据坐标也是相对 knee 原点写的，位置完全重合）。
+       * 组和装备空槽是**兄弟**，都在 knee 原点，互不影响。 */
+      const bootBase = slot(knee, 0, 0, 0);
+      put(bootBase, G.cyl(0.098, 0.090, 0.16, 7), mBoot, 0, -0.29, 0);      // 靴筒
+      put(bootBase, G.box(0.150, 0.10, 0.265), mBoot, 0, -0.41, 0.05);      // 靴底
+      put(bootBase, G.box(0.100, 0.045, 0.055), mTrim, 0, -0.235, 0.108);   // 靴口铜扣
+      /* 换装靴专用空槽。**不许往这里放别的东西** —— Doll.dress 换装时
+       * 会整组清空（它只清自己装的，但混放就分不清了）。 */
+      const bootG = slot(knee, 0, 0, 0);
 
-      if (side < 0) { A.parts.legL = leg; A.parts.kneeL = knee; }
-      else { A.parts.legR = leg; A.parts.kneeR = knee; }
+      if (side < 0) {
+        A.parts.legL = leg; A.parts.kneeL = knee;
+        A.parts.bootBaseL = bootBase; A.parts.bootL = bootG;
+      } else {
+        A.parts.legR = leg; A.parts.kneeR = knee;
+        A.parts.bootBaseR = bootBase; A.parts.bootR = bootG;
+      }
     }
 
     /* ================= 躯干 ================= */
@@ -281,15 +293,24 @@
 
       const elbow = slot(arm, 0, -0.355, 0);
       put(elbow, G.cyl(0.055, 0.046, 0.26, 6), cfg.longSleeve ? mSleeve : mSkin, 0, -0.13, 0);
-      if (!cfg.longSleeve) put(elbow, G.cyl(0.064, 0.058, 0.10, 6), mArmor, 0, -0.10, 0);  // 护腕
+      /* 自带护腕同样单独成组：装护手时隐藏，不然两个护腕套在同一截前臂上 */
+      const wristBase = slot(elbow, 0, 0, 0);
+      if (!cfg.longSleeve) put(wristBase, G.cyl(0.064, 0.058, 0.10, 6), mArmor, 0, -0.10, 0);  // 护腕
       put(elbow, G.box(0.072, 0.094, 0.058), mHand, 0, -0.30, 0);       // 手
+      /* 换装护手专用空槽（同上：只给 Doll.dress 用） */
+      const gloveG = slot(elbow, 0, 0, 0);
 
       /* 副手 / 武器位：必须是空 Group（换装会 clearGroup） */
       const offSlot = slot(elbow, 0, -0.30, 0.03);
       const wpnSlot = slot(elbow, 0, -0.30, 0.02);
 
-      if (side < 0) { A.parts.armL = arm; A.parts.elbowL = elbow; A.parts.offHand = offSlot; }
-      else { A.parts.armR = arm; A.parts.elbowR = elbow; A.parts.weaponHand = wpnSlot; }
+      if (side < 0) {
+        A.parts.armL = arm; A.parts.elbowL = elbow; A.parts.offHand = offSlot;
+        A.parts.wristBaseL = wristBase; A.parts.gloveL = gloveG;
+      } else {
+        A.parts.armR = arm; A.parts.elbowR = elbow; A.parts.weaponHand = wpnSlot;
+        A.parts.wristBaseR = wristBase; A.parts.gloveR = gloveG;
+      }
     }
 
     /* ================= 下摆 ================= */

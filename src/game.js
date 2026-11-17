@@ -1761,7 +1761,13 @@ const Game = {
 
   setupPlayer() {
     const cls = CLASSES[this.state.cls];
-    if (this.actor) { this.scene.remove(this.actor.group); }
+    if (this.actor) {
+      /* 旧角色身上挂着的模组件要**先还回去**：Doll 的缓存按引用计数回收，
+       * 直接扔掉 actor 等于把 refs 丢在 1，那些几何永远等不到归零。
+       * 一次换职业漏十几份几何，换十次就是显存只涨不落。 */
+      try { if (typeof Doll !== 'undefined' && Doll.undress) Doll.undress(this.actor); } catch (e) { }
+      this.scene.remove(this.actor.group);
+    }
     /* 古风角色优先；任何异常都退回盒子人，保证一定能进游戏 */
     const a = (typeof CharForge !== 'undefined' && CharForge.has(this.state.cls))
       ? CharForge.build(this.state.cls)

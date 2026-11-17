@@ -21,9 +21,10 @@ const vm = require('vm');
 const { loadData } = require('./_load');
 
 const ROOT = path.resolve(__dirname, '..');
+/* data-doll.js 已经进了 index.html，loadData() 会按真实顺序带上它 ——
+ * 这里再手动灌一次就是 `Identifier 'DOLL_FAM_NAME' has already been declared`。
+ * 这一条本身就是「零件真的进了页面」的间接证据：清单来自 index.html。 */
 const ctx = loadData();
-vm.runInContext(fs.readFileSync(path.join(ROOT, 'src/data/data-doll.js'), 'utf8'), ctx,
-  { filename: 'src/data/data-doll.js' });
 
 const P = n => vm.runInContext(n, ctx);
 const DOLL_PARTS = P('DOLL_PARTS');

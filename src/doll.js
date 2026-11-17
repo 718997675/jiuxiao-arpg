@@ -426,7 +426,8 @@
     });
   }
 
-  /* 把 build 的结果挂到 actor.parts 上；返回是否成功 */
+  /* 把 build 的结果挂到 actor.parts 上；返回是否成功。
+   * **只管挂，不管摘** —— 连挂两次就是两顶头盔穿在一起。换装走 dress。 */
   function mount(actor, item, cls) {
     if (!actor || !actor.parts || !item) return false;
     const res = build(item, cls);
@@ -440,6 +441,64 @@
       n++;
     }
     return n > 0;
+  }
+
+  /* 换装：**先摘上一次装的，再挂这一次的**。
+   *
+   * 为什么必须记住「上一次」而不是直接清空挂点组：
+   *   gloveL / bootL 是 charforge 开的空槽，清空安全；但 ring 挂的是 elbowL
+   *   本体，那里面有前臂几何 —— 一个「清空挂点」的通用实现迟早会被人用到
+   *   关节上，然后玩家的手就没了。所以只摘自己挂过的那些 mesh。
+   *
+   * 记录存在 actor.__doll（**不放 actor.parts**：parts 是骨架的公开字典，
+   * 往里塞私货会让「遍历 parts」的代码拿到一个不是 Group 的东西）。
+   *
+   * 引用计数：同一个 res 可能占多个挂点（护肩 L+R 共享一份几何），
+   * 所以按 res 去重后只 release 一次 —— 逐个挂点 release 会把 refs 减穿。
+   */
+  function dress(actor, slot, item, cls) {
+    if (!actor || !actor.parts) return false;
+    const book = actor.__doll || (actor.__doll = {});
+    const prev = book[slot];
+    if (prev) {
+      const seen = [];
+      for (const an in prev) {
+        const g = actor.parts[an];
+        const rec = prev[an];
+        if (g && rec.mesh && rec.mesh.parent === g) g.remove(rec.mesh);
+        if (rec.res && seen.indexOf(rec.res) < 0) { seen.push(rec.res); release(rec.res); }
+      }
+      delete book[slot];
+    }
+    if (!item) return true;                       // 脱掉：摘干净就算成功
+    const res = build(item, cls);
+    if (!res) return false;
+    const rec = {};
+    for (const an in res) {
+      if (an.charAt(0) === '_') continue;
+      const g = actor.parts[an];
+      if (!g) continue;
+      g.add(res[an]);
+      rec[an] = { mesh: res[an], res: res };
+      /* 挨打要闪：材质必须进 actor.mats（charforge.js 遍历的就是这张表），
+       * 否则受击只有身体闪、装备不动，看着像模型分层。
+       * 材质是池里共享的，所以**去重** —— 不去重的话换十次装，
+       * 同一份材质在 mats 里出现十次，每次受击多遍历十遍。 */
+      const m = res[an].material;
+      if (m && actor.mats && actor.mats.indexOf(m) < 0) actor.mats.push(m);
+    }
+    if (!Object.keys(rec).length) { release(res); return false; }
+    book[slot] = rec;
+    return true;
+  }
+
+  /* 清空一个 actor 身上所有模组件（重开档 / 换职业时用） */
+  function undress(actor) {
+    if (!actor) return;
+    const book = actor.__doll;
+    if (!book) return;
+    for (const slot in book) dress(actor, slot, null);
+    actor.__doll = {};
   }
 
   function stats() {
@@ -467,7 +526,7 @@
   }
 
   global.Doll = {
-    build, mount, clear, stats, reset, release,
+    build, mount, dress, undress, clear, stats, reset, release,
     mergeGeos, geoOf, paletteOf, matrixOf,
     keyOf: dollKeyOf,
     CACHE,

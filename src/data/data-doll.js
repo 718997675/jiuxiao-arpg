@@ -59,8 +59,13 @@ const DOLL_ANCHORS = {
   capeG:     'torso',
   torsoG:    'torso',
   skirtG:    'skirt',
-  elbowL:    'elbowL',  elbowR: 'elbowR',     // 护手/戒指：前臂段
-  kneeL:     'kneeL',   kneeR:  'kneeR',      // 靴：小腿段（**不许挂 leg，腿会变橡皮**）
+  /* 护手 / 靴挂的是**装备专用空槽**，不是关节本体。
+   * 关节组里装着前臂/小腿的几何，直接清会把手脚清没；
+   * charforge 在 elbow/knee 原点各开了一个空子组，位置等价、互不干扰。 */
+  gloveL:    'elbowL',  gloveR: 'elbowR',
+  bootL:     'kneeL',   bootR:  'kneeR',
+  elbowL:    'elbowL',  elbowR: 'elbowR',     // 戒指：直接挂关节（P3 再收成 ringL/R）
+  kneeL:     'kneeL',   kneeR:  'kneeR',      // 旧数据兜底，同 bootL
   relicG:    'torso',
   footG:     'root'                            // 命格：脚下
 };
@@ -317,7 +322,7 @@ cloak: {
 gloves: {
   A: {
     name: '布手', axis: '袖口翻边',
-    anchor: 'elbowL',
+    anchor: 'gloveL',
     parts: [
       { i: 'cuff', g: 'cyl', s: [0.066, 0.074, 0.150, 7], p: [0, -0.205, 0], m: 'main' },
       { i: 'fold', g: 'cyl', s: [0.080, 0.080, 0.030, 7], p: [0, -0.286, 0], m: 'sub' }
@@ -330,7 +335,7 @@ gloves: {
   },
   B: {
     name: '臂甲', axis: '硬筒 · 肘尖',
-    anchor: 'elbowL',
+    anchor: 'gloveL',
     parts: [
       { i: 'vamb',  g: 'cyl',  s: [0.080, 0.070, 0.240, 7], p: [0, -0.155, 0], m: 'main' },
       { i: 'point', g: 'cone', s: [0.042, 0.105, 4],        p: [0, 0.008, -0.060], r: [-0.38, 0, 0], m: 'trim' },
@@ -344,7 +349,7 @@ gloves: {
   },
   C: {
     name: '缠绳', axis: '交叉绑带 · 露指',
-    anchor: 'elbowL',
+    anchor: 'gloveL',
     parts: [
       { i: 'wrap', g: 'box', s: [0.016, 0.190, 0.016], p: [0.050, -0.170, 0.048], r: [0, 0, 0.55], m: 'sub' },
       { i: 'wrap2', g: 'box', s: [0.016, 0.190, 0.016], p: [-0.050, -0.170, 0.048], r: [0, 0, -0.55], m: 'sub' },
@@ -365,7 +370,7 @@ gloves: {
 boots: {
   A: {
     name: '布履', axis: '薄底 · 绑腿布',
-    anchor: 'kneeL',
+    anchor: 'bootL',
     parts: [
       { i: 'wrap', g: 'cyl', s: [0.098, 0.106, 0.200, 7], p: [0, -0.245, 0], m: 'main' },
       { i: 'sole', g: 'box', s: [0.152, 0.055, 0.272], p: [0, -0.405, 0.045], m: 'sub' }
@@ -378,7 +383,7 @@ boots: {
   },
   B: {
     name: '战靴', axis: '高筒 · 胫甲 · 铁头',
-    anchor: 'kneeL',
+    anchor: 'bootL',
     parts: [
       { i: 'shaft', g: 'cyl', s: [0.118, 0.108, 0.290, 7], p: [0, -0.225, 0], m: 'main' },
       { i: 'shin',  g: 'box', s: [0.142, 0.255, 0.064],    p: [0, -0.245, 0.098], m: 'main' },
@@ -394,7 +399,7 @@ boots: {
   },
   C: {
     name: '轻履', axis: '露趾 · 交叉带 · 铃',
-    anchor: 'kneeL',
+    anchor: 'bootL',
     parts: [
       { i: 'sole', g: 'box', s: [0.142, 0.042, 0.205], p: [0, -0.412, 0.030], m: 'sub' },
       { i: 'band', g: 'box', s: [0.150, 0.020, 0.086], p: [0, -0.300, 0.020], r: [0.55, 0, 0], m: 'main' },

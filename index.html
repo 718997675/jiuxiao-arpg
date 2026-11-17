@@ -3250,11 +3250,20 @@
 <!-- [U8] 世界 Boss 预警层：18 招「判定形状 → 预警形状」映射，独立于 BOSS_TWIST。
      纯数据 + 纯函数 wbWarnOf，被 worldboss-fight.js 的 cast() 消费 -->
 <script src="src/data/data-wbzone.js"></script>
+<!-- [D0] 装备模组零件表：33 造型族 / 202 零件 / 14 标准挂点 / 9 武器模具。
+     纯数据 + 纯函数（dollKeyOf / dollPartsOf / 剪影判据），运行时才读 items.js 的
+     itemBaseList —— 所以放在数据区不违反「数据在前」的次序。 -->
+<script src="src/data/data-doll.js"></script>
 <!-- 逻辑层 -->
 <script src="src/weapons.js"></script>
 <script src="src/items.js"></script>
 <script src="src/actors.js"></script>
 <script src="src/charforge.js"></script>
+<!-- [D0] 装备模组装配器（把零件表变成 mesh：装配 / 合并 / 缓存 / 回收）。
+     必须在 charforge.js 之后：paletteOf 优先读 actors.js 的 METAL_PALETTE，
+     在 weapons.js 之后：buildWeapon 走 WeaponForge.build。
+     **它不认识「哪件装备好看」，只管拼** —— 造型全在 data-doll.js。 -->
+<script src="src/doll.js"></script>
 <!-- [M18.6] 世界 Boss 六套程序化骨架。必须在 actors.js 之后：
      它要用 actors.js 的 boxGeo/sphGeo/coneGeo/cylGeo/torusGeo/mesh/M 这些全局 helper -->
 <script src="src/wbmodels.js"></script>

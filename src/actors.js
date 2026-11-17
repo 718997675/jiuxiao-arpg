@@ -950,6 +950,35 @@ function rarityGlow(item) {
   return null;
 }
 
+/* ============================================================
+ * 模组化纸娃娃 —— P1 接管 helm / shoulders / cloak / gloves / boots
+ *
+ * 这五槽的几何来自 data-doll.js 的 15 个造型族（每槽 3 族），由 Doll.dress
+ * 负责换装（它会记住上次装的是哪几个 mesh，先摘后挂）。
+ *
+ * **为什么不在这里手写**：手写的结果就是原来那三个 if 分支 —— 三职业各一种
+ * 头盔，装备换了造型不变。数据表里已经有 15 族，手写等于把它们全扔掉。
+ *
+ * 能不能走模组看 `a.cf`：只有 charforge 骨架开了装备空槽
+ * （helmG / shoulderL,R / capeG / gloveL,R / bootL,R）。
+ * 非 cf 骨架（actors.js 的通用人形）没有这些槽，退回老的手写着色 ——
+ * 不让「没槽」变成「没装备」。
+ * ============================================================ */
+function dollReady(a) {
+  return !!a && !!a.cf && typeof Doll !== 'undefined' && !!Doll.dress;
+}
+
+/* 装备靴/护手时把骨架自带的那一双藏起来：两双靴筒叠在同一截小腿上，
+ * 视觉是「靴子穿了两层」，而且自带那双永远比装备那双宽一圈。
+ * 摘掉装备立刻还回来 —— 隐藏而不是删除，因为自带的才是没装备时的样子。 */
+function hideBaseGear(a, hasBoot, hasGlove) {
+  const P = a.parts;
+  if (P.bootBaseL) P.bootBaseL.visible = !hasBoot;
+  if (P.bootBaseR) P.bootBaseR.visible = !hasBoot;
+  if (P.wristBaseL) P.wristBaseL.visible = !hasGlove;
+  if (P.wristBaseR) P.wristBaseR.visible = !hasGlove;
+}
+
 function applyPaperDoll(p) {
   const a = p.actor;
   const eq = p.equipment;
@@ -983,18 +1012,25 @@ function applyPaperDoll(p) {
     P.clothMat.emissive.setHex(0x000000);
   }
 
-  /* 护腿 / 靴 */
+  const canDoll = dollReady(a);
+
+  /* 护腿 / 靴 —— 模组装配。**不再染 bootMat**：靴子是套在小腿上的几何，
+   * 染色的结果是「穿靴子 = 小腿整截变色」，脱掉之后那截还是那个色。 */
   const boots = eq.boots;
-  if (boots) {
+  if (canDoll) {
+    Doll.dress(a, 'boots', boots, p.cls);
+  } else if (boots) {
     const c = itemVisualColor(boots);
     P.bootMat.color.setHex(c.base);
     P.bootMat.emissive.setHex(c.glow);
     P.bootMat.emissiveIntensity = c.glow ? 0.4 : 0;
   }
 
-  /* 护手 */
+  /* 护手 —— 模组装配。**不再染 handMat**（同上：那是手，不是手套）。 */
   const gloves = eq.gloves;
-  if (gloves) {
+  if (canDoll) {
+    Doll.dress(a, 'gloves', gloves, p.cls);
+  } else if (gloves) {
     const c = itemVisualColor(gloves);
     P.handMat.color.setHex(c.base);
     P.handMat.emissive.setHex(c.glow);
@@ -1002,49 +1038,61 @@ function applyPaperDoll(p) {
   } else {
     P.handMat.emissive.setHex(0x000000);
   }
+  hideBaseGear(a, canDoll && !!boots, canDoll && !!gloves);
 
-  /* 头盔 */
+  /* 头盔 —— 模组装配（15 族） */
   clearGroup(P.helmG);
-  if (eq.helm) {
+  if (canDoll) {
+    Doll.dress(a, 'helm', eq.helm, p.cls);
+  } else if (eq.helm) {
     const c = itemVisualColor(eq.helm);
     const mat = M(c.base, { metal: c.metal, rough: 0.5, emissive: c.glow, ei: 0.45 });
     a.mats.push(mat);
-    const t = tierIndex(eq.helm.ilvl);
     if (p.cls === 'mage') {
-      const hat = mesh(coneGeo(0.34, 0.7, 6), mat, 0, 0.42, 0, P.helmG);
+      mesh(coneGeo(0.34, 0.7, 6), mat, 0, 0.42, 0, P.helmG);
       mesh(boxGeo(0.62, 0.05, 0.62), mat, 0, 0.14, 0, P.helmG);
     } else if (p.cls === 'taoist') {
       mesh(boxGeo(0.56, 0.2, 0.56), mat, 0, 0.26, 0, P.helmG);
       mesh(boxGeo(0.5, 0.06, 0.5), M(0xe8dfa8), 0, 0.38, 0, P.helmG);
     } else {
       mesh(boxGeo(0.58, 0.3, 0.58), mat, 0, 0.22, 0, P.helmG);
-      const horn = mesh(coneGeo(0.07, 0.42, 5), M(0xd8b25a, { metal: 0.8 }), 0, 0.45, 0, P.helmG);
+      mesh(coneGeo(0.07, 0.42, 5), M(0xd8b25a, { metal: 0.8 }), 0, 0.45, 0, P.helmG);
       mesh(boxGeo(0.62, 0.08, 0.12), mat, 0, 0.12, 0.24, P.helmG);
     }
   }
 
-  /* 护肩 */
-  for (const [gg, sx] of [[P.shoulderL, -1], [P.shoulderR, 1]]) {
-    clearGroup(gg);
-    const sh = eq.shoulders;
-    if (!sh) continue;
-    const c = itemVisualColor(sh);
+  /* 护肩 —— 模组装配。数据只写 L 一份，右肩由 doll.js 的 targetsOf 镜像，
+   * 所以这里不再「左右各建一次」。 */
+  clearGroup(P.shoulderL);
+  clearGroup(P.shoulderR);
+  if (canDoll) {
+    Doll.dress(a, 'shoulders', eq.shoulders, p.cls);
+  } else if (eq.shoulders) {
+    const c = itemVisualColor(eq.shoulders);
     const mat = M(c.base, { metal: c.metal, rough: 0.45, emissive: c.glow, ei: 0.4 });
     a.mats.push(mat);
-    const s = mesh(sphGeo(0.26, 6), mat, sx * 0.1, 0.06, 0, gg);
-    s.scale.set(1.25, 0.75, 1.1);
-    mesh(coneGeo(0.08, 0.3, 4), mat, sx * 0.22, 0.22, 0, gg).rotation.z = sx * 0.4;
+    for (const [gg, sx] of [[P.shoulderL, -1], [P.shoulderR, 1]]) {
+      const s = mesh(sphGeo(0.26, 6), mat, sx * 0.1, 0.06, 0, gg);
+      s.scale.set(1.25, 0.75, 1.1);
+      mesh(coneGeo(0.08, 0.3, 4), mat, sx * 0.22, 0.22, 0, gg).rotation.z = sx * 0.4;
+    }
   }
 
-  /* 披风 */
+  /* 披风 —— 模组装配。
+   * **读的是 `eq.cloak`**，不是 `eq.chest`：披风有自己的槽位（14 槽里一直都有），
+   * 老代码拿胸甲当披风，于是「换了胸甲披风跟着换颜色」，而真披风永远不出现。 */
   clearGroup(P.capeG);
-  const capeItem = eq.chest;
-  if (capeItem && (capeItem.rarity === 'unique' || capeItem.rarity === 'legendary' || capeItem.rarity === 'set' || capeItem.rarity === 'rare')) {
-    const c = itemVisualColor(capeItem);
-    const cm = M(c.dark, { rough: 0.9, side: THREE.DoubleSide, emissive: c.glow, ei: 0.18 });
-    a.mats.push(cm);
-    const cape = mesh(boxGeo(0.72, 1.15, 0.05), cm, 0, -0.6, -0.03, P.capeG);
-    cape.rotation.x = 0.12;
+  if (canDoll) {
+    Doll.dress(a, 'cloak', eq.cloak, p.cls);
+  } else {
+    const capeItem = eq.cloak;
+    if (capeItem && (capeItem.rarity === 'unique' || capeItem.rarity === 'legendary' || capeItem.rarity === 'set' || capeItem.rarity === 'rare')) {
+      const c = itemVisualColor(capeItem);
+      const cm = M(c.dark, { rough: 0.9, side: THREE.DoubleSide, emissive: c.glow, ei: 0.18 });
+      a.mats.push(cm);
+      const cape = mesh(boxGeo(0.72, 1.15, 0.05), cm, 0, -0.6, -0.03, P.capeG);
+      cape.rotation.x = 0.12;
+    }
   }
 
   /* 武器 */
