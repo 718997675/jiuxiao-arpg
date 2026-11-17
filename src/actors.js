@@ -248,6 +248,14 @@ function buildMonster(kind, cfg) {
      * `body.radius` 给（「主干有多粗」），`game.js` 那边会夹一次。 */
     if (wb) return wb;
   }
+  /* [M7.5] 八部天龙九套骨架，同一套路：`animKind` 当分派键。
+   * 八只魔将的数据里 `model` 还是 `brute`/`demon`（老口径），所以
+   * `spawnEnemy` 优先传 `animKind`；这里只做一次查表，不要往下加
+   * `if (kind === 'deva')` 分支 —— 那会让 1300 行的文件再长 1000 行。 */
+  if (typeof BafoModels !== 'undefined' && BafoModels.has(kind)) {
+    const bf = BafoModels.build(kind, cfg);
+    if (bf) return bf;
+  }
   if (kind === 'spider') {
     const g = new THREE.Group();
     a = { group: g, mats: [], parts: {} };
@@ -1209,6 +1217,9 @@ function updateActorAnim(a, dt) {
    * 张颚 / 抡斧 / 九尾），塞进下面这套「走路摆臂」里没有任何意义。
    * 和 charforge 同一个套路：模型自带 anim 实现，这里只做分派。 */
   if (a.wbModel && typeof WBModels !== 'undefined') return WBModels.anim(a, dt);
+  /* [M7.5] 八部天龙九套：光轮要转、蛇要游、翅膀要开合、八首要公转 ——
+   * 这些塞进下面这套「走路摆臂」里没有任何意义，各走各的曲线。 */
+  if (a.bafoModel && typeof BafoModels !== 'undefined') return BafoModels.anim(a, dt);
   const t = a.time = (a.time || 0) + dt;
   if (!P.torso) return;
 

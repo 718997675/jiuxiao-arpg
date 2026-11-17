@@ -2118,7 +2118,12 @@ const Game = {
     const mapLv = MAPS[this.state.mapId].level;
     const lvl = levelOverride || (mapLv + RNDI(-1, 2));
     const scale = cfg.scale || 1;
-    const a = buildMonster(cfg.model || 'humanoid', {
+    /* [M7.5] 八部魔将的分派键是 `animKind`（数据里的 `model` 还是老的
+     * `brute`/`demon`，直接传会落进人形分支，九套骨架永远不生效）。
+     * 只有 BafoModels 认识的名字才替换，其余保持原样。 */
+    const mkind = (cfg.animKind && typeof BafoModels !== 'undefined' && BafoModels.has(cfg.animKind))
+      ? cfg.animKind : (cfg.model || 'humanoid');
+    const a = buildMonster(mkind, {
       scale: scale * (elite ? 1.12 : 1) * (isBoss ? 1 : 1.0),
       color: cfg.color, cloth: cfg.cloth, skin: cfg.skin
     });
@@ -2336,7 +2341,12 @@ const Game = {
      * 数据里的 `body.radius` 描述的是「主干有多粗」，不是「尾巴甩到多远」，
      * 用它当上限。没有 `body.radius` 的（老模型）保持原样。 */
     const wbCap = (cfg.body && cfg.body.radius) || 0;
-    e.radius = wbCap ? Math.min(_br, wbCap) : _br;
+    /* [M7.5] 八部九套骨架同样是**真实米数**（金翅翼展 5 米、无相真身 11.5 米），
+     * 量包围盒会得到 3 米半径。骨架自己给了 `footR`（「身子有多粗」），用它当上限。
+     * 只对 bafo 生效 —— 世界 Boss 走上面的 `body.radius`，老模型一概不动。 */
+    const bfCap = (a.bafoModel && a.footR) ? a.footR : 0;
+    const cap = wbCap || bfCap;
+    e.radius = cap ? Math.min(_br, cap) : _br;
     e.reach = Math.max(cfg.range || 2.2, e.radius * 1.26 + 0.75);
 
     this.enemies.push(e);
